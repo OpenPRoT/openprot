@@ -1,0 +1,11 @@
+[book]
+authors = ["OpenProt Team"]
+language = "en"
+multilingual = false
+src = "src"
+title = "OpenProt Documentation"
+
+[preprocessor.mermaid]
+command = "mdbook-mermaid"
+
+[output.html]

@@ -1,0 +1,16 @@
+# Licensed under the Apache-2.0 license
+
+[package]
+name = "openprot"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "openprot"
+path = "src/main.rs"
+
+[lib]
+name = "openprot"
+path = "src/lib.rs"
+
+[dependencies]
