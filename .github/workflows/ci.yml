@@ -32,7 +32,7 @@ jobs:
         components: clippy, rustfmt
     
     - name: Cache cargo registry
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cargo/registry
@@ -70,7 +70,7 @@ jobs:
         components: clippy, rust-src, llvm-tools, rustfmt, rustc-dev
     
     - name: Cache cargo registry
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cargo/registry
