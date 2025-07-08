@@ -43,6 +43,21 @@ jobs:
     - name: Build documentation
       run: cargo doc --all-features --no-deps --workspace
     
+    - name: Create index.html redirect for GitHub Pages
+      run: |
+        cat > target/doc/index.html << 'EOF'
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta http-equiv="refresh" content="0; url=openprot/">
+            <title>OpenProt Documentation</title>
+        </head>
+        <body>
+            <p>Redirecting to <a href="openprot/">OpenProt Documentation</a>...</p>
+        </body>
+        </html>
+        EOF
+    
     - name: Check for broken links in docs
       run: |
         cargo install cargo-deadlinks
