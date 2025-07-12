@@ -1,0 +1,9 @@
+[submodule "external/spdm-lib"]
+	path = external/spdm-lib
+	url = git@github.com:OpenPRoT/spdm-lib.git
+[submodule "external/pldm-lib"]
+	path = external/pldm-lib
+	url = git@github.com:OpenPRoT/pldm-lib.git
+[submodule "external/mctp-lib"]
+	path = external/mctp-lib
+	url = git@github.com:OpenPRoT/mctp-lib.git

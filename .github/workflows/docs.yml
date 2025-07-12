@@ -19,6 +19,8 @@ env:
 jobs:
   docs:
     name: Documentation
+    # Only run this job on the main branch
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -65,16 +67,14 @@ jobs:
       continue-on-error: true
     
     - name: Setup Pages
-      if: github.ref == 'refs/heads/main'
       uses: actions/configure-pages@v4
       
+    # Upload the 'github-pages' artifact
     - name: Upload artifact
-      if: github.ref == 'refs/heads/main'
       uses: actions/upload-pages-artifact@v3
       with:
         path: ./target/doc
         
     - name: Deploy to GitHub Pages
-      if: github.ref == 'refs/heads/main'
       id: deployment
       uses: actions/deploy-pages@v4
