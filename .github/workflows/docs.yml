@@ -67,7 +67,7 @@ jobs:
       continue-on-error: true
     
     - name: Setup Pages
-      uses: actions/configure-pages@v4
+      uses: actions/configure-pages@v5
       
     # Upload the 'github-pages' artifact
     - name: Upload artifact
