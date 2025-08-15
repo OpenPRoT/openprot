@@ -18,4 +18,4 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-zerocopy = { version = "0.8.26", features = ["derive"] }
+zerocopy = { version = "0.8.25", features = ["derive"] }
