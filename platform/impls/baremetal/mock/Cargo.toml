@@ -1,0 +1,18 @@
+# Licensed under the Apache-2.0 license
+
+[package]
+name = "openprot-platform-mock"
+version = "0.1.0"
+edition = "2021"
+description = "Mock/stub implementation of OpenPRoT platform traits for testing"
+
+[features]
+default = []
+
+[dependencies]
+# OpenPRoT HAL traits
+openprot-hal-blocking = { path = "../../../../hal/blocking" }
+
+# Core dependencies for embedded development
+cortex-m = "0.7"
+embedded-hal = "1.0"

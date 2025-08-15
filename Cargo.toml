@@ -8,6 +8,7 @@ members = [
     "hal/async", 
     "hal/nb",
     "platform/traits",
+    "platform/impls/baremetal/mock",
     "platform/impls/linux",
     "platform/impls/tock",
     "platform/impls/hubris",
@@ -15,3 +16,6 @@ members = [
     "services/storage",
 ]
 resolver = "2"
+
+[workspace.dependencies]
+zerocopy = { version = "0.8.25", features = ["derive"] }

@@ -14,8 +14,12 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+/// Cryptographic digest operations (hashing)
+pub mod digest;
 /// Gpio port module
 pub mod gpio_port;
+/// Message Authentication Code (MAC) traits and implementations
+pub mod mac;
 /// Reset and clocking traits for OpenPRoT HAL
 pub mod system_control;
 
