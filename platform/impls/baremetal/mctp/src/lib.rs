@@ -1,8 +1,12 @@
+//! This crate provides a platform agnostic MCTP stack.
+//!
+//! It utilizes the [mctp-estack]() and re-exports parts of it.
 #![no_std]
 use mctp::{Eid, Error, MsgIC, MsgType, Result, Tag};
-use mctp_estack::{Stack, fragment};
+use mctp_estack::Stack;
 
 pub use mctp_estack::AppCookie;
+pub use mctp_estack::fragment::Fragmenter;
 
 pub const MAX_LISTENER_HANDLES: usize = 64;
 pub const MAX_REQUEST_HANDLES: usize = 64;
@@ -27,9 +31,12 @@ impl ReqHandle {
 }
 
 /// A platform agnostic MCTP stack with routing
+///
+/// Currently only a single port/bus is supported
 #[derive(Debug)]
-pub struct Router {
+pub struct Router<S: Sender> {
     stack: Stack,
+    sender: S,
     /// listener handles
     ///
     /// The index is used to construct the AppCookie.
@@ -41,15 +48,12 @@ pub struct Router {
     requests: [Option<ReqHandle>; MAX_REQUEST_HANDLES],
 }
 
-impl Router {
-    pub fn new<O>(own_eid: Eid, now_millis: u64, outbound: O) -> Self
-    where
-        O: FnMut(&[u8]),
-    {
-        // TODO: Outbound handler and lookup (a Trait might be a better fit)
+impl<S: Sender> Router<S> {
+    pub fn new(own_eid: Eid, now_millis: u64, outbound: S) -> Self {
         let stack = Stack::new(own_eid, now_millis);
         Router {
             stack,
+            sender: outbound,
             listeners: [None; MAX_LISTENER_HANDLES],
             requests: [const { None }; MAX_REQUEST_HANDLES],
         }
@@ -151,11 +155,15 @@ impl Router {
         cookie: AppCookie,
         bufs: &[&[u8]],
     ) -> Result<Tag> {
-        const MTU: usize = 64;
-        // TODO: mtu (and port) lookup
-        let mut frag = self
-            .stack
-            .start_send(eid, typ, tag, true, ic, None, Some(cookie))?;
+        let frag = self.stack.start_send(
+            eid,
+            typ,
+            tag,
+            true,
+            ic,
+            Some(self.sender.get_mtu()),
+            Some(cookie),
+        )?;
 
         let mut local_buffer = [0; mctp_estack::config::MAX_PAYLOAD];
 
@@ -176,16 +184,7 @@ impl Router {
         // TODO: this seems unnecessary,
         // the fragmenter should iterate over the bufs requiring only a single packet buffer.
 
-        loop {
-            let mut pkt_buf = [0; MTU];
-            match frag.fragment(payload, &mut pkt_buf) {
-                fragment::SendOutput::Packet(items) => {
-                    todo!("send data over the provided outgoing port")
-                }
-                fragment::SendOutput::Complete { tag, cookie: _ } => return Ok(tag),
-                fragment::SendOutput::Error { err, cookie: _ } => return Err(err),
-            }
-        }
+        self.sender.send(frag, payload)
     }
 
     /// Receive a message associated with a [`AppCookie`]
@@ -220,6 +219,13 @@ impl Router {
             Ok(())
         }
     }
+}
+
+pub trait Sender {
+    /// Send a packet fragmented by `fragmenter` with the payload `payload`
+    fn send(&mut self, fragmenter: Fragmenter, payload: &[u8]) -> Result<Tag>;
+    /// Get the MTU of a MCTP packet fragment (without transport headers)
+    fn get_mtu(&self) -> usize;
 }
 
 /// Function to create a router unique AppCookie for listeners
@@ -280,12 +286,30 @@ fn cookie_is_listener(cookie: &AppCookie) -> bool {
 mod test {
     use mctp::Eid;
 
-    use crate::Router;
+    use crate::{Router, Sender};
+
+    struct DoNothingSender;
+
+    impl Sender for DoNothingSender {
+        fn send(
+            &mut self,
+            fragmenter: mctp_estack::fragment::Fragmenter,
+            payload: &[u8],
+        ) -> core::result::Result<mctp::Tag, mctp::Error> {
+            let _ = payload;
+            Ok(fragmenter.tag())
+        }
+
+        fn get_mtu(&self) -> usize {
+            255
+        }
+    }
 
     /// Test the creation of request and listener handles (`AppCookies`)
     #[test]
     fn test_handle_creation() {
-        let mut router = Router::new(Eid(42), 0, |_| {});
+        let outbound = DoNothingSender;
+        let mut router = Router::new(Eid(42), 0, outbound);
 
         // create a new listener and expect the cookie value to be 0 (raw index of the underlying table)
         let listener = router.listener(mctp::MsgType(0));
