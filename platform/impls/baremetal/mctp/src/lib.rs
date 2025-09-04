@@ -206,9 +206,17 @@ impl Router {
                 .ok_or(Error::BadArgument)?;
             Ok(())
         } else {
-            self.requests[requests_index_from_cookie(cookie).ok_or(Error::BadArgument)?]
-                .take()
-                .ok_or(Error::BadArgument)?;
+            let req = self.requests
+                [requests_index_from_cookie(cookie).ok_or(Error::BadArgument)?]
+            .take()
+            .ok_or(Error::BadArgument)?;
+            if let ReqHandle {
+                eid,
+                last_tag: Some(tag),
+            } = req
+            {
+                self.stack.cancel_flow(eid, tag.tag());
+            }
             Ok(())
         }
     }
