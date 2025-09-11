@@ -60,9 +60,9 @@ impl<S: Sender> Router<S> {
     }
 
     /// update the stack, returning after how many milliseconds update has to be called again
-    pub fn update(&mut self, now_millis: u64) -> Result<u32> {
+    pub fn update(&mut self, now_millis: u64) -> Result<u64> {
         // TODO: Handle timeouts
-        self.stack.update(now_millis).map(|x| x.0 as u32)
+        self.stack.update(now_millis).map(|x| x.0)
     }
 
     /// Provide an incoming packet to the router.
