@@ -20,8 +20,10 @@ pub mod digest;
 pub mod ecdsa;
 /// Gpio port module
 pub mod gpio_port;
-/// I2C target device operations
-pub mod i2c_target;
+/// I2C device implementation traits (application layer)
+pub mod i2c_device;
+/// I2C hardware controller traits (hardware abstraction layer)
+pub mod i2c_hardware;
 /// Message Authentication Code (MAC) traits and implementations
 pub mod mac;
 /// Reset and clocking traits for OpenPRoT HAL

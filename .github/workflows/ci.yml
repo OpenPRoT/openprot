@@ -125,7 +125,24 @@ jobs:
           -W clippy::panic \
           -W clippy::mem_forget \
           -W clippy::multiple_unsafe_ops_per_block \
-          -W clippy::undocumented_unsafe_blocks
+          -W clippy::undocumented_unsafe_blocks \
+          -A clippy::assertions_on_constants \
+          -A clippy::needless_return
+    
+    - name: Run strict security lints on non-test code
+      run: |
+        cargo clippy --lib --bins -- \
+          -D warnings \
+          -D clippy::arithmetic_side_effects \
+          -D clippy::float_arithmetic \
+          -D clippy::indexing_slicing \
+          -D clippy::unwrap_used \
+          -D clippy::expect_used \
+          -D clippy::panic \
+          -D clippy::mem_forget \
+          -D clippy::multiple_unsafe_ops_per_block \
+          -D clippy::undocumented_unsafe_blocks \
+          -D clippy::assertions_on_constants
     
     - name: Run semgrep security scan
       uses: returntocorp/semgrep-action@v1

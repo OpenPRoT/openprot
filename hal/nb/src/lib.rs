@@ -9,6 +9,9 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+/// Non-blocking I2C hardware controller traits
+pub mod i2c_hardware;
+
 // Re-export nb and embedded-hal-nb 1.0 traits
 pub use embedded_hal_nb::*;
 pub use nb;
