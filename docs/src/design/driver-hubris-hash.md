@@ -12,7 +12,7 @@ This document describes the design and architecture of a generic digest server f
 
 #### R1: Algorithm Support
 - **R1.1**: Support SHA-256 for basic SPDM operations and PLDM firmware integrity validation
-- **R1.2**: Support SHA-384 for enhanced security profiles in both SPDM and PLDM  
+- **R1.2**: Support SHA-384 for enhanced security profiles in both SPDM and PLDM
 - **R1.3**: Support SHA-512 for maximum security assurance
 - **R1.4**: Reject unsupported algorithms (SHA-3) with clear error codes
 
@@ -77,26 +77,26 @@ graph LR
         SC[SPDM Client]
         SCV[• Certificate verification<br/>• Transcript hashing<br/>• Challenge-response<br/>• Key derivation]
     end
-    
+
     subgraph "PLDM Client Task"
         PC[PLDM Firmware Update]
         PCV[• Image integrity validation<br/>• Component verification<br/>• Signature validation<br/>• Running digest computation]
     end
-    
+
     subgraph "Digest Server"
         DS[ServerImpl&lt;D&gt;]
         DSV[• Session management<br/>• Generic implementation<br/>• Resource management<br/>• Error handling]
     end
-    
+
     subgraph "Hardware Backend"
         HW[Hardware Device]
         HWV[• MockDigestDevice<br/>• Actual HW accelerator<br/>• Any device with traits]
     end
-    
+
     SC ---|Synchronous<br/>IPC/Idol| DS
     PC ---|Synchronous<br/>IPC/Idol| DS
     DS ---|HAL Traits| HW
-    
+
     SC -.-> SCV
     PC -.-> PCV
     DS -.-> DSV
@@ -134,7 +134,7 @@ SPDM Client Request
         ↓
    Direct hardware streaming
         ↓
-   Result processing  
+   Result processing
         ↓
    Response to client
 ```
@@ -147,7 +147,7 @@ SPDM Client Request
 impl DigestInit<Sha2_256> for Ast1060HashDevice {
     type OpContext<'a> = Ast1060DigestContext<'a> where Self: 'a;
     type Output = Digest<8>;
-    
+
     fn init<'a>(&'a mut self, _: Sha2_256) -> Result<Self::OpContext<'a>, Self::Error> {
         // Direct hardware initialization - no session management needed
         Ok(Ast1060DigestContext::new_sha256(self))
@@ -159,7 +159,7 @@ impl DigestOp for Ast1060DigestContext<'_> {
         // Direct streaming to hardware - blocking until complete
         self.hardware.stream_data(data)
     }
-    
+
     fn finalize(self) -> Result<Self::Output, Self::Error> {
         // Complete and return result - hardware auto-resets
         self.hardware.finalize_sha256()
@@ -170,7 +170,7 @@ impl DigestOp for Ast1060DigestContext<'_> {
 impl DigestInit<Sha2_256> for MultiContextDevice {
     type OpContext<'a> = MultiContextDigestContext<'a> where Self: 'a;
     type Output = Digest<8>;
-    
+
     fn init<'a>(&'a mut self, _: Sha2_256) -> Result<Self::OpContext<'a>, Self::Error> {
         // Complex session allocation happens here, hidden from server
         let context_id = self.allocate_hardware_context()?;
@@ -196,32 +196,32 @@ sequenceDiagram
     participant C2 as PLDM Client
     participant DS as Digest Server
     participant HW as ASPEED HACE
-    
+
     Note over C1,HW: Clients naturally serialize via blocking IPC
-    
+
     C1->>DS: init_sha256()
     DS->>HW: Initialize SHA-256 (direct hardware access)
     HW-->>DS: Context initialized
     DS-->>C1: session_id = 1
-    
+
     par Client 2 blocks waiting
         C2->>DS: init_sha384() (BLOCKS until C1 finishes)
     end
-    
+
     C1->>DS: update(session_id=1, data_chunk_1)
     DS->>HW: Stream data directly to hardware
     HW->>HW: Process data incrementally
     HW-->>DS: Update complete
     DS-->>C1: Success
-    
+
     C1->>DS: finalize_sha256(session_id=1)
     DS->>HW: Finalize computation
     HW->>HW: Complete hash calculation
     HW-->>DS: Final digest result
     DS-->>C1: SHA-256 digest
-    
+
     Note over DS,HW: Hardware available for next client
-    
+
     DS->>HW: Initialize SHA-384 for Client 2
     HW-->>DS: Context initialized
     DS-->>C2: session_id = 2 (C2 unblocks)
@@ -235,31 +235,31 @@ sequenceDiagram
     participant DS as Digest Server
     participant HW as Multi-Context Hardware
     participant RAM as Context Storage
-    
+
     Note over C1,RAM: Complex session management with context switching
-    
+
     C1->>DS: init_sha256()
     DS->>HW: Initialize SHA-256 context
     DS->>DS: current_session = 0
     DS-->>C1: session_id = 1
-    
+
     C1->>DS: update(session_id=1, data_chunk_1)
     DS->>HW: Stream data to active context
     HW-->>DS: Update complete
     DS-->>C1: Success
-    
+
     C2->>DS: init_sha384()
     Note over DS,RAM: Context switching required
     DS->>RAM: Save session 0 context (SHA-256 state)
-    DS->>HW: Initialize SHA-384 context  
+    DS->>HW: Initialize SHA-384 context
     DS->>DS: current_session = 1
     DS-->>C2: session_id = 2
-    
+
     C2->>DS: update(session_id=2, data_chunk_2)
     DS->>HW: Stream data to active context
     HW-->>DS: Update complete
     DS-->>C2: Success
-    
+
     C1->>DS: update(session_id=1, data_chunk_3)
     Note over DS,RAM: Switch back to session 0
     DS->>RAM: Save session 1 context (SHA-384 state)
@@ -269,7 +269,7 @@ sequenceDiagram
     DS->>HW: Stream data to restored context
     HW-->>DS: Update complete
     DS-->>C1: Success
-    
+
     C1->>DS: finalize_sha256(session_id=1)
     DS->>HW: Finalize computation
     HW-->>DS: Final digest result
@@ -368,7 +368,7 @@ Interface(
                 err: CLike("DigestError"),
             ),
         ),
-        
+
         // One-shot convenience operations (using scoped API internally)
         "digest_oneshot_sha256": (
             args: {
@@ -417,18 +417,18 @@ Interface(
 
 #### Session-Based Operations
 - **init_sha256/384/512()**: Creates new session using owned API, returns session ID for storage
-- **update(session_id, data)**: Updates specific session using move-based context operations  
+- **update(session_id, data)**: Updates specific session using move-based context operations
 - **finalize_sha256/384/512(session_id)**: Completes session and recovers controller for reuse
 - **reset(session_id)**: Cancels session early and recovers controller
 
-#### One-Shot Operations  
+#### One-Shot Operations
 - **digest_oneshot_sha256/384/512()**: Complete digest computation in single IPC call using scoped API
 - **Convenience methods**: For simple use cases that don't need streaming
 
 #### Zero-Copy Data Transfer
 - **Leased memory**: All data transfer uses Hubris leased memory system
 - **Read leases**: Input data (`data`) passed by reference, no copying
-- **Write leases**: Output digests (`digest_out`) written directly to client memory  
+- **Write leases**: Output digests (`digest_out`) written directly to client memory
 - **Bounded transfers**: Maximum 1024 bytes per update for deterministic behavior
 
 #### Type Safety
@@ -493,7 +493,7 @@ impl DigestHardwareCapabilities for Ast1060HashDevice {
     const SUPPORTS_HARDWARE_CONTEXT_SWITCHING: bool = false;
 }
 
-// Example hypothetical multi-context implementation  
+// Example hypothetical multi-context implementation
 impl DigestHardwareCapabilities for HypotheticalMultiContextDevice {
     const MAX_CONCURRENT_SESSIONS: usize = 16;  // Hardware-dependent capacity
     const SUPPORTS_HARDWARE_CONTEXT_SWITCHING: bool = true;
@@ -527,7 +527,7 @@ With the actual `openprot-hal-blocking` trait structure:
 impl DigestInit<Sha2_256> for MyDigestDevice {
     type OpContext<'a> = MyDigestContext<'a> where Self: 'a;
     type Output = Digest<8>;
-    
+
     fn init<'a>(&'a mut self, _: Sha2_256) -> Result<Self::OpContext<'a>, Self::Error> {
         // All hardware complexity (context management, save/restore) handled here
     }
@@ -536,12 +536,12 @@ impl DigestInit<Sha2_256> for MyDigestDevice {
 // The context handles streaming operations
 impl DigestOp for MyDigestContext<'_> {
     type Output = Digest<8>;
-    
+
     fn update(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         // Hardware-specific streaming implementation
         // Context switching (if needed) happens transparently
     }
-    
+
     fn finalize(self) -> Result<Self::Output, Self::Error> {
         // Complete digest computation
         // Context cleanup happens automatically
@@ -561,7 +561,7 @@ impl DigestOp for MyDigestContext<'_> {
 **Single-Context Hardware (ASPEED HACE):**
 ```
 Client A calls init_sha256() → Blocks until complete → Returns session_id
-Client B calls init_sha384() → Blocks waiting for A to finish → Still blocked  
+Client B calls init_sha384() → Blocks waiting for A to finish → Still blocked
 Client A calls update(session_id) → Blocks until complete → Returns success
 Client B calls update(session_id) → Still blocked waiting for A to finalize
 Client A calls finalize() → Releases hardware → Client B can now proceed
@@ -570,7 +570,7 @@ Client A calls finalize() → Releases hardware → Client B can now proceed
 **Multi-Context Hardware (Hypothetical):**
 ```
 Client A calls init_sha256() → Creates session context → Returns immediately
-Client B calls init_sha384() → Creates different context → Returns immediately  
+Client B calls init_sha384() → Creates different context → Returns immediately
 Client A calls update(session_id) → Uses session context → Returns immediately
 Client B calls update(session_id) → Uses different context → Returns immediately
 ```
@@ -639,7 +639,7 @@ graph TB
         SC3[Immediate Response]
         SC1 --> SC2 --> SC3
     end
-    
+
     subgraph "Multi-Context Hardware (Hypothetical)"
         MC1[Session Pool]
         MC2[Context Scheduler]
@@ -678,23 +678,23 @@ Examples of hardware-specific session limits:
 With proper trait encapsulation, the server implementation becomes much simpler:
 
 ```rust
-impl<D> ServerImpl<D> 
-where 
+impl<D> ServerImpl<D>
+where
     D: DigestInit<Sha2_256> + DigestInit<Sha2_384> + DigestInit<Sha2_512> + ErrorType
 {
     fn update_session(&mut self, session_id: u32, data: &[u8]) -> Result<(), DigestError> {
         let session = self.get_session_mut(session_id)?;
-        
+
         // Generic trait call - all hardware complexity hidden
         session.op_context.update(data)
             .map_err(|_| DigestError::HardwareFailure)?;
-        
+
         Ok(())
     }
-    
+
     fn finalize_session(&mut self, session_id: u32) -> Result<DigestOutput, DigestError> {
         let session = self.take_session(session_id)?;
-        
+
         // Trait handles finalization and automatic cleanup
         session.op_context.finalize()
             .map_err(|_| DigestError::HardwareFailure)
@@ -704,7 +704,7 @@ where
 
 #### Hardware Complexity Encapsulation
 - **No save/restore methods**: All context management hidden in trait implementations
-- **No platform-specific code**: Server only calls generic trait methods  
+- **No platform-specific code**: Server only calls generic trait methods
 - **Automatic optimization**: Single-context hardware avoids unnecessary overhead
 - **Transparent complexity**: Multi-context hardware handles switching internally
 
@@ -740,18 +740,18 @@ sequenceDiagram
     participant HW as ASPEED HACE
 
     Note over DS,HW: Hardware only supports one active session
-    
+
     S1->>DS: init_sha256()
     DS->>HW: Direct hardware initialization
     DS-->>S1: session_id = 1
-    
+
     S2->>DS: init_sha384() (BLOCKS on IPC until S1 finishes)
     Note over S2: Client automatically waits - no error needed
-    
+
     S1->>DS: finalize_sha256(session_id=1)
     DS->>HW: Complete and release hardware
     DS-->>S1: digest result
-    
+
     Note over DS,HW: Hardware now available
     DS->>HW: Initialize SHA-384 for S2
     DS-->>S2: session_id = 2 (S2 unblocks)
@@ -766,11 +766,11 @@ sequenceDiagram
     participant HW as Multi-Context Hardware
 
     Note over DS: Hardware capacity reached, all contexts active
-    
+
     S2->>DS: init_sha256()
     DS->>DS: find_free_hardware_context()
     DS-->>S2: Error: TooManySessions
-    
+
     Note over S2: Client must wait for context to free up
     S2->>DS: init_sha256() (retry after delay)
     DS->>HW: Allocate available hardware context
@@ -786,17 +786,17 @@ sequenceDiagram
 
     SC->>DS: init_sha256()
     DS-->>SC: session_id = 3
-    
+
     Note over T: 10,000 ticks pass
     T->>DS: timer_tick
     DS->>DS: cleanup_expired_sessions()
     DS->>DS: session[3].timeout expired
     DS->>DS: session[3] = FREE
-    
+
     SC->>DS: update(session_id=3, data)
     DS->>DS: validate_session(3)
     DS-->>SC: Error: InvalidSession
-    
+
     Note over SC: Client must reinitialize
     SC->>DS: init_sha256()
     DS-->>SC: session_id = 3 (reused)
@@ -809,18 +809,18 @@ sequenceDiagram
 flowchart TD
     A[SPDM/PLDM Client Request] --> B[Digest Server]
     B --> C{Hardware Available?}
-    
+
     C -->|Yes| D[Call hardware.init]
     C -->|No| E[panic! - Hardware unavailable]
-    
+
     D --> F{Hardware Response}
     F -->|Success| G[Process normally]
     F -->|Error| H[panic! - Hardware failure]
-    
+
     G --> I[Return result to client]
     E --> J[Task fault → Jefe supervision]
     H --> J
-    
+
     style E fill:#ffcccc
     style H fill:#ffcccc
     style J fill:#fff2cc
@@ -833,18 +833,18 @@ flowchart TD
 ```mermaid
 flowchart LR
     A[Large Data Update] --> B{Buffer Space Available?}
-    
+
     B -->|Yes| C[Accept data into session buffer]
     B -->|No| D[Return InvalidInputLength]
-    
+
     C --> E{Session Buffer Full?}
     E -->|No| F[Continue accepting updates]
     E -->|Yes| G[Client must finalize before more updates]
-    
+
     D --> H[Client must use smaller chunks]
     G --> I[finalize_sha256/384/512]
     H --> J[Retry with smaller data]
-    
+
     style D fill:#ffcccc
     style G fill:#fff2cc
     style H fill:#ccffcc
@@ -855,34 +855,34 @@ flowchart LR
 stateDiagram-v2
     [*] --> FREE
     FREE --> ACTIVE_SHA256: init_sha256() + hardware context init
-    FREE --> ACTIVE_SHA384: init_sha384() + hardware context init  
+    FREE --> ACTIVE_SHA384: init_sha384() + hardware context init
     FREE --> ACTIVE_SHA512: init_sha512() + hardware context init
-    
+
     ACTIVE_SHA256 --> ACTIVE_SHA256: update(data) → stream to hardware
     ACTIVE_SHA384 --> ACTIVE_SHA384: update(data) → stream to hardware
     ACTIVE_SHA512 --> ACTIVE_SHA512: update(data) → stream to hardware
-    
+
     ACTIVE_SHA256 --> FREE: finalize_sha256() → hardware result
     ACTIVE_SHA384 --> FREE: finalize_sha384() → hardware result
     ACTIVE_SHA512 --> FREE: finalize_sha512() → hardware result
-    
+
     ACTIVE_SHA256 --> FREE: reset() + context cleanup
     ACTIVE_SHA384 --> FREE: reset() + context cleanup
     ACTIVE_SHA512 --> FREE: reset() + context cleanup
-    
+
     ACTIVE_SHA256 --> FREE: timeout + context cleanup
     ACTIVE_SHA384 --> FREE: timeout + context cleanup
     ACTIVE_SHA512 --> FREE: timeout + context cleanup
-    
+
     state ERROR_STATES {
         [*] --> InvalidSession: Wrong session ID
         [*] --> WrongAlgorithm: finalize_sha384() on SHA256 session
         [*] --> ContextSwitchError: Hardware context save/restore failure
         [*] --> HardwareError: Hardware streaming failure
     }
-    
+
     ACTIVE_SHA256 --> ERROR_STATES: Error conditions
-    ACTIVE_SHA384 --> ERROR_STATES: Error conditions  
+    ACTIVE_SHA384 --> ERROR_STATES: Error conditions
     ACTIVE_SHA512 --> ERROR_STATES: Error conditions
 ```
 
@@ -901,7 +901,7 @@ sequenceDiagram
     DS->>HW: Direct hardware operation (blocks until complete)
     HW-->>DS: Certificate hash result
     DS-->>SPDM: Success
-    
+
     Note over SPDM: No session management complexity needed
 ```
 
@@ -913,7 +913,7 @@ sequenceDiagram
     participant HW as Multi-Context Hardware
 
     SPDM->>DS: verify_certificate_chain()
-    
+
     alt Hardware context available
         DS->>HW: Allocate context and process
         HW-->>DS: Certificate hash result
@@ -931,27 +931,27 @@ sequenceDiagram
 flowchart TD
     A[SPDM Message Exchange] --> B[Compute Transcript Hash]
     B --> C{Digest Server Available?}
-    
+
     C -->|Yes| D[Normal transcript computation]
     C -->|No| E[Digest server failure]
-    
+
     E --> F{Failure Type}
     F -->|Session Exhausted| G[Retry with backoff]
     F -->|Hardware Failure| H[Abort authentication]
     F -->|Timeout| I[Reinitialize session]
-    
+
     G --> J{Retry Successful?}
     J -->|Yes| D
     J -->|No| K[Authentication failure]
-    
+
     H --> K
     I --> L{Reinit Successful?}
     L -->|Yes| D
     L -->|No| K
-    
+
     D --> M[Continue SPDM protocol]
     K --> N[Report to security policy]
-    
+
     style E fill:#ffcccc
     style K fill:#ff9999
     style N fill:#ffcccc
@@ -963,37 +963,37 @@ flowchart TD
 ```mermaid
 flowchart LR
     HW[Hardware Layer] -->|Any Error| PANIC[Task Panic]
-    
+
     DS[Digest Server] -->|Recoverable DigestError| RE[RequestError wrapper]
     RE -->|IPC| CLIENTS[SPDM/PLDM Clients]
     CLIENTS -->|Simple Retry| POL[Security Policy]
-    
+
     PANIC -->|Task Fault| JEFE[Jefe Supervisor]
     JEFE -->|Task Restart| DS_NEW[Fresh Digest Server]
     DS_NEW -->|Next IPC| CLIENTS
-    
+
     subgraph "Recoverable Error Types"
         E1[InvalidSession]
         E2[TooManySessions]
         E3[InvalidInputLength]
     end
-    
+
     subgraph "Simple Client Recovery"
         R1[Session Cleanup]
         R2[Retry with Backoff]
         R3[Use One-shot API]
         R4[Authentication Failure]
     end
-    
+
     DS --> E1
     DS --> E2
     DS --> E3
-    
+
     CLIENTS --> R1
     CLIENTS --> R2
     CLIENTS --> R3
     CLIENTS --> R4
-    
+
     style PANIC fill:#ffcccc
     style DS_NEW fill:#ccffcc
 ```
@@ -1006,50 +1006,50 @@ graph TB
         F2[Recoverable Hardware Failure]
         F3[Input Validation Errors]
     end
-    
+
     subgraph "Task-Level Failures"
         T1[Unrecoverable Hardware Failure]
         T2[Memory Corruption]
         T3[Syscall Faults]
         T4[Explicit Panics]
     end
-    
+
     subgraph "SPDM Client Responses"
         S1[Retry with Backoff]
         S2[Fallback to One-shot]
         S3[Graceful Degradation]
         S4[Abort Authentication]
     end
-    
+
     subgraph "Jefe Supervisor Actions"
         J1[Task Restart - Restart Disposition]
         J2[Hold for Debug - Hold Disposition]
         J3[Log Fault Information]
         J4[External Debug Interface]
     end
-    
+
     subgraph "System-Level Responses"
         R1[Continue with Fresh Task Instance]
         R2[Debug Analysis Mode]
         R3[System Reboot - Jefe Fault]
     end
-    
+
     F1 --> S1
     F2 --> S1
     F3 --> S4
-    
+
     T1 --> J1
     T2 --> J1
     T3 --> J1
     T4 --> J1
-    
+
     J1 --> R1
     J2 --> R2
-    
+
     S1 --> R1
     S2 --> R1
     S3 --> R1
-    
+
     R2 --> R3
     R1 --> R4
     R2 --> R4
@@ -1068,21 +1068,21 @@ graph TB
         JEFE[Jefe Supervisor Task]
         JEFE_FEATURES[• Fault notification handling<br/>• Task restart decisions<br/>• Debugging interface<br/>• System restart capability]
     end
-    
+
     subgraph "Application Domain"
         DS[Digest Server]
         SPDM[SPDM Client]
         OTHER[Other Tasks]
     end
-    
+
     KERNEL[Hubris Kernel] -->|Fault Notifications| JEFE
     JEFE -->|reinit_task| KERNEL
     JEFE -->|system_restart| KERNEL
-    
+
     DS -.->|Task Fault| KERNEL
     SPDM -.->|Task Fault| KERNEL
     OTHER -.->|Task Fault| KERNEL
-    
+
     JEFE -.-> JEFE_FEATURES
 ```
 
@@ -1108,10 +1108,10 @@ sequenceDiagram
     DS->>DS: panic!("Hardware failure detected")
     DS->>K: Task fault occurs
     K->>JEFE: Fault notification (bit 0)
-    
+
     JEFE->>K: find_faulted_task()
     K-->>JEFE: task_index (digest server)
-    
+
     alt Restart disposition (production)
         JEFE->>K: reinit_task(digest_server, true)
         K->>DS: Task reinitialized with fresh hardware state
@@ -1127,11 +1127,11 @@ sequenceDiagram
 
 #### Recoverable Failures (Handled by Digest Server)
 - **Session Management**: `TooManySessions`, `InvalidSession` → Return error to client
-- **Input Validation**: `InvalidInputLength` → Return error to client  
+- **Input Validation**: `InvalidInputLength` → Return error to client
 
 #### Task-Level Failures (Handled by Jefe)
 - **Any Hardware Failure**: Hardware errors of any kind → Task panic → Jefe restart
-- **Hardware Resource Exhaustion**: Hardware cannot allocate resources → Task panic → Jefe restart  
+- **Hardware Resource Exhaustion**: Hardware cannot allocate resources → Task panic → Jefe restart
 - **Memory Corruption**: Stack overflow, heap corruption → Task fault → Jefe restart
 - **Syscall Faults**: Invalid kernel IPC usage → Task fault → Jefe restart
 - **Explicit Panics**: `panic!()` in digest server code → Task fault → Jefe restart
@@ -1151,7 +1151,7 @@ Jefe provides an external interface for debugging digest server failures:
 // External control commands available via debugger (Humility)
 enum JefeRequest {
     Hold,     // Stop automatic restart of digest server
-    Start,    // Manually restart digest server  
+    Start,    // Manually restart digest server
     Release,  // Resume automatic restart behavior
     Fault,    // Force digest server to fault for testing
 }
@@ -1178,19 +1178,19 @@ This enables development workflows like:
 // SPDM task verifying a certificate chain
 fn verify_certificate_chain(&mut self, cert_chain: &[u8]) -> Result<bool, SpdmError> {
     let digest = Digest::from(DIGEST_SERVER_TASK_ID);
-    
+
     // Create session for certificate hash (R2.1: incremental computation)
     let session_id = digest.init_sha256()?;  // R1.1: SHA-256 support
-    
+
     // Process certificate data incrementally (R4.2: zero-copy processing)
     for chunk in cert_chain.chunks(512) {
         digest.update(session_id, chunk.len() as u32, chunk)?;
     }
-    
+
     // Get final certificate hash
     let mut cert_hash = [0u32; 8];
     digest.finalize_sha256(session_id, &mut cert_hash)?;
-    
+
     // Verify against policy
     self.verify_hash_against_policy(&cert_hash)
 }
@@ -1202,13 +1202,13 @@ fn verify_certificate_chain(&mut self, cert_chain: &[u8]) -> Result<bool, SpdmEr
 fn compute_transcript_hash(&mut self, messages: &[SpdmMessage]) -> Result<[u32; 8], SpdmError> {
     let digest = Digest::from(DIGEST_SERVER_TASK_ID);
     let session_id = digest.init_sha256()?;  // R2.3: session isolation
-    
+
     // Hash all messages in the SPDM transcript (R3.5: message authentication)
     for msg in messages {
         let msg_bytes = msg.serialize()?;
         digest.update(session_id, msg_bytes.len() as u32, &msg_bytes)?;
     }
-    
+
     let mut transcript_hash = [0u32; 8];
     digest.finalize_sha256(session_id, &mut transcript_hash)?;  // R7.1: synchronous IPC
     Ok(transcript_hash)
@@ -1221,30 +1221,30 @@ fn compute_transcript_hash(&mut self, messages: &[SpdmMessage]) -> Result<[u32; 
 impl SpdmResponder {
     fn handle_certificate_and_transcript(&mut self, cert_data: &[u8], messages: &[SpdmMessage]) -> Result<(), SpdmError> {
         let digest = Digest::from(DIGEST_SERVER_TASK_ID);
-        
+
         // Operation 1: Certificate verification (R2.1: incremental computation)
         let cert_session = digest.init_sha256()?;  // R1.1: SHA-256 support
-        
+
         // Process certificate incrementally
         for chunk in cert_data.chunks(512) {
             digest.update(cert_session, chunk.len() as u32, chunk)?;
         }
-        
+
         let mut cert_hash = [0u32; 8];
         digest.finalize_sha256(cert_session, &mut cert_hash)?;
-        
+
         // Operation 2: Transcript hash computation (sequential, after cert verification)
         let transcript_session = digest.init_sha256()?;  // R2.3: new isolated session
-        
+
         // Hash all SPDM messages in sequence
         for msg in messages {
             let msg_bytes = msg.serialize()?;
             digest.update(transcript_session, msg_bytes.len() as u32, &msg_bytes)?;
         }
-        
+
         let mut transcript_hash = [0u32; 8];
         digest.finalize_sha256(transcript_session, &mut transcript_hash)?;
-        
+
         // Use both hashes for SPDM protocol
         self.process_verification_results(&cert_hash, &transcript_hash)
     }
@@ -1258,19 +1258,19 @@ impl SpdmResponder {
 // PLDM task validating received firmware chunks
 fn validate_firmware_image(&mut self, image_chunks: &[&[u8]], expected_digest: &[u32; 8]) -> Result<bool, PldmError> {
     let digest = Digest::from(DIGEST_SERVER_TASK_ID);
-    
+
     // Create session for running digest computation (R2.1: incremental computation)
     let session_id = digest.init_sha256()?;  // R1.1: SHA-256 commonly used in PLDM
-    
+
     // Process firmware image incrementally as chunks are received (R4.2: zero-copy processing)
     for chunk in image_chunks {
         digest.update(session_id, chunk.len() as u32, chunk)?;
     }
-    
+
     // Get final image digest
     let mut computed_digest = [0u32; 8];
     digest.finalize_sha256(session_id, &mut computed_digest)?;
-    
+
     // Compare with manifest digest
     Ok(computed_digest == *expected_digest)
 }
@@ -1281,29 +1281,29 @@ fn validate_firmware_image(&mut self, image_chunks: &[&[u8]], expected_digest: &
 // PLDM task computing running digest during TransferFirmware
 fn transfer_firmware_with_validation(&mut self, component_id: u16) -> Result<(), PldmError> {
     let digest = Digest::from(DIGEST_SERVER_TASK_ID);
-    
+
     // Initialize digest session for this component transfer (R2.3: session isolation)
     let session_id = digest.init_sha384()?;  // R1.2: SHA-384 for enhanced security
-    
+
     // Store session for this component transfer
     self.component_sessions.insert(component_id, session_id);
-    
+
     // Firmware chunks will be processed via update() calls as they arrive
     // This enables real-time validation during transfer rather than after
-    
+
     Ok(())
 }
 
 fn process_firmware_chunk(&mut self, component_id: u16, chunk: &[u8]) -> Result<(), PldmError> {
     let digest = Digest::from(DIGEST_SERVER_TASK_ID);
-    
+
     // Retrieve session for this component
     let session_id = self.component_sessions.get(&component_id)
         .ok_or(PldmError::InvalidComponent)?;
-    
+
     // Add chunk to running digest (R3.6: firmware image integrity)
     digest.update(*session_id, chunk.len() as u32, chunk)?;
-    
+
     Ok(())
 }
 ```
@@ -1314,24 +1314,24 @@ fn process_firmware_chunk(&mut self, component_id: u16, chunk: &[u8]) -> Result<
 impl PldmFirmwareUpdate {
     fn handle_concurrent_updates(&mut self) -> Result<(), PldmError> {
         let digest = Digest::from(DIGEST_SERVER_TASK_ID);
-        
+
         // Component 1: Main firmware using SHA-256
         let main_fw_session = digest.init_sha256()?;
-        
-        // Component 2: Boot loader using SHA-384  
+
+        // Component 2: Boot loader using SHA-384
         let bootloader_session = digest.init_sha384()?;  // R1.2: SHA-384 support
-        
+
         // Component 3: FPGA bitstream using SHA-512
         let fpga_session = digest.init_sha512()?;        // R1.3: SHA-512 support
-        
+
         // All components can be updated concurrently (hardware-dependent capacity - R2.2)
         // Each maintains independent digest state (R2.3: isolation)
-        
+
         // Store sessions for component tracking
         self.component_sessions.insert(MAIN_FW_COMPONENT, main_fw_session);
         self.component_sessions.insert(BOOTLOADER_COMPONENT, bootloader_session);
         self.component_sessions.insert(FPGA_COMPONENT, fpga_session);
-        
+
         Ok(())
     }
 }
@@ -1344,7 +1344,7 @@ impl PldmFirmwareUpdate {
 | Requirement | Status | Implementation |
 |-------------|--------|----------------|
 | **R1.1** SHA-256 support | ✅ | `init_sha256()`, `finalize_sha256()` with hardware context |
-| **R1.2** SHA-384 support | ✅ | `init_sha384()`, `finalize_sha384()` with hardware context |  
+| **R1.2** SHA-384 support | ✅ | `init_sha384()`, `finalize_sha384()` with hardware context |
 | **R1.3** SHA-512 support | ✅ | `init_sha512()`, `finalize_sha512()` with hardware context |
 | **R1.4** Reject unsupported algorithms | ✅ | SHA-3 functions return `UnsupportedAlgorithm` |
 | **R2.1** Incremental hash computation | ✅ | True streaming via `update_hardware_context()` |
@@ -1382,7 +1382,7 @@ The `ServerImpl<D>` struct is now generic over any device `D` that implements:
 ## Key Features
 
 1. **True Hardware Streaming**: Data flows directly to hardware contexts with proper save/restore
-2. **Context Management**: Multiple sessions share hardware via non-cacheable RAM context switching  
+2. **Context Management**: Multiple sessions share hardware via non-cacheable RAM context switching
 3. **Type Safety**: Associated type constraints ensure digest output sizes match expectations
 4. **Zero Runtime Cost**: Uses static dispatch for optimal performance
 5. **Memory Efficient**: Static session storage with hardware context simulation
@@ -1402,7 +1402,7 @@ struct MyDigestDevice {
 
 impl DigestInit<Sha2_256> for MyDigestDevice {
     type Output = Digest<8>;
-    
+
     fn init(&mut self, _: Sha2_256) -> Result<DigestContext, HardwareError> {
         // Initialize hardware registers for SHA-256
         // Set up context for streaming operations
@@ -1417,7 +1417,7 @@ impl DigestInit<Sha2_384> for MyDigestDevice {
 
 impl DigestInit<Sha2_512> for MyDigestDevice {
     type Output = Digest<16>;
-    // Similar implementation for SHA-512  
+    // Similar implementation for SHA-512
 }
 
 impl DigestCtrlReset for MyDigestDevice {
@@ -1434,7 +1434,7 @@ impl MyDigestDevice {
         // Save current hardware context to non-cacheable RAM
         // Hardware-specific register read and memory write operations
     }
-    
+
     fn restore_context_from_ram(&mut self, session_id: usize) -> Result<(), HardwareError> {
         // Restore session context from non-cacheable RAM to hardware
         // Hardware-specific memory read and register write operations
@@ -1467,7 +1467,7 @@ The original scoped trait definition created lifetime constraints:
 pub trait DigestInit<T: DigestAlgorithm>: ErrorType {
     type OpContext<'a>: DigestOp<Output = Self::Output>
     where Self: 'a;
-    
+
     fn init(&mut self, init_params: T) -> Result<Self::OpContext<'_>, Self::Error>;
 }
 ```
@@ -1488,7 +1488,7 @@ pub mod scoped {
     pub trait DigestInit<T: DigestAlgorithm>: ErrorType {
         type OpContext<'a>: DigestOp<Output = Self::Output>
         where Self: 'a;
-        
+
         fn init<'a>(&'a mut self, init_params: T) -> Result<Self::OpContext<'a>, Self::Error>;
     }
 }
@@ -1499,13 +1499,13 @@ pub mod scoped {
 pub mod owned {
     pub trait DigestInit<T: DigestAlgorithm>: ErrorType {
         type OwnedContext: DigestOp<Output = Self::Output>;
-        
+
         fn init_owned(&mut self, init_params: T) -> Result<Self::OwnedContext, Self::Error>;
     }
-    
+
     pub trait DigestOp {
         type Output;
-        
+
         fn update(&mut self, data: &[u8]) -> Result<(), Self::Error>;
         fn finalize(self) -> Result<Self::Output, Self::Error>;
         fn cancel(self) -> Self::Controller;
@@ -1526,8 +1526,8 @@ struct DigestServer<H, C> {
     active_session: Option<C>,  // Single active session
 }
 
-impl<H, C> DigestServer<H, C> 
-where 
+impl<H, C> DigestServer<H, C>
+where
     H: DigestInit<Sha2_256, Context = C>,
     C: DigestOp<Controller = H>,
 {
@@ -1544,7 +1544,7 @@ where
         self.active_session = Some(updated_context);   // ✅ Store updated state
         Ok(())
     }
-    
+
     fn finalize_session(&mut self) -> Result<Digest<8>, Error> {
         let context = self.active_session.take().ok_or(Error::NoSession)?;
         let (digest, controller) = context.finalize()?;
@@ -1557,7 +1557,7 @@ where
 #### Key Benefits of the Move-Based Solution
 
 1. **True Streaming Support**: Contexts can be stored and updated incrementally
-2. **Session Isolation**: Each session owns its context independently  
+2. **Session Isolation**: Each session owns its context independently
 3. **Resource Recovery**: `cancel()` method allows controller recovery
 4. **Rust Ownership Safety**: Move semantics prevent use-after-finalize
 5. **Backward Compatibility**: Scoped API remains unchanged for simple use cases
