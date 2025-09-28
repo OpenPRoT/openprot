@@ -9,3 +9,9 @@ title = "OpenProt Documentation"
 command = "mdbook-mermaid"
 
 [output.html]
+additional-js = ["src/third_party/mermaid.min.js", "src/third_party/mermaid-init.js"]
+default-theme = "light"
+
+[output.html.fold]
+enable = true
+level = 1
