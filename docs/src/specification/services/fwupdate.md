@@ -88,8 +88,9 @@ DownstreamDeviceIDRecordCount | 1    | 0
 
 #### Component Image Information
 
+Field                         | Size | Definition
+:---------------------------- | :--- | :---------
 ComponentClassification            | 2        | 0x000A: Downstream EEPROM, Downstream SoC Firmware, and OpenPRoT RT Image (Firmware), 0x0001: Downstream SoC Manifest (Other)
-:--------------------------------- | :------- | :----------------------------------------------------------------------------------------------------------------------------
 ComponentIdentifier                | 2        | Unique value selected by the FD vendor to distinguish between component images. 0x0001: OpenPRoT RT Image, 0x0002: Downstream SoC Manifest, 0x0003: 0x0003: Downstream EEPROM 0x1000\-0xFFFF \- Reserved for other vendor-defined SoC images
 ComponentComparisonStamp           | 4        | Value used as a comparison in determining if a firmware component is down-level or up-level. When ComponentOptions bit 1 is set, this field should use a comparison stamp format (e.g., MajorMinorRevisionPatch). If not set, use 0xFFFFFFFF.
 ComponentOptions                   | 2        | Refer to ComponentOptions definition in [DMTF Firmware Update Specification v.1.3.0](https://www.dmtf.org/sites/default/files/standards/documents/DSP0267_1.3.0.pdf)
@@ -106,16 +107,10 @@ ComponentOpaqueData                | Variable | Optional data transferred to the
 
 | Component Image | Name                      | Description                    |
 | :-------------- | :------------------------ | :----------------------------- |
-| 0x0             | OpenPRoT RT Image         | OpenPRoT manifest and firmware |
-:                 :                           : images (e.g. BL0, RT           :
-:                 :                           : firmware).                     :
-| 0x1             | Downstream SoC Manifest   | SoC manifest covering firmware |
-:                 :                           : images. Used to stage          :
-:                 :                           : verification of the firmware   :
-:                 :                           : payload.                       :
+| 0x0             | OpenPRoT RT Image         | OpenPRoT manifest and firmware images (e.g. BL0, RT firmware).                     |
+| 0x1             | Downstream SoC Manifest   | SoC manifest covering firmware images. Used to stage verification of the firmware payload. |
 | 0x2             | Downstream SoC Firmware   | SoC firmware payload.          |
-| 0x3             | Downstream EEPROM         | Bulk update of downstream      |
-:                 :                           : EEPROM                         :
+| 0x3             | Downstream EEPROM         | Bulk update of downstream EEPROM |
 | \>= 0x1000      | Vendor defined components |                                |
 
 ## PLDM Firmware Update Process
