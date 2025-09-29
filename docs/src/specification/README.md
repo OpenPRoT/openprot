@@ -66,8 +66,8 @@ TBD
 
 ## High Level Architecture
 
-TBD
-
 ### Block Diagram
 
-TBD
+The following block diagram illustrates the high-level architecture of OpenPRoT.
+
+<img src="openprot_diagram.svg" alt="figure2" width="700"/>
