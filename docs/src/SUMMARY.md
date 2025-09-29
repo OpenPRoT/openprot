@@ -16,6 +16,7 @@
   * [SPDM](./specification/middleware/spdm.md)
   * [PLDM](./specification/middleware/pldm.md)
 * [Services](./specification/services/README.md)
+  * [Firmware Update](./specification/services/fwupdate.md)
 * [Device Abstraction](./specification/device_abstraction/README.md)
 * [Terminology](./specification/terminology.md)
 
@@ -26,4 +27,3 @@
 * [Design](./design/README.md)
   * [Digest Driver for Hubris](./design/driver-hubris-hash.md)
   * [Rust Traits to IDL Guide](./design/rust-trait-to-idl-conversion.md)
-
