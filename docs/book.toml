@@ -10,6 +10,7 @@ command = "mdbook-mermaid"
 
 [output.html]
 additional-js = ["src/third_party/mermaid.min.js", "src/third_party/mermaid-init.js"]
+additional-css = ["theme/custom.css"]
 default-theme = "light"
 
 [output.html.fold]
