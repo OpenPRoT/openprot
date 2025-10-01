@@ -66,8 +66,51 @@ TBD
 
 ## High Level Architecture
 
+The OpenPRoT architecture is designed to be a flexible and extensible platform
+Root of Trust (PRoT) solution. It is built upon a layered approach that
+abstracts hardware-specific implementations, providing standardized interfaces
+for higher-level applications. This architecture promotes reusability,
+interoperability, and a consistent security posture across different platforms.
+
 ### Block Diagram
 
 The following block diagram illustrates the high-level architecture of OpenPRoT.
 
 <img src="openprot_diagram.svg" alt="figure2" width="700"/>
+
+### Architectural Layers
+
+The OpenPRoT architecture can be broken down into the following layers:
+
+1.  **Hardware Abstraction Layer (HAL):** At the lowest level, the
+    [Driver Development Kit](./device_abstraction/README.md) (DDK) provides
+    hardware abstractions. This layer is responsible for interfacing with the
+    specific RoT silicon and platform hardware.
+2.  **Operating System:** Above the DDK sits the operating system, which
+    provides the foundational services for the upper layers.
+3.  **Middleware:** This layer consists of standardized communication protocols
+    that enable secure and reliable communication between different components
+    of the system. Key protocols include:
+    *   [MCTP](./middleware/mctp.md) (Management Component Transport Protocol):
+        Provides a transport layer that is compatible with various hardware
+        interfaces.
+    *   [SPDM](./middleware/spdm.md) (Security Protocol and Data Model): Used
+        for establishing secure channels and for attestation.
+    *   [PLDM](./middleware/pldm.md) (Platform Level Data Model): Provides
+        interfaces for firmware updates and telemetry retrieval.
+4.  **Services:** This layer provides a minimal set of standardized services
+    that align with the OpenPRoT specification. These services include:
+    *   **Lifecycle Services:** Manages the lifecycle state of the device,
+        including secure debug enablement.
+    *   **Attestation:** Aggregates attestation reports from platform
+        components.
+    *   [Firmware Update & Recovery](./services/fwupdate.md): Orchestrates the
+        secure update and recovery of firmware for platform components.
+    *   **Telemetry:** Collects and extracts telemetry data.
+5.  **Applications:** At the highest level are the applications that implement
+    the core logic of the PRoT. These applications have room for differentiation
+    while being built upon standardized interfaces. Key applications include:
+    *   **Secure Boot:** Orchestrates the secure boot process for platform
+        components.
+    *   **Policy Manager:** Manages the security policies of the platform.
+
