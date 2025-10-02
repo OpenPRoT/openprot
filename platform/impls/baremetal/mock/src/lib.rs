@@ -12,4 +12,6 @@
 #![allow(clippy::arithmetic_side_effects)]
 
 pub mod hash;
+pub mod i2c_hardware;
 pub mod mac;
+pub mod system_control;

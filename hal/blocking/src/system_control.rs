@@ -260,3 +260,40 @@ pub trait ResetControl: ErrorType {
     /// * `Result<bool, Self::Error>` - Ok with a boolean indicating if the reset is asserted, or an error of type `Self::Error`.
     fn reset_is_asserted(&self, reset_id: &Self::ResetId) -> Result<bool, Self::Error>;
 }
+
+/// Blanket trait that combines clock and reset control functionality.
+///
+/// This trait provides a unified interface for system control operations,
+/// combining both clock management and reset control capabilities. It is
+/// automatically implemented for any type that implements both `ClockControl`
+/// and `ResetControl` with the same error type.
+///
+/// # Design
+///
+/// The blanket implementation pattern allows consumers to use a single trait
+/// bound for system control operations while maintaining the flexibility of
+/// separate, composable traits for clock and reset functionality.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// fn configure_system<T: SystemControl>(controller: &mut T)
+/// where
+///     T::ClockId: From<u32>,
+///     T::ResetId: From<u32>,
+///     T::ClockConfig: Default,
+/// {
+///     // Enable peripheral clock
+///     controller.enable(&T::ClockId::from(42)).unwrap();
+///
+///     // Release from reset
+///     controller.reset_deassert(&T::ResetId::from(42)).unwrap();
+/// }
+/// ```
+pub trait SystemControl: ClockControl + ResetControl {}
+
+/// Blanket implementation of SystemControl for types implementing both traits.
+///
+/// This implementation is automatically provided for any type that implements
+/// both `ClockControl` and `ResetControl` with compatible error types.
+impl<T> SystemControl for T where T: ClockControl + ResetControl {}

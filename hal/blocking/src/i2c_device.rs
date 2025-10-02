@@ -1,5 +1,116 @@
 // Licensed under the Apache-2.0 license
 
+//! # I2C Device Implementation Traits
+//!
+//! This module provides application-level traits for implementing I2C devices such as sensors,
+//! EEPROMs, display controllers, ADCs, DACs, and other peripheral devices that respond
+//! to I2C master/controller requests.
+//!
+//! ## Purpose
+//!
+//! These traits focus on the **application logic** of how devices should respond to I2C
+//! transactions initiated by a master/controller. They are **not** for controlling I2C
+//! hardware controllers - that's handled by hardware abstraction layer (HAL) traits.
+//!
+//! ## Layer Distinction
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────────────────────┐
+//! │                    Application Layer                            │
+//! │  i2c_device.rs - Implement device behavior (this module)       │
+//! │  Examples: Sensor readings, EEPROM storage, register access    │
+//! ├─────────────────────────────────────────────────────────────────┤
+//! │                Hardware Abstraction Layer                      │
+//! │  i2c_hardware.rs - Control I2C controller peripherals          │
+//! │  Examples: Buffer management, interrupt handling, bus control   │
+//! └─────────────────────────────────────────────────────────────────┘
+//! ```
+//!
+//! ## Design Philosophy
+//!
+//! The traits in this module are designed around **device behavior patterns**:
+//!
+//! - **Event-driven**: Devices respond to master-initiated transactions
+//! - **Callback-based**: Use `on_*` methods to handle different transaction types
+//! - **Stateful**: Devices can maintain internal state between transactions
+//! - **Protocol-aware**: Support common I2C device patterns (register access, etc.)
+//!
+//! ## Common Use Cases
+//!
+//! ### Temperature Sensor
+//! ```rust,ignore
+//! struct TemperatureSensor {
+//!     temperature: f32,
+//!     address: u8,
+//! }
+//!
+//! impl I2CCoreTarget for TemperatureSensor {
+//!     fn on_read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
+//!         let temp_bytes = self.temperature.to_le_bytes();
+//!         buffer[..4].copy_from_slice(&temp_bytes);
+//!         Ok(4)
+//!     }
+//! }
+//! ```
+//!
+//! ### EEPROM Device
+//! ```rust,ignore
+//! struct EepromDevice {
+//!     memory: [u8; 256],
+//!     address_pointer: u8,
+//! }
+//!
+//! impl WriteTarget for EepromDevice {
+//!     fn on_write(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+//!         if let Some(&addr) = data.first() {
+//!             self.address_pointer = addr;
+//!             // Write remaining data to memory starting at addr
+//!             for (i, &byte) in data[1..].iter().enumerate() {
+//!                 if let Some(mem_slot) = self.memory.get_mut(addr as usize + i) {
+//!                     *mem_slot = byte;
+//!                 }
+//!             }
+//!         }
+//!         Ok(())
+//!     }
+//! }
+//!
+//! impl ReadTarget for EepromDevice {
+//!     fn on_read(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
+//!         let start = self.address_pointer as usize;
+//!         let end = (start + buffer.len()).min(self.memory.len());
+//!         let bytes_to_read = end - start;
+//!         buffer[..bytes_to_read].copy_from_slice(&self.memory[start..end]);
+//!         Ok(bytes_to_read)
+//!     }
+//! }
+//! ```
+//!
+//! ## Trait Overview
+//!
+//! The traits are organized in a composable hierarchy:
+//!
+//! - [`I2CCoreTarget`]: Core transaction lifecycle (required for all devices)
+//! - [`WriteTarget`]: Handle write operations from master
+//! - [`ReadTarget`]: Handle read operations from master  
+//! - [`WriteReadTarget`]: Handle combined write-read transactions
+//! - [`RegisterAccess`]: Higher-level register-based access patterns
+//! - [`I2CTarget`]: Convenience trait combining all capabilities
+//!
+//! ## Transaction Flow
+//!
+//! A typical I2C transaction from the device perspective:
+//!
+//! 1. **Address Match**: `on_address_match(address)` - Should this device respond?
+//! 2. **Transaction Start**: `on_transaction_start(direction, repeated)` - Initialize for transaction
+//! 3. **Data Phase**: `on_write(data)` or `on_read(buffer)` - Handle the actual data
+//! 4. **Transaction End**: `on_stop()` - Clean up after transaction
+//!
+//! ## Error Handling
+//!
+//! All traits use associated `Error` types that must implement `embedded_hal::i2c::Error`,
+//! providing standard I2C error conditions while allowing device-specific error extensions.
+
 #![allow(clippy::doc_overindented_list_items)]
 use embedded_hal::i2c::ErrorType as I2CErrorType;
 
@@ -20,32 +131,46 @@ pub enum TransactionDirection {
     Read,
 }
 
-/// A convenience trait alias that represents a fully-featured I2C target device.
+/// A convenience trait alias that represents a fully-featured I2C device implementation.
 ///
-/// This trait combines all the core and extended I2C target traits into a single interface:
+/// This trait combines all the core and extended I2C device traits into a single interface:
 ///
 /// - [`I2CCoreTarget`]: Handles transaction lifecycle and address matching.
-/// - [`ReadTarget`]: Supports reading data from the target.
-/// - [`WriteTarget`]: Supports writing data to the target.
+/// - [`ReadTarget`]: Supports reading data from the device.
+/// - [`WriteTarget`]: Supports writing data to the device.
 /// - [`WriteReadTarget`]: Supports combined write-read transactions.
 /// - [`RegisterAccess`]: Supports register-level read/write operations.
 ///
-/// Implementing this trait means the device is capable of handling all standard I2C target behaviors,
+/// Implementing this trait means the device is capable of handling all standard I2C device behaviors,
 /// making it suitable for use in generic drivers or frameworks that require full I2C functionality.
 ///
-/// # Example
+/// ## When to Use
+///
+/// Use this trait when you need a device that supports all I2C interaction patterns:
+/// - Simple read/write operations
+/// - Register-based access (common for sensors, configuration devices)
+/// - Complex transaction sequences
+/// - Generic device drivers that work with multiple device types
+///
+/// ## Implementation Pattern
+///
+/// Most implementations will implement the individual traits and get `I2CTarget` automatically:
+///
 /// ```rust,ignore
-/// struct MyDevice { /* ... */ }
+/// struct MyComplexDevice {
+///     registers: [u8; 256],
+///     current_register: u8,
+/// }
 ///
-/// impl I2CCoreTarget for MyDevice { /* ... */ }
-/// impl ReadTarget for MyDevice { /* ... */ }
-/// impl WriteTarget for MyDevice { /* ... */ }
-/// impl WriteReadTarget for MyDevice { /* ... */ }
-/// impl RegisterAccess for MyDevice { /* ... */ }
+/// impl I2CCoreTarget for MyComplexDevice { /* ... */ }
+/// impl ReadTarget for MyComplexDevice { /* ... */ }
+/// impl WriteTarget for MyComplexDevice { /* ... */ }
+/// impl WriteReadTarget for MyComplexDevice { /* ... */ }
+/// impl RegisterAccess for MyComplexDevice { /* ... */ }
 ///
-/// // Now MyDevice automatically implements FullI2CTarget
-/// fn use_device<T: I2CTarget>(dev: &mut T) {
-///     // Use all I2C capabilities
+/// // Now MyComplexDevice automatically implements I2CTarget
+/// fn use_any_device<T: I2CTarget>(device: &mut T) {
+///     // Can use all I2C device capabilities
 /// }
 /// ```
 pub trait I2CTarget:
@@ -58,11 +183,27 @@ impl<T> I2CTarget for T where
 {
 }
 
-/// Trait representing a target (slave) I2C device behavior.
+/// Trait representing core I2C device behavior.
 ///
-/// This trait defines the core methods that an I2C target device must implement to handle
-/// transactions initiated by an I2C master. It includes methods for handling stop conditions,
-/// transaction starts, and address match events.
+/// This trait defines the fundamental methods that an I2C device must implement to handle
+/// transactions initiated by an I2C master/controller. It covers the essential lifecycle
+/// of I2C transactions from the device's perspective.
+///
+/// ## Core Responsibilities
+///
+/// - **Address matching**: Decide whether to respond to a specific I2C address
+/// - **Transaction initialization**: Set up device state for incoming transactions  
+/// - **Transaction lifecycle**: Handle start conditions, repeated starts, and stop conditions
+///
+/// ## Implementation Notes
+///
+/// This trait focuses on **device logic**, not hardware control. Implementations should:
+/// - Maintain device state (registers, memory, sensor readings, etc.)
+/// - Implement device-specific address matching logic
+/// - Handle transaction setup and teardown
+/// - Prepare for data exchange (actual data handling is in `ReadTarget`/`WriteTarget`)
+///
+/// For hardware I2C controller management, use hardware abstraction layer traits instead.
 pub trait I2CCoreTarget: I2CErrorType {
     /// Initialize the target with a specific address.
     fn init(&mut self, address: u8) -> Result<(), Self::Error>;
