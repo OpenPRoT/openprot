@@ -1,5 +1,5 @@
-**Version:** 0.1 (Draft)  
-**Date:** [Current Date]  
+**Version:** 0.1 (Draft)
+**Date:** [Current Date]
 **Status:** Work in Progress
 
 ## 1. Introduction
@@ -701,5 +701,3 @@ https://opencomputeproject.github.io/Security/device-identity-provisioning/HEAD/
 **TODO**: Guidance for implementers of OpenPRoT attestation
 
 ---
-
-## Appendix A: Glossary

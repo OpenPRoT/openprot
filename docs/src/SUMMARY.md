@@ -16,6 +16,7 @@
   * [SPDM](./specification/middleware/spdm.md)
   * [PLDM](./specification/middleware/pldm.md)
 * [Services](./specification/services/README.md)
+  * [Attestation](./specification/services/attestation.md)
   * [Firmware Update](./specification/services/fwupdate.md)
 * [Device Abstraction](./specification/device_abstraction/README.md)
 * [Terminology](./specification/terminology.md)
