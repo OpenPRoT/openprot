@@ -58,11 +58,36 @@ TBD
 
 ## Industry standards and specifications
 
-TBD
+OpenPRoT is designed to be a standards-based and interoperable Platform Root of
+Trust (PRoT) solution. This ensures that OpenPRoT can be integrated into a wide
+range of platforms and that it leverages proven and well-defined security and
+management protocols.
+
+### Distributed Management Task Force (DMTF)
+
+- **DSP0274**: Security Protocol and Data Model (SPDM) Version 1.3 or later
+- **DSP0277**: Secured Messages using SPDM over MCTP Binding
+- **DSP0236**: Management Component Transport Protocol (MCTP) Base Specification
+- **DSP0240**: Platform Level Data Model (PLDM) Base Specification
+- **DSP0248**: Platform Level Data Model (PLDM) for Platform Monitoring and Control Specification
+- **DSP0267**: Platform Level Data Model (PLDM) for Firmware Update Specification
+
+### Trusted Computing Group (TCG)
+
+- **DICE Layering Architecture**: Device Identity Composition Engine
+- **DICE Attestation Architecture**: Certificate-based attestation
+- **DICE Protection Environment (DPE)**: Runtime attestation service
+- **TCG DICE Concise Evidence Binding for SPDM**: Evidence format specification
+
+### National Institute of Standards and Technology (NIST)
+
+- **NIST SP 800-193**: Platform Firmware Resiliency Guidelines
+- **NIST FIPS 186-5**: Digital Signature Standard (DSS)
+- **NIST SP 800-90A**: Recommendation for Random Number Generation
+- **NIST SP 800-108**: Recommendation for Key Derivation Functions
 
 ## Threat Model
 
-TBD
 
 ## High Level Architecture
 
@@ -113,4 +138,3 @@ The OpenPRoT architecture can be broken down into the following layers:
     *   **Secure Boot:** Orchestrates the secure boot process for platform
         components.
     *   **Policy Manager:** Manages the security policies of the platform.
-
