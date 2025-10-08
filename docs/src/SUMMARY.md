@@ -10,6 +10,7 @@
 # Specification
 
 * [Introduction](./specification/README.md)
+* [Threat Model](./specification/threat_model.md)
 * [Firmware Resiliency](./specification/firmware_resiliency.md)
 * [Middleware](./specification/middleware/README.md)
   * [MCTP](./specification/middleware/mctp.md)

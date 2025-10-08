@@ -86,9 +86,6 @@ management protocols.
 - **NIST SP 800-90A**: Recommendation for Random Number Generation
 - **NIST SP 800-108**: Recommendation for Key Derivation Functions
 
-## Threat Model
-
-
 ## High Level Architecture
 
 The OpenPRoT architecture is designed to be a flexible and extensible platform
