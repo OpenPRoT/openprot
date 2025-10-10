@@ -1,6 +1,4 @@
-**Version:** 0.1 (Draft)
-**Date:** [Current Date]
-**Status:** Work in Progress
+# Attestation
 
 ## 1. Introduction
 

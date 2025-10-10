@@ -1,7 +1,5 @@
 # MCTP
 
-Status: Draft.
-
 MCTP OpenPRoT devices shall support MCTP as the transport for all DMTF
 protocols.
 

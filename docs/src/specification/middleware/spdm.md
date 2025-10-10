@@ -1,7 +1,5 @@
 # SPDM
 
-Status: Draft
-
 SPDM OpenPRoT devices shall use SPDM to conduct all attestation operations both
 with downstream devices (as a requester) and upstream devices (as a responder.)
 Devices may choose to act as a requester, a responder, or both. All SPDM version
