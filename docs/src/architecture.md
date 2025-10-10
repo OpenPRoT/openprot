@@ -22,10 +22,6 @@ openprot/
 
 ## Components
 
-### Main Application (`openprot/`)
-
-The main application provides...
-
 ### Build System (`xtask/`)
 
 The xtask system provides automated build tasks including:
