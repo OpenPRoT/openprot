@@ -11,7 +11,9 @@ The *minimum required* MCTP version is 1.3.1 (DSP0236.) Support for MCTP 2.0.0
 ## Required Bindings
 
 Currently only one binding is *mandatory* in the OpenPRoT specification, though
-this will change in future versions. 1. . MCTP over SMBus (DSP0237, 1.2.0)
+this will change in future versions.
+
+1.  MCTP over SMBus (DSP0237, 1.2.0)
 
 ## Recommended Bindings
 

@@ -1,69 +1,72 @@
-## PLDM
+# PLDM
 
-PLDM OpenPRoT devices will support Platform Level Data Model as a responder for
-FW updates and platform monitoring. This means that OpenPRoT will respond to
-Type 0, Type 2 and Type 5 as listed in Table 1\.
+OpenPRoT devices support the Platform Level Data Model (PLDM) as a responder for
+firmware updates and platform monitoring. This entails responding to messages of
+Type 0 (Base), Type 2 (Platform Monitoring and Control), and Type 5 (Firmware
+Update).
 
-## PLDM Base Specifications for Supported Types {#pldm-base-specifications-for-supported-types}
+## PLDM Base Specifications
 
 ### Type 0 - Base Specification
 
-*   Purpose: Base Specification and Initialization
-*   Version: 1.2.0
-*   [Platform Level Data Model (PLDM) Base Specification](https://www.dmtf.org/sites/default/files/standards/documents/DSP0240_1.2.0.pdf)
+-   **Purpose**: Base Specification and Initialization
+-   **Version**: 1.2.0
+-   **Specification**:
+    [PLDM Base Specification](https://www.dmtf.org/sites/default/files/standards/documents/DSP0240_1.2.0.pdf)
 
-All responders shall implement the four (4) *spec mandatory* PLDM commands:
+All responders must implement the following mandatory PLDM commands:
 
-*   `GetTID`
-*   `GetPLDMVersion`
-*   `GetPLDMTypes`
-*   `GetPLDMCommands`
+-   `GetTID`
+-   `GetPLDMVersion`
+-   `GetPLDMTypes`
+-   `GetPLDMCommands`
 
-All responders shall implement the following *optional* commands
+All responders must also implement the following optional command:
 
-*   `SetTID`
+-   `SetTID`
 
 ### Type 2 - Platform Monitoring and Control
 
-*   Purpose: Platform Monitoring and Control
-*   Version: 1.3.0
-*   [Platform Level Data Model (PLDM) for Platform Monitoring and Control
-    Specification](https://www.dmtf.org/sites/default/files/standards/documents/DSP0248_1.3.0.pdf)
+-   **Purpose**: Platform Monitoring and Control
+-   **Version**: 1.3.0
+-   **Specification**:
+    [PLDM for Platform Monitoring and Control](https://www.dmtf.org/sites/default/files/standards/documents/DSP0248_1.3.0.pdf)
 
-OpenPRoT will support PLDM Monitoring and Control by providing a PDR, Platform
-Descriptor Record, repository to a prospective PDLM Manageability Access Point
-Discovery Agent’s primary PDR. These PDRs will be defined via Json files and
-included into OpenPRoT at build time. OpenPRoT will not support any dynamic
-adjustments to the PDR repository. These PDRs should be limited to security
-features and as such, will only support PLDM sensors and not effectors. PLDM
-Monitoring PDRs
+OpenPRoT supports PLDM Monitoring and Control by providing a Platform Descriptor
+Record (PDR) repository to a prospective PLDM manageability access point
+discovery agent. These PDRs are defined in JSON files and included in OpenPRoT
+at build time, with no support for dynamic adjustments. The PDRs are limited to
+security features and will only support PLDM sensors, not effectors.
 
-*   Terminus Locator PDR
-*   Numeric Sensor PDR
+#### PLDM Monitoring PDRs
+
+-   Terminus Locator PDR
+-   Numeric Sensor PDR
 
 ### Type 5 - Firmware Update
 
-*   Purpose: Firmware Update
-*   Version: 1.3.0
-*   [Platform Level Data Model (PLDM) for Firmware Update Specification](https://www.dmtf.org/sites/default/files/standards/documents/DSP0267_1.3.0.pdf)
+-   **Purpose**: Firmware Update
+-   **Version**: 1.3.0
+-   **Specification**:
+    [PLDM for Firmware Update](https://www.dmtf.org/sites/default/files/standards/documents/DSP0267_1.3.0.pdf)
 
-Required Inventory Commands:
+#### Required Inventory Commands
 
-*   `QueryDeviceIdentifiers`
-*   `GetFirmwareParameters`
+-   `QueryDeviceIdentifiers`
+-   `GetFirmwareParameters`
 
-Required Update Commands:
+#### Required Update Commands
 
-*   `RequestFirmwareUpdate`
-*   `PassComponentTable`
-*   `UpdateComponent`
-*   `TransferComplete`
-*   `VerifyComplete`
-*   `ApplyComplete`
-*   `ActivateFirmware`
-*   `GetStatus`
+-   `RequestFirmwareUpdate`
+-   `PassComponentTable`
+-   `UpdateComponent`
+-   `TransferComplete`
+-   `VerifyComplete`
+-   `ApplyComplete`
+-   `ActivateFirmware`
+-   `GetStatus`
 
-All responders shall implement the following optional commands
+All responders must also implement the following optional commands:
 
-*   `GetPackageData`
-*   `GetPackageMetaData`
+-   `GetPackageData`
+-   `GetPackageMetaData`
