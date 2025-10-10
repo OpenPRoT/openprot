@@ -1,4 +1,13 @@
-# Contributing
+# Contributing to OpenPRoT
+
+## Contributor License Agreement
+
+- Use of OpenPRoT requires no CLA.
+- Contributions to OpenPRoT must have signed the [CHIPS CLA](https://github.com/chipsalliance/Caliptra/blob/main/CONTRIBUTING.md#contributor-license-agreement).
+
+## Code of Conduct
+
+The code of conduct can be found [here](https://github.com/OpenPRoT/.github/blob/main/CODE_OF_CONDUCT.md).
 
 ## Development Setup
 
