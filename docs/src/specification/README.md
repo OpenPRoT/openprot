@@ -46,15 +46,37 @@ threats.
 
 ## Background
 
-TBD
+Today's Platform Root of Trust (PRoT) solutions are often specifically designed
+for their target platform, relying on custom interfaces or protocols. This leads
+to slower time-to-market due to the integration effort required. Customers can
+become locked into a single solution, making it costly and time-consuming to
+change suppliers, which in turn introduces supply chain risks.
 
-### Goals
+The Open Platform Root-of-Trust (OpenPRoT) stack is an open and extensible
+standards-compliant root-of-trust firmware stack for use in root-of-trust
+elements. The project was initiated to create an OCP specification for a
+Platform Root of Trust software stack, along with an open-source implementation
+of that specification. The OpenPRoT stack provides base root-of-trust services
+in an open architecture that allows hardware vendors to provide both standard
+and value-added services.
 
-TBD
+## Goals
 
-### Use cases
+The vision of the OpenPRoT project is to enable implementation consistency,
+transparency, openness, reusability, and interoperability. The primary goals of
+the project are to:
 
-TBD
+*   **Create an OCP specification** for a Platform Root of Trust (PRoT) firmware
+    stack.
+*   **Create an open-source implementation** of the specification.
+*   **Target new and existing PRoT hardware implementations**, with a preference
+    for Open Silicon.
+*   **Enable optionality** for integrators through stable interfaces while
+    maintaining a high security bar.
+*   **Standardize PRoT hardware interfaces**, such as an add-in card connector
+    on the DC-SCM board.
+*   **Promote reusability** through collaboration with standards bodies and
+    hardware RoT projects to create robust, modular firmware.
 
 ## Industry standards and specifications
 
