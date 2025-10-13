@@ -62,6 +62,11 @@ effectively. Here’s a guide to the different sections:
 -   https://github.com/OpenPRoT/mctp-rs: MCTP protocol support for Linux and
     embedded platforms.
 
+## Contact Us
+
+-   Email us at openprot-wg@lists.chipsalliance.org
+-   Join our public mailing list at https://lists.chipsalliance.org/g/openprot-wg
+
 ## Quick Start
 
 To get started with OpenPRoT, you can build and test the project using the
