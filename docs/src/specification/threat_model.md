@@ -1,6 +1,6 @@
 # Threat Model
 
-## Assets and Desired Security Objectives
+## Assets and Desired Security Properties
 
 | Asset                                  | Security Property         | Description |
 |----------------------------------------|---------------------------|-------------|
