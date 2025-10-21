@@ -24,10 +24,10 @@ Critical infrastructure cannot tolerate cascading failures. We assessed each sys
 Runtime flexibility introduces uncertainty in security-critical systems. We compared compile-time system definition (where all components and dependencies are known) against runtime component loading. Static composition enables better security analysis and eliminates entire classes of runtime failures. Hubris employs "aggressively static" design principles, where all tasks, inter-process communication, and resource allocations are declared in configuration files (app.toml) at build time, with extensive compile-time validation through static assertions [1,2].
 
 **System Complexity and Attack Surface**  
-Simpler systems are easier to audit, verify, and secure. We evaluated the conceptual complexity of each architecture, the number of potential attack vectors, and the effort required for security validation. Minimizing unnecessary features reduces both complexity and risk.
+PRoT systems have focused requirements that differ from general-purpose embedded applications. We evaluated how each OS architecture aligns with these specific security-critical needs. For platform root of trust implementations, features like dynamic application loading, runtime resource allocation, and general-purpose abstractions can introduce complexity and attack surface without providing security benefits. Hubris's design philosophy prioritizes eliminating functionality not essential for server management and platform security, resulting in a smaller codebase to audit and validate.
 
 **Preemptive Scheduling and Determinism**  
-Platform management requires predictable response times for critical tasks like thermal protection. We assessed each system's scheduling guarantees, priority handling, and ability to ensure high-priority tasks can always preempt lower-priority work within bounded time.
+Platform root of trust implementations require predictable response times for security-critical operations like cryptographic processing and attestation responses. We assessed each system's scheduling guarantees, priority handling, and ability to ensure high-priority security tasks can always preempt lower-priority work within bounded time.
 
 ## Detailed Technical Analysis
 
@@ -44,7 +44,7 @@ Platform management requires predictable response times for critical tasks like 
 | Feature | Hubris (Oxide) | Tock | Why it matters |
 |---------|----------------|------|----------------|
 | **Resource Allocation** | **Fixed**: Memory, hardware, and IRQ allocation determined at build time. Static assertions verify total resource requirements don't exceed physical limits before compilation. Compile-time memory layout with predetermined regions that never change. | **Dynamic**: Resources allocated as applications load. Grant-based dynamic allocation with runtime memory protection and garbage collection capabilities. | Build-time allocation with static validation eliminates runtime resource exhaustion. Static allocation provides deterministic usage patterns and eliminates fragmentation, critical for long-running server infrastructure. |
-| **Scheduling** | **Priority-based Preemptive**: Deterministic scheduling with strict priority ordering, higher priority tasks always preempt lower ones. | **Cooperative**: Kernel space cooperation with round-robin userspace scheduling. | Preemptive scheduling ensures critical tasks (thermal management) can respond promptly and predictably, essential for server reliability. |
+| **Scheduling** | **Priority-based Preemptive**: Deterministic scheduling with strict priority ordering, higher priority tasks always preempt lower ones. | **Cooperative**: Kernel space cooperation with round-robin userspace scheduling. | Preemptive scheduling ensures critical security operations (cryptographic processing, attestation responses) can respond promptly and predictably, essential for platform trust establishment. |
 
 ### System Architecture & Philosophy
 
