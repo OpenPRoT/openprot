@@ -1,0 +1,83 @@
+# OpenPRoT Operating System Selection: Technical Decision Framework
+
+Platform root of trust (PRoT) implementations require an operating system that provides hardware-enforced memory isolation, deterministic behavior, and fault recovery without compromising system integrity. OpenPRoT is an open-source, Rust-based project that provides a secure and reliable foundation for platform security, offering a Hardware Abstraction Layer (HAL) and suite of services for device attestation, secure firmware updates, and modern security protocols (SPDM, MCTP, PLDM). The OpenPRoT initiative evaluated multiple OS candidates to identify the optimal foundation for this security-critical embedded platform.
+
+This whitepaper documents our evaluation process and technical rationale for selecting Hubris over Tock OS. Both operating systems implement memory safety through Rust, but employ different architectural approaches to isolation, task management, and system composition.
+
+Our evaluation framework assessed:
+
+1. **Memory protection and isolation mechanisms** - Critical for security boundaries
+2. **Fault tolerance and recovery capabilities** - Essential for system reliability  
+3. **Static vs. dynamic system composition** - Impacts predictability and security
+4. **System complexity and attack surface** - Affects long-term maintainability and security
+5. **Preemptive scheduling and determinism** - Important for responsive system behavior
+
+## Evaluation Criteria Details
+
+**Memory Protection and Isolation Mechanisms**  
+PRoT requires strict separation between trusted and untrusted components. We evaluated how each OS enforces memory boundaries, prevents unauthorized access between tasks, and isolates drivers from the kernel. Hardware-enforced isolation (Memory Protection Unit - MPU) provides stronger guarantees than software-based partitioning.
+
+**Fault Tolerance and Recovery Capabilities**  
+Critical infrastructure cannot tolerate cascading failures. We assessed each system's ability to contain faults, restart failed components without affecting others, and maintain system integrity during partial failures. The ability to predict and bound failure modes is essential. Hubris provides in-place task reinitialization - when a task crashes, the kernel can stop it, disconnect it from resources, reset registers and stack, and restart it cleanly. A designated supervisor task receives fault notifications and can restart individual tasks or task groups without system-wide reboot, limiting the "blast radius" of failures through memory isolation.
+
+**Static vs. Dynamic System Composition**  
+Runtime flexibility introduces uncertainty in security-critical systems. We compared compile-time system definition (where all components and dependencies are known) against runtime component loading. Static composition enables better security analysis and eliminates entire classes of runtime failures. Hubris employs "aggressively static" design principles, where all tasks, inter-process communication, and resource allocations are declared in configuration files (app.toml) at build time, with extensive compile-time validation through static assertions.
+
+**System Complexity and Attack Surface**  
+Simpler systems are easier to audit, verify, and secure. We evaluated the conceptual complexity of each architecture, the number of potential attack vectors, and the effort required for security validation. Minimizing unnecessary features reduces both complexity and risk.
+
+**Preemptive Scheduling and Determinism**  
+Platform management requires predictable response times for critical tasks like thermal protection. We assessed each system's scheduling guarantees, priority handling, and ability to ensure high-priority tasks can always preempt lower-priority work within bounded time.
+
+## Detailed Technical Analysis
+
+### Core Design Decisions
+
+| Feature | Hubris (Oxide) | Tock | Why it matters |
+|---------|----------------|------|----------------|
+| **Task Model** | **Static**: All tasks defined at compile-time in app.toml configuration, cannot be created/destroyed at runtime. Build system validates all configurations with static assertions. Supports in-place task reinitialization for fault recovery - supervisor task can restart crashed tasks without system reboot. | **Dynamic**: Tasks can be dynamically loaded and assigned. Offers flexibility but introduces complexity and resource management issues. | Static model with compile-time validation prevents entire classes of runtime failures. In-place restart capability enables component-level recovery, avoiding system-wide reboots for isolated faults. |
+| **Communication** | **Strictly Synchronous**: IPC blocks sender until reply received. Uses rendezvous mechanism inspired by L4 microkernel - kernel performs direct memory copy between tasks, extending Rust's ownership model across task boundaries through leasing. | **Asynchronous**: Callback-based notifications for applications. | Synchronous communication eliminates race conditions, enables precise fault isolation (REPLY_FAULT at error point), and simplifies kernel design by avoiding complex message queue management. |
+| **Fault Isolation** | **Disjoint Protection Domains**: Drivers and kernel in separate, MPU-enforced memory spaces. Failing driver cannot corrupt kernel. | **Shared Protection Domain**: Drivers run in same domain as kernel but are partitioned by system (using Rust's capsule system). | Hardware-enforced isolation provides robust defense against faults. Memory-safe languages alone don't prevent all failures in critical systems. |
+
+### Resource & Memory Management
+
+| Feature | Hubris (Oxide) | Tock | Why it matters |
+|---------|----------------|------|----------------|
+| **Resource Allocation** | **Fixed**: Memory, hardware, and IRQ allocation determined at build time. Static assertions verify total resource requirements don't exceed physical limits before compilation. Compile-time memory layout with predetermined regions that never change. | **Dynamic**: Resources allocated as applications load. Grant-based dynamic allocation with runtime memory protection and garbage collection capabilities. | Build-time allocation with static validation eliminates runtime resource exhaustion. Static allocation provides deterministic usage patterns and eliminates fragmentation, critical for long-running server infrastructure. |
+| **Scheduling** | **Priority-based Preemptive**: Deterministic scheduling with strict priority ordering, higher priority tasks always preempt lower ones. | **Cooperative**: Kernel space cooperation with round-robin userspace scheduling. | Preemptive scheduling ensures critical tasks (thermal management) can respond promptly and predictably, essential for server reliability. |
+
+### System Architecture & Philosophy
+
+| Feature | Hubris (Oxide) | Tock | Why it matters |
+|---------|----------------|------|----------------|
+| **Hardware Abstraction** | **Minimal HAL**: Direct hardware access through capability-based permissions (unforgeable access tokens). Each task gets explicit hardware rights. | **Capsule-based**: Higher-level interfaces to hardware resources through Tock's capsule abstraction layer. | Direct access with explicit permissions makes system behavior predictable and easier to audit for security compliance. |
+| **Design Philosophy** | **Reliability-focused**: Emphasizes static validation, correctness and predictability over flexibility. Avoids unsolved problems and unnecessary complexity, prioritizing correctness and reliability by construction for high-stakes server management. | **Application-flexible**: Designed for general-purpose embedded systems with dynamic application loading. Targets applications beyond Rust that can be dynamically loaded/replaced/removed separately from kernel, similar to traditional desktop/server OS but for resource-constrained settings. Research platform pushing boundaries in embedded Rust. | Production systems require proven, stable interfaces rather than cutting-edge features that may introduce unexpected behaviors. Different philosophies serve different use cases and constraints. |
+| **System Composition** | **Static**: System composition fixed at build time with all dependencies resolved statically. Boot sequence is predictable and repeatable. | **Dynamic**: Runtime component loading and initialization. | Predictable system composition critical for server infrastructure where remote recovery from boot failures is expensive or impossible. |
+
+## Key Findings & Differentiators
+
+The analysis revealed that Hubris's microkernel architecture with MPU-enforced isolation and static task assignment better aligns with PRoT requirements than Tock's dynamic application model.
+
+**Hubris's "Aggressively Static" Philosophy**  
+Hubris employs comprehensive compile-time validation through static assertions, moving error detection from runtime to build time. All system configuration is declared in app.toml files, with the build system performing extensive checks on task priorities, resource requirements, and communication paths. This approach makes entire classes of runtime failures impossible by construction - if a configuration would lead to resource exhaustion or invalid task communication, the build simply fails with a clear error message.
+
+**Synchronous IPC Design for Robustness**  
+Hubris implements synchronous, message-based Inter-Process Communication inspired by L4 microkernel design. The rendezvous mechanism operates like cross-task function calls: the sender blocks until the receiver processes the message and replies. This enables direct memory copying between tasks without intermediate queues, extends Rust's ownership model across task boundaries through memory leasing, and provides precise fault isolation - a buggy task can be terminated with REPLY_FAULT at the exact error point, preventing fault propagation.
+
+**Component-Level Fault Recovery**  
+Hubris enables recursive component-level restarts without system reboots through in-place task reinitialization. When a task experiences a kernel-visible fault (memory access violation, panic), the kernel notifies a designated supervisor task, which can restart the failed task by resetting its registers, stack, and resource connections. Memory isolation limits the "blast radius" - corrupt state in one task cannot affect others. This allows individual driver crashes to be handled by restarting just the affected components rather than the entire system, critical for continuous operation in server infrastructure.
+
+**Critical Architectural Differences**  
+Key differentiators include Hubris's hardware-enforced memory boundaries, user-space driver architecture, and compile-time system composition versus Tock's software-based isolation for kernel drivers (capsules) and runtime application loading. Hubris eliminates dynamic memory allocation, task creation/destruction, and runtime resource management, while Tock maintains flexibility through grant-based dynamic allocation and runtime component loading.
+
+These architectural differences have direct implications for security guarantees, system predictability, and fault containment in PRoT applications.
+
+## Conclusion & Recommendation
+
+For OpenPRoT platform root of trust implementation, **Hubris is the recommended operating system choice**. Its static task model, hardware-enforced isolation, and deterministic behavior provide the security guarantees and predictability required for critical infrastructure management.
+
+The decision prioritizes security and reliability over flexibility, aligning with the fundamental requirement that PRoT systems "cannot fail." While Tock offers valuable research capabilities and dynamic features, Hubris's production-first design philosophy and robust fault isolation make it the optimal foundation for security-critical embedded platforms.
+
+## References
+
+- Fife, C. (2024). *On Hubris and Humility*. https://cliffle.com/blog/on-hubris-and-humility/
