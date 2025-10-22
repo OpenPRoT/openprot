@@ -1,8 +1,14 @@
-# OpenPRoT Operating System Selection: Technical Decision Framework
+# OpenPRoT Operating System Selection
 
-Platform root of trust (PRoT) implementations require an operating system that provides hardware-enforced memory isolation, deterministic behavior, and fault recovery without compromising system integrity. OpenPRoT is an open-source, Rust-based project that provides a secure and reliable foundation for platform security, offering a Hardware Abstraction Layer (HAL) and suite of services for device attestation, secure firmware updates, and modern security protocols (SPDM, MCTP, PLDM) [5]. The OpenPRoT initiative evaluated multiple OS candidates to identify the optimal foundation for this security-critical embedded platform.
+Platform root of trust (PRoT) implementations require an operating system that provides hardware-enforced memory isolation, deterministic behavior, and fault recovery without compromising system integrity. 
 
-This whitepaper documents our evaluation process and technical rationale for selecting Hubris [2] over Tock OS [3]. Both operating systems implement memory safety through Rust [6], but employ different architectural approaches to isolation, task management, and system composition.
+OpenPRoT addresses these requirements as an open-source, Rust-based platform that provides a secure foundation for platform security. The project offers a Hardware Abstraction Layer (HAL) and suite of services for device attestation, secure firmware updates, and modern security protocols (SPDM, MCTP, PLDM) [5]. 
+
+The OpenPRoT workgroup (hereafter "the workgroup") evaluated best-in-class Rust embededded OSes to identify the optimal operating system for this security-critical embedded platform.
+
+Rust-based operating systems were a non-negotiable requirement for OpenPRoT due to Rust's fundamental memory safety guarantees.
+
+This whitepaper documents the workgroup's evaluation process and technical rationale for selecting Hubris [2] over Tock OS [3]. Both operating systems implement memory safety through Rust [6], but employ different architectural approaches to isolation, task management, and system composition.
 
 Our evaluation framework assessed:
 
