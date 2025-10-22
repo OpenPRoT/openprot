@@ -11,6 +11,7 @@ Our evaluation framework assessed:
 3. **Static vs. dynamic system composition** - Impacts predictability and security
 4. **System complexity and attack surface** - Affects long-term maintainability and security
 5. **Preemptive scheduling and determinism** - Important for responsive system behavior
+6. **Debuggability and system observability** - Critical for development, testing, and production monitoring
 
 ## Evaluation Criteria Details
 
@@ -29,6 +30,9 @@ PRoT systems have focused requirements that differ from general-purpose embedded
 **Preemptive Scheduling and Determinism**  
 Platform root of trust implementations require predictable response times for security-critical operations like cryptographic processing and attestation responses. We assessed each system's scheduling guarantees, priority handling, and ability to ensure high-priority security tasks can always preempt lower-priority work within bounded time.
 
+**Debuggability and System Observability**  
+Complex embedded systems require robust debugging and monitoring capabilities throughout development and deployment. We evaluated each system's approach to runtime inspection, system state visibility, and debugging infrastructure. Traditional console-based debugging introduces security vulnerabilities and code bloat, making kernel-aware debugging tools essential for production systems. The ability to observe system behavior without modifying application code or introducing runtime overhead is critical for security-sensitive platforms.
+
 ## Detailed Technical Analysis
 
 ### Core Design Decisions
@@ -45,6 +49,7 @@ Platform root of trust implementations require predictable response times for se
 |---------|----------------|------|----------------|
 | **Resource Allocation** | **Fixed**: Memory, hardware, and IRQ allocation determined at build time. Static assertions verify total resource requirements don't exceed physical limits before compilation. Compile-time memory layout with predetermined regions that never change. | **Dynamic**: Resources allocated as applications load. Grant-based dynamic allocation with deterministic memory reclamation through Rust's ownership system and immediate cleanup on process termination. | Build-time allocation with static validation eliminates runtime resource exhaustion. Static allocation provides deterministic usage patterns, critical for long-running server infrastructure. |
 | **Scheduling** | **Priority-based Preemptive**: Deterministic scheduling with strict priority ordering, higher priority tasks always preempt lower ones. | **Cooperative**: Kernel space cooperation with round-robin userspace scheduling. | Preemptive scheduling ensures critical security operations (cryptographic processing, attestation responses) can respond promptly and predictably, essential for platform trust establishment. |
+| **Debuggability** | **Kernel-aware Debugger**: Humility debugger co-developed with Hubris kernel provides deep system inspection through Debug Binary Interface (DBI). No in-application console interfaces or printf formatting. External debugger handles all formatting and command parsing, eliminating security vulnerabilities and code bloat. | **Traditional Console**: UART/USB-based console interfaces with in-application command parsing and printf-style formatting. Provides runtime system inspection and control capabilities. | Kernel-aware debugging eliminates security vulnerabilities from console interfaces while providing superior system observability. Traditional consoles introduce attack surface and code complexity but offer familiar debugging workflows. |
 
 ### System Architecture & Philosophy
 
@@ -66,6 +71,13 @@ Hubris implements synchronous, message-based Inter-Process Communication inspire
 
 **Component-Level Fault Recovery**  
 Hubris enables recursive component-level restarts without system reboots through in-place task reinitialization [1]. When a task experiences a kernel-visible fault (memory access violation, panic), the kernel notifies a designated supervisor task, which can restart the failed task by resetting its registers, stack, and resource connections. Memory isolation limits the "blast radius" - corrupt state in one task cannot affect others. This allows individual driver crashes to be handled by restarting just the affected components rather than the entire system, critical for continuous operation in server infrastructure.
+
+**Kernel-Aware Debugging Architecture**  
+Hubris takes a unique approach to system debugging through its co-developed Humility debugger and Debug Binary Interface (DBI). Rather than implementing traditional console interfaces within applications, Hubris applications contain no printf-level formatting code, command parsing, or console interfaces. Instead, the external Humility debugger provides comprehensive system inspection capabilities through kernel-aware debugging protocols.
+
+This architecture eliminates common security vulnerabilities associated with console interfaces - buffer overflows, format string vulnerabilities, and command injection attacks - while reducing application code size by removing formatting and parsing logic. The DBI allows applications to declare variables and types that the debugger can automatically discover and manipulate, providing superior observability without runtime overhead or security compromise.
+
+Hubris includes comprehensive core dump support, enabling the capture of complete system snapshots into files for post-mortem analysis. These dumps can be loaded into Humility for offline debugging, allowing detailed investigation of system failures without requiring access to the live hardware. This capability proves particularly valuable for security-critical systems where traditional debugging interfaces would introduce unacceptable attack surface, enabling thorough failure analysis while maintaining production system security.
 
 **Critical Architectural Differences**  
 Key differentiators include Hubris's hardware-enforced memory boundaries, user-space driver architecture, and compile-time system composition versus Tock's software-based isolation for kernel drivers (capsules) [4] and runtime application loading. In Tock, capsules are kernel modules that share the same privilege level and address space as the kernel core, with isolation achieved through Rust's type system, borrowing checker, and carefully designed trait boundaries rather than hardware memory protection. Hubris eliminates dynamic memory allocation, task creation/destruction, and runtime resource management [2], while Tock maintains flexibility through grant-based dynamic allocation and runtime component loading [3,4].
