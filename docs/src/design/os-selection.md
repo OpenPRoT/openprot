@@ -106,6 +106,6 @@ This decision is specific to the security-critical, infrastructure-focused requi
 1. Biffle, C. L. (2024). *On Hubris and Humility*. https://cliffle.com/blog/on-hubris-and-humility/
 2. Hubris Operating System Documentation. *Hubris Kernel Design and Implementation*. https://github.com/oxidecomputer/hubris
 3. Tock Operating System. *Tock OS Documentation and Design Principles*. https://www.tockos.org/
-4. Levy, A., et al. (2017). *Multiprogramming a 64kB Computer Safely and Efficiently*. Proceedings of the 26th Symposium on Operating Systems Principles (SOSP '17).
-5. OpenPRoT Initiative. *Platform Root of Trust Architecture and Requirements*. https://github.com/openprot/openprot
-6. Klabnik, S. & Nichols, C. *The Rust Programming Language: Memory Safety and Zero-Cost Abstractions*. No Starch Press.
+4. Levy, A., et al. (2017). *Multiprogramming a 64kB Computer Safely and Efficiently*. Proceedings of the 26th Symposium on Operating Systems Principles (SOSP '17). https://doi.org/10.1145/3132747.3132786
+5. OpenPRoT Workgroup. *Platform Root of Trust Architecture and Requirements*. https://github.com/OpenPRoT/openprot
+6. Klabnik, S. & Nichols, C. *The Rust Programming Language: Memory Safety and Zero-Cost Abstractions*. https://doc.rust-lang.org/book/
