@@ -1,6 +1,6 @@
 # OpenPRoT Operating System Selection: Technical Decision Framework
 
-Platform root of trust (PRoT) implementations require an operating system that provides hardware-enforced memory isolation, deterministic behavior, and fault recovery without compromising system integrity [9]. OpenPRoT is an open-source, Rust-based project that provides a secure and reliable foundation for platform security, offering a Hardware Abstraction Layer (HAL) and suite of services for device attestation, secure firmware updates, and modern security protocols (SPDM, MCTP, PLDM) [5]. The OpenPRoT initiative evaluated multiple OS candidates to identify the optimal foundation for this security-critical embedded platform.
+Platform root of trust (PRoT) implementations require an operating system that provides hardware-enforced memory isolation, deterministic behavior, and fault recovery without compromising system integrity. OpenPRoT is an open-source, Rust-based project that provides a secure and reliable foundation for platform security, offering a Hardware Abstraction Layer (HAL) and suite of services for device attestation, secure firmware updates, and modern security protocols (SPDM, MCTP, PLDM) [5]. The OpenPRoT initiative evaluated multiple OS candidates to identify the optimal foundation for this security-critical embedded platform.
 
 This whitepaper documents our evaluation process and technical rationale for selecting Hubris [2] over Tock OS [3]. Both operating systems implement memory safety through Rust [6], but employ different architectural approaches to isolation, task management, and system composition.
 
@@ -65,27 +65,24 @@ Hubris employs comprehensive compile-time validation through static assertions, 
 Hubris implements synchronous, message-based Inter-Process Communication inspired by L4 microkernel design [1]. The rendezvous mechanism operates like cross-task function calls: the sender blocks until the receiver processes the message and replies. This enables direct memory copying between tasks without intermediate queues, extends Rust's ownership model across task boundaries through memory leasing [6], and provides precise fault isolation - a buggy task can be terminated with REPLY_FAULT at the exact error point, preventing fault propagation.
 
 **Component-Level Fault Recovery**  
-Hubris enables recursive component-level restarts without system reboots through in-place task reinitialization [1]. When a task experiences a kernel-visible fault (memory access violation, panic), the kernel notifies a designated supervisor task, which can restart the failed task by resetting its registers, stack, and resource connections. Memory isolation limits the "blast radius" - corrupt state in one task cannot affect others [7]. This allows individual driver crashes to be handled by restarting just the affected components rather than the entire system, critical for continuous operation in server infrastructure.
+Hubris enables recursive component-level restarts without system reboots through in-place task reinitialization [1]. When a task experiences a kernel-visible fault (memory access violation, panic), the kernel notifies a designated supervisor task, which can restart the failed task by resetting its registers, stack, and resource connections. Memory isolation limits the "blast radius" - corrupt state in one task cannot affect others. This allows individual driver crashes to be handled by restarting just the affected components rather than the entire system, critical for continuous operation in server infrastructure.
 
 **Critical Architectural Differences**  
-Key differentiators include Hubris's hardware-enforced memory boundaries [7], user-space driver architecture, and compile-time system composition versus Tock's software-based isolation for kernel drivers (capsules) [4] and runtime application loading. In Tock, capsules are kernel modules that share the same privilege level and address space as the kernel core, with isolation achieved through Rust's type system, borrowing checker, and carefully designed trait boundaries rather than hardware memory protection. Hubris eliminates dynamic memory allocation, task creation/destruction, and runtime resource management [2], while Tock maintains flexibility through grant-based dynamic allocation and runtime component loading [3,4].
+Key differentiators include Hubris's hardware-enforced memory boundaries, user-space driver architecture, and compile-time system composition versus Tock's software-based isolation for kernel drivers (capsules) [4] and runtime application loading. In Tock, capsules are kernel modules that share the same privilege level and address space as the kernel core, with isolation achieved through Rust's type system, borrowing checker, and carefully designed trait boundaries rather than hardware memory protection. Hubris eliminates dynamic memory allocation, task creation/destruction, and runtime resource management [2], while Tock maintains flexibility through grant-based dynamic allocation and runtime component loading [3,4].
 
 These architectural differences have direct implications for security guarantees, system predictability, and fault containment in PRoT applications [9,10].
 
 ## Conclusion & Recommendation
 
-For OpenPRoT platform root of trust implementation, **Hubris is the recommended operating system choice**. Its static task model, hardware-enforced isolation, and deterministic behavior provide the security guarantees and predictability required for critical infrastructure management [9].
+For OpenPRoT platform root of trust implementation, **Hubris is the recommended operating system choice**. Its static task model, hardware-enforced isolation, and deterministic behavior provide the security guarantees and predictability required for critical infrastructure management.
 
-The decision prioritizes security and reliability over flexibility, aligning with the fundamental requirement that PRoT systems "cannot fail" [10]. While Tock offers valuable research capabilities and dynamic features [3,4], Hubris's production-first design philosophy and robust fault isolation make it the optimal foundation for security-critical embedded platforms [1,2].
+The decision prioritizes security and reliability over flexibility, aligning with the fundamental requirement that PRoT systems "cannot fail". While Tock offers valuable research capabilities and dynamic features [3,4], Hubris's production-first design philosophy and robust fault isolation make it the optimal foundation for security-critical embedded platforms [1,2].
 
 ## References
 
-1. Fife, C. (2024). *On Hubris and Humility*. https://cliffle.com/blog/on-hubris-and-humility/
+1. Biffle, C. L. (2024). *On Hubris and Humility*. https://cliffle.com/blog/on-hubris-and-humility/
 2. Hubris Operating System Documentation. *Hubris Kernel Design and Implementation*. https://github.com/oxidecomputer/hubris
 3. Tock Operating System. *Tock OS Documentation and Design Principles*. https://www.tockos.org/
 4. Levy, A., et al. (2017). *Multiprogramming a 64kB Computer Safely and Efficiently*. Proceedings of the 26th Symposium on Operating Systems Principles (SOSP '17).
 5. OpenPRoT Initiative. *Platform Root of Trust Architecture and Requirements*. https://github.com/openprot/openprot
 6. Klabnik, S. & Nichols, C. *The Rust Programming Language: Memory Safety and Zero-Cost Abstractions*. No Starch Press.
-7. ARM Limited. *ARMv7-M Architecture Reference Manual: Memory Protection Unit (MPU)*. ARM Limited.
-8. National Institute of Standards and Technology. *NIST SP 800-193: Platform Firmware Resiliency Guidelines*. NIST Special Publication 800-193.
-9. Trusted Computing Group. *Platform Root of Trust for Measurement (RTM) Specification*. TCG Specification.
