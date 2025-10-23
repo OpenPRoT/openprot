@@ -4,7 +4,7 @@ Platform root of trust (PRoT) implementations require an operating system that p
 
 OpenPRoT addresses these requirements as an open-source, Rust-based platform that provides a secure foundation for platform security. The project offers a Hardware Abstraction Layer (HAL) and suite of services for device attestation, secure firmware updates, and modern security protocols (SPDM, MCTP, PLDM) [5]. 
 
-The OpenPRoT workgroup (hereafter "the workgroup") evaluated best-in-class Rust embededded OSes to identify the optimal operating system for this security-critical embedded platform.
+The OpenPRoT workgroup (hereafter "the workgroup") evaluated best-in-class Rust embedded OSes to identify the optimal operating system for this security-critical embedded platform.
 
 Rust-based operating systems were a non-negotiable requirement for OpenPRoT due to Rust's fundamental memory safety guarantees.
 
