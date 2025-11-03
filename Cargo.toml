@@ -30,4 +30,4 @@ subtle = { version = "2", default-features = false }
 # Pin to match Hubris ecosystem
 rand_core = { version = "0.9", default-features = false }
 embedded-hal = "1.0"
-heapless = { version = "0.8", default-features = false }
+heapless = { version = "0.9", default-features = false }
