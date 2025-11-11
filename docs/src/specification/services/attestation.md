@@ -366,13 +366,9 @@ When OpenPRoT needs to establish trust in platform devices:
 11. Local trust decision made by OpenPRoT
 12. Result used for platform composition decisions
 
-**Standard Measurement Report:**
+**Standard Measurement Transcript:**
 
-OpenPRoT follows the SPDM Standard Measurement Report format for evidence collection from devices. This standardized approach ensures consistent evidence structure across different device types and vendors.
-
-For complete details on the Standard Measurement Report format, see:
-
-https://github.com/steven-bellock/libspdm/blob/96d08a730ecbe3f05fa3a2cdbf0b7c2613b24a2f/doc/standard_measurement_report.md
+OpenPRoT follows the [DMTF SPDM Single-request Measurement Transcript](https://github.com/DMTF/libspdm/blob/main/doc/standard_measurement_transcripts.md#single-request-measurement-transcript-definition) for evidence collection from devices. This standardized approach ensures consistent evidence structure across different device types and vendors.
 
 **Evidence Received by OpenPRoT:**
 
