@@ -16,3 +16,7 @@ pub mod cipher;
 
 // Re-export commonly used cipher types
 pub use cipher::{Aes256CtrCipher, Aes256GcmCipher, RustCryptoCipherError};
+
+// Re-export RustCrypto-based controller
+pub mod controller;
+pub use controller::RustCryptoController;

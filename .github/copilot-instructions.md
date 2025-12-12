@@ -9,6 +9,9 @@
 - [ ] Unsafe code blocks are documented with safety comments
 - [ ] Hardware register access uses proper volatile operations
 - [ ] Cryptographic operations use constant-time implementations where applicable
+- [ ] Code is no_std compatible (no heap allocation: Vec, HashMap, String, etc.)
+- [ ] Fixed-size arrays and heapless collections used instead of dynamic allocation
+- [ ] Stack usage is bounded and reasonable for embedded targets
 
 ## Quick Reference: Forbidden Patterns
 
@@ -19,6 +22,9 @@
 | `collection[index]` | `collection.get(index).ok_or(Error::OutOfBounds)?` |
 | `a + b` (integers) | `a.checked_add(b).ok_or(Error::Overflow)?` |
 | `ptr.read()` | `ptr.read_volatile()` (for MMIO) |
+| `Vec<T>`, `HashMap<K,V>` | Fixed-size arrays `[T; N]`, `heapless::Vec<T, N>` |
+| `String` | Fixed-size string `heapless::String<N>` or `&str` |
+| `Box<T>` | Stack allocation or `&mut T` reference |
 
 ## Security-Specific Guidelines
 

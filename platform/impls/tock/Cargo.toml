@@ -8,4 +8,3 @@ description = "Tock OS platform implementation for OpenPRoT"
 license = "Apache-2.0"
 
 [dependencies]
-openprot-platform-traits = { path = "../../traits" }

@@ -1,5 +1,7 @@
 // Licensed under the Apache-2.0 license
 
+#![allow(deprecated)] // Allow deprecated GenericArray from cipher crate for compatibility
+
 use openprot_hal_blocking::cipher::{
     AeadCipherMode, BlockCipherMode, CipherInit, CipherMode, CipherOp, CipherStatus, Error,
     ErrorKind, ErrorType, SymmetricCipher,
@@ -7,9 +9,8 @@ use openprot_hal_blocking::cipher::{
 
 // RustCrypto imports for AES-CTR implementation
 use aes::Aes256;
-use cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
+use cipher::{generic_array::GenericArray, KeyIvInit, StreamCipher, StreamCipherSeek};
 use ctr::Ctr64BE;
-use generic_array::GenericArray;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RustCryptoCipherError {

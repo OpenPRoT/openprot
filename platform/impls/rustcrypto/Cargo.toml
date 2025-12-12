@@ -1,7 +1,7 @@
 # Licensed under the Apache-2.0 license
 
 [package]
-name = "rustcrypto"
+name = "platform-rustcrypto-impl"
 version = "0.1.0"
 license.workspace = true
 repository.workspace = true
@@ -9,20 +9,28 @@ edition.workspace = true
 
 [dependencies]
 openprot-hal-blocking = { path = "../../../hal/blocking" }
+openprot-platform-traits-hubris = { path = "../../traits/hubris" }
 
 # RustCrypto ECDSA crates
 p256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
 p384 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
 k256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
 
+# RustCrypto digest crates
+sha2 = { version = "0.10", default-features = false }
+sha3 = { version = "0.10", default-features = false }
+
+# RustCrypto MAC crates
+hmac = { version = "0.12", default-features = false }
+
 # RustCrypto cipher crates
 aes = { version = "0.8", default-features = false }
 ctr = { version = "0.9", default-features = false }
 aes-gcm = { version = "0.10", default-features = false, features = ["aes"] }
 cipher = { version = "0.4", default-features = false }
-generic-array = { version = "0.14", default-features = false }
 
 # Traits and utilities
 zerocopy = { workspace = true }
 zeroize = { workspace = true }
 rand_core = { workspace = true }
+heapless = { workspace = true }
