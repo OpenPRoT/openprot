@@ -1,0 +1,16 @@
+sequenceDiagram
+    participant Client
+    participant Kernel
+    participant Server
+    
+    Client->>Kernel: sys_send(WriteRead, leases)
+    Note over Client: blocks
+    Kernel->>Server: deliver message
+    Server->>Server: sys_recv_open()
+    Server->>Server: sys_borrow_info()
+    Server->>Server: sys_borrow_read() × N
+    Server->>Server: [I2C hardware operation]
+    Server->>Server: sys_borrow_write() × M
+    Server->>Kernel: sys_reply()
+    Kernel->>Client: return with data
+    Note over Client: unblocks

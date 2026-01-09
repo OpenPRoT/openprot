@@ -1,0 +1,11 @@
+flowchart TB
+    subgraph HW["AST1060 Hardware: 14 I2C Controllers (I2C0-I2C13)"]
+    end
+    
+    HW --> SERVER_A["i2c_server_a<br/>(I2C0, I2C1)<br/>6 regions"]
+    HW --> SERVER_B["i2c_server_b<br/>(I2C2, I2C3)<br/>6 regions"]
+    HW --> SERVER_C["i2c_server_c<br/>(I2C4, I2C5)<br/>6 regions"]
+    
+    SERVER_A --> CLIENT_A["Client A"]
+    SERVER_B --> CLIENT_B["Client B"]
+    SERVER_C --> CLIENT_C["Client C"]

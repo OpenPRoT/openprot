@@ -1,7 +1,6 @@
 [book]
 authors = ["OpenProt Team"]
 language = "en"
-multilingual = false
 src = "src"
 title = "OpenProt Documentation"
 

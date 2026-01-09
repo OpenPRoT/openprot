@@ -1,0 +1,19 @@
+sequenceDiagram
+    participant Master as Master<br/>(external)
+    participant HW as Hardware<br/>(I2C periph)
+    participant Driver as Driver<br/>(i2c server)
+    participant Client as Client<br/>(app task)
+    
+    Master->>HW: Write[Msg1]
+    HW->>Driver: IRQ
+    Note over Driver: read_slave_data()<br/>Store Msg1
+    Driver->>Client: sys_post()
+    Note over Client: (wakes up)
+    Client->>Driver: get_slave_message()
+    Driver-->>Client: Returns Msg1
+    Note over Client: (processing Msg1)
+    
+    Master->>HW: Write[Msg2]
+    HW->>Driver: IRQ
+    Note over Driver: read_slave_data()<br/>Store Msg2
+    Driver->>Client: sys_post()

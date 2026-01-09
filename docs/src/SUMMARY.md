@@ -28,5 +28,6 @@
 * [Architecture](./architecture.md)
 * [Contributing](./contributing.md)
 * [Design](./design/README.md)
+  * [Hubris I2C Subsystem Design](./design/i2c/subsystem.md)
   * [Digest Driver for Hubris](./design/driver-hubris-hash.md)
   * [Rust Traits to IDL Guide](./design/rust-trait-to-idl-conversion.md)

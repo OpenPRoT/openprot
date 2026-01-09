@@ -1,0 +1,46 @@
+flowchart TB
+    subgraph HOST["HOST / BMC (SPDM Requester)"]
+        SPDM_R["SPDM<br/>Requester"]
+        MCTP_H["MCTP<br/>Layer"]
+        I2C_C["I2C<br/>Controller"]
+        SPDM_R --> MCTP_H --> I2C_C
+    end
+    
+    I2C_C --- BUS["I2C Bus<br/>(Single Physical Bus)"]
+    
+    BUS --- DEV_A
+    BUS --- DEV_B
+    BUS --- DEV_C
+    BUS --- DEV_D
+    
+    subgraph DEV_A["OpenProt Device A (e.g. SSD)"]
+        I2C_A["I2C Target<br/>Addr: 0x50"]
+        MCTP_A["MCTP<br/>EID: 10"]
+        SPDM_A["SPDM<br/>Responder"]
+        CERT_A["Certificate<br/>+ Keys"]
+        I2C_A --> MCTP_A --> SPDM_A --> CERT_A
+    end
+    
+    subgraph DEV_B["OpenProt Device B (e.g. NIC)"]
+        I2C_B["I2C Target<br/>Addr: 0x51"]
+        MCTP_B["MCTP<br/>EID: 11"]
+        SPDM_B["SPDM<br/>Responder"]
+        CERT_B["Certificate<br/>+ Keys"]
+        I2C_B --> MCTP_B --> SPDM_B --> CERT_B
+    end
+    
+    subgraph DEV_C["OpenProt Device C (e.g. GPU)"]
+        I2C_C2["I2C Target<br/>Addr: 0x52"]
+        MCTP_C["MCTP<br/>EID: 12"]
+        SPDM_C["SPDM<br/>Responder"]
+        CERT_C["Certificate<br/>+ Keys"]
+        I2C_C2 --> MCTP_C --> SPDM_C --> CERT_C
+    end
+    
+    subgraph DEV_D["OpenProt Device D (e.g. FPGA)"]
+        I2C_D["I2C Target<br/>Addr: 0x53"]
+        MCTP_D["MCTP<br/>EID: 13"]
+        SPDM_D["SPDM<br/>Responder"]
+        CERT_D["Certificate<br/>+ Keys"]
+        I2C_D --> MCTP_D --> SPDM_D --> CERT_D
+    end

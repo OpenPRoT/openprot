@@ -1,0 +1,15 @@
+flowchart LR
+    subgraph PKT["MCTP Packet Structure (I2C binding)"]
+        direction TB
+        B0["Byte 0: Destination I2C Address (for master)"]
+        B1["Byte 1: Command Code (0x0F for MCTP)"]
+        B2["Byte 2: Byte Count"]
+        B3["Byte 3: Source I2C Address (7-bit << 1)"]
+        B4["Bytes 4-7: MCTP Transport Header"]
+        B4_SUB["• Header Version<br/>• Destination EID ← Routing identifier<br/>• Source EID ← Response routing<br/>• Flags (SOM/EOM/Pkt Seq/Tag)"]
+        B5["Bytes 8+: MCTP Payload"]
+        
+        B0 --- B1 --- B2 --- B3 --- B4
+        B4 --- B4_SUB
+        B4_SUB --- B5
+    end

@@ -1,0 +1,13 @@
+flowchart TB
+    subgraph HW["Hardware I2C Controllers"]
+        I2C0["I2C0 Controller"]
+        I2C2["I2C2 Controller"]
+    end
+    
+    DRV["I2C Driver Task<br/>(ONE task - controls all hardware)"]
+    
+    I2C0 --> DRV
+    I2C2 --> DRV
+    
+    DRV -->|"notifications via sys_post"| TASK_A["Task A<br/>(I2C0 slave)"]
+    DRV -->|"notifications via sys_post"| TASK_B["Task B<br/>(I2C2 slave)"]

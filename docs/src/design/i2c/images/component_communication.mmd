@@ -1,0 +1,27 @@
+sequenceDiagram
+    participant App as Application Task<br/>(Client)
+    participant Driver as I2C Driver Task<br/>(Server)
+    participant HW as Hardware
+    
+    Note over App: 1. Create I2cDevice<br/>(controller, port, addr)
+    
+    App->>Driver: 2. read_reg() / write()<br/>(IPC)
+    Driver->>HW: 3. Hardware I/O
+    HW-->>Driver: 
+    Driver-->>App: 4. Reply with data
+    
+    App->>Driver: 5. configure_slave_address()<br/>(IPC)
+    Driver->>HW: 6. Set slave addr
+    
+    App->>Driver: 7. enable_slave_receive()<br/>(IPC)
+    Driver->>HW: 8. Enable slave RX
+    
+    App->>Driver: 9. enable_slave_notification()<br/>(IPC)
+    Driver->>HW: 10. Enable interrupt
+    
+    HW-->>Driver: 11. Interrupt on RX
+    Driver-->>App: 12. Notification (kernel)
+    
+    App->>Driver: 13. get_slave_message()<br/>(IPC)
+    Driver->>HW: 14. Read buffer
+    Driver-->>App: 15. Message data

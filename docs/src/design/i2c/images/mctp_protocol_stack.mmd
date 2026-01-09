@@ -1,0 +1,26 @@
+block-beta
+    columns 1
+    
+    block:spdm:1
+        SPDM["<b>SPDM Layer</b><br/>(Authentication, Measurement, Key Exchange)<br/><br/>• GET_VERSION • GET_CAPABILITIES • NEGOTIATE_ALGORITHMS<br/>• GET_DIGESTS • GET_CERTIFICATE • CHALLENGE<br/>• GET_MEASUREMENTS • KEY_EXCHANGE • FINISH"]
+    end
+    
+    space
+    
+    block:mctp:1
+        MCTP["<b>MCTP Layer</b><br/>(Endpoint Addressing & Message Framing)<br/><br/>• Endpoint ID (EID) based routing<br/>• Message fragmentation/reassembly<br/>• Message type: SPDM (0x05)"]
+    end
+    
+    space
+    
+    block:binding:1
+        BINDING["<b>MCTP over I2C Binding</b><br/>(DSP0237)<br/><br/>• Single I2C bus supports multiple endpoints<br/>• Each device has unique I2C target address<br/>• Controller initiates all transactions"]
+    end
+    
+    space
+    
+    block:physical:1
+        PHYSICAL["<b>Physical I2C Bus</b><br/><br/>• Single controller (Host/BMC)<br/>• Multiple targets (OpenProt devices)<br/>• Standard I2C signaling (SCL/SDA)"]
+    end
+    
+    spdm --> mctp --> binding --> physical

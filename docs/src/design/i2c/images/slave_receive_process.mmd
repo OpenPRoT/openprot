@@ -1,0 +1,25 @@
+flowchart TB
+    subgraph EXT["External"]
+        MASTER["I2C Master<br/>(External)"]
+    end
+    
+    subgraph HW_BLOCK["I2C Hardware"]
+        HW_PROC["- Address matches configured 0x1D<br/>- Receives data into hardware buffer<br/>- Generates interrupt"]
+    end
+    
+    subgraph KERN["Kernel"]
+        KERN_PROC["- Dispatches interrupt to driver task"]
+    end
+    
+    subgraph DRV["I2C Driver Task (Interrupt Handler)"]
+        DRV_PROC["1. Read hardware status<br/>2. Copy data from hardware buffer<br/>3. Create SlaveMessage struct<br/>4. Store in pending_slave_msg<br/>5. sys_post(client_task_id, notif_mask)<br/><br/>Target: < 5µs for AST1060"]
+    end
+    
+    subgraph CLIENT["Client Application Task"]
+        CLIENT_PROC["- sys_recv_open() returns<br/>- Check sender == KERNEL<br/>- Check notification bit<br/>- Call get_slave_message()"]
+    end
+    
+    MASTER -->|"I2C Write Transaction<br/>Address: 0x1D, Data: [0x0F, 0x01, ...]"| HW_BLOCK
+    HW_BLOCK -->|"Hardware Interrupt"| KERN
+    KERN -->|"Task Notification"| DRV
+    DRV -->|"Kernel Notification (sys_post)"| CLIENT

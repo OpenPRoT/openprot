@@ -1,0 +1,15 @@
+flowchart TB
+    subgraph APP["APPLICATION LAYER"]
+        APP_DESC["- Protocol implementation (MCTP, PMBus, etc.)<br/>- Business logic<br/>- Uses high-level API"]
+    end
+    
+    subgraph FW["FRAMEWORK LAYER (openprot-i2c-server)"]
+        FW_DESC["- IPC handling<br/>- Notification delivery via sys_post()<br/>- Operation dispatch<br/>- Hardware abstraction (I2cHardware trait)<br/>- Single message buffer per controller"]
+    end
+    
+    subgraph HW["HARDWARE LAYER"]
+        HW_DESC["- Platform-specific driver (AST1060, STM32, etc.)<br/>- Register manipulation<br/>- Interrupt handling<br/>- Hardware buffer management"]
+    end
+    
+    APP -->|"drv-i2c-api (I2cDevice methods)"| FW
+    FW -->|"Hardware trait calls (I2cHardware)"| HW

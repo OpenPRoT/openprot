@@ -1,0 +1,26 @@
+sequenceDiagram
+    participant Host as Host/BMC<br/>(Requester)
+    participant Device as OpenProt Device<br/>(Responder)
+    
+    Host->>Device: GET_VERSION
+    Device-->>Host: VERSION
+    
+    Host->>Device: GET_CAPABILITIES
+    Device-->>Host: CAPABILITIES
+    
+    Host->>Device: NEGOTIATE_ALGORITHMS
+    Device-->>Host: ALGORITHMS
+    
+    Host->>Device: GET_DIGESTS
+    Device-->>Host: DIGESTS
+    
+    Host->>Device: GET_CERTIFICATE
+    Device-->>Host: CERTIFICATE
+    
+    Host->>Device: CHALLENGE
+    Device-->>Host: CHALLENGE_AUTH
+    
+    Note over Host,Device: Device Authenticated
+    
+    Host->>Device: GET_MEASUREMENTS
+    Device-->>Host: MEASUREMENTS
