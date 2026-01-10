@@ -295,6 +295,16 @@ For porting the I2C subsystem to another OS, these abstractions must be provided
 | **Monotonic Time** | `sys_get_timer` | Non-decreasing time source |
 | **Build-Time Config** | `task_slot!`, `notifications` | Static task references and notification masks |
 
+## Portability Considerations
+
+For detailed guidance on porting the I2C subsystem to other microkernel platforms, including API adaptation strategies and memory isolation tradeoffs, see [Portability Considerations](portability.md).
+
+**Key Topics:**
+- I2cHardware trait design (closure-based vs. slice-based buffer access)
+- Porting to pw_kernel (Pigweed) and Tock OS
+- Memory isolation models comparison
+- Abstraction layer options for maximum portability
+
 ## Syscall Flow Examples
 
 ### Master Write-Read Operation

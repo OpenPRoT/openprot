@@ -1,4 +1,4 @@
-# Reference
+# Appendix
 
 ## Implementation Files
 
@@ -30,34 +30,14 @@
 | Overflow handling | Silent overwrite | No error signaling |
 | SlaveMessage controller ID | Not included | Cannot identify source controller |
 
-## Comparison with OpenTitan
+## Comparisons with Other Systems
 
-OpenTitan's I2C IP represents a more mature design:
-
-| Feature | Hubris | OpenTitan |
-|---------|--------|-----------|
-| Message Buffer | Single `Option<SlaveMessage>` | Dual FIFOs (ACQ + TX) |
-| Overflow Handling | Silent overwrite | Clock stretching prevents overflow |
-| Data Loss | Possible on burst traffic | Prevented by hardware flow control |
-| Interrupt Model | Single notification per message | Granular (threshold, empty, complete, error) |
-| Flow Control | None | Hardware clock stretching |
-| ACK/NACK Control | Automatic ACK | Software-controlled per byte |
+- **[Caliptra-MCU (Tock) Comparison](./appendix_caliptra_comparison.md)** - OS-level comparison of subscriber models and notification mechanisms
 
 ## Future Enhancements
 
 1. **Message Queuing**: Replace single buffer with `heapless::Deque<SlaveMessage, N>`
 2. **Buffer Overflow Signaling**: Add `ResponseCode::SlaveBufferFull`
-3. **Per-Controller Notification**: Separate subscriber per controller
 4. **Multiple Transports**: Concurrent I2C + SPI transports for MCTP
 5. **Hardware Flow Control**: Leverage clock stretching where available
-6. **DMA Support**: Large transfer optimization
 
-## Implementation Status
-
-| Component | Status |
-|-----------|--------|
-| AST1060 slave mode driver | ✅ Complete |
-| Client API | ✅ Complete |
-| Server framework | ✅ Complete |
-| Hardware trait | ✅ Complete |
-| Example applications | ✅ Complete |

@@ -76,3 +76,95 @@ uses = ["i2c2", "i2c3", "scu", "i2c_global"]
 | Full I2C utilization (14) | 14 | 7 |
 
 **Note:** Most RoT deployments use 1-2 I2C controllers for management communication, staying within the single-task limit.
+
+## Driver Implementation
+
+### Adapter Pattern
+
+The low-level I2C driver for AST1060 (`Ast1060I2c`) manages **one controller** per instance:
+
+```rust
+pub struct Ast1060I2c<'a> {
+    controller: &'a I2cController<'a>,  // Bound to ONE controller
+    xfer_mode: I2cXferMode,
+    multi_master: bool,
+}
+```
+
+The `I2cHardware` trait expects **one object** to manage **all controllers**, so we use an adapter:
+
+```rust
+pub struct Ast1060I2cAdapter<'a> {
+    controllers: [Option<Ast1060I2c<'a>>; 14],
+    slave_states: [SlaveState; 14],
+}
+```
+
+The adapter provides:
+1. **Controller Routing**: Selects the right instance based on `Controller` enum
+2. **Software Buffering**: Adds slave message buffer
+3. **State Management**: Tracks per-controller slave configuration
+4. **Unified Interface**: Matches the trait contract
+
+### Transfer Modes
+
+The AST1060 supports two transfer modes:
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| Byte Mode | Transfer one byte at a time | Small transfers |
+| Buffer Mode | Use hardware 32-byte buffer | Larger payloads (default) |
+
+### Implementation Files
+
+| File | Purpose |
+|------|---------|
+| `drv/ast1060-i2c/src/server_driver.rs` | I2cHardware trait implementation |
+| `drv/ast1060-i2c/src/slave.rs` | Slave mode hardware operations |
+| `drv/ast1060-i2c/src/master.rs` | Master mode hardware operations |
+| `drv/ast1060-i2c/src/transfer.rs` | Low-level transfer modes |
+
+### Adapter Pattern
+
+The low-level AST1060 driver (`Ast1060I2c`) manages **one controller** per instance:
+
+```rust
+pub struct Ast1060I2c<'a> {
+    controller: &'a I2cController<'a>,  // Bound to ONE controller
+    xfer_mode: I2cXferMode,
+    multi_master: bool,
+}
+```
+
+The `I2cHardware` trait expects **one object** to manage **all controllers**, so we use an adapter:
+
+```rust
+pub struct Ast1060I2cAdapter<'a> {
+    controllers: [Option<Ast1060I2c<'a>>; 14],
+    slave_states: [SlaveState; 14],
+}
+```
+
+The adapter provides:
+1. **Controller Routing**: Selects the right instance based on `Controller` enum
+2. **Software Buffering**: Adds slave message buffer
+3. **State Management**: Tracks per-controller slave configuration
+4. **Unified Interface**: Matches the trait contract
+
+### Transfer Modes
+
+The AST1060 supports two transfer modes:
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| Byte Mode | Transfer one byte at a time | Small transfers |
+| Buffer Mode | Use hardware 32-byte buffer | Larger payloads (default) |
+
+### Implementation Files
+
+| File | Purpose |
+|------|---------|-----|
+| `drv/ast1060-i2c/src/server_driver.rs` | I2cHardware trait implementation |
+| `drv/ast1060-i2c/src/slave.rs` | Slave mode hardware operations |
+| `drv/ast1060-i2c/src/master.rs` | Master mode hardware operations |
+| `drv/ast1060-i2c/src/transfer.rs` | Low-level transfer modes |
