@@ -33,6 +33,7 @@
 ## Comparisons with Other Systems
 
 - **[Caliptra-MCU (Tock) Comparison](./appendix_caliptra_comparison.md)** - OS-level comparison of subscriber models and notification mechanisms
+- **[pw_kernel Reference](./appendix_pw_kernel_reference.md)** - Quick reference for Pigweed kernel objects, signals, and concepts
 
 ## Future Enhancements
 
