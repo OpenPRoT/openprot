@@ -30,8 +30,8 @@ pub enum Controller {
     I2C5 = 5,
     I2C6 = 6,
     I2C7 = 7,
+    // Additional controllers may be available depending on hardware
 }
-// Note: AST1060 supports I2C0-I2C13
 ```
 
 ### SlaveMessage
