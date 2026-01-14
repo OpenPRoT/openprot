@@ -1,6 +1,6 @@
 # Overview
 
-The Hubris I2C subsystem provides a vendor-agnostic I2C driver framework supporting both controller and target modes. It is designed around Hubris's task-based architecture, using IPC to communicate with separate I2C driver tasks that control the actual hardware.
+The OpenPRoT I2C subsystem provides a vendor-agnostic I2C driver framework supporting both controller and target modes. It is designed around a microkernel-based architecture, using IPC to communicate with separate I2C driver tasks that control the actual hardware.
 
 ## Audience
 
@@ -10,7 +10,7 @@ This guide serves three primary audiences:
 |----------|------|------------|
 | **Application Developer** | Use I2C to communicate with devices | [Quick Start](#quick-start), then [I2C API](#i2c-api) |
 | **Driver Implementer** | Add support for new I2C hardware | [Architecture](#architecture), then [Hardware Implementations](#hardware-implementations) |
-| **System Integrator** | Configure I2C in a Hubris deployment | [System Integration](#system-integration), then [MCTP Integration](#mctp-integration) |
+| **System Integrator** | Configure I2C in a system deployment | [System Integration](#system-integration), then [MCTP Integration](#mctp-integration) |
 
 ## Quick Start
 
