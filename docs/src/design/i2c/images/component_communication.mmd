@@ -11,10 +11,10 @@ sequenceDiagram
     Driver-->>App: 4. Reply with data
     
     App->>Driver: 5. configure_slave_address()<br/>(IPC)
-    Driver->>HW: 6. Set slave addr
+    Driver->>HW: 6. Set target addr
     
     App->>Driver: 7. enable_slave_receive()<br/>(IPC)
-    Driver->>HW: 8. Enable slave RX
+    Driver->>HW: 8. Enable target RX
     
     App->>Driver: 9. enable_slave_notification()<br/>(IPC)
     Driver->>HW: 10. Enable interrupt

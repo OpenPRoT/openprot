@@ -1,6 +1,6 @@
-# Slave Mode Deep Dive
+# Target Mode Deep Dive
 
-This section provides comprehensive coverage of I2C slave mode operation, which is the primary focus for MCTP-based RoT applications.
+This section provides covers of I2C target mode operation, which is the primary focus for MCTP-based RoT applications.
 
 ## Interrupt-Driven Receive Flow
 
@@ -8,14 +8,14 @@ This section provides comprehensive coverage of I2C slave mode operation, which 
 
 ## Single Subscriber Pattern
 
-Each `openprot-i2c-server` instance has `notification_client: Option<(TaskId, u32)>`. Only one task can receive slave mode notifications from a given driver instance.
+Each `openprot-i2c-server` instance has `notification_client: Option<(TaskId, u32)>`. Only one task can receive target mode notifications from a given driver instance.
 
 **Rationale:**
 1. **Simplicity**: Single `Option<(TaskId, u32)>` per driver minimizes state
-2. **Clear Ownership**: One task owns slave traffic for that driver instance
+2. **Clear Ownership**: One task owns target traffic for that driver instance
 3. **Typical Usage**: Most systems have a single protocol handler per bus
 
-## Complete Slave Mode Example
+## Complete Target Mode Example
 
 ```rust
 use drv_i2c_api::*;
@@ -26,13 +26,13 @@ task_slot!(I2C, i2c_driver);
 const I2C_RX_NOTIF: u32 = 0x0001;
 
 fn main() -> ! {
-    // Setup slave mode
+    // Setup target mode
     let device = I2cDevice::new(
         I2C.get_task_id(),
         Controller::I2C1,
         PortIndex(0),
         None,
-        0x1D,  // Our slave address
+        0x1D,  // Our target address
     );
 
     device.configure_slave_address(0x1D).unwrap_lite();
@@ -67,7 +67,7 @@ fn main() -> ! {
 
 ## Multiple I2C Controllers
 
-Different tasks can use slave mode on different I2C controllers independently:
+Different tasks can use target mode on different I2C controllers independently:
 
 ![Multiple Controllers Routing](../images/multiple_controllers_routing.png)
 
@@ -83,9 +83,9 @@ Different tasks can use slave mode on different I2C controllers independently:
 
 ## Buffer Management
 
-### Master Mode
+### Controller Mode
 
-Master mode operations are **synchronous** and use caller-provided buffers:
+Controller mode operations are **synchronous** and use caller-provided buffers:
 
 ```rust
 // Caller provides buffers - no driver allocation needed
@@ -94,7 +94,7 @@ let mut read_data = [0u8; 16];
 device.write_read(0x50, &write_data, &mut read_data)?;
 ```
 
-### Slave Mode: Single Message Buffer
+### Target Mode: Single Message Buffer
 
 The current implementation uses a **single message buffer** per driver instance:
 
@@ -119,10 +119,10 @@ let mut notification_client: Option<(TaskId, u32)> = None;
 ### Memory Budget
 
 ```
-Master Mode (synchronous - no buffering):
+Controller Mode (synchronous - no buffering):
 - 0 bytes (uses caller buffers)
 
-Slave Mode (1 message buffer):
+Target Mode (1 message buffer):
 - SlaveMessage: 257 bytes (1 addr + 1 len + 255 data)
 - State overhead: ~16 bytes
 - Total: ~273 bytes per controller

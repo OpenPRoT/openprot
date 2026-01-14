@@ -27,8 +27,8 @@ pub struct Ast1060I2cAdapter<'a> {
 
 The adapter provides:
 1. **Controller Routing**: Selects the right instance based on `Controller` enum
-2. **Software Buffering**: Adds slave message buffer
-3. **State Management**: Tracks per-controller slave configuration
+2. **Software Buffering**: Adds target message buffer
+3. **State Management**: Tracks per-controller target configuration
 4. **Unified Interface**: Matches the trait contract
 
 ### Transfer Modes
@@ -45,8 +45,8 @@ The AST1060 supports two transfer modes:
 | File | Purpose |
 |------|---------|
 | `drv/ast1060-i2c/src/server_driver.rs` | I2cHardware trait implementation |
-| `drv/ast1060-i2c/src/slave.rs` | Slave mode hardware operations |
-| `drv/ast1060-i2c/src/master.rs` | Master mode hardware operations |
+| `drv/ast1060-i2c/src/slave.rs` | Target mode hardware operations |
+| `drv/ast1060-i2c/src/master.rs` | Controller mode hardware operations |
 | `drv/ast1060-i2c/src/transfer.rs` | Low-level transfer modes |
 
 ## Adding New Hardware Support

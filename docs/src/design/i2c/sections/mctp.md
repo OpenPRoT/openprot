@@ -53,14 +53,14 @@ Each device on the bus requires two identifiers:
 use drv_i2c_api::*;
 use userlib::*;
 
-const I2C_OWN_ADDR: u8 = 0x12; // Our I2C slave address
+const I2C_OWN_ADDR: u8 = 0x12; // Our I2C target address
 
 let i2c_recv = I2cDevice::new(
     I2C.get_task_id(),
     Controller::I2C1,
     PortIndex(0),
     None,
-    0x00, // Address unused for slave mode
+    0x00, // Address unused for target mode
 );
 
 i2c_recv.configure_slave_address(I2C_OWN_ADDR).unwrap_lite();
@@ -93,7 +93,7 @@ loop {
                 }
                 Err(ResponseCode::NoSlaveMessage) => {}
                 Err(e) => {
-                    log::warn!("I2C slave message error: {:?}", e);
+                    log::warn!("I2C target message error: {:?}", e);
                 }
             }
         }
@@ -109,7 +109,7 @@ loop {
 
 ## Why Single Subscriber Works for MCTP
 
-The I2C slave driver's "single subscriber" limitation does not affect MCTP deployments:
+The I2C target driver's "single subscriber" limitation does not affect MCTP deployments:
 
 1. **Multiplexing happens at MCTP layer** - One MCTP server receives all I2C packets
 2. **EID-based routing** - Responses routed via EID, not I2C controller

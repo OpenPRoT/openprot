@@ -1,17 +1,20 @@
 # Implementing `raise_peer_user_signal` Syscall
 
+> **⚠️ AI-Assisted Prototype:** This implementation was developed
+> with AI assistance (GitHub Copilot) as a proof of concept. The code has been
+> tested but should be reviewed before production use.
+
 This document describes the kernel changes required to implement the
 `raise_peer_user_signal` syscall, which enables async notifications between
 channel peers (similar to Hubris's `sys_post()`).
 
-> **Note:** This is an AI-assisted prototype implementation created to demonstrate
-> the feasibility of porting Hubris I2C notification patterns to pw_kernel. The
-> implementation serves as a proof-of-concept and reference for understanding the
-> syscall architecture, but should undergo thorough review and testing before
-> production use. See the [Safety Review](./appendix_sys_post_safety_review.md)
-> for critical considerations.
+**Status:** ✅ Implemented and validated
 
-**Status:** ✅ Prototype implemented and validated in QEMU
+**Commits:**
+- `8ff5c7d79` - Initial syscall definition + basic test
+- `7310b581d` - Comprehensive validation tests
+- `01d37d6e9` - Core implementation (raise() method + channel support)
+- `77eaaaff2` - Fix channel_transact to preserve USER signal
 
 ## Overview
 

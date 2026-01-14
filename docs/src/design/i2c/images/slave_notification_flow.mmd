@@ -11,7 +11,7 @@ sequenceDiagram
     Kernel->>Client: wake up
     Server->>Server: sys_irq_control(true)
     
-    Client->>Server: sys_send(GetSlaveMessage)
+    Client->>Server: sys_send(GetTargetMessage)
     Note over Client: blocks
     Server->>Client: sys_reply(data)
     Note over Client: returns with msg

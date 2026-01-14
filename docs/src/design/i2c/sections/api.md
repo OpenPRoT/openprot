@@ -38,7 +38,7 @@ pub enum Controller {
 
 ```rust
 pub struct SlaveMessage {
-    /// The 7-bit I2C address of the master that sent this message
+    /// The 7-bit I2C address of the controller that sent this message
     pub source_address: u8,
     /// Length of the message data in bytes (0-255)
     pub data_length: u8,
@@ -59,11 +59,11 @@ impl SlaveMessage {
 pub struct SlaveConfig {
     pub controller: Controller,  // Which I2C controller
     pub port: PortIndex,         // Port/pin configuration
-    pub address: u8,             // 7-bit slave address (0x08-0x77)
+    pub address: u8,             // 7-bit target address (0x08-0x77)
 }
 ```
 
-## Master Mode Methods
+## Controller Mode Methods
 
 ```rust
 impl I2cDevice {
@@ -84,11 +84,11 @@ impl I2cDevice {
 }
 ```
 
-## Slave Mode Methods
+## Target Mode Methods
 
 ```rust
 impl I2cDevice {
-    /// Configure this controller as a slave with the given address
+    /// Configure this controller as a target with the given address
     pub fn configure_slave_address(&self, addr: u8) -> Result<(), ResponseCode>;
 
     /// Start listening for incoming messages
@@ -110,18 +110,18 @@ impl I2cDevice {
 
 ## Operation Types
 
-### Master Mode Operations
+### Controller Mode Operations
 
 | Operation | Op Code | Description |
 |-----------|---------|-------------|
 | WriteRead | 1 | Standard I2C write-then-read operation |
 | WriteReadBlock | 2 | SMBus block read with length byte |
 
-### Slave Mode Operations
+### Target Mode Operations
 
 | Operation | Op Code | Description |
 |-----------|---------|-------------|
-| ConfigureSlaveAddress | 3 | Set slave address |
+| ConfigureSlaveAddress | 3 | Set target address |
 | EnableSlaveReceive | 4 | Start listening for messages |
 | DisableSlaveReceive | 5 | Stop listening |
 | EnableSlaveNotification | 6 | Register for notifications |

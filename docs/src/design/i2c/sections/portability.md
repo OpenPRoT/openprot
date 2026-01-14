@@ -197,7 +197,7 @@ Different microkernels make different tradeoffs between security and performance
 ```
 
 **Pros:** Maximal portability, ecosystem compatibility  
-**Cons:** embedded-hal doesn't support slave mode or complex mux traversal
+**Cons:** embedded-hal doesn't support target mode or complex mux traversal
 
 ## Recommendations for Future Ports
 

@@ -1,4 +1,4 @@
-# I2C Slave Support: Hubris vs Caliptra-MCU
+# I2C Target Support: Hubris vs Caliptra-MCU
 
 ## Subscriber Model
 
@@ -8,7 +8,7 @@
 | Notification | sys_post to one task | Upcall to one process |
 | Buffer ownership | One lease holder | One grant region |
 
-Both are single-subscriber models. Only one client can register to receive slave data at a time.
+Both are single-subscriber models. Only one client can register to receive target data at a time.
 
 ## Why Single Subscriber?
 
@@ -23,7 +23,7 @@ I2C Bus
     │
     ▼
 ┌─────────────┐
-│ I2C Driver  │  ← single slave address
+│ I2C Driver  │  ← single target address
 └──────┬──────┘
        │ single notification
        ▼

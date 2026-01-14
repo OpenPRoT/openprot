@@ -7,8 +7,8 @@
 | `drv/i2c-api/src/lib.rs` | Client API with `I2cDevice` methods |
 | `drv/i2c-types/src/lib.rs` | Type definitions (`SlaveMessage`, `SlaveConfig`, `ResponseCode`) |
 | `drv/i2c-types/src/traits.rs` | `I2cHardware` trait for hardware abstraction |
-| `drv/openprot-i2c-server/src/main.rs` | IPC server handling slave operations |
-| `drv/ast1060-i2c/src/slave.rs` | AST1060-specific slave mode implementation |
+| `drv/openprot-i2c-server/src/main.rs` | IPC server handling target operations |
+| `drv/ast1060-i2c/src/slave.rs` | AST1060-specific target mode implementation |
 | `drv/ast1060-i2c/src/server_driver.rs` | AST1060 I2cHardware trait implementation |
 | `task/mctp-server/src/main.rs` | MCTP server with I2C transport |
 

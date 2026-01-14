@@ -11,7 +11,7 @@ This section covers common problems and their solutions.
 | Intermittent `BusError` | Electrical noise | Check pull-up resistor values, reduce bus speed |
 | `ControllerBusy` | Incomplete transaction | Reset controller, check for interrupt conflicts |
 
-## Slave Mode Issues
+## Target Mode Issues
 
 | Symptom | Likely Cause | Solution |
 |---------|--------------|----------|
@@ -26,7 +26,7 @@ This section covers common problems and their solutions.
 |---------|--------------|----------|
 | `BadController` error | Controller not in `uses` list | Update app.toml `uses` field |
 | `MemManageFault` | MPU region violation | Check peripheral assignments in app.toml |
-| `SlaveAddressInUse` | Duplicate configuration | Only configure slave address once per controller |
+| `SlaveAddressInUse` | Duplicate configuration | Only configure target address once per controller |
 | Task crashes on I2C access | Missing peripheral | Verify `uses` includes required peripherals |
 
 ## Debugging Tips
@@ -34,7 +34,7 @@ This section covers common problems and their solutions.
 1. **Enable logging**: Use `serial_log` feature for debug output
 2. **Check hardware**: Use logic analyzer to verify I2C signals
 3. **Verify addresses**: I2C uses 7-bit addresses; some tools show 8-bit
-4. **Test incrementally**: Verify master mode works before slave mode
+4. **Test incrementally**: Verify controller mode works before target mode
 5. **Monitor timing**: Use `sys_get_timer()` to measure latencies
 
 ## Bus Recovery

@@ -9,5 +9,5 @@ flowchart TB
     I2C0 --> DRV
     I2C2 --> DRV
     
-    DRV -->|"notifications via sys_post"| TASK_A["Task A<br/>(I2C0 slave)"]
-    DRV -->|"notifications via sys_post"| TASK_B["Task B<br/>(I2C2 slave)"]
+    DRV -->|"notifications via sys_post"| TASK_A["Task A<br/>(I2C0 target)"]
+    DRV -->|"notifications via sys_post"| TASK_B["Task B<br/>(I2C2 target)"]

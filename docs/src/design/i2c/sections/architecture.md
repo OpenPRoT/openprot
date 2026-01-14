@@ -29,7 +29,7 @@ The subsystem is structured into three distinct layers to maximize portability a
 | **Hybrid Communication** | Client operations use synchronous IPC; events use async notifications |
 | **Manual IPC** | Handwritten protocol code instead of code-generated bindings for flexibility |
 | **Type Safety** | Leverages Rust's type system and zero-copy serialization |
-| **Interrupt-Driven** | Slave mode uses notifications instead of polling |
+| **Interrupt-Driven** | Target mode uses notifications instead of polling |
 | **Device Identification** | 5-tuple uniquely identifies each I2C device |
 
 ## I2cHardware Trait
@@ -38,7 +38,7 @@ Hardware drivers implement this trait to integrate with the framework:
 
 ```rust
 pub trait I2cHardware {
-    // Master Mode
+    // Controller Mode
     fn write_read(
         &mut self,
         controller: Controller,
@@ -52,7 +52,7 @@ pub trait I2cHardware {
 
     fn write_read_block(...) -> Result<usize, ResponseCode>;
 
-    // Slave Mode
+    // Target Mode
     fn configure_slave_mode(&mut self, controller: Controller, config: &SlaveConfig) -> Result<(), ResponseCode>;
     fn enable_slave_receive(&mut self, controller: Controller) -> Result<(), ResponseCode>;
     fn disable_slave_receive(&mut self, controller: Controller) -> Result<(), ResponseCode>;

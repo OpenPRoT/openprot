@@ -1,6 +1,6 @@
 # Overview
 
-The Hubris I2C subsystem provides a vendor-agnostic I2C driver framework supporting both master and slave modes. It is designed around Hubris's task-based architecture, using IPC to communicate with separate I2C driver tasks that control the actual hardware.
+The Hubris I2C subsystem provides a vendor-agnostic I2C driver framework supporting both controller and target modes. It is designed around Hubris's task-based architecture, using IPC to communicate with separate I2C driver tasks that control the actual hardware.
 
 ## Audience
 
@@ -14,7 +14,7 @@ This guide serves three primary audiences:
 
 ## Quick Start
 
-**Reading from an I2C device (master mode):**
+**Reading from an I2C device (controller mode):**
 
 ```rust
 use drv_i2c_api::*;
@@ -36,7 +36,7 @@ let mut buffer = [0u8; 8];
 device.write_read(&[0x10], &mut buffer)?;
 ```
 
-**Receiving messages as an I2C slave:**
+**Receiving messages as an I2C target:**
 
 ```rust
 use drv_i2c_api::*;
@@ -45,7 +45,7 @@ const NOTIF_MASK: u32 = 0x0001;
 
 let device = I2cDevice::new(I2C.get_task_id(), Controller::I2C1, PortIndex(0), None, 0x1D);
 
-// Configure as slave at address 0x1D
+// Configure as target at address 0x1D
 device.configure_slave_address(0x1D)?;
 device.enable_slave_receive()?;
 device.enable_slave_notification(NOTIF_MASK)?;
@@ -65,8 +65,8 @@ loop {
 | Feature | Description |
 |---------|-------------|
 | **Hardware Abstraction** | Single API works across AST1060, STM32, LPC55, and other I2C controllers |
-| **Master + Slave Modes** | Initiate transactions or respond to external masters |
-| **Interrupt-Driven** | Slave mode uses async notifications—no polling required |
+| **Controller + Target Modes** | Initiate transactions or respond to external controllers |
+| **Interrupt-Driven** | Target mode uses async notifications—no polling required |
 | **Memory Efficient** | ~270 bytes driver state; zero-copy where possible |
 | **Type Safe** | Rust's type system prevents common I2C programming errors |
 | **Task Isolation** | MPU-enforced separation between driver and application tasks |
@@ -75,9 +75,9 @@ loop {
 
 | Use Case | Mode | Typical Protocol |
 |----------|------|------------------|
-| BMC/host management communication | Slave | MCTP-over-I2C |
-| Sensor reading | Master | Raw I2C / SMBus |
-| EEPROM access | Master | Raw I2C |
-| Power management | Master | PMBus |
-| Device authentication | Slave | SPDM over MCTP |
+| BMC/host management communication | Target | MCTP-over-I2C |
+| Sensor reading | Controller | Raw I2C / SMBus |
+| EEPROM access | Controller | Raw I2C |
+| Power management | Controller | PMBus |
+| Device authentication | Target | SPDM over MCTP |
 | Multi-board communication | Both | Custom / MCTP |

@@ -95,7 +95,7 @@ sys_reply(msg.sender, ResponseCode::NoDevice as u32, &[]);
 Used to notify client tasks when interrupt-driven events occur:
 
 ```rust
-// Server notifies client of slave message arrival
+// Server notifies client of target message arrival
 if let Some((client_task, mask)) = notification_client {
     sys_post(client_task, mask);
 }
@@ -297,10 +297,10 @@ For porting the I2C subsystem to another OS, these abstractions must be provided
 
 ## Syscall Flow Examples
 
-### Master Write-Read Operation
+### Controller Write-Read Operation
 
-![Master Syscall Flow](../images/master_syscall_flow.png)
+![Controller Syscall Flow](../images/master_syscall_flow.png)
 
-### Slave Notification Flow
+### Target Notification Flow
 
-![Slave Notification Flow](../images/slave_notification_flow.png)
+![Target Notification Flow](../images/slave_notification_flow.png)

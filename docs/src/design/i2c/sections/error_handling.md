@@ -19,13 +19,13 @@ This section covers error codes, handling patterns, and recovery strategies.
 | `BusError` | General I2C bus error | Electrical issues |
 | `OperationNotSupported` | Operation not supported on this hardware | Hardware limitation |
 | `TooMuchData` | Data exceeds buffer capacity | Message too large |
-| `SlaveAddressInUse` | Slave address already configured | Duplicate configuration |
-| `SlaveNotSupported` | Slave mode not supported on controller | Hardware limitation |
-| `SlaveNotEnabled` | Slave receive not enabled | Forgot to call enable_slave_receive() |
+| `SlaveAddressInUse` | Target address already configured | Duplicate configuration |
+| `SlaveNotSupported` | Target mode not supported on controller | Hardware limitation |
+| `SlaveNotEnabled` | Target receive not enabled | Forgot to call enable_slave_receive() |
 | `SlaveBufferFull` | Hardware buffer full, messages dropped | Too much traffic |
-| `BadSlaveAddress` | Invalid slave address | Reserved or out of range |
-| `SlaveConfigurationFailed` | Hardware failed to configure slave mode | Hardware error |
-| `NoSlaveMessage` | No slave message available to retrieve | Spurious notification |
+| `BadSlaveAddress` | Invalid target address | Reserved or out of range |
+| `SlaveConfigurationFailed` | Hardware failed to configure target mode | Hardware error |
+| `NoSlaveMessage` | No target message available to retrieve | Spurious notification |
 | `NotificationFailed` | Failed to register notification | System resource issue |
 
 ## Configuration Error Handling
@@ -40,7 +40,7 @@ match device.configure_slave_address(0x1D) {
         // Another task already configured this address
     }
     Err(ResponseCode::SlaveNotSupported) => {
-        // This controller doesn't support slave mode
+        // This controller doesn't support target mode
     }
     Err(e) => {
         // Other configuration error
@@ -59,7 +59,7 @@ match device.get_slave_message() {
         // Normal: notification but message already retrieved
     }
     Err(ResponseCode::SlaveNotEnabled) => {
-        // Slave mode was disabled, re-enable if needed
+        // Target mode was disabled, re-enable if needed
         device.enable_slave_receive()?;
     }
     Err(e) => {

@@ -141,7 +141,7 @@ rbuf.copy_from_slice(&response[..rbuf.len()]);
 **Hubris Pattern:**
 
 ```rust
-// Server: notify client of slave message arrival
+// Server: notify client of target message arrival
 if let Some((client_task, mask)) = notification_client {
     sys_post(client_task, mask);
 }
@@ -149,7 +149,7 @@ if let Some((client_task, mask)) = notification_client {
 // Client: wait for notification
 let msg = sys_recv_open(&mut buffer, I2C_RX_MASK);
 if msg.sender == TaskId::KERNEL && (msg.operation & I2C_RX_MASK) != 0 {
-    // Handle slave message ready
+    // Handle target message ready
 }
 ```
 
@@ -431,7 +431,7 @@ rust_library(
 
 //! I2C Driver Task for pw_kernel
 //!
-//! Handles both master and slave mode I2C operations.
+//! Handles both controller and target mode I2C operations.
 //! This is a handler-side app that receives IPC requests from initiators.
 
 #![no_std]
@@ -611,7 +611,7 @@ pub type Result<T> = core::result::Result<T, I2cError>;
 
 /// Hardware abstraction trait for I2C controllers
 pub trait I2cHardware {
-    /// Perform a write-then-read transaction (master mode)
+    /// Perform a write-then-read transaction (controller mode)
     fn write_read(
         &mut self,
         device: &I2cDevice,
@@ -619,19 +619,19 @@ pub trait I2cHardware {
         read_buf: &mut [u8],
     ) -> Result<()>;
     
-    /// Configure slave mode address
+    /// Configure target mode address
     fn configure_slave_address(&mut self, address: u8) -> Result<()>;
     
-    /// Enable slave receive mode
+    /// Enable target receive mode
     fn enable_slave_receive(&mut self) -> Result<()>;
     
-    /// Disable slave receive mode
+    /// Disable target receive mode
     fn disable_slave_receive(&mut self) -> Result<()>;
     
-    /// Check if slave data is available
+    /// Check if target data is available
     fn has_slave_data(&self) -> bool;
     
-    /// Read received slave data into buffer
+    /// Read received target data into buffer
     /// Returns number of bytes read
     fn read_slave_data(&mut self, buf: &mut [u8]) -> usize;
     
@@ -687,7 +687,7 @@ impl I2cDevice {
 
 //! AST1060 I2C Controller Driver for pw_kernel
 //!
-//! Supports both master and slave mode operations.
+//! Supports both controller and target mode operations.
 
 #![no_std]
 
@@ -815,9 +815,9 @@ impl I2cHardware for Ast1060I2c {
     fn configure_slave_address(&mut self, address: u8) -> Result<()> {
         unsafe {
             let ctrl = read_volatile(&(*self.regs).fun_ctrl);
-            write_volatile(&mut (*self.regs).fun_ctrl, ctrl | (1 << 16)); // Enable slave
+            write_volatile(&mut (*self.regs).fun_ctrl, ctrl | (1 << 16)); // Enable target
             write_volatile(&mut (*self.regs).dev_addr, 
-                (address as u32) << 8 | 0x1); // Slave address + enable
+                (address as u32) << 8 | 0x1); // Target address + enable
         }
         Ok(())
     }
@@ -825,7 +825,7 @@ impl I2cHardware for Ast1060I2c {
     fn enable_slave_receive(&mut self) -> Result<()> {
         unsafe {
             let ctrl = read_volatile(&(*self.regs).intr_ctrl);
-            write_volatile(&mut (*self.regs).intr_ctrl, ctrl | (1 << 8)); // Slave RX IRQ
+            write_volatile(&mut (*self.regs).intr_ctrl, ctrl | (1 << 8)); // Target RX IRQ
         }
         Ok(())
     }

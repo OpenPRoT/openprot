@@ -2,7 +2,7 @@
 
 ## Hardware Validation with Aardvark
 
-I2C slave mode requires an external master device for testing. The codebase includes support for testing with an Aardvark I2C adapter:
+I2C target mode requires an external controller device for testing. The codebase includes support for testing with an Aardvark I2C adapter:
 
 | File | Purpose |
 |------|---------|
@@ -11,8 +11,8 @@ I2C slave mode requires an external master device for testing. The codebase incl
 | `drv/ast1060-i2c/AARDVARK-BRINGUP.md` | Hardware setup guide |
 
 ```bash
-# Run slave receive test with Aardvark
-python3 aardvark_test.py --test slave_receive --address 0x1D
+# Run target receive test with Aardvark
+python3 aardvark_test.py --test target_receive --address 0x1D
 ```
 
 ## Example Test Application
@@ -30,11 +30,11 @@ fn main() -> ! {
         0x50,
     );
 
-    // Test master mode
+    // Test controller mode
     let mut buffer = [0u8; 16];
     device.read_reg(0x00u8, &mut buffer).unwrap_lite();
 
-    // Test slave mode
+    // Test target mode
     device.configure_slave_address(0x1D).unwrap_lite();
     device.enable_slave_receive().unwrap_lite();
     device.enable_slave_notification(0x0001).unwrap_lite();
@@ -52,12 +52,12 @@ fn main() -> ! {
 
 ## Test Checklist
 
-- [ ] Master mode read from known device
-- [ ] Master mode write to known device
-- [ ] Master mode write-then-read sequence
-- [ ] Slave address configuration
-- [ ] Slave mode receive single message
-- [ ] Slave mode receive multiple messages
+- [ ] Controller mode read from known device
+- [ ] Controller mode write to known device
+- [ ] Controller mode write-then-read sequence
+- [ ] Target address configuration
+- [ ] Target mode receive single message
+- [ ] Target mode receive multiple messages
 - [ ] Notification delivery and timing
 - [ ] Error handling for reserved addresses
 - [ ] Bus recovery after lockup
