@@ -2,6 +2,16 @@
 
 The OpenPRoT I2C subsystem provides a vendor-agnostic I2C driver framework supporting both controller and target modes. It is designed around a microkernel-based architecture, using IPC to communicate with separate I2C driver tasks that control the actual hardware.
 
+┌─────────────────┐   IPC Channel/Syscall   ┌─────────────────┐
+│  Userspace App  │ ──────────────────────▶│|  Driver Task   |│
+│  (Rust binary)  │                         │  (Rust binary)  │
+└─────────────────┘                         └────────┬────────┘
+        ▲                                            │
+        └──────── Notification ──────────────────────┤
+                                            ┌────────▼────────┐
+                                            │   Hardware      │
+                                            └─────────────────┘
+
 ## Audience
 
 This guide serves three primary audiences:
