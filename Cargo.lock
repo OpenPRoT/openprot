@@ -378,7 +378,7 @@ name = "openprot-hal-blocking"
 version = "0.1.0"
 dependencies = [
  "embedded-hal 1.0.0",
- "rand_core 0.9.3",
+ "rand_core 0.9.5",
  "subtle",
  "zerocopy",
  "zeroize",
@@ -474,7 +474,7 @@ dependencies = [
  "openprot-platform-traits-hubris",
  "p256",
  "p384",
- "rand_core 0.9.3",
+ "rand_core 0.9.5",
  "sha2",
  "sha3",
  "zerocopy",
@@ -528,9 +528,9 @@ checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 
 [[package]]
 name = "rand_core"
-version = "0.9.3"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99d9a13982dcf210057a8a78572b2217b667c3beacbf3a0d8b454f6f82837d38"
+checksum = "76afc826de14238e6e8c374ddcc1fa19e374fd8dd986b0d2af0d02377261d83c"
 
 [[package]]
 name = "rfc6979"
