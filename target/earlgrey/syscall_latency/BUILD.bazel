@@ -1,0 +1,135 @@
+# Copyright 2025 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@pigweed//pw_kernel/tooling:app_package.bzl", "app_package")
+load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
+load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//signing/keys:defs.bzl", "FPGA_ECDSA_KEY", "SILICON_ECDSA_KEY")
+load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//tooling:opentitan_runner.bzl", "opentitan_runner")
+
+rust_binary(
+    name = "syscall_latency",
+    srcs = [
+        "main.rs",
+    ],
+    crate_features = select({
+        "//target/earlgrey:fpga": ["fpga"],
+        "//target/earlgrey:silicon": ["silicon"],
+        "//target/earlgrey:verilator": ["verilator"],
+        "//conditions:default": [],
+    }),
+    crate_name = "syscall_latency",
+    edition = "2024",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":app_syscall_latency",
+        "//target/earlgrey:config",
+        "//target/earlgrey/registers",
+        "@pigweed//pw_base64/rust:pw_base64",
+        "@pigweed//pw_kernel/syscall:syscall_user",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
+app_package(
+    name = "app_syscall_latency",
+    app_name = "syscall_latency",
+    edition = "2024",
+    system_config = "@pigweed//pw_kernel/target:system_config_file",
+    tags = ["kernel"],
+)
+
+system_image(
+    name = "measure_syscall_latency",
+    apps = [
+        ":syscall_latency",
+    ],
+    kernel = ":target",
+    platform = "//target/earlgrey",
+    system_config = ":system_config",
+    tags = ["kernel"],
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    template = "//target/earlgrey:linker_script_template",
+)
+
+filegroup(
+    name = "system_config",
+    srcs = ["system.json5"],
+)
+
+target_codegen(
+    name = "codegen",
+    arch = "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+    system_config = ":system_config",
+)
+
+rust_binary(
+    name = "target",
+    srcs = [
+        "target.rs",
+    ],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":codegen",
+        ":linker_script",
+        "//target/earlgrey:entry",
+        "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/lib/memory_config",
+        "@pigweed//pw_kernel/subsys/console:console_backend",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)
+
+opentitan_runner(
+    name = "measure_syscall_latency_verilator",
+    interface = "verilator",
+    target = ":measure_syscall_latency",
+)
+
+opentitan_runner(
+    name = "measure_syscall_latency_hyper310",
+    ecdsa_key = FPGA_ECDSA_KEY,
+    interface = "hyper310",
+    target = ":measure_syscall_latency",
+)
+
+opentitan_runner(
+    name = "measure_syscall_latency_hyper340",
+    ecdsa_key = FPGA_ECDSA_KEY,
+    interface = "hyper340",
+    target = ":measure_syscall_latency",
+)
+
+opentitan_runner(
+    name = "measure_syscall_latency_silicon",
+    ecdsa_key = SILICON_ECDSA_KEY,
+    interface = "teacup",
+    tags = ["manual"],
+    target = ":measure_syscall_latency",
+)

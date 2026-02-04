@@ -1,0 +1,140 @@
+# Copyright 2025 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("@pigweed//pw_build:merge_flags.bzl", "flags_from_dict")
+load("@pigweed//pw_kernel:flags.bzl", "KERNEL_DEVICE_COMMON_FLAGS")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
+
+platform(
+    name = "earlgrey",
+    constraint_values = [
+        ":target_earlgrey",
+        "@pigweed//pw_kernel/arch/riscv:timer_mtime",
+        "@pigweed//pw_build/constraints/riscv/extensions:I",
+        "@pigweed//pw_build/constraints/riscv/extensions:M",
+        "@pigweed//pw_build/constraints/riscv/extensions:C",
+        "@pigweed//pw_build/constraints/riscv/extensions:A.not",
+        "@pigweed//pw_build/constraints/riscv/extensions:Smepmp",
+        "@pigweed//pw_build/constraints/rust:no_std",
+        "@platforms//cpu:riscv32",
+        "@platforms//os:none",
+    ],
+    flags = flags_from_dict(
+        KERNEL_DEVICE_COMMON_FLAGS | {
+            "@pigweed//pw_kernel/arch/riscv:exceptions_reload_pmp": True,
+            "@pigweed//pw_kernel/config:kernel_config": ":config",
+            "@pigweed//pw_kernel/subsys/console:console_backend": ":console",
+            "@pigweed//pw_log/rust:pw_log_backend": "@pigweed//pw_kernel:log_backend_basic",
+        },
+    ),
+    visibility = [":__subpackages__"],
+)
+
+string_flag(
+    name = "target_type",
+    build_setting_default = "silicon",
+    values = [
+        "silicon",
+        "fpga",
+        "verilator",
+    ],
+)
+
+config_setting(
+    name = "silicon",
+    flag_values = {":target_type": "silicon"},
+)
+
+config_setting(
+    name = "fpga",
+    flag_values = {":target_type": "fpga"},
+)
+
+config_setting(
+    name = "verilator",
+    flag_values = {":target_type": "verilator"},
+)
+
+constraint_value(
+    name = "target_earlgrey",
+    constraint_setting = "@pigweed//pw_kernel/target:target",
+    visibility = [":__subpackages__"],
+)
+
+rust_library(
+    name = "entry",
+    srcs = [
+        "entry.rs",
+        "epmp.rs",
+    ],
+    crate_features = select({
+        ":fpga": ["fpga"],
+        ":silicon": ["silicon"],
+        ":verilator": ["verilator"],
+        "//conditions:default": [],
+    }),
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = [":__subpackages__"],
+    deps = [
+        ":config",
+        "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/lib/memory_config",
+        "@rust_crates//:riscv-rt",
+    ],
+)
+
+rust_library(
+    name = "console",
+    srcs = ["console.rs"],
+    crate_name = "console_backend",
+    edition = "2024",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//target/earlgrey/registers",
+        "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:embedded-io",
+    ],
+)
+
+rust_library(
+    name = "config",
+    srcs = ["config.rs"],
+    crate_features = select({
+        ":fpga": ["fpga"],
+        ":silicon": ["silicon"],
+        ":verilator": ["verilator"],
+        "//conditions:default": [],
+    }),
+    crate_name = "kernel_config",
+    edition = "2024",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = [":__subpackages__"],
+    deps = [
+        "@pigweed//pw_kernel/config:kernel_config_interface",
+        "@pigweed//pw_kernel/lib/memory_config",
+    ],
+)
+
+filegroup(
+    name = "linker_script_template",
+    srcs = ["target.ld.jinja"],
+    visibility = [":__subpackages__"],
+)

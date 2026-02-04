@@ -53,13 +53,6 @@ target/
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
 
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
 # OS files
 .DS_Store
 .DS_Store?

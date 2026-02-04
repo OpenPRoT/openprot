@@ -1,0 +1,5 @@
+---
+tokens:
+  - key_ring: "projects/opentitan/locations/us-west1/keyRings/ot-earlgrey-a1"
+    label: "ot-earlgrey-a1"
+log_directory: "/tmp"

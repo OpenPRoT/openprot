@@ -1,0 +1,383 @@
+# Copyright 2025 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "registers",
+    srcs = ["registers.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":adc_ctrl",
+        ":aes",
+        ":alert_handler",
+        ":aon_timer",
+        ":ast",
+        ":clkmgr",
+        ":csrng",
+        ":edn",
+        ":entropy_src",
+        ":flash_ctrl_core",
+        ":flash_ctrl_mem",
+        ":gpio",
+        ":hmac",
+        ":i2c",
+        ":keymgr",
+        ":kmac",
+        ":lc_ctrl",
+        ":otbn",
+        ":otp_ctrl_core",
+        ":otp_ctrl_prim",
+        ":pattgen",
+        ":pinmux",
+        ":pwm",
+        ":pwrmgr",
+        ":rom_ctrl_regs",
+        ":rom_ctrl_rom",
+        ":rstmgr",
+        ":rv_core_ibex",
+        ":rv_dm_mem",
+        ":rv_dm_regs",
+        ":rv_plic",
+        ":rv_timer",
+        ":sensor_ctrl",
+        ":spi_device",
+        ":spi_host",
+        ":sram_ctrl_ram",
+        ":sram_ctrl_regs",
+        ":sysrst_ctrl",
+        ":uart",
+        ":usbdev",
+    ],
+)
+
+rust_library(
+    name = "adc_ctrl",
+    srcs = ["adc_ctrl.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "aes",
+    srcs = ["aes.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "alert_handler",
+    srcs = ["alert_handler.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "aon_timer",
+    srcs = ["aon_timer.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "ast",
+    srcs = ["ast.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "clkmgr",
+    srcs = ["clkmgr.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "csrng",
+    srcs = ["csrng.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "edn",
+    srcs = ["edn.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "entropy_src",
+    srcs = ["entropy_src.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "flash_ctrl_core",
+    srcs = ["flash_ctrl_core.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "flash_ctrl_mem",
+    srcs = ["flash_ctrl_mem.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "gpio",
+    srcs = ["gpio.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "hmac",
+    srcs = ["hmac.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "i2c",
+    srcs = ["i2c.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "keymgr",
+    srcs = ["keymgr.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "kmac",
+    srcs = ["kmac.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "lc_ctrl",
+    srcs = ["lc_ctrl.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "otbn",
+    srcs = ["otbn.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "otp_ctrl_core",
+    srcs = ["otp_ctrl_core.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "otp_ctrl_prim",
+    srcs = ["otp_ctrl_prim.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "pattgen",
+    srcs = ["pattgen.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "pinmux",
+    srcs = ["pinmux.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "pwm",
+    srcs = ["pwm.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "pwrmgr",
+    srcs = ["pwrmgr.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "rom_ctrl_regs",
+    srcs = ["rom_ctrl_regs.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "rom_ctrl_rom",
+    srcs = ["rom_ctrl_rom.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "rstmgr",
+    srcs = ["rstmgr.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "rv_core_ibex",
+    srcs = ["rv_core_ibex.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "rv_dm_mem",
+    srcs = ["rv_dm_mem.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "rv_dm_regs",
+    srcs = ["rv_dm_regs.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "rv_plic",
+    srcs = ["rv_plic.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "rv_timer",
+    srcs = ["rv_timer.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "sensor_ctrl",
+    srcs = ["sensor_ctrl.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "spi_device",
+    srcs = ["spi_device.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "spi_host",
+    srcs = ["spi_host.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "sram_ctrl_ram",
+    srcs = ["sram_ctrl_ram.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "sram_ctrl_regs",
+    srcs = ["sram_ctrl_regs.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "sysrst_ctrl",
+    srcs = ["sysrst_ctrl.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "uart",
+    srcs = ["uart.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
+
+rust_library(
+    name = "usbdev",
+    srcs = ["usbdev.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@ureg"],
+)
