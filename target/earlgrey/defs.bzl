@@ -11,3 +11,10 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
+"""Common definitions used by all earlgrey targets.
+"""
+
+TARGET_COMPATIBLE_WITH = select({
+    "//target/earlgrey:target_earlgrey": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})

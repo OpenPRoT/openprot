@@ -1,0 +1,94 @@
+# Copyright 2025 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
+
+load("@pigweed//pw_build:pw_py_importable_runfile.bzl", "pw_py_importable_runfile")
+load("@rules_python//python:defs.bzl", "py_binary")
+
+pw_py_importable_runfile(
+    name = "opentitantool-runfiles",
+    src = "@opentitan_devbundle//:opentitantool/opentitantool",
+    executable = True,
+    import_location = "opentitan.opentitantool",
+)
+
+pw_py_importable_runfile(
+    name = "verilator-runfiles",
+    src = "@opentitan_devbundle//:earlgrey/verilator/Vchip_sim_tb",
+    executable = True,
+    import_location = "opentitan.verilator",
+)
+
+pw_py_importable_runfile(
+    name = "test_rom-runfiles",
+    src = "@opentitan_devbundle//:earlgrey/test_rom/test_rom_sim_verilator.39.scr.vmem",
+    import_location = "opentitan.test_rom",
+)
+
+pw_py_importable_runfile(
+    name = "test_otp-runfiles",
+    src = "@opentitan_devbundle//:earlgrey/otp/img_rma.24.vmem",
+    import_location = "opentitan.test_otp",
+)
+
+pw_py_importable_runfile(
+    name = "rom_ext_cw310-runfiles",
+    src = "@opentitan_devbundle//:rom_ext/rom_ext_dice_x509_slot_virtual_fpga_cw310.prod_key_0.prod_key_0.signed.bin",
+    import_location = "opentitan.rom_ext_cw310",
+)
+
+pw_py_importable_runfile(
+    name = "rom_ext_cw340-runfiles",
+    src = "@opentitan_devbundle//:rom_ext/rom_ext_dice_x509_slot_virtual_fpga_cw340.prod_key_0.prod_key_0.signed.bin",
+    import_location = "opentitan.rom_ext_cw340",
+)
+
+pw_py_importable_runfile(
+    name = "bitstream_hyper310-runfiles",
+    src = "@opentitan_devbundle//:earlgrey/bitstreams/bitstream_fpga_hyper310.bit",
+    import_location = "opentitan.bitstream_hyper310",
+)
+
+pw_py_importable_runfile(
+    name = "bitstream_hyper340-runfiles",
+    src = "@opentitan_devbundle//:earlgrey/bitstreams/bitstream_fpga_hyper340.bit",
+    import_location = "opentitan.bitstream_hyper340",
+)
+
+pw_py_importable_runfile(
+    name = "app_prod_ecdsa-runfiles",
+    src = "@opentitan_devbundle//:fake_keys/app_prod_ecdsa_p256.der",
+    executable = False,
+    import_location = "opentitan.fake_keys.app_prod_ecdsa",
+)
+
+py_binary(
+    name = "opentitan_runner",
+    srcs = [
+        "opentitan_runner.py",
+    ],
+    main = "opentitan_runner.py",
+    deps = [
+        ":app_prod_ecdsa-runfiles",
+        ":bitstream_hyper310-runfiles",
+        ":bitstream_hyper340-runfiles",
+        ":opentitantool-runfiles",
+        ":rom_ext_cw310-runfiles",
+        ":rom_ext_cw340-runfiles",
+        ":test_otp-runfiles",
+        ":test_rom-runfiles",
+        ":verilator-runfiles",
+        "@pigweed//pw_tokenizer/py:detokenize",
+        "@rules_python//python/runfiles",
+    ],
+)

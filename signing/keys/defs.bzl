@@ -11,3 +11,6 @@
 # WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 # License for the specific language governing permissions and limitations under
 # the License.
+
+FPGA_ECDSA_KEY = {"//signing/keys:fpga_keyset": "app_prod_0"}
+SILICON_ECDSA_KEY = {"//signing/keys:gb00_keyset": "gb00-app-key-prod-0"}
