@@ -1,0 +1,116 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
+load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//target/earlgrey/signing/keys:defs.bzl", "FPGA_ECDSA_KEY", "SILICON_ECDSA_KEY")
+load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_test")
+
+system_image(
+    name = "ipc",
+    apps = [
+        "@pigweed//pw_kernel/tests/ipc/user:initiator",
+        "@pigweed//pw_kernel/tests/ipc/user:handler",
+    ],
+    kernel = ":target",
+    platform = "//target/earlgrey",
+    system_config = ":system_config",
+    tags = ["kernel"],
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    template = "//target/earlgrey:linker_script_template",
+)
+
+rust_binary_no_panics_test(
+    name = "no_panics_test",
+    binary = ":ipc",
+    tags = [
+        # TODO(cfrantz): Fix this test.
+        "disabled",
+        "kernel",
+    ],
+)
+
+filegroup(
+    name = "system_config",
+    srcs = ["system.json5"],
+)
+
+target_codegen(
+    name = "codegen",
+    arch = "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+    system_config = ":system_config",
+)
+
+rust_binary(
+    name = "target",
+    srcs = [
+        "target.rs",
+    ],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":codegen",
+        ":linker_script",
+        "//target/earlgrey:entry",
+        "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/subsys/console:console_backend",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)
+
+opentitan_test(
+    name = "ipc_runner_verilator_test",
+    timeout = "eternal",
+    interface = "verilator",
+    tags = [
+        "nightly_test",
+        "verilator",
+    ],
+    target = ":ipc",
+)
+
+opentitan_test(
+    name = "ipc_runner_hyper310_test",
+    ecdsa_key = FPGA_ECDSA_KEY,
+    interface = "hyper310",
+    tags = [
+        "hardware",
+        "hyper310",
+    ],
+    target = ":ipc",
+)
+
+opentitan_test(
+    name = "ipc_runner_hyper340_test",
+    ecdsa_key = FPGA_ECDSA_KEY,
+    interface = "hyper340",
+    tags = [
+        "hardware",
+        "hyper340",
+    ],
+    target = ":ipc",
+)
+
+opentitan_test(
+    name = "ipc_runner_silicon_test",
+    ecdsa_key = SILICON_ECDSA_KEY,
+    interface = "teacup",
+    tags = [
+        "earlgrey_silicon",
+        "hardware",
+    ],
+    target = ":ipc",
+)

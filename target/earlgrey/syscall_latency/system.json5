@@ -1,0 +1,40 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+{
+  arch: {
+    type: "riscv",
+  },
+  kernel: {
+    flash_start_address: 0xA0010000,
+    flash_size_bytes: 65536,
+    ram_start_address: 0x10000000,
+    ram_size_bytes: 32768,
+    interrupt_table: {
+      table: {}
+    },
+  },
+  apps: [
+    {
+      name: "syscall_latency",
+      flash_size_bytes: 32768,
+      ram_size_bytes: 4096,
+      process: {
+        name: "syscall latency",
+        memory_mappings: [
+          {
+            name: "RV_TIMER",
+            type: "device",
+            start_address: 0x40100000,
+            size_bytes: 0x200,
+          },
+        ],
+        threads: [
+          {
+            name: "syscall_latency",
+            stack_size_bytes: 4096,
+          },
+        ],
+      },
+    },
+  ],
+}

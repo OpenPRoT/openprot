@@ -49,9 +49,12 @@ jobs:
       run: |
         bazel test \
             --keep_going \
+            --test_output=streamed \
+            --build_tag_filters=-hardware,-disabled \
+            --test_tag_filters=-hardware,-disabled \
             //...
 
-  build-targets:
+  build:
     name: Build Targets
     needs: test
     runs-on: ubuntu-latest
@@ -67,7 +70,11 @@ jobs:
         repository-cache: true
 
     - name: Build
-      run: bazel build //...
+      run: |
+        bazel build \
+            --keep_going \
+            --build_tag_filters=-hardware,-disabled \
+            //...
 
   security-audit:
     name: Security Audit
