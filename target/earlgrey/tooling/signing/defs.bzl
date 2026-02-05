@@ -12,15 +12,15 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("//tooling/signing:keyset.bzl", _keyset = "keyset")
+load("//target/earlgrey/tooling/signing:keyset.bzl", _keyset = "keyset")
 load(
-    "//tooling/signing:signing.bzl",
+    "//target/earlgrey/tooling/signing:signing.bzl",
     _sign_bin = "sign_bin",
     _sign_binary = "sign_binary",
 )
-load("//tooling/signing:tool.bzl", _signing_tool = "signing_tool")
+load("//target/earlgrey/tooling/signing:tool.bzl", _signing_tool = "signing_tool")
 load(
-    "//tooling/signing:util.bzl",
+    "//target/earlgrey/tooling/signing:util.bzl",
     _KeySetInfo = "KeySetInfo",
     _SigningToolInfo = "SigningToolInfo",
 )

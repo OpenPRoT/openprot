@@ -17,9 +17,9 @@ load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
 load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
-load("//signing/keys:defs.bzl", "FPGA_ECDSA_KEY", "SILICON_ECDSA_KEY")
 load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
-load("//tooling:opentitan_runner.bzl", "opentitan_runner")
+load("//target/earlgrey/signing/keys:defs.bzl", "FPGA_ECDSA_KEY", "SILICON_ECDSA_KEY")
+load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_runner")
 
 rust_binary(
     name = "syscall_latency",

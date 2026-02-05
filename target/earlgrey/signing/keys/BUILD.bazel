@@ -12,7 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("//tooling/signing:defs.bzl", "keyset")
+load("//target/earlgrey/tooling/signing:defs.bzl", "keyset")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -26,7 +26,7 @@ keyset(
         "@opentitan_devbundle//:fake_keys/app_test_ecdsa_p256.der": "app_test_0",
     },
     profile = "local",
-    tool = "//signing/tokens:local",
+    tool = "//target/earlgrey/signing/tokens:local",
 )
 
 # Keys held in CloudKMS to sign for the Google Bringup SKU of the Earlgrey ASIC.
@@ -46,5 +46,5 @@ keyset(
     #     "user": "user"
     #   }
     profile = "earlgrey_a1_gb_owner",
-    tool = "//signing/tokens:cloud_kms_gb",
+    tool = "//target/earlgrey/signing/tokens:cloud_kms_gb",
 )

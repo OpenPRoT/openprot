@@ -12,7 +12,7 @@
 # License for the specific language governing permissions and limitations under
 # the License.
 
-load("//tooling/signing:util.bzl", "SigningToolInfo")
+load("//target/earlgrey/tooling/signing:util.bzl", "SigningToolInfo")
 
 def _signing_tool(ctx):
     env = {k: ctx.expand_location(v, ctx.attr.data) for k, v in ctx.attr.env.items()}

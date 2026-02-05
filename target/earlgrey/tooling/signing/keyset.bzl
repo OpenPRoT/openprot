@@ -13,7 +13,7 @@
 # the License.
 
 load(
-    "//tooling/signing:util.bzl",
+    "//target/earlgrey/tooling/signing:util.bzl",
     "KeySetInfo",
     "SigningToolInfo",
     _hsmtool_sign = "hsmtool_sign",

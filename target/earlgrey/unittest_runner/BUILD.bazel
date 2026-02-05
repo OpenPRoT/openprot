@@ -17,7 +17,7 @@ load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
-load("//tooling:opentitan_runner.bzl", "opentitan_test")
+load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_test")
 
 system_image(
     name = "unittest_runner",

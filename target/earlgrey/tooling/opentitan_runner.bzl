@@ -14,7 +14,7 @@
 """A rule for running a pigweed system_image on an opentitan board."""
 
 load("@pigweed//pw_kernel/tooling:system_image.bzl", "SystemImageInfo")
-load("//tooling/signing:defs.bzl", "KeySetInfo", "sign_binary")
+load("//target/earlgrey/tooling/signing:defs.bzl", "KeySetInfo", "sign_binary")
 
 def _target_type_transition_impl(_, attr):
     if attr.interface == "hyper310" or attr.interface == "hyper340":
@@ -116,7 +116,7 @@ _BASE_ATTRS = {
     "_opentitan_runner": attr.label(
         executable = True,
         cfg = "exec",
-        default = "//tooling:opentitan_runner",
+        default = "//target/earlgrey/tooling:opentitan_runner",
     ),
     "_opentitantool": attr.label(
         executable = True,

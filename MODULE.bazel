@@ -81,7 +81,7 @@ archive_override(
     url = "https://storage.googleapis.com/artifacts.opentitan.org/dev_bundle/devbundle-test-20251105.tar.xz",
 )
 
-nonhermetic_repo = use_repo_rule("//tooling/signing:nonhermetic.bzl", "nonhermetic_repo")
+nonhermetic_repo = use_repo_rule("//target/earlgrey/tooling/signing:nonhermetic.bzl", "nonhermetic_repo")
 
 nonhermetic_repo(name = "nonhermetic")
 

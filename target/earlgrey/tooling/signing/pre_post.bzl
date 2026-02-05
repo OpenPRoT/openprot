@@ -13,7 +13,7 @@
 # the License.
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
-load("//tooling/signing:util.bzl", "key_ext")
+load("//target/earlgrey/tooling/signing:util.bzl", "key_ext")
 
 def presigning_artifacts(ctx, opentitantool, src, manifest, ecdsa_key, rsa_key, spx_key, basename = None, keyname_in_filenames = False):
     """Create the pre-signing artifacts for a given input binary.

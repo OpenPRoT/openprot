@@ -14,12 +14,12 @@
 
 load("@pigweed//pw_kernel/tooling:system_image.bzl", "SystemImageInfo")
 load(
-    "//tooling/signing:pre_post.bzl",
+    "//target/earlgrey/tooling/signing:pre_post.bzl",
     "post_signing_attach",
     "presigning_artifacts",
 )
 load(
-    "//tooling/signing:util.bzl",
+    "//target/earlgrey/tooling/signing:util.bzl",
     "clear_if_none_key",
     "get_override",
     "key_from_dict",

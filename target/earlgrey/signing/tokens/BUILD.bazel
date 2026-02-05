@@ -13,7 +13,7 @@
 # the License.
 
 load("@nonhermetic//:env.bzl", "ENV")
-load("//tooling/signing:defs.bzl", "signing_tool")
+load("//target/earlgrey/tooling/signing:defs.bzl", "signing_tool")
 
 package(default_visibility = ["//visibility:public"])
 
