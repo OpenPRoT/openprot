@@ -1,0 +1,22 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# Default to C++17 to ensure compatibility.
+common --@pigweed//pw_toolchain/cc:cxx_standard=17
+common:cxx20 --//pw_toolchain/cc:cxx_standard=20
+common --per_file_copt=external/.*,.*\.pb\.cc@-w
+common --host_per_file_copt=external/.*,.*\.pb\.cc@-w
+
+# Don't automatically create __init__.py files.
+#
+# This prevents spurious package name collisions at import time, and should be
+# the default (https://github.com/bazelbuild/bazel/issues/7386). Pigweed's
+# Python libraries break without this.
+common --incompatible_default_to_explicit_init_py
+
+# Do not attempt to configure an autodetected (local) toolchain. We vendor all
+# our toolchains, and CI VMs may not have any local toolchain to detect.
+common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+
+test --@pigweed//pw_kernel:enable_tests=true
+test --platform_suffix=test

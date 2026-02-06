@@ -1,3 +1,39 @@
+# Build
+rust-project.json
+user.bazelrc
+/bazel-*
+/out
+
+# Editors
+.pw_ide/
+.vscode/settings.json
+.vscode/tasks.json
+.vscode/pw_user_*.json
+.vscode/*.bak.json
+.idea/
+.project
+.cproject
+.clangd
+.clangd/
+*.swp
+*.swo
+.#*
+
+# Git
+*.orig
+*.BACKUP.*
+*.BASE.*
+*.LOCAL.*
+*.REMOTE.*
+*_BACKUP_*.txt
+*_BASE_*.txt
+*_LOCAL_*.txt
+*_REMOTE_*.txt
+
+# Other
+pw_console-*logs.txt
+.pw_console.user.yaml
+
 # Rust build artifacts
 /target/
 **/target/

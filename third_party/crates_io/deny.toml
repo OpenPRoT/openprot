@@ -1,0 +1,21 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+[advisories]
+ignore = [
+    { id = "RUSTSEC-2024-0436", reason = "Allowed while replacement is identified" },
+]
+unmaintained = "workspace"
+
+[bans]
+skip = []
+
+[licenses]
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Zlib",
+]
