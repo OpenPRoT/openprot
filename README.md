@@ -7,9 +7,12 @@ The OpenPRoT Technical Charter can be found at
 
 ## Getting Started
 
+NOTE: We are converting our build system to [bazel](https://bazel.build/).  We recommend installing [bazelisk](https://github.com/bazelbuild/bazelisk) to automatically manage bazel versions.
+
 This project uses [<u>cargo-xtask</u>](https://github.com/matklad/cargo-xtask) for build automation and project management.
 
 ### Available Tasks
+
 
 You can run tasks using `cargo xtask <task-name>`:
 

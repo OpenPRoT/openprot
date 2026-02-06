@@ -1,0 +1,54 @@
+{
+  "configs": [
+    {
+      "name": "bazel_default",
+      "description": "Default bazel build configuration",
+      "build_type": "bazel",
+      "args": [
+        "--test_output=all"
+      ],
+      "env": {}
+    },
+    {
+      "name": "bazel_default_notest",
+      "description": "Default bazel build configuration",
+      "build_type": "bazel",
+      "args": [],
+      "env": {},
+      "driver_options": {
+        "@type": "pw.build.proto.BazelDriverOptions",
+        "no_test": true
+      }
+    }
+  ],
+  "builds": [
+    {
+      "name": "wildcard_build",
+      "use_config": "bazel_default_notest",
+      "targets": [
+        "//..."
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "format",
+      "description": "Find and fix code formatting issues",
+      "use_config": "bazel_default",
+      "analyzer_friendly_args": [
+        "--check"
+      ],
+      "target": "//:format"
+    }
+  ],
+  "groups": [
+    {
+      "name": "default",
+      "description": "Quick presubmit for validating code changes locally",
+      "builds": [
+        "format",
+        "wildcard_build"
+      ]
+    }
+  ]
+}

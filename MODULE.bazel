@@ -1,0 +1,67 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+module(
+    name = "openprot",
+    version = "0.0.1",
+)
+
+bazel_dep(name = "bazel_skylib", version = "1.8.2")
+bazel_dep(name = "pigweed")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_rust", version = "0.68.1")
+bazel_dep(name = "rules_platform", version = "0.1.0")
+bazel_dep(name = "rules_python", version = "1.8.3")
+
+git_override(
+    module_name = "pigweed",
+    # ROLL: Warning: this entry is automatically updated by
+    # ROLL: https://cr-buildbucket.appspot.com/builder/pigweed-internal/opentitan.roll/pigweed-opentitan-roller
+    commit = "f52059663fee1e2ab2f2ab752301b159da3ca806",
+    remote = "https://pigweed.googlesource.com/pigweed/pigweed",
+)
+
+pw_rust = use_extension("@pigweed//pw_toolchain/rust:extensions.bzl", "pw_rust")
+pw_rust.toolchain(cipd_tag = "git_revisions:fe5c95d4ae33ec9d7831921e448e2daf8264ea42,7b074fc9362a4a6a5f172dd8936a22fb25eff96b")
+use_repo(pw_rust, "pw_rust_toolchains")
+
+register_toolchains(
+    "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_linux",
+    "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_macos",
+    "@pigweed//pw_toolchain/riscv_clang:riscv_clang_cc_toolchain_rv32imc",
+    "@pw_rust_toolchains//:all",
+)
+
+crate = use_extension("@rules_rust//crate_universe:extension.bzl", "crate")
+crate.from_cargo(
+    name = "rust_crates",
+    cargo_lockfile = "//third_party/crates_io:Cargo.lock",
+    manifests = ["//third_party/crates_io:Cargo.toml"],
+    # crate_universe's defaults do not include some embedded triples so the
+    # triples are listed explicitly.
+    supported_platform_triples = [
+        # Host platforms
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin",
+
+        # Target platforms
+        "riscv32imc-unknown-none-elf",
+    ],
+)
+use_repo(crate, "rust_crates")
+
+pw_rust_crates_ext = use_extension("@pigweed//pw_build:pw_rust_crates_extension.bzl", "pw_rust_crates_extension")
+
+# Ideally, we shouldn't need to override the pigweed `rust_crates` repo as it
+# requires the downstream (openprot) repo adding pigweed cargo deps to its own
+# Cargo.toml.  This is currently needed to work around a limitation in
+# rules_rust and unsupported target triples.
+#
+# TODO(cfrantz): Remove this override and non-directly  referenced crates
+# once pigweed has adopted a version of rules_rust that fixes the limitation.
+override_repo(
+    pw_rust_crates_ext,
+    rust_crates = "rust_crates",
+)
