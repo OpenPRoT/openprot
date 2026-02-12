@@ -1,0 +1,6 @@
+# Licensed under the Apache-2.0 license
+
+exports_files(
+    glob(["*.patch"]),
+    visibility = ["//visibility:public"],
+)

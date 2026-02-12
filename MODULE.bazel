@@ -1,25 +1,50 @@
-# Licensed under the Apache-2.0 license
-# SPDX-License-Identifier: Apache-2.0
+# Copyright 2025 The Pigweed Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License"); you may not
+# use this file except in compliance with the License. You may obtain a copy of
+# the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+# License for the specific language governing permissions and limitations under
+# the License.
 
 module(
-    name = "openprot",
+    name = "opentitan_pigweed",
     version = "0.0.1",
 )
 
 bazel_dep(name = "bazel_skylib", version = "1.8.2")
 bazel_dep(name = "pigweed")
 bazel_dep(name = "platforms", version = "1.0.0")
-bazel_dep(name = "rules_rust", version = "0.68.1")
-bazel_dep(name = "rules_rust_mdbook", version = "0.68.1")
+bazel_dep(name = "rules_go", version = "0.52.0")
+bazel_dep(name = "rules_rust", version = "0.66.0")
+
+# Apply patch that adds missing ARM triples to rules_rust
+single_version_override(
+    module_name = "rules_rust",
+    patch_strip = 1,
+    patches = [
+        "//patches:0003-Add-thumbv6m-and-more-thumbv7m-and-thumbv8m-triples.patch",
+    ],
+)
 bazel_dep(name = "rules_platform", version = "0.1.0")
-bazel_dep(name = "rules_python", version = "1.8.3")
+bazel_dep(name = "rules_python", version = "1.6.3")
+bazel_dep(name = "ureg")
 
 git_override(
     module_name = "pigweed",
-    # ROLL: Warning: this entry is automatically updated by
-    # ROLL: https://cr-buildbucket.appspot.com/builder/pigweed-internal/opentitan.roll/pigweed-opentitan-roller
-    commit = "f52059663fee1e2ab2f2ab752301b159da3ca806",
-    remote = "https://pigweed.googlesource.com/pigweed/pigweed",
+    commit = "f4d0fdfb3a657f20e0a059010fd2d10853432e6f",
+    remote = "https://github.com/rusty1968/pigweed",
+)
+
+git_override(
+    module_name = "ureg",
+    commit = "412ca40146d5d2012417e493b4a01096b04edf4b",
+    remote = "https://github.com/chipsalliance/caliptra-ureg",
 )
 
 pw_rust = use_extension("@pigweed//pw_toolchain/rust:extensions.bzl", "pw_rust")
@@ -30,6 +55,8 @@ register_toolchains(
     "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_linux",
     "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_macos",
     "@pigweed//pw_toolchain/riscv_clang:riscv_clang_cc_toolchain_rv32imc",
+    # ARM Cortex-M C++ toolchain (AST1030)
+    "@pigweed//pw_toolchain:cc_toolchain_cortex-m3",
     "@pw_rust_toolchains//:all",
 )
 
@@ -49,20 +76,35 @@ crate.from_cargo(
 
         # Target platforms
         "riscv32imc-unknown-none-elf",
+        "thumbv7m-none-eabi",
     ],
 )
 use_repo(crate, "rust_crates")
 
 pw_rust_crates_ext = use_extension("@pigweed//pw_build:pw_rust_crates_extension.bzl", "pw_rust_crates_extension")
 
-# Ideally, we shouldn't need to override the pigweed `rust_crates` repo as it
-# requires the downstream (openprot) repo adding pigweed cargo deps to its own
-# Cargo.toml.  This is currently needed to work around a limitation in
-# rules_rust and unsupported target triples.
-#
-# TODO(cfrantz): Remove this override and non-directly  referenced crates
-# once pigweed has adopted a version of rules_rust that fixes the limitation.
 override_repo(
     pw_rust_crates_ext,
     rust_crates = "rust_crates",
 )
+
+bazel_dep(name = "opentitan_devbundle")
+archive_override(
+    module_name = "opentitan_devbundle",
+    integrity = "sha256-n/0uF/b0uXkEfTzP7QJx/cK1KWExES/Zn/C/EqyXzGo=",
+    url = "https://storage.googleapis.com/artifacts.opentitan.org/dev_bundle/devbundle-test-20251105.tar.xz",
+)
+
+# ── AST1060 Peripheral Access Crate (svd2rust-generated) ──
+ast1060_pac_ext = use_extension(
+    "//third_party:ast1060_pac.bzl",
+    "ast1060_pac_ext",
+)
+use_repo(ast1060_pac_ext, "ast1060_pac", "vcell")
+
+nonhermetic_repo = use_repo_rule("//target/earlgrey/tooling/signing:nonhermetic.bzl", "nonhermetic_repo")
+
+nonhermetic_repo(name = "nonhermetic")
+
+hsm = use_extension("//third_party/hsm:extensions.bzl", "hsm")
+use_repo(hsm, "cloud_kms_hsm")
