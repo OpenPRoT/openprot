@@ -18,9 +18,14 @@ The code of conduct can be found [here](https://github.com/OpenPRoT/.github/blob
 
 ## Code Style
 
-- Use `cargo xtask fmt` to format code
-- Run `cargo xtask clippy` to check for lints
-- Ensure all tests pass with `cargo xtask test`
+### Formatters
+
+The following formatters are used in the project:
+
+- `rustfmt`: For Rust code formatting
+- `PEP8` and `black` for Python code formatting
+- `clang-format` for C code formatting
+- `buildifier` for Bazel code formatting
 
 ## Documentation
 
