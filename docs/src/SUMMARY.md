@@ -26,6 +26,7 @@
 # Developer Guide
 
 * [Architecture](./architecture.md)
+* [Coding Style](./coding-style.md)
 * [Contributing](./contributing.md)
 * [Design](./design/README.md)
   * [Digest Driver for Hubris](./design/driver-hubris-hash.md)
