@@ -1,8 +1,8 @@
 // Licensed under the Apache-2.0 license
 
-//! AST1030 BMC boot entry point.
+//! AST1060 BMC boot entry point.
 //!
-//! Initializes the ARM Cortex-M4 and hands off to the Pigweed kernel.
+//! Initializes the ARM Cortex-M and hands off to the Pigweed kernel.
 
 #![no_std]
 #![no_main]

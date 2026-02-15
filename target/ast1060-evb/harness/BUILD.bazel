@@ -1,0 +1,20 @@
+# Licensed under the Apache-2.0 license
+
+# UART test execution tool
+# 
+# This tool requires pyserial to be installed in the system Python:
+#   pip install pyserial
+#
+# Usage:
+#   bazel run //tools/uart_test:uart_test_exec -- [args]
+#   Or directly: python3 tools/uart_test/uart_test_exec.py [args]
+
+sh_binary(
+    name = "uart_test_exec",
+    srcs = ["uart_test_exec_wrapper.sh"],
+    data = ["uart_test_exec.py"],
+    visibility = ["//visibility:public"],
+)
+
+# Export the Python script for direct use
+exports_files(["uart_test_exec.py"])

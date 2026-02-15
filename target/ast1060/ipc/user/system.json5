@@ -1,0 +1,77 @@
+// Licensed under the Apache-2.0 license
+
+// ASPEED AST1060 IPC test configuration
+// ARM Cortex-M3 (soft-float ABI for QEMU compatibility) with 768KB SRAM
+// NOTE: AST1060 does not support XIP - ROM code copies firmware from flash to RAM
+// and executes from RAM starting at 0x00000000
+//
+// PMSAv7-Friendly Memory Layout:
+// The system generator places app flash after kernel flash, and app RAM after
+// kernel RAM. For PMSAv7 compatibility, regions must be at power-of-2 aligned
+// addresses to avoid MPU subregion overlap with kernel RAM.
+//
+//   0x00000000 - 0x000004A0: Vector table + kernel annotations (1184 bytes)
+//   0x000004A0 - 0x00020000: Kernel code (~126KB, ends at 128KB boundary)
+//   0x00020000 - 0x00040000: Initiator app code (128KB, power-of-2 aligned)
+//   0x00040000 - 0x00060000: Handler app code (128KB, power-of-2 aligned)
+//   0x00060000 - 0x00080000: Kernel RAM (128KB, after all flash)
+//   0x00080000 - 0x00090000: App RAM (64KB total)
+//
+// Total: 576KB, fits within AST1060's 768KB SRAM.
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1184,  // 0x4A0 (272 vectors + thread/stack annotations)
+    },
+    kernel: {
+        flash_start_address: 0x000004A0,  // After vector table + annotations
+        flash_size_bytes: 129888,         // ~126KB (ends at 0x00020000, power-of-2 boundary)
+        ram_start_address: 0x00060000,    // After all flash regions (power-of-2 aligned)
+        ram_size_bytes: 131072,           // 128KB
+    },
+    apps: [
+        {
+            name: "initiator",
+            flash_size_bytes: 131072,     // 128KB for initiator app (power-of-2 aligned)
+            ram_size_bytes: 32768,        // 32KB RAM for initiator
+            process: {
+                name: "initiator process",
+                objects: [
+                    {
+                        name: "IPC",
+                        type: "channel_initiator",
+                        handler_app: "handler",
+                        handler_object_name: "IPC",
+                    }
+                ],
+                threads: [
+                    {
+                        name: "initiator thread",
+                        stack_size_bytes: 2048,  // 2KB stack
+                    },
+                ],
+            },
+        },
+        {
+            name: "handler",
+            flash_size_bytes: 131072,     // 128KB for handler app (power-of-2 aligned)
+            ram_size_bytes: 32768,        // 32KB RAM for handler
+            process: {
+                name: "handler process",
+                objects: [
+                    {
+                        name: "IPC",
+                        type: "channel_handler",
+                    },
+                ],
+                threads: [
+                    {
+                        name: "handler thread",
+                        stack_size_bytes: 2048,  // 2KB stack
+                    },
+                ],
+            },
+        },
+    ],
+}

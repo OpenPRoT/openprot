@@ -1,0 +1,42 @@
+# Licensed under the Apache-2.0 license
+
+[package]
+name = "crates_no_std"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[workspace]
+
+[lib]
+path = "fake.rs"
+
+[dependencies]
+# AST1060-specific crates - use @oot_crates_no_std// for these
+ast1060-pac = { git = "https://github.com/stevenlee7189/ast1060-pac", branch = "main" }
+aspeed-ddk = { git = "https://github.com/OpenPRoT/aspeed-rust.git", branch = "pigweed-integration" }
+embedded-hal = "1.0.0"
+embedded-io = "0.6.1"
+# cortex-m crates needed for consistent linking (avoid duplicate symbols)
+cortex-m = "0.7.7"
+cortex-m-rt = "0.7.5"
+cortex-m-semihosting = "0.5.0"
+
+# RustCrypto crates for crypto service
+sha2 = { version = "0.10", default-features = false }
+hmac = { version = "0.12", default-features = false }
+aes = { version = "0.8", default-features = false }
+aes-gcm = { version = "0.10", default-features = false, features = ["aes"] }
+ctr = { version = "0.9", default-features = false }
+cipher = { version = "0.4", default-features = false }
+zerocopy = { version = "0.8", default-features = false, features = ["derive"] }
+
+# ECDSA crates
+ecdsa = { version = "0.16", default-features = false, features = ["signing", "verifying"] }
+p256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+p384 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+
+[features]
+
+[patch."https://github.com/AspeedTech-BMC/ast1060-pac.git"]
+ast1060-pac = { git = "https://github.com/stevenlee7189/ast1060-pac", branch = "main" }

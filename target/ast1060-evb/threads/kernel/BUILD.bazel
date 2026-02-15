@@ -1,0 +1,92 @@
+# Licensed under the Apache-2.0 license
+
+load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image", "system_image_test")
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//target/ast1060-evb:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//target:uart_boot_image.bzl", "uart_boot_image")
+load("//target/ast1060-evb/harness:uart_upload_test.bzl", "uart_upload", "uart_upload_test")
+
+system_image(
+    name = "threads",
+    kernel = ":target",
+    platform = "//target/ast1060-evb",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+)
+
+system_image_test(
+    name = "threads_test",
+    image = ":threads",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+rust_binary_no_panics_test(
+    name = "no_panics_test",
+    binary = ":threads",
+    tags = ["kernel"],
+)
+
+# Generate UART bootable image with size header for physical board flashing
+uart_boot_image(
+    name = "threads_uart",
+    src = ":threads",
+    out = "threads_uart.bin",
+)
+
+# UART upload test - uploads firmware and monitors test execution
+# Run with: bazel test :threads_uart_test --test_env=UART_DEVICE=/dev/ttyUSB0
+uart_upload_test(
+    name = "threads_uart_test",
+    image = ":threads_uart",
+    skip_gpio = True,  # Set to False if using GPIO for SRST/FWSPICK
+    tags = [
+        "exclusive",  # Don't run in parallel with other UART tests
+        "local",      # Run on local machine, not remote
+        "manual",     # Don't run with `bazel test ...`
+    ],
+    test_timeout = 300,
+)
+
+# Upload-only target for manual testing
+# Run with: bazel run :upload_threads
+uart_upload(
+    name = "upload_threads",
+    image = ":threads_uart",
+    skip_gpio = True,
+)
+
+filegroup(
+    name = "system_config",
+    srcs = ["system.json5"],
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    template = "//target/ast1060-evb:linker_script_template",
+)
+
+rust_binary(
+    name = "target",
+    srcs = ["target.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":linker_script",
+        "//target/ast1060-evb:entry",
+        "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/subsys/console:console_backend",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_kernel/tests/threads/kernel:threads",
+        "@pigweed//pw_log/rust:pw_log",
+        "@oot_crates_no_std//:cortex-m-semihosting",
+    ],
+)

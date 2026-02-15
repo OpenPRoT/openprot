@@ -1,5 +1,5 @@
-// AST1030 Kernel Threading Test Configuration
-// ARM Cortex-M4 @ 200 MHz (simulated at 12 MHz for QEMU)
+// AST1060 Kernel Threading Test Configuration
+// ARM Cortex-M (using M3 settings for soft-float ABI)
 // 768KB SRAM (640KB usable), executes from RAM
 {
     arch: {

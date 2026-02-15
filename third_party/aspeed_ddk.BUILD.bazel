@@ -1,0 +1,19 @@
+# Licensed under the Apache-2.0 license
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "aspeed_ddk",
+    srcs = glob(["src/**/*.rs"]),
+    crate_root = "src/lib.rs",
+    edition = "2021",
+    rustc_flags = [
+        "--cap-lints=allow",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@ast1060_pac//:ast1060_pac",
+        "@rust_crates//:embedded-hal",
+        "@rust_crates//:embedded-io",
+    ],
+)

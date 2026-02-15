@@ -1,6 +1,6 @@
 // Licensed under the Apache-2.0 license
 
-//! AST1030-BMC kernelspace threads test target.
+//! AST1060-BMC kernelspace threads test target.
 
 #![no_std]
 #![no_main]
@@ -10,11 +10,11 @@ use cortex_m_semihosting::debug::{EXIT_FAILURE, EXIT_SUCCESS, exit};
 use target_common::{TargetInterface, declare_target};
 use {console_backend as _, entry as _};
 
-/// AST1030 threads test target.
+/// AST1060 threads test target.
 pub struct Target {}
 
 impl TargetInterface for Target {
-    const NAME: &'static str = "AST1030-BMC Kernelspace Threads";
+    const NAME: &'static str = "AST1060-BMC Kernelspace Threads";
 
     fn main() -> ! {
         static mut APP_STATE: threads::AppState<Arch> = threads::AppState::new(Arch);

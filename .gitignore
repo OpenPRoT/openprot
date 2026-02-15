@@ -133,3 +133,6 @@ criterion/
 
 # Build scripts
 build.rs.bk
+
+# Cargo build output
+target/

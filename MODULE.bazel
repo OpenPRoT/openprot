@@ -55,14 +55,14 @@ register_toolchains(
     "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_linux",
     "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_macos",
     "@pigweed//pw_toolchain/riscv_clang:riscv_clang_cc_toolchain_rv32imc",
-    # ARM Cortex-M C++ toolchain (AST1030)
+    # ARM Cortex-M C++ toolchain (AST1060) - use M3 for soft-float ABI
     "@pigweed//pw_toolchain:cc_toolchain_cortex-m3",
     "@pw_rust_toolchains//:all",
 )
 
 crate = use_extension("@rules_rust//crate_universe:extension.bzl", "crate")
 crate.from_cargo(
-    name = "rust_crates",
+    name = "rust_crates_base",
     cargo_lockfile = "//third_party/crates_io:Cargo.lock",
     manifests = ["//third_party/crates_io:Cargo.toml"],
     # crate_universe's defaults do not include some embedded triples so the
@@ -79,14 +79,33 @@ crate.from_cargo(
         "thumbv7m-none-eabi",
     ],
 )
-use_repo(crate, "rust_crates")
-
-pw_rust_crates_ext = use_extension("@pigweed//pw_build:pw_rust_crates_extension.bzl", "pw_rust_crates_extension")
-
-override_repo(
-    pw_rust_crates_ext,
-    rust_crates = "rust_crates",
+crate.from_cargo(
+    name = "oot_crates_no_std",
+    cargo_lockfile = "//third_party/crates_io/crates_no_std:Cargo.lock",
+    manifests = ["//third_party/crates_io/crates_no_std:Cargo.toml"],
+    supported_platform_triples = [
+        # Host platforms (required for build scripts)
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin",
+        # Embedded targets
+        "thumbv6m-none-eabi",
+        "thumbv7m-none-eabi",
+        "thumbv7em-none-eabi",
+        "thumbv8m.main-none-eabi",
+        "riscv32imc-unknown-none-elf",
+    ],
 )
+use_repo(crate, "rust_crates_base", "oot_crates_no_std")
+
+# Create @rust_crates alias repo that routes cortex-m to oot_crates_no_std
+oot_rust_crates_ext = use_extension("//third_party/crates_io/rust_crates:extension.bzl", "oot_rust_crates_extension")
+use_repo(oot_rust_crates_ext, "rust_crates")
+
+# Override pigweed's rust_crates repo with our aliased version
+pw_rust_crates_ext = use_extension("@pigweed//pw_build:pw_rust_crates_extension.bzl", "pw_rust_crates_extension")
+override_repo(pw_rust_crates_ext, rust_crates = "rust_crates")
 
 bazel_dep(name = "opentitan_devbundle")
 archive_override(

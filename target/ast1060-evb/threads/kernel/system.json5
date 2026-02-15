@@ -1,0 +1,18 @@
+// Licensed under the Apache-2.0 license
+
+// AST1060-EVB Kernel Threading Test Configuration
+// ARM Cortex-M4 @ 200 MHz (simulated at 12 MHz for QEMU)
+// 768KB SRAM (640KB usable), executes from RAM
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1088,  // 0x440 (272 vectors)
+    },
+    kernel: {
+        flash_start_address: 0x00000440,  // After vector table
+        flash_size_bytes: 262144,         // 256KB for kernel code (in RAM)
+        ram_start_address: 0x00040440,    // RAM starts after code
+        ram_size_bytes: 393216,           // 384KB for data
+    },
+}

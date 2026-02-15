@@ -31,19 +31,37 @@ common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 
 test --@pigweed//pw_kernel:enable_tests=true
 
-# ── AST1030 QEMU target configuration ──
+# ── AST1060 QEMU target configuration ──
 build:k_common --build_tag_filters=-do_not_build,-kernel_doc_test
 test:k_common --test_tag_filters=-integration,-do_not_build,-do_not_run_test,-kernel_doc_test
 test:k_common --@pigweed//pw_kernel:enable_tests=true
 
-common:k_qemu_ast1030 --config=k_common
-common:k_qemu_ast1030 --platforms=//target/ast1030
-run:k_qemu_ast1030 --run_under="@pigweed//pw_kernel/tooling:qemu \
+common:k_qemu_ast1060 --config=k_common
+common:k_qemu_ast1060 --platforms=//target/ast1060
+run:k_qemu_ast1060 --run_under="@pigweed//pw_kernel/tooling:qemu \
   --cpu cortex-m4 \
   --machine ast1030-evb \
   --semihosting \
   --image "
-test:k_qemu_ast1030 --run_under="@pigweed//pw_kernel/tooling:qemu \
+test:k_qemu_ast1060 --run_under="@pigweed//pw_kernel/tooling:qemu \
+  --cpu cortex-m4 \
+  --machine ast1030-evb \
+  --semihosting \
+  --image "
+
+# AST1060-EVB physical board (no QEMU, flash directly)
+common:k_ast1060_evb --config=k_common
+common:k_ast1060_evb --platforms=//target/ast1060-evb
+
+# AST1060 virtual (QEMU) — semihosting console, no hardware init
+common:virt_ast1060_evb --config=k_common
+common:virt_ast1060_evb --platforms=//target/virt-ast1060-evb
+run:virt_ast1060_evb --run_under="@pigweed//pw_kernel/tooling:qemu \
+  --cpu cortex-m4 \
+  --machine ast1030-evb \
+  --semihosting \
+  --image "
+test:virt_ast1060_evb --run_under="@pigweed//pw_kernel/tooling:qemu \
   --cpu cortex-m4 \
   --machine ast1030-evb \
   --semihosting \
