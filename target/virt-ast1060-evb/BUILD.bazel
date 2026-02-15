@@ -1,0 +1,64 @@
+# Licensed under the Apache-2.0 license
+
+load("@pigweed//pw_build:merge_flags.bzl", "flags_from_dict")
+load("@pigweed//pw_kernel:flags.bzl", "KERNEL_DEVICE_COMMON_FLAGS")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//target/virt-ast1060-evb:defs.bzl", "TARGET_COMPATIBLE_WITH")
+
+package(default_visibility = [":__subpackages__"])
+
+# Virtual AST1060 platform for QEMU-based testing
+# Uses semihosting console instead of UART for stdio
+platform(
+    name = "virt-ast1060-evb",
+    constraint_values = [
+        ":target_virt_ast1060_evb",
+        # Use cortex-m3 to get soft-float ABI (compatible with thumbv7m-none-eabi Rust target)
+        "@pigweed//pw_build/constraints/arm:cortex-m3",
+        "@platforms//cpu:armv7-m",
+        "@platforms//os:none",
+        "@pigweed//pw_build/constraints/rust:no_std",
+    ],
+    flags = flags_from_dict(
+        KERNEL_DEVICE_COMMON_FLAGS | {
+            "@pigweed//pw_kernel/config:kernel_config": ":config",
+            "@pigweed//pw_kernel/subsys/console:console_backend": "@pigweed//pw_kernel/subsys/console:console_backend_semihosting",
+        },
+    ),
+)
+
+constraint_value(
+    name = "target_virt_ast1060_evb",
+    constraint_setting = "@pigweed//pw_kernel/target:target",
+    visibility = [":__subpackages__"],
+)
+
+rust_library(
+    name = "entry",
+    srcs = ["entry.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+        "@pigweed//pw_kernel/kernel",
+        "@rust_crates//:cortex-m-rt",
+    ],
+)
+
+rust_library(
+    name = "config",
+    srcs = ["config.rs"],
+    crate_name = "kernel_config",
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "@pigweed//pw_kernel/config:kernel_config_interface",
+    ],
+)
+
+filegroup(
+    name = "linker_script_template",
+    srcs = ["target.ld.tmpl"],
+)
