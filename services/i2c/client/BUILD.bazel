@@ -1,0 +1,15 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "i2c_client",
+    srcs = ["src/lib.rs"],
+    crate_name = "i2c_client",
+    edition = "2021",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/i2c/api:i2c_api",
+        "//third_party/pigweed/pw_kernel/userspace",
+        "@rust_crates//:embedded-hal",
+    ],
+)
+

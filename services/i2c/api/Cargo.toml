@@ -1,0 +1,13 @@
+# Licensed under the Apache-2.0 license
+
+[package]
+name = "openprot-i2c-api"
+version = "0.1.0"
+edition = "2021"
+description = "I2C client API types and traits for OpenPRoT"
+license = "Apache-2.0"
+
+[dependencies]
+embedded-hal = { workspace = true }
+
+[dev-dependencies]
