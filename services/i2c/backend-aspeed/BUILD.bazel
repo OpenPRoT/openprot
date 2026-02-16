@@ -1,0 +1,18 @@
+# Licensed under the Apache-2.0 license
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "i2c_backend_aspeed",
+    srcs = ["src/lib.rs"],
+    crate_name = "i2c_backend_aspeed",
+    edition = "2024",
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/i2c/api:i2c_api",
+        "@oot_crates_no_std//:aspeed-ddk",
+        "@oot_crates_no_std//:ast1060-pac",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)

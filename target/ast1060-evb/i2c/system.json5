@@ -1,0 +1,76 @@
+// Licensed under the Apache-2.0 license
+
+// AST1060-EVB I2C Server + Client Configuration
+// ARM Cortex-M4 @ 200 MHz
+// 768KB SRAM (640KB usable), executes from RAM
+//
+// Memory Layout (PMSAv7-friendly, power-of-2 aligned regions):
+//   0x00000000 - 0x000004A0: Vector table + kernel annotations (1184 bytes)
+//   0x000004A0 - 0x00020000: Kernel code (~126KB)
+//   0x00020000 - 0x00060000: App flash (256KB: 2 apps × 128KB)
+//   0x00060000 - 0x00080000: Kernel RAM (128KB)
+//   0x00080000 - 0x000A0000: App RAM (128KB: 2 apps × 64KB)
+//
+// Total: 640KB, fits within AST1060's 768KB SRAM.
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1184,  // 0x4A0 (272 vectors + thread/stack annotations)
+    },
+    kernel: {
+        flash_start_address: 0x000004A0,  // After vector table + annotations
+        flash_size_bytes: 129888,         // ~126KB (ends at 0x00020000, power-of-2 boundary)
+        ram_start_address: 0x00060000,    // After all flash regions
+        ram_size_bytes: 131072,           // 128KB
+    },
+    apps: [
+        // ──── I2C Server ────
+        // Owns the 14 AST1060 I2C controllers.
+        // Receives I2C operations via IPC channel, dispatches to hardware.
+        {
+            name: "i2c_server",
+            flash_size_bytes: 131072,     // 128KB for server code
+            ram_size_bytes: 65536,        // 64KB RAM (register maps + buffers)
+            process: {
+                name: "i2c server process",
+                objects: [
+                    {
+                        name: "I2C",
+                        type: "channel_handler",  // Server side of client→server channel
+                    },
+                ],
+                threads: [
+                    {
+                        name: "i2c server thread",
+                        stack_size_bytes: 4096,   // 4KB stack (register ops, buffers)
+                    },
+                ],
+            },
+        },
+        // ──── I2C Client (test) ────
+        // Sends I2C read/write requests to the server via IPC.
+        {
+            name: "i2c_client",
+            flash_size_bytes: 131072,     // 128KB for client/test code
+            ram_size_bytes: 65536,        // 64KB RAM
+            process: {
+                name: "i2c client process",
+                objects: [
+                    {
+                        name: "I2C",
+                        type: "channel_initiator",  // Client side
+                        handler_app: "i2c_server",
+                        handler_object_name: "I2C",
+                    },
+                ],
+                threads: [
+                    {
+                        name: "i2c client thread",
+                        stack_size_bytes: 2048,   // 2KB stack
+                    },
+                ],
+            },
+        },
+    ],
+}

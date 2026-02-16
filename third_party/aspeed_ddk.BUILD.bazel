@@ -13,7 +13,21 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         "@ast1060_pac//:ast1060_pac",
+        "@rust_crates//:bitflags",
+        "@rust_crates//:cortex-m",
+        "@rust_crates//:cortex-m-rt",
         "@rust_crates//:embedded-hal",
         "@rust_crates//:embedded-io",
+        "@rust_crates//:fugit",
+        "@rust_crates//:heapless",
+        "@rust_crates//:hex-literal",
+        "@rust_crates//:nb",
+        "@rust_crates//:openprot-hal-blocking",
+        "@rust_crates//:panic-halt",
+        "@rust_crates//:proposed-traits",
+        "@rust_crates//:zerocopy",
+    ],
+    proc_macro_deps = [
+        "@rust_crates//:paste",
     ],
 )

@@ -25,7 +25,7 @@
 use i2c_api::{
     wire::{
         self, encode_probe_request, encode_read_request, encode_write_read_request,
-        encode_write_request, I2cResponseHeader,
+        encode_write_request, I2cResponseHeader, WireError,
     },
     BusIndex, I2cAddress, I2cClient, I2cError, I2cErrorKind, NoAcknowledgeSource, Operation,
     ResponseCode,
@@ -83,15 +83,26 @@ impl IpcI2cClient {
         }
 
         let header = wire::decode_response_header(&self.response_buf[..len])
-            .ok_or_else(|| I2cError::from_code(ResponseCode::ServerError))?;
+            .map_err(wire_to_i2c_error)?;
 
         if !header.is_success() {
             return Err(response_to_error(header.response_code()));
         }
 
         wire::get_response_data(&self.response_buf[..len], &header)
-            .ok_or_else(|| I2cError::from_code(ResponseCode::ServerError))
+            .map_err(wire_to_i2c_error)
     }
+}
+
+/// Convert a WireError to an I2cError
+fn wire_to_i2c_error(e: WireError) -> I2cError {
+    let code = match e {
+        WireError::BufferTooSmall => ResponseCode::BufferTooSmall,
+        WireError::PayloadTooLarge => ResponseCode::BufferTooLarge,
+        WireError::InvalidOpcode(_) => ResponseCode::ServerError,
+        WireError::Truncated => ResponseCode::ServerError,
+    };
+    I2cError::from_code(code)
 }
 
 /// Convert a ResponseCode to an I2cError
@@ -123,7 +134,7 @@ impl I2cClient for IpcI2cClient {
         if write.is_empty() && read.is_empty() {
             // Probe operation
             let req_len = encode_probe_request(&mut self.request_buf, bus.value(), address.value())
-                .ok_or_else(|| I2cError::from_code(ResponseCode::BufferTooSmall))?;
+                .map_err(wire_to_i2c_error)?;
 
             let resp_len = self.send_recv(req_len)?;
             let _ = self.decode_response(resp_len)?;
@@ -138,7 +149,7 @@ impl I2cClient for IpcI2cClient {
                 address.value(),
                 read.len() as u16,
             )
-            .ok_or_else(|| I2cError::from_code(ResponseCode::BufferTooSmall))?;
+            .map_err(wire_to_i2c_error)?;
 
             let resp_len = self.send_recv(req_len)?;
             let data = self.decode_response(resp_len)?;
@@ -151,7 +162,7 @@ impl I2cClient for IpcI2cClient {
             // Write only
             let req_len =
                 encode_write_request(&mut self.request_buf, bus.value(), address.value(), write)
-                    .ok_or_else(|| I2cError::from_code(ResponseCode::BufferTooSmall))?;
+                    .map_err(wire_to_i2c_error)?;
 
             let resp_len = self.send_recv(req_len)?;
             let _ = self.decode_response(resp_len)?;
@@ -166,7 +177,7 @@ impl I2cClient for IpcI2cClient {
             write,
             read.len() as u16,
         )
-        .ok_or_else(|| I2cError::from_code(ResponseCode::BufferTooSmall))?;
+        .map_err(wire_to_i2c_error)?;
 
         let resp_len = self.send_recv(req_len)?;
         let data = self.decode_response(resp_len)?;

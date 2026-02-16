@@ -1,0 +1,29 @@
+# Licensed under the Apache-2.0 license
+
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("@pigweed//pw_kernel/tooling:app_package.bzl", "app_package")
+
+rust_binary(
+    name = "i2c_server",
+    srcs = ["src/main.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":app_i2c_server",
+        "//services/i2c/api:i2c_api",
+        "//services/i2c/backend-aspeed:i2c_backend_aspeed",
+        "@pigweed//pw_kernel/syscall:syscall_user",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
+app_package(
+    name = "app_i2c_server",
+    app_name = "i2c_server",
+    edition = "2024",
+    system_config = "//target/ast1060-evb/i2c:system_config",
+    tags = ["kernel"],
+)

@@ -121,6 +121,13 @@ ast1060_pac_ext = use_extension(
 )
 use_repo(ast1060_pac_ext, "ast1060_pac", "vcell")
 
+# ── Aspeed DDK (bare-metal I2C / GPIO / crypto drivers) ──
+aspeed_ddk_ext = use_extension(
+    "//third_party:aspeed_ddk.bzl",
+    "aspeed_ddk_ext",
+)
+use_repo(aspeed_ddk_ext, "aspeed_ddk")
+
 nonhermetic_repo = use_repo_rule("//target/earlgrey/tooling/signing:nonhermetic.bzl", "nonhermetic_repo")
 
 nonhermetic_repo(name = "nonhermetic")

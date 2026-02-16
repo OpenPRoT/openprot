@@ -8,7 +8,7 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         "//services/i2c/api:i2c_api",
-        "//third_party/pigweed/pw_kernel/userspace",
+        "@pigweed//pw_kernel/userspace",
         "@rust_crates//:embedded-hal",
     ],
 )

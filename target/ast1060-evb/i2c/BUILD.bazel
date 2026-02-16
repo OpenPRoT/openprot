@@ -1,0 +1,141 @@
+# Licensed under the Apache-2.0 license
+
+load("@pigweed//pw_kernel/tooling:app_package.bzl", "app_package")
+load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image", "system_image_test")
+load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//target/ast1060-evb:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//target:uart_boot_image.bzl", "uart_boot_image")
+load("//target/ast1060-evb/harness:uart_upload_test.bzl", "uart_upload", "uart_upload_test")
+
+# ---------------------------------------------------------------------------
+# I2C client test binary (board-specific: ADT7490 on I2C1)
+# ---------------------------------------------------------------------------
+
+rust_binary(
+    name = "i2c_client_test",
+    srcs = ["i2c_client_test.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    deps = [
+        ":app_i2c_client",
+        "//services/i2c/api:i2c_api",
+        "//services/i2c/client:i2c_client",
+        "@pigweed//pw_kernel/syscall:syscall_user",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
+app_package(
+    name = "app_i2c_client",
+    app_name = "i2c_client",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+)
+
+# ---------------------------------------------------------------------------
+# System image: server + client test
+# ---------------------------------------------------------------------------
+
+system_image(
+    name = "i2c",
+    apps = [
+        ":i2c_client_test",
+        "//services/i2c/server:i2c_server",
+    ],
+    kernel = ":target",
+    platform = "//target/ast1060-evb",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+)
+
+system_image_test(
+    name = "i2c_test",
+    image = ":i2c",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+rust_binary_no_panics_test(
+    name = "no_panics_test",
+    binary = ":i2c",
+    tags = ["kernel"],
+)
+
+# Generate UART bootable image with size header for physical board flashing
+uart_boot_image(
+    name = "i2c_uart",
+    src = ":i2c",
+    out = "i2c_uart.bin",
+)
+
+# UART upload test - uploads firmware and monitors test execution
+# Run with: bazel test :i2c_uart_test --test_env=UART_DEVICE=/dev/ttyUSB0
+uart_upload_test(
+    name = "i2c_uart_test",
+    image = ":i2c_uart",
+    skip_gpio = True,
+    tags = [
+        "exclusive",
+        "local",
+        "manual",
+    ],
+    test_timeout = 300,
+)
+
+# Upload-only target for manual testing
+# Run with: bazel run :upload_i2c
+uart_upload(
+    name = "upload_i2c",
+    image = ":i2c_uart",
+    skip_gpio = True,
+)
+
+filegroup(
+    name = "system_config",
+    srcs = ["system.json5"],
+    visibility = ["//visibility:public"],
+)
+
+target_codegen(
+    name = "codegen",
+    arch = "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+    system_config = ":system_config",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    template = "//target/ast1060-evb:linker_script_template",
+)
+
+rust_binary(
+    name = "target",
+    srcs = [
+        "target.rs",
+    ],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":codegen",
+        ":linker_script",
+        "//target/ast1060-evb:entry",
+        "//target/ast1060-evb:console_backend_uart",
+        "@rust_crates//:cortex-m-semihosting",
+        "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)

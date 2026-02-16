@@ -40,12 +40,12 @@ dependencies = [
 [[package]]
 name = "aspeed-ddk"
 version = "0.1.0"
-source = "git+https://github.com/OpenPRoT/aspeed-rust.git?branch=pigweed-integration#048e272b0d6ffc2a5a8e870c7316b08df33bda7c"
+source = "git+https://github.com/OpenPRoT/aspeed-rust.git?branch=i2c-core#a1cd0aa834446d20c4ab841fd02f0045c42f4480"
 dependencies = [
- "ast1060-pac",
+ "ast1060-pac 0.1.0 (git+https://github.com/OpenPRoT/ast1060-pac.git?branch=main)",
+ "bitflags",
  "cortex-m",
  "cortex-m-rt",
- "critical-section",
  "embedded-hal 1.0.0",
  "embedded-hal 1.0.0-alpha.1",
  "embedded-io",
@@ -63,10 +63,19 @@ dependencies = [
 [[package]]
 name = "ast1060-pac"
 version = "0.1.0"
-source = "git+https://github.com/stevenlee7189/ast1060-pac?branch=main#310f66a458f1edbb4e0c515969188dac7e62df10"
+source = "git+https://github.com/OpenPRoT/ast1060-pac.git?branch=main#564cd385f0b160b4a5ce435b930d28b87799bc96"
 dependencies = [
  "cortex-m",
  "cortex-m-rt",
+ "vcell",
+]
+
+[[package]]
+name = "ast1060-pac"
+version = "0.1.0"
+source = "git+https://github.com/stevenlee7189/ast1060-pac?branch=main#310f66a458f1edbb4e0c515969188dac7e62df10"
+dependencies = [
+ "cortex-m",
  "vcell",
 ]
 
@@ -101,6 +110,12 @@ name = "bitfield"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "46afbd2983a5d5a7bd740ccb198caf5b82f45c40c09c0eed36052d91cb92e719"
+
+[[package]]
+name = "bitflags"
+version = "2.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "843867be96c8daad0d758b57df9392b6d8d271134fce549de6ce169ff98a92af"
 
 [[package]]
 name = "block-buffer"
@@ -147,7 +162,6 @@ checksum = "8ec610d8f49840a5b376c69663b6369e71f4b34484b9b2eb29fb918d92516cb9"
 dependencies = [
  "bare-metal",
  "bitfield",
- "critical-section",
  "embedded-hal 0.2.7",
  "volatile-register",
 ]
@@ -197,7 +211,7 @@ dependencies = [
  "aes",
  "aes-gcm",
  "aspeed-ddk",
- "ast1060-pac",
+ "ast1060-pac 0.1.0 (git+https://github.com/stevenlee7189/ast1060-pac?branch=main)",
  "cipher",
  "cortex-m",
  "cortex-m-rt",
@@ -212,12 +226,6 @@ dependencies = [
  "sha2",
  "zerocopy",
 ]
-
-[[package]]
-name = "critical-section"
-version = "1.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "790eea4361631c5e7d22598ecd5723ff611904e3344ce8720784c93e3d83d40b"
 
 [[package]]
 name = "crypto-bigint"

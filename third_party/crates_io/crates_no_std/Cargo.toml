@@ -14,7 +14,7 @@ path = "fake.rs"
 [dependencies]
 # AST1060-specific crates - use @oot_crates_no_std// for these
 ast1060-pac = { git = "https://github.com/stevenlee7189/ast1060-pac", branch = "main" }
-aspeed-ddk = { git = "https://github.com/OpenPRoT/aspeed-rust.git", branch = "pigweed-integration" }
+aspeed-ddk = { git = "https://github.com/OpenPRoT/aspeed-rust.git", branch = "i2c-core" }
 embedded-hal = "1.0.0"
 embedded-io = "0.6.1"
 # cortex-m crates needed for consistent linking (avoid duplicate symbols)

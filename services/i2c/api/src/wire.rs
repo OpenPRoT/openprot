@@ -24,6 +24,23 @@
 use crate::ResponseCode;
 
 // ============================================================================
+// Wire Error
+// ============================================================================
+
+/// Error type for wire protocol encoding/decoding operations
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WireError {
+    /// Output buffer too small for the encoded message
+    BufferTooSmall,
+    /// Payload exceeds MAX_PAYLOAD_SIZE
+    PayloadTooLarge,
+    /// Unrecognized operation code during decode
+    InvalidOpcode(u8),
+    /// Input buffer too short to contain a complete header
+    Truncated,
+}
+
+// ============================================================================
 // Operation Codes
 // ============================================================================
 
@@ -263,85 +280,86 @@ pub const MAX_RESPONSE_SIZE: usize = I2cResponseHeader::SIZE + MAX_PAYLOAD_SIZE;
 
 /// Encode a write request into a buffer
 ///
-/// Returns the total number of bytes written, or None if:
-/// - buffer too small
-/// - data exceeds MAX_PAYLOAD_SIZE
-pub fn encode_write_request(buf: &mut [u8], bus: u8, address: u8, data: &[u8]) -> Option<usize> {
+/// # Errors
+/// - `WireError::PayloadTooLarge` if data exceeds MAX_PAYLOAD_SIZE
+/// - `WireError::BufferTooSmall` if buffer cannot hold header + data
+pub fn encode_write_request(buf: &mut [u8], bus: u8, address: u8, data: &[u8]) -> Result<usize, WireError> {
     if data.len() > MAX_PAYLOAD_SIZE {
-        return None;
+        return Err(WireError::PayloadTooLarge);
     }
-    let write_len = u16::try_from(data.len()).ok()?;
+    let write_len = u16::try_from(data.len()).map_err(|_| WireError::PayloadTooLarge)?;
     let total_len = I2cRequestHeader::SIZE + data.len();
     if buf.len() < total_len {
-        return None;
+        return Err(WireError::BufferTooSmall);
     }
 
     let header = I2cRequestHeader::write(bus, address, write_len);
     buf[..I2cRequestHeader::SIZE].copy_from_slice(&header.to_bytes());
     buf[I2cRequestHeader::SIZE..total_len].copy_from_slice(data);
 
-    Some(total_len)
+    Ok(total_len)
 }
 
 /// Encode a read request into a buffer
 ///
-/// Returns the total number of bytes written, or None if:
-/// - buffer too small
-/// - read_len exceeds MAX_PAYLOAD_SIZE
-pub fn encode_read_request(buf: &mut [u8], bus: u8, address: u8, read_len: u16) -> Option<usize> {
+/// # Errors
+/// - `WireError::PayloadTooLarge` if read_len exceeds MAX_PAYLOAD_SIZE
+/// - `WireError::BufferTooSmall` if buffer cannot hold header
+pub fn encode_read_request(buf: &mut [u8], bus: u8, address: u8, read_len: u16) -> Result<usize, WireError> {
     if read_len as usize > MAX_PAYLOAD_SIZE {
-        return None;
+        return Err(WireError::PayloadTooLarge);
     }
     if buf.len() < I2cRequestHeader::SIZE {
-        return None;
+        return Err(WireError::BufferTooSmall);
     }
 
     let header = I2cRequestHeader::read(bus, address, read_len);
     buf[..I2cRequestHeader::SIZE].copy_from_slice(&header.to_bytes());
 
-    Some(I2cRequestHeader::SIZE)
+    Ok(I2cRequestHeader::SIZE)
 }
 
 /// Encode a write-read request into a buffer
 ///
-/// Returns the total number of bytes written, or None if:
-/// - buffer too small
-/// - write_data or read_len exceeds MAX_PAYLOAD_SIZE
+/// # Errors
+/// - `WireError::PayloadTooLarge` if write_data or read_len exceeds MAX_PAYLOAD_SIZE
+/// - `WireError::BufferTooSmall` if buffer cannot hold header + write_data
 pub fn encode_write_read_request(
     buf: &mut [u8],
     bus: u8,
     address: u8,
     write_data: &[u8],
     read_len: u16,
-) -> Option<usize> {
+) -> Result<usize, WireError> {
     if write_data.len() > MAX_PAYLOAD_SIZE || read_len as usize > MAX_PAYLOAD_SIZE {
-        return None;
+        return Err(WireError::PayloadTooLarge);
     }
-    let write_len = u16::try_from(write_data.len()).ok()?;
+    let write_len = u16::try_from(write_data.len()).map_err(|_| WireError::PayloadTooLarge)?;
     let total_len = I2cRequestHeader::SIZE + write_data.len();
     if buf.len() < total_len {
-        return None;
+        return Err(WireError::BufferTooSmall);
     }
 
     let header = I2cRequestHeader::write_read(bus, address, write_len, read_len);
     buf[..I2cRequestHeader::SIZE].copy_from_slice(&header.to_bytes());
     buf[I2cRequestHeader::SIZE..total_len].copy_from_slice(write_data);
 
-    Some(total_len)
+    Ok(total_len)
 }
 
 /// Encode a probe request into a buffer
 ///
-/// Returns the total number of bytes written, or None if buffer too small.
-pub fn encode_probe_request(buf: &mut [u8], bus: u8, address: u8) -> Option<usize> {
+/// # Errors
+/// - `WireError::BufferTooSmall` if buffer cannot hold header
+pub fn encode_probe_request(buf: &mut [u8], bus: u8, address: u8) -> Result<usize, WireError> {
     if buf.len() < I2cRequestHeader::SIZE {
-        return None;
+        return Err(WireError::BufferTooSmall);
     }
 
     let header = I2cRequestHeader::probe(bus, address);
     buf[..I2cRequestHeader::SIZE].copy_from_slice(&header.to_bytes());
 
-    Some(I2cRequestHeader::SIZE)
+    Ok(I2cRequestHeader::SIZE)
 }
 
 // ============================================================================
@@ -349,31 +367,43 @@ pub fn encode_probe_request(buf: &mut [u8], bus: u8, address: u8) -> Option<usiz
 // ============================================================================
 
 /// Decode a response header from a buffer
-pub fn decode_response_header(buf: &[u8]) -> Option<I2cResponseHeader> {
-    I2cResponseHeader::from_bytes(buf)
+///
+/// # Errors
+/// - `WireError::Truncated` if buffer is too short
+pub fn decode_response_header(buf: &[u8]) -> Result<I2cResponseHeader, WireError> {
+    I2cResponseHeader::from_bytes(buf).ok_or(WireError::Truncated)
 }
 
 /// Get response data from a buffer (after header)
-pub fn get_response_data<'a>(buf: &'a [u8], header: &I2cResponseHeader) -> Option<&'a [u8]> {
+///
+/// # Errors
+/// - `WireError::Truncated` if buffer doesn't contain declared data length
+pub fn get_response_data<'a>(buf: &'a [u8], header: &I2cResponseHeader) -> Result<&'a [u8], WireError> {
     let data_end = I2cResponseHeader::SIZE + header.data_len as usize;
     if buf.len() < data_end {
-        return None;
+        return Err(WireError::Truncated);
     }
-    Some(&buf[I2cResponseHeader::SIZE..data_end])
+    Ok(&buf[I2cResponseHeader::SIZE..data_end])
 }
 
 /// Decode a request header from a buffer
-pub fn decode_request_header(buf: &[u8]) -> Option<I2cRequestHeader> {
-    I2cRequestHeader::from_bytes(buf)
+///
+/// # Errors
+/// - `WireError::Truncated` if buffer is too short
+pub fn decode_request_header(buf: &[u8]) -> Result<I2cRequestHeader, WireError> {
+    I2cRequestHeader::from_bytes(buf).ok_or(WireError::Truncated)
 }
 
 /// Get request payload data from a buffer (after header)
-pub fn get_request_payload<'a>(buf: &'a [u8], header: &I2cRequestHeader) -> Option<&'a [u8]> {
+///
+/// # Errors
+/// - `WireError::Truncated` if buffer doesn't contain declared write_len
+pub fn get_request_payload<'a>(buf: &'a [u8], header: &I2cRequestHeader) -> Result<&'a [u8], WireError> {
     let data_end = I2cRequestHeader::SIZE + header.write_len as usize;
     if buf.len() < data_end {
-        return None;
+        return Err(WireError::Truncated);
     }
-    Some(&buf[I2cRequestHeader::SIZE..data_end])
+    Ok(&buf[I2cRequestHeader::SIZE..data_end])
 }
 
 // ============================================================================
@@ -382,36 +412,39 @@ pub fn get_request_payload<'a>(buf: &'a [u8], header: &I2cRequestHeader) -> Opti
 
 /// Encode a success response with data
 ///
-/// Returns the total number of bytes written, or None if:
-/// - buffer too small
-/// - data exceeds MAX_PAYLOAD_SIZE
-pub fn encode_success_response(buf: &mut [u8], data: &[u8]) -> Option<usize> {
+/// # Errors
+/// - `WireError::PayloadTooLarge` if data exceeds MAX_PAYLOAD_SIZE
+/// - `WireError::BufferTooSmall` if buffer cannot hold header + data
+pub fn encode_success_response(buf: &mut [u8], data: &[u8]) -> Result<usize, WireError> {
     if data.len() > MAX_PAYLOAD_SIZE {
-        return None;
+        return Err(WireError::PayloadTooLarge);
     }
-    let data_len = u16::try_from(data.len()).ok()?;
+    let data_len = u16::try_from(data.len()).map_err(|_| WireError::PayloadTooLarge)?;
     let total_len = I2cResponseHeader::SIZE + data.len();
     if buf.len() < total_len {
-        return None;
+        return Err(WireError::BufferTooSmall);
     }
 
     let header = I2cResponseHeader::success(data_len);
     buf[..I2cResponseHeader::SIZE].copy_from_slice(&header.to_bytes());
     buf[I2cResponseHeader::SIZE..total_len].copy_from_slice(data);
 
-    Some(total_len)
+    Ok(total_len)
 }
 
 /// Encode an error response
-pub fn encode_error_response(buf: &mut [u8], code: ResponseCode) -> Option<usize> {
+///
+/// # Errors
+/// - `WireError::BufferTooSmall` if buffer cannot hold header
+pub fn encode_error_response(buf: &mut [u8], code: ResponseCode) -> Result<usize, WireError> {
     if buf.len() < I2cResponseHeader::SIZE {
-        return None;
+        return Err(WireError::BufferTooSmall);
     }
 
     let header = I2cResponseHeader::error(code);
     buf[..I2cResponseHeader::SIZE].copy_from_slice(&header.to_bytes());
 
-    Some(I2cResponseHeader::SIZE)
+    Ok(I2cResponseHeader::SIZE)
 }
 
 #[cfg(test)]
@@ -518,38 +551,38 @@ mod tests {
     fn test_encode_write_request_payload_too_large() {
         let mut buf = [0u8; 512];
         let oversized_data = [0u8; MAX_PAYLOAD_SIZE + 1];
-        assert!(encode_write_request(&mut buf, 1, 0x48, &oversized_data).is_none());
+        assert_eq!(encode_write_request(&mut buf, 1, 0x48, &oversized_data), Err(WireError::PayloadTooLarge));
     }
 
     #[test]
     fn test_encode_write_request_buffer_too_small() {
         let mut buf = [0u8; 4]; // smaller than header
         let data = [0xAA, 0xBB];
-        assert!(encode_write_request(&mut buf, 1, 0x48, &data).is_none());
+        assert_eq!(encode_write_request(&mut buf, 1, 0x48, &data), Err(WireError::BufferTooSmall));
     }
 
     #[test]
     fn test_encode_read_request_payload_too_large() {
         let mut buf = [0u8; 16];
-        assert!(encode_read_request(&mut buf, 1, 0x48, (MAX_PAYLOAD_SIZE + 1) as u16).is_none());
+        assert_eq!(encode_read_request(&mut buf, 1, 0x48, (MAX_PAYLOAD_SIZE + 1) as u16), Err(WireError::PayloadTooLarge));
     }
 
     #[test]
     fn test_encode_write_read_request_payload_too_large() {
         let mut buf = [0u8; 512];
         let oversized_data = [0u8; MAX_PAYLOAD_SIZE + 1];
-        assert!(encode_write_read_request(&mut buf, 1, 0x48, &oversized_data, 4).is_none());
+        assert_eq!(encode_write_read_request(&mut buf, 1, 0x48, &oversized_data, 4), Err(WireError::PayloadTooLarge));
         
         // Also test read_len exceeding limit
         let small_data = [0u8; 4];
-        assert!(encode_write_read_request(&mut buf, 1, 0x48, &small_data, (MAX_PAYLOAD_SIZE + 1) as u16).is_none());
+        assert_eq!(encode_write_read_request(&mut buf, 1, 0x48, &small_data, (MAX_PAYLOAD_SIZE + 1) as u16), Err(WireError::PayloadTooLarge));
     }
 
     #[test]
     fn test_encode_success_response_payload_too_large() {
         let mut buf = [0u8; 512];
         let oversized_data = [0u8; MAX_PAYLOAD_SIZE + 1];
-        assert!(encode_success_response(&mut buf, &oversized_data).is_none());
+        assert_eq!(encode_success_response(&mut buf, &oversized_data), Err(WireError::PayloadTooLarge));
     }
 
     #[test]
@@ -557,6 +590,6 @@ mod tests {
         let mut buf = [0u8; MAX_REQUEST_SIZE];
         let max_data = [0u8; MAX_PAYLOAD_SIZE];
         // Should succeed at exactly MAX_PAYLOAD_SIZE
-        assert!(encode_write_request(&mut buf, 1, 0x48, &max_data).is_some());
+        assert!(encode_write_request(&mut buf, 1, 0x48, &max_data).is_ok());
     }
 }

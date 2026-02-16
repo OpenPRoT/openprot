@@ -27,6 +27,60 @@ alias(
     visibility = ["//visibility:public"],
 )
 
+alias(
+    name = "embedded-hal",
+    actual = "@oot_crates_no_std//:embedded-hal",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "embedded-io",
+    actual = "@oot_crates_no_std//:embedded-io",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "fugit",
+    actual = "@oot_crates_no_std//:fugit",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "heapless",
+    actual = "@oot_crates_no_std//:heapless",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "hex-literal",
+    actual = "@oot_crates_no_std//:hex-literal",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "nb",
+    actual = "@oot_crates_no_std//:nb",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "openprot-hal-blocking",
+    actual = "@oot_crates_no_std//:openprot-hal-blocking",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "proposed-traits",
+    actual = "@oot_crates_no_std//:proposed-traits",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "zerocopy",
+    actual = "@oot_crates_no_std//:zerocopy",
+    visibility = ["//visibility:public"],
+)
+
 # Host crates - route to main rust_crates_base
 alias(
     name = "anyhow",
