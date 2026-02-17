@@ -1,0 +1,28 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "blocking",
+    srcs = glob([
+        "src/*.rs",
+        "src/**/*.rs",
+    ]),
+    crate_name = "openprot_hal_blocking",
+    edition = "2024",
+    deps = [
+        "@rust_crates//:embedded-hal",
+        "@rust_crates//:rand_core",
+        "@rust_crates//:subtle",
+        "@rust_crates//:zerocopy",
+        "@rust_crates//:zeroize",
+    ],
+)
+
+rust_doc(
+    name = "blocking_doc",
+    crate = ":blocking",
+)

@@ -1,0 +1,26 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "hubris",
+    srcs = glob([
+        "src/*.rs",
+        "src/**/*.rs",
+    ]),
+    crate_name = "openprot_platform_traits_hubris",
+    edition = "2024",
+    deps = [
+        "//hal/async",
+        "//hal/blocking",
+        "//hal/nb",
+    ],
+)
+
+rust_doc(
+    name = "hubris_doc",
+    crate = ":hubris",
+)

@@ -1,0 +1,30 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_doc", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "openprot_lib",
+    srcs = ["src/lib.rs"],
+    crate_name = "openprot",
+    edition = "2024",
+)
+
+rust_binary(
+    name = "openprot",
+    srcs = ["src/main.rs"],
+    edition = "2024",
+    deps = [":openprot_lib"],
+)
+
+rust_doc(
+    name = "openprot_lib_doc",
+    crate = ":openprot_lib",
+)
+
+rust_doc(
+    name = "openprot_doc",
+    crate = ":openprot",
+)
