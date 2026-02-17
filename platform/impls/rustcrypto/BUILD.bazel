@@ -1,0 +1,39 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "rustcrypto",
+    srcs = glob([
+        "src/*.rs",
+        "src/**/*.rs",
+    ]),
+    crate_name = "platform_rustcrypto_impl",
+    edition = "2024",
+    deps = [
+        "//hal/blocking",
+        "//platform/traits/hubris",
+        "@rust_crates//:aes",
+        "@rust_crates//:aes-gcm",
+        "@rust_crates//:cipher",
+        "@rust_crates//:ctr",
+        "@rust_crates//:heapless",
+        "@rust_crates//:hmac",
+        "@rust_crates//:k256",
+        "@rust_crates//:p256",
+        "@rust_crates//:p384",
+        "@rust_crates//:rand_core",
+        "@rust_crates//:sha2",
+        "@rust_crates//:sha3",
+        "@rust_crates//:zerocopy",
+        "@rust_crates//:zeroize",
+    ],
+)
+
+rust_doc(
+    name = "rustcrypto_doc",
+    crate = ":rustcrypto",
+)
