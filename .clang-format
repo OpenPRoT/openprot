@@ -1,0 +1,20 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# Documentation for this configuration is here:
+#   https://releases.llvm.org/6.0.0/tools/clang/docs/ClangFormatStyleOptions.html
+
+BasedOnStyle: Google
+IndentWidth: 4
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+DerivePointerAlignment: false
+PointerAlignment: Right
+
+IncludeCategories:
+- # System Headers: #include <*>
+  Regex: '^<.*>$'
+  Priority: 1
+- # All Other Headers
+  Regex: '.*'
+  Priority: 2

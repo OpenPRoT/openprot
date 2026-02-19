@@ -18,7 +18,7 @@ The code of conduct can be found [here](https://github.com/OpenPRoT/.github/blob
 
 ## Code Style
 
-- Use `cargo xtask fmt` to format code
+- Follow the [coding style](coding-style.md) guide.
 - Run `cargo xtask clippy` to check for lints
 - Ensure all tests pass with `cargo xtask test`
 

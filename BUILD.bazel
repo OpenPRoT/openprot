@@ -1,0 +1,16 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@bazel_skylib//rules:native_binary.bzl", "native_binary")
+
+native_binary(
+    name = "pw",
+    src = "@pigweed//pw_build/py:workflows_launcher",
+)
+
+# Shortcut for the Pigweed formatter.
+# Just run `bazel run //:format` to format code.
+alias(
+    name = "format",
+    actual = "@pigweed//pw_presubmit/py:format",
+)

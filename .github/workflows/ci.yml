@@ -105,7 +105,7 @@ jobs:
       run: cargo install cargo-audit --locked
     
     - name: Install cargo-deny
-      run: cargo install cargo-deny --version 0.18.3 --locked
+      run: cargo install cargo-deny --version 0.19.0 --locked
     
     - name: Run security audit
       run: cargo audit
