@@ -39,14 +39,28 @@
         "--check"
       ],
       "target": "//:format"
+    },
+    {
+      "name": "presubmit_checks",
+      "description": "Run the presubmit checks",
+      "use_config": "bazel_default",
+      "target": "//presubmit:presubmit",
+      "type": "ANALYZER"
     }
   ],
   "groups": [
     {
-      "name": "default",
+      "name": "presubmit",
       "description": "Quick presubmit for validating code changes locally",
-      "builds": [
+      "analyzers": [
         "format",
+        "presubmit_checks"
+      ]
+    },
+    {
+      "name": "default",
+      "description": "Common builds/configurations",
+      "builds": [
         "wildcard_build"
       ]
     }
