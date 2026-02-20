@@ -1,0 +1,17 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@pigweed//pw_build:python.bzl", "pw_py_binary")
+
+pw_py_binary(
+    name = "presubmit",
+    srcs = [
+        "cpp_include_guard.py",
+        "license.py",
+        "presubmit.py",
+    ],
+    main = "presubmit.py",
+    deps = [
+        "@pigweed//pw_presubmit/py:pw_presubmit",
+    ],
+)
