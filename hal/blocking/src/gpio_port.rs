@@ -1,4 +1,5 @@
 // Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
 
 /// This represents a common set of GPIO operation errors. Implementations are
 /// free to define more specific or additional error types. However, by providing
