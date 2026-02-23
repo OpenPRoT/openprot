@@ -28,6 +28,25 @@
       "targets": [
         "//..."
       ]
+    },
+    {
+      "name": "clippy",
+      "build_config": {
+        "name": "clippy_config",
+        "description": "Run clippy checks",
+        "build_type": "bazel",
+        "args": [
+          "--aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect",
+          "--output_groups=clippy_checks"
+        ],
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "no_test": true
+        }
+      },
+      "targets": [
+        "//..."
+      ]
     }
   ],
   "tools": [
@@ -55,6 +74,9 @@
       "analyzers": [
         "format",
         "presubmit_checks"
+      ],
+      "builds": [
+        "clippy"
       ]
     },
     {
