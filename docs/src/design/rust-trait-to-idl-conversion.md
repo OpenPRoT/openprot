@@ -175,13 +175,13 @@ pub enum DigestError {
        ops: {
            // Initialization operations
            "init_*": (/* ... */),
-           
-           // State manipulation operations  
+
+           // State manipulation operations
            "operation_*": (/* ... */),
-           
+
            // Cleanup operations
            "reset": (/* ... */),
-           
+
            // Convenience operations
            "oneshot_*": (/* ... */),
        },
@@ -263,7 +263,7 @@ pub enum DigestError {
 2. **Define Error Types**
    ```rust
    #[derive(
-       Copy, Clone, Debug, FromPrimitive, Eq, PartialEq, 
+       Copy, Clone, Debug, FromPrimitive, Eq, PartialEq,
        IdolError, counters::Count,
    )]
    #[repr(u32)]
@@ -271,7 +271,7 @@ pub enum DigestError {
        // Map from original ErrorKind
        InvalidInput = 1,
        HardwareFailure = 2,
-       // ... 
+       // ...
        #[idol(server_death)]
        ServerRestarted = 100,
    }
@@ -413,7 +413,7 @@ pub struct GoodConfig {
     pub _padding: [u8; 3], // Explicit padding
 }
 
-// ❌ Bad - Not zerocopy compatible  
+// ❌ Bad - Not zerocopy compatible
 pub struct BadConfig {
     pub value: u32,
     pub enabled: bool, // bool doesn't implement FromBytes
@@ -482,11 +482,11 @@ pub enum MyTraitError {
     InvalidInputLength = 1,
     UnsupportedAlgorithm = 2,
     HardwareFailure = 3,
-    
+
     // Add IPC-specific errors
     InvalidSession = 10,
     TooManySessions = 11,
-    
+
     // Required for Hubris
     #[idol(server_death)]
     ServerRestarted = 100,
@@ -502,7 +502,7 @@ pub enum MyTraitError {
     InitializationFailed = 20,
     UpdateFailed = 21,
     FinalizationFailed = 22,
-    
+
     // Resource-specific errors
     OutOfMemory = 30,
     BufferTooSmall = 31,
@@ -524,7 +524,7 @@ pub enum MyTraitError {
            "timeout_ms": "u32",
        },
    ),
-   
+
    // ❌ Bad - Multiple round trips
    "set_algorithm": (args: {"algo": "MyAlgorithm"}),
    "set_buffer_size": (args: {"size": "u32"}),
@@ -584,7 +584,7 @@ Here's a complete example showing the transformation of a simple trait:
 pub trait Crypto: ErrorType {
     type Algorithm: CryptoAlgorithm;
     type Context<'a>: CryptoOp where Self: 'a;
-    
+
     fn init<'a>(&'a mut self, algo: Self::Algorithm) -> Result<Self::Context<'a>, Self::Error>;
 }
 
@@ -660,7 +660,7 @@ include!(concat!(env!("OUT_DIR"), "/client_stub.rs"));
 Converting Rust HAL traits to Idol interfaces requires careful consideration of:
 
 1. **State Management**: Sessions instead of lifetimes
-2. **Type Systems**: Concrete types instead of generics  
+2. **Type Systems**: Concrete types instead of generics
 3. **Memory Management**: Leases instead of references
 4. **Error Handling**: Comprehensive concrete error enums
 5. **Performance**: Efficient message design
