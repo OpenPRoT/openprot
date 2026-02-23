@@ -1,0 +1,10 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust_mdbook//:defs.bzl", "mdbook")
+
+mdbook(
+    name = "docs",
+    srcs = glob(["**"]),
+    book = "book.toml",
+)
