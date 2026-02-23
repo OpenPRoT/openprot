@@ -17,6 +17,9 @@ members = [
     "services/telemetry",
     "services/storage",
 ]
+exclude = [
+    "third_party/crates_io"
+]
 resolver = "2"
 
 [workspace.package]

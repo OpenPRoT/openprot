@@ -13,85 +13,80 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  presubmit:
+    name: Presubmit Checks
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Setup Bazel
+      uses: bazel-contrib/setup-bazel@0.18.0
+      with:
+        bazelisk-cache: true
+        disk-cache: true
+        repository-cache: true
+
+    - name: Presubmit Checks
+      # The presubmit workflow performs formatting checks, license checks
+      # C/C++ include checks and clippy lints.
+      run: ./pw presubmit
+
   test:
     name: Test
+    needs: presubmit
     runs-on: ubuntu-latest
     strategy:
       matrix:
         rust:
           - stable
-          - beta
           - nightly
     steps:
     - uses: actions/checkout@v5
-    
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@master
+
+    - name: Setup Bazel
+      uses: bazel-contrib/setup-bazel@0.18.0
       with:
-        toolchain: ${{ matrix.rust }}
-        components: clippy, rustfmt
-    
-    - name: Cache cargo registry
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    
-    - name: Check formatting
-      run: cargo xtask fmt --check
-    
-    - name: Run clippy
-      run: cargo xtask clippy
-    
+        bazelisk-cache: true
+        disk-cache: true
+        repository-cache: true
+
     - name: Run tests
-      run: cargo xtask test
-    
-    - name: Build
-      run: cargo xtask build
+      run: |
+        bazel test \
+            --@rules_rust//rust/toolchain/channel=${{ matrix.rust }} \
+            --keep_going \
+            //...
 
   build-targets:
     name: Build Targets
+    needs: test
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        target:
-          - x86_64-unknown-linux-gnu
+
     steps:
     - uses: actions/checkout@v5
-    
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@master
+
+    - name: Setup Bazel
+      uses: bazel-contrib/setup-bazel@0.18.0
       with:
-        toolchain: nightly-2025-02-15
-        targets: ${{ matrix.target }}
-        components: clippy, rust-src, llvm-tools, rustfmt, rustc-dev
-    
-    - name: Cache cargo registry
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    
-    - name: Build for target
-      run: cargo build --target ${{ matrix.target }}
+        bazelisk-cache: true
+        disk-cache: true
+        repository-cache: true
+
+    - name: Build
+      run: bazel build //...
 
   security-audit:
     name: Security Audit
+    needs: presubmit
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v5
-    
+
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
       with:
         components: clippy
-    
+
     - name: Cache cargo registry
       uses: actions/cache@v4
       with:
@@ -100,50 +95,19 @@ jobs:
           ~/.cargo/git
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-    
+
     - name: Install cargo-audit
       run: cargo install cargo-audit --locked
-    
+
     - name: Install cargo-deny
       run: cargo install cargo-deny --version 0.19.0 --locked
-    
+
     - name: Run security audit
-      run: cargo audit
-    
+      run: cd third_party/crates_io; cargo audit
+
     - name: Run cargo deny checks
-      run: cargo xtask deny
-    
-    - name: Run security-focused clippy lints
-      run: |
-        cargo clippy --all-targets --all-features --workspace --exclude openprot-platform-mock -- \
-          -D warnings \
-          -W clippy::arithmetic_side_effects \
-          -W clippy::float_arithmetic \
-          -W clippy::indexing_slicing \
-          -W clippy::unwrap_used \
-          -W clippy::expect_used \
-          -W clippy::panic \
-          -W clippy::mem_forget \
-          -W clippy::multiple_unsafe_ops_per_block \
-          -W clippy::undocumented_unsafe_blocks \
-          -A clippy::assertions_on_constants \
-          -A clippy::needless_return
-    
-    - name: Run strict security lints on non-test code
-      run: |
-        cargo clippy --lib --bins --workspace --exclude openprot-platform-mock -- \
-          -D warnings \
-          -D clippy::arithmetic_side_effects \
-          -D clippy::float_arithmetic \
-          -D clippy::indexing_slicing \
-          -D clippy::unwrap_used \
-          -D clippy::expect_used \
-          -D clippy::panic \
-          -D clippy::mem_forget \
-          -D clippy::multiple_unsafe_ops_per_block \
-          -D clippy::undocumented_unsafe_blocks \
-          -D clippy::assertions_on_constants
-    
+      run: cd third_party/crates_io; cargo deny check
+
     - name: Run semgrep security scan
       uses: returntocorp/semgrep-action@v1
       with:

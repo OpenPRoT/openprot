@@ -76,6 +76,7 @@ _EXCLUDE_FROM_LICENSE_CHECK: Sequence[str] = (
     # keep-sorted: end
     # Generated third-party files
     # keep-sorted: start
+    r"\bdocs/src/third_party/.*",
     r"\bthird_party/.*\.bazelrc$",
     # keep-sorted: end
     # Diff/Patch files
