@@ -1,22 +1,12 @@
-# Copyright 2025 The Pigweed Authors
-#
-# Licensed under the Apache License, Version 2.0 (the "License"); you may not
-# use this file except in compliance with the License. You may obtain a copy of
-# the License at
-#
-#     https://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-# License for the specific language governing permissions and limitations under
-# the License.
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
 
 load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
 load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//target/earlgrey/signing/keys:defs.bzl", "FPGA_ECDSA_KEY")
 load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_test")
 
 system_image(
@@ -34,12 +24,14 @@ target_linker_script(
 
 opentitan_test(
     name = "hyper310_test",
+    ecdsa_key = FPGA_ECDSA_KEY,
     interface = "hyper310",
     target = ":unittest_runner",
 )
 
 opentitan_test(
     name = "hyper340_test",
+    ecdsa_key = FPGA_ECDSA_KEY,
     interface = "hyper340",
     target = ":unittest_runner",
 )

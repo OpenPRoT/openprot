@@ -51,11 +51,13 @@ _EXCLUDE_FROM_LICENSE_CHECK: Sequence[str] = (
     # keep-sorted: start
     r"\.bin$",
     r"\.csv$",
+    r"\.der$",
     r"\.elf$",
     r"\.gif$",
     r"\.ico$",
     r"\.jpg$",
     r"\.json$",
+    r"\.pem$",
     r"\.png$",
     r"\.svg$",
     r"\.vsix$",
@@ -73,6 +75,10 @@ _EXCLUDE_FROM_LICENSE_CHECK: Sequence[str] = (
     r"\.pb\.c$",
     r"\.pb\.h$",
     r"\_pb2.pyi?$",
+    # keep-sorted: end
+    # Generated files
+    # keep-sorted: start
+    r"\btarget/earlgrey/registers/.*",
     # keep-sorted: end
     # Generated third-party files
     # keep-sorted: start
