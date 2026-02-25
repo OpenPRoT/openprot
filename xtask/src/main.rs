@@ -9,7 +9,6 @@ use std::{
 use xshell::{cmd, Shell};
 
 mod cargo_lock;
-mod docs;
 mod header;
 mod precheckin;
 
@@ -34,7 +33,6 @@ fn try_main() -> Result<(), DynError> {
         Some("clean") => clean()?,
         Some("dist") => dist()?,
         Some("deny") => cargo_deny()?,
-        Some("docs") => docs::docs()?,
         Some("cargo-lock") => cargo_lock::cargo_lock()?,
         Some("precheckin") => precheckin::precheckin()?,
         Some("header-check") => header::check()?,
@@ -56,7 +54,6 @@ fmt             Format code with rustfmt
 clean           Clean build artifacts
 dist            Build a distribution (release build)
 deny            Run cargo deny checks (licenses, advisories, bans)
-docs            Build documentation with mdbook
 cargo-lock      Manage Cargo.lock file
 precheckin      Run all pre-checkin validation checks
 header-check    Check license headers in source files
