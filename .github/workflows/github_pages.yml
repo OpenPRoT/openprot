@@ -26,27 +26,15 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v5
 
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
+    - name: Setup Bazel
+      uses: bazel-contrib/setup-bazel@0.18.0
       with:
-        components: rust-docs
-
-    - name: Cache cargo registry
-      uses: actions/cache@v5
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-github-pages-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Install mdbook and mdbook-mermaid
-      run: |
-        cargo install mdbook --locked
-        cargo install mdbook-mermaid --locked
+        bazelisk-cache: true
+        disk-cache: true
+        repository-cache: true
 
     - name: Build mdbook documentation
-      run: cargo xtask docs
+      run: bazel build //docs
 
     - name: Setup Pages
       uses: actions/configure-pages@v5
@@ -54,7 +42,7 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-pages-artifact@v4
       with:
-        path: ./target/book
+        path: ./bazel-bin/docs/docs
 
     - name: Deploy to GitHub Pages
       id: deployment
