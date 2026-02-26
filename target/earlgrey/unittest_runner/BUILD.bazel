@@ -26,6 +26,10 @@ opentitan_test(
     name = "hyper310_test",
     ecdsa_key = FPGA_ECDSA_KEY,
     interface = "hyper310",
+    tags = [
+        "hardware",
+        "hyper310",
+    ],
     target = ":unittest_runner",
 )
 
@@ -33,6 +37,10 @@ opentitan_test(
     name = "hyper340_test",
     ecdsa_key = FPGA_ECDSA_KEY,
     interface = "hyper340",
+    tags = [
+        "hardware",
+        "hyper340",
+    ],
     target = ":unittest_runner",
 )
 

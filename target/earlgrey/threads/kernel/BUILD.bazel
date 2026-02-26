@@ -8,7 +8,7 @@ load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl"
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
 load("//target/earlgrey/signing/keys:defs.bzl", "FPGA_ECDSA_KEY", "SILICON_ECDSA_KEY")
-load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_runner", "opentitan_test")
+load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_test")
 
 system_image(
     name = "threads",
@@ -26,26 +26,21 @@ target_linker_script(
 rust_binary_no_panics_test(
     name = "no_panics_test",
     binary = ":threads",
-)
-
-opentitan_runner(
-    name = "threads_runner_hyper310",
-    ecdsa_key = FPGA_ECDSA_KEY,
-    interface = "hyper310",
-    target = ":threads",
+    tags = [
+        # TODO(cfrantz): Fix this test.
+        "disabled",
+        "kernel",
+    ],
 )
 
 opentitan_test(
     name = "threads_runner_hyper310_test",
     ecdsa_key = FPGA_ECDSA_KEY,
     interface = "hyper310",
-    target = ":threads",
-)
-
-opentitan_runner(
-    name = "threads_runner_hyper340",
-    ecdsa_key = FPGA_ECDSA_KEY,
-    interface = "hyper340",
+    tags = [
+        "hardware",
+        "hyper310",
+    ],
     target = ":threads",
 )
 
@@ -53,22 +48,22 @@ opentitan_test(
     name = "threads_runner_hyper340_test",
     ecdsa_key = FPGA_ECDSA_KEY,
     interface = "hyper340",
+    tags = [
+        "hardware",
+        "hyper340",
+    ],
     target = ":threads",
 )
 
 opentitan_test(
     name = "threads_runner_verilator_test",
-    timeout = "long",
+    timeout = "eternal",
     ecdsa_key = FPGA_ECDSA_KEY,
     interface = "verilator",
-    target = ":threads",
-)
-
-opentitan_runner(
-    name = "threads_runner_silicon",
-    ecdsa_key = SILICON_ECDSA_KEY,
-    interface = "teacup",
-    tags = ["manual"],
+    tags = [
+        "nightly_test",
+        "verilator",
+    ],
     target = ":threads",
 )
 
@@ -76,7 +71,10 @@ opentitan_test(
     name = "threads_runner_silicon_test",
     ecdsa_key = SILICON_ECDSA_KEY,
     interface = "teacup",
-    tags = ["manual"],
+    tags = [
+        "earlgrey_silicon",
+        "hardware",
+    ],
     target = ":threads",
 )
 

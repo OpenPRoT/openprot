@@ -313,7 +313,7 @@
   "moduleExtensions": {
     "//third_party/hsm:extensions.bzl%hsm": {
       "general": {
-        "bzlTransitiveDigest": "GARjuEBZsMo6TY3xjNxu8r6S8FFLFTkIWrEvB/WrUuI=",
+        "bzlTransitiveDigest": "dMr6eMmFrHzjZoSlJF19xOQiEGyEWeYgBcnHpSIo8uY=",
         "usagesDigest": "gbze9F5NvSkv3y6dQhVG6h7LR50p7DQQUEx+Uoy8E/s=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
