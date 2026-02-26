@@ -1,10 +1,16 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
-load("@rules_rust_mdbook//:defs.bzl", "mdbook")
+load("@rules_rust_mdbook//:defs.bzl", "mdbook", "mdbook_server")
 
 mdbook(
     name = "docs",
     srcs = glob(["**"]),
     book = "book.toml",
+)
+
+mdbook_server(
+    name = "serve",
+    book = ":docs",
+    port = "8000",
 )
