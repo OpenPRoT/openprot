@@ -34,7 +34,10 @@ jobs:
         repository-cache: true
 
     - name: Build mdbook documentation
-      run: bazel build //docs
+      id: build-docs
+      run: |
+        bazel build //docs
+        echo "path=$(bazel cquery --output=files //docs 2>/dev/null)" >> "$GITHUB_OUTPUT"
 
     - name: Setup Pages
       uses: actions/configure-pages@v5
@@ -42,7 +45,7 @@ jobs:
     - name: Upload artifact
       uses: actions/upload-pages-artifact@v4
       with:
-        path: ./bazel-bin/docs/docs
+        path: ${{ steps.build-docs.outputs.path }}
 
     - name: Deploy to GitHub Pages
       id: deployment
