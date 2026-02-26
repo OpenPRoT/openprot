@@ -80,10 +80,10 @@ rust_binary(
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
         ":linker_script",
+        "//target/ast1060-evb:console_backend_uart",
         "//target/ast1060-evb:entry",
         "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
         "@pigweed//pw_kernel/kernel",
-        "@pigweed//pw_kernel/subsys/console:console_backend",
         "@pigweed//pw_kernel/target:target_common",
         "@pigweed//pw_kernel/tests/threads/kernel:threads",
         "@pigweed//pw_log/rust:pw_log",
