@@ -1,0 +1,30 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@nonhermetic//:env.bzl", "ENV")
+load("//target/earlgrey/tooling/signing:defs.bzl", "signing_tool")
+
+package(default_visibility = ["//visibility:public"])
+
+signing_tool(
+    name = "local",
+    location = "local",
+    tool = "@opentitan_devbundle//:opentitantool/opentitantool",
+)
+
+signing_tool(
+    name = "cloud_kms_gb",
+    data = [
+        "ot-earlgrey-a1.yaml",
+        "@cloud_kms_hsm//:libkmsp11",
+    ],
+    env = {
+        # The Cloud KMS PKCS11 provider needs to know where the user's home
+        # is in order to load the gclould credentials.
+        "HOME": ENV["HOME"],
+        "HSMTOOL_MODULE": "$(location @cloud_kms_hsm//:libkmsp11)",
+        "KMS_PKCS11_CONFIG": "$(location ot-earlgrey-a1.yaml)",
+    },
+    location = "token",
+    tool = "@opentitan_devbundle//:hsmtool/hsmtool",
+)

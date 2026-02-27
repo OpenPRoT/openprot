@@ -13,6 +13,7 @@ bazel_dep(name = "rules_rust", version = "0.68.1")
 bazel_dep(name = "rules_rust_mdbook", version = "0.68.1")
 bazel_dep(name = "rules_platform", version = "0.1.0")
 bazel_dep(name = "rules_python", version = "1.8.3")
+bazel_dep(name = "ureg")
 
 git_override(
     module_name = "pigweed",
@@ -20,6 +21,12 @@ git_override(
     # ROLL: https://cr-buildbucket.appspot.com/builder/pigweed-internal/opentitan.roll/pigweed-opentitan-roller
     commit = "f52059663fee1e2ab2f2ab752301b159da3ca806",
     remote = "https://pigweed.googlesource.com/pigweed/pigweed",
+)
+
+git_override(
+    module_name = "ureg",
+    commit = "412ca40146d5d2012417e493b4a01096b04edf4b",
+    remote = "https://github.com/chipsalliance/caliptra-ureg",
 )
 
 pw_rust = use_extension("@pigweed//pw_toolchain/rust:extensions.bzl", "pw_rust")
@@ -66,3 +73,17 @@ override_repo(
     pw_rust_crates_ext,
     rust_crates = "rust_crates",
 )
+
+bazel_dep(name = "opentitan_devbundle")
+archive_override(
+    module_name = "opentitan_devbundle",
+    integrity = "sha256-n/0uF/b0uXkEfTzP7QJx/cK1KWExES/Zn/C/EqyXzGo=",
+    url = "https://storage.googleapis.com/artifacts.opentitan.org/dev_bundle/devbundle-test-20251105.tar.xz",
+)
+
+nonhermetic_repo = use_repo_rule("//target/earlgrey/tooling/signing:nonhermetic.bzl", "nonhermetic_repo")
+
+nonhermetic_repo(name = "nonhermetic")
+
+hsm = use_extension("//third_party/hsm:extensions.bzl", "hsm")
+use_repo(hsm, "cloud_kms_hsm")

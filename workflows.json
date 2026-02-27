@@ -47,6 +47,14 @@
       "targets": [
         "//..."
       ]
+    },
+    {
+      "name": "verilator_tests",
+      "use_config": "bazel_default",
+      "targets": [
+        "//target/earlgrey/threads/kernel:threads_runner_verilator_test",
+        "//target/earlgrey/ipc/user:ipc_runner_verilator_test"
+      ]
     }
   ],
   "tools": [
@@ -84,6 +92,15 @@
       "description": "Common builds/configurations",
       "builds": [
         "wildcard_build"
+      ]
+    },
+    {
+      "name": "earlgrey",
+      "description": "Quick presubmit for validating code changes locally",
+      "builds": [
+        "format",
+        "wildcard_build",
+        "verilator_tests"
       ]
     }
   ]

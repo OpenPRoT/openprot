@@ -1,0 +1,76 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
+load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//target/earlgrey/signing/keys:defs.bzl", "FPGA_ECDSA_KEY")
+load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_test")
+
+system_image(
+    name = "unittest_runner",
+    kernel = ":target",
+    platform = "//target/earlgrey",
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    template = "//target/earlgrey:linker_script_template",
+)
+
+opentitan_test(
+    name = "hyper310_test",
+    ecdsa_key = FPGA_ECDSA_KEY,
+    interface = "hyper310",
+    tags = [
+        "hardware",
+        "hyper310",
+    ],
+    target = ":unittest_runner",
+)
+
+opentitan_test(
+    name = "hyper340_test",
+    ecdsa_key = FPGA_ECDSA_KEY,
+    interface = "hyper340",
+    tags = [
+        "hardware",
+        "hyper340",
+    ],
+    target = ":unittest_runner",
+)
+
+filegroup(
+    name = "system_config",
+    srcs = ["system.json5"],
+)
+
+target_codegen(
+    name = "codegen",
+    arch = "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+    system_config = ":system_config",
+)
+
+rust_binary(
+    name = "target",
+    srcs = [
+        "target.rs",
+    ],
+    edition = "2024",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":codegen",
+        ":linker_script",
+        "//target/earlgrey:entry",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/kernel/tests:integration_tests",
+        "@pigweed//pw_kernel/lib/unittest:unittest_core",
+        "@pigweed//pw_kernel/subsys/console:console_backend",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)

@@ -31,9 +31,31 @@ jobs:
       # C/C++ include checks and clippy lints.
       run: ./pw presubmit
 
+  build:
+    name: Build Targets
+    needs: presubmit
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Setup Bazel
+      uses: bazel-contrib/setup-bazel@0.18.0
+      with:
+        bazelisk-cache: true
+        disk-cache: true
+        repository-cache: true
+
+    - name: Build
+      run: |
+        bazel build \
+            --keep_going \
+            --build_tag_filters=-hardware,-disabled \
+            //...
+
   test:
     name: Test
-    needs: presubmit
+    needs: build
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v5
@@ -49,25 +71,10 @@ jobs:
       run: |
         bazel test \
             --keep_going \
+            --test_output=streamed \
+            --build_tag_filters=-hardware,-disabled \
+            --test_tag_filters=-hardware,-disabled \
             //...
-
-  build-targets:
-    name: Build Targets
-    needs: test
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v5
-
-    - name: Setup Bazel
-      uses: bazel-contrib/setup-bazel@0.18.0
-      with:
-        bazelisk-cache: true
-        disk-cache: true
-        repository-cache: true
-
-    - name: Build
-      run: bazel build //...
 
   security-audit:
     name: Security Audit

@@ -1,0 +1,39 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("//target/earlgrey/tooling/signing:defs.bzl", "keyset")
+
+package(default_visibility = ["//visibility:public"])
+
+# Fake keys for FPGA signing.
+keyset(
+    name = "fpga_keyset",
+    build_setting_default = "",
+    keys = {
+        "@opentitan_devbundle//:fake_keys/app_dev_ecdsa_p256.der": "app_dev_0",
+        "@opentitan_devbundle//:fake_keys/app_prod_ecdsa_p256.der": "app_prod_0",
+        "@opentitan_devbundle//:fake_keys/app_test_ecdsa_p256.der": "app_test_0",
+    },
+    profile = "local",
+    tool = "//target/earlgrey/signing/tokens:local",
+)
+
+# Keys held in CloudKMS to sign for the Google Bringup SKU of the Earlgrey ASIC.
+keyset(
+    name = "gb00_keyset",
+    build_setting_default = "",
+    keys = {
+        "gb00-app-key-dev-0.pub.der": "gb00-app-key-dev-0",
+        "gb00-app-key-prod-0.pub.der": "gb00-app-key-prod-0",
+        "gb00-app-key-test-0.pub.der": "gb00-app-key-test-0",
+    },
+    # You need a profile entry in $HOME/.config/hsmtool/profiles.json
+    # that links the profile to the cloud-kms token:
+    #
+    #   "earlgrey_a1_gb_owner": {
+    #     "token": "ot-earlgrey-a1",
+    #     "user": "user"
+    #   }
+    profile = "earlgrey_a1_gb_owner",
+    tool = "//target/earlgrey/signing/tokens:cloud_kms_gb",
+)

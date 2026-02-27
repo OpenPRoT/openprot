@@ -1,0 +1,9 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "libkmsp11",
+    srcs = ["libkmsp11.so"],
+)

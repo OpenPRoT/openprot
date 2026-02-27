@@ -1,0 +1,330 @@
+/*
+ * Licensed under the Apache-2.0 license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* This relatively simplified linker script will work with many RISC-V cores
+ * that have on-board memory-mapped RAM and FLASH. For more
+ * complex projects and devices, it's possible this linker script will not be
+ * sufficient as-is.
+ *
+ * This linker script is likely not suitable for a project with a bootloader.
+ */
+
+MEMORY
+{
+  /* Note: the ROM_EXT and FLASH addresses are lies.  These addresses
+   * represent the target addresses of the Earlgrey Ibex remap windows,
+   * which are aliases to flash.
+   *
+   * The remap windows allow software developers to bypass the (as yet)
+   * immature and undeveloped RISC-V compilers' position independent code
+   * features and link firmware at a known address regardless of whether it is
+   * located in SlotA or SlotB of the internal flash.
+   *
+   * We're doubly lying about the ROM_EXT address:  When we build for verilator,
+   * we include a tiny trampoline in place of the actual ROM_EXT.  The trampoline
+   * expects to execute at flash SlotA address 0x20000000 (no remapping), and
+   * it configures the remap window for 0xA000000 (which is what the real
+   * ROM_EXT would do).
+   */
+  /* ROM_EXT */
+  ROM_EXT(rx) : ORIGIN = 0xA0000000, LENGTH = 0x10000
+  /* Internal Flash */
+  FLASH(rx) :   ORIGIN = 0xA0010000, LENGTH = 0x70000
+  /* Internal SRAM */
+  RAM(rw) : ORIGIN = 0x10000000, LENGTH = 0x20000
+
+  /* Each memory region above has an associated .*.unused_space section that
+   * overlays the unused space at the end of the memory segment. These segments
+   * are used by pw_bloat.bloaty_config to create the utilization data source
+   * for bloaty size reports.
+   *
+   * These sections MUST be located immediately after the last section that is
+   * placed in the respective memory region or lld will issue a warning like:
+   *
+   *   warning: ignoring memory region assignment for non-allocatable section
+   *      '.FLASH.unused_space'
+   *
+   * If this warning occurs, it's also likely that LLD will have created quite
+   * large padded regions in the ELF file due to bad cursor operations. This
+   * can cause ELF files to balloon from hundreds of kilobytes to hundreds of
+   * megabytes.
+   *
+   * Attempting to add sections to the memory region AFTER the unused_space
+   * section will cause the region to overflow.
+   */
+}
+
+SECTIONS
+{
+    /*
+     * If (and only if) we're building for verilator will the fake_rom_ext
+     * section exist.  If it does, we locate it into the traditional
+     * ROM_EXT location.  This allows the rest of the kernel and apps to
+     * be built without needing to be relocated.
+     */
+    .verilator_trampoline ORIGIN(ROM_EXT):
+    {
+      KEEP(*(.fake_rom_ext))
+    } > ROM_EXT
+
+    /*
+     * We setup the OpenTitan manifest in the linker script so we can
+     * fill in relevant code offsets when we link the program.
+     */
+    .manifest ORIGIN(FLASH):
+    {
+        _manifest = .;
+        /* see: sw/device/silicon_creator/lib/manifest.h */
+        . += 384; /* rsa_signature */
+        . += 4;   /* usage_constraints.selector_bits */
+        LONG(0xa5a5a5a5);  /* usage_constraints.device_id (8 words)*/
+        LONG(0xa5a5a5a5);
+        LONG(0xa5a5a5a5);
+        LONG(0xa5a5a5a5);
+        LONG(0xa5a5a5a5);
+        LONG(0xa5a5a5a5);
+        LONG(0xa5a5a5a5);
+        LONG(0xa5a5a5a5);
+        LONG(0xa5a5a5a5);  /* usage_constraints.manuf_state_creator */
+        LONG(0xa5a5a5a5);  /* usage_constraints.manuf_state_owner */
+        LONG(0xa5a5a5a5);  /* usage_constraints.life_cycle_state */
+        . += 384; /* rsa_modulus */
+        LONG(0x739); /* . = . + 4; address_translation (HardenedTrue) */
+        LONG(0x3042544f); /* . = . + 4; identifier (OTB0) */
+        SHORT(0x6c47); /* . = . + 2; manifest_version.minor */
+        SHORT(0x2);    /* . = . + 2; manifest_version.major */
+        LONG(_signed_region_end - ORIGIN(FLASH)); /* . = . + 4; signed_region_end */
+        LONG(_signed_region_end - ORIGIN(FLASH)); /* . = . + 4; length */
+        . += 4;   /* version_major */
+        . += 4;   /* version_minor */
+        . += 4;   /* security_version */
+        . += 8;   /* timestamp */
+        . += 32;  /* binding_value */
+        . += 4;   /* max_key_version */
+        LONG(_code_start - ORIGIN(FLASH)); /* . = . + 4; code_start */
+        LONG(_code_end   - ORIGIN(FLASH)); /* . = . + 4; code_end */
+        LONG(_start      - ORIGIN(FLASH)); /* . = . + 4; entry_point */
+        /* manifest extension table */
+        /* see: sw/device/silicon_creator/lib/base/chip.h */
+        /* CHIP_MANIFEST_EXT_TABLE_COUNT = 15 */
+        /* sizeof(manifest_ext_table_entry) = 8 */
+        . += 120; /* manifest_ext_table */
+    } > FLASH
+
+  /* Main executable code. */
+  .code : ALIGN(4)
+  {
+    _code_start = .;
+    /* Put reset handler first in .text section so it ends up as the entry */
+    /* point of the program. */
+    KEEP(*(.init));
+    KEEP(*(.init.rust));
+    . = ALIGN(4);
+
+    /* Application code. */
+    *(.text)
+    *(.text*)
+    KEEP(*(.init))
+    KEEP(*(.fini))
+
+    /* The trap handler needs to be in the code section. */
+    *(.trap)
+
+    /* OpenTitan requires the code start/end to be 4-byte aligned. */
+    . = ALIGN(4);
+    _code_end = .;
+
+    /* Constants.*/
+    *(.rodata)
+    *(.rodata*)
+
+    /* .preinit_array, .init_array, .fini_array are used by libc.
+     * Each section is a list of function pointers that are called pre-main and
+     * post-exit for object initialization and tear-down.
+     * Since the region isn't explicitly referenced, specify KEEP to prevent
+     * link-time garbage collection. SORT is used for sections that have strict
+     * init/de-init ordering requirements. */
+    . = ALIGN(4);
+    PROVIDE_HIDDEN(__preinit_array_start = .);
+    KEEP(*(.preinit_array*))
+    PROVIDE_HIDDEN(__preinit_array_end = .);
+
+    PROVIDE_HIDDEN(__init_array_start = .);
+    KEEP(*(SORT(.init_array.*)))
+    KEEP(*(.init_array*))
+    PROVIDE_HIDDEN(__init_array_end = .);
+
+    PROVIDE_HIDDEN(__fini_array_start = .);
+    KEEP(*(SORT(.fini_array.*)))
+    KEEP(*(.fini_array*))
+    PROVIDE_HIDDEN(__fini_array_end = .);
+  } >FLASH
+
+  /* Explicitly initialized global and static data. (.data)*/
+  .static_init_ram : ALIGN(4)
+  {
+    *(.data)
+    *(.data*)
+    . = ALIGN(4);
+  } >RAM AT> FLASH
+
+  .FLASH.kernel_end (NOLOAD) : ALIGN(4)
+  {
+    /*
+     * The end of the kernel text and data sections.
+     * This symbol is used to compute the end of the kernel read-only data
+     * segment in the ePMP configuration.
+     */
+    _kernel_end = .;
+  } >FLASH
+
+  /* Represents unused space in the FLASH segment. This MUST be the last section
+   * assigned to the FLASH region.
+   */
+  .FLASH.unused_space (NOLOAD) : ALIGN(4)
+  {
+    /*
+     * The end of the signed region is where unused flash starts.
+     *
+     * TODO: This needs to be adjusted to be after apps are added into the image
+     * so that the signature over the image covers both the kernel and apps.
+     */
+    _signed_region_end = .;
+    . = ABSOLUTE(ORIGIN(FLASH) + LENGTH(FLASH));
+  } >FLASH
+
+  /* The .zero_init_ram, .heap, and .stack sections below require (NOLOAD)
+   * annotations for LLVM lld, but not GNU ld, because LLVM's lld intentionally
+   * interprets the linker file differently from ld:
+   *
+   * https://discourse.llvm.org/t/lld-vs-ld-section-type-progbits-vs-nobits/5999/3
+   *
+   * Zero initialized global/static data (.bss) is initialized in
+   * pw_boot_Entry() via memset(), so the section doesn't need to be loaded from
+   * flash. The .heap and .stack sections don't require any initialization,
+   * as they only represent allocated memory regions, so they also do not need
+   * to be loaded.
+   */
+  .zero_init_ram (NOLOAD) : ALIGN(4)
+  {
+    *(.bss)
+    *(.bss*)
+    *(COMMON)
+    . = ALIGN(4);
+  } >RAM
+
+  .heap (NOLOAD) : ALIGN(4)
+  {
+    pw_boot_heap_low_addr = .;
+    . = . + 0;
+    . = ALIGN(4);
+    pw_boot_heap_high_addr = .;
+  } >RAM
+
+  /* Link-time check for stack overlaps.
+   *
+   */
+  .stack (NOLOAD) :
+  {
+    /* Set the address that the main stack pointer should be initialized to. */
+    pw_boot_stack_low_addr = .;
+    HIDDEN(_stack_size = ORIGIN(RAM) + LENGTH(RAM) - .);
+    /* Align the stack to a lower address to ensure it isn't out of range. */
+    HIDDEN(_stack_high = (. + _stack_size) & ~0x7);
+    ASSERT(_stack_high - . >= 1K,
+           "Error: Not enough RAM for desired minimum stack size.");
+    . = _stack_high;
+    pw_boot_stack_high_addr = .;
+  } >RAM
+
+  /* Represents unused space in the RAM segment. This MUST be the last section
+   * assigned to the RAM region.
+   */
+  .RAM.unused_space (NOLOAD) : ALIGN(4)
+  {
+    . = ABSOLUTE(ORIGIN(RAM) + LENGTH(RAM));
+  } >RAM
+
+  /* Strip unnecessary stuff */
+  /DISCARD/ : { *(.comment .note .eh_frame .eh_frame_hdr) }
+}
+
+/* Symbols used by core_init.c: */
+/* Start of .static_init_ram in FLASH. */
+_pw_static_init_flash_start = LOADADDR(.static_init_ram);
+
+/* Region of .static_init_ram in RAM. */
+_pw_static_init_ram_start = ADDR(.static_init_ram);
+_pw_static_init_ram_end = _pw_static_init_ram_start + SIZEOF(.static_init_ram);
+
+/* Region of .zero_init_ram. */
+_pw_zero_init_ram_start = ADDR(.zero_init_ram);
+_pw_zero_init_ram_end = _pw_zero_init_ram_start + SIZEOF(.zero_init_ram);
+
+/* Symbols needed for the Rust riscv-rt crate. */
+_sbss = _pw_zero_init_ram_start;
+_ebss = _pw_zero_init_ram_end;
+_sdata = _pw_static_init_ram_start;
+_edata = _pw_static_init_ram_end;
+_sidata = LOADADDR(.static_init_ram);
+REGION_ALIAS("REGION_TEXT", FLASH);
+REGION_ALIAS("REGION_RODATA", FLASH);
+REGION_ALIAS("REGION_DATA", RAM);
+REGION_ALIAS("REGION_BSS", RAM);
+REGION_ALIAS("REGION_HEAP", RAM);
+REGION_ALIAS("REGION_STACK", RAM);
+
+_stext = ORIGIN(REGION_TEXT);
+_heap_size = 1K; /* Set heap size to 1KB */
+_max_hart_id = 1; /* Two harts present */
+_hart_stack_size = 1K; /* Set stack size per hart to 1KB */
+_stack_start = _stack_high;
+
+_ram_start = ORIGIN(RAM);
+_ram_end = ORIGIN(RAM) + LENGTH(RAM);
+
+PROVIDE(InstructionMisaligned = ExceptionHandler);
+PROVIDE(InstructionFault = ExceptionHandler);
+PROVIDE(IllegalInstruction = ExceptionHandler);
+PROVIDE(Breakpoint = ExceptionHandler);
+PROVIDE(LoadMisaligned = ExceptionHandler);
+PROVIDE(LoadFault = ExceptionHandler);
+PROVIDE(StoreMisaligned = ExceptionHandler);
+PROVIDE(StoreFault = ExceptionHandler);;
+PROVIDE(UserEnvCall = ExceptionHandler);
+PROVIDE(SupervisorEnvCall = ExceptionHandler);
+PROVIDE(MachineEnvCall = ExceptionHandler);
+PROVIDE(InstructionPageFault = ExceptionHandler);
+PROVIDE(LoadPageFault = ExceptionHandler);
+PROVIDE(StorePageFault = ExceptionHandler);
+
+PROVIDE(SupervisorSoft = DefaultHandler);
+PROVIDE(MachineSoft = DefaultHandler);
+PROVIDE(SupervisorTimer = DefaultHandler);
+PROVIDE(MachineTimer = DefaultHandler);
+PROVIDE(SupervisorExternal = DefaultHandler);
+PROVIDE(MachineExternal = DefaultHandler);
+
+PROVIDE(DefaultHandler = DefaultInterruptHandler);
+PROVIDE(ExceptionHandler = DefaultExceptionHandler);
+
+PROVIDE(__pre_init = default_pre_init);
+PROVIDE(_setup_interrupts = default_setup_interrupts);
+PROVIDE(_mp_hook = default_mp_hook);
+PROVIDE(_start_trap = default_start_trap);
+
+
+/* These symbols are used by pw_bloat.bloaty_config to create the memoryregions
+ * data source for bloaty in this format (where the optional _N defaults to 0):
+ * pw_bloat_config_memory_region_NAME_{start,end}{_N,} */
+pw_bloat_config_memory_region_FLASH_start = ORIGIN(FLASH);
+pw_bloat_config_memory_region_FLASH_end = ORIGIN(FLASH) + LENGTH(FLASH);
+pw_bloat_config_memory_region_RAM_start = ORIGIN(RAM);
+pw_bloat_config_memory_region_RAM_end = ORIGIN(RAM) + LENGTH(RAM);
+
+/*
+ * Pigweed linker sections.
+ */
+{% include "pigweed_linker_sections.ld.jinja" %}
