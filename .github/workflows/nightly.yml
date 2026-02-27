@@ -12,76 +12,46 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  nightly-build:
+    name: Nightly Build
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Setup Bazel
+      uses: bazel-contrib/setup-bazel@0.18.0
+      with:
+        bazelisk-cache: true
+        disk-cache: true
+        repository-cache: true
+
+    - name: Build
+      run: |
+        bazel build \
+            --keep_going \
+            --build_tag_filters=-hardware,-disabled \
+            //...
+
   nightly-test:
     name: Nightly Test
+    needs: nightly-build
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v5
-    
-    - name: Install Rust nightly toolchain
-      uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: nightly-2025-02-15
-        components: clippy, rust-src, llvm-tools, rustfmt, rustc-dev
-    
-    - name: Cache cargo registry
-      uses: actions/cache@v5
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-nightly-cargo-${{ hashFiles('**/Cargo.lock') }}
-    
-    - name: Run tests with nightly
-      run: cargo xtask test
-    
-    - name: Run clippy with nightly
-      run: cargo xtask clippy
-    
-    - name: Build with nightly
-      run: cargo xtask build
 
-  dependency-update:
-    name: Dependency Update Check
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v5
-    
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-    
-    - name: Install cargo-outdated
-      run: cargo install cargo-outdated
-    
-    - name: Check for outdated dependencies
-      run: cargo outdated --exit-code 1
-      continue-on-error: true
-    
-    - name: Install cargo-audit
-      run: cargo install cargo-audit
-    
-    - name: Run security audit
-      run: cargo audit
-
-  benchmark:
-    name: Benchmark
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v5
-    
-    - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
-    
-    - name: Cache cargo registry
-      uses: actions/cache@v5
+    - name: Setup Bazel
+      uses: bazel-contrib/setup-bazel@0.18.0
       with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-benchmark-cargo-${{ hashFiles('**/Cargo.lock') }}
-    
-    - name: Run benchmarks
-      run: cargo bench --workspace
-      continue-on-error: true
+        bazelisk-cache: true
+        disk-cache: true
+        repository-cache: true
+
+    - name: Run tests
+      run: |
+        bazel test \
+            --keep_going \
+            --test_output=streamed \
+            --build_tag_filters=-hardware,-disabled \
+            --test_tag_filters=-hardware,-disabled \
+            //...
