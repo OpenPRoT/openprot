@@ -35,11 +35,6 @@ jobs:
     name: Test
     needs: presubmit
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust:
-          - stable
-          - nightly
     steps:
     - uses: actions/checkout@v5
 
@@ -53,7 +48,6 @@ jobs:
     - name: Run tests
       run: |
         bazel test \
-            --@rules_rust//rust/toolchain/channel=${{ matrix.rust }} \
             --keep_going \
             //...
 
