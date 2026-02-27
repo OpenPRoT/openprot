@@ -40,10 +40,10 @@ use userspace::syscall;
 // ============================================================================
 
 /// I2C bus for master tests (I2C1 — connected to ADT7490 on the EVB)
-const I2C_BUS: BusIndex = BusIndex::BUS_1;
+const I2C_BUS: BusIndex = BusIndex::BUS_2;
 
 /// ADT7490 temperature sensor 7-bit address (on-board)
-const ADT7490_ADDR: u8 = 0x2E;
+const ADT7490_ADDR: u8 = 0x42;
 
 /// ADT7490 register addresses and their expected power-on-reset defaults.
 /// From ADT7490 datasheet — these are read-only default values.
@@ -226,7 +226,7 @@ fn run_i2c_tests() -> Result<()> {
 
     pw_log::info!("========================================");
     pw_log::info!("I2C Hardware Tests (IPC → ADT7490)");
-    pw_log::info!("Bus: I2C1  Addr: 0x2E");
+    pw_log::info!("Bus: I2C2  Addr: 0x42");
     pw_log::info!("========================================");
 
     test_probe_adt7490(&mut client, &mut results);

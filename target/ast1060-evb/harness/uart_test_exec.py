@@ -17,6 +17,35 @@ import time
 from pathlib import Path
 from typing import Optional, Tuple
 
+def _find_pw_tokenizer() -> bool:
+    """Attempt to locate and add pw_tokenizer to sys.path.
+
+    Checks PW_TOK_ROOT first, then falls back to the Bazel output base.
+    Returns True if pw_tokenizer was found and added to sys.path.
+    """
+    pw_tok_root = os.environ.get("PW_TOK_ROOT")
+    if pw_tok_root:
+        sys.path.insert(0, os.path.join(pw_tok_root, "pw_tokenizer", "py"))
+        return True
+
+    try:
+        output_base = subprocess.check_output(
+            ["bazel", "info", "output_base"], text=True, stderr=subprocess.DEVNULL
+        ).strip()
+        candidate = os.path.join(output_base, "external", "pigweed+", "pw_tokenizer", "py")
+        if os.path.isdir(candidate):
+            sys.path.insert(0, candidate)
+            return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+
+    return False
+
+_PW_TOKENIZER_AVAILABLE = _find_pw_tokenizer()
+
+if _PW_TOKENIZER_AVAILABLE:
+    from pw_tokenizer import Detokenizer
+
 try:
     import serial
 except ImportError:
@@ -36,11 +65,21 @@ class UartTestExecutor:
         self.serial_port: Optional[serial.Serial] = None
         self.log_file = getattr(args, "log_file", None) or f"uart-test-{os.getpid()}.log"
         self.log_file_handle = None
+        elf = getattr(args, "elf", None)
+        self.detokenizer = Detokenizer(elf) if (elf and _PW_TOKENIZER_AVAILABLE) else None
 
     def log(self, message: str):
         """Print message unless in quiet mode."""
         if not self.args.quiet:
             print(message, flush=True)
+
+    def print_uart_data(self, data: str):
+        """Print UART data, with detokenized output on the following line in green."""
+        print(data, end="", flush=True)
+        if self.detokenizer:
+            detokenized = self.detokenizer.detokenize_text(data)
+            if detokenized != data:
+                print(f"\033[32m{detokenized}\033[0m", end="", flush=True)
 
     def run_command(self, cmd: list, check: bool = True) -> Tuple[int, str, str]:
         """Run command and return (returncode, stdout, stderr)."""
@@ -221,7 +260,7 @@ class UartTestExecutor:
             if data:
                 buffer += data
                 if not self.args.quiet:
-                    print(data, end="", flush=True)
+                    self.print_uart_data(data)
 
                 # Look for 'U' character
                 if "U" in buffer:
@@ -304,7 +343,7 @@ class UartTestExecutor:
             if data:
                 buffer += data
                 if not self.args.quiet:
-                    print(data, end="", flush=True)
+                    self.print_uart_data(data)
 
                 lines = buffer.split("\n")
                 for line in lines:
@@ -387,6 +426,7 @@ Examples:
         "uart_device", nargs="?", help="UART device path (e.g., /dev/ttyUSB0)"
     )
     parser.add_argument("firmware", nargs="?", help="Firmware binary file path")
+    parser.add_argument("--elf", help="ELF file for pw_tokenizer detokenization")
 
     # GPIO control
     parser.add_argument(
@@ -459,6 +499,20 @@ Examples:
     )
 
     args = parser.parse_args()
+
+    # Validate pw_tokenizer / --elf argument consistency
+    if os.environ.get("PW_TOK_ROOT") and not args.elf:
+        print(
+            "Error: PW_TOK_ROOT is set but --elf was not provided. "
+            "Detokenization requires an ELF file."
+        )
+        sys.exit(1)
+    if args.elf and not _PW_TOKENIZER_AVAILABLE:
+        print(
+            "Error: --elf was provided but pw_tokenizer could not be located. "
+            "Set PW_TOK_ROOT to the Pigweed root or ensure Bazel has fetched it."
+        )
+        sys.exit(1)
 
     # Validate arguments
     if args.upload_only:

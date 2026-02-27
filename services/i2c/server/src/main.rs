@@ -109,6 +109,7 @@ fn dispatch_i2c_op(
     response: &mut [u8],
     backend: &mut AspeedI2cBackend,
 ) -> usize {
+    pw_log::info!("I2C server dispatch");
     // Parse header
     let Some(header) = I2cRequestHeader::from_bytes(request) else {
         return encode_error(response, ResponseCode::ServerError);
@@ -125,6 +126,7 @@ fn dispatch_i2c_op(
         // Write: header.write_len bytes from payload → device
         // ------------------------------------------------------------------
         I2cOp::Write => {
+            pw_log::info!("I2C dispatch write");
             let wlen = header.write_len as usize;
             if payload.len() < wlen {
                 return encode_error(response, ResponseCode::BufferTooSmall);
@@ -139,6 +141,7 @@ fn dispatch_i2c_op(
         // Read: header.read_len bytes from device → response payload
         // ------------------------------------------------------------------
         I2cOp::Read => {
+            pw_log::info!("I2C dispatch read");
             let rlen = header.read_len as usize;
             let avail = response.len().saturating_sub(I2cResponseHeader::SIZE);
             if rlen > avail {
@@ -156,6 +159,7 @@ fn dispatch_i2c_op(
         // WriteRead: write then read with repeated START
         // ------------------------------------------------------------------
         I2cOp::WriteRead => {
+            pw_log::info!("I2C dispatch writeread");
             let wlen = header.write_len as usize;
             let rlen = header.read_len as usize;
             if payload.len() < wlen {
@@ -178,6 +182,9 @@ fn dispatch_i2c_op(
         // Probe: write 0 bytes — ACK means device present
         // ------------------------------------------------------------------
         I2cOp::Probe => {
+            pw_log::info!("I2C dispatch probe");
+
+
             match backend.write(header.bus, header.address, &[]) {
                 Ok(()) => encode_success(response, 0),
                 Err(code) => encode_error(response, code),
@@ -188,6 +195,7 @@ fn dispatch_i2c_op(
         // RecoverBus: attempt to unstick SDA via clock pulses
         // ------------------------------------------------------------------
         I2cOp::RecoverBus => {
+            pw_log::info!("I2C dispatch recover bus");
             match backend.recover_bus(header.bus) {
                 Ok(()) => encode_success(response, 0),
                 Err(code) => encode_error(response, code),
