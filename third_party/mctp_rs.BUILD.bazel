@@ -1,0 +1,41 @@
+# Licensed under the Apache-2.0 license
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+# mctp: base types and traits (no_std, no std feature)
+rust_library(
+    name = "mctp",
+    srcs = glob(["mctp/src/**/*.rs"]),
+    crate_root = "mctp/src/lib.rs",
+    crate_name = "mctp",
+    edition = "2021",
+    rustc_flags = [
+        "--cap-lints=allow",
+        "--cfg=feature=\"default\"",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [],
+)
+
+# mctp-estack: embedded MCTP stack (no_std, log feature, no async)
+rust_library(
+    name = "mctp_estack",
+    srcs = glob(["mctp-estack/src/**/*.rs"]),
+    crate_root = "mctp-estack/src/lib.rs",
+    crate_name = "mctp_estack",
+    edition = "2021",
+    rustc_flags = [
+        "--cap-lints=allow",
+        "--cfg=feature=\"log\"",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":mctp",
+        "@oot_crates_no_std//:crc",
+        "@oot_crates_no_std//:embedded-io",
+        "@oot_crates_no_std//:embedded-io-async",
+        "@oot_crates_no_std//:heapless",
+        "@oot_crates_no_std//:log",
+        "@oot_crates_no_std//:smbus-pec",
+    ],
+)

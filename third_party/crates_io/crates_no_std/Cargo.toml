@@ -15,8 +15,13 @@ path = "fake.rs"
 # AST1060-specific crates - use @oot_crates_no_std// for these
 ast1060-pac = { git = "https://github.com/stevenlee7189/ast1060-pac", branch = "main" }
 aspeed-ddk = { git = "https://github.com/OpenPRoT/aspeed-rust.git", branch = "i2c-core" }
+crc = { version = "3.3", default-features = false }
 embedded-hal = "1.0.0"
 embedded-io = "0.6.1"
+embedded-io-async = "0.6.1"
+heapless = "0.8"
+log = { version = "0.4", default-features = false }
+smbus-pec = { version = "1.0", default-features = false }
 # cortex-m crates needed for consistent linking (avoid duplicate symbols)
 cortex-m = "0.7.7"
 cortex-m-rt = "0.7.5"
@@ -29,6 +34,7 @@ aes = { version = "0.8", default-features = false }
 aes-gcm = { version = "0.10", default-features = false, features = ["aes"] }
 ctr = { version = "0.9", default-features = false }
 cipher = { version = "0.4", default-features = false }
+bitfield = { version = "0.14.0", default-features = false }
 zerocopy = { version = "0.8", default-features = false, features = ["derive"] }
 
 # ECDSA crates

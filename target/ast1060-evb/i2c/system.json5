@@ -1,26 +1,30 @@
 // Licensed under the Apache-2.0 license
 
-// AST1060-EVB I2C Server + Client Configuration
+// AST1060-EVB I2C Server + Client + SPDM Responder Configuration
 // ARM Cortex-M4 @ 200 MHz
 // 768KB SRAM (640KB usable), executes from RAM
 //
 // Memory Layout (PMSAv7-friendly, power-of-2 aligned regions):
 //   0x00000000 - 0x000004A0: Vector table + kernel annotations (1184 bytes)
 //   0x000004A0 - 0x00020000: Kernel code (~126KB)
-//   0x00020000 - 0x00060000: App flash (256KB: 2 apps × 128KB)
+//   0x00020000 - 0x00040000: i2c_server flash (128KB)
+//   0x00040000 - 0x00050000: i2c_client flash (64KB)
+//   0x00050000 - 0x00060000: spdm_responder flash (64KB)
 //   0x00060000 - 0x00080000: Kernel RAM (128KB)
-//   0x00080000 - 0x000A0000: App RAM (128KB: 2 apps × 64KB)
+//   0x00080000 - 0x00090000: i2c_server RAM (64KB)
+//   0x00090000 - 0x00098000: i2c_client RAM (32KB)
+//   0x00098000 - 0x000A0000: spdm_responder RAM (32KB)
 //
 // Total: 640KB, fits within AST1060's 768KB SRAM.
 {
     arch: {
         type: "armv7m",
         vector_table_start_address: 0x00000000,
-        vector_table_size_bytes: 1184,  // 0x4A0 (272 vectors + thread/stack annotations)
+        vector_table_size_bytes: 1280,  // 0x500 (272 vectors + thread/stack annotations for 3 apps)
     },
     kernel: {
-        flash_start_address: 0x000004A0,  // After vector table + annotations
-        flash_size_bytes: 129888,         // ~126KB (ends at 0x00020000, power-of-2 boundary)
+        flash_start_address: 0x00000500,  // After vector table + annotations
+        flash_size_bytes: 129792,         // ~126KB (ends at 0x00020000)
         ram_start_address: 0x00060000,    // After all flash regions
         ram_size_bytes: 131072,           // 128KB
     },
@@ -52,8 +56,8 @@
         // Sends I2C read/write requests to the server via IPC.
         {
             name: "i2c_client",
-            flash_size_bytes: 131072,     // 128KB for client/test code
-            ram_size_bytes: 65536,        // 64KB RAM
+            flash_size_bytes: 65536,      // 64KB for client/test code
+            ram_size_bytes: 32768,        // 32KB RAM
             process: {
                 name: "i2c client process",
                 objects: [
@@ -68,6 +72,23 @@
                     {
                         name: "i2c client thread",
                         stack_size_bytes: 2048,   // 2KB stack
+                    },
+                ],
+            },
+        },
+        // ──── SPDM Responder ────
+        // Handles SPDM protocol exchanges using spdm-lib.
+        {
+            name: "spdm_responder",
+            flash_size_bytes: 65536,      // 64KB flash
+            ram_size_bytes: 32768,        // 32KB RAM
+            process: {
+                name: "spdm responder process",
+                objects: [],
+                threads: [
+                    {
+                        name: "spdm responder thread",
+                        stack_size_bytes: 4096,   // 4KB stack
                     },
                 ],
             },

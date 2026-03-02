@@ -128,6 +128,27 @@ aspeed_ddk_ext = use_extension(
 )
 use_repo(aspeed_ddk_ext, "aspeed_ddk")
 
+# ── CodeConstruct mctp-rs (mctp + mctp-estack) ──
+mctp_rs_ext = use_extension(
+    "//third_party:mctp_rs.bzl",
+    "mctp_rs_ext",
+)
+use_repo(mctp_rs_ext, "mctp_rs")
+
+# ── MCTP library ──
+mctp_lib_ext = use_extension(
+    "//third_party:mctp_lib.bzl",
+    "mctp_lib_ext",
+)
+use_repo(mctp_lib_ext, "mctp_lib")
+
+# ── SPDM library ──
+spdm_lib_ext = use_extension(
+    "//third_party:spdm_lib.bzl",
+    "spdm_lib_ext",
+)
+use_repo(spdm_lib_ext, "spdm_lib")
+
 nonhermetic_repo = use_repo_rule("//target/earlgrey/tooling/signing:nonhermetic.bzl", "nonhermetic_repo")
 
 nonhermetic_repo(name = "nonhermetic")

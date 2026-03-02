@@ -1,0 +1,27 @@
+# Licensed under the Apache-2.0 license
+
+load("@pigweed//pw_kernel/tooling:app_package.bzl", "app_package")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+rust_binary(
+    name = "spdm_responder",
+    srcs = ["src/main.rs"],
+    edition = "2021",
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":app_spdm_responder",
+        "@spdm_lib//:spdm_lib",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
+app_package(
+    name = "app_spdm_responder",
+    app_name = "spdm_responder",
+    edition = "2021",
+    system_config = "//target/ast1060-evb/i2c:system_config",
+    tags = ["kernel"],
+)

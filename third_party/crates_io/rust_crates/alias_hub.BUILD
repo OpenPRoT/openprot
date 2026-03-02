@@ -76,6 +76,12 @@ alias(
 )
 
 alias(
+    name = "bitfield",
+    actual = "@oot_crates_no_std//:bitfield",
+    visibility = ["//visibility:public"],
+)
+
+alias(
     name = "zerocopy",
     actual = "@oot_crates_no_std//:zerocopy",
     visibility = ["//visibility:public"],

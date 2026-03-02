@@ -47,6 +47,7 @@ system_image(
     apps = [
         ":i2c_client_test",
         "//services/i2c/server:i2c_server",
+        "//apps/spdm-responder:spdm_responder",
     ],
     kernel = ":target",
     platform = "//target/ast1060-evb",
