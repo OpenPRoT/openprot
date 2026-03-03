@@ -6,6 +6,7 @@ load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image", "system_ima
 load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
+load("//target:uart_boot_image.bzl", "uart_boot_image")
 
 system_image(
     name = "ipc",
@@ -24,6 +25,12 @@ system_image_test(
     name = "ipc_test",
     image = ":ipc",
     target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+uart_boot_image(
+    name = "ipc_uart",
+    src = ":ipc",
+    out = "ipc_uart.bin",
 )
 
 rust_binary_no_panics_test(

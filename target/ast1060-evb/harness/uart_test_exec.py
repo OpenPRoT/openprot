@@ -73,20 +73,30 @@ class UartTestExecutor:
         if not self.args.quiet:
             print(message, flush=True)
 
+    def _write_log(self, text: str):
+        """Write text to the log file if open."""
+        if self.log_file_handle:
+            self.log_file_handle.write(text)
+            self.log_file_handle.flush()
+
     def print_uart_data(self, data: str):
         """Print UART data, with detokenized output on the following line in green.
 
         If --notok is set, the raw tokenized data is suppressed and only the
-        detokenized output is printed.
+        detokenized output is printed. When --elf is supplied, the detokenized
+        string (not the raw token) is written to the log.
         """
         if self.detokenizer:
             detokenized = self.detokenizer.detokenize_text(data)
             if detokenized != data:
                 if not getattr(self.args, "notok", False):
                     print(data, end="", flush=True)
+                    self._write_log(data)
                 print(f"\033[32m{detokenized}\033[0m", end="", flush=True)
+                self._write_log(detokenized)
                 return
         print(data, end="", flush=True)
+        self._write_log(data)
 
     def run_command(self, cmd: list, check: bool = True) -> Tuple[int, str, str]:
         """Run command and return (returncode, stdout, stderr)."""
@@ -215,12 +225,6 @@ class UartTestExecutor:
 
             if data:
                 decoded = data.decode("utf-8", errors="ignore")
-
-                # Log to file
-                if self.log_file_handle:
-                    self.log_file_handle.write(decoded)
-                    self.log_file_handle.flush()
-
                 return decoded
 
             return ""
