@@ -135,7 +135,7 @@ impl AspeedI2cBackend {
         //   - I2CC00: reset, master enable, bus auto-release
         //   - Timing registers per I2cConfig
         //   - I2CM10/I2CM14: interrupt enable/clear
-        let _i2c = Ast1060I2c::new(&ctrl, I2cConfig::default())
+        let _i2c = Ast1060I2c::new(&ctrl, I2cConfig::with_static_clocks())
             .map_err(map_i2c_error)?;
         self.initialized |= 1 << bus;
         pw_log::info!("I2C bus {} controller initialized", bus as u8);
@@ -204,7 +204,7 @@ impl AspeedI2cBackend {
             registers: regs,
             buff_registers: buffs,
         };
-        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::with_static_clocks());
         i2c.write(addr, data).map_err(map_i2c_error)
     }
 
@@ -219,7 +219,7 @@ impl AspeedI2cBackend {
             registers: regs,
             buff_registers: buffs,
         };
-        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::with_static_clocks());
         i2c.read(addr, buf).map_err(map_i2c_error)
     }
 
@@ -240,7 +240,7 @@ impl AspeedI2cBackend {
             registers: regs,
             buff_registers: buffs,
         };
-        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::with_static_clocks());
         i2c.write_read(addr, wr, rd).map_err(map_i2c_error)
     }
 
@@ -255,7 +255,7 @@ impl AspeedI2cBackend {
             registers: regs,
             buff_registers: buffs,
         };
-        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::with_static_clocks());
         i2c.recover_bus().map_err(map_i2c_error)
     }
 }

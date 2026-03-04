@@ -67,8 +67,8 @@ fn i2c_server_loop() -> Result<()> {
 
     // Per-controller hardware init (I2CC00, timing, interrupts).
     // Platform init (entry.rs) already ran init_i2c_global() + pinmux.
-    // TODO: Initialize all buses this server owns. For now, just bus 0 (I2C1).
-    backend.init_bus(0).map_err(|_| pw_status::Error::Internal)?;
+    // TODO: Initialize all buses this server owns. For now, just bus 2 (I2C1 in hardware).
+    backend.init_bus(2).map_err(|_| pw_status::Error::Internal)?;
 
     let mut request_buf = [0u8; MAX_REQUEST_SIZE];
     let mut response_buf = [0u8; MAX_RESPONSE_SIZE];

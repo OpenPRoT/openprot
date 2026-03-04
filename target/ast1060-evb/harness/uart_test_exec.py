@@ -548,17 +548,14 @@ Examples:
     args = parser.parse_args()
 
     # Validate pw_tokenizer / --elf argument consistency
-    if os.environ.get("PW_TOK_ROOT") and not args.elf:
-        print(
-            "Error: PW_TOK_ROOT is set but --elf was not provided. "
-            "Detokenization requires an ELF file."
-        )
-        sys.exit(1)
     if args.elf and not _PW_TOKENIZER_AVAILABLE:
         print(
             "Error: --elf was provided but pw_tokenizer could not be located. "
             "Set PW_TOK_ROOT to the Pigweed root or ensure Bazel has fetched it."
         )
+        sys.exit(1)
+    if args.elf and not Path(args.elf).exists():
+        print(f"Error: ELF file not found: {args.elf}")
         sys.exit(1)
     if args.notok and not args.elf:
         parser.error("--notok requires --elf")

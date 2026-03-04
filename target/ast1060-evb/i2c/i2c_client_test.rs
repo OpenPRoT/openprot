@@ -85,7 +85,7 @@ impl TestResults {
 // Tests
 // ============================================================================
 
-/// Probe ADT7490 — device must ACK at 0x2E.
+/// Probe ADT7490 — device must ACK at 0x42.
 fn test_probe_adt7490(client: &mut IpcI2cClient, results: &mut TestResults) {
     let addr = match I2cAddress::new(ADT7490_ADDR) {
         Ok(a) => a,
@@ -98,7 +98,7 @@ fn test_probe_adt7490(client: &mut IpcI2cClient, results: &mut TestResults) {
 
     match client.probe(I2C_BUS, addr) {
         Ok(true) => {
-            pw_log::info!("[PASS] probe ADT7490 @ 0x2E");
+            pw_log::info!("[PASS] probe ADT7490 @ 0x42");
             results.pass();
         }
         Ok(false) => {
@@ -189,8 +189,8 @@ fn test_write_read_device_id(client: &mut IpcI2cClient, results: &mut TestResult
 
 /// Probe a vacant address — must return `Ok(false)` (NAK).
 fn test_probe_vacant(client: &mut IpcI2cClient, results: &mut TestResults) {
-    // 0x7F is unlikely to be populated on the EVB
-    let addr = match I2cAddress::new(0x7F) {
+    // 0x77 is unlikely to be populated on the EVB
+    let addr = match I2cAddress::new(0x77) {
         Ok(a) => a,
         Err(_) => {
             pw_log::error!("[FAIL] probe vacant: invalid address");

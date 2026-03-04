@@ -44,6 +44,20 @@
                         type: "channel_handler",  // Server side of client→server channel
                     },
                 ],
+                memory_mappings: [
+                    {
+                        name: "i2c_controllers",
+                        type: "device",
+                        start_address: 0x7e7b0000,
+                        size_bytes: 0x2000,  // I2Cglobal + 14 controllers + 14 buff regions
+                    },
+                    {
+                        name: "scu",
+                        type: "device",
+                        start_address: 0x7e6e2000,
+                        size_bytes: 0x1000,  // SCU register block (scu310 at +0x310 read for APB clock)
+                    },
+                ],
                 threads: [
                     {
                         name: "i2c server thread",
