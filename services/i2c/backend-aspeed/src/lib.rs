@@ -39,8 +39,8 @@
 
 #![no_std]
 
-use aspeed_ddk::i2c_core::{Ast1060I2c, Controller as DdkController, I2cConfig, I2cError};
-use i2c_api::ResponseCode;
+use aspeed_ddk::i2c_core::{Ast1060I2c, Controller as DdkController, I2cConfig, I2cError, SlaveConfig, SlaveEvent};
+use i2c_api::{ResponseCode, SlaveEventKind};
 
 use pw_log;
 
@@ -86,10 +86,19 @@ fn map_i2c_error(e: I2cError) -> ResponseCode {
 /// The backend exclusively owns `ast1060_pac::Peripherals`, ensuring no
 /// aliased register access. The `unsafe` is confined to [`new()`] where
 /// `Peripherals::steal()` is called.
+/// Maximum TX buffer size per bus (matches hardware buffer size).
+const SLAVE_TX_BUF_SIZE: usize = 32;
+
 pub struct AspeedI2cBackend {
     peripherals: ast1060_pac::Peripherals,
     /// Tracks which buses have been initialized via `init_bus()`.
     initialized: u16,
+    /// Tracks which buses have slave mode configured via `configure_slave()`.
+    slave_configured: u16,
+    /// Pre-loaded TX data to send when master reads from us (one buffer per bus).
+    slave_tx_bufs: [[u8; SLAVE_TX_BUF_SIZE]; 14],
+    /// Valid byte count in each `slave_tx_bufs` slot.
+    slave_tx_lens: [usize; 14],
 }
 
 impl AspeedI2cBackend {
@@ -105,6 +114,9 @@ impl AspeedI2cBackend {
         Self {
             peripherals: unsafe { ast1060_pac::Peripherals::steal() },
             initialized: 0,
+            slave_configured: 0,
+            slave_tx_bufs: [[0u8; SLAVE_TX_BUF_SIZE]; 14],
+            slave_tx_lens: [0usize; 14],
         }
     }
 
@@ -257,5 +269,195 @@ impl AspeedI2cBackend {
         };
         let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::with_static_clocks());
         i2c.recover_bus().map_err(map_i2c_error)
+    }
+
+    // -----------------------------------------------------------------------
+    // Slave operations
+    // -----------------------------------------------------------------------
+
+    /// Configure a bus as an I2C slave at the given 7-bit address.
+    ///
+    /// The bus must have been initialized via [`init_bus()`] first.
+    /// After configuration, call [`enable_slave()`] to start receiving.
+    pub fn configure_slave(&mut self, bus: u8, addr: u8) -> Result<(), ResponseCode> {
+        if !self.is_bus_initialized(bus) {
+            return Err(ResponseCode::ServerError);
+        }
+        let (regs, buffs) = self.controller_regs(bus)?;
+        let ctrl = aspeed_ddk::i2c_core::I2cController {
+            controller: DdkController(bus),
+            registers: regs,
+            buff_registers: buffs,
+        };
+        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+        let config = SlaveConfig::new(addr).map_err(map_i2c_error)?;
+        i2c.configure_slave(&config).map_err(map_i2c_error)?;
+        self.slave_configured |= 1 << bus;
+        pw_log::info!("I2C bus {} slave configured at address 0x{:02x}", bus as u8, addr as u8);
+        Ok(())
+    }
+
+    /// Enable slave receive mode on a previously configured bus.
+    pub fn enable_slave(&mut self, bus: u8) -> Result<(), ResponseCode> {
+        if !self.is_bus_initialized(bus) {
+            return Err(ResponseCode::ServerError);
+        }
+        if (self.slave_configured & (1 << bus)) == 0 {
+            return Err(ResponseCode::NotInitialized);
+        }
+        let (regs, buffs) = self.controller_regs(bus)?;
+        let ctrl = aspeed_ddk::i2c_core::I2cController {
+            controller: DdkController(bus),
+            registers: regs,
+            buff_registers: buffs,
+        };
+        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+        i2c.enable_slave();
+        pw_log::info!("I2C bus {} slave enabled", bus as u8);
+        Ok(())
+    }
+
+    /// Disable slave receive mode on a bus.
+    pub fn disable_slave(&mut self, bus: u8) -> Result<(), ResponseCode> {
+        if !self.is_bus_initialized(bus) {
+            return Err(ResponseCode::ServerError);
+        }
+        let (regs, buffs) = self.controller_regs(bus)?;
+        let ctrl = aspeed_ddk::i2c_core::I2cController {
+            controller: DdkController(bus),
+            registers: regs,
+            buff_registers: buffs,
+        };
+        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+        i2c.disable_slave();
+        pw_log::info!("I2C bus {} slave disabled", bus as u8);
+        Ok(())
+    }
+
+    /// Pre-load the TX buffer for a bus.
+    ///
+    /// Data stored here will be sent to the master when it issues a read
+    /// transaction to our slave address, as part of `slave_wait_event`.
+    pub fn slave_set_response(&mut self, bus: u8, data: &[u8]) -> Result<(), ResponseCode> {
+        if !self.is_bus_initialized(bus) {
+            return Err(ResponseCode::ServerError);
+        }
+        let len = data.len().min(SLAVE_TX_BUF_SIZE);
+        self.slave_tx_bufs[bus as usize][..len].copy_from_slice(&data[..len]);
+        self.slave_tx_lens[bus as usize] = len;
+        Ok(())
+    }
+
+    /// Block until the next slave event, handling reads automatically.
+    ///
+    /// On `DataReceived`, reads bytes into `rx_buf` and returns
+    /// `(SlaveEventKind::DataReceived, n)` where `n` is the byte count.
+    ///
+    /// On `ReadRequest`, sends the pre-loaded TX buffer (set via
+    /// [`slave_set_response`]) and returns `(SlaveEventKind::ReadRequest, 0)`.
+    ///
+    /// On `Stop`, returns `(SlaveEventKind::Stop, 0)`.
+    pub fn slave_wait_event(
+        &mut self,
+        bus: u8,
+        rx_buf: &mut [u8],
+    ) -> Result<(SlaveEventKind, usize), ResponseCode> {
+        if !self.is_bus_initialized(bus) {
+            return Err(ResponseCode::ServerError);
+        }
+        if (self.slave_configured & (1 << bus)) == 0 {
+            return Err(ResponseCode::NotInitialized);
+        }
+
+        // Copy TX buffer to local stack before borrowing peripherals.
+        let tx_len = self.slave_tx_lens[bus as usize];
+        let mut tx_local = [0u8; SLAVE_TX_BUF_SIZE];
+        tx_local[..tx_len].copy_from_slice(&self.slave_tx_bufs[bus as usize][..tx_len]);
+
+        let (regs, buffs) = self.controller_regs(bus)?;
+        let ctrl = aspeed_ddk::i2c_core::I2cController {
+            controller: DdkController(bus),
+            registers: regs,
+            buff_registers: buffs,
+        };
+        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+
+        const POLL_BUDGET: usize = 10_000;
+        for _ in 0..POLL_BUDGET {
+            match i2c.handle_slave_interrupt() {
+                Some(SlaveEvent::DataReceived { len: _ }) => {
+                    let n = i2c.slave_read(rx_buf).map_err(map_i2c_error)?;
+                    return Ok((SlaveEventKind::DataReceived, n));
+                }
+                Some(SlaveEvent::ReadRequest) => {
+                    let _ = i2c.slave_write(&tx_local[..tx_len]);
+                    return Ok((SlaveEventKind::ReadRequest, 0));
+                }
+                Some(SlaveEvent::DataSent { len: _ }) => {
+                    // Read transaction completed — treat same as ReadRequest
+                    // (data was already pre-loaded and sent by hardware).
+                    return Ok((SlaveEventKind::ReadRequest, 0));
+                }
+                Some(SlaveEvent::Stop) => {
+                    return Ok((SlaveEventKind::Stop, 0));
+                }
+                Some(SlaveEvent::WriteRequest) | None => {
+                    continue;
+                }
+            }
+        }
+
+        Err(ResponseCode::Timeout)
+    }
+
+    /// Poll for received slave data, blocking until data arrives or timeout.
+    ///
+    /// Returns the number of bytes written into `buf`, or 0 if a Stop was
+    /// received before any data (e.g. a probe). Returns `ResponseCode::Timeout`
+    /// if no activity is seen within the polling budget.
+    pub fn slave_receive(&mut self, bus: u8, buf: &mut [u8]) -> Result<usize, ResponseCode> {
+        if !self.is_bus_initialized(bus) {
+            return Err(ResponseCode::ServerError);
+        }
+        if (self.slave_configured & (1 << bus)) == 0 {
+            return Err(ResponseCode::NotInitialized);
+        }
+        let (regs, buffs) = self.controller_regs(bus)?;
+        let ctrl = aspeed_ddk::i2c_core::I2cController {
+            controller: DdkController(bus),
+            registers: regs,
+            buff_registers: buffs,
+        };
+        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+
+        // Polling loop — spins until a relevant event or budget exhausted.
+        // At 200 MHz, ~10_000 iterations ≈ a few hundred microseconds.
+        const POLL_BUDGET: usize = 10_000;
+        for _ in 0..POLL_BUDGET {
+            match i2c.handle_slave_interrupt() {
+                Some(SlaveEvent::DataReceived { len: _ }) => {
+                    let n = i2c.slave_read(buf).map_err(map_i2c_error)?;
+                    return Ok(n);
+                }
+                Some(SlaveEvent::Stop) => {
+                    // Stop without data (e.g. probe or zero-length write).
+                    return Ok(0);
+                }
+                Some(SlaveEvent::WriteRequest) | Some(SlaveEvent::ReadRequest) => {
+                    // Transaction in progress — keep polling for data.
+                    continue;
+                }
+                Some(SlaveEvent::DataSent { len: _ }) => {
+                    // Master read from us; not relevant for receive path.
+                    continue;
+                }
+                None => {
+                    // No hardware event yet — keep polling.
+                    continue;
+                }
+            }
+        }
+
+        Err(ResponseCode::Timeout)
     }
 }

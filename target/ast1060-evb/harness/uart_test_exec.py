@@ -79,24 +79,35 @@ class UartTestExecutor:
             self.log_file_handle.write(text)
             self.log_file_handle.flush()
 
-    def print_uart_data(self, data: str):
-        """Print UART data, with detokenized output on the following line in green.
+    def print_uart_data(self, raw: bytes):
+        """Print UART data, detokenizing base64-encoded pw_log tokens when possible.
 
-        If --notok is set, the raw tokenized data is suppressed and only the
-        detokenized output is printed. When --elf is supplied, the detokenized
-        string (not the raw token) is written to the log.
+        raw  -- the undecoded bytes straight from the serial port.
+
+        pw_tokenizer embeds base64-encoded token frames in otherwise plain text.
+        We let detokenize_base64 scan the byte string for those frames and
+        substitute decoded strings in-place; anything that is not a token frame
+        is left as-is.  The result is a plain str that we print in green when
+        detokenization changed anything.
+
+        If --notok is set the raw line is suppressed and only the decoded output
+        is shown.  When no ELF / detokenizer is available we just decode and
+        print the raw bytes.
         """
+        text = raw.decode("utf-8", errors="replace")
+
         if self.detokenizer:
-            detokenized = self.detokenizer.detokenize_text(data)
-            if detokenized != data:
+            detokenized = self.detokenizer.detokenize_text(raw).decode("utf-8", errors="replace")
+            if detokenized != text:
                 if not getattr(self.args, "notok", False):
-                    print(data, end="", flush=True)
-                    self._write_log(data)
+                    print(text, end="", flush=True)
+                    self._write_log(text)
                 print(f"\033[32m{detokenized}\033[0m", end="", flush=True)
                 self._write_log(detokenized)
                 return
-        print(data, end="", flush=True)
-        self._write_log(data)
+
+        print(text, end="", flush=True)
+        self._write_log(text)
 
     def run_command(self, cmd: list, check: bool = True) -> Tuple[int, str, str]:
         """Run command and return (returncode, stdout, stderr)."""
@@ -211,27 +222,22 @@ class UartTestExecutor:
             self.log_file_handle.close()
             self.log_file_handle = None
 
-    def read_serial_data(self, timeout_seconds: float = 1.0) -> str:
-        """Read available data from serial port."""
+    def read_serial_data(self, timeout_seconds: float = 1.0) -> bytes:
+        """Read available data from serial port, returning raw bytes."""
         if not self.serial_port or self.args.skip_uart:
-            return ""
+            return b""
 
         if self.args.dry_run:
-            return ""
+            return b""
 
         try:
             self.serial_port.timeout = timeout_seconds
             data = self.serial_port.read(1024)
-
-            if data:
-                decoded = data.decode("utf-8", errors="ignore")
-                return decoded
-
-            return ""
+            return data if data else b""
 
         except Exception as e:
             self.log(f"Serial read error: {e}")
-            return ""
+            return b""
 
     def write_serial_data(self, data: bytes) -> bool:
         """Write data to serial port."""
@@ -264,7 +270,7 @@ class UartTestExecutor:
             return True
 
         start_time = time.time()
-        buffer = ""
+        buffer = b""
 
         while time.time() - start_time < timeout:
             data = self.read_serial_data(0.1)
@@ -274,7 +280,7 @@ class UartTestExecutor:
                     self.print_uart_data(data)
 
                 # Look for 'U' character
-                if "U" in buffer:
+                if b"U" in buffer:
                     self.log("\nUART bootloader ready detected!")
                     return True
 
@@ -346,18 +352,21 @@ class UartTestExecutor:
             return True
 
         start_time = time.time()
-        buffer = ""
+        line_buffer = ""
         test_results = {"passed": 0, "failed": 0, "skipped": 0}
 
         while time.time() - start_time < actual_timeout:
             data = self.read_serial_data(0.5)
             if data:
-                buffer += data
                 if not self.args.quiet:
                     self.print_uart_data(data)
 
-                lines = buffer.split("\n")
-                for line in lines:
+                line_buffer += data.decode("utf-8", errors="replace")
+                lines = line_buffer.split("\n")
+                # Keep the last (possibly incomplete) line in the buffer
+                line_buffer = lines[-1]
+
+                for line in lines[:-1]:
                     if "PASS" in line:
                         test_results["passed"] += 1
                     elif "FAIL" in line:
@@ -377,8 +386,6 @@ class UartTestExecutor:
                         if pattern.lower() in line.lower():
                             self.log(f"\nFailure detected: {pattern}")
                             return False
-
-                buffer = "\n".join(lines[-10:])
 
         self.log(f"\nTest monitoring timeout. Results so far: {test_results}")
         return test_results["failed"] == 0
