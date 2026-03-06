@@ -29,6 +29,7 @@ jobs:
     - name: Presubmit Checks
       # The presubmit workflow performs formatting checks, license checks
       # C/C++ include checks and clippy lints.
+      # See workflows.json for the `presubmit` definition.
       run: ./pw presubmit
 
   test:
@@ -46,13 +47,8 @@ jobs:
         repository-cache: true
 
     - name: Run tests
-      run: |
-        bazel test \
-            --keep_going \
-            --test_output=streamed \
-            --build_tag_filters=-hardware,-disabled \
-            --test_tag_filters=-hardware,-disabled \
-            //...
+      # See workflows.json for the `ci` definition.
+      run: ./pw ci
 
   build:
     name: Build Targets
@@ -70,11 +66,8 @@ jobs:
         repository-cache: true
 
     - name: Build
-      run: |
-        bazel build \
-            --keep_going \
-            --build_tag_filters=-hardware,-disabled \
-            //...
+      # See workflows.json for the `default` definition.
+      run: ./pw default
 
   security-audit:
     name: Security Audit

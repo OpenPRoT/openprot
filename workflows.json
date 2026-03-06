@@ -13,7 +13,10 @@
       "name": "bazel_default_notest",
       "description": "Default bazel build configuration",
       "build_type": "bazel",
-      "args": [],
+      "args": [
+        "--keep_going",
+        "--build_tag_filters=-hardware,-disabled"
+      ],
       "env": {},
       "driver_options": {
         "@type": "pw.build.proto.BazelDriverOptions",
@@ -49,11 +52,45 @@
       ]
     },
     {
-      "name": "verilator_tests",
-      "use_config": "bazel_default",
+      "name": "ci_tests",
+      "build_config": {
+        "name": "ci_tests_config",
+        "description": "Execute CI tests (excluding hardware and heavyweight simulator tests)",
+        "build_type": "bazel",
+        "args": [
+          "--keep_going",
+          "--build_tag_filters=-hardware,-disabled,-verilator",
+          "--test_tag_filters=-hardware,-disabled,-verilator",
+          "--test_output=streamed"
+        ],
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "no_test": false
+        }
+      },
       "targets": [
-        "//target/earlgrey/threads/kernel:threads_runner_verilator_test",
-        "//target/earlgrey/ipc/user:ipc_runner_verilator_test"
+        "//..."
+      ]
+    },
+    {
+      "name": "earlgrey_verilator_tests",
+      "build_config": {
+        "name": "earlgrey_verilator_tests_config",
+        "description": "Run Earlgrey verilator-based tests",
+        "build_type": "bazel",
+        "args": [
+          "--keep_going",
+          "--build_tag_filters=+verilator",
+          "--test_tag_filters=+verilator",
+          "--test_output=streamed"
+        ],
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "no_test": false
+        }
+      },
+      "targets": [
+        "//target/earlgrey/..."
       ]
     }
   ],
@@ -95,12 +132,18 @@
       ]
     },
     {
-      "name": "earlgrey",
-      "description": "Quick presubmit for validating code changes locally",
+      "name": "ci",
+      "description": "Execute CI tests (excluding hardware and heavyweight simulator tests)",
       "builds": [
-        "format",
-        "wildcard_build",
-        "verilator_tests"
+        "ci_tests"
+      ]
+    },
+    {
+      "name": "upstream_pigweed",
+      "description": "Workflow for checking upstream pigweed compatibility",
+      "builds": [
+        "ci_tests",
+        "earlgrey_verilator_tests"
       ]
     }
   ]
