@@ -10,6 +10,8 @@ This script is designed to be invoked by Bazel test rules or used standalone.
 """
 
 import argparse
+import base64
+import binascii
 import os
 import subprocess
 import sys
@@ -45,6 +47,7 @@ _PW_TOKENIZER_AVAILABLE = _find_pw_tokenizer()
 
 if _PW_TOKENIZER_AVAILABLE:
     from pw_tokenizer import Detokenizer
+    from pw_tokenizer.detokenize import NestedMessageParser
 
 try:
     import serial
@@ -67,6 +70,7 @@ class UartTestExecutor:
         self.log_file_handle = None
         elf = getattr(args, "elf", None)
         self.detokenizer = Detokenizer(elf) if (elf and _PW_TOKENIZER_AVAILABLE) else None
+        self._token_parser = NestedMessageParser() if _PW_TOKENIZER_AVAILABLE else None
 
     def log(self, message: str):
         """Print message unless in quiet mode."""
@@ -84,28 +88,54 @@ class UartTestExecutor:
 
         raw  -- the undecoded bytes straight from the serial port.
 
-        pw_tokenizer embeds base64-encoded token frames in otherwise plain text.
-        We let detokenize_base64 scan the byte string for those frames and
-        substitute decoded strings in-place; anything that is not a token frame
-        is left as-is.  The result is a plain str that we print in green when
-        detokenization changed anything.
+        pw_tokenizer embeds $-prefixed base64 token frames in otherwise plain
+        text.  We use NestedMessageParser.read_messages() to scan the chunk for
+        those frames byte-by-byte.  The parser preserves state between calls so
+        tokens split across successive reads are handled correctly.
 
-        If --notok is set the raw line is suppressed and only the decoded output
-        is shown.  When no ELF / detokenizer is available we just decode and
-        print the raw bytes.
+        Each yielded span is either a raw non-token run or a complete $<base64>
+        token.  Tokens are base64-decoded and looked up in the detokenizer; on
+        a hit the decoded string is printed in green (and, unless --notok, the
+        raw frame is printed first).  On a miss the raw frame is printed as-is.
+
+        When no ELF / detokenizer is available we just decode and print the raw
+        bytes.
         """
-        text = raw.decode("utf-8", errors="replace")
+        if self.detokenizer and self._token_parser:
+            notok = getattr(self.args, "notok", False)
 
-        if self.detokenizer:
-            detokenized = self.detokenizer.detokenize_text(raw).decode("utf-8", errors="replace")
-            if detokenized != text:
-                if not getattr(self.args, "notok", False):
+            for is_token, span in self._token_parser.read_messages(raw):
+                if not is_token:
+                    text = span.decode("utf-8", errors="replace")
                     print(text, end="", flush=True)
                     self._write_log(text)
-                print(f"\033[32m{detokenized}\033[0m", end="", flush=True)
-                self._write_log(detokenized)
-                return
+                    continue
 
+                # span is b'$<base64chars>' — strip the leading '$' before decoding.
+                # Add standard base64 padding so b64decode accepts unpadded tokens.
+                raw_text = span.decode("utf-8", errors="replace")
+                try:
+                    b64 = span[1:]
+                    b64 += b"=" * (-len(b64) % 4)
+                    encoded = base64.b64decode(b64, validate=True)
+                    result = self.detokenizer.detokenize(encoded)
+                except (binascii.Error, ValueError):
+                    result = None
+
+                if result is not None and result.ok():
+                    if not notok:
+                        print(raw_text, end="", flush=True)
+                        self._write_log(raw_text)
+                    decoded_str = str(result)
+                    print(f"\033[32m{decoded_str}\033[0m", end="", flush=True)
+                    self._write_log(decoded_str)
+                else:
+                    # Token not in database or decode failed — print as plain text
+                    print(raw_text, end="", flush=True)
+                    self._write_log(raw_text)
+            return
+
+        text = raw.decode("utf-8", errors="replace")
         print(text, end="", flush=True)
         self._write_log(text)
 

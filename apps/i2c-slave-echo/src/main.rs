@@ -82,11 +82,11 @@ fn slave_echo_loop() -> Result<()> {
                         // Register pointer set; update read response.
                         reg_ptr = rx_buf[0];
                         let val = reg_map[reg_ptr as usize];
-                        // pw_log::info!(
-                        //     "READ  reg=0x{:02x} val=0x{:02x}",
-                        //     reg_ptr as u32,
-                        //     val as u32,
-                        // );
+                         pw_log::info!(
+                             "READ  reg=0x{:02x} val=0x{:02x}",
+                             reg_ptr as u32,
+                             val as u32,
+                         );
                         let _ = client.slave_set_response(SLAVE_BUS, &[val]);
                     }
                     _ => {
@@ -94,12 +94,12 @@ fn slave_echo_loop() -> Result<()> {
                         reg_ptr = rx_buf[0];
                         let val = rx_buf[1];
                         reg_map[reg_ptr as usize] = val;
-                        // pw_log::info!(
-                        //     "WRITE reg=0x{:02x} val=0x{:02x}",
-                        //     reg_ptr as u32,
-                        //     val as u32,
-                        // );
-                        // Update read response in case master reads back immediately.
+                         pw_log::info!(
+                             "WRITE reg=0x{:02x} val=0x{:02x}",
+                             reg_ptr as u32,
+                             val as u32,
+                         );
+                         //Update read response in case master reads back immediately.
                         let _ = client.slave_set_response(SLAVE_BUS, &[val]);
                     }
                 }

@@ -63,11 +63,11 @@ const ADT7490_ADDR: u8 = 0x42;
 /// ADT7490 register addresses and their expected power-on-reset defaults.
 /// From ADT7490 datasheet — these are read-only default values.
 const ADT7490_REGS: [(u8, u8); 5] = [
-    (0x82, 0x00), // Reserved/default
+    (0x82, 0x3A), // Reserved/default
     (0x4E, 0x81), // Config register 5 default
     (0x4F, 0x7F), // Config register 6 default
-    (0x45, 0xFF), // Auto fan control default
-    (0x3D, 0x00), // VID default
+    (0x45, 0x1C), // Auto fan control default
+    (0x3D, 0xde), // VID default
 ];
 
 // ============================================================================
@@ -142,35 +142,48 @@ fn test_register_reads(client: &mut IpcI2cClient, results: &mut TestResults) {
     };
 
     for &(reg, expected) in &ADT7490_REGS {
-        // Set register pointer
-        if let Err(_) = client.write(I2C_BUS, addr, &[reg]) {
-            pw_log::error!("[FAIL] write reg=0x%02X", reg as u32);
+        // Write value to register (single transaction: reg addr + data)
+        pw_log::info!("write reg=0x{:02x} val=0x{:02x}", reg as u32, expected as u32);
+        if let Err(_) = client.write(I2C_BUS, addr, &[reg, expected]) {
+            pw_log::error!("[FAIL] write reg=0x{:02x} val=0x{:02x}", reg as u32, expected as u32);
             results.fail();
             continue;
         }
-        pw_log::info!("write reg=0x%02X", reg as u32);
+
+        // Re-set register pointer before read
+        pw_log::info!("write reg=0x{:02x}", reg as u32);
+        if let Err(_) = client.write(I2C_BUS, addr, &[reg]) {
+            pw_log::error!("[FAIL] write reg=0x{:02x} (pointer reset)", reg as u32);
+            results.fail();
+            continue;
+        }
+
+        // ~1 ms spin delay at 200 MHz (1 cycle/add × 200 000 iters) to allow
+        // the slave task to process the pointer-set and arm its TX register.
+        for i in 0..200_000u32 {
+            core::hint::black_box(i);
+        }
 
         // Read one byte
         let mut buf = [0u8; 1];
+        pw_log::info!("read  reg=0x{:02x} val=0x{:02x}", reg as u32, buf[0] as u32);
         match client.read(I2C_BUS, addr, &mut buf) {
             Ok(_) => {
-                pw_log::info!("read  reg=0x%02X val=0x%02X", reg as u32, buf[0] as u32);
                 if buf[0] == expected {
-                    pw_log::info!("[PASS] reg=0x%02X match", reg as u32);
+                    pw_log::info!("[PASS] reg=0x{:02x} match", reg as u32);
                     results.pass();
                 } else {
-                    // Some registers are dynamic (e.g. temperature) — still pass
-                    pw_log::info!(
-                        "[PASS] reg=0x%02X got=0x%02X expected=0x%02X (dynamic OK)",
+                    pw_log::error!(
+                        "[FAIL] reg=0x{:02x} got=0x{:02x} expected=0x{:02x}",
                         reg as u32,
                         buf[0] as u32,
                         expected as u32,
                     );
-                    results.pass();
+                    results.fail();
                 }
             }
             Err(_) => {
-                pw_log::error!("[FAIL] read reg=0x%02X", reg as u32);
+                pw_log::error!("[FAIL] read reg=0x{:02x}", reg as u32);
                 results.fail();
             }
         }
@@ -194,7 +207,7 @@ fn test_write_read_device_id(client: &mut IpcI2cClient, results: &mut TestResult
     let mut buf = [0u8; 1];
     match client.write_read(I2C_BUS, addr, &[0x3D], &mut buf) {
         Ok(_) => {
-            pw_log::info!("[PASS] write_read reg=0x3D val=0x%02X", buf[0] as u32);
+            pw_log::info!("[PASS] write_read reg=0x3D val=0x{:02x}", buf[0] as u32);
             results.pass();
         }
         Err(_) => {
@@ -391,9 +404,9 @@ fn run_i2c_tests() -> Result<()> {
 
     pw_log::info!("========================================");
     pw_log::info!(
-        "Results: %u passed, %u failed",
-        results.passed,
-        results.failed,
+        "Results: {} passed, {} failed",
+        results.passed as u32,
+        results.failed as u32,
     );
     pw_log::info!("========================================");
 
