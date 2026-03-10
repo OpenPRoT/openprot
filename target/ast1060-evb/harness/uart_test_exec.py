@@ -13,6 +13,7 @@ import argparse
 import base64
 import binascii
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -302,17 +303,21 @@ class UartTestExecutor:
         start_time = time.time()
         buffer = b""
 
-        while time.time() - start_time < timeout:
-            data = self.read_serial_data(0.1)
-            if data:
-                buffer += data
-                if not self.args.quiet:
-                    self.print_uart_data(data)
+        try:
+            while time.time() - start_time < timeout:
+                data = self.read_serial_data(0.1)
+                if data:
+                    buffer += data
+                    if not self.args.quiet:
+                        self.print_uart_data(data)
 
-                # Look for 'U' character
-                if b"U" in buffer:
-                    self.log("\nUART bootloader ready detected!")
-                    return True
+                    # Look for 'U' character
+                    if b"U" in buffer:
+                        self.log("\nUART bootloader ready detected!")
+                        return True
+        except KeyboardInterrupt:
+            self.log("\nInterrupted while waiting for UART ready")
+            raise
 
         self.log("\nTimeout waiting for UART ready signal")
         return False
@@ -343,20 +348,26 @@ class UartTestExecutor:
             chunk_size = 1024
             bytes_sent = 0
 
-            for i in range(0, len(firmware_data), chunk_size):
-                chunk = firmware_data[i : i + chunk_size]
+            try:
+                for i in range(0, len(firmware_data), chunk_size):
+                    chunk = firmware_data[i : i + chunk_size]
 
-                if not self.write_serial_data(chunk):
-                    self.log("Failed to write firmware chunk")
-                    return False
+                    if not self.write_serial_data(chunk):
+                        self.log("Failed to write firmware chunk")
+                        return False
 
-                bytes_sent += len(chunk)
-                time.sleep(0.01)
+                    bytes_sent += len(chunk)
+                    time.sleep(0.01)
 
-                # Progress indicator
-                if not self.args.quiet and bytes_sent % (chunk_size * 10) == 0:
-                    progress = (bytes_sent * 100) // len(firmware_data)
-                    print(f"\rProgress: {progress}%", end="", flush=True)
+                    # Progress indicator
+                    if not self.args.quiet and bytes_sent % (chunk_size * 10) == 0:
+                        progress = (bytes_sent * 100) // len(firmware_data)
+                        print(f"\rProgress: {progress}%", end="", flush=True)
+            except KeyboardInterrupt:
+                if not self.args.quiet:
+                    print()
+                self.log("Firmware upload interrupted")
+                raise
 
             if not self.args.quiet:
                 print()
@@ -364,6 +375,8 @@ class UartTestExecutor:
             self.log("Firmware upload completed")
             return True
 
+        except KeyboardInterrupt:
+            raise
         except Exception as e:
             self.log(f"Failed to upload firmware: {e}")
             return False
@@ -385,37 +398,41 @@ class UartTestExecutor:
         line_buffer = ""
         test_results = {"passed": 0, "failed": 0, "skipped": 0}
 
-        while time.time() - start_time < actual_timeout:
-            data = self.read_serial_data(0.5)
-            if data:
-                if not self.args.quiet:
-                    self.print_uart_data(data)
+        try:
+            while time.time() - start_time < actual_timeout:
+                data = self.read_serial_data(0.5)
+                if data:
+                    if not self.args.quiet:
+                        self.print_uart_data(data)
 
-                line_buffer += data.decode("utf-8", errors="replace")
-                lines = line_buffer.split("\n")
-                # Keep the last (possibly incomplete) line in the buffer
-                line_buffer = lines[-1]
+                    line_buffer += data.decode("utf-8", errors="replace")
+                    lines = line_buffer.split("\n")
+                    # Keep the last (possibly incomplete) line in the buffer
+                    line_buffer = lines[-1]
 
-                for line in lines[:-1]:
-                    if "PASS" in line:
-                        test_results["passed"] += 1
-                    elif "FAIL" in line:
-                        test_results["failed"] += 1
-                    elif "SKIP" in line:
-                        test_results["skipped"] += 1
+                    for line in lines[:-1]:
+                        if "PASS" in line:
+                            test_results["passed"] += 1
+                        elif "FAIL" in line:
+                            test_results["failed"] += 1
+                        elif "SKIP" in line:
+                            test_results["skipped"] += 1
 
-                    # Check for completion
-                    for pattern in self.SUCCESS_PATTERNS:
-                        if pattern in line:
-                            self.log(f"\nTest execution completed!")
-                            self.log(f"Results: {test_results}")
-                            return test_results["failed"] == 0
+                        # Check for completion
+                        for pattern in self.SUCCESS_PATTERNS:
+                            if pattern in line:
+                                self.log(f"\nTest execution completed!")
+                                self.log(f"Results: {test_results}")
+                                return test_results["failed"] == 0
 
-                    # Check for failure
-                    for pattern in self.FAILURE_PATTERNS:
-                        if pattern.lower() in line.lower():
-                            self.log(f"\nFailure detected: {pattern}")
-                            return False
+                        # Check for failure
+                        for pattern in self.FAILURE_PATTERNS:
+                            if pattern.lower() in line.lower():
+                                self.log(f"\nFailure detected: {pattern}")
+                                return False
+        except KeyboardInterrupt:
+            self.log(f"\nMonitoring interrupted. Results so far: {test_results}")
+            raise
 
         self.log(f"\nTest monitoring timeout. Results so far: {test_results}")
         return test_results["failed"] == 0
@@ -423,6 +440,12 @@ class UartTestExecutor:
     def cleanup(self):
         """Clean up resources."""
         self.close_serial()
+
+    def _install_signal_handler(self):
+        """Install SIGINT handler so Ctrl+C always triggers clean shutdown."""
+        def _handler(signum, frame):
+            raise KeyboardInterrupt
+        signal.signal(signal.SIGINT, _handler)
 
     def run_parse_only(self) -> int:
         """Read and print UART output indefinitely. Returns 0 on KeyboardInterrupt."""
@@ -640,6 +663,7 @@ Examples:
         parser.error(f"UART device not found: {args.uart_device}")
 
     executor = UartTestExecutor(args)
+    executor._install_signal_handler()
 
     try:
         # Parse-only mode: read UART indefinitely
@@ -698,7 +722,8 @@ Examples:
                 return 1
 
     except KeyboardInterrupt:
-        executor.log("\nInterrupted by user")
+        executor.log("\nInterrupted.")
+        executor.cleanup()
         return 130
     except Exception as e:
         executor.log(f"Error: {e}")

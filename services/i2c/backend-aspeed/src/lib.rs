@@ -342,9 +342,37 @@ impl AspeedI2cBackend {
         if !self.is_bus_initialized(bus) {
             return Err(ResponseCode::ServerError);
         }
+        if (self.slave_configured & (1 << bus)) == 0 {
+            return Err(ResponseCode::NotInitialized);
+        }
+
         let len = data.len().min(SLAVE_TX_BUF_SIZE);
         self.slave_tx_bufs[bus as usize][..len].copy_from_slice(&data[..len]);
         self.slave_tx_lens[bus as usize] = len;
+
+        // Pre-load the hardware TX buffer and length register so it's ready for the next
+        // master read. We do NOT set AST_I2CS_TX_BUFF_EN here because that would put the
+        // slave into TX mode and prevent it from receiving writes. The TX_BUFF_EN flag
+        // will be set later when we detect a ReadRequest event.
+        let (regs, buffs) = self.controller_regs(bus)?;
+
+        // Manually pre-load TX buffer without triggering transmission.
+        // Only copy 1 byte to match the DDK's current limitation.
+        let to_write = 1.min(len);
+        if to_write > 0 {
+            // Write directly to hardware buffer register (first DWORD)
+            // The buffer is organized as 8 DWORDs, each holding up to 4 bytes
+            unsafe {
+                buffs.buff(0).write(|w| w.bits(data[0] as u32));
+
+                // Set transfer length register (tx_data_byte_count = len - 1)
+                regs.i2cc0c()
+                    .modify(|_, w| w.tx_data_byte_count().bits((to_write - 1) as u8));
+            }
+            // Note: We do NOT set AST_I2CS_TX_BUFF_EN here - that happens in slave_wait_event
+            // when ReadRequest is detected, to avoid blocking RX operations.
+        }
+
         Ok(())
     }
 
@@ -390,6 +418,8 @@ impl AspeedI2cBackend {
                     return Ok((SlaveEventKind::DataReceived, n));
                 }
                 Some(SlaveEvent::ReadRequest) => {
+                    // Hardware should already have the TX buffer armed from slave_set_response(),
+                    // but call slave_write() as a fallback in case the timing worked out.
                     let _ = i2c.slave_write(&tx_local[..tx_len]);
                     return Ok((SlaveEventKind::ReadRequest, 0));
                 }

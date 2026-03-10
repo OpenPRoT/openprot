@@ -67,7 +67,9 @@ fn slave_echo_loop() -> Result<()> {
     let mut reg_ptr: u8 = 0;
 
     // Pre-load the initial read response.
-    let _ = client.slave_set_response(SLAVE_BUS, &[reg_map[reg_ptr as usize]]);
+    if let Err(_) = client.slave_set_response(SLAVE_BUS, &[reg_map[reg_ptr as usize]]) {
+        pw_log::error!("Initial slave_set_response failed");
+    }
 
     let mut rx_buf = [0u8; 32];
 
@@ -87,7 +89,9 @@ fn slave_echo_loop() -> Result<()> {
                              reg_ptr as u32,
                              val as u32,
                          );
-                        let _ = client.slave_set_response(SLAVE_BUS, &[val]);
+                        if let Err(_) = client.slave_set_response(SLAVE_BUS, &[val]) {
+                            pw_log::error!("slave_set_response failed");
+                        }
                     }
                     _ => {
                         // Write: byte 0 = register address, byte 1 = value.
@@ -100,7 +104,9 @@ fn slave_echo_loop() -> Result<()> {
                              val as u32,
                          );
                          //Update read response in case master reads back immediately.
-                        let _ = client.slave_set_response(SLAVE_BUS, &[val]);
+                        if let Err(_) = client.slave_set_response(SLAVE_BUS, &[val]) {
+                            pw_log::error!("slave_set_response failed");
+                        }
                     }
                 }
             }
