@@ -45,6 +45,20 @@ use i2c_api::{ResponseCode, SlaveEventKind};
 use pw_log;
 
 // ---------------------------------------------------------------------------
+// I2C Slave Command Register Constants
+// ---------------------------------------------------------------------------
+// These are copied from aspeed_ddk::i2c_core::constants which is private.
+
+/// Enable slave packet mode
+const AST_I2CS_PKT_MODE_EN: u32 = 1 << 16;
+/// Slave active for all addresses
+const AST_I2CS_ACTIVE_ALL: u32 = 0x3 << 17;
+/// Enable slave RX buffer
+const AST_I2CS_RX_BUFF_EN: u32 = 1 << 7;
+/// Enable slave TX buffer
+const AST_I2CS_TX_BUFF_EN: u32 = 1 << 6;
+
+// ---------------------------------------------------------------------------
 // Error mapping
 // ---------------------------------------------------------------------------
 
@@ -350,13 +364,17 @@ impl AspeedI2cBackend {
         self.slave_tx_bufs[bus as usize][..len].copy_from_slice(&data[..len]);
         self.slave_tx_lens[bus as usize] = len;
 
-        // Pre-load the hardware TX buffer and length register so it's ready for the next
-        // master read. We do NOT set AST_I2CS_TX_BUFF_EN here because that would put the
-        // slave into TX mode and prevent it from receiving writes. The TX_BUFF_EN flag
-        // will be set later when we detect a ReadRequest event.
+        // Pre-load the hardware TX buffer and enable it so the slave can respond to reads.
+        // CRITICAL: We must set TX_BUFF_EN here, not in the ReadRequest handler, because
+        // by the time we detect ReadRequest the master has already started clocking and
+        // it's too late to respond (resulting in 0xFF on the bus).
+        //
+        // Setting both RX_BUFF_EN and TX_BUFF_EN allows the slave to simultaneously:
+        // - Accept writes from the master (RX mode)
+        // - Respond immediately to reads with pre-loaded data (TX mode)
         let (regs, buffs) = self.controller_regs(bus)?;
 
-        // Manually pre-load TX buffer without triggering transmission.
+        // Manually pre-load TX buffer and arm it for transmission.
         // Only copy 1 byte to match the DDK's current limitation.
         let to_write = 1.min(len);
         if to_write > 0 {
@@ -368,9 +386,30 @@ impl AspeedI2cBackend {
                 // Set transfer length register (tx_data_byte_count = len - 1)
                 regs.i2cc0c()
                     .modify(|_, w| w.tx_data_byte_count().bits((to_write - 1) as u8));
+
+                // ARM TX BUFFER: Set both RX_BUFF_EN and TX_BUFF_EN to enable simultaneous
+                // receive (for writes) and transmit (for reads). This is required for the
+                // slave to respond to reads without delay.
+                let mut cmd = AST_I2CS_ACTIVE_ALL | AST_I2CS_PKT_MODE_EN;
+                cmd |= AST_I2CS_RX_BUFF_EN;  // Keep RX enabled for writes
+                cmd |= AST_I2CS_TX_BUFF_EN;  // Arm TX for immediate read response
+                regs.i2cs28().write(|w| w.bits(cmd));
             }
-            // Note: We do NOT set AST_I2CS_TX_BUFF_EN here - that happens in slave_wait_event
-            // when ReadRequest is detected, to avoid blocking RX operations.
+        }
+
+        Ok(())
+    }
+
+    /// Re-enable RX after a read transaction completes.
+    ///
+    /// Called from slave_wait_event() after a DataSent event to restore RX mode.
+    fn slave_rearm_rx(&mut self, bus: u8) -> Result<(), ResponseCode> {
+        let (regs, _) = self.controller_regs(bus)?;
+
+        unsafe {
+            let mut cmd = AST_I2CS_ACTIVE_ALL | AST_I2CS_PKT_MODE_EN;
+            cmd |= AST_I2CS_RX_BUFF_EN;
+            regs.i2cs28().write(|w| w.bits(cmd));
         }
 
         Ok(())
@@ -418,14 +457,15 @@ impl AspeedI2cBackend {
                     return Ok((SlaveEventKind::DataReceived, n));
                 }
                 Some(SlaveEvent::ReadRequest) => {
-                    // Hardware should already have the TX buffer armed from slave_set_response(),
-                    // but call slave_write() as a fallback in case the timing worked out.
-                    let _ = i2c.slave_write(&tx_local[..tx_len]);
-                    return Ok((SlaveEventKind::ReadRequest, 0));
+                    // TX buffer was pre-armed in slave_set_response(), so the hardware
+                    // should respond automatically. We just need to wait for DataSent.
+                    continue;
                 }
                 Some(SlaveEvent::DataSent { len: _ }) => {
-                    // Read transaction completed — treat same as ReadRequest
-                    // (data was already pre-loaded and sent by hardware).
+                    // Read transaction completed. Re-arm RX mode for next write.
+                    // Drop i2c to release register borrows before calling slave_rearm_rx.
+                    drop(i2c);
+                    let _ = self.slave_rearm_rx(bus);
                     return Ok((SlaveEventKind::ReadRequest, 0));
                 }
                 Some(SlaveEvent::Stop) => {
