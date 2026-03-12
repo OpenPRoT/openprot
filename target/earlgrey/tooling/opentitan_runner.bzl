@@ -126,7 +126,7 @@ opentitan_test = rule(
     test = True,
     attrs = _BASE_ATTRS | {
         "exit_failure": attr.string(
-            default = "FAIL: \\d+\\n",
+            default = "FAIL: .+\\n",
             doc = "The regex to look for in the output to determine failure.",
         ),
         "exit_success": attr.string(
