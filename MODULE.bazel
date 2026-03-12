@@ -19,7 +19,7 @@ git_override(
     module_name = "pigweed",
     # ROLL: Warning: this entry is automatically updated by
     # ROLL: https://cr-buildbucket.appspot.com/builder/pigweed-internal/opentitan.roll/pigweed-opentitan-roller
-    commit = "f52059663fee1e2ab2f2ab752301b159da3ca806",
+    commit = "60041564a00b455fa68b20e89b685f19a210e69e",
     remote = "https://pigweed.googlesource.com/pigweed/pigweed",
 )
 
