@@ -34,6 +34,7 @@ serde = { version = "1.0.219", features = ["derive"] }
 serde_json5 = "0.2.1"
 syn = { version = "2.0.104", features = ["full", "extra-traits"] }
 toml = "0.8.23"
+ufmt = "0.2.0"
 
 cortex-m = "0.7.7"
 embedded-hal = "1.0"
