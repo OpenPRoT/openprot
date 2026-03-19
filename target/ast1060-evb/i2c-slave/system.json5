@@ -49,6 +49,11 @@
                             },
                         ],
                     },
+                    {
+                        // WaitGroup: multiplexes IPC channel (READABLE) and IRQ (signals::I2C2).
+                        name: "WG",
+                        type: "wait_group",
+                    },
                 ],
                 memory_mappings: [
                     {

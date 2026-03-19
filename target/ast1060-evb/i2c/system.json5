@@ -39,6 +39,22 @@
                         name: "I2C",
                         type: "channel_handler",  // Server side of client→server channel
                     },
+                    {
+                        // AST1060 I2C2 combined master+slave interrupt (IRQ 112).
+                        name: "I2C2_IRQ",
+                        type: "interrupt",
+                        irqs: [
+                            {
+                                name: "i2c2",
+                                number: 112,
+                            },
+                        ],
+                    },
+                    {
+                        // WaitGroup: multiplexes IPC channel (READABLE) and IRQ (signals::I2C2).
+                        name: "WG",
+                        type: "wait_group",
+                    },
                 ],
                 threads: [
                     {
