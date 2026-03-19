@@ -1,7 +1,7 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
-load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
 
 rust_library(
@@ -28,6 +28,29 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         "//target/earlgrey/registers",
+    ],
+)
+
+rust_library(
+    name = "usb_driver",
+    srcs = ["usb_driver.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking/usb:hal_usb",
+        "//target/earlgrey/registers:usbdev",
+        "//util/regcpy",
+        "@rust_crates//:aligned",
+        "@rust_crates//:zerocopy",
         "@ureg",
+    ],
+)
+
+rust_test(
+    name = "usb_driver_test",
+    crate = ":usb_driver",
+    rustc_flags = [
+        "-C",
+        "debug-assertions",
     ],
 )
