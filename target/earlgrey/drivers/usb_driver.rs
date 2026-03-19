@@ -254,8 +254,8 @@ impl Usb {
         });
         regs.usbctrl().modify(|w| w.enable(true));
 
-        let stat = regs.usbstat().read();
         // TODO: decide what to do about tracing.
+        //let stat = regs.usbstat().read();
         //traceln!(
         //    "Usb out_depth={} setup_depth={}",
         //    stat.av_out_depth(),
