@@ -25,7 +25,8 @@
 use i2c_api::{
     wire::{
         self, encode_configure_slave_request, encode_disable_slave_request,
-        encode_enable_slave_request, encode_probe_request, encode_read_request,
+        encode_disable_slave_notification_request, encode_enable_slave_request,
+        encode_enable_slave_notification_request, encode_probe_request, encode_read_request,
         encode_slave_receive_request, encode_slave_set_response_request,
         encode_slave_wait_event_request, encode_write_read_request, encode_write_request,
         I2cResponseHeader, WireError,
@@ -324,11 +325,15 @@ impl I2cTargetClient for IpcI2cClient {
 
     fn register_notification(
         &mut self,
-        _bus: BusIndex,
+        bus: BusIndex,
         _notification_mask: u32,
     ) -> Result<(), Self::Error> {
-        // Interrupt-driven notifications are not yet implemented.
-        Err(I2cError::from_code(ResponseCode::ServerError))
+        let req_len =
+            encode_enable_slave_notification_request(&mut self.request_buf, bus.value())
+                .map_err(wire_to_i2c_error)?;
+        let resp_len = self.send_recv(req_len)?;
+        let _ = self.decode_response(resp_len)?;
+        Ok(())
     }
 
     fn get_pending_messages(

@@ -74,6 +74,10 @@ pub enum I2cOp {
     SlaveWaitEvent = 11,
     /// Pre-load TX buffer with data to send on next master read
     SlaveSetResponse = 12,
+    /// Enable interrupt-driven notification for slave receive events
+    EnableSlaveNotification = 13,
+    /// Disable interrupt-driven notifications
+    DisableSlaveNotification = 14,
 }
 
 impl I2cOp {
@@ -93,6 +97,8 @@ impl I2cOp {
             10 => Some(Self::SlaveReceive),
             11 => Some(Self::SlaveWaitEvent),
             12 => Some(Self::SlaveSetResponse),
+            13 => Some(Self::EnableSlaveNotification),
+            14 => Some(Self::DisableSlaveNotification),
             _ => None,
         }
     }
@@ -247,6 +253,28 @@ impl I2cRequestHeader {
             bus,
             address: 0,
             write_len: data_len,
+            read_len: 0,
+        }
+    }
+
+    /// Create an EnableSlaveNotification request header.
+    pub const fn enable_slave_notification(bus: u8) -> Self {
+        Self {
+            op: I2cOp::EnableSlaveNotification as u8,
+            bus,
+            address: 0,
+            write_len: 0,
+            read_len: 0,
+        }
+    }
+
+    /// Create a DisableSlaveNotification request header.
+    pub const fn disable_slave_notification(bus: u8) -> Self {
+        Self {
+            op: I2cOp::DisableSlaveNotification as u8,
+            bus,
+            address: 0,
+            write_len: 0,
             read_len: 0,
         }
     }
@@ -527,6 +555,32 @@ pub fn encode_slave_wait_event_request(buf: &mut [u8], bus: u8, max_rx_len: u16)
         return Err(WireError::BufferTooSmall);
     }
     let header = I2cRequestHeader::slave_wait_event(bus, max_rx_len);
+    buf[..I2cRequestHeader::SIZE].copy_from_slice(&header.to_bytes());
+    Ok(I2cRequestHeader::SIZE)
+}
+
+/// Encode an enable-slave-notification request into a buffer.
+///
+/// # Errors
+/// - `WireError::BufferTooSmall` if buffer cannot hold the header
+pub fn encode_enable_slave_notification_request(buf: &mut [u8], bus: u8) -> Result<usize, WireError> {
+    if buf.len() < I2cRequestHeader::SIZE {
+        return Err(WireError::BufferTooSmall);
+    }
+    let header = I2cRequestHeader::enable_slave_notification(bus);
+    buf[..I2cRequestHeader::SIZE].copy_from_slice(&header.to_bytes());
+    Ok(I2cRequestHeader::SIZE)
+}
+
+/// Encode a disable-slave-notification request into a buffer.
+///
+/// # Errors
+/// - `WireError::BufferTooSmall` if buffer cannot hold the header
+pub fn encode_disable_slave_notification_request(buf: &mut [u8], bus: u8) -> Result<usize, WireError> {
+    if buf.len() < I2cRequestHeader::SIZE {
+        return Err(WireError::BufferTooSmall);
+    }
+    let header = I2cRequestHeader::disable_slave_notification(bus);
     buf[..I2cRequestHeader::SIZE].copy_from_slice(&header.to_bytes());
     Ok(I2cRequestHeader::SIZE)
 }
