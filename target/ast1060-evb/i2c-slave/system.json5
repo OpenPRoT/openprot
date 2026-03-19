@@ -35,6 +35,20 @@
                         name: "I2C",
                         type: "channel_handler",
                     },
+                    {
+                        // AST1060 I2C2 combined master+slave interrupt.
+                        // IRQ number confirmed from ast1060-pac: Interrupt::i2c2 = 112.
+                        // No separate slave-RX line exists; the server reads i2cs24
+                        // (slave status register) to distinguish event types.
+                        name: "I2C2_IRQ",
+                        type: "interrupt",
+                        irqs: [
+                            {
+                                name: "i2c2",
+                                number: 112,
+                            },
+                        ],
+                    },
                 ],
                 memory_mappings: [
                     {
