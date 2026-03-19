@@ -1,0 +1,26 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "stack",
+    srcs = [
+        "lib.rs",
+    ],
+    crate_name = "usb_stack",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking/usb:hal_usb",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:aligned",
+        "@rust_crates//:zerocopy",
+    ],
+)
+
+rust_test(
+    name = "stack_test",
+    crate = ":stack",
+    rustc_flags = [
+        "-C",
+        "debug-assertions",
+    ],
+)

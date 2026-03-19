@@ -1,0 +1,27 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "hal_usb",
+    srcs = [
+        "descriptor.rs",
+        "driver.rs",
+        "lib.rs",
+    ],
+    crate_name = "hal_usb",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@rust_crates//:aligned",
+        "@rust_crates//:ufmt",
+        "@rust_crates//:zerocopy",
+    ],
+)
+
+rust_test(
+    name = "hal_usb_test",
+    crate = ":hal_usb",
+    rustc_flags = [
+        "-C",
+        "debug-assertions",
+    ],
+)
