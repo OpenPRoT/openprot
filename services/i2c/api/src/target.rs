@@ -122,6 +122,30 @@ pub trait I2cTargetClient: ErrorType {
     ) -> Result<usize, Self::Error>;
 }
 
+/// The type of event reported by a slave wait operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum SlaveEventKind {
+    /// Master wrote data to us.
+    DataReceived = 0,
+    /// Master requested to read from us (TX data was sent).
+    ReadRequest = 1,
+    /// Stop condition received.
+    Stop = 2,
+}
+
+impl SlaveEventKind {
+    /// Decode from a raw byte.
+    pub fn from_u8(val: u8) -> Option<Self> {
+        match val {
+            0 => Some(Self::DataReceived),
+            1 => Some(Self::ReadRequest),
+            2 => Some(Self::Stop),
+            _ => None,
+        }
+    }
+}
+
 /// Maximum size of a target message payload.
 pub const TARGET_MESSAGE_MAX_LEN: usize = 255;
 
