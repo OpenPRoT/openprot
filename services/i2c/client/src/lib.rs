@@ -24,11 +24,14 @@
 
 use i2c_api::{
     wire::{
-        self, encode_probe_request, encode_read_request, encode_write_read_request,
-        encode_write_request, I2cResponseHeader, WireError,
+        self, encode_configure_slave_request, encode_disable_slave_request,
+        encode_enable_slave_request, encode_probe_request, encode_read_request,
+        encode_slave_receive_request, encode_slave_set_response_request,
+        encode_slave_wait_event_request, encode_write_read_request, encode_write_request,
+        I2cResponseHeader, WireError,
     },
-    BusIndex, I2cAddress, I2cClient, I2cError, I2cErrorKind, NoAcknowledgeSource, Operation,
-    ResponseCode,
+    BusIndex, I2cAddress, I2cClient, I2cError, I2cErrorKind, I2cTargetClient, NoAcknowledgeSource,
+    Operation, ResponseCode, SlaveEventKind, TargetMessage, TARGET_MESSAGE_MAX_LEN,
 };
 
 use userspace::syscall;
@@ -205,5 +208,136 @@ impl I2cClient for IpcI2cClient {
             }
         }
         Ok(())
+    }
+}
+
+impl IpcI2cClient {
+    /// Pre-load data the slave will send when the master reads from us.
+    ///
+    /// Must be called before [`slave_wait_event`] if a read response is needed.
+    pub fn slave_set_response(&mut self, bus: BusIndex, data: &[u8]) -> Result<(), I2cError> {
+        let req_len =
+            encode_slave_set_response_request(&mut self.request_buf, bus.value(), data)
+                .map_err(wire_to_i2c_error)?;
+        let resp_len = self.send_recv(req_len)?;
+        let _ = self.decode_response(resp_len)?;
+        Ok(())
+    }
+
+    /// Block until the next slave event on `bus`.
+    ///
+    /// Returns the event kind and, for `DataReceived`, the received bytes
+    /// written into `rx_buf`. The returned `usize` is the number of bytes
+    /// written.
+    pub fn slave_wait_event(
+        &mut self,
+        bus: BusIndex,
+        rx_buf: &mut [u8],
+    ) -> Result<(SlaveEventKind, usize), I2cError> {
+        let max_rx = rx_buf.len().min(wire::MAX_PAYLOAD_SIZE - 1);
+        let req_len = encode_slave_wait_event_request(
+            &mut self.request_buf,
+            bus.value(),
+            max_rx as u16,
+        )
+        .map_err(wire_to_i2c_error)?;
+
+        let resp_len = self.send_recv(req_len)?;
+        let data = self.decode_response(resp_len)?;
+
+        if data.is_empty() {
+            return Err(I2cError::from_code(ResponseCode::ServerError));
+        }
+
+        let kind = SlaveEventKind::from_u8(data[0])
+            .ok_or_else(|| I2cError::from_code(ResponseCode::ServerError))?;
+
+        let rx_len = if kind == SlaveEventKind::DataReceived {
+            let n = (data.len() - 1).min(rx_buf.len());
+            rx_buf[..n].copy_from_slice(&data[1..1 + n]);
+            n
+        } else {
+            0
+        };
+
+        Ok((kind, rx_len))
+    }
+}
+
+impl I2cTargetClient for IpcI2cClient {
+    fn configure_target_address(
+        &mut self,
+        bus: BusIndex,
+        address: I2cAddress,
+    ) -> Result<(), Self::Error> {
+        let req_len =
+            encode_configure_slave_request(&mut self.request_buf, bus.value(), address.value())
+                .map_err(wire_to_i2c_error)?;
+        let resp_len = self.send_recv(req_len)?;
+        let _ = self.decode_response(resp_len)?;
+        Ok(())
+    }
+
+    fn enable_receive(&mut self, bus: BusIndex) -> Result<(), Self::Error> {
+        let req_len = encode_enable_slave_request(&mut self.request_buf, bus.value())
+            .map_err(wire_to_i2c_error)?;
+        let resp_len = self.send_recv(req_len)?;
+        let _ = self.decode_response(resp_len)?;
+        Ok(())
+    }
+
+    fn disable_receive(&mut self, bus: BusIndex) -> Result<(), Self::Error> {
+        let req_len = encode_disable_slave_request(&mut self.request_buf, bus.value())
+            .map_err(wire_to_i2c_error)?;
+        let resp_len = self.send_recv(req_len)?;
+        let _ = self.decode_response(resp_len)?;
+        Ok(())
+    }
+
+    fn wait_for_messages(
+        &mut self,
+        bus: BusIndex,
+        messages: &mut [TargetMessage],
+        _timeout: Option<core::time::Duration>,
+    ) -> Result<usize, Self::Error> {
+        let mut count = 0;
+        for msg in messages.iter_mut() {
+            let req_len = encode_slave_receive_request(
+                &mut self.request_buf,
+                bus.value(),
+                TARGET_MESSAGE_MAX_LEN as u16,
+            )
+            .map_err(wire_to_i2c_error)?;
+            let resp_len = self.send_recv(req_len)?;
+            let data = self.decode_response(resp_len)?;
+            if data.is_empty() {
+                // No data (Stop or timeout) — no more messages pending.
+                break;
+            }
+            let copy_len = core::cmp::min(data.len(), TARGET_MESSAGE_MAX_LEN);
+            msg.data_mut()[..copy_len].copy_from_slice(&data[..copy_len]);
+            msg.set_len(copy_len);
+            count += 1;
+        }
+        Ok(count)
+    }
+
+    fn register_notification(
+        &mut self,
+        _bus: BusIndex,
+        _notification_mask: u32,
+    ) -> Result<(), Self::Error> {
+        // Interrupt-driven notifications are not yet implemented.
+        Err(I2cError::from_code(ResponseCode::ServerError))
+    }
+
+    fn get_pending_messages(
+        &mut self,
+        bus: BusIndex,
+        messages: &mut [TargetMessage],
+    ) -> Result<usize, Self::Error> {
+        // Non-blocking variant: same as wait_for_messages (hardware poll returns
+        // immediately on timeout with 0 bytes).
+        self.wait_for_messages(bus, messages, None)
     }
 }

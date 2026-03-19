@@ -109,7 +109,6 @@ fn dispatch_i2c_op(
     response: &mut [u8],
     backend: &mut AspeedI2cBackend,
 ) -> usize {
-    pw_log::info!("I2C server dispatch");
     // Parse header
     let Some(header) = I2cRequestHeader::from_bytes(request) else {
         return encode_error(response, ResponseCode::ServerError);
@@ -198,6 +197,94 @@ fn dispatch_i2c_op(
             pw_log::info!("I2C dispatch recover bus");
             match backend.recover_bus(header.bus) {
                 Ok(()) => encode_success(response, 0),
+                Err(code) => encode_error(response, code),
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // ConfigureSlave: set slave address on a bus
+        // ------------------------------------------------------------------
+        I2cOp::ConfigureSlave => {
+            pw_log::info!("I2C dispatch configure slave");
+            match backend.configure_slave(header.bus, header.address) {
+                Ok(()) => encode_success(response, 0),
+                Err(code) => encode_error(response, code),
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // EnableSlave: activate slave receive mode
+        // ------------------------------------------------------------------
+        I2cOp::EnableSlave => {
+            pw_log::info!("I2C dispatch enable slave");
+            match backend.enable_slave(header.bus) {
+                Ok(()) => encode_success(response, 0),
+                Err(code) => encode_error(response, code),
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // DisableSlave: deactivate slave receive mode
+        // ------------------------------------------------------------------
+        I2cOp::DisableSlave => {
+            pw_log::info!("I2C dispatch disable slave");
+            match backend.disable_slave(header.bus) {
+                Ok(()) => encode_success(response, 0),
+                Err(code) => encode_error(response, code),
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // SlaveReceive: blocking poll for incoming data
+        // ------------------------------------------------------------------
+        I2cOp::SlaveReceive => {
+            pw_log::info!("I2C dispatch slave receive");
+            let rlen = header.read_len as usize;
+            let avail = response.len().saturating_sub(I2cResponseHeader::SIZE);
+            if rlen > avail {
+                return encode_error(response, ResponseCode::BufferTooLarge);
+            }
+            let buf = &mut response[I2cResponseHeader::SIZE..I2cResponseHeader::SIZE + rlen];
+            match backend.slave_receive(header.bus, buf) {
+                Ok(n) => encode_success(response, n),
+                Err(code) => encode_error(response, code),
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // SlaveSetResponse: pre-load TX buffer for next master read
+        // ------------------------------------------------------------------
+        I2cOp::SlaveSetResponse => {
+            // pw_log::info!("I2C dispatch slave set response");
+            let wlen = header.write_len as usize;
+            if payload.len() < wlen {
+                return encode_error(response, ResponseCode::BufferTooSmall);
+            }
+            match backend.slave_set_response(header.bus, &payload[..wlen]) {
+                Ok(()) => encode_success(response, 0),
+                Err(code) => encode_error(response, code),
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // SlaveWaitEvent: block until next slave event, return kind + data
+        //
+        // Response payload layout:
+        //   byte 0:    SlaveEventKind as u8
+        //   bytes 1..: received data (only for DataReceived events)
+        // ------------------------------------------------------------------
+        I2cOp::SlaveWaitEvent => {
+            let max_rx = header.read_len as usize;
+            // Reserve space for event-kind byte + rx data.
+            let avail = response.len().saturating_sub(I2cResponseHeader::SIZE + 1);
+            let rx_cap = max_rx.min(avail);
+            let rx_buf = &mut response[I2cResponseHeader::SIZE + 1..I2cResponseHeader::SIZE + 1 + rx_cap];
+            match backend.slave_wait_event(header.bus, rx_buf) {
+                Ok((kind, rx_len)) => {
+                    let total = 1 + rx_len;
+                    response[I2cResponseHeader::SIZE] = kind as u8;
+                    encode_success(response, total)
+                }
                 Err(code) => encode_error(response, code),
             }
         }
