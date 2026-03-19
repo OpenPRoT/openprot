@@ -1,0 +1,21 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "usb_driver",
+    srcs = ["usb_driver.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking/usb:hal_usb",
+        "//target/earlgrey/registers:usbdev",
+        "//util/console",
+        "//util/regcpy",
+        "@rust_crates//:aligned",
+        "@rust_crates//:ufmt",
+        "@rust_crates//:zerocopy",
+        "@ureg",
+    ],
+)
