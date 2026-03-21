@@ -10,7 +10,7 @@
 //! for decoding (same as Hubris).
 
 use mctp_lib::i2c::MctpI2cEncap;
-use openprot_i2c_api::TargetMessage;
+use i2c_api::TargetMessage;
 
 /// Decodes I2C target messages into raw MCTP packets.
 ///

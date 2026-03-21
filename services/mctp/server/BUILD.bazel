@@ -35,7 +35,10 @@ rust_binary(
     deps = [
         ":app_mctp_server",
         ":mctp_server_lib",
+        "//services/i2c/api:i2c_api",
+        "//services/i2c/client:i2c_client",
         "//services/mctp/api:mctp_api",
+        "//services/mctp/transport-i2c:mctp_transport_i2c",
         "@rust_crates//:mctp",
         "@rust_crates//:mctp-lib",
         "@pigweed//pw_kernel/syscall:syscall_user",

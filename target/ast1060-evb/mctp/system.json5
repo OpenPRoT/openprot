@@ -49,7 +49,25 @@
                         name: "i2c server thread",
                         stack_size_bytes: 4096,   // 4KB stack
                     },
-                ],
+                ],                
+                memory_mappings: [
+                    {
+                        // AST1060 I2C peripheral block: I2cglobal through I2cFilter
+                        // Base: 0x7e7b0000, covers all 14 controllers + buffers + filter
+                        name: "i2c_regs",
+                        type: "device",
+                        start_address: 0x7e7b0000,
+                        size_bytes: 0x4000,
+                    },
+                    {
+                        // SCU register block — scu310 at +0x310 is read by
+                        // ClockConfig::from_hardware() to derive APB clock frequency.
+                        name: "scu",
+                        type: "device",
+                        start_address: 0x7e6e2000,
+                        size_bytes: 0x1000,
+                    },
+                ],            
             },
         },
         // ──── MCTP Server ────
@@ -71,6 +89,12 @@
                         type: "channel_initiator",  // Client side: MCTP server → I2C server
                         handler_app: "i2c_server",
                         handler_object_name: "I2C",
+                    },
+                    {
+                        // WaitGroup: multiplexes IPC channel (READABLE) and I2C slave
+                        // notification (USER). user_data=0 → IPC from a client, user_data=1 → inbound.
+                        name: "WG",
+                        type: "wait_group",
                     },
                 ],
                 threads: [

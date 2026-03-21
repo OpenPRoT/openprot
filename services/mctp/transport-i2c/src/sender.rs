@@ -4,11 +4,11 @@
 //!
 //! Direct port of Hubris `mctp-server/src/i2c.rs` `I2cSender`.
 //! Only the I2C driver API is replaced: `drv_i2c_api::I2cDevice` →
-//! `openprot_i2c_api::I2cClientBlocking`.
+//! `i2c_api::I2cClientBlocking`.
 
 use mctp::Result;
 use mctp_lib::i2c::{MctpI2cEncap, MCTP_I2C_MAXMTU};
-use openprot_i2c_api::{BusIndex, I2cAddress, I2cClientBlocking};
+use i2c_api::{BusIndex, I2cAddress, I2cClientBlocking};
 
 /// I2C MCTP sender.
 ///

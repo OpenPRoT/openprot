@@ -47,12 +47,19 @@ use openprot_mctp_api::wire::{MctpRequestHeader, MAX_REQUEST_SIZE, MAX_RESPONSE_
 use openprot_mctp_api::ResponseCode;
 use openprot_mctp_server::dispatch;
 
+use i2c_api::{BusIndex, I2cTargetClient, TargetMessage};
+use i2c_client::IpcI2cClient;
+use openprot_mctp_transport_i2c::{I2cSender, MctpI2cReceiver};
+
 use pw_status::Result;
 use userspace::entry;
 use userspace::syscall::{self, Signals};
 use userspace::time::Instant;
 
 use app_mctp_server::handle;
+
+const OWN_EID: u8 = 8;
+const OWN_I2C_ADDR: u8 = 0x10;
 
 // ---------------------------------------------------------------------------
 // Server loop
@@ -61,76 +68,71 @@ use app_mctp_server::handle;
 fn mctp_server_loop() -> Result<()> {
     pw_log::info!("MCTP server starting");
 
-    // TODO(Phase 6): Initialize transport binding.
-    // The I2C sender needs an IpcI2cClient bound to the I2C server channel.
-    // For now, we create a stub sender that will be replaced with a real
-    // I2cSender<IpcI2cClient> once the I2C channel handle is wired up.
-    //
-    // let i2c_client = i2c_client::IpcI2cClient::new(handle::I2C);
-    // let sender = I2cSender::new(i2c_client, BusIndex::BUS_0, OWN_I2C_ADDR);
-    // let mut server = Server::new(Eid(OWN_EID), 0, sender);
+    // I2C notification client: receives slave-mode interrupts via Signals::USER.
+    let mut i2c_notify = IpcI2cClient::new(handle::I2C);
+    i2c_notify
+        .register_notification(BusIndex::BUS_0, 0)
+        .map_err(|_| pw_status::Error::Internal)?;
 
-    // For initial bring-up, use a no-op sender so the IPC dispatch loop
-    // can be tested without I2C hardware.
-    let mut server = openprot_mctp_server::Server::<NoopSender, 16>::new(
-        mctp::Eid(8), // default EID
+    // Separate handle for the sender — I2cSender takes ownership.
+    let sender = I2cSender::new(IpcI2cClient::new(handle::I2C), BusIndex::BUS_0, OWN_I2C_ADDR);
+    let receiver = MctpI2cReceiver::new(OWN_I2C_ADDR);
+    let mut server = openprot_mctp_server::Server::<_, 16>::new(
+        mctp::Eid(OWN_EID),
         0,
-        NoopSender,
+        sender,
     );
 
     let mut request_buf = [0u8; MAX_REQUEST_SIZE];
     let mut response_buf = [0u8; MAX_RESPONSE_SIZE];
     let mut recv_buf = [0u8; MAX_PAYLOAD_SIZE];
 
+    // Register both event sources with the WaitGroup.
+    // user_data=0 → IPC from a client  (MCTP channel READABLE)
+    // user_data=1 → I2C slave notification (I2C channel USER)
+    syscall::wait_group_add(handle::WG, handle::MCTP, Signals::READABLE, 0usize)?;
+    syscall::wait_group_add(handle::WG, handle::I2C,  Signals::USER,     1usize)?;
+
     loop {
-        // Block until a client sends a request
-        syscall::object_wait(handle::MCTP, Signals::READABLE, Instant::MAX)?;
+        let ev = syscall::object_wait(handle::WG, Signals::READABLE, Instant::MAX)?;
 
-        // Read the request
-        let len = syscall::channel_read(handle::MCTP, 0, &mut request_buf)?;
+        if ev.user_data == 1 {
+            // Inbound I2C data: drain pending messages, decode I2C framing,
+            // feed raw MCTP packets into the router.
+            let mut msgs = [TargetMessage::default(); 1];
+            if let Ok(n) = i2c_notify.get_pending_messages(BusIndex::BUS_0, &mut msgs) {
+                for msg in &msgs[..n] {
+                    if let Ok((pkt, _src_addr)) = receiver.decode(msg) {
+                        let _ = server.inbound(pkt);
+                    }
+                }
+            }
+        } else {
+            // IPC from a client — channel_read is non-blocking here because
+            // the WaitGroup only fires after READABLE is set.
+            let len = syscall::channel_read(handle::MCTP, 0, &mut request_buf)?;
 
-        if len < MctpRequestHeader::SIZE {
-            // Truncated request — respond with error
-            let resp = openprot_mctp_api::wire::MctpResponseHeader::error(ResponseCode::BadArgument);
-            response_buf[..openprot_mctp_api::wire::MctpResponseHeader::SIZE]
-                .copy_from_slice(&resp.to_bytes());
-            syscall::channel_respond(
-                handle::MCTP,
-                &response_buf[..openprot_mctp_api::wire::MctpResponseHeader::SIZE],
-            )?;
-            continue;
+            if len < MctpRequestHeader::SIZE {
+                // Truncated request — respond with error
+                let resp = openprot_mctp_api::wire::MctpResponseHeader::error(ResponseCode::BadArgument);
+                response_buf[..openprot_mctp_api::wire::MctpResponseHeader::SIZE]
+                    .copy_from_slice(&resp.to_bytes());
+                syscall::channel_respond(
+                    handle::MCTP,
+                    &response_buf[..openprot_mctp_api::wire::MctpResponseHeader::SIZE],
+                )?;
+                continue;
+            }
+
+            // Dispatch and respond
+            let response_len = dispatch::dispatch_mctp_op(
+                &request_buf[..len],
+                &mut response_buf,
+                &mut server,
+                &mut recv_buf,
+            );
+            syscall::channel_respond(handle::MCTP, &response_buf[..response_len])?;
         }
-
-        // Dispatch and respond
-        let response_len = dispatch::dispatch_mctp_op(
-            &request_buf[..len],
-            &mut response_buf,
-            &mut server,
-            &mut recv_buf,
-        );
-        syscall::channel_respond(handle::MCTP, &response_buf[..response_len])?;
-    }
-}
-
-// ---------------------------------------------------------------------------
-// No-op sender for initial bring-up
-// ---------------------------------------------------------------------------
-
-/// Stub sender that does nothing. Used for IPC dispatch testing before
-/// the I2C transport is wired up.
-struct NoopSender;
-
-impl mctp_lib::Sender for NoopSender {
-    fn send_vectored(
-        &mut self,
-        _fragmenter: mctp_lib::fragment::Fragmenter,
-        _payload: &[&[u8]],
-    ) -> mctp::Result<mctp::Tag> {
-        Err(mctp::Error::TxFailure)
-    }
-
-    fn get_mtu(&self) -> usize {
-        64
     }
 }
 

@@ -98,4 +98,4 @@ pub use error::{I2cError, I2cErrorKind, NoAcknowledgeSource, ResponseCode};
 pub use operation::Operation;
 
 // Re-export target mode types
-pub use target::{I2cTargetClient, TargetMessage, TARGET_MESSAGE_MAX_LEN};
+pub use target::{I2cTargetClient, SlaveEventKind, TargetMessage, TARGET_MESSAGE_MAX_LEN};

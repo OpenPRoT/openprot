@@ -4,6 +4,16 @@ user.bazelrc
 /bazel-*
 /out
 
+# Cargo build artifacts
+# (target/ is also used for platform configs, so we exclude Cargo outputs specifically)
+/target/.rustc_info.json
+/target/debug/
+/target/release/
+/target/thumbv7m-none-eabi/
+/target/riscv32imac-unknown-none-elf/
+/target/riscv32imafc-unknown-none-elf/
+/target/x86_64-unknown-linux-gnu/
+
 # Editors
 .pw_ide/
 .vscode/settings.json
