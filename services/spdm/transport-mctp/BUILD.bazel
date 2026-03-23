@@ -18,3 +18,17 @@ rust_test(
     name = "spdm_transport_mctp_test",
     crate = ":spdm_transport_mctp",
 )
+
+rust_test(
+    name = "roundtrip",
+    srcs = ["tests/roundtrip.rs"],
+    edition = "2024",
+    deps = [
+        ":spdm_transport_mctp",
+        "//services/mctp/api:mctp_api",
+        "//services/mctp/server:mctp_server_lib",
+        "@rust_crates//:mctp",
+        "@rust_crates//:mctp-lib",
+        "@rust_crates//:spdm-lib",
+    ],
+)

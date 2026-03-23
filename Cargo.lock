@@ -588,7 +588,10 @@ dependencies = [
 name = "openprot-spdm-transport-mctp"
 version = "0.1.0"
 dependencies = [
+ "mctp",
+ "mctp-lib",
  "openprot-mctp-api",
+ "openprot-mctp-server",
  "spdm-lib",
 ]
 

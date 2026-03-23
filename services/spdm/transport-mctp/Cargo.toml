@@ -10,3 +10,8 @@ license = "Apache-2.0"
 [dependencies]
 openprot-mctp-api = { path = "../../mctp/api" }
 spdm-lib = { git = "https://github.com/9elements/spdm-lib.git", branch = "buildup" }
+
+[dev-dependencies]
+mctp = { git = "https://github.com/OpenPRoT/mctp-rs.git", branch = "sync-features" }
+mctp-lib = { git = "https://github.com/9elements/mctp-lib.git", branch = "buildup", package = "mctp-lib" }
+openprot-mctp-server = { path = "../../mctp/server" }
