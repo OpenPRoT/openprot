@@ -16,11 +16,11 @@
     arch: {
         type: "armv7m",
         vector_table_start_address: 0x00000000,
-        vector_table_size_bytes: 1280,  // 0x500 (272 vectors + thread/stack/process annotations)
+        vector_table_size_bytes: 1664,  // 0x680 (includes vector table + annotations)
     },
     kernel: {
-        flash_start_address: 0x00000500,  // After vector table + annotations
-        flash_size_bytes: 129792,         // ~126KB (ends at 0x00020000, power-of-2 boundary)
+        flash_start_address: 0x00000680,  // After vector table + annotations
+        flash_size_bytes: 129408,         // ~126KB (ends at 0x00020000, power-of-2 boundary)
         ram_start_address: 0x00060000,    // After all flash regions
         ram_size_bytes: 131072,           // 128KB
     },
@@ -56,6 +56,20 @@
                         type: "wait_group",
                     },
                 ],
+                memory_mappings: [
+                    {
+                        name: "i2c_controllers",
+                        type: "device",
+                        start_address: 0x7e7b0000,
+                        size_bytes: 0x2000,  // I2Cglobal + 14 controllers + 14 buff regions
+                    },
+                    {
+                        name: "scu",
+                        type: "device",
+                        start_address: 0x7e6e2000,
+                        size_bytes: 0x1000,  // SCU register block (scu310 at +0x310 read for APB clock)
+                    },
+                ],
                 threads: [
                     {
                         name: "i2c server thread",
@@ -68,8 +82,8 @@
         // Sends I2C read/write requests to the server via IPC.
         {
             name: "i2c_client",
-            flash_size_bytes: 131072,     // 128KB for client/test code
-            ram_size_bytes: 65536,        // 64KB RAM
+            flash_size_bytes: 65536,      // 64KB for client/test code
+            ram_size_bytes: 32768,        // 32KB RAM
             process: {
                 name: "i2c client process",
                 objects: [
