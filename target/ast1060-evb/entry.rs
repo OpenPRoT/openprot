@@ -88,7 +88,7 @@ mod console_backend {
 /// Initialize I2C subsystem
 ///
 /// This must be called once before any I2C controller is used.
-/// Sets up global I2C registers and pin muxing for I2C1.
+/// Sets up global I2C registers and pin muxing for I2C1 and I2C2.
 fn i2c_init() {
     // 1. Initialize I2C global registers (reset, clock dividers)
     //    - Asserts/de-asserts I2C reset via SCU050/SCU054
@@ -96,8 +96,9 @@ fn i2c_init() {
     //    - Sets I2CG10 base clock dividers for all speed modes
     aspeed_ddk::i2c_core::init_i2c_global();
 
-    // 2. Configure I2C1 pin muxing via SCU414 bits 30-31
+    // 2. Configure I2C pin muxing
     aspeed_ddk::pinctrl::Pinctrl::apply_pinctrl_group(aspeed_ddk::pinctrl::PINCTRL_I2C1);
+    aspeed_ddk::pinctrl::Pinctrl::apply_pinctrl_group(aspeed_ddk::pinctrl::PINCTRL_I2C2);
 }
 
 #[cortex_m_rt::entry]
