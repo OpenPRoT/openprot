@@ -12,12 +12,14 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use pw_status::{Error, Result};
 use ast1060_pac::Peripherals;
 use embedded_io::Write;
+use kernel::sync::spinlock::SpinLock;
 
 use aspeed_ddk::uart::{Config, Parity, StopBits, UartController};
 
-// Global UART controller instance
+// Global UART controller instance wrapped in a spinlock
 static mut UART_CONTROLLER: MaybeUninit<UartController<'static>> = MaybeUninit::uninit();
 static UART_INITIALIZED: AtomicBool = AtomicBool::new(false);
+static UART_LOCK: SpinLock<arch_arm_cortex_m::Arch, ()> = SpinLock::new(());
 
 struct DummyDelay;
 
@@ -73,8 +75,10 @@ pub fn console_backend_write_all(buf: &[u8]) -> Result<()> {
         return Err(Error::Unavailable);
     }
 
-    // Safety: logical singlton access pattern guarded by UART_INITIALIZED.
-    // In a real multi-threaded kernel we'd need a spinlock here.
+    // Acquire spinlock to ensure exclusive UART access
+    let _guard = UART_LOCK.lock(arch_arm_cortex_m::Arch);
+
+    // Safety: exclusive access is guaranteed by the spinlock guard above.
     let controller = unsafe {
         &mut *(core::ptr::addr_of_mut!(UART_CONTROLLER) as *mut UartController<'static>)
     };
