@@ -174,6 +174,13 @@ impl Algorithm for EcdsaP384Verify {
     const OP: CryptoOp = CryptoOp::EcdsaP384Verify;
 }
 
+/// Get random bytes (variable-length output)
+pub struct GetRandomBytes;
+impl Algorithm for GetRandomBytes {
+    const OUTPUT_SIZE: usize = 0;  // Variable-length
+    const OP: CryptoOp = CryptoOp::GetRandomBytes;
+}
+
 // ---------------------------------------------------------------------------
 // Structured input type
 // ---------------------------------------------------------------------------
@@ -216,6 +223,9 @@ pub enum CryptoInput<'a> {
         message: &'a [u8],
         signature: &'a [u8],
     },
+
+    /// RNG operation: generate random bytes of specified length.
+    Rng { length: usize },
 }
 
 impl<'a> CryptoInput<'a> {
@@ -237,6 +247,10 @@ impl<'a> CryptoInput<'a> {
             }
             CryptoOp::Aes256GcmEncrypt | CryptoOp::Aes256GcmDecrypt => {
                 CryptoInput::Aead { key, nonce, data }
+            }
+            CryptoOp::GetRandomBytes => {
+                // Length encoded in data_len field (already parsed in header)
+                CryptoInput::Rng { length: data.len() }
             }
             #[cfg(feature = "ecdsa")]
             CryptoOp::EcdsaP256Sign | CryptoOp::EcdsaP384Sign => CryptoInput::Sign {

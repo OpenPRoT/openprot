@@ -26,3 +26,8 @@ aes-gcm = { version = "0.10", default-features = false, features = ["aes"] }
 # ECDSA (optional)
 p256 = { version = "0.13", default-features = false, features = ["ecdsa"], optional = true }
 p384 = { version = "0.13", default-features = false, features = ["ecdsa"], optional = true }
+
+# RNG
+rand_chacha = { workspace = true }
+rand_core = { workspace = true }
+getrandom = { version = "0.2", default-features = false }

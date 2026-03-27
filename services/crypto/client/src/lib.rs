@@ -368,6 +368,58 @@ impl CryptoClient {
         self.cipher_op(CryptoOp::Aes256GcmDecrypt, key, nonce, ciphertext, out)
     }
 
+    // -- RNG operations -----------------------------------------------------
+
+    /// Generate cryptographically secure random bytes.
+    ///
+    /// Fills the provided buffer with random data from a CSPRNG
+    /// (ChaCha20) seeded with system entropy.
+    ///
+    /// # Arguments
+    ///
+    /// * `buf` — Output buffer to fill with random bytes
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let mut nonce = [0u8; 32];
+    /// crypto.get_random_bytes(&mut nonce)?;
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ClientError::BufferTooSmall`] if buffer exceeds max payload size.
+    pub fn get_random_bytes(&self, buf: &mut [u8]) -> Result<(), ClientError> {
+        let len = buf.len();
+
+        if len == 0 {
+            return Ok(());
+        }
+
+        if len > MAX_PAYLOAD_SIZE {
+            return Err(ClientError::BufferTooSmall);
+        }
+
+        let mut request = [0u8; MAX_BUF_SIZE];
+        let mut response = [0u8; MAX_BUF_SIZE];
+
+        // Encode length in data_len field, no payload needed
+        let header = CryptoRequestHeader::new(CryptoOp::GetRandomBytes, 0, 0, len as u16);
+        let header_bytes = zerocopy::IntoBytes::as_bytes(&header);
+        request[..CryptoRequestHeader::SIZE].copy_from_slice(header_bytes);
+
+        let response_len = syscall::channel_transact(
+            self.handle,
+            &request[..CryptoRequestHeader::SIZE],
+            &mut response,
+            Instant::MAX,
+        )?;
+
+        // Parse variable-length response
+        parse_variable_response(&response[..response_len], buf)?;
+        Ok(())
+    }
+
     // -- ECDSA operations ---------------------------------------------------
 
     /// Sign a message with ECDSA P-256 (secp256r1).
@@ -901,6 +953,11 @@ pub fn aes256_gcm_open(
     out: &mut [u8],
 ) -> Result<usize, ClientError> {
     CryptoClient::new(handle).aes256_gcm_open(key, nonce, ciphertext, out)
+}
+
+/// Convenience: get random bytes without constructing a client.
+pub fn get_random_bytes(handle: u32, buf: &mut [u8]) -> Result<(), ClientError> {
+    CryptoClient::new(handle).get_random_bytes(buf)
 }
 
 /// Convenience: ECDSA P-256 sign without constructing a client.

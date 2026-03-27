@@ -30,6 +30,9 @@ aes-gcm = { version = "0.10", default-features = false, features = ["aes"] }
 ctr = { version = "0.9", default-features = false }
 cipher = { version = "0.4", default-features = false }
 zerocopy = { version = "0.8", default-features = false, features = ["derive"] }
+rand_chacha = { version = "0.3", default-features = false }
+rand_core = { version = "0.6", default-features = false }
+getrandom = { version = "0.2", default-features = false }
 
 # aspeed-ddk transitive deps needed as explicit Bazel targets
 heapless = "0.8.0"
