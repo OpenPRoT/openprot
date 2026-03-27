@@ -24,10 +24,14 @@ use crypto_api::backend::{
     Sha256, Sha384, Sha512,
     HmacSha256, HmacSha384, HmacSha512,
     Aes256GcmEncrypt, Aes256GcmDecrypt,
+    GetRandomBytes,
 };
 
 #[cfg(feature = "ecdsa")]
 use crypto_api::backend::{EcdsaP256Sign, EcdsaP256Verify, EcdsaP384Sign, EcdsaP384Verify};
+
+use rand_chacha::ChaCha20Rng;
+use rand_core::{RngCore, SeedableRng};
 
 use sha2::Digest as Sha2Digest;
 use hmac::{Hmac, Mac};
@@ -369,6 +373,40 @@ impl OneShot<EcdsaP384Verify> for RustCryptoBackend {
                 Ok(1)
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RNG implementation
+// ---------------------------------------------------------------------------
+
+impl OneShot<GetRandomBytes> for RustCryptoBackend {
+    fn compute(&self, input: &CryptoInput<'_>, output: &mut [u8]) -> Result<usize, BackendError> {
+        let CryptoInput::Rng { length } = input else {
+            return Err(BackendError::InvalidOperation);
+        };
+
+        if *length == 0 {
+            return Err(BackendError::InvalidDataLength);
+        }
+
+        if *length > output.len() {
+            return Err(BackendError::BufferTooSmall);
+        }
+
+        // Use ChaCha20Rng with a fixed seed for MVP
+        // TODO: Integrate with hardware RNG when available
+        // Fixed seed derived from "OpenPRoT-SPDM-RNG-Seed-v1" SHA-256
+        let seed: [u8; 32] = [
+            0x3c, 0xf8, 0x91, 0x42, 0x7e, 0x5a, 0x1f, 0xd3,
+            0x9b, 0x2e, 0x8c, 0x67, 0xa4, 0x0f, 0xb5, 0x28,
+            0x71, 0xc6, 0x3d, 0x94, 0xe2, 0x58, 0x0b, 0xfa,
+            0x6d, 0xb1, 0x45, 0xc9, 0x87, 0x3a, 0xf6, 0x29,
+        ];
+        let mut rng = ChaCha20Rng::from_seed(seed);
+        rng.fill_bytes(&mut output[..*length]);
+
+        Ok(*length)
     }
 }
 

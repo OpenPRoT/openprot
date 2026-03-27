@@ -16,6 +16,7 @@ use crypto_api::backend::{
     Sha256 as Sha256Marker, Sha384 as Sha384Marker, Sha512 as Sha512Marker,
     HmacSha256 as HmacSha256Marker, HmacSha384 as HmacSha384Marker, HmacSha512 as HmacSha512Marker,
     Aes256GcmEncrypt, Aes256GcmDecrypt,
+    GetRandomBytes,
 };
 use crypto_backend_rustcrypto::{
     RustCryptoBackend,
@@ -139,6 +140,9 @@ fn dispatch_crypto_op(
         // AES-GCM via backend traits
         CryptoOp::Aes256GcmEncrypt => do_oneshot::<Aes256GcmEncrypt>(backend, op, key, nonce, data, response),
         CryptoOp::Aes256GcmDecrypt => do_oneshot::<Aes256GcmDecrypt>(backend, op, key, nonce, data, response),
+
+        // RNG via backend traits
+        CryptoOp::GetRandomBytes => do_oneshot::<GetRandomBytes>(backend, op, key, nonce, data, response),
 
         // ECDSA not yet migrated to backend traits
         CryptoOp::EcdsaP256Sign | CryptoOp::EcdsaP256Verify |

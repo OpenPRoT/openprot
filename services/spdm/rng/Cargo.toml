@@ -1,0 +1,12 @@
+# Licensed under the Apache-2.0 license
+
+[package]
+name = "openprot-spdm-rng"
+version = "0.1.0"
+edition = "2021"
+description = "SPDM RNG implementation using OpenPRoT crypto service"
+license = "Apache-2.0"
+
+[dependencies]
+spdm-lib = { git = "https://github.com/9elements/spdm-lib.git", branch = "buildup" }
+crypto-client = { path = "../../crypto/client" }

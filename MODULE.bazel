@@ -31,6 +31,7 @@ single_version_override(
         "//patches:0003-Add-thumbv6m-and-more-thumbv7m-and-thumbv8m-triples.patch",
     ],
 )
+
 bazel_dep(name = "rules_platform", version = "0.1.0")
 bazel_dep(name = "rules_python", version = "1.6.3")
 bazel_dep(name = "ureg")
@@ -97,7 +98,7 @@ crate.from_cargo(
         "riscv32imc-unknown-none-elf",
     ],
 )
-use_repo(crate, "rust_crates_base", "oot_crates_no_std")
+use_repo(crate, "oot_crates_no_std", "rust_crates_base")
 
 # Create @rust_crates alias repo that routes cortex-m to oot_crates_no_std
 oot_rust_crates_ext = use_extension("//third_party/crates_io/rust_crates:extension.bzl", "oot_rust_crates_extension")
@@ -105,7 +106,11 @@ use_repo(oot_rust_crates_ext, "rust_crates")
 
 # Override pigweed's rust_crates repo with our aliased version
 pw_rust_crates_ext = use_extension("@pigweed//pw_build:pw_rust_crates_extension.bzl", "pw_rust_crates_extension")
-override_repo(pw_rust_crates_ext, rust_crates = "rust_crates")
+
+override_repo(
+    pw_rust_crates_ext,
+    rust_crates = "rust_crates",
+)
 
 bazel_dep(name = "opentitan_devbundle")
 archive_override(

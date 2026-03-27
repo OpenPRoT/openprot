@@ -68,6 +68,9 @@ pub enum CryptoOp {
     Aes256GcmEncrypt = 0x20,
     Aes256GcmDecrypt = 0x21,
 
+    // RNG operations (0x30-0x3F)
+    GetRandomBytes = 0x30,
+
     // ECDSA operations (0x40-0x4F)
     EcdsaP256Sign = 0x40,
     EcdsaP256Verify = 0x41,
@@ -97,6 +100,7 @@ impl TryFrom<u8> for CryptoOp {
             0x12 => Ok(CryptoOp::HmacSha512),
             0x20 => Ok(CryptoOp::Aes256GcmEncrypt),
             0x21 => Ok(CryptoOp::Aes256GcmDecrypt),
+            0x30 => Ok(CryptoOp::GetRandomBytes),
             0x40 => Ok(CryptoOp::EcdsaP256Sign),
             0x41 => Ok(CryptoOp::EcdsaP256Verify),
             0x42 => Ok(CryptoOp::EcdsaP384Sign),
@@ -279,6 +283,7 @@ pub fn output_size_for_op(op: CryptoOp, input_len: usize) -> usize {
         CryptoOp::HmacSha512 => SHA512_OUTPUT_SIZE,
         CryptoOp::Aes256GcmEncrypt => input_len + MAX_TAG_SIZE,
         CryptoOp::Aes256GcmDecrypt => input_len.saturating_sub(MAX_TAG_SIZE),
+        CryptoOp::GetRandomBytes => input_len,
         CryptoOp::EcdsaP256Sign => ECDSA_P256_SIGNATURE_SIZE,
         CryptoOp::EcdsaP256Verify => 1, // returns 1 byte: 0x01 for valid, 0x00 for invalid
         CryptoOp::EcdsaP384Sign => ECDSA_P384_SIGNATURE_SIZE,

@@ -11,6 +11,9 @@ rust_library(
         "@oot_crates_no_std//:sha2",
         "@oot_crates_no_std//:hmac",
         "@oot_crates_no_std//:aes-gcm",
+        "@oot_crates_no_std//:rand_chacha",
+        "@oot_crates_no_std//:rand_core",
+        "@oot_crates_no_std//:getrandom",
     ],
     visibility = ["//visibility:public"],
 )
