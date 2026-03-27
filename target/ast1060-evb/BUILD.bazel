@@ -60,6 +60,8 @@ rust_library(
     deps = [
         "@oot_crates_no_std//:ast1060-pac",
         "@pigweed//pw_status/rust:pw_status",
+        "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+        "@pigweed//pw_kernel/kernel",
         "@oot_crates_no_std//:aspeed-ddk",
         "@oot_crates_no_std//:embedded-hal",
         "@oot_crates_no_std//:embedded-io",
