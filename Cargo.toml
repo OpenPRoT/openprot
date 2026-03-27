@@ -19,6 +19,7 @@ members = [
     "services/spdm/responder",
     "services/spdm/transport-mctp",
     "services/spdm/rng",
+    "services/spdm/hash",
     "services/telemetry",
     "services/storage",
 ]
