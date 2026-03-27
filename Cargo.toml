@@ -18,6 +18,7 @@ members = [
     "services/spdm/requester",
     "services/spdm/responder",
     "services/spdm/transport-mctp",
+    "services/spdm/rng",
     "services/telemetry",
     "services/storage",
 ]
@@ -32,6 +33,7 @@ edition = "2021"
 zerocopy = { version = "0.8", features = ["derive"] }
 zeroize = { version = "1.8", default-features = false, features = ["derive"] }
 subtle = { version = "2", default-features = false }
-rand_core = { version = "0.9", default-features = false }
+rand_core = { version = "0.6", default-features = false }
+rand_chacha = { version = "0.3", default-features = false }
 embedded-hal = "1.0"
 heapless = { version = "0.9", default-features = false }
