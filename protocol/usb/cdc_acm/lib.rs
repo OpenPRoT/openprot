@@ -2,13 +2,14 @@
 
 #![no_std]
 
-pub use hal_usb::driver::{UsbEvent, UsbPacket};
+pub use hal_usb::driver::{UsbEvent, UsbPacket, UsbDriver};
 pub use hal_usb::{
     Direction, EndpointDescriptor, FunctionalDescriptor, InterfaceDescriptor, Recipient, Request,
     RequestType, SetupPacket, StringHandle, TransferType,
 };
 pub use usb_driver::{EpIn, EpOut};
 use usb_stack::{UsbAction, UsbClass, EMPTY};
+use util_queue::RingBuffer;
 
 /// CDC-ACM specific constants.
 pub const USB_CLASS_CDC: u8 = 0x02;
@@ -273,23 +274,31 @@ impl CdcAcmBuilder {
 }
 
 /// CDC-ACM class handler.
-#[allow(dead_code)]
-pub struct CdcAcm {
+pub struct CdcAcm<const RX_SIZE: usize, const TX_SIZE: usize> {
     config: CdcAcmBuilder,
     line_coding: LineCoding,
     expecting_control_out: bool,
-    rx_buffer: [u8; 64],
+    control_buf: [u8; 8],
+    pub rx_queue: RingBuffer<u8, RX_SIZE>,
+    pub tx_queue: RingBuffer<u8, TX_SIZE>,
 }
 
-impl CdcAcm {
+impl<const RX_SIZE: usize, const TX_SIZE: usize> CdcAcm<RX_SIZE, TX_SIZE> {
     /// Creates a new CDC-ACM class handler from a builder.
     pub fn new(config: CdcAcmBuilder) -> Self {
         Self {
             config,
             line_coding: LineCoding::default(),
             expecting_control_out: false,
-            rx_buffer: [0u8; 64],
+            control_buf: [0u8; 8],
+            rx_queue: RingBuffer::new(),
+            tx_queue: RingBuffer::new(),
         }
+    }
+
+    /// Returns the configuration builder for this instance.
+    pub fn config(&self) -> &CdcAcmBuilder {
+        &self.config
     }
 
     fn handle_setup<'a>(&'a mut self, pkt: SetupPacket) -> (UsbAction<'a>, bool) {
@@ -334,7 +343,7 @@ impl CdcAcm {
     }
 
     fn handle_control_out<'a>(&'a mut self, pkt: impl UsbPacket) -> UsbAction<'a> {
-        let buf = pkt.copy_to_unaligned(&mut self.rx_buffer);
+        let buf = pkt.copy_to_unaligned(&mut self.control_buf);
         self.expecting_control_out = false;
         match LineCoding::try_from(buf) {
             Ok(x) => {
@@ -348,9 +357,18 @@ impl CdcAcm {
             Err(_) => UsbAction::StallInAndOut { endpoint: 0 },
         }
     }
+
+    /// Polls the send buffer and initiates IN transfers if data is available.
+    pub fn poll_transmit<D: UsbDriver>(&mut self, driver: &mut D) {
+        let data = self.tx_queue.as_slice();
+        if !data.is_empty() {
+            let n = driver.transfer_in_unaligned(self.config.data_in_ep, data, true);
+            self.tx_queue.consume(n);
+        }
+    }
 }
 
-impl UsbClass for CdcAcm {
+impl<const RX_SIZE: usize, const TX_SIZE: usize> UsbClass for CdcAcm<RX_SIZE, TX_SIZE> {
     fn handle_event<'a, P: UsbPacket>(
         &'a mut self,
         event: UsbEvent<P>,
@@ -368,12 +386,10 @@ impl UsbClass for CdcAcm {
                 if pkt.endpoint_index() == 0 && self.expecting_control_out {
                     Ok(self.handle_control_out(pkt))
                 } else if pkt.endpoint_index() == self.config.data_out_ep as usize {
-                    let buf = pkt.copy_to_unaligned(&mut self.rx_buffer);
-                    Ok(UsbAction::TransferInUnaligned {
-                        endpoint: self.config.data_in_ep,
-                        data: buf,
-                        zlp: true,
-                    })
+                    let mut tmp = [0u8; 64];
+                    let buf = pkt.copy_to_unaligned(&mut tmp);
+                    let _ = self.rx_queue.push_slice(buf);
+                    Ok(UsbAction::None)
                 } else {
                     Err(UsbEvent::DataOutPacket(pkt))
                 }

@@ -131,7 +131,7 @@ fn handle_usb() -> Result<(), ErrorCode> {
 
     let mut usb = usb_driver::Usb::new(unsafe { usbdev::Usbdev::new() }, USB_CONFIG);
     let mut ep0 = usb_stack::SimpleEp0::new();
-    let mut cdc_acm = CdcAcm::new(CDC_BUILDER);
+    let mut cdc_acm = CdcAcm::<1024, 1024>::new(CDC_BUILDER);
 
     loop {
         let wait_return = syscall::object_wait(
@@ -166,6 +166,14 @@ fn handle_usb() -> Result<(), ErrorCode> {
             };
             action.run(&mut usb);
         }
+
+        // Loopback received data to send buffer
+        while let Some(byte) = cdc_acm.rx_queue.pop() {
+            let _ = cdc_acm.tx_queue.push(byte);
+        }
+
+        // Initiate any pending transmissions
+        cdc_acm.poll_transmit(&mut usb);
     }
 }
 
