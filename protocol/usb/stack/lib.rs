@@ -52,6 +52,18 @@ pub struct SimpleEp0 {
     new_address: Option<u8>,
 }
 
+/// A trait for modular USB class implementations.
+pub trait UsbClass {
+    /// Attempt to handle a USB event.
+    ///
+    /// If the event is handled by this class, it returns `Ok(UsbAction)`.
+    /// Otherwise, it returns the original event in `Err`.
+    fn handle_event<'a, P: UsbPacket>(
+        &'a mut self,
+        event: UsbEvent<P>,
+    ) -> Result<UsbAction<'a>, UsbEvent<P>>;
+}
+
 /// Indicates the result of running a USB action.
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum UsbActionRun {
@@ -256,25 +268,23 @@ impl SimpleEp0 {
     /// A helper function to process a driver UsbEvent.
     ///
     /// This function returns the action that should be performed on the driver.
-    pub fn handle_event<'a>(
+    pub fn handle_event<'a, P: UsbPacket>(
         &mut self,
-        ev: UsbEvent<impl UsbPacket>,
+        ev: UsbEvent<P>,
         descriptor_source: &'a impl DescriptorSource,
-    ) -> UsbAction<'a> {
+    ) -> Result<UsbAction<'a>, UsbEvent<P>> {
         match ev {
-            UsbEvent::SetupPacket { endpoint, pkt } => {
-                if endpoint == 0 {
-                    return self.handle_setup(pkt, descriptor_source);
+            UsbEvent::SetupPacket { endpoint, pkt } if endpoint == 0 => {
+                use hal_usb::RequestType;
+                if pkt.request().request_type() == RequestType::Standard {
+                    Ok(self.handle_setup(pkt, descriptor_source))
+                } else {
+                    Err(ev)
                 }
             }
-            UsbEvent::PacketSent { endpoint } => {
-                if endpoint == 0 {
-                    return self.handle_packet_sent();
-                }
-            }
-            _ => {}
+            UsbEvent::PacketSent { endpoint } if endpoint == 0 => Ok(self.handle_packet_sent()),
+            _ => Err(ev),
         }
-        UsbAction::None
     }
 
     /// Process a SETUP transfer and return the resulting action.
