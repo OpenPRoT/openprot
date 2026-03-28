@@ -2,7 +2,6 @@
 
 #![no_std]
 
-use aligned::{Aligned, A4};
 pub use hal_usb::driver::{UsbEvent, UsbPacket};
 pub use hal_usb::{
     Direction, EndpointDescriptor, FunctionalDescriptor, InterfaceDescriptor, Recipient, Request,
@@ -279,7 +278,7 @@ pub struct CdcAcm {
     config: CdcAcmBuilder,
     line_coding: LineCoding,
     expecting_control_out: bool,
-    rx_buffer: Aligned<A4, [u32; 16]>,
+    rx_buffer: [u8; 64],
 }
 
 impl CdcAcm {
@@ -289,7 +288,7 @@ impl CdcAcm {
             config,
             line_coding: LineCoding::default(),
             expecting_control_out: false,
-            rx_buffer: Aligned([0u32; 16]),
+            rx_buffer: [0u8; 64],
         }
     }
 
@@ -314,19 +313,14 @@ impl CdcAcm {
                 self.expecting_control_out = true;
                 (UsbAction::None, true)
             }
-            REQ_GET_LINE_CODING => {
-                let data = unsafe {
-                    core::mem::transmute::<&[u8], &Aligned<A4, [u8]>>(self.line_coding.as_bytes())
-                };
-                (
-                    UsbAction::TransferIn {
-                        endpoint: 0,
-                        data,
-                        zlp: true,
-                    },
-                    false,
-                )
-            }
+            REQ_GET_LINE_CODING => (
+                UsbAction::TransferInUnaligned {
+                    endpoint: 0,
+                    data: self.line_coding.as_bytes(),
+                    zlp: true,
+                },
+                false,
+            ),
             REQ_SET_CONTROL_LINE_STATE => (
                 UsbAction::TransferIn {
                     endpoint: 0,
@@ -340,8 +334,7 @@ impl CdcAcm {
     }
 
     fn handle_control_out<'a>(&'a mut self, pkt: impl UsbPacket) -> UsbAction<'a> {
-        let mut data = [0u32; 2];
-        let buf = pkt.copy_to(&mut data);
+        let buf = pkt.copy_to_unaligned(&mut self.rx_buffer);
         self.expecting_control_out = false;
         match LineCoding::try_from(buf) {
             Ok(x) => {
@@ -375,10 +368,10 @@ impl UsbClass for CdcAcm {
                 if pkt.endpoint_index() == 0 && self.expecting_control_out {
                     Ok(self.handle_control_out(pkt))
                 } else if pkt.endpoint_index() == self.config.data_out_ep as usize {
-                    let buf = pkt.copy_to(self.rx_buffer.as_mut());
-                    Ok(UsbAction::TransferIn {
+                    let buf = pkt.copy_to_unaligned(&mut self.rx_buffer);
+                    Ok(UsbAction::TransferInUnaligned {
                         endpoint: self.config.data_in_ep,
-                        data: unsafe { core::mem::transmute(buf) },
+                        data: buf,
                         zlp: true,
                     })
                 } else {
