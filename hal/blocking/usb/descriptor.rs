@@ -1,57 +1,103 @@
+//! USB descriptor structures and serialization.
+//!
+//! This module provides the tools to define and serialize standard USB
+//! descriptors, including Device, Configuration, Interface, and Endpoint
+//! descriptors.
+
 use aligned::Aligned;
 use aligned::A4;
 use ufmt::uWrite;
 
+/// USB Audio class code.
 pub const USB_CLASS_AUDIO: u8 = 0x01;
+/// USB Communications and CDC Control class code.
 pub const USB_CLASS_COMMUNIATIONS: u8 = 0x02;
+/// USB HID (Human Interface Device) class code.
 pub const USB_CLASS_HID: u8 = 0x03;
+/// USB Physical class code.
 pub const USB_CLASS_PHYSICAL: u8 = 0x05;
+/// USB Image class code.
 pub const USB_CLASS_IMAGE: u8 = 0x06;
+/// USB Printer class code.
 pub const USB_CLASS_PRINTER: u8 = 0x07;
+/// USB Mass Storage class code.
 pub const USB_CLASS_MASS_STORAGE: u8 = 0x08;
+/// USB Hub class code.
 pub const USB_CLASS_HUB: u8 = 0x09;
+/// USB CDC-Data class code.
 pub const USB_CLASS_CDC_DATA: u8 = 0x0a;
+/// USB Smart Card class code.
 pub const USB_CLASS_SMART_CARD: u8 = 0x0b;
+/// USB Content Security class code.
 pub const USB_CLASS_CONTENT_SECURITY: u8 = 0x0d;
+/// USB Video class code.
 pub const USB_CLASS_VIDEO: u8 = 0x0e;
+/// USB Personal Healthcare class code.
 pub const USB_CLASS_PERSONAL_HEALTHCARE: u8 = 0x0f;
+/// USB Audio/Video class code.
 pub const USB_CLASS_AUDIO_VIDEO: u8 = 0x10;
+/// USB Billboard class code.
 pub const USB_CLASS_BILLBOARD: u8 = 0x11;
+/// USB Type-C Bridge class code.
 pub const USB_CLASS_USB_TYPEC_BRIDGE: u8 = 0x12;
+/// USB Bulk Display class code.
 pub const USB_CLASS_BULK_DISPLAY: u8 = 0x13;
+/// USB MCTP class code.
 pub const USB_CLASS_MCTP: u8 = 0x14;
+/// USB I3C class code.
 pub const USB_CLASS_I3C: u8 = 0x3c;
+/// USB Diagnostic Device class code.
 pub const USB_CLASS_DIAGNOSTIC_DEVICE: u8 = 0xdc;
+/// USB Wireless Controller class code.
 pub const USB_CLASS_WIRELESS_CONTROLLER: u8 = 0xe0;
+/// USB Miscellaneous class code.
 pub const USB_CLASS_MISC: u8 = 0xef;
+/// USB Application Specific class code.
 pub const USB_CLASS_APPLICATION_SPECIFIC: u8 = 0xfe;
+/// USB Vendor Specific class code.
 pub const USB_CLASS_VENDOR: u8 = 0xff;
 
+/// DFU (Device Firmware Upgrade) subclass code.
 pub const USB_SUBCLASS_APPLICATION_SPECIFIC_DFU: u8 = 0x01;
 
+/// DFU Runtime Mode protocol code.
 pub const USB_PROTOCOL_APPLICATION_SPECIFIC_DFU_RUNTIME_MODE: u8 = 0x01;
+/// DFU Mode protocol code.
 pub const USB_PROTOCOL_APPLICATION_SPECIFIC_DFU_DFU_MODE: u8 = 0x02;
 
 use crate::DescriptorType;
 use crate::Direction;
 
+/// A handle to a USB string descriptor.
 #[derive(Clone, Copy, Eq, PartialEq)]
 #[repr(transparent)]
 pub struct StringHandle(pub u8);
 impl StringHandle {
+    /// Indicates that no string descriptor is provided.
     pub const NONE: Self = StringHandle(0);
 }
 
+/// A standard USB device descriptor.
 pub struct DeviceDescriptor {
+    /// The class of the device.
     pub device_class: DeviceClass,
+    /// The subclass of the device.
     pub device_sub_class: u8,
+    /// The protocol used by the device.
     pub device_protocol: u8,
+    /// Maximum packet size for Endpoint 0.
     pub max_packet_size: u8,
+    /// Vendor ID assigned by the USB-IF.
     pub vendor_id: u16,
+    /// Product ID assigned by the manufacturer.
     pub product_id: u16,
+    /// Device release number (in binary-coded decimal).
     pub device_release_num: u16,
+    /// Handle for the manufacturer string descriptor.
     pub manufacturer: StringHandle,
+    /// Handle for the product string descriptor.
     pub product: StringHandle,
+    /// Handle for the serial number string descriptor.
     pub serial_num: StringHandle,
 }
 impl DeviceDescriptor {
@@ -62,6 +108,7 @@ impl DeviceDescriptor {
         Self::SIZE
     }
 
+    /// Serializes the device descriptor into a byte array.
     #[allow(clippy::identity_op)]
     pub const fn serialize(&self) -> [u8; Self::SIZE] {
         let mut buf = [0u8; Self::SIZE];
@@ -98,18 +145,25 @@ impl DeviceDescriptor {
     }
 }
 
+/// A standard USB configuration descriptor.
 pub struct ConfigDescriptor {
+    /// The configuration value for this configuration.
     pub configuration_value: u8,
-    // in 2 mA units
+    /// Maximum power consumption in 2 mA units.
     pub max_power: u8,
+    /// Indicates if the device is self-powered.
     pub self_powered: bool,
+    /// Indicates if the device supports remote wakeup.
     pub remote_wakeup: bool,
+    /// List of interfaces included in this configuration.
     pub interfaces: &'static [InterfaceDescriptor],
 }
 
 impl ConfigDescriptor {
     const SIZE: usize = 9;
 
+    /// Returns the total size of the configuration descriptor, including
+    /// all interfaces and endpoints.
     pub const fn total_size(&self) -> usize {
         let mut result = Self::SIZE;
         let mut i = 0;
@@ -120,6 +174,7 @@ impl ConfigDescriptor {
         result
     }
 
+    /// Serializes the configuration descriptor and its children into a byte array.
     #[allow(clippy::identity_op)]
     pub const fn serialize<const RESULT_SIZE: usize>(&self) -> [u8; RESULT_SIZE] {
         assert!(self.total_size() == RESULT_SIZE);
@@ -168,14 +223,23 @@ impl ConfigDescriptor {
     }
 }
 
+/// A standard USB interface descriptor.
 pub struct InterfaceDescriptor {
+    /// Handle for the interface name string descriptor.
     pub name: StringHandle,
+    /// The alternate setting for this interface.
     pub alternate_setting: u8,
+    /// The interface number.
     pub interface_number: u8,
+    /// The interface class.
     pub interface_class: u8,
+    /// The interface subclass.
     pub interface_sub_class: u8,
+    /// The interface protocol.
     pub interface_protocol: u8,
+    /// List of class-specific functional descriptors.
     pub func_descs: &'static [FunctionalDescriptor],
+    /// List of endpoints used by this interface.
     pub endpoints: &'static [EndpointDescriptor],
 }
 impl InterfaceDescriptor {
@@ -195,6 +259,7 @@ impl InterfaceDescriptor {
         }
         result
     }
+    /// Serializes the interface descriptor and its children.
     pub const fn serialize<const RESULT_SIZE: usize>(&self) -> ([u8; RESULT_SIZE], usize) {
         assert!(RESULT_SIZE >= self.total_size());
 
@@ -236,11 +301,17 @@ impl InterfaceDescriptor {
     }
 }
 
+/// A standard USB endpoint descriptor.
 pub struct EndpointDescriptor {
+    /// The data direction of the endpoint.
     pub direction: Direction,
+    /// The endpoint number (0-15).
     pub endpoint_num: u8,
+    /// The transfer type of the endpoint.
     pub transfer_type: TransferType,
+    /// Maximum packet size for this endpoint.
     pub max_packet_size: u16,
+    /// Polling interval (for interrupt and isochronous endpoints).
     pub interval: u8,
 }
 impl EndpointDescriptor {
@@ -288,14 +359,18 @@ impl EndpointDescriptor {
     }
 }
 
+/// A standard USB String Descriptor 0 (listing supported languages).
 pub struct StringDescriptor0 {
+    /// List of supported LANGIDs.
     pub langs: &'static [u16],
 }
 impl StringDescriptor0 {
+    /// Returns the total size of the descriptor.
     pub const fn total_size(&self) -> usize {
         2 + core::mem::size_of_val(self.langs)
     }
 
+    /// Serializes the language list into a byte array.
     #[allow(clippy::identity_op)]
     pub const fn serialize<const RESULT_SIZE: usize>(&self) -> [u8; RESULT_SIZE] {
         assert!(RESULT_SIZE == self.total_size());
@@ -320,12 +395,17 @@ impl StringDescriptor0 {
     }
 }
 
+/// USB transfer type.
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
 pub enum TransferType {
+    /// Control transfer.
     Control,
+    /// Isochronous transfer.
     Isochronous(SynchronizationType, UsageType),
+    /// Bulk transfer.
     Bulk,
+    /// Interrupt transfer.
     Interrupt,
 }
 impl TransferType {
@@ -340,6 +420,7 @@ impl TransferType {
     }
 }
 
+/// Isochronous synchronization type.
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code)]
 pub enum SynchronizationType {
@@ -349,6 +430,7 @@ pub enum SynchronizationType {
     Synchronous = 3,
 }
 
+/// Isochronous usage type.
 #[derive(Clone, Copy, Debug)]
 #[allow(dead_code, clippy::enum_variant_names)]
 pub enum UsageType {
@@ -357,14 +439,22 @@ pub enum UsageType {
     ExplicitFeedbackDataEndpoint,
 }
 
+/// USB device class code.
 pub struct DeviceClass(pub u8);
 impl DeviceClass {
+    /// Class is specified at the interface level.
     pub const SPECIFIED_BY_INTERFACE: Self = Self(0x00);
+    /// CDC (Communication Device Class).
     pub const COMMUNICATIONS_AND_CDC: Self = Self(0x02);
+    /// Hub device.
     pub const HUB: Self = Self(0x09);
+    /// Billboard device.
     pub const BILLBOARD: Self = Self(0x11);
+    /// Diagnostic device.
     pub const DIAGNOSTIC_DEVICE: Self = Self(0x3c);
+    /// Miscellaneous device.
     pub const MISCELLANEOUS: Self = Self(0xef);
+    /// Vendor-specified device class.
     pub const VENDOR_SPECIFIED: Self = Self(0xff);
 }
 impl From<DeviceClass> for u8 {
@@ -373,9 +463,11 @@ impl From<DeviceClass> for u8 {
     }
 }
 
+/// A statically-allocated USB string descriptor.
 pub struct StringDescriptor<const BYTE_LEN: usize>(Aligned<A4, [u8; BYTE_LEN]>);
 
 impl<const BYTE_LEN: usize> StringDescriptor<BYTE_LEN> {
+    /// Creates a string descriptor from an ASCII string at compile-time.
     pub const fn const_from_ascii(s: &str) -> Self {
         assert!(BYTE_LEN <= (u8::MAX as usize));
         assert!(s.len() * 2 + 2 == BYTE_LEN);
@@ -394,19 +486,23 @@ impl<const BYTE_LEN: usize> StringDescriptor<BYTE_LEN> {
         }
         StringDescriptor(Aligned(result))
     }
+    /// Returns a reference to the string descriptor.
     pub const fn as_ref(&self) -> StringDescriptorRef<'_> {
         StringDescriptorRef(&self.0)
     }
 }
 
+/// A reference to an aligned USB string descriptor.
 #[derive(Clone, Copy)]
 pub struct StringDescriptorRef<'a>(pub &'a Aligned<A4, [u8]>);
 impl<'a> StringDescriptorRef<'a> {
+    /// Returns the descriptor as a byte slice.
     pub const fn as_bytes(self) -> &'a Aligned<A4, [u8]> {
         self.0
     }
 }
 
+/// Macro for easily creating static string descriptors.
 #[macro_export]
 macro_rules! string_descriptor {
     ($s:expr) => {
@@ -414,12 +510,16 @@ macro_rules! string_descriptor {
     };
 }
 
+/// Descriptor generation error.
 #[derive(Debug)]
 pub enum DescriptorErr {
+    /// Buffer is too small.
     Overflow,
+    /// Invalid encoding.
     Encoding,
 }
 
+/// Generates a UTF-16 hex-encoded string descriptor from a byte slice.
 #[inline(always)]
 pub fn hex_utf16_descriptor(dest: &mut [u8], src: &[u8]) -> Result<usize, DescriptorErr> {
     const { assert!(cfg!(target_endian = "little")) };
@@ -442,6 +542,7 @@ pub fn hex_utf16_descriptor(dest: &mut [u8], src: &[u8]) -> Result<usize, Descri
     Ok(total_len)
 }
 
+/// Generates an aligned UTF-16 hex-encoded string descriptor.
 #[inline(always)]
 pub fn hex_utf16_descriptor_aligned<'a>(
     dest: &'a mut Aligned<A4, [u8]>,
@@ -451,11 +552,13 @@ pub fn hex_utf16_descriptor_aligned<'a>(
     Ok(StringDescriptorRef(&dest[..len]))
 }
 
+/// Utility for dynamically writing content into a USB string descriptor.
 pub struct StringDescriptorWritter<'a> {
     buf: &'a mut Aligned<A4, [u8]>,
     index: usize,
 }
 impl<'a> StringDescriptorWritter<'a> {
+    /// Creates a new writer using the provided buffer.
     pub fn new(buf: &'a mut Aligned<A4, [u8]>) -> Result<Self, DescriptorErr> {
         if buf.len() < 2 || buf.len() > 2 + 255 {
             return Err(DescriptorErr::Overflow);
@@ -463,6 +566,7 @@ impl<'a> StringDescriptorWritter<'a> {
         *buf.get_mut(1).unwrap() = DescriptorType::STRING.0;
         Ok(StringDescriptorWritter { buf, index: 2 })
     }
+    /// Finalizes the descriptor and returns a reference to it.
     pub fn finalize(self) -> Result<StringDescriptorRef<'a>, DescriptorErr> {
         *self.buf.get_mut(0).ok_or(DescriptorErr::Overflow)? =
             u8::try_from(self.index).map_err(|_| DescriptorErr::Overflow)?;
@@ -551,6 +655,7 @@ mod test_string_descriptor_writter {
     }
 }
 
+/// A DFU functional descriptor.
 pub struct DfuFunctionalDescriptor {
     /// New firmware can be received from the host
     pub can_download: bool,
@@ -567,9 +672,11 @@ pub struct DfuFunctionalDescriptor {
     pub transfer_size: u16,
 }
 impl DfuFunctionalDescriptor {
+    /// Returns the total size of the descriptor.
     pub const fn total_size(&self) -> usize {
         9
     }
+    /// Serializes the DFU functional descriptor.
     pub const fn serialize(&self, dest: &mut [u8], offset: usize) {
         const fn bit(index: u8, val: bool) -> u8 {
             (if val { 1 } else { 0 }) << index
@@ -595,14 +702,19 @@ impl DfuFunctionalDescriptor {
     }
 }
 
+/// A raw class-specific functional descriptor.
 pub struct RawFunctionalDescriptor {
+    /// The type of the descriptor.
     pub descriptor_type: u8,
+    /// The raw content of the descriptor.
     pub content: &'static [u8],
 }
 impl RawFunctionalDescriptor {
+    /// Returns the total size of the descriptor.
     pub const fn total_size(&self) -> usize {
         self.content.len() + 2
     }
+    /// Serializes the raw functional descriptor.
     pub const fn serialize(&self, dest: &mut [u8], offset: usize) {
         dest[offset] = self.total_size() as u8;
         dest[offset + 1] = self.descriptor_type;
@@ -614,25 +726,30 @@ impl RawFunctionalDescriptor {
     }
 }
 
-// This should be a trait, but traits can't be used from const functions :(
+/// Represents a class-specific functional descriptor.
 pub enum FunctionalDescriptor {
+    /// DFU functional descriptor.
     Dfu(DfuFunctionalDescriptor),
+    /// Raw class-specific functional descriptor.
     Raw(RawFunctionalDescriptor),
 }
 
 impl FunctionalDescriptor {
+    /// Creates a raw functional descriptor.
     pub const fn raw(descriptor_type: u8, content: &'static [u8]) -> Self {
         Self::Raw(RawFunctionalDescriptor {
             descriptor_type,
             content,
         })
     }
+    /// Returns the total size of the descriptor.
     pub const fn total_size(&self) -> usize {
         match self {
             Self::Dfu(dfu) => dfu.total_size(),
             Self::Raw(raw) => raw.total_size(),
         }
     }
+    /// Serializes the functional descriptor.
     #[allow(clippy::identity_op)]
     pub const fn serialize(&self, dest: &mut [u8], offset: usize) {
         assert!(offset + self.total_size() <= dest.len());

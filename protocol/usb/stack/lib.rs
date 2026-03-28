@@ -1,3 +1,9 @@
+//! Generic USB protocol stack.
+//!
+//! This module provides the core logic for a USB device stack, including
+//! Endpoint 0 control request handling, descriptor management, and
+//! multi-packet transfer accumulation.
+
 #![no_std]
 
 use aligned::Aligned;
@@ -16,51 +22,81 @@ use zerocopy::IntoBytes;
 
 use pw_status::Error;
 
+/// A trait for providing USB descriptors to the stack.
+///
+/// Applications must implement this trait to define the device's identity
+/// and capabilities.
 pub trait DescriptorSource {
+    /// Device descriptor bytes.
     const DEVICE_DESC_BYTES: &'static Aligned<A4, [u8]>;
+    /// Configuration descriptor bytes (including interfaces and endpoints).
     const CONFIG_DESC_BYTES: &'static Aligned<A4, [u8]>;
+    /// String descriptor 0 bytes (supported languages).
     const STRING_DESC_0_BYTES: &'static Aligned<A4, [u8]>;
+    /// Device status bytes (2 bytes, usually [0, 0]).
     const DEVICE_STATUS: Aligned<A4, [u8; 2]>;
 
+    /// Returns a string descriptor by handle and language ID.
     fn get_string(&self, handle: StringHandle, lang: u16) -> Option<StringDescriptorRef<'_>>;
+    /// Returns the device status bytes.
     fn get_device_status(&self) -> &Aligned<A4, [u8]> {
         &Self::DEVICE_STATUS
     }
 }
 
+/// An empty aligned buffer.
 pub const EMPTY: &Aligned<A4, [u8]> = &Aligned([]);
 
+/// A simple implementation of USB Endpoint 0 (control endpoint).
 pub struct SimpleEp0 {
     new_address: Option<u8>,
 }
 
+/// Indicates the result of running a USB action.
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum UsbActionRun {
+    /// No operation was performed.
     NoOp,
+    /// The action has more data to transfer.
     HasMoreData,
+    /// The action is complete.
     Done,
 }
 
+/// Actions to be performed on a USB driver.
 pub enum UsbAction<'a> {
+    /// No action.
     None,
+    /// Perform an IN transfer on the specified endpoint.
     TransferIn {
+        /// The endpoint index.
         endpoint: u8,
+        /// The data to transfer.
         data: &'a Aligned<A4, [u8]>,
-        /// If zlp=true and `data.len()` is a multiple of MAX_PACKET_SIZE,
-        /// send a zero-length packet after sending all the data.
+        /// If true, send a zero-length packet (ZLP) if the data length
+        /// is a multiple of the maximum packet size.
         zlp: bool,
     },
+    /// Stall both IN and OUT directions on the specified endpoint.
     StallInAndOut {
+        /// The endpoint index.
         endpoint: u8,
     },
+    /// Set the device address.
     SetAddress {
+        /// The new device address.
         new_address: u8,
     },
+    /// Get the status of an endpoint.
     GetEndpointStatus {
+        /// The endpoint index.
         endpoint: u8,
     },
+    /// Set the stall status of an endpoint.
     SetEndpointStatus {
+        /// The endpoint index.
         endpoint: u8,
+        /// Whether to stall or unstall the endpoint.
         stall: bool,
     },
 }
@@ -68,6 +104,8 @@ impl<'a> UsbAction<'a> {
     const EP_CLEAR: Aligned<A4, [u8; 2]> = Aligned([0u8, 0]);
     const EP_HALTED: Aligned<A4, [u8; 2]> = Aligned([1u8, 0]);
 
+    /// Helper to create a TransferIn action for a control transfer,
+    /// or a StallInAndOut if the requested length is too small.
     #[inline(always)]
     #[track_caller]
     pub fn control_transfer_in_or_stall(
@@ -87,6 +125,7 @@ impl<'a> UsbAction<'a> {
             }
         }
     }
+    /// Merges another action into this one.
     pub fn merge(&mut self, new_action: UsbAction<'a>) {
         match new_action {
             UsbAction::None => {}
@@ -94,6 +133,7 @@ impl<'a> UsbAction<'a> {
         }
     }
 
+    /// Executes the action on the provided driver.
     pub fn run<TDriver: UsbDriver>(&mut self, driver: &mut TDriver) -> UsbActionRun {
         match self {
             Self::None => return UsbActionRun::NoOp,
@@ -136,14 +176,13 @@ impl<'a> UsbAction<'a> {
 }
 
 impl SimpleEp0 {
+    /// Creates a new `SimpleEp0` handler.
     pub fn new() -> Self {
         Self { new_address: None }
     }
     /// A helper function to process a driver UsbEvent.
     ///
-    /// This function returns the action that should be performed on the driver
-    /// (we can't take the driver as a parameter because the UsbPacket in the
-    /// event may capture the driver's lifetime).
+    /// This function returns the action that should be performed on the driver.
     pub fn handle_event<'a>(
         &mut self,
         ev: UsbEvent<impl UsbPacket>,
@@ -165,7 +204,7 @@ impl SimpleEp0 {
         UsbAction::None
     }
 
-    /// Process a SETUP transfer, and return the action that should be performed.
+    /// Process a SETUP transfer and return the resulting action.
     fn handle_setup<'a, TDescriptorSource: DescriptorSource>(
         &mut self,
         setup_pkt: SetupPacket,
@@ -267,10 +306,10 @@ pub struct Transfer<const N: usize> {
 }
 
 impl<const N: usize> Transfer<N> {
-    // TODO: ckungler - This could be a const generic if we need to support
-    // other packet sizes.
+    /// Maximum packet size supported (fixed at 64 bytes).
     pub const MAX_PACKET_SIZE: usize = 64;
 
+    /// Creates a new `Transfer` buffer.
     pub fn new() -> Self {
         Self {
             buffer: [0; N],
