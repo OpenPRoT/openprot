@@ -12,15 +12,15 @@ use userspace::{entry, syscall};
 
 use aligned::{Aligned, A4};
 use hal_usb::driver::UsbDriver;
-use hal_usb::{Direction, StringDescriptorRef};
-
-use usb_driver::{EpIn, EpOut, UsbConfig};
-use usb_stack::{
-    DescriptorSource,
-    UsbAction,
-    UsbClass,
+use hal_usb::{
+    ConfigDescriptor, DeviceDescriptor, EndpointDescriptor, FunctionalDescriptor,
+    InterfaceDescriptor, StringDescriptorRef,
 };
-use protocol_usb_cdc_acm::CdcAcm;
+
+use usb_driver::UsbConfig;
+use usb_stack::{DescriptorSource, UsbAction, UsbClass};
+
+use protocol_usb_cdc_acm::{CdcAcm, CdcAcmBuilder};
 
 const USB_VENDOR_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(1);
 const USB_PRODUCT_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(2);
@@ -28,17 +28,15 @@ const USB_SERIAL_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(3);
 const USB_CDC_COMM_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(4);
 const USB_CDC_DATA_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(5);
 
-const USB_CLASS_CDC: u8 = 0x02;
-const USB_CLASS_CDC_DATA: u8 = 0x0a;
-const CDC_SUBCLASS_ACM: u8 = 0x02;
-const CDC_PROTOCOL_NONE: u8 = 0x00;
+const CDC_BUILDER: CdcAcmBuilder = CdcAcmBuilder::new(
+    0, // comm_if: Communication Interface index
+    1, // data_if: Data Interface index
+    1, // comm_ep: Communication IN endpoint (Interrupt)
+    2, // data_out_ep: Data OUT endpoint (Bulk)
+    3, // data_in_ep: Data IN endpoint (Bulk)
+);
 
-const CS_INTERFACE: u8 = 0x24;
-const CDC_TYPE_HEADER: u8 = 0x00;
-const CDC_TYPE_ACM: u8 = 0x02;
-const CDC_TYPE_UNION: u8 = 0x06;
-
-static DEVICE_DESC: hal_usb::DeviceDescriptor = hal_usb::DeviceDescriptor {
+static DEVICE_DESC: DeviceDescriptor = DeviceDescriptor {
     device_class: hal_usb::DeviceClass::SPECIFIED_BY_INTERFACE,
     device_sub_class: 0x00,
     device_protocol: 0x00,
@@ -50,65 +48,27 @@ static DEVICE_DESC: hal_usb::DeviceDescriptor = hal_usb::DeviceDescriptor {
     product: USB_PRODUCT_HANDLE,
     serial_num: USB_SERIAL_HANDLE,
 };
-const CONFIG_DESC: hal_usb::ConfigDescriptor = hal_usb::ConfigDescriptor {
+
+// Fragmented Static Assembly
+static CDC_COMM_FUNC_DESCS: [FunctionalDescriptor; 3] = CDC_BUILDER.comm_func_descs();
+static CDC_COMM_ENDPOINTS: [EndpointDescriptor; 1] = CDC_BUILDER.comm_endpoints();
+static CDC_DATA_ENDPOINTS: [EndpointDescriptor; 2] = CDC_BUILDER.data_endpoints();
+
+const CDC_INTERFACES: [InterfaceDescriptor; 2] = [
+    CDC_BUILDER.comm_interface(
+        USB_CDC_COMM_HANDLE,
+        &CDC_COMM_FUNC_DESCS,
+        &CDC_COMM_ENDPOINTS,
+    ),
+    CDC_BUILDER.data_interface(USB_CDC_DATA_HANDLE, &CDC_DATA_ENDPOINTS),
+];
+
+const CONFIG_DESC: ConfigDescriptor = ConfigDescriptor {
     configuration_value: 1,
     max_power: 250,
     self_powered: false,
     remote_wakeup: false,
-    interfaces: &[
-        hal_usb::InterfaceDescriptor {
-            name: USB_CDC_COMM_HANDLE,
-            interface_number: 0,
-            alternate_setting: 0,
-            interface_class: USB_CLASS_CDC,
-            interface_sub_class: CDC_SUBCLASS_ACM,
-            interface_protocol: CDC_PROTOCOL_NONE,
-            func_descs: &[
-                hal_usb::FunctionalDescriptor::raw(CS_INTERFACE, &[CDC_TYPE_HEADER, 0x10, 0x01]),
-                hal_usb::FunctionalDescriptor::raw(CS_INTERFACE, &[CDC_TYPE_ACM, 0x02]),
-                hal_usb::FunctionalDescriptor::raw(
-                    CS_INTERFACE,
-                    &[
-                        CDC_TYPE_UNION,
-                        0, // comm_if
-                        1, // data_if
-                    ],
-                ),
-            ],
-            endpoints: &[hal_usb::EndpointDescriptor {
-                direction: Direction::DeviceToHost,
-                endpoint_num: 1,
-                interval: 255,
-                max_packet_size: 8,
-                transfer_type: hal_usb::TransferType::Interrupt,
-            }],
-        },
-        hal_usb::InterfaceDescriptor {
-            name: USB_CDC_DATA_HANDLE,
-            interface_number: 1,
-            alternate_setting: 0,
-            interface_class: USB_CLASS_CDC_DATA,
-            interface_sub_class: 0,
-            interface_protocol: CDC_PROTOCOL_NONE,
-            func_descs: &[],
-            endpoints: &[
-                hal_usb::EndpointDescriptor {
-                    direction: Direction::HostToDevice,
-                    endpoint_num: 2,
-                    interval: 0,
-                    max_packet_size: 64,
-                    transfer_type: hal_usb::TransferType::Bulk,
-                },
-                hal_usb::EndpointDescriptor {
-                    direction: Direction::DeviceToHost,
-                    endpoint_num: 3,
-                    interval: 0,
-                    max_packet_size: 64,
-                    transfer_type: hal_usb::TransferType::Bulk,
-                },
-            ],
-        },
-    ],
+    interfaces: &CDC_INTERFACES,
 };
 
 const STRING_DESC_0: hal_usb::StringDescriptor0 = hal_usb::StringDescriptor0 {
@@ -162,24 +122,16 @@ fn handle_usb() -> Result<(), ErrorCode> {
             .unwrap(),
         product_desc_bytes: PRODUCT_ID_DEFAULT,
     };
-    const USB_EP_ACM_INT_IN: EpIn = EpIn {
-        num: 1,
-        buf_pool_size: 1,
-    };
-    const USB_EP_ACM_OUT: EpOut = EpOut {
-        num: 2,
-        set_nak: false,
-    };
-    const USB_EP_ACM_IN: EpIn = EpIn {
-        num: 3,
-        buf_pool_size: 1,
-    };
 
-    const USB_CONFIG: UsbConfig =
-        UsbConfig::new(&[USB_EP_ACM_INT_IN, USB_EP_ACM_IN], &[USB_EP_ACM_OUT]);
+    const CDC_EPS: (
+        [protocol_usb_cdc_acm::EpIn; 2],
+        [protocol_usb_cdc_acm::EpOut; 1],
+    ) = CDC_BUILDER.eps();
+    const USB_CONFIG: UsbConfig = UsbConfig::new(&CDC_EPS.0, &CDC_EPS.1);
+
     let mut usb = usb_driver::Usb::new(unsafe { usbdev::Usbdev::new() }, USB_CONFIG);
     let mut ep0 = usb_stack::SimpleEp0::new();
-    let mut cdc_acm = CdcAcm::new(0, 1, 2, 3);
+    let mut cdc_acm = CdcAcm::new(CDC_BUILDER);
 
     loop {
         let wait_return = syscall::object_wait(

@@ -9,6 +9,7 @@ rust_library(
     deps = [
         "//hal/blocking/usb:hal_usb",
         "//protocol/usb/stack",
+        "//target/earlgrey/drivers:usb_driver",
         "@rust_crates//:aligned",
     ],
 )

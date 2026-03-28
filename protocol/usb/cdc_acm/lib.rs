@@ -3,9 +3,24 @@
 #![no_std]
 
 use aligned::{Aligned, A4};
-use hal_usb::driver::{UsbEvent, UsbPacket};
-use hal_usb::{Direction, Recipient, Request, RequestType, SetupPacket};
+pub use hal_usb::driver::{UsbEvent, UsbPacket};
+pub use hal_usb::{
+    Direction, EndpointDescriptor, FunctionalDescriptor, InterfaceDescriptor, Recipient, Request,
+    RequestType, SetupPacket, StringHandle, TransferType,
+};
+pub use usb_driver::{EpIn, EpOut};
 use usb_stack::{UsbAction, UsbClass, EMPTY};
+
+/// CDC-ACM specific constants.
+pub const USB_CLASS_CDC: u8 = 0x02;
+pub const USB_CLASS_CDC_DATA: u8 = 0x0a;
+pub const CDC_SUBCLASS_ACM: u8 = 0x02;
+pub const CDC_PROTOCOL_NONE: u8 = 0x00;
+
+pub const CS_INTERFACE: u8 = 0x24;
+pub const CDC_TYPE_HEADER: u8 = 0x00;
+pub const CDC_TYPE_ACM: u8 = 0x02;
+pub const CDC_TYPE_UNION: u8 = 0x06;
 
 /// CDC-ACM specific requests.
 pub const REQ_SEND_ENCAPSULATED_COMMAND: Request = Request::new(
@@ -126,25 +141,152 @@ impl LineCoding {
     }
 }
 
+/// A builder for CDC-ACM class configuration.
+///
+/// This builder encapsulates the constants and configuration logic for a
+/// CDC-ACM instance. It provides methods to generate descriptor fragments
+/// and the final `InterfaceDescriptor` structs, hiding class-specific details
+/// from the application.
+///
+/// # Convention
+/// USB classes should provide a `Builder` struct with `const` methods that:
+/// 1. Return arrays of child descriptors (functional, endpoints).
+/// 2. Construct fully-populated `InterfaceDescriptor`s from application-provided
+///    handles and static fragments.
+/// 3. Provide hardware configuration (`EpIn`, `EpOut`).
+#[derive(Copy, Clone)]
+pub struct CdcAcmBuilder {
+    pub comm_if: u8,
+    pub data_if: u8,
+    pub comm_ep: u8,
+    pub data_out_ep: u8,
+    pub data_in_ep: u8,
+}
+
+impl CdcAcmBuilder {
+    /// Creates a new CDC-ACM configuration.
+    pub const fn new(comm_if: u8, data_if: u8, comm_ep: u8, data_out_ep: u8, data_in_ep: u8) -> Self {
+        Self {
+            comm_if,
+            data_if,
+            comm_ep,
+            data_out_ep,
+            data_in_ep,
+        }
+    }
+
+    /// Returns the functional descriptors for the control interface.
+    pub const fn comm_func_descs(&self) -> [FunctionalDescriptor; 3] {
+        [
+            FunctionalDescriptor::raw(CS_INTERFACE, &[CDC_TYPE_HEADER, 0x10, 0x01]),
+            FunctionalDescriptor::raw(CS_INTERFACE, &[CDC_TYPE_ACM, 0x02]),
+            FunctionalDescriptor::raw(CS_INTERFACE, &[CDC_TYPE_UNION, self.comm_if, self.data_if]),
+        ]
+    }
+
+    /// Returns the endpoints for the control interface.
+    pub const fn comm_endpoints(&self) -> [EndpointDescriptor; 1] {
+        [EndpointDescriptor {
+            direction: Direction::DeviceToHost,
+            endpoint_num: self.comm_ep,
+            interval: 255,
+            max_packet_size: 8,
+            transfer_type: TransferType::Interrupt,
+        }]
+    }
+
+    /// Returns the endpoints for the data interface.
+    pub const fn data_endpoints(&self) -> [EndpointDescriptor; 2] {
+        [
+            EndpointDescriptor {
+                direction: Direction::HostToDevice,
+                endpoint_num: self.data_out_ep,
+                interval: 0,
+                max_packet_size: 64,
+                transfer_type: TransferType::Bulk,
+            },
+            EndpointDescriptor {
+                direction: Direction::DeviceToHost,
+                endpoint_num: self.data_in_ep,
+                interval: 0,
+                max_packet_size: 64,
+                transfer_type: TransferType::Bulk,
+            },
+        ]
+    }
+
+    /// Constructs the CDC-ACM Communication (Control) interface descriptor.
+    pub const fn comm_interface(
+        &self,
+        name: StringHandle,
+        func_descs: &'static [FunctionalDescriptor],
+        endpoints: &'static [EndpointDescriptor],
+    ) -> InterfaceDescriptor {
+        InterfaceDescriptor {
+            name,
+            interface_number: self.comm_if,
+            alternate_setting: 0,
+            interface_class: USB_CLASS_CDC,
+            interface_sub_class: CDC_SUBCLASS_ACM,
+            interface_protocol: CDC_PROTOCOL_NONE,
+            func_descs,
+            endpoints,
+        }
+    }
+
+    /// Constructs the CDC-ACM Data interface descriptor.
+    pub const fn data_interface(
+        &self,
+        name: StringHandle,
+        endpoints: &'static [EndpointDescriptor],
+    ) -> InterfaceDescriptor {
+        InterfaceDescriptor {
+            name,
+            interface_number: self.data_if,
+            alternate_setting: 0,
+            interface_class: USB_CLASS_CDC_DATA,
+            interface_sub_class: 0,
+            interface_protocol: CDC_PROTOCOL_NONE,
+            func_descs: &[],
+            endpoints,
+        }
+    }
+
+    /// Returns the hardware endpoint configuration for this CDC-ACM instance.
+    pub const fn eps(&self) -> ([EpIn; 2], [EpOut; 1]) {
+        (
+            [
+                EpIn {
+                    num: self.comm_ep,
+                    buf_pool_size: 1,
+                },
+                EpIn {
+                    num: self.data_in_ep,
+                    buf_pool_size: 1,
+                },
+            ],
+            [EpOut {
+                num: self.data_out_ep,
+                set_nak: false,
+            }],
+        )
+    }
+}
+
 /// CDC-ACM class handler.
 #[allow(dead_code)]
 pub struct CdcAcm {
-    comm_if: u8,
-    data_if: u8,
-    out_ep: u8,
-    in_ep: u8,
+    config: CdcAcmBuilder,
     line_coding: LineCoding,
     expecting_control_out: bool,
     rx_buffer: Aligned<A4, [u32; 16]>,
 }
 
 impl CdcAcm {
-    pub fn new(comm_if: u8, data_if: u8, out_ep: u8, in_ep: u8) -> Self {
+    /// Creates a new CDC-ACM class handler from a builder.
+    pub fn new(config: CdcAcmBuilder) -> Self {
         Self {
-            comm_if,
-            data_if,
-            out_ep,
-            in_ep,
+            config,
             line_coding: LineCoding::default(),
             expecting_control_out: false,
             rx_buffer: Aligned([0u32; 16]),
@@ -153,7 +295,7 @@ impl CdcAcm {
 
     fn handle_setup<'a>(&'a mut self, pkt: SetupPacket) -> (UsbAction<'a>, bool) {
         if !(pkt.request().recipient() == Recipient::Interface
-            && (pkt.index() as u8) == self.comm_if)
+            && (pkt.index() as u8) == self.config.comm_if)
         {
             return (UsbAction::None, false);
         }
@@ -232,10 +374,10 @@ impl UsbClass for CdcAcm {
             UsbEvent::DataOutPacket(pkt) => {
                 if pkt.endpoint_index() == 0 && self.expecting_control_out {
                     Ok(self.handle_control_out(pkt))
-                } else if pkt.endpoint_index() == self.out_ep as usize {
+                } else if pkt.endpoint_index() == self.config.data_out_ep as usize {
                     let buf = pkt.copy_to(self.rx_buffer.as_mut());
                     Ok(UsbAction::TransferIn {
-                        endpoint: self.in_ep,
+                        endpoint: self.config.data_in_ep,
                         data: unsafe { core::mem::transmute(buf) },
                         zlp: true,
                     })

@@ -78,6 +78,7 @@ impl StringHandle {
 }
 
 /// A standard USB device descriptor.
+#[derive(Clone, Copy)]
 pub struct DeviceDescriptor {
     /// The class of the device.
     pub device_class: DeviceClass,
@@ -146,6 +147,7 @@ impl DeviceDescriptor {
 }
 
 /// A standard USB configuration descriptor.
+#[derive(Clone, Copy)]
 pub struct ConfigDescriptor {
     /// The configuration value for this configuration.
     pub configuration_value: u8,
@@ -224,6 +226,7 @@ impl ConfigDescriptor {
 }
 
 /// A standard USB interface descriptor.
+#[derive(Clone, Copy)]
 pub struct InterfaceDescriptor {
     /// Handle for the interface name string descriptor.
     pub name: StringHandle,
@@ -245,7 +248,7 @@ pub struct InterfaceDescriptor {
 impl InterfaceDescriptor {
     const SIZE: usize = 9;
 
-    const fn total_size(&self) -> usize {
+    pub(crate) const fn total_size(&self) -> usize {
         let mut result = Self::SIZE;
         let mut i = 0;
         while i < self.func_descs.len() {
@@ -302,6 +305,7 @@ impl InterfaceDescriptor {
 }
 
 /// A standard USB endpoint descriptor.
+#[derive(Clone, Copy)]
 pub struct EndpointDescriptor {
     /// The data direction of the endpoint.
     pub direction: Direction,
@@ -317,7 +321,7 @@ pub struct EndpointDescriptor {
 impl EndpointDescriptor {
     const SIZE: usize = 7;
 
-    const fn total_size(&self) -> usize {
+    pub(crate) const fn total_size(&self) -> usize {
         Self::SIZE
     }
 
@@ -360,6 +364,7 @@ impl EndpointDescriptor {
 }
 
 /// A standard USB String Descriptor 0 (listing supported languages).
+#[derive(Clone, Copy)]
 pub struct StringDescriptor0 {
     /// List of supported LANGIDs.
     pub langs: &'static [u16],
@@ -440,6 +445,7 @@ pub enum UsageType {
 }
 
 /// USB device class code.
+#[derive(Clone, Copy)]
 pub struct DeviceClass(pub u8);
 impl DeviceClass {
     /// Class is specified at the interface level.
@@ -656,6 +662,7 @@ mod test_string_descriptor_writter {
 }
 
 /// A DFU functional descriptor.
+#[derive(Clone, Copy)]
 pub struct DfuFunctionalDescriptor {
     /// New firmware can be received from the host
     pub can_download: bool,
@@ -703,23 +710,26 @@ impl DfuFunctionalDescriptor {
 }
 
 /// A raw class-specific functional descriptor.
+#[derive(Clone, Copy)]
 pub struct RawFunctionalDescriptor {
     /// The type of the descriptor.
     pub descriptor_type: u8,
+    /// The raw content length.
+    pub len: u8,
     /// The raw content of the descriptor.
-    pub content: &'static [u8],
+    pub content: [u8; 16],
 }
 impl RawFunctionalDescriptor {
     /// Returns the total size of the descriptor.
     pub const fn total_size(&self) -> usize {
-        self.content.len() + 2
+        (self.len as usize) + 2
     }
     /// Serializes the raw functional descriptor.
     pub const fn serialize(&self, dest: &mut [u8], offset: usize) {
         dest[offset] = self.total_size() as u8;
         dest[offset + 1] = self.descriptor_type;
         let mut i = 0;
-        while i < self.content.len() {
+        while i < (self.len as usize) {
             dest[offset + 2 + i] = self.content[i];
             i += 1;
         }
@@ -727,6 +737,7 @@ impl RawFunctionalDescriptor {
 }
 
 /// Represents a class-specific functional descriptor.
+#[derive(Clone, Copy)]
 pub enum FunctionalDescriptor {
     /// DFU functional descriptor.
     Dfu(DfuFunctionalDescriptor),
@@ -736,10 +747,17 @@ pub enum FunctionalDescriptor {
 
 impl FunctionalDescriptor {
     /// Creates a raw functional descriptor.
-    pub const fn raw(descriptor_type: u8, content: &'static [u8]) -> Self {
+    pub const fn raw(descriptor_type: u8, content: &[u8]) -> Self {
+        let mut buf = [0u8; 16];
+        let mut i = 0;
+        while i < content.len() {
+            buf[i] = content[i];
+            i += 1;
+        }
         Self::Raw(RawFunctionalDescriptor {
             descriptor_type,
-            content,
+            len: content.len() as u8,
+            content: buf,
         })
     }
     /// Returns the total size of the descriptor.
