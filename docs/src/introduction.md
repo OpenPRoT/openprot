@@ -73,8 +73,8 @@ To get started with OpenPRoT, you can build and test the project using the
 following commands:
 
 ```bash
-cargo xtask build
-cargo xtask test
+./pw presubmit
+bazel test //...
 ```
 
 For more detailed instructions, please refer to the
