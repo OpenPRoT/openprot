@@ -77,6 +77,34 @@ pub fn copy_to_reg_array<const LEN: usize>(
 }
 
 #[inline(never)]
+pub fn copy_to_reg_array_unaligned<const LEN: usize>(
+    array: &ureg::Array<
+        LEN,
+        ureg::RegRef<
+            impl ureg::WritableReg<WriteVal = u32, Raw = u32> + ureg::ResettableReg<Raw = u32>,
+            impl ureg::MmioMut + Copy,
+        >,
+    >,
+    src: &[u8],
+) {
+    let (words, rem_bytes): (&[Unalign<u32>], &[u8]) = FromBytes::ref_from_prefix(src).unwrap();
+
+    let words_to_copy = min(LEN, words.len());
+
+    #[allow(clippy::needless_range_loop)] // optimizes better
+    for i in 0..words_to_copy {
+        array.at(i).write(|_| words[i].get());
+    }
+    let Some(reg) = array.get(words.len()) else {
+        return;
+    };
+    let Some(last_word) = last_word(rem_bytes) else {
+        return;
+    };
+    reg.write(|_| last_word);
+}
+
+#[inline(never)]
 pub fn copy_from_reg<const LEN: usize>(
     dest: &mut Aligned<A4, [u8]>,
     reg: &ureg::RegRef<impl ureg::ReadableReg<ReadVal = u32, Raw = u32>, impl ureg::Mmio + Copy>,
@@ -108,6 +136,28 @@ pub fn copy_from_reg_array<const LEN: usize>(
     #[allow(clippy::needless_range_loop)]
     for i in 0..words_to_copy {
         words[i] = array.at(i).read();
+    }
+
+    if words_to_copy < LEN {
+        set_rem_bytes(rem_bytes, || array.at(words_to_copy).read());
+    }
+}
+
+#[inline(never)]
+pub fn copy_from_reg_array_unaligned<const LEN: usize>(
+    dest: &mut [u8],
+    array: &ureg::Array<
+        LEN,
+        ureg::RegRef<impl ureg::ReadableReg<ReadVal = u32, Raw = u32>, impl ureg::Mmio + Copy>,
+    >,
+) {
+    let (words, rem_bytes): (&mut [Unalign<u32>], &mut [u8]) =
+        FromBytes::mut_from_prefix(dest).unwrap();
+    let words_to_copy = min(LEN, words.len());
+
+    #[allow(clippy::needless_range_loop)]
+    for i in 0..words_to_copy {
+        words[i].set(array.at(i).read());
     }
 
     if words_to_copy < LEN {
@@ -566,6 +616,85 @@ mod test {
 
     #[test]
     #[rustfmt::skip]
+    pub fn test_copy_to_reg_array_unaligned() {
+        let mmio = FakeMmio::default();
+        let reg_array = unsafe {
+            ureg::Array::<3, RegRef<ReadWriteReg32<0, u32, u32>, &FakeMmio>>::new_with_mmio(
+                0x4040_4040 as *mut _,
+                &mmio,
+            )
+        };
+
+        copy_to_reg_array_unaligned(&reg_array, &[]);
+        assert_eq!(
+            mmio.take_log(),
+            vec![],
+        );
+
+        copy_to_reg_array_unaligned(&reg_array, &[0x12]);
+        assert_eq!(
+            mmio.take_log(),
+            vec![(0x4040_4040, 0x0000_0012)],
+        );
+
+        copy_to_reg_array_unaligned(&reg_array, &[0x12, 0x34]);
+        assert_eq!(
+            mmio.take_log(),
+            vec![(0x4040_4040, 0x0000_3412)],
+        );
+
+        copy_to_reg_array_unaligned(&reg_array, &[0x12, 0x34, 0x56]);
+        assert_eq!(
+            mmio.take_log(),
+            vec![(0x4040_4040, 0x0056_3412)],
+        );
+
+        copy_to_reg_array_unaligned(&reg_array, &[0x12, 0x34, 0x56, 0x78]);
+        assert_eq!(
+            mmio.take_log(),
+            vec![(0x4040_4040, 0x7856_3412)],
+        );
+
+        copy_to_reg_array_unaligned(&reg_array, &[0x12, 0x34, 0x56, 0x78, 0x9a]);
+        assert_eq!(
+            mmio.take_log(),
+            vec![
+                (0x4040_4040, 0x7856_3412),
+                (0x4040_4044, 0x0000_009a),
+            ],
+        );
+
+        copy_to_reg_array_unaligned(&reg_array, &[0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc]);
+        assert_eq!(
+            mmio.take_log(),
+            vec![
+                (0x4040_4040, 0x7856_3412),
+                (0x4040_4044, 0x0000_bc9a),
+            ],
+        );
+
+        copy_to_reg_array_unaligned(&reg_array, &[0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0]);
+        assert_eq!(
+            mmio.take_log(),
+            vec![
+                (0x4040_4040, 0x7856_3412),
+                (0x4040_4044, 0xf0de_bc9a),
+            ],
+        );
+
+        copy_to_reg_array_unaligned(&reg_array, &[0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0xdd]);
+        assert_eq!(
+            mmio.take_log(),
+            vec![
+                (0x4040_4040, 0x7856_3412),
+                (0x4040_4044, 0xf0de_bc9a),
+                (0x4040_4048, 0x0000_00dd),
+            ],
+        );
+    }
+
+    #[test]
+    #[rustfmt::skip]
     pub fn test_copy_from_reg() {
         let mmio = FakeMmio::default();
         // nosemgrep
@@ -704,6 +833,75 @@ mod test {
         let mut result = Aligned::<A4, _>([0_u8; 9]);
         copy_from_reg_array(&mut result, &reg_array);
         assert_eq!(&result, &Aligned([0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0xDD]));
+    }
+
+    #[test]
+    #[rustfmt::skip]
+    pub fn test_copy_from_reg_array_unaligned() {
+        let mmio = FakeMmio::default();
+        let reg_array = unsafe {
+            ureg::Array::<3, RegRef<ReadWriteReg32<0, u32, u32>, &FakeMmio>>::new_with_mmio(
+                0x4040_4040 as *mut _,
+                &mmio,
+            )
+        };
+
+        copy_from_reg_array_unaligned(&mut [], &reg_array);
+        assert_eq!(
+            mmio.take_log(),
+            vec![],
+        );
+
+        mmio.fifo_push(0x4040_4040, 0x0000_0012);
+        let mut result = [0_u8; 1];
+        copy_from_reg_array_unaligned(&mut result, &reg_array);
+        assert_eq!(result, [0x12]);
+
+        mmio.fifo_push(0x4040_4040, 0x0000_3412);
+        let mut result = [0_u8; 2];
+        copy_from_reg_array_unaligned(&mut result, &reg_array);
+        assert_eq!(result, [0x12, 0x34]);
+
+        mmio.fifo_push(0x4040_4040, 0x0056_3412);
+        let mut result = [0_u8; 3];
+        copy_from_reg_array_unaligned(&mut result, &reg_array);
+        assert_eq!(result, [0x12, 0x34, 0x56]);
+
+        mmio.fifo_push(0x4040_4040, 0x78563412);
+        let mut result = [0_u8; 4];
+        copy_from_reg_array_unaligned(&mut result, &reg_array);
+        assert_eq!(result, [0x12, 0x34, 0x56, 0x78]);
+
+        mmio.fifo_push(0x4040_4040, 0x78563412);
+        mmio.fifo_push(0x4040_4044, 0x0000_009A);
+        let mut result = [0_u8; 5];
+        copy_from_reg_array_unaligned(&mut result, &reg_array);
+        assert_eq!(result, [0x12, 0x34, 0x56, 0x78, 0x9A]);
+
+        mmio.fifo_push(0x4040_4040, 0x78563412);
+        mmio.fifo_push(0x4040_4044, 0x0000_BC9A);
+        let mut result = [0_u8; 6];
+        copy_from_reg_array_unaligned(&mut result, &reg_array);
+        assert_eq!(result, [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC]);
+
+        mmio.fifo_push(0x4040_4040, 0x78563412);
+        mmio.fifo_push(0x4040_4044, 0x00DE_BC9A);
+        let mut result = [0_u8; 7];
+        copy_from_reg_array_unaligned(&mut result, &reg_array);
+        assert_eq!(result, [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE]);
+
+        mmio.fifo_push(0x4040_4040, 0x78563412);
+        mmio.fifo_push(0x4040_4044, 0xF0DE_BC9A);
+        let mut result = [0_u8; 8];
+        copy_from_reg_array_unaligned(&mut result, &reg_array);
+        assert_eq!(result, [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0]);
+
+        mmio.fifo_push(0x4040_4040, 0x78563412);
+        mmio.fifo_push(0x4040_4044, 0xF0DE_BC9A);
+        mmio.fifo_push(0x4040_4048, 0x0000_00DD);
+        let mut result = [0_u8; 9];
+        copy_from_reg_array_unaligned(&mut result, &reg_array);
+        assert_eq!(result, [0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0xDD]);
     }
 
     #[test]

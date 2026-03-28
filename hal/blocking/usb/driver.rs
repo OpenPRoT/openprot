@@ -33,6 +33,11 @@ pub trait UsbDriver {
     /// hardware is in an invalid state.
     fn transfer_in(&mut self, endpoint_idx: u8, data: &Aligned<A4, [u8]>, zlp: bool) -> usize;
 
+    /// Store data in a peripheral buffer that will be transferred to the host.
+    ///
+    /// This version accepts an unaligned data buffer.
+    fn transfer_in_unaligned(&mut self, endpoint_idx: u8, data: &[u8], zlp: bool) -> usize;
+
     /// Stalls or unstalls an endpoint.
     ///
     /// Note: the driver will automatically unstall all endpoints upon a USB
@@ -73,6 +78,11 @@ pub trait UsbPacket {
     ///
     /// Will fault if `self.len() > dest.len() * 4`.
     fn copy_to(self, dest: &mut [u32]) -> &[u8];
+
+    /// Copies the packet data from the peripheral buffer into system memory.
+    ///
+    /// This version accepts an unaligned destination buffer.
+    fn copy_to_unaligned(self, dest: &mut [u8]) -> &[u8];
 
     /// Returns `true` if the packet is empty (zero-length).
     fn is_empty(&self) -> bool {

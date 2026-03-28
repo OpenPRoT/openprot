@@ -77,6 +77,16 @@ pub enum UsbAction<'a> {
         /// is a multiple of the maximum packet size.
         zlp: bool,
     },
+    /// Perform an IN transfer on the specified endpoint using unaligned data.
+    TransferInUnaligned {
+        /// The endpoint index.
+        endpoint: u8,
+        /// The data to transfer.
+        data: &'a [u8],
+        /// If true, send a zero-length packet (ZLP) if the data length
+        /// is a multiple of the maximum packet size.
+        zlp: bool,
+    },
     /// Stall both IN and OUT directions on the specified endpoint.
     StallInAndOut {
         /// The endpoint index.
@@ -100,6 +110,57 @@ pub enum UsbAction<'a> {
         stall: bool,
     },
 }
+
+impl PartialEq for UsbAction<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::None, Self::None) => true,
+            (
+                Self::TransferIn {
+                    endpoint: e1,
+                    data: d1,
+                    zlp: z1,
+                },
+                Self::TransferIn {
+                    endpoint: e2,
+                    data: d2,
+                    zlp: z2,
+                },
+            ) => e1 == e2 && core::ptr::eq(*d1, *d2) && z1 == z2,
+            (
+                Self::TransferInUnaligned {
+                    endpoint: e1,
+                    data: d1,
+                    zlp: z1,
+                },
+                Self::TransferInUnaligned {
+                    endpoint: e2,
+                    data: d2,
+                    zlp: z2,
+                },
+            ) => e1 == e2 && core::ptr::eq(*d1, *d2) && z1 == z2,
+            (Self::StallInAndOut { endpoint: e1 }, Self::StallInAndOut { endpoint: e2 }) => e1 == e2,
+            (Self::SetAddress { new_address: a1 }, Self::SetAddress { new_address: a2 }) => a1 == a2,
+            (
+                Self::GetEndpointStatus { endpoint: e1 },
+                Self::GetEndpointStatus { endpoint: e2 },
+            ) => e1 == e2,
+            (
+                Self::SetEndpointStatus {
+                    endpoint: e1,
+                    stall: s1,
+                },
+                Self::SetEndpointStatus {
+                    endpoint: e2,
+                    stall: s2,
+                },
+            ) => e1 == e2 && s1 == s2,
+            _ => false,
+        }
+    }
+}
+impl Eq for UsbAction<'_> {}
+
 impl<'a> UsbAction<'a> {
     const EP_CLEAR: Aligned<A4, [u8; 2]> = Aligned([0u8, 0]);
     const EP_HALTED: Aligned<A4, [u8; 2]> = Aligned([1u8, 0]);
@@ -147,6 +208,18 @@ impl<'a> UsbAction<'a> {
                 // UsbDriver::MAX_PACKET_SIZE, which is guaranteed to be a
                 // multiple of 4.
                 if bytes_transferred < data.len() && (bytes_transferred & 3) == 0 {
+                    // We're not done yet...
+                    *data = &data[bytes_transferred..];
+                    return UsbActionRun::HasMoreData;
+                }
+            }
+            Self::TransferInUnaligned {
+                endpoint,
+                data,
+                zlp,
+            } => {
+                let bytes_transferred = driver.transfer_in_unaligned(*endpoint, data, *zlp);
+                if bytes_transferred < data.len() {
                     // We're not done yet...
                     *data = &data[bytes_transferred..];
                     return UsbActionRun::HasMoreData;
@@ -388,6 +461,12 @@ pub mod testing {
             // aligned. `dest_bytes` is a byte slice view of the same memory, so it's also
             // 4-byte aligned. The subslice `&dest_bytes[..copy_len]` maintains this alignment.
             unsafe { core::mem::transmute::<&[u8], &Aligned<A4, [u8]>>(&dest_bytes[..copy_len]) }
+        }
+
+        fn copy_to_unaligned(self, dest: &mut [u8]) -> &[u8] {
+            let copy_len = self.data.len().min(dest.len());
+            dest[..copy_len].copy_from_slice(&self.data[..copy_len]);
+            &dest[..copy_len]
         }
     }
 }

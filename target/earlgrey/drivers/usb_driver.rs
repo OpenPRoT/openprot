@@ -3,7 +3,7 @@
 use aligned::A4;
 use aligned::Aligned;
 use core::cmp::min;
-use util_regcpy::copy_to_reg_array;
+use util_regcpy::{copy_to_reg_array, copy_to_reg_array_unaligned, copy_from_reg_array_unaligned};
 use console::traceln;
 use hal_usb::SetupPacket;
 use hal_usb::driver::UsbDriver;
@@ -15,7 +15,6 @@ const MAX_PACKET_SIZE: usize = 64;
 const BUFFER_SLOT_SIZE_WORDS: usize = MAX_PACKET_SIZE / 4;
 const BUFFER_SLOT_COUNT: usize = 32;
 
-const EMPTY_A4: &Aligned<A4, [u8]> = &Aligned([]);
 
 use buf_pool::BufId;
 use buf_pool::BufPool;
@@ -67,6 +66,11 @@ impl<TMmio: ureg::Mmio + Copy> UsbPacket for PacketHandle<TMmio> {
             dest[i] = self.data.at(i).read();
         }
         &dest.as_bytes()[..min(self.len(), dest.as_bytes().len())]
+    }
+
+    fn copy_to_unaligned(self, dest: &mut [u8]) -> &[u8] {
+        copy_from_reg_array_unaligned(dest, &self.data);
+        &dest[..min(self.len(), dest.len())]
     }
 }
 
@@ -319,6 +323,83 @@ impl Usb {
             .rxenable_out0()
             .modify(|w| bit_setval(u32::from(w), ep_num.into(), true).into());
     }
+
+    /// Common internal implementation for transfer_in and transfer_in_unaligned.
+    fn transfer_in_internal(&mut self, endpoint: u8, mut data: &[u8], zlp: bool, aligned: bool) -> usize {
+        let mut bytes_queued = 0;
+        let zlp = zlp && (data.len() % MAX_PACKET_SIZE) == 0;
+        loop {
+            if data.is_empty() && !zlp {
+                break;
+            }
+            let regs = self.mmio.regs_mut();
+            let Some(configin_reg) = regs.configin().get(endpoint.into()) else {
+                // Fault?
+                return 0;
+            };
+
+            let pkt = &data[..cmp::min(MAX_PACKET_SIZE, data.len())];
+            if pkt.len() == MAX_PACKET_SIZE {
+                data = &data[pkt.len()..];
+            } else {
+                data = &[];
+            }
+
+            let buf_pool = self.buf_pools_in.get_mut(usize::from(endpoint)).unwrap();
+
+            // Check to see if we have enough buffers to send both
+            // the last data packet and a ZLP if necessary. If not, leave last
+            // data packet unsent so caller knows to retry transfer
+            if zlp && pkt.len() == MAX_PACKET_SIZE && buf_pool.len() < 2 {
+                traceln!("Couldn't find buf in pool for last IN + ZLP");
+                break;
+            }
+
+            let Some(buf_id) = buf_pool.take() else {
+                traceln!("Couldn't find buf in pool for next IN");
+                break;
+            };
+
+            let Some(buffer) = regs
+                .buffer()
+                .get_sub_array::<BUFFER_SLOT_SIZE_WORDS>(buf_id.offset())
+            else {
+                // Shouldn't fail to get buffer offset
+                unreachable!();
+            };
+            if aligned {
+                copy_to_reg_array(&buffer, unsafe { core::mem::transmute(pkt) });
+            } else {
+                copy_to_reg_array_unaligned(&buffer, pkt);
+            }
+
+            match self.transmit_queues.queue(
+                endpoint.into(),
+                NextInPacket {
+                    buf_id: u32::from(buf_id) as u8,
+                    len: pkt.len() as u8,
+                },
+            ) {
+                TransmitQueueAction::None => {}
+                TransmitQueueAction::SendNow => {
+                    if configin_reg.read().rdy() {
+                        traceln!("WARN: Packet already queued in hardware");
+                    }
+                    configin_reg.write(|w| {
+                        w.buffer(buf_id.into())
+                            .rdy(true)
+                            .size(u32::try_from(pkt.len()).unwrap())
+                    });
+                }
+            }
+            bytes_queued += pkt.len();
+
+            if pkt.is_empty() {
+                break;
+            }
+        }
+        bytes_queued
+    }
 }
 
 #[inline(always)]
@@ -364,77 +445,15 @@ impl UsbDriver for Usb {
 
     /// Store data in peripheral buffer that will be transferred when the host requests it.
     #[inline(never)]
-    fn transfer_in(&mut self, endpoint: u8, mut data: &Aligned<A4, [u8]>, zlp: bool) -> usize {
-        let mut bytes_queued = 0;
-        let zlp = zlp && (data.len() % MAX_PACKET_SIZE) == 0;
-        loop {
-            if data.is_empty() && !zlp {
-                break;
-            }
-            let regs = self.mmio.regs_mut();
-            let Some(configin_reg) = regs.configin().get(endpoint.into()) else {
-                // Fault?
-                return 0;
-            };
-
-            let pkt = &data[..cmp::min(MAX_PACKET_SIZE, data.len())];
-            if pkt.len() == MAX_PACKET_SIZE {
-                data = &data[pkt.len()..];
-            } else {
-                data = EMPTY_A4;
-            }
-
-            let buf_pool = self.buf_pools_in.get_mut(usize::from(endpoint)).unwrap();
-
-            // Check to see if we have enough buffers to send both
-            // the last data packet and a ZLP if necessary. If not, leave last
-            // data packet unsent so caller knows to retry transfer
-            if zlp && pkt.len() == MAX_PACKET_SIZE && buf_pool.len() < 2 {
-                traceln!("Couldn't find buf in pool for last IN + ZLP");
-                break;
-            }
-
-            let Some(buf_id) = buf_pool.take() else {
-                traceln!("Couldn't find buf in pool for next IN");
-                break;
-            };
-
-            let Some(buffer) = regs
-                .buffer()
-                .get_sub_array::<BUFFER_SLOT_SIZE_WORDS>(buf_id.offset())
-            else {
-                // Shouldn't fail to get buffer offset
-                unreachable!();
-            };
-            copy_to_reg_array(&buffer, pkt);
-
-            match self.transmit_queues.queue(
-                endpoint.into(),
-                NextInPacket {
-                    buf_id: u32::from(buf_id) as u8,
-                    len: pkt.len() as u8,
-                },
-            ) {
-                TransmitQueueAction::None => {}
-                TransmitQueueAction::SendNow => {
-                    if configin_reg.read().rdy() {
-                        traceln!("WARN: Packet already queued in hardware");
-                    }
-                    configin_reg.write(|w| {
-                        w.buffer(buf_id.into())
-                            .rdy(true)
-                            .size(u32::try_from(pkt.len()).unwrap())
-                    });
-                }
-            }
-            bytes_queued += pkt.len();
-
-            if pkt.is_empty() {
-                break;
-            }
-        }
-        bytes_queued
+    fn transfer_in(&mut self, endpoint: u8, data: &Aligned<A4, [u8]>, zlp: bool) -> usize {
+        self.transfer_in_internal(endpoint, data.as_ref(), zlp, true)
     }
+
+    #[inline(never)]
+    fn transfer_in_unaligned(&mut self, endpoint_idx: u8, data: &[u8], zlp: bool) -> usize {
+        self.transfer_in_internal(endpoint_idx, data, zlp, false)
+    }
+
     fn set_address(&mut self, address: u8) {
         self.mmio
             .regs_mut()
