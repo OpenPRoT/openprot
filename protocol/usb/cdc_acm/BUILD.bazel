@@ -1,0 +1,14 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "cdc_acm",
+    srcs = ["lib.rs"],
+    crate_name = "protocol_usb_cdc_acm",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking/usb:hal_usb",
+        "//protocol/usb/stack",
+        "@rust_crates//:aligned",
+    ],
+)

@@ -6,23 +6,21 @@
 #![allow(dead_code)]
 
 use app_test_usb::{handle, signals};
-use ufmt::derive::uDebug;
 use util_error::{ErrorCode, KERNEL_ERROR_UNKNOWN};
-//use userspace::syscall::Signals;
 use userspace::time::Instant;
 use userspace::{entry, syscall};
 
 use aligned::{Aligned, A4};
-use hal_usb::driver::{UsbDriver, UsbEvent, UsbPacket};
-use hal_usb::{Direction, Recipient, Request, RequestType, SetupPacket, StringDescriptorRef};
+use hal_usb::driver::UsbDriver;
+use hal_usb::{Direction, StringDescriptorRef};
 
 use usb_driver::{EpIn, EpOut, UsbConfig};
 use usb_stack::{
-    //UsbActionRun,
     DescriptorSource,
     UsbAction,
-    EMPTY,
+    UsbClass,
 };
+use protocol_usb_cdc_acm::CdcAcm;
 
 const USB_VENDOR_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(1);
 const USB_PRODUCT_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(2);
@@ -31,7 +29,6 @@ const USB_CDC_COMM_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(4);
 const USB_CDC_DATA_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(5);
 
 const USB_CLASS_CDC: u8 = 0x02;
-
 const USB_CLASS_CDC_DATA: u8 = 0x0a;
 const CDC_SUBCLASS_ACM: u8 = 0x02;
 const CDC_PROTOCOL_NONE: u8 = 0x00;
@@ -40,207 +37,6 @@ const CS_INTERFACE: u8 = 0x24;
 const CDC_TYPE_HEADER: u8 = 0x00;
 const CDC_TYPE_ACM: u8 = 0x02;
 const CDC_TYPE_UNION: u8 = 0x06;
-
-const REQ_SEND_ENCAPSULATED_COMMAND: Request = Request::new(
-    Direction::HostToDevice,
-    RequestType::Class,
-    Recipient::Interface,
-    0x00,
-);
-const REQ_GET_ENCAPSULATED_COMMAND: Request = Request::new(
-    Direction::DeviceToHost,
-    RequestType::Class,
-    Recipient::Interface,
-    0x01,
-);
-const REQ_SET_LINE_CODING: Request = Request::new(
-    Direction::HostToDevice,
-    RequestType::Class,
-    Recipient::Interface,
-    0x20,
-);
-const REQ_GET_LINE_CODING: Request = Request::new(
-    Direction::DeviceToHost,
-    RequestType::Class,
-    Recipient::Interface,
-    0x21,
-);
-const REQ_SET_CONTROL_LINE_STATE: Request = Request::new(
-    Direction::HostToDevice,
-    RequestType::Class,
-    Recipient::Interface,
-    0x22,
-);
-
-#[derive(Copy, Clone, PartialEq, Eq, Default, uDebug)]
-#[repr(u8)]
-pub enum StopBits {
-    #[default]
-    One = 0,
-    OnePointFive = 1,
-    Two = 2,
-}
-
-impl From<u8> for StopBits {
-    fn from(x: u8) -> Self {
-        match x {
-            0 => StopBits::One,
-            1 => StopBits::OnePointFive,
-            2 => StopBits::Two,
-            _ => StopBits::One,
-        }
-    }
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, Default, uDebug)]
-#[repr(u8)]
-pub enum Parity {
-    #[default]
-    None = 0,
-    Odd = 1,
-    Even = 2,
-    Mark = 3,
-    Space = 4,
-}
-
-impl From<u8> for Parity {
-    fn from(x: u8) -> Self {
-        match x {
-            0 => Parity::None,
-            1 => Parity::Odd,
-            2 => Parity::Even,
-            3 => Parity::Mark,
-            4 => Parity::Space,
-            _ => Parity::None,
-        }
-    }
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, uDebug)]
-#[repr(C)]
-pub struct LineCoding {
-    pub data_rate: u32,
-    pub stop_bits: StopBits,
-    pub parity: Parity,
-    pub data_bits: u8,
-}
-
-impl TryFrom<&[u8]> for LineCoding {
-    type Error = ();
-    fn try_from(data: &[u8]) -> Result<Self, Self::Error> {
-        if data.len() >= 7 {
-            Ok(LineCoding {
-                data_rate: u32::from_le_bytes(data[0..4].try_into().unwrap()),
-                stop_bits: StopBits::from(data[4]),
-                parity: Parity::from(data[5]),
-                data_bits: data[6],
-            })
-        } else {
-            Err(())
-        }
-    }
-}
-
-impl Default for LineCoding {
-    fn default() -> Self {
-        LineCoding {
-            data_rate: 9600,
-            stop_bits: StopBits::default(),
-            parity: Parity::default(),
-            data_bits: 8,
-        }
-    }
-}
-
-impl LineCoding {
-    pub fn as_bytes(&self) -> &[u8] {
-        let x = unsafe { core::mem::transmute::<&LineCoding, &[u8; 7]>(self) };
-        &*x
-    }
-}
-
-#[derive(Default)]
-struct CdcAcmControl {
-    pub line_coding: LineCoding,
-    pub dtr: bool,
-    pub rts: bool,
-    pub comm_if: u8,
-    pub expecting_out: bool,
-}
-
-impl CdcAcmControl {
-    fn handle_setup<'a>(&'a mut self, pkt: SetupPacket) -> UsbAction<'a> {
-        if !(pkt.request().recipient() == Recipient::Interface
-            && (pkt.index() as u8) == self.comm_if)
-        {
-            return UsbAction::None;
-        }
-        match pkt.request() {
-            REQ_SEND_ENCAPSULATED_COMMAND => {
-                console::println!("CdcAcm: SEND_ENCAPSULATED_COMMAND");
-                // We don't support encapsulated commands.  Lie and accept it.
-                UsbAction::TransferIn {
-                    endpoint: 0,
-                    data: EMPTY,
-                    zlp: true,
-                }
-            }
-            REQ_GET_ENCAPSULATED_COMMAND => {
-                console::println!("CdcAcm: GET_ENCAPSULATED_COMMAND");
-                // We don'st support this, to reject.
-                UsbAction::StallInAndOut { endpoint: 0 }
-            }
-            REQ_SET_LINE_CODING => {
-                console::println!("CdcAcm: SET_LINE_CODING");
-                self.expecting_out = true;
-                UsbAction::None
-            }
-            REQ_GET_LINE_CODING => {
-                console::println!("CdcAcm: GET_LINE_CODING");
-                let data = unsafe {
-                    // SAFETY: LineCoding has an alignment of 4.
-                    core::mem::transmute::<&[u8], &Aligned<A4, [u8]>>(self.line_coding.as_bytes())
-                };
-                UsbAction::TransferIn {
-                    endpoint: 0,
-                    data,
-                    zlp: true,
-                }
-            }
-            REQ_SET_CONTROL_LINE_STATE => {
-                let dtr = (pkt.value() & 1) != 0;
-                let rts = (pkt.value() & 2) != 0;
-                console::println!("CdcAcm: SET_CONTROL_LINE_STATE: dtr={} rts={}", dtr, rts);
-                UsbAction::TransferIn {
-                    endpoint: 0,
-                    data: EMPTY,
-                    zlp: true,
-                }
-            }
-            _ => UsbAction::StallInAndOut { endpoint: 0 },
-        }
-    }
-
-    fn handle_control_out<'a>(&'a mut self, pkt: impl UsbPacket) -> UsbAction<'a> {
-        if !(pkt.endpoint_index() == 0 && self.expecting_out) {
-            return UsbAction::None;
-        }
-        let mut data = [0u32; 2];
-        let buf = pkt.copy_to(&mut data);
-        match LineCoding::try_from(buf) {
-            Ok(x) => {
-                console::println!("line_coding = {:?}", x);
-                self.line_coding = x;
-                UsbAction::TransferIn {
-                    endpoint: 0,
-                    data: EMPTY,
-                    zlp: true,
-                }
-            }
-            Err(_) => UsbAction::StallInAndOut { endpoint: 0 },
-        }
-    }
-}
 
 static DEVICE_DESC: hal_usb::DeviceDescriptor = hal_usb::DeviceDescriptor {
     device_class: hal_usb::DeviceClass::SPECIFIED_BY_INTERFACE,
@@ -359,12 +155,8 @@ impl DescriptorSource for MyDescriptors<'_> {
     }
 }
 
-const CONTROL_EP_OUT_NUM: u8 = 0;
-
 fn handle_usb() -> Result<(), ErrorCode> {
     let mut serial_num_buffer = Aligned::<A4, _>([0_u8; 130]);
-    // TODO
-    //let mut product_desc_buffer = Aligned::<A4, _>([0_u8; 100]);
     let descriptors = MyDescriptors {
         serial_desc_bytes: hal_usb::hex_utf16_descriptor_aligned(&mut serial_num_buffer, b"12345")
             .unwrap(),
@@ -387,8 +179,7 @@ fn handle_usb() -> Result<(), ErrorCode> {
         UsbConfig::new(&[USB_EP_ACM_INT_IN, USB_EP_ACM_IN], &[USB_EP_ACM_OUT]);
     let mut usb = usb_driver::Usb::new(unsafe { usbdev::Usbdev::new() }, USB_CONFIG);
     let mut ep0 = usb_stack::SimpleEp0::new();
-    let mut cdc_acm = CdcAcmControl::default();
-    let mut ep3_action = UsbAction::None;
+    let mut cdc_acm = CdcAcm::new(0, 1, 2, 3);
 
     loop {
         let wait_return = syscall::object_wait(
@@ -403,13 +194,10 @@ fn handle_usb() -> Result<(), ErrorCode> {
                 | signals::USBDEV_AV_OUT_EMPTY
                 | signals::USBDEV_RX_FULL
                 | signals::USBDEV_AV_OVERFLOW
-                //| signals::USBDEV_LINK_IN_ERR
                 | signals::USBDEV_RX_CRC_ERR
                 | signals::USBDEV_RX_PID_ERR
                 | signals::USBDEV_RX_BITSTUFF_ERR
                 | signals::USBDEV_FRAME
-                //| signals::USBDEV_POWERED
-                //| signals::USBDEV_LINK_OUT_ERR
                 | signals::USBDEV_AV_SETUP_EMPTY,
             Instant::MAX,
         )?;
@@ -419,52 +207,12 @@ fn handle_usb() -> Result<(), ErrorCode> {
             return Err(KERNEL_ERROR_UNKNOWN);
         }
 
-        let mut buffer = [0u32; 16];
         while let Some(event) = usb.poll() {
-            let mut ep0_action = match event {
-                UsbEvent::SetupPacket { pkt, endpoint } => {
-                    if endpoint == 0 {
-                        console::println!("SETUP: {:?}", pkt);
-                        if pkt.request().recipient() == Recipient::Interface {
-                            cdc_acm.handle_setup(pkt)
-                        } else {
-                            ep0.handle_event(event, &descriptors)
-                        }
-                    } else {
-                        console::println!("Setup on bad EP {:?}", endpoint);
-                        UsbAction::None
-                    }
-                }
-
-                UsbEvent::tataOutPacket(pkt) => match u8::try_from(pkt.endpoint_index()).unwrap() {
-                    CONTROL_EP_OUT_NUM => {
-                        console::println!("OUT on control ep");
-                        cdc_acm.handle_control_out(pkt)
-                    }
-                    2 => {
-                        let x = pkt.copy_to(&mut buffer);
-                        let x = unsafe { core::str::from_utf8_unchecked(x) };
-                        console::println!("ACM data: {}", x);
-                        ep3_action = UsbAction::TransferIn {
-                            endpoint: 3,
-                            data: unsafe { core::mem::transmute(x) },
-                            zlp: true,
-                        };
-                        UsbAction::None
-                    }
-                    ep => {
-                        console::println!("Unhandled OUT on EP {} len={}", ep, pkt.len());
-                        UsbAction::None
-                    }
-                },
-                UsbEvent::UsbReset => {
-                    console::println!("USB reset");
-                    UsbAction::None
-                }
-                _ => ep0.handle_event(event, &descriptors),
+            let mut action = match cdc_acm.handle_event(event) {
+                Ok(a) => a,
+                Err(e) => ep0.handle_event(e, &descriptors).unwrap_or(UsbAction::None),
             };
-            ep0_action.run(&mut usb);
-            ep3_action.run(&mut usb);
+            action.run(&mut usb);
         }
     }
 }
@@ -482,7 +230,6 @@ fn usb_setup_pinmux() {
 
 #[entry]
 fn entry() -> ! {
-    // Since this is written as a test, shut down with the return status from `main()`.
     usb_setup_pinmux();
     let ret = match handle_usb() {
         Ok(()) => Ok(()),

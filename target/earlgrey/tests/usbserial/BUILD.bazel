@@ -22,6 +22,7 @@ rust_binary(
     deps = [
         ":app_test_usb",
         "//hal/blocking/usb:hal_usb",
+        "//protocol/usb/cdc_acm",
         "//protocol/usb/stack",
         "//target/earlgrey/drivers:usb_driver",
         "//target/earlgrey/registers:pinmux",
@@ -33,8 +34,8 @@ rust_binary(
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
         "@rust_crates//:aligned",
-        "@rust_crates//:zerocopy",
         "@rust_crates//:ufmt",
+        "@rust_crates//:zerocopy",
     ],
 )
 
