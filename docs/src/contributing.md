@@ -1,5 +1,11 @@
 # Contributing to OpenPRoT
 
+Thank you for your interest in contributing to the OpenPRoT project!
+
+## Contribution Process
+
+Before you begin, please review our [Development Process](development-process.md) for details on our **RFC process** for large changes and our standard requirements for pull requests.
+
 ## Contributor License Agreement
 
 - Use of OpenPRoT requires no CLA.
@@ -11,30 +17,23 @@ The code of conduct can be found [here](https://github.com/OpenPRoT/.github/blob
 
 ## Development Setup
 
-1. Clone the repository
-2. Install dependencies: `cargo xtask check`
-3. Run tests: `cargo xtask test`
-4. Format code: `cargo xtask fmt`
+1. Clone the repository.
+2. Use the Pigweed workflow launcher `pw` or `bazel` for common tasks:
+   - `./pw presubmit` - Run presubmit checks: formatting, license checks, C/C++ header checks, and `clippy`.
+   - `./pw format` - Run the code formatters.
+   - `bazel test //...` - Run all tests.
+   - `bazel build //docs` - Build documentation.
 
 ## Code Style
 
 - Follow the [coding style](coding-style.md) guide.
-- Run `cargo xtask clippy` to check for lints
-- Ensure all tests pass with `cargo xtask test`
+- Run `./pw presubmit` to check for lints and ensure all tests pass.
 
 ## Documentation
 
-- Update documentation in the `docs/` directory
-- Build docs with `cargo xtask docs`
-- Documentation is built with mdbook
-
-## Pull Requests
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run the full test suite
-5. Submit a pull request
+- Update documentation in the `docs/` directory.
+- Build docs with `bazel build //docs`.
+- Documentation is built with mdbook.
 
 ## Issues
 

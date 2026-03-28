@@ -28,6 +28,7 @@
 * [Architecture](./architecture.md)
 * [Coding Style](./coding-style.md)
 * [Contributing](./contributing.md)
+* [Development Process](./development-process.md)
 * [Design](./design/README.md)
   * [Digest Driver for Hubris](./design/driver-hubris-hash.md)
   * [Rust Traits to IDL Guide](./design/rust-trait-to-idl-conversion.md)
