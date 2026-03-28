@@ -325,7 +325,13 @@ impl Usb {
     }
 
     /// Common internal implementation for transfer_in and transfer_in_unaligned.
-    fn transfer_in_internal(&mut self, endpoint: u8, mut data: &[u8], zlp: bool, aligned: bool) -> usize {
+    ///
+    /// # Safety
+    ///
+    /// If `aligned` is true, `data` MUST be 4-byte aligned. Failure to ensure
+    /// alignment will result in undefined behavior when the data is transmuted
+    /// to an aligned reference.
+    unsafe fn transfer_in_internal(&mut self, endpoint: u8, mut data: &[u8], zlp: bool, aligned: bool) -> usize {
         let mut bytes_queued = 0;
         let zlp = zlp && (data.len() % MAX_PACKET_SIZE) == 0;
         loop {
@@ -368,6 +374,8 @@ impl Usb {
                 unreachable!();
             };
             if aligned {
+                // SAFETY: The caller of transfer_in_internal has guaranteed that 'data'
+                // is 4-byte aligned when the 'aligned' flag is set.
                 copy_to_reg_array(&buffer, unsafe { core::mem::transmute(pkt) });
             } else {
                 copy_to_reg_array_unaligned(&buffer, pkt);
@@ -446,12 +454,15 @@ impl UsbDriver for Usb {
     /// Store data in peripheral buffer that will be transferred when the host requests it.
     #[inline(never)]
     fn transfer_in(&mut self, endpoint: u8, data: &Aligned<A4, [u8]>, zlp: bool) -> usize {
-        self.transfer_in_internal(endpoint, data.as_ref(), zlp, true)
+        // SAFETY: Aligned<A4, [u8]> is guaranteed to be 4-byte aligned.
+        unsafe { self.transfer_in_internal(endpoint, data.as_ref(), zlp, true) }
     }
 
     #[inline(never)]
     fn transfer_in_unaligned(&mut self, endpoint_idx: u8, data: &[u8], zlp: bool) -> usize {
-        self.transfer_in_internal(endpoint_idx, data, zlp, false)
+        // SAFETY: The 'aligned' flag is set to false, so transfer_in_internal
+        // will use the unaligned copy helper.
+        unsafe { self.transfer_in_internal(endpoint_idx, data, zlp, false) }
     }
 
     fn set_address(&mut self, address: u8) {
