@@ -1,0 +1,18 @@
+[ req ]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
+
+[ req_distinguished_name ]
+C = US
+ST = California
+L = Folsom
+O = OpenPRoT Project
+OU = Reference Implementation
+CN = AST1060-EVB Device
+
+[ v3_req ]
+subjectKeyIdentifier = hash
+basicConstraints = CA:false
+keyUsage = critical,digitalSignature
+extendedKeyUsage = serverAuth,clientAuth

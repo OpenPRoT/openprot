@@ -1,0 +1,24 @@
+# Licensed under the Apache-2.0 license
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//target/ast1060-evb:defs.bzl", "TARGET_COMPATIBLE_WITH")
+
+# Software-based SPDM certificate store implementation for AST1060-EVB
+#
+# This is a reference implementation using static data and IPC-based signing.
+# Future hardware-backed implementations (using OTP, HSM, etc.) should follow
+# this pattern but store keys securely in hardware.
+
+rust_library(
+    name = "cert_store",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "ast1060_cert_store",
+    edition = "2024",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/crypto/api:crypto_api",
+        "//services/crypto/client:crypto_client",
+        "@oot_crates_no_std//:spdm-lib",
+    ],
+)
