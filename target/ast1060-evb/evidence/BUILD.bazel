@@ -1,0 +1,23 @@
+# Licensed under the Apache-2.0 license
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//target/ast1060-evb:defs.bzl", "TARGET_COMPATIBLE_WITH")
+
+# SPDM evidence implementation for AST1060-EVB
+#
+# This provides device measurements for SPDM attestation. This is a reference
+# implementation with fixed measurement values for testing.
+# Future hardware-backed implementations could integrate with TPM, boot
+# measurements, or platform-specific measurement engines.
+
+rust_library(
+    name = "evidence",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "ast1060_evidence",
+    edition = "2024",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+    deps = [
+        "@oot_crates_no_std//:spdm-lib",
+    ],
+)

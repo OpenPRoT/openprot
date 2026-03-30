@@ -53,8 +53,6 @@ use crypto_api::{
     CryptoError, CryptoOp, CryptoRequestHeader, CryptoResponseHeader,
     MAX_PAYLOAD_SIZE,
 };
-#[cfg(feature = "ecdsa")]
-use crypto_api::{ECDSA_P256_SIGNATURE_SIZE, ECDSA_P384_SIGNATURE_SIZE};
 use userspace::syscall;
 use userspace::time::Instant;
 
