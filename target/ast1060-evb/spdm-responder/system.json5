@@ -1,0 +1,150 @@
+// Licensed under the Apache-2.0 license
+
+// ASPEED AST1060-EVB SPDM Responder Configuration
+// ARM Cortex-M4F with UART console
+//
+// Memory Layout (PMSAv7-aligned for AST1060 MPU):
+//   0x00000000 - 0x00000500: Vector table + kernel annotations (1280 bytes)
+//   0x00000500 - 0x00020000: Kernel code (~127KB)
+//   0x00020000 - 0x00030000: I2C server (64KB flash)
+//   0x00030000 - 0x00040000: MCTP server (64KB flash)
+//   0x00040000 - 0x00060000: SPDM responder (128KB flash)
+//   0x00060000 - 0x00080000: Crypto server (128KB flash, aligned to 128KB boundary)
+//   0x00080000 - 0x00084000: I2C server RAM (16KB)
+//   0x00084000 - 0x00088000: MCTP server RAM (16KB)
+//   0x00088000 - 0x00090000: SPDM responder RAM (32KB)
+//   0x00090000 - 0x00098000: Crypto server RAM (32KB)
+//   0x00098000 - 0x000A8000: Kernel RAM (64KB)
+//
+// Total: 672KB (fits within 768KB SRAM)
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,  // 0x500 (272 vectors + thread/stack annotations)
+    },
+    kernel: {
+        flash_start_address: 0x00000500,  // After vector table + annotations
+        flash_size_bytes: 129792,         // ~127KB (ends at 0x00020000)
+        ram_start_address: 0x00098000,    // After all app RAM
+        ram_size_bytes: 65536,            // 64KB
+    },
+    apps: [
+        // ──── I2C Server ────
+        {
+            name: "i2c_server",
+            flash_size_bytes: 65536,      // 64KB for I2C server
+            ram_size_bytes: 16384,        // 16KB RAM
+            process: {
+                name: "i2c_server_process",
+                objects: [
+                    {
+                        name: "I2C",
+                        type: "channel_handler",
+                    },
+                ],
+                threads: [
+                    {
+                        name: "i2c_server_thread",
+                        stack_size_bytes: 4096,
+                    },
+                ],
+                memory_mappings: [
+                    {
+                        name: "i2c_regs",
+                        type: "device",
+                        start_address: 0x7e7b0000,
+                        size_bytes: 0x4000,
+                    },
+                    {
+                        name: "scu",
+                        type: "device",
+                        start_address: 0x7e6e2000,
+                        size_bytes: 0x1000,
+                    },
+                ],
+            },
+        },
+        // ──── MCTP Server ────
+        {
+            name: "mctp_server",
+            flash_size_bytes: 65536,      // 64KB for MCTP server
+            ram_size_bytes: 16384,        // 16KB RAM
+            process: {
+                name: "mctp_server_process",
+                objects: [
+                    {
+                        name: "MCTP",
+                        type: "channel_handler",
+                    },
+                    {
+                        name: "I2C",
+                        type: "channel_initiator",
+                        handler_app: "i2c_server",
+                        handler_object_name: "I2C",
+                    },
+                    {
+                        name: "WG",
+                        type: "wait_group",
+                    },
+                ],
+                threads: [
+                    {
+                        name: "mctp_server_thread",
+                        stack_size_bytes: 4096,
+                    },
+                ],
+            },
+        },
+        // ──── SPDM Responder ────
+        {
+            name: "spdm_responder",
+            flash_size_bytes: 131072,     // 128KB for SPDM responder (aligned)
+            ram_size_bytes: 32768,        // 32KB RAM for SPDM contexts and buffers
+            process: {
+                name: "spdm_responder_process",
+                objects: [
+                    {
+                        name: "CRYPTO",
+                        type: "channel_initiator",
+                        handler_app: "crypto_server",
+                        handler_object_name: "CRYPTO",
+                    },
+                    {
+                        name: "MCTP",
+                        type: "channel_initiator",
+                        handler_app: "mctp_server",
+                        handler_object_name: "MCTP",
+                    },
+                ],
+                threads: [
+                    {
+                        name: "spdm_responder_thread",
+                        stack_size_bytes: 16384,  // 16KB stack for SPDM operations
+                    },
+                ],
+            },
+        },
+        // ──── Crypto Server ────
+        {
+            name: "crypto_server",
+            flash_size_bytes: 131072,     // 128KB for crypto server
+            ram_size_bytes: 32768,        // 32KB RAM for crypto contexts
+            process: {
+                name: "crypto_server_process",
+                objects: [
+                    {
+                        name: "CRYPTO",
+                        type: "channel_handler",
+                    },
+                ],
+                threads: [
+                    {
+                        name: "crypto_server_thread",
+                        stack_size_bytes: 8192,  // 8KB stack for crypto ops
+                    },
+                ],
+            },
+        },
+    ],
+}

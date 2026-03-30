@@ -5,6 +5,7 @@ load("@rules_rust//rust:defs.bzl", "rust_library")
 rust_library(
     name = "crypto_client",
     srcs = ["src/lib.rs"],
+    crate_features = ["ecdsa"],
     edition = "2024",
     tags = ["kernel"],
     visibility = ["//visibility:public"],

@@ -1,13 +1,11 @@
 # Licensed under the Apache-2.0 license
 
 [package]
-name = "openprot-spdm-responder"
+name = "spdm-responder"
 version = "0.1.0"
 edition = "2021"
-description = "SPDM responder implementation for OpenPRoT"
+description = "SPDM responder service for OpenPRoT"
 license = "Apache-2.0"
 
 [dependencies]
-openprot-spdm-transport-mctp = { path = "../transport-mctp" }
 spdm-lib = { git = "https://github.com/9elements/spdm-lib.git", branch = "buildup" }
-heapless = { workspace = true }

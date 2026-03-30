@@ -54,14 +54,14 @@ impl SpdmRng for SpdmCryptoRng {
     fn get_random_bytes(&mut self, buf: &mut [u8]) -> SpdmRngResult<()> {
         self.crypto
             .get_random_bytes(buf)
-            .map_err(|_| spdm_lib::platform::rng::SpdmRngError::InternalError)
+            .map_err(|_| spdm_lib::platform::rng::SpdmRngError::InvalidSize)
     }
 
     fn generate_random_number(&mut self, random_number: &mut [u8]) -> SpdmRngResult<()> {
         // Both methods are identical in spdm-lib: fill a buffer with random bytes
         self.crypto
             .get_random_bytes(random_number)
-            .map_err(|_| spdm_lib::platform::rng::SpdmRngError::InternalError)
+            .map_err(|_| spdm_lib::platform::rng::SpdmRngError::InvalidSize)
     }
 }
 

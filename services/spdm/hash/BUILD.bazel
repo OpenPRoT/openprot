@@ -10,7 +10,7 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         "//services/crypto/client:crypto_client",
-        "@rust_crates//:spdm-lib",
+        "@oot_crates_no_std//:spdm-lib",
     ],
 )
 

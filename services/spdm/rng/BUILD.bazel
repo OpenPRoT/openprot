@@ -3,18 +3,18 @@
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
 rust_library(
-    name = "spdm_transport_mctp",
+    name = "spdm_rng_lib",
     srcs = glob(["src/**/*.rs"]),
-    crate_name = "openprot_spdm_transport_mctp",
+    crate_name = "openprot_spdm_rng",
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
-        "//services/mctp/api:mctp_api",
+        "//services/crypto/client:crypto_client",
         "@oot_crates_no_std//:spdm-lib",
     ],
 )
 
 rust_test(
-    name = "spdm_transport_mctp_test",
-    crate = ":spdm_transport_mctp",
+    name = "spdm_rng_test",
+    crate = ":spdm_rng_lib",
 )
