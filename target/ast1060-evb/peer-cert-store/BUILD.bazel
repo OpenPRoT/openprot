@@ -1,0 +1,23 @@
+# Licensed under the Apache-2.0 license
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//target/ast1060-evb:defs.bzl", "TARGET_COMPATIBLE_WITH")
+
+# Software-based SPDM peer certificate store implementation for AST1060-EVB
+#
+# This stores certificates received from peer SPDM responders during protocol
+# operations. This is a reference implementation using static buffers.
+# Future hardware-backed implementations could use secure flash or validated
+# certificate caching.
+
+rust_library(
+    name = "peer_cert_store",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "ast1060_peer_cert_store",
+    edition = "2024",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+    deps = [
+        "@oot_crates_no_std//:spdm-lib",
+    ],
+)
