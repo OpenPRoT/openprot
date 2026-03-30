@@ -1,0 +1,49 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@pigweed//pw_build:pw_py_importable_runfile.bzl", "pw_py_importable_runfile")
+load("@rules_python//python:defs.bzl", "py_binary")
+
+pw_py_importable_runfile(
+    name = "emulator-cptra-rom-runfiles",
+    src = "@caliptra_devbundle//:emulator/cptra-rom.bin",
+    executable = False,
+    import_location = "caliptra.emulator_cptra_rom",
+)
+
+pw_py_importable_runfile(
+    name = "emulator-cptra-firmware-runfiles",
+    src = "@caliptra_devbundle//:emulator/cptra-firmware.bin",
+    executable = False,
+    import_location = "caliptra.emulator_cptra_firmware",
+)
+
+pw_py_importable_runfile(
+    name = "emulator-mcu-rom-runfiles",
+    src = "//third_party/caliptra:mcu_rom_bin",
+    executable = False,
+    import_location = "caliptra.emulator_mcu_rom",
+)
+
+pw_py_importable_runfile(
+    name = "emulator-exe-runfiles",
+    src = "@caliptra_devbundle//:tools/emulator",
+    executable = True,
+    import_location = "caliptra.emulator_exe",
+)
+
+py_binary(
+    name = "caliptra_runner",
+    srcs = [
+        "caliptra_runner.py",
+    ],
+    main = "caliptra_runner.py",
+    deps = [
+        "emulator-cptra-firmware-runfiles",
+        "emulator-cptra-rom-runfiles",
+        "emulator-exe-runfiles",
+        "emulator-mcu-rom-runfiles",
+        "@pigweed//pw_tokenizer/py:detokenize",
+        "@rules_python//python/runfiles",
+    ],
+)

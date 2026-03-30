@@ -79,6 +79,35 @@ archive_override(
     url = "https://storage.googleapis.com/artifacts.opentitan.org/dev_bundle/devbundle-20260401.tar.xz",
 )
 
+bazel_dep(name = "caliptra_devbundle")
+archive_override(
+    module_name = "caliptra_devbundle",
+    integrity = "sha256-k5EobAyBQqApv/s4QsMVEaJKRptnS6Ic//eJr8F4yOw=",
+    url = "https://storage.googleapis.com/artifacts.opentitan.org/dev_bundle/experimental/cptra-dev-20260330.zip",
+)
+
+caliptra_repos = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+
+caliptra_repos(
+    name = "caliptra_mcu_sw",
+    build_file = "//third_party/caliptra:caliptra_mcu_sw.BUILD",
+    commit = "b7e45fc139620754e8d32e70d6cc90845d1756df",
+    remote = "https://github.com/chipsalliance/caliptra-mcu-sw",
+)
+
+caliptra_repos(
+    name = "caliptra_sw",
+    build_file = "//third_party/caliptra:caliptra_sw.BUILD",
+    commit = "2fe38a094bd06188714ff7c040252bc3059d9699",
+    remote = "https://github.com/chipsalliance/caliptra-sw",
+)
+
+caliptra_repos(
+    name = "caliptra_ss",
+    build_file = "//third_party/caliptra:caliptra_ss.BUILD",
+    commit = "9022fc2a57bb9af2f3ebc2376b98a807812e2e0f",
+    remote = "https://github.com/chipsalliance/caliptra-ss",
+)
 nonhermetic_repo = use_repo_rule("//target/earlgrey/tooling/signing:nonhermetic.bzl", "nonhermetic_repo")
 
 nonhermetic_repo(name = "nonhermetic")
