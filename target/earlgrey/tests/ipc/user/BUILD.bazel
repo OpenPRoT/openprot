@@ -10,13 +10,12 @@ load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
 load("//target/earlgrey/signing/keys:defs.bzl", "FPGA_ECDSA_KEY", "SILICON_ECDSA_KEY")
 load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_test")
 
-APPS = [
-    "@pigweed//pw_kernel/tests/ipc/user:ipc",
-]
-
 system_image(
     name = "ipc",
-    apps = APPS,
+    apps = [
+        "@pigweed//pw_kernel/tests/ipc/user:initiator",
+        "@pigweed//pw_kernel/tests/ipc/user:handler",
+    ],
     kernel = ":target",
     platform = "//target/earlgrey",
     system_config = ":system_config",
@@ -47,7 +46,6 @@ filegroup(
 
 target_codegen(
     name = "codegen",
-    apps = APPS,
     arch = "@pigweed//pw_kernel/arch/riscv:arch_riscv",
     system_config = ":system_config",
 )
