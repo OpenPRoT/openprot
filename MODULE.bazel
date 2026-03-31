@@ -17,7 +17,9 @@ bazel_dep(name = "ureg")
 
 git_override(
     module_name = "pigweed",
-    commit = "ecef9fcc2d03654806a428fd18cc0e556b3839dc",
+    # ROLL: Warning: this entry is automatically updated by
+    # ROLL: https://cr-buildbucket.appspot.com/builder/pigweed-internal/opentitan.roll/pigweed-opentitan-roller
+    commit = "60041564a00b455fa68b20e89b685f19a210e69e",
     remote = "https://pigweed.googlesource.com/pigweed/pigweed",
 )
 
