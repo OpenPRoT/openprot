@@ -1,7 +1,7 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
-load("@pigweed//pw_kernel/tooling:app_package.bzl", "app_package")
+load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app")
 load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
 load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
@@ -10,16 +10,15 @@ load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
 load("//target/earlgrey/signing/keys:defs.bzl", "FPGA_ECDSA_KEY", "SILICON_ECDSA_KEY")
 load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_test")
 
-rust_binary(
+rust_app(
     name = "test_uart",
     srcs = [
         "test_uart.rs",
     ],
     edition = "2024",
+    system_config = "@pigweed//pw_kernel/target:system_config_file",
     tags = ["kernel"],
-    visibility = ["//visibility:public"],
     deps = [
-        ":app_test_uart",
         "//target/earlgrey/registers",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
@@ -27,24 +26,15 @@ rust_binary(
     ],
 )
 
-app_package(
-    name = "app_test_uart",
-    app_name = "test_uart",
-    edition = "2024",
-    system_config = "@pigweed//pw_kernel/target:system_config_file",
-    tags = ["kernel"],
-)
-
-rust_binary(
+rust_app(
     name = "test_uart_listener",
     srcs = [
         "test_uart_listener.rs",
     ],
     edition = "2024",
+    system_config = "@pigweed//pw_kernel/target:system_config_file",
     tags = ["kernel"],
-    visibility = ["//visibility:public"],
     deps = [
-        ":app_test_uart_listener",
         "//target/earlgrey/registers",
         "@pigweed//pw_kernel/lib/pw_assert",
         "@pigweed//pw_kernel/syscall:syscall_user",
@@ -52,14 +42,6 @@ rust_binary(
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
     ],
-)
-
-app_package(
-    name = "app_test_uart_listener",
-    app_name = "test_uart_listener",
-    edition = "2024",
-    system_config = "@pigweed//pw_kernel/target:system_config_file",
-    tags = ["kernel"],
 )
 
 system_image(
