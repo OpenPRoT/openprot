@@ -77,8 +77,8 @@ override_repo(
 bazel_dep(name = "opentitan_devbundle")
 archive_override(
     module_name = "opentitan_devbundle",
-    integrity = "sha256-n/0uF/b0uXkEfTzP7QJx/cK1KWExES/Zn/C/EqyXzGo=",
-    url = "https://storage.googleapis.com/artifacts.opentitan.org/dev_bundle/devbundle-test-20251105.tar.xz",
+    integrity = "sha256-GP3ysylvAFBUKyDHu1al2swa2CA2Od2GGMgJLcoOZTY=",
+    url = "https://storage.googleapis.com/artifacts.opentitan.org/dev_bundle/devbundle-20260401.tar.xz",
 )
 
 nonhermetic_repo = use_repo_rule("//target/earlgrey/tooling/signing:nonhermetic.bzl", "nonhermetic_repo")
