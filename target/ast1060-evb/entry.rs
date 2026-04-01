@@ -69,7 +69,7 @@ macro_rules! default_handler {
 // Default stub handlers for peripherals not yet implemented
 default_handler!(
     fmc, gpio, hace,
-    i2c, i2c1, i2c2, i2c3, i2c4, i2c5, i2c6, i2c7, i2c8, i2c9, i2c10, i2c11, i2c12, i2c13,
+    i2c, i2c1, i2c3, i2c4, i2c5, i2c6, i2c7, i2c8, i2c9, i2c10, i2c11, i2c12, i2c13,
     i2cfilter,
     i3c, i3c1, i3c2, i3c3,
     scu, sgpiom,
@@ -77,6 +77,44 @@ default_handler!(
     timer1, timer2, timer3, timer4, timer5, timer6, timer7,
     uart, uartdma, wdt
 );
+
+// ── I2C2 Interrupt Handler ──
+// Handles I2C2 interrupts for both master and slave mode.
+// This ISR clears the hardware interrupt status and lets the kernel wake the I2C server task.
+//
+// The AST1060 I2C controller supports simultaneous master and slave operation on the same
+// bus, with separate interrupt status registers:
+//   - I2CM14: Master Interrupt Status Register
+//   - I2CS24: Slave Interrupt Status Register
+
+#[unsafe(no_mangle)]
+pub extern "C" fn i2c2() {
+    // SAFETY: This is called from interrupt context. We only read/write I2C2 interrupt status
+    // registers, which is safe as this ISR is the exclusive owner of these operations.
+    unsafe {
+        // Steal I2C2 peripheral to access interrupt status registers
+        let i2c2 = ast1060_pac::I2c2::steal();
+
+        // Check and clear master mode interrupt status (I2CM14)
+        let master_int_sts = i2c2.i2cm14().read().bits();
+        if master_int_sts != 0 {
+            // Clear master interrupt status bits by writing them back
+            // (AST1060 I2C uses write-1-to-clear for interrupt status)
+            i2c2.i2cm14().write(|w| w.bits(master_int_sts));
+        }
+
+        // Check and clear slave mode interrupt status (I2CS24)
+        let slave_int_sts = i2c2.i2cs24().read().bits();
+        if slave_int_sts != 0 {
+            // Clear slave interrupt status bits by writing them back
+            i2c2.i2cs24().write(|w| w.bits(slave_int_sts));
+        }
+    }
+
+    // The kernel will deliver this interrupt to the I2C server task via the I2C2_IRQ handle.
+    // No explicit kernel notification needed - the hardware interrupt automatically triggers
+    // the kernel's interrupt delivery mechanism to wake tasks waiting on this IRQ.
+}
 
 mod console_backend {
     unsafe extern "Rust" {

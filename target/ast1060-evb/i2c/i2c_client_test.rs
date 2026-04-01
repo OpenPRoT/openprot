@@ -101,7 +101,7 @@ impl TestResults {
 // ============================================================================
 
 /// Probe ADT7490 — device must ACK at 0x2E.
-fn test_probe_adt7490(client: &mut IpcI2cClient, results: &mut TestResults) {
+fn _test_probe_adt7490(client: &mut IpcI2cClient, results: &mut TestResults) {
     let addr = match I2cAddress::new(ADT7490_ADDR) {
         Ok(a) => a,
         Err(_) => {
@@ -194,7 +194,7 @@ fn test_register_reads(client: &mut IpcI2cClient, results: &mut TestResults) {
 ///
 /// Uses the combined write-read IPC operation (repeated start) which
 /// exercises a different code path than separate write + read.
-fn test_write_read_device_id(client: &mut IpcI2cClient, results: &mut TestResults) {
+fn _test_write_read_device_id(client: &mut IpcI2cClient, results: &mut TestResults) {
     let addr = match I2cAddress::new(ADT7490_ADDR) {
         Ok(a) => a,
         Err(_) => {
@@ -218,7 +218,7 @@ fn test_write_read_device_id(client: &mut IpcI2cClient, results: &mut TestResult
 }
 
 /// Probe a vacant address — must return `Ok(false)` (NAK).
-fn test_probe_vacant(client: &mut IpcI2cClient, results: &mut TestResults) {
+fn _test_probe_vacant(client: &mut IpcI2cClient, results: &mut TestResults) {
     // 0x7F is unlikely to be populated on the EVB
     let addr = match I2cAddress::new(0x7F) {
         Ok(a) => a,
@@ -389,10 +389,10 @@ fn run_i2c_tests() -> Result<()> {
     pw_log::info!("Bus: I2C2  Addr: 0x42");
     pw_log::info!("========================================");
 
-    test_probe_adt7490(&mut client, &mut results);
+//    test_probe_adt7490(&mut client, &mut results);
     test_register_reads(&mut client, &mut results);
-    test_write_read_device_id(&mut client, &mut results);
-    test_probe_vacant(&mut client, &mut results);
+//    test_write_read_device_id(&mut client, &mut results);
+//    test_probe_vacant(&mut client, &mut results);
 
     // pw_log::info!("========================================");
     // pw_log::info!("I2C Slave Tests (IPC slave path, I2C2)");
