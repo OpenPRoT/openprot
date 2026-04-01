@@ -50,13 +50,13 @@ use pw_log;
 // These are copied from aspeed_ddk::i2c_core::constants which is private.
 
 /// Enable slave packet mode
-const AST_I2CS_PKT_MODE_EN: u32 = 1 << 16;
+// const AST_I2CS_PKT_MODE_EN: u32 = 1 << 16;
 /// Slave active for all addresses
-const AST_I2CS_ACTIVE_ALL: u32 = 0x3 << 17;
+// const AST_I2CS_ACTIVE_ALL: u32 = 0x3 << 17;
 /// Enable slave RX buffer
-const AST_I2CS_RX_BUFF_EN: u32 = 1 << 7;
+// const AST_I2CS_RX_BUFF_EN: u32 = 1 << 7;
 /// Enable slave TX buffer
-const AST_I2CS_TX_BUFF_EN: u32 = 1 << 6;
+//const AST_I2CS_TX_BUFF_EN: u32 = 1 << 6;
 
 // ---------------------------------------------------------------------------
 // Error mapping
@@ -352,7 +352,7 @@ impl AspeedI2cBackend {
     ///
     /// Data stored here will be sent to the master when it issues a read
     /// transaction to our slave address, as part of `slave_wait_event`.
-    pub fn slave_set_response(&mut self, bus: u8, data: &[u8]) -> Result<(), ResponseCode> {
+    /*pub fn slave_set_response(&mut self, bus: u8, data: &[u8]) -> Result<(), ResponseCode> {
         if !self.is_bus_initialized(bus) {
             return Err(ResponseCode::ServerError);
         }
@@ -398,12 +398,31 @@ impl AspeedI2cBackend {
         }
 
         Ok(())
+    }*/
+    pub fn slave_set_response(&mut self, bus: u8, data: &[u8]) -> Result<(), ResponseCode> {
+        if !self.is_bus_initialized(bus) {
+            return Err(ResponseCode::ServerError);
+        }
+        if (self.slave_configured & (1 << bus)) == 0 {
+            return Err(ResponseCode::NotInitialized);
+        }
+
+        let (regs, buffs) = self.controller_regs(bus)?;
+        let ctrl = aspeed_ddk::i2c_core::I2cController {
+            controller: DdkController(bus),
+            registers: regs,
+            buff_registers: buffs,
+        };
+        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+        let n = i2c.slave_write(data).map_err(map_i2c_error)?;
+        pw_log::info!("slave_set_response slave write length should be 1 (len={})", n as u8);
+        Ok(())
     }
 
     /// Re-enable RX after a read transaction completes.
     ///
     /// Called from slave_wait_event() after a DataSent event to restore RX mode.
-    fn slave_rearm_rx(&mut self, bus: u8) -> Result<(), ResponseCode> {
+    /*fn slave_rearm_rx(&mut self, bus: u8) -> Result<(), ResponseCode> {
         let (regs, _) = self.controller_regs(bus)?;
 
         unsafe {
@@ -413,7 +432,7 @@ impl AspeedI2cBackend {
         }
 
         Ok(())
-    }
+    }*/
 
     /// Block until the next slave event, handling reads automatically.
     ///
@@ -454,24 +473,29 @@ impl AspeedI2cBackend {
             match i2c.handle_slave_interrupt() {
                 Some(SlaveEvent::DataReceived { len: _ }) => {
                     let n = i2c.slave_read(rx_buf).map_err(map_i2c_error)?;
+                    pw_log::info!("slave_wait_event:: SlaveEvent::DataReceived (len={})", n as u8);
                     return Ok((SlaveEventKind::DataReceived, n));
                 }
                 Some(SlaveEvent::ReadRequest) => {
                     // TX buffer was pre-armed in slave_set_response(), so the hardware
                     // should respond automatically. We just need to wait for DataSent.
+                    pw_log::info!("slave_wait_event:: SlaveEvent::ReadRequest");
                     continue;
                 }
                 Some(SlaveEvent::DataSent { len: _ }) => {
                     // Read transaction completed. Re-arm RX mode for next write.
                     // Drop i2c to release register borrows before calling slave_rearm_rx.
-                    drop(i2c);
-                    let _ = self.slave_rearm_rx(bus);
-                    return Ok((SlaveEventKind::ReadRequest, 0));
+                    pw_log::info!("slave_wait_event:: SlaveEvent::DataSent");
+                    // drop(i2c);
+                    // let _ = self.slave_rearm_rx(bus);
+                    return Ok((SlaveEventKind::DataSent, 1));
                 }
                 Some(SlaveEvent::Stop) => {
+                    pw_log::info!("slave_wait_event:: SlaveEvent::Stop");
                     return Ok((SlaveEventKind::Stop, 0));
                 }
                 Some(SlaveEvent::WriteRequest) | None => {
+                    //pw_log::info!("slave_wait_event:: SlaveEvent::WriteRequest or None");
                     continue;
                 }
             }

@@ -67,9 +67,9 @@ fn slave_echo_loop() -> Result<()> {
     let mut reg_ptr: u8 = 0;
 
     // Pre-load the initial read response.
-    if let Err(_) = client.slave_set_response(SLAVE_BUS, &[reg_map[reg_ptr as usize]]) {
-        pw_log::error!("Initial slave_set_response failed");
-    }
+    // if let Err(_) = client.slave_set_response(SLAVE_BUS, &[reg_map[reg_ptr as usize]]) {
+    //     pw_log::error!("Initial slave_set_response failed");
+    // }
 
     let mut rx_buf = [0u8; 32];
 
@@ -89,9 +89,9 @@ fn slave_echo_loop() -> Result<()> {
                              reg_ptr as u32,
                              val as u32,
                          );
-                        if let Err(_) = client.slave_set_response(SLAVE_BUS, &[val]) {
-                            pw_log::error!("slave_set_response failed");
-                        }
+                        // if let Err(_) = client.slave_set_response(SLAVE_BUS, &[val]) {
+                        //     pw_log::error!("slave_set_response failed");
+                        // }
                     }
                     _ => {
                         // Write: byte 0 = register address, byte 1 = value.
@@ -104,10 +104,23 @@ fn slave_echo_loop() -> Result<()> {
                              val as u32,
                          );
                          //Update read response in case master reads back immediately.
-                        if let Err(_) = client.slave_set_response(SLAVE_BUS, &[val]) {
-                            pw_log::error!("slave_set_response failed");
-                        }
+                        // if let Err(_) = client.slave_set_response(SLAVE_BUS, &[val]) {
+                        //     pw_log::error!("slave_set_response failed");
+                        // }
                     }
+                }
+            }
+            Ok((SlaveEventKind::DataSent, _)) => {
+                pw_log::info!("DataSent");
+                reg_ptr = rx_buf[0];
+                let val = reg_map[reg_ptr as usize];
+                    pw_log::info!(
+                        "DataSent READ  reg=0x{:02x} val=0x{:02x}",
+                        reg_ptr as u32,
+                        val as u32,
+                    );
+                if let Err(_) = client.slave_set_response(SLAVE_BUS, &[val]) {
+                    pw_log::error!("DataSent slave_set_response failed");
                 }
             }
             Ok((SlaveEventKind::ReadRequest, _)) => {
