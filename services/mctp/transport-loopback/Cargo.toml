@@ -1,0 +1,17 @@
+# Licensed under the Apache-2.0 license
+
+[package]
+name = "openprot-mctp-transport-loopback"
+version = "0.1.0"
+edition = "2021"
+description = "MCTP loopback transport binding for OpenPRoT"
+license = "Apache-2.0"
+
+[dependencies]
+openprot-mctp-api = { path = "../api" }
+mctp-lib = { git = "https://github.com/9elements/mctp-lib.git", branch = "buildup", package = "mctp-lib" }
+mctp = { git = "https://github.com/OpenPRoT/mctp-rs.git", branch = "sync-features", default-features = false }
+heapless = { workspace = true }
+
+[dev-dependencies]
+openprot-mctp-server = { path = "../server" }

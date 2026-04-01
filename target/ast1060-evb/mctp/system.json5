@@ -5,28 +5,28 @@
 // 768KB SRAM (640KB usable), executes from RAM
 //
 // Memory Layout (PMSAv7-friendly, power-of-2 aligned regions):
-//   0x00000000 - 0x00000500: Vector table + kernel annotations (1280 bytes)
-//   0x00000500 - 0x00020000: Kernel flash (~127KB, ends at 128KB boundary)
+//   0x00000000 - 0x00000680: Vector table + kernel annotations (1664 bytes)
+//   0x00000680 - 0x00020000: Kernel flash (~126KB, ends at 128KB boundary)
 //   0x00020000 - 0x00040000: i2c_server flash (128KB)
 //   0x00040000 - 0x00060000: mctp_server flash (128KB)
 //   0x00060000 - 0x00080000: mctp_echo flash (128KB)
-//   0x00080000 - 0x00088000: i2c_server RAM (32KB)
-//   0x00088000 - 0x00090000: mctp_server RAM (32KB)
-//   0x00090000 - 0x00098000: mctp_echo RAM (32KB)
-//   0x00098000 - 0x000A0000: Kernel RAM (32KB)
+//   0x00080000 - 0x000A0000: Kernel RAM (128KB)
+//   0x000A0000 - 0x000B0000: i2c_server RAM (64KB)
+//   0x000B0000 - 0x000B8000: mctp_server RAM (32KB)
+//   0x000B8000 - 0x000C0000: mctp_echo RAM (32KB)
 //
-// Total: 0xA0000 = 640KB (fits within the 640KB usable window of the AST1060's 768KB SRAM).
+// Total: 0xC0000 = 768KB (uses all of the AST1060's 768KB SRAM).
 {
     arch: {
         type: "armv7m",
         vector_table_start_address: 0x00000000,
-        vector_table_size_bytes: 1280,  // 0x500 (272 vectors + thread/stack annotations)
+        vector_table_size_bytes: 1664,  // 0x680 (includes vector table + annotations)
     },
     kernel: {
-        flash_start_address: 0x00000500,  // After vector table + annotations
-        flash_size_bytes: 129792,         // 0x1FB00: ends at exactly 0x20000 (128KB boundary)
-        ram_start_address: 0x00098000,    // After all app RAM (3 × 32KB = 0x18000 past 0x80000)
-        ram_size_bytes: 32768,            // 32KB
+        flash_start_address: 0x00000680,  // After vector table + annotations
+        flash_size_bytes: 129408,         // ~126KB (ends at 0x00020000, power-of-2 boundary)
+        ram_start_address: 0x00080000,    // After all flash regions
+        ram_size_bytes: 131072,           // 128KB
     },
     apps: [
         // ──── I2C Server ────
@@ -35,7 +35,7 @@
         {
             name: "i2c_server",
             flash_size_bytes: 131072,     // 128KB for server code
-            ram_size_bytes: 32768,        // 32KB RAM (register maps + buffers)
+            ram_size_bytes: 65536,        // 64KB RAM (register maps + buffers)
             process: {
                 name: "i2c server process",
                 objects: [

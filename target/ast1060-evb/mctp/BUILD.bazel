@@ -8,6 +8,109 @@ load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/ast1060-evb:defs.bzl", "TARGET_COMPATIBLE_WITH")
 load("//target:uart_boot_image.bzl", "uart_boot_image")
 
+# ===========================================================================
+# MCTP Loopback Test (no I2C, in-process dual servers)
+# ===========================================================================
+
+rust_binary(
+    name = "mctp_loopback_test",
+    srcs = ["mctp_loopback_test.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    deps = [
+        ":app_mctp_loopback_test",
+        "//services/mctp/api:mctp_api",
+        "//services/mctp/server:mctp_server_lib",
+        "//services/mctp/transport-loopback:mctp_transport_loopback",
+        "@pigweed//pw_kernel/syscall:syscall_user",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:mctp",
+        "@rust_crates//:mctp-lib",
+    ],
+)
+
+app_package(
+    name = "app_mctp_loopback_test",
+    app_name = "mctp_loopback_test",
+    edition = "2024",
+    system_config = ":system_config_loopback",
+    tags = ["kernel"],
+)
+
+system_image(
+    name = "mctp_loopback",
+    apps = [
+        ":mctp_loopback_test",
+    ],
+    kernel = ":target_loopback",
+    platform = "//target/ast1060-evb",
+    system_config = ":system_config_loopback",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+)
+
+system_image_test(
+    name = "mctp_loopback_test_run",
+    image = ":mctp_loopback",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+uart_boot_image(
+    name = "mctp_loopback_uart",
+    src = ":mctp_loopback",
+    out = "mctp_loopback_uart.bin",
+)
+
+filegroup(
+    name = "system_config_loopback",
+    srcs = ["system_loopback.json5"],
+    visibility = ["//visibility:public"],
+)
+
+target_codegen(
+    name = "codegen_loopback",
+    arch = "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+    system_config = ":system_config_loopback",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+target_linker_script(
+    name = "linker_script_loopback",
+    system_config = ":system_config_loopback",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    template = "//target/ast1060-evb:linker_script_template",
+)
+
+rust_binary(
+    name = "target_loopback",
+    srcs = [
+        "target_loopback.rs",
+    ],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":codegen_loopback",
+        ":linker_script_loopback",
+        "//target/ast1060-evb:console_backend_uart",
+        "//target/ast1060-evb:entry",
+        "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@rust_crates//:cortex-m-semihosting",
+    ],
+)
+
+# ===========================================================================
+# MCTP Echo (Original - with I2C server)
+# ===========================================================================
+
 # ---------------------------------------------------------------------------
 # MCTP echo binary (userspace process)
 # ---------------------------------------------------------------------------

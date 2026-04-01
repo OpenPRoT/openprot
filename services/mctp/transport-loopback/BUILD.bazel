@@ -1,0 +1,31 @@
+# Licensed under the Apache-2.0 license
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "mctp_transport_loopback",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "openprot_mctp_transport_loopback",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/mctp/api:mctp_api",
+        "@rust_crates//:heapless",
+        "@rust_crates//:mctp",
+        "@rust_crates//:mctp-lib",
+    ],
+)
+
+rust_test(
+    name = "mctp_transport_loopback_test",
+    srcs = glob(["tests/**/*.rs"]),
+    crate_root = "tests/loopback.rs",
+    edition = "2024",
+    deps = [
+        ":mctp_transport_loopback",
+        "//services/mctp/api:mctp_api",
+        "//services/mctp/server:mctp_server_lib",
+        "@rust_crates//:mctp",
+        "@rust_crates//:mctp-lib",
+    ],
+)
