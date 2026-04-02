@@ -3,7 +3,7 @@
 
 #![no_std]
 #![no_main]
-use app_test_uart::handle;
+use test_uart_codegen::handle;
 use pw_status::{Error, Result, StatusCode};
 use userspace::syscall::Signals;
 use userspace::time::Instant;
