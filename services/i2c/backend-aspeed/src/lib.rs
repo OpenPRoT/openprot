@@ -49,15 +49,6 @@ use pw_log;
 // ---------------------------------------------------------------------------
 // These are copied from aspeed_ddk::i2c_core::constants which is private.
 
-/// Enable slave packet mode
-const AST_I2CS_PKT_MODE_EN: u32 = 1 << 16;
-/// Slave active for all addresses
-const AST_I2CS_ACTIVE_ALL: u32 = 0x3 << 17;
-/// Enable slave RX buffer
-const AST_I2CS_RX_BUFF_EN: u32 = 1 << 7;
-/// Enable slave TX buffer
-const AST_I2CS_TX_BUFF_EN: u32 = 1 << 6;
-
 // ---------------------------------------------------------------------------
 // Error mapping
 // ---------------------------------------------------------------------------
@@ -100,8 +91,6 @@ fn map_i2c_error(e: I2cError) -> ResponseCode {
 /// The backend exclusively owns `ast1060_pac::Peripherals`, ensuring no
 /// aliased register access. The `unsafe` is confined to [`new()`] where
 /// `Peripherals::steal()` is called.
-/// Maximum TX buffer size per bus (matches hardware buffer size).
-const SLAVE_TX_BUF_SIZE: usize = 32;
 
 /// Maximum RX buffer size for buffered slave notifications (SMBus max payload).
 const SLAVE_RX_BUF_SIZE: usize = 255;
@@ -147,10 +136,6 @@ pub struct AspeedI2cBackend {
     initialized: u16,
     /// Tracks which buses have slave mode configured via `configure_slave()`.
     slave_configured: u16,
-    /// Pre-loaded TX data to send when master reads from us (one buffer per bus).
-    slave_tx_bufs: [[u8; SLAVE_TX_BUF_SIZE]; 14],
-    /// Valid byte count in each `slave_tx_bufs` slot.
-    slave_tx_lens: [usize; 14],
     /// Per-bus state for interrupt-driven slave receive notifications.
     slave_notification: [SlaveNotificationState; 14],
 }
@@ -169,8 +154,6 @@ impl AspeedI2cBackend {
             peripherals: unsafe { ast1060_pac::Peripherals::steal() },
             initialized: 0,
             slave_configured: 0,
-            slave_tx_bufs: [[0u8; SLAVE_TX_BUF_SIZE]; 14],
-            slave_tx_lens: [0usize; 14],
             slave_notification: [EMPTY_NOTIF_STATE; 14],
         }
     }
@@ -401,58 +384,15 @@ impl AspeedI2cBackend {
             return Err(ResponseCode::NotInitialized);
         }
 
-        let len = data.len().min(SLAVE_TX_BUF_SIZE);
-        self.slave_tx_bufs[bus as usize][..len].copy_from_slice(&data[..len]);
-        self.slave_tx_lens[bus as usize] = len;
-
-        // Pre-load the hardware TX buffer and enable it so the slave can respond to reads.
-        // CRITICAL: We must set TX_BUFF_EN here, not in the ReadRequest handler, because
-        // by the time we detect ReadRequest the master has already started clocking and
-        // it's too late to respond (resulting in 0xFF on the bus).
-        //
-        // Setting both RX_BUFF_EN and TX_BUFF_EN allows the slave to simultaneously:
-        // - Accept writes from the master (RX mode)
-        // - Respond immediately to reads with pre-loaded data (TX mode)
         let (regs, buffs) = self.controller_regs(bus)?;
-
-        // Manually pre-load TX buffer and arm it for transmission.
-        // Only copy 1 byte to match the DDK's current limitation.
-        let to_write = 1.min(len);
-        if to_write > 0 {
-            // Write directly to hardware buffer register (first DWORD)
-            // The buffer is organized as 8 DWORDs, each holding up to 4 bytes
-            unsafe {
-                buffs.buff(0).write(|w| w.bits(data[0] as u32));
-
-                // Set transfer length register (tx_data_byte_count = len - 1)
-                regs.i2cc0c()
-                    .modify(|_, w| w.tx_data_byte_count().bits((to_write - 1) as u8));
-
-                // ARM TX BUFFER: Set both RX_BUFF_EN and TX_BUFF_EN to enable simultaneous
-                // receive (for writes) and transmit (for reads). This is required for the
-                // slave to respond to reads without delay.
-                let mut cmd = AST_I2CS_ACTIVE_ALL | AST_I2CS_PKT_MODE_EN;
-                cmd |= AST_I2CS_RX_BUFF_EN;  // Keep RX enabled for writes
-                cmd |= AST_I2CS_TX_BUFF_EN;  // Arm TX for immediate read response
-                regs.i2cs28().write(|w| w.bits(cmd));
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Re-enable RX after a read transaction completes.
-    ///
-    /// Called from slave_wait_event() after a DataSent event to restore RX mode.
-    fn slave_rearm_rx(&mut self, bus: u8) -> Result<(), ResponseCode> {
-        let (regs, _) = self.controller_regs(bus)?;
-
-        unsafe {
-            let mut cmd = AST_I2CS_ACTIVE_ALL | AST_I2CS_PKT_MODE_EN;
-            cmd |= AST_I2CS_RX_BUFF_EN;
-            regs.i2cs28().write(|w| w.bits(cmd));
-        }
-
+        let ctrl = aspeed_ddk::i2c_core::I2cController {
+            controller: DdkController(bus),
+            registers: regs,
+            buff_registers: buffs,
+        };
+        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+        let n = i2c.slave_write(data).map_err(map_i2c_error)?;
+        pw_log::info!("slave_set_response slave write length should be 1 (len={})", n as u8);
         Ok(())
     }
 
@@ -477,11 +417,6 @@ impl AspeedI2cBackend {
             return Err(ResponseCode::NotInitialized);
         }
 
-        // Copy TX buffer to local stack before borrowing peripherals.
-        let tx_len = self.slave_tx_lens[bus as usize];
-        let mut tx_local = [0u8; SLAVE_TX_BUF_SIZE];
-        tx_local[..tx_len].copy_from_slice(&self.slave_tx_bufs[bus as usize][..tx_len]);
-
         let (regs, buffs) = self.controller_regs(bus)?;
         let ctrl = aspeed_ddk::i2c_core::I2cController {
             controller: DdkController(bus),
@@ -495,21 +430,21 @@ impl AspeedI2cBackend {
             match i2c.handle_slave_interrupt() {
                 Some(SlaveEvent::DataReceived { len: _ }) => {
                     let n = i2c.slave_read(rx_buf).map_err(map_i2c_error)?;
+                    pw_log::info!("slave_wait_event:: SlaveEvent::DataReceived (len={})", n as u8);
                     return Ok((SlaveEventKind::DataReceived, n));
                 }
                 Some(SlaveEvent::ReadRequest) => {
                     // TX buffer was pre-armed in slave_set_response(), so the hardware
                     // should respond automatically. We just need to wait for DataSent.
+                    pw_log::info!("slave_wait_event:: SlaveEvent::ReadRequest");
                     continue;
                 }
                 Some(SlaveEvent::DataSent { len: _ }) => {
-                    // Read transaction completed. Re-arm RX mode for next write.
-                    // Drop i2c to release register borrows before calling slave_rearm_rx.
-                    drop(i2c);
-                    let _ = self.slave_rearm_rx(bus);
-                    return Ok((SlaveEventKind::ReadRequest, 0));
+                    pw_log::info!("slave_wait_event:: SlaveEvent::DataSent");
+                    return Ok((SlaveEventKind::DataSent, 1));
                 }
                 Some(SlaveEvent::Stop) => {
+                    pw_log::info!("slave_wait_event:: SlaveEvent::Stop");
                     return Ok((SlaveEventKind::Stop, 0));
                 }
                 Some(SlaveEvent::WriteRequest) | None => {

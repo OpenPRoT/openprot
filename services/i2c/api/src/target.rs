@@ -132,6 +132,8 @@ pub enum SlaveEventKind {
     ReadRequest = 1,
     /// Stop condition received.
     Stop = 2,
+    /// Data was sent to the master.
+    DataSent = 3,
 }
 
 impl SlaveEventKind {
@@ -141,6 +143,7 @@ impl SlaveEventKind {
             0 => Some(Self::DataReceived),
             1 => Some(Self::ReadRequest),
             2 => Some(Self::Stop),
+            3 => Some(Self::DataSent),
             _ => None,
         }
     }

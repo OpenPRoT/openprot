@@ -85,34 +85,40 @@ fn i2c_server_loop() -> Result<()> {
     loop {
         let wait_return = syscall::object_wait(handle::WG, Signals::READABLE, Instant::MAX)?;
 
-        if wait_return.user_data == WTOKEN_IRQ {
-            // Hardware I2C2 slave interrupt: drain data into flat buffers.
-            // Only signal the client if bytes were actually received to avoid
-            // spurious wakeups on non-data events (Stop, WriteRequest, etc.).
-            if handle_i2c_interrupt(&mut backend) {
-                let _ = syscall::raise_peer_user_signal(handle::I2C);
+        match wait_return.user_data {
+            WTOKEN_IRQ => {
+                // Hardware I2C2 slave interrupt: drain data into flat buffers.
+                // Only signal the client if bytes were actually received to avoid
+                // spurious wakeups on non-data events (Stop, WriteRequest, etc.).
+                if handle_i2c_interrupt(&mut backend) {
+                    let _ = syscall::raise_peer_user_signal(handle::I2C);
+                }
+                if let Err(e) = syscall::interrupt_ack(handle::I2C2_IRQ, signals::I2C2) {
+                    pw_log::warn!("interrupt_ack failed: {}", e as u32);
+                }
             }
-            if let Err(e) = syscall::interrupt_ack(handle::I2C2_IRQ, signals::I2C2) {
-                pw_log::warn!("interrupt_ack failed: {}", e as u32);
-            }
-        } else {
-            // IPC request from client — channel_read returns immediately since
-            // the channel was already READABLE when the WaitGroup fired.
-            let len = syscall::channel_read(handle::I2C, 0, &mut request_buf)?;
+            WTOKEN_IPC => {
+                // IPC request from client — channel_read returns immediately since
+                // the channel was already READABLE when the WaitGroup fired.
+                let len = syscall::channel_read(handle::I2C, 0, &mut request_buf)?;
 
-            if len < I2cRequestHeader::SIZE {
-                let resp = I2cResponseHeader::error(ResponseCode::ServerError);
-                response_buf[..I2cResponseHeader::SIZE].copy_from_slice(&resp.to_bytes());
-                syscall::channel_respond(handle::I2C, &response_buf[..I2cResponseHeader::SIZE])?;
-                continue;
-            }
+                if len < I2cRequestHeader::SIZE {
+                    let resp = I2cResponseHeader::error(ResponseCode::ServerError);
+                    response_buf[..I2cResponseHeader::SIZE].copy_from_slice(&resp.to_bytes());
+                    syscall::channel_respond(handle::I2C, &response_buf[..I2cResponseHeader::SIZE])?;
+                    continue;
+                }
 
-            let response_len = dispatch_i2c_op(
-                &request_buf[..len],
-                &mut response_buf,
-                &mut backend,
-            );
-            syscall::channel_respond(handle::I2C, &response_buf[..response_len])?;
+                let response_len = dispatch_i2c_op(
+                    &request_buf[..len],
+                    &mut response_buf,
+                    &mut backend,
+                );
+                syscall::channel_respond(handle::I2C, &response_buf[..response_len])?;
+            }
+            token => {
+                pw_log::warn!("unexpected wait_group token: {}", token as u32);
+            }
         }
     }
 }
