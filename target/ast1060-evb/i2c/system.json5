@@ -20,11 +20,11 @@
     arch: {
         type: "armv7m",
         vector_table_start_address: 0x00000000,
-        vector_table_size_bytes: 1280,  // 0x500 (272 vectors + thread/stack annotations for 3 apps)
+        vector_table_size_bytes: 1696,  // 0x6A0 (includes vector table + annotations + IRQ/WG objects)
     },
     kernel: {
-        flash_start_address: 0x00000500,  // After vector table + annotations
-        flash_size_bytes: 129792,         // ~126KB (ends at 0x00020000)
+        flash_start_address: 0x000006A0,  // After vector table + annotations
+        flash_size_bytes: 129376,         // ~126KB (ends at 0x00020000)
         ram_start_address: 0x00060000,    // After all flash regions
         ram_size_bytes: 131072,           // 128KB
     },
@@ -42,6 +42,22 @@
                     {
                         name: "I2C",
                         type: "channel_handler",  // Server side of client→server channel
+                    },
+                    {
+                        // AST1060 I2C2 combined master+slave interrupt (IRQ 112).
+                        name: "I2C2_IRQ",
+                        type: "interrupt",
+                        irqs: [
+                            {
+                                name: "i2c2",
+                                number: 112,
+                            },
+                        ],
+                    },
+                    {
+                        // WaitGroup: multiplexes IPC channel (READABLE) and IRQ (signals::I2C2).
+                        name: "WG",
+                        type: "wait_group",
                     },
                 ],
                 memory_mappings: [
