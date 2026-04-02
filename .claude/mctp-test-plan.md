@@ -25,48 +25,48 @@ services/mctp/server/tests/
 
 ## Layer 1 — Shared Test Fixtures (common/mod.rs)
 
-- [ ] Extract `BufferSender<'_>` from echo.rs and dispatch.rs into `tests/common/mod.rs`
-- [ ] Add `DroppingBufferSender` (discards writes, always returns Ok) for tests that only care about inbound routing
-- [ ] Extract `transfer(from, to)` helper into common
-- [ ] Extract `DirectClient<'a, S, N>` into common (wraps &RefCell<Server> as MctpClient)
+- [x] Extract `BufferSender<'_>` from echo.rs and dispatch.rs into `tests/common/mod.rs`
+- [x] Add `DroppingBufferSender` (discards writes, always returns Ok) for tests that only care about inbound routing
+- [x] Extract `transfer(from, to)` helper into common
+- [x] Extract `DirectClient<'a, S, N>` into common (wraps &RefCell<Server> as MctpClient)
 
 ---
 
 ## Layer 2 — Server Unit Tests (server_unit.rs)
 
-- [ ] `req()` + `unbind()` — handle allocation/deallocation
-- [ ] `listener()` duplicate msg_type — expect AlreadyBound error
-- [ ] `try_recv()` before any `inbound()` — returns None
-- [ ] `inbound(raw_pkt)` + `try_recv()` — full routing path (use mctp_lib::fragment::Fragmenter to build raw pkts)
-- [ ] `register_recv()` + `update(now + timeout)` — timeout fires RecvResult::TimedOut
-- [ ] `set_eid()` / `get_eid()` — EID round-trip
-- [ ] `send()` with payload > MAX_PAYLOAD — expect NoSpace error
+- [x] `req()` + `unbind()` — handle allocation/deallocation
+- [x] `listener()` duplicate msg_type — expect AlreadyBound error
+- [x] `try_recv()` before any `inbound()` — returns None
+- [x] `inbound(raw_pkt)` + `try_recv()` — full routing path (via `deliver_to` helper using a temporary sender Server)
+- [x] `register_recv()` + `update(now + timeout)` — timeout fires RecvResult::TimedOut
+- [x] `set_eid()` / `get_eid()` — EID round-trip
+- [x] `send()` with payload > MAX_PAYLOAD — expect NoSpace error
 
 ---
 
 ## Layer 3 — Dispatch Unit Tests (dispatch.rs additions)
 
-- [ ] Malformed wire request → BadArgument
-- [ ] `MctpOp::Send` via response path (no handle, HAS_EID flag, explicit tag)
-- [ ] `MctpOp::Unbind` for never-allocated handle → error
-- [ ] `MctpOp::Recv` when no message ready → TimedOut (gap noted in code comment)
+- [x] Malformed wire request → BadArgument
+- [x] `MctpOp::Send` via response path (no handle, HAS_EID flag, explicit tag)
+- [x] `MctpOp::Unbind` for never-allocated handle → idempotent success
+- [x] `MctpOp::Recv` when no message ready → TimedOut
 
 ---
 
 ## Layer 4 — Integration Tests (integration.rs)
 
-- [ ] Multi-fragment roundtrip: set `get_mtu()=64`, send 200-byte payload, verify reassembly
-- [ ] Multiple concurrent listeners: two msg_type values, cross-deliver, verify no cross-talk
-- [ ] Response-without-handle: verify tag & EID threading through echo
-- [ ] Interleaved requests from two senders: tag collision avoidance
+- [x] Multi-fragment roundtrip: set `get_mtu()=64`, send 200-byte payload, verify reassembly
+- [x] Multiple concurrent listeners: two msg_type values, cross-deliver, verify no cross-talk
+- [x] Response-without-handle: verify tag & EID threading through echo
+- [ ] Interleaved requests from two senders: tag collision avoidance ← not yet implemented
 
 ---
 
-## Layer 5 — MctpClient Trait Tests (via DirectClient in echo.rs)
+## Layer 5 — MctpClient Trait Tests (via DirectClient / DirectListener)
 
-- [ ] `MctpListener::recv()` — called after inbound, returns payload
-- [ ] `MctpReqChannel::send()` + `recv()` — full request-response cycle
-- [ ] `drop_handle` mid-flight — verify outstanding entry is cleared
+- [x] `MctpListener::recv()` + `MctpRespChannel::send()` — echo via trait (`echo_via_mctplistener_trait`)
+- [x] `MctpReqChannel::send()` + `recv()` — full request-response cycle (`req_channel_send_recv`)
+- [x] `drop_handle` mid-flight — verify outstanding entry is cleared (`drop_handle_mid_flight_clears_entry`)
 
 ---
 

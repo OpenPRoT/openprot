@@ -1,0 +1,2647 @@
+   0.024005785s  INFO prepare_target{force=false package_id=crypto-api v0.1.0 (/home/rusty1968/work/openprot/services/crypto/api) target="crypto_api"}: cargo::core::compiler::fingerprint: fingerprint error for crypto-api v0.1.0 (/home/rusty1968/work/openprot/services/crypto/api)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("crypto_api", ["lib"], "/home/rusty1968/work/openprot/services/crypto/api/src/lib.rs", Edition2021) }
+   0.024047954s  INFO prepare_target{force=false package_id=crypto-api v0.1.0 (/home/rusty1968/work/openprot/services/crypto/api) target="crypto_api"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/crypto-api-29c23e5ae70f6402/lib-crypto_api`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.041234393s  INFO prepare_target{force=false package_id=zerocopy v0.8.27 target="zerocopy"}: cargo::core::compiler::fingerprint: fingerprint error for zerocopy v0.8.27/Check { test: false }/TargetInner { ..: lib_target("zerocopy", ["lib"], "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zerocopy-0.8.27/src/lib.rs", Edition2021) }
+   0.041272905s  INFO prepare_target{force=false package_id=zerocopy v0.8.27 target="zerocopy"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/zerocopy-60a75b113440bf65/lib-zerocopy`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  16: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  17: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  18: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  19: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  20: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  21: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  22: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  23: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  24: main
+  25: <unknown>
+  26: __libc_start_main
+  27: <unknown>
+   0.041530728s  INFO prepare_target{force=false package_id=zerocopy v0.8.27 target="build-script-build"}: cargo::core::compiler::fingerprint: fingerprint error for zerocopy v0.8.27/RunCustomBuild/TargetInner { ..: custom_build_target("build-script-build", "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zerocopy-0.8.27/build.rs", Edition2021) }
+   0.041557197s  INFO prepare_target{force=false package_id=zerocopy v0.8.27 target="build-script-build"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/zerocopy-c8f9fc6494b04d1f/run-build-script-build-script-build`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::custom_build::build_work
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   9: cargo::ops::cargo_compile::compile_ws
+  10: cargo::ops::cargo_compile::compile_with_exec
+  11: cargo::ops::cargo_compile::compile
+  12: cargo::commands::check::exec
+  13: <cargo::cli::Exec>::exec
+  14: cargo::main
+  15: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  16: std::rt::lang_start::<()>::{closure#0}
+  17: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  18: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  19: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  20: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  21: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  22: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  23: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  24: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  25: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  26: main
+  27: <unknown>
+  28: __libc_start_main
+  29: <unknown>
+   0.041653207s  INFO prepare_target{force=false package_id=zerocopy v0.8.27 target="build-script-build"}: cargo::core::compiler::fingerprint: fingerprint error for zerocopy v0.8.27/Build/TargetInner { ..: custom_build_target("build-script-build", "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zerocopy-0.8.27/build.rs", Edition2021) }
+   0.041658437s  INFO prepare_target{force=false package_id=zerocopy v0.8.27 target="build-script-build"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/zerocopy-a1aa461f5ec650c0/build-script-build-script-build`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   9: cargo::ops::cargo_compile::compile_ws
+  10: cargo::ops::cargo_compile::compile_with_exec
+  11: cargo::ops::cargo_compile::compile
+  12: cargo::commands::check::exec
+  13: <cargo::cli::Exec>::exec
+  14: cargo::main
+  15: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  16: std::rt::lang_start::<()>::{closure#0}
+  17: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  18: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  19: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  20: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  21: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  22: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  23: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  24: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  25: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  26: main
+  27: <unknown>
+  28: __libc_start_main
+  29: <unknown>
+   0.042860553s  INFO prepare_target{force=false package_id=zerocopy-derive v0.8.27 target="zerocopy_derive"}: cargo::core::compiler::fingerprint: fingerprint error for zerocopy-derive v0.8.27/Build/TargetInner { for_host: true, proc_macro: true, ..: lib_target("zerocopy_derive", ["proc-macro"], "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zerocopy-derive-0.8.27/src/lib.rs", Edition2021) }
+   0.042887764s  INFO prepare_target{force=false package_id=zerocopy-derive v0.8.27 target="zerocopy_derive"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/zerocopy-derive-6868220c68805fd1/lib-zerocopy_derive`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  17: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  18: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  19: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  20: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  21: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  22: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  23: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  24: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  25: main
+  26: <unknown>
+  27: __libc_start_main
+  28: <unknown>
+   0.043043637s  INFO prepare_target{force=false package_id=proc-macro2 v1.0.97 target="proc_macro2"}: cargo::core::compiler::fingerprint: fingerprint error for proc-macro2 v1.0.97/Build/TargetInner { ..: lib_target("proc_macro2", ["lib"], "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/proc-macro2-1.0.97/src/lib.rs", Edition2021) }
+   0.043069225s  INFO prepare_target{force=false package_id=proc-macro2 v1.0.97 target="proc_macro2"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/proc-macro2-a02a0d981f41ebb8/lib-proc_macro2`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   9: cargo::ops::cargo_compile::compile_ws
+  10: cargo::ops::cargo_compile::compile_with_exec
+  11: cargo::ops::cargo_compile::compile
+  12: cargo::commands::check::exec
+  13: <cargo::cli::Exec>::exec
+  14: cargo::main
+  15: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  16: std::rt::lang_start::<()>::{closure#0}
+  17: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  18: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  19: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  20: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  21: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  22: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  23: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  24: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  25: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  26: main
+  27: <unknown>
+  28: __libc_start_main
+  29: <unknown>
+   0.043257598s  INFO prepare_target{force=false package_id=proc-macro2 v1.0.97 target="build-script-build"}: cargo::core::compiler::fingerprint: fingerprint error for proc-macro2 v1.0.97/RunCustomBuild/TargetInner { ..: custom_build_target("build-script-build", "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/proc-macro2-1.0.97/build.rs", Edition2021) }
+   0.043282715s  INFO prepare_target{force=false package_id=proc-macro2 v1.0.97 target="build-script-build"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/proc-macro2-577309a92bbde012/run-build-script-build-script-build`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::custom_build::build_work
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: cargo::core::compiler::compile
+   9: cargo::core::compiler::compile
+  10: <cargo::core::compiler::build_runner::BuildRunner>::compile
+  11: cargo::ops::cargo_compile::compile_ws
+  12: cargo::ops::cargo_compile::compile_with_exec
+  13: cargo::ops::cargo_compile::compile
+  14: cargo::commands::check::exec
+  15: <cargo::cli::Exec>::exec
+  16: cargo::main
+  17: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  18: std::rt::lang_start::<()>::{closure#0}
+  19: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  20: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  21: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  22: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  23: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  24: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  25: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  26: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  27: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  28: main
+  29: <unknown>
+  30: __libc_start_main
+  31: <unknown>
+   0.043374717s  INFO prepare_target{force=false package_id=proc-macro2 v1.0.97 target="build-script-build"}: cargo::core::compiler::fingerprint: fingerprint error for proc-macro2 v1.0.97/Build/TargetInner { ..: custom_build_target("build-script-build", "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/proc-macro2-1.0.97/build.rs", Edition2021) }
+   0.043381129s  INFO prepare_target{force=false package_id=proc-macro2 v1.0.97 target="build-script-build"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/proc-macro2-b97174a8d54978c0/build-script-build-script-build`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: cargo::core::compiler::compile
+   9: cargo::core::compiler::compile
+  10: <cargo::core::compiler::build_runner::BuildRunner>::compile
+  11: cargo::ops::cargo_compile::compile_ws
+  12: cargo::ops::cargo_compile::compile_with_exec
+  13: cargo::ops::cargo_compile::compile
+  14: cargo::commands::check::exec
+  15: <cargo::cli::Exec>::exec
+  16: cargo::main
+  17: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  18: std::rt::lang_start::<()>::{closure#0}
+  19: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  20: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  21: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  22: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  23: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  24: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  25: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  26: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  27: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  28: main
+  29: <unknown>
+  30: __libc_start_main
+  31: <unknown>
+   0.044616905s  INFO prepare_target{force=false package_id=quote v1.0.40 target="quote"}: cargo::core::compiler::fingerprint: fingerprint error for quote v1.0.40/Build/TargetInner { ..: lib_target("quote", ["lib"], "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/quote-1.0.40/src/lib.rs", Edition2018) }
+   0.044652181s  INFO prepare_target{force=false package_id=quote v1.0.40 target="quote"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/quote-4a516cb9b4432081/lib-quote`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   9: cargo::ops::cargo_compile::compile_ws
+  10: cargo::ops::cargo_compile::compile_with_exec
+  11: cargo::ops::cargo_compile::compile
+  12: cargo::commands::check::exec
+  13: <cargo::cli::Exec>::exec
+  14: cargo::main
+  15: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  16: std::rt::lang_start::<()>::{closure#0}
+  17: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  18: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  19: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  20: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  21: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  22: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  23: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  24: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  25: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  26: main
+  27: <unknown>
+  28: __libc_start_main
+  29: <unknown>
+   0.044835845s  INFO prepare_target{force=false package_id=syn v2.0.105 target="syn"}: cargo::core::compiler::fingerprint: fingerprint error for syn v2.0.105/Build/TargetInner { ..: lib_target("syn", ["lib"], "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/syn-2.0.105/src/lib.rs", Edition2021) }
+   0.044843069s  INFO prepare_target{force=false package_id=syn v2.0.105 target="syn"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/syn-2669db80a7c36a79/lib-syn`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   9: cargo::ops::cargo_compile::compile_ws
+  10: cargo::ops::cargo_compile::compile_with_exec
+  11: cargo::ops::cargo_compile::compile
+  12: cargo::commands::check::exec
+  13: <cargo::cli::Exec>::exec
+  14: cargo::main
+  15: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  16: std::rt::lang_start::<()>::{closure#0}
+  17: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  18: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  19: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  20: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  21: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  22: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  23: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  24: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  25: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  26: main
+  27: <unknown>
+  28: __libc_start_main
+  29: <unknown>
+   0.045064574s  INFO prepare_target{force=false package_id=crypto-api v0.1.0 (/home/rusty1968/work/openprot/services/crypto/api) target="crypto_api"}: cargo::core::compiler::fingerprint: fingerprint error for crypto-api v0.1.0 (/home/rusty1968/work/openprot/services/crypto/api)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("crypto_api", ["lib"], "/home/rusty1968/work/openprot/services/crypto/api/src/lib.rs", Edition2021) }
+   0.045110129s  INFO prepare_target{force=false package_id=crypto-api v0.1.0 (/home/rusty1968/work/openprot/services/crypto/api) target="crypto_api"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/crypto-api-146a6974f7c58597/test-lib-crypto_api`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.048484660s  INFO prepare_target{force=false package_id=openprot-hal-async v0.1.0 (/home/rusty1968/work/openprot/hal/async) target="openprot_hal_async"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-hal-async v0.1.0 (/home/rusty1968/work/openprot/hal/async)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("openprot_hal_async", ["lib"], "/home/rusty1968/work/openprot/hal/async/src/lib.rs", Edition2021) }
+   0.048535455s  INFO prepare_target{force=false package_id=openprot-hal-async v0.1.0 (/home/rusty1968/work/openprot/hal/async) target="openprot_hal_async"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-hal-async-b3c04429830e6e58/lib-openprot_hal_async`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.048754265s  INFO prepare_target{force=false package_id=embedded-hal-async v1.0.0 target="embedded_hal_async"}: cargo::core::compiler::fingerprint: fingerprint error for embedded-hal-async v1.0.0/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("embedded_hal_async", ["lib"], "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/embedded-hal-async-1.0.0/src/lib.rs", Edition2021) }
+   0.048760587s  INFO prepare_target{force=false package_id=embedded-hal-async v1.0.0 target="embedded_hal_async"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/embedded-hal-async-79664a2d5d960ba2/lib-embedded_hal_async`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  16: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  17: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  18: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  19: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  20: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  21: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  22: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  23: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  24: main
+  25: <unknown>
+  26: __libc_start_main
+  27: <unknown>
+   0.049195706s  INFO prepare_target{force=false package_id=embedded-hal-async v1.0.0 target="build-script-build"}: cargo::core::compiler::fingerprint: fingerprint error for embedded-hal-async v1.0.0/RunCustomBuild/TargetInner { ..: custom_build_target("build-script-build", "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/embedded-hal-async-1.0.0/build.rs", Edition2021) }
+   0.049225862s  INFO prepare_target{force=false package_id=embedded-hal-async v1.0.0 target="build-script-build"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/embedded-hal-async-a7e55c34405ef3db/run-build-script-build-script-build`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::custom_build::build_work
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   9: cargo::ops::cargo_compile::compile_ws
+  10: cargo::ops::cargo_compile::compile_with_exec
+  11: cargo::ops::cargo_compile::compile
+  12: cargo::commands::check::exec
+  13: <cargo::cli::Exec>::exec
+  14: cargo::main
+  15: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  16: std::rt::lang_start::<()>::{closure#0}
+  17: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  18: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  19: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  20: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  21: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  22: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  23: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  24: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  25: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  26: main
+  27: <unknown>
+  28: __libc_start_main
+  29: <unknown>
+   0.049327513s  INFO prepare_target{force=false package_id=embedded-hal-async v1.0.0 target="build-script-build"}: cargo::core::compiler::fingerprint: fingerprint error for embedded-hal-async v1.0.0/Build/TargetInner { ..: custom_build_target("build-script-build", "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/embedded-hal-async-1.0.0/build.rs", Edition2021) }
+   0.049332983s  INFO prepare_target{force=false package_id=embedded-hal-async v1.0.0 target="build-script-build"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/embedded-hal-async-9ab8864db176f438/build-script-build-script-build`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   9: cargo::ops::cargo_compile::compile_ws
+  10: cargo::ops::cargo_compile::compile_with_exec
+  11: cargo::ops::cargo_compile::compile
+  12: cargo::commands::check::exec
+  13: <cargo::cli::Exec>::exec
+  14: cargo::main
+  15: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  16: std::rt::lang_start::<()>::{closure#0}
+  17: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  18: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  19: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  20: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  21: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  22: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  23: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  24: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  25: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  26: main
+  27: <unknown>
+  28: __libc_start_main
+  29: <unknown>
+   0.049766055s  INFO prepare_target{force=false package_id=openprot-hal-async v0.1.0 (/home/rusty1968/work/openprot/hal/async) target="openprot_hal_async"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-hal-async v0.1.0 (/home/rusty1968/work/openprot/hal/async)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("openprot_hal_async", ["lib"], "/home/rusty1968/work/openprot/hal/async/src/lib.rs", Edition2021) }
+   0.049794328s  INFO prepare_target{force=false package_id=openprot-hal-async v0.1.0 (/home/rusty1968/work/openprot/hal/async) target="openprot_hal_async"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-hal-async-d6dcf60e9b6a69a7/test-lib-openprot_hal_async`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.050526500s  INFO prepare_target{force=false package_id=openprot-hal-blocking v0.1.0 (/home/rusty1968/work/openprot/hal/blocking) target="openprot_hal_blocking"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-hal-blocking v0.1.0 (/home/rusty1968/work/openprot/hal/blocking)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("openprot_hal_blocking", ["lib"], "/home/rusty1968/work/openprot/hal/blocking/src/lib.rs", Edition2021) }
+   0.050552689s  INFO prepare_target{force=false package_id=openprot-hal-blocking v0.1.0 (/home/rusty1968/work/openprot/hal/blocking) target="openprot_hal_blocking"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-hal-blocking-5b2fbc7efc660ed4/lib-openprot_hal_blocking`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.051191015s  INFO prepare_target{force=false package_id=zeroize v1.8.2 target="zeroize"}: cargo::core::compiler::fingerprint: fingerprint error for zeroize v1.8.2/Check { test: false }/TargetInner { ..: lib_target("zeroize", ["lib"], "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize-1.8.2/src/lib.rs", Edition2021) }
+   0.051216453s  INFO prepare_target{force=false package_id=zeroize v1.8.2 target="zeroize"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/zeroize-a8d72523df85fcda/lib-zeroize`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  16: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  17: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  18: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  19: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  20: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  21: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  22: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  23: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  24: main
+  25: <unknown>
+  26: __libc_start_main
+  27: <unknown>
+   0.051352247s  INFO prepare_target{force=false package_id=zeroize_derive v1.4.2 target="zeroize_derive"}: cargo::core::compiler::fingerprint: fingerprint error for zeroize_derive v1.4.2/Build/TargetInner { name_inferred: true, for_host: true, proc_macro: true, ..: lib_target("zeroize_derive", ["proc-macro"], "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/zeroize_derive-1.4.2/src/lib.rs", Edition2021) }
+   0.051378677s  INFO prepare_target{force=false package_id=zeroize_derive v1.4.2 target="zeroize_derive"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/zeroize_derive-18a90affedfabf11/lib-zeroize_derive`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  17: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  18: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  19: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  20: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  21: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  22: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  23: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  24: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  25: main
+  26: <unknown>
+  27: __libc_start_main
+  28: <unknown>
+   0.051534549s  INFO prepare_target{force=false package_id=openprot-hal-blocking v0.1.0 (/home/rusty1968/work/openprot/hal/blocking) target="openprot_hal_blocking"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-hal-blocking v0.1.0 (/home/rusty1968/work/openprot/hal/blocking)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("openprot_hal_blocking", ["lib"], "/home/rusty1968/work/openprot/hal/blocking/src/lib.rs", Edition2021) }
+   0.051561028s  INFO prepare_target{force=false package_id=openprot-hal-blocking v0.1.0 (/home/rusty1968/work/openprot/hal/blocking) target="openprot_hal_blocking"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-hal-blocking-e6215bec0f81870d/test-lib-openprot_hal_blocking`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.052254969s  INFO prepare_target{force=false package_id=openprot-hal-nb v0.1.0 (/home/rusty1968/work/openprot/hal/nb) target="openprot_hal_nb"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-hal-nb v0.1.0 (/home/rusty1968/work/openprot/hal/nb)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("openprot_hal_nb", ["lib"], "/home/rusty1968/work/openprot/hal/nb/src/lib.rs", Edition2021) }
+   0.052285566s  INFO prepare_target{force=false package_id=openprot-hal-nb v0.1.0 (/home/rusty1968/work/openprot/hal/nb) target="openprot_hal_nb"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-hal-nb-737b505239c3c673/lib-openprot_hal_nb`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.052844825s  INFO prepare_target{force=false package_id=openprot-hal-nb v0.1.0 (/home/rusty1968/work/openprot/hal/nb) target="openprot_hal_nb"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-hal-nb v0.1.0 (/home/rusty1968/work/openprot/hal/nb)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("openprot_hal_nb", ["lib"], "/home/rusty1968/work/openprot/hal/nb/src/lib.rs", Edition2021) }
+   0.052870583s  INFO prepare_target{force=false package_id=openprot-hal-nb v0.1.0 (/home/rusty1968/work/openprot/hal/nb) target="openprot_hal_nb"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-hal-nb-a4a4b018302dad43/test-lib-openprot_hal_nb`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.054805710s  INFO prepare_target{force=false package_id=openprot-mctp-api v0.1.0 (/home/rusty1968/work/openprot/services/mctp/api) target="openprot_mctp_api"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-mctp-api v0.1.0 (/home/rusty1968/work/openprot/services/mctp/api)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("openprot_mctp_api", ["lib"], "/home/rusty1968/work/openprot/services/mctp/api/src/lib.rs", Edition2021) }
+   0.054832951s  INFO prepare_target{force=false package_id=openprot-mctp-api v0.1.0 (/home/rusty1968/work/openprot/services/mctp/api) target="openprot_mctp_api"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-mctp-api-6cf64668a65c6648/lib-openprot_mctp_api`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.054960620s  INFO prepare_target{force=false package_id=heapless v0.9.1 target="heapless"}: cargo::core::compiler::fingerprint: fingerprint error for heapless v0.9.1/Check { test: false }/TargetInner { ..: lib_target("heapless", ["lib"], "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/heapless-0.9.1/src/lib.rs", Edition2021) }
+   0.054985547s  INFO prepare_target{force=false package_id=heapless v0.9.1 target="heapless"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/heapless-516944a0dff9ac7f/lib-heapless`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  16: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  17: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  18: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  19: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  20: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  21: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  22: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  23: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  24: main
+  25: <unknown>
+  26: __libc_start_main
+  27: <unknown>
+   0.055582506s  INFO prepare_target{force=false package_id=heapless v0.9.1 target="build-script-build"}: cargo::core::compiler::fingerprint: fingerprint error for heapless v0.9.1/RunCustomBuild/TargetInner { ..: custom_build_target("build-script-build", "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/heapless-0.9.1/build.rs", Edition2021) }
+   0.055607122s  INFO prepare_target{force=false package_id=heapless v0.9.1 target="build-script-build"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/heapless-799fb983e5cc8a18/run-build-script-build-script-build`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::custom_build::build_work
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   9: cargo::ops::cargo_compile::compile_ws
+  10: cargo::ops::cargo_compile::compile_with_exec
+  11: cargo::ops::cargo_compile::compile
+  12: cargo::commands::check::exec
+  13: <cargo::cli::Exec>::exec
+  14: cargo::main
+  15: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  16: std::rt::lang_start::<()>::{closure#0}
+  17: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  18: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  19: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  20: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  21: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  22: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  23: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  24: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  25: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  26: main
+  27: <unknown>
+  28: __libc_start_main
+  29: <unknown>
+   0.055693043s  INFO prepare_target{force=false package_id=heapless v0.9.1 target="build-script-build"}: cargo::core::compiler::fingerprint: fingerprint error for heapless v0.9.1/Build/TargetInner { ..: custom_build_target("build-script-build", "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/heapless-0.9.1/build.rs", Edition2021) }
+   0.055697962s  INFO prepare_target{force=false package_id=heapless v0.9.1 target="build-script-build"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/heapless-7412ca63a3111114/build-script-build-script-build`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   9: cargo::ops::cargo_compile::compile_ws
+  10: cargo::ops::cargo_compile::compile_with_exec
+  11: cargo::ops::cargo_compile::compile
+  12: cargo::commands::check::exec
+  13: <cargo::cli::Exec>::exec
+  14: cargo::main
+  15: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  16: std::rt::lang_start::<()>::{closure#0}
+  17: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  18: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  19: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  20: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  21: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  22: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  23: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  24: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  25: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  26: main
+  27: <unknown>
+  28: __libc_start_main
+  29: <unknown>
+   0.056401861s  INFO prepare_target{force=false package_id=openprot-mctp-api v0.1.0 (/home/rusty1968/work/openprot/services/mctp/api) target="openprot_mctp_api"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-mctp-api v0.1.0 (/home/rusty1968/work/openprot/services/mctp/api)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("openprot_mctp_api", ["lib"], "/home/rusty1968/work/openprot/services/mctp/api/src/lib.rs", Edition2021) }
+   0.056428221s  INFO prepare_target{force=false package_id=openprot-mctp-api v0.1.0 (/home/rusty1968/work/openprot/services/mctp/api) target="openprot_mctp_api"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-mctp-api-58637c13c934ee81/test-lib-openprot_mctp_api`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.056577190s  INFO prepare_target{force=false package_id=openprot-mctp-client v0.1.0 (/home/rusty1968/work/openprot/services/mctp/client) target="openprot_mctp_client"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-mctp-client v0.1.0 (/home/rusty1968/work/openprot/services/mctp/client)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("openprot_mctp_client", ["lib"], "/home/rusty1968/work/openprot/services/mctp/client/src/lib.rs", Edition2021) }
+   0.056602106s  INFO prepare_target{force=false package_id=openprot-mctp-client v0.1.0 (/home/rusty1968/work/openprot/services/mctp/client) target="openprot_mctp_client"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-mctp-client-d108a9f5ebe1af61/lib-openprot_mctp_client`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.056716651s  INFO prepare_target{force=false package_id=openprot-mctp-client v0.1.0 (/home/rusty1968/work/openprot/services/mctp/client) target="openprot_mctp_client"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-mctp-client v0.1.0 (/home/rusty1968/work/openprot/services/mctp/client)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("openprot_mctp_client", ["lib"], "/home/rusty1968/work/openprot/services/mctp/client/src/lib.rs", Edition2021) }
+   0.056721140s  INFO prepare_target{force=false package_id=openprot-mctp-client v0.1.0 (/home/rusty1968/work/openprot/services/mctp/client) target="openprot_mctp_client"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-mctp-client-e2d2791d6463fe31/test-lib-openprot_mctp_client`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.058957050s  INFO prepare_target{force=false package_id=openprot-mctp-server v0.1.0 (/home/rusty1968/work/openprot/services/mctp/server) target="openprot_mctp_server"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-mctp-server v0.1.0 (/home/rusty1968/work/openprot/services/mctp/server)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("openprot_mctp_server", ["lib"], "/home/rusty1968/work/openprot/services/mctp/server/src/lib.rs", Edition2021) }
+   0.058983760s  INFO prepare_target{force=false package_id=openprot-mctp-server v0.1.0 (/home/rusty1968/work/openprot/services/mctp/server) target="openprot_mctp_server"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-mctp-server-dd70c54c3e5f0e3f/lib-openprot_mctp_server`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.059527008s  INFO prepare_target{force=false package_id=mctp-lib v0.1.0 (https://github.com/9elements/mctp-lib.git?branch=buildup#9c53adae) target="mctp_lib"}: cargo::core::compiler::fingerprint: fingerprint error for mctp-lib v0.1.0 (https://github.com/9elements/mctp-lib.git?branch=buildup#9c53adae)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("mctp_lib", ["lib"], "/home/rusty1968/.cargo/git/checkouts/mctp-lib-778ecd30380bcf13/9c53ada/src/lib.rs", Edition2024) }
+   0.059599924s  INFO prepare_target{force=false package_id=mctp-lib v0.1.0 (https://github.com/9elements/mctp-lib.git?branch=buildup#9c53adae) target="mctp_lib"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/mctp-lib-fc792c08fc4db853/lib-mctp_lib`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  16: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  17: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  18: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  19: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  20: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  21: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  22: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  23: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  24: main
+  25: <unknown>
+  26: __libc_start_main
+  27: <unknown>
+   0.060049938s  INFO prepare_target{force=false package_id=mctp-estack v0.1.0 (https://github.com/OpenPRoT/mctp-rs.git?branch=sync-features#fafe92f6) target="mctp_estack"}: cargo::core::compiler::fingerprint: fingerprint error for mctp-estack v0.1.0 (https://github.com/OpenPRoT/mctp-rs.git?branch=sync-features#fafe92f6)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("mctp_estack", ["lib"], "/home/rusty1968/.cargo/git/checkouts/mctp-rs-ae15241768aeb12b/fafe92f/mctp-estack/src/lib.rs", Edition2021) }
+   0.060080936s  INFO prepare_target{force=false package_id=mctp-estack v0.1.0 (https://github.com/OpenPRoT/mctp-rs.git?branch=sync-features#fafe92f6) target="mctp_estack"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/mctp-estack-d7d69cfb83ad94f9/lib-mctp_estack`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  17: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  18: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  19: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  20: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  21: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  22: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  23: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  24: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  25: main
+  26: <unknown>
+  27: __libc_start_main
+  28: <unknown>
+   0.060940266s  INFO prepare_target{force=false package_id=embedded-io-async v0.6.1 target="embedded_io_async"}: cargo::core::compiler::fingerprint: fingerprint error for embedded-io-async v0.6.1/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("embedded_io_async", ["lib"], "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/embedded-io-async-0.6.1/src/lib.rs", Edition2021) }
+   0.060964301s  INFO prepare_target{force=false package_id=embedded-io-async v0.6.1 target="embedded_io_async"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/embedded-io-async-ed25dd0c64126341/lib-embedded_io_async`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   9: cargo::ops::cargo_compile::compile_ws
+  10: cargo::ops::cargo_compile::compile_with_exec
+  11: cargo::ops::cargo_compile::compile
+  12: cargo::commands::check::exec
+  13: <cargo::cli::Exec>::exec
+  14: cargo::main
+  15: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  16: std::rt::lang_start::<()>::{closure#0}
+  17: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  18: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  19: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  20: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  21: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  22: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  23: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  24: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  25: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  26: main
+  27: <unknown>
+  28: __libc_start_main
+  29: <unknown>
+   0.061138317s  INFO prepare_target{force=false package_id=embedded-io-async v0.6.1 target="build-script-build"}: cargo::core::compiler::fingerprint: fingerprint error for embedded-io-async v0.6.1/RunCustomBuild/TargetInner { ..: custom_build_target("build-script-build", "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/embedded-io-async-0.6.1/build.rs", Edition2021) }
+   0.061162773s  INFO prepare_target{force=false package_id=embedded-io-async v0.6.1 target="build-script-build"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/embedded-io-async-a876a6d17206b295/run-build-script-build-script-build`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::custom_build::build_work
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: cargo::core::compiler::compile
+   9: cargo::core::compiler::compile
+  10: <cargo::core::compiler::build_runner::BuildRunner>::compile
+  11: cargo::ops::cargo_compile::compile_ws
+  12: cargo::ops::cargo_compile::compile_with_exec
+  13: cargo::ops::cargo_compile::compile
+  14: cargo::commands::check::exec
+  15: <cargo::cli::Exec>::exec
+  16: cargo::main
+  17: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  18: std::rt::lang_start::<()>::{closure#0}
+  19: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  20: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  21: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  22: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  23: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  24: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  25: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  26: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  27: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  28: main
+  29: <unknown>
+  30: __libc_start_main
+  31: <unknown>
+   0.061248524s  INFO prepare_target{force=false package_id=embedded-io-async v0.6.1 target="build-script-build"}: cargo::core::compiler::fingerprint: fingerprint error for embedded-io-async v0.6.1/Build/TargetInner { ..: custom_build_target("build-script-build", "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/embedded-io-async-0.6.1/build.rs", Edition2021) }
+   0.061270966s  INFO prepare_target{force=false package_id=embedded-io-async v0.6.1 target="build-script-build"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/embedded-io-async-a03508a8cce74c4e/build-script-build-script-build`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: cargo::core::compiler::compile
+   9: cargo::core::compiler::compile
+  10: <cargo::core::compiler::build_runner::BuildRunner>::compile
+  11: cargo::ops::cargo_compile::compile_ws
+  12: cargo::ops::cargo_compile::compile_with_exec
+  13: cargo::ops::cargo_compile::compile
+  14: cargo::commands::check::exec
+  15: <cargo::cli::Exec>::exec
+  16: cargo::main
+  17: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  18: std::rt::lang_start::<()>::{closure#0}
+  19: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  20: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  21: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  22: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  23: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  24: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  25: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  26: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  27: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  28: main
+  29: <unknown>
+  30: __libc_start_main
+  31: <unknown>
+   0.061704539s  INFO prepare_target{force=false package_id=heapless v0.8.0 target="heapless"}: cargo::core::compiler::fingerprint: fingerprint error for heapless v0.8.0/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("heapless", ["lib"], "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/heapless-0.8.0/src/lib.rs", Edition2021) }
+   0.061734715s  INFO prepare_target{force=false package_id=heapless v0.8.0 target="heapless"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/heapless-89b00ea5d9045eda/lib-heapless`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   9: cargo::ops::cargo_compile::compile_ws
+  10: cargo::ops::cargo_compile::compile_with_exec
+  11: cargo::ops::cargo_compile::compile
+  12: cargo::commands::check::exec
+  13: <cargo::cli::Exec>::exec
+  14: cargo::main
+  15: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  16: std::rt::lang_start::<()>::{closure#0}
+  17: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  18: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  19: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  20: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  21: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  22: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  23: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  24: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  25: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  26: main
+  27: <unknown>
+  28: __libc_start_main
+  29: <unknown>
+   0.061985816s  INFO prepare_target{force=false package_id=heapless v0.8.0 target="build-script-build"}: cargo::core::compiler::fingerprint: fingerprint error for heapless v0.8.0/RunCustomBuild/TargetInner { ..: custom_build_target("build-script-build", "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/heapless-0.8.0/build.rs", Edition2021) }
+   0.062015972s  INFO prepare_target{force=false package_id=heapless v0.8.0 target="build-script-build"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/heapless-e3047553a6dd2fc9/run-build-script-build-script-build`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::custom_build::build_work
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: cargo::core::compiler::compile
+   9: cargo::core::compiler::compile
+  10: <cargo::core::compiler::build_runner::BuildRunner>::compile
+  11: cargo::ops::cargo_compile::compile_ws
+  12: cargo::ops::cargo_compile::compile_with_exec
+  13: cargo::ops::cargo_compile::compile
+  14: cargo::commands::check::exec
+  15: <cargo::cli::Exec>::exec
+  16: cargo::main
+  17: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  18: std::rt::lang_start::<()>::{closure#0}
+  19: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  20: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  21: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  22: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  23: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  24: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  25: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  26: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  27: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  28: main
+  29: <unknown>
+  30: __libc_start_main
+  31: <unknown>
+   0.062133993s  INFO prepare_target{force=false package_id=heapless v0.8.0 target="build-script-build"}: cargo::core::compiler::fingerprint: fingerprint error for heapless v0.8.0/Build/TargetInner { ..: custom_build_target("build-script-build", "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/heapless-0.8.0/build.rs", Edition2021) }
+   0.062161575s  INFO prepare_target{force=false package_id=heapless v0.8.0 target="build-script-build"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/heapless-2dd6b63654a8788c/build-script-build-script-build`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: cargo::core::compiler::compile
+   9: cargo::core::compiler::compile
+  10: <cargo::core::compiler::build_runner::BuildRunner>::compile
+  11: cargo::ops::cargo_compile::compile_ws
+  12: cargo::ops::cargo_compile::compile_with_exec
+  13: cargo::ops::cargo_compile::compile
+  14: cargo::commands::check::exec
+  15: <cargo::cli::Exec>::exec
+  16: cargo::main
+  17: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  18: std::rt::lang_start::<()>::{closure#0}
+  19: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  20: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  21: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  22: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  23: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  24: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  25: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  26: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  27: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  28: main
+  29: <unknown>
+  30: __libc_start_main
+  31: <unknown>
+   0.063053210s  INFO prepare_target{force=false package_id=smbus-pec v1.0.1 target="smbus_pec"}: cargo::core::compiler::fingerprint: fingerprint error for smbus-pec v1.0.1/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("smbus_pec", ["lib"], "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/smbus-pec-1.0.1/src/lib.rs", Edition2018) }
+   0.063092283s  INFO prepare_target{force=false package_id=smbus-pec v1.0.1 target="smbus_pec"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/smbus-pec-534abc3a0e94824b/lib-smbus_pec`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   9: cargo::ops::cargo_compile::compile_ws
+  10: cargo::ops::cargo_compile::compile_with_exec
+  11: cargo::ops::cargo_compile::compile
+  12: cargo::commands::check::exec
+  13: <cargo::cli::Exec>::exec
+  14: cargo::main
+  15: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  16: std::rt::lang_start::<()>::{closure#0}
+  17: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  18: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  19: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  20: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  21: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  22: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  23: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  24: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  25: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  26: main
+  27: <unknown>
+  28: __libc_start_main
+  29: <unknown>
+   0.063589511s  INFO prepare_target{force=false package_id=smbus-pec v1.0.1 target="build-script-build"}: cargo::core::compiler::fingerprint: fingerprint error for smbus-pec v1.0.1/RunCustomBuild/TargetInner { ..: custom_build_target("build-script-build", "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/smbus-pec-1.0.1/build.rs", Edition2018) }
+   0.063617083s  INFO prepare_target{force=false package_id=smbus-pec v1.0.1 target="build-script-build"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/smbus-pec-fd820862362117df/run-build-script-build-script-build`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::custom_build::build_work
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: cargo::core::compiler::compile
+   9: cargo::core::compiler::compile
+  10: <cargo::core::compiler::build_runner::BuildRunner>::compile
+  11: cargo::ops::cargo_compile::compile_ws
+  12: cargo::ops::cargo_compile::compile_with_exec
+  13: cargo::ops::cargo_compile::compile
+  14: cargo::commands::check::exec
+  15: <cargo::cli::Exec>::exec
+  16: cargo::main
+  17: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  18: std::rt::lang_start::<()>::{closure#0}
+  19: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  20: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  21: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  22: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  23: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  24: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  25: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  26: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  27: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  28: main
+  29: <unknown>
+  30: __libc_start_main
+  31: <unknown>
+   0.063691763s  INFO prepare_target{force=false package_id=smbus-pec v1.0.1 target="build-script-build"}: cargo::core::compiler::fingerprint: fingerprint error for smbus-pec v1.0.1/Build/TargetInner { ..: custom_build_target("build-script-build", "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/smbus-pec-1.0.1/build.rs", Edition2018) }
+   0.063695179s  INFO prepare_target{force=false package_id=smbus-pec v1.0.1 target="build-script-build"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/smbus-pec-d08aacde0a3d07c0/build-script-build-script-build`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: cargo::core::compiler::compile
+   8: cargo::core::compiler::compile
+   9: cargo::core::compiler::compile
+  10: <cargo::core::compiler::build_runner::BuildRunner>::compile
+  11: cargo::ops::cargo_compile::compile_ws
+  12: cargo::ops::cargo_compile::compile_with_exec
+  13: cargo::ops::cargo_compile::compile
+  14: cargo::commands::check::exec
+  15: <cargo::cli::Exec>::exec
+  16: cargo::main
+  17: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  18: std::rt::lang_start::<()>::{closure#0}
+  19: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  20: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  21: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  22: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  23: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  24: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  25: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  26: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  27: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  28: main
+  29: <unknown>
+  30: __libc_start_main
+  31: <unknown>
+   0.064556694s  INFO prepare_target{force=false package_id=openprot-mctp-server v0.1.0 (/home/rusty1968/work/openprot/services/mctp/server) target="openprot_mctp_server"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-mctp-server v0.1.0 (/home/rusty1968/work/openprot/services/mctp/server)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("openprot_mctp_server", ["lib"], "/home/rusty1968/work/openprot/services/mctp/server/src/lib.rs", Edition2021) }
+   0.064584305s  INFO prepare_target{force=false package_id=openprot-mctp-server v0.1.0 (/home/rusty1968/work/openprot/services/mctp/server) target="openprot_mctp_server"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-mctp-server-9499f2fab6da9f49/test-lib-openprot_mctp_server`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.064818043s  INFO prepare_target{force=false package_id=openprot-mctp-server v0.1.0 (/home/rusty1968/work/openprot/services/mctp/server) target="dispatch"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-mctp-server v0.1.0 (/home/rusty1968/work/openprot/services/mctp/server)/Check { test: true }/TargetInner { kind: "test", name: "dispatch", benched: false, ..: with_path("/home/rusty1968/work/openprot/services/mctp/server/tests/dispatch.rs", Edition2021) }
+   0.064844222s  INFO prepare_target{force=false package_id=openprot-mctp-server v0.1.0 (/home/rusty1968/work/openprot/services/mctp/server) target="dispatch"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-mctp-server-a082b8dc08e3c2a9/test-integration-test-dispatch`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.065044558s  INFO prepare_target{force=false package_id=openprot-mctp-server v0.1.0 (/home/rusty1968/work/openprot/services/mctp/server) target="echo"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-mctp-server v0.1.0 (/home/rusty1968/work/openprot/services/mctp/server)/Check { test: true }/TargetInner { kind: "test", name: "echo", benched: false, ..: with_path("/home/rusty1968/work/openprot/services/mctp/server/tests/echo.rs", Edition2021) }
+   0.065070436s  INFO prepare_target{force=false package_id=openprot-mctp-server v0.1.0 (/home/rusty1968/work/openprot/services/mctp/server) target="echo"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-mctp-server-3536fbd93e108288/test-integration-test-echo`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.065252928s  INFO prepare_target{force=false package_id=openprot-mctp-server v0.1.0 (/home/rusty1968/work/openprot/services/mctp/server) target="integration"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-mctp-server v0.1.0 (/home/rusty1968/work/openprot/services/mctp/server)/Check { test: true }/TargetInner { kind: "test", name: "integration", benched: false, ..: with_path("/home/rusty1968/work/openprot/services/mctp/server/tests/integration.rs", Edition2021) }
+   0.065278657s  INFO prepare_target{force=false package_id=openprot-mctp-server v0.1.0 (/home/rusty1968/work/openprot/services/mctp/server) target="integration"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-mctp-server-0567e97e0e0a8c9b/test-integration-test-integration`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.065451220s  INFO prepare_target{force=false package_id=openprot-mctp-server v0.1.0 (/home/rusty1968/work/openprot/services/mctp/server) target="server_unit"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-mctp-server v0.1.0 (/home/rusty1968/work/openprot/services/mctp/server)/Check { test: true }/TargetInner { kind: "test", name: "server_unit", benched: false, ..: with_path("/home/rusty1968/work/openprot/services/mctp/server/tests/server_unit.rs", Edition2021) }
+   0.065476658s  INFO prepare_target{force=false package_id=openprot-mctp-server v0.1.0 (/home/rusty1968/work/openprot/services/mctp/server) target="server_unit"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-mctp-server-7c025a76d5e68111/test-integration-test-server_unit`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.065651085s  INFO prepare_target{force=false package_id=openprot-mctp-transport-i2c v0.1.0 (/home/rusty1968/work/openprot/services/mctp/transport-i2c) target="openprot_mctp_transport_i2c"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-mctp-transport-i2c v0.1.0 (/home/rusty1968/work/openprot/services/mctp/transport-i2c)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("openprot_mctp_transport_i2c", ["lib"], "/home/rusty1968/work/openprot/services/mctp/transport-i2c/src/lib.rs", Edition2021) }
+   0.065679167s  INFO prepare_target{force=false package_id=openprot-mctp-transport-i2c v0.1.0 (/home/rusty1968/work/openprot/services/mctp/transport-i2c) target="openprot_mctp_transport_i2c"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-mctp-transport-i2c-e45ce187221e047b/lib-openprot_mctp_transport_i2c`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.065830240s  INFO prepare_target{force=false package_id=openprot-mctp-transport-i2c v0.1.0 (/home/rusty1968/work/openprot/services/mctp/transport-i2c) target="openprot_mctp_transport_i2c"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-mctp-transport-i2c v0.1.0 (/home/rusty1968/work/openprot/services/mctp/transport-i2c)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("openprot_mctp_transport_i2c", ["lib"], "/home/rusty1968/work/openprot/services/mctp/transport-i2c/src/lib.rs", Edition2021) }
+   0.065855468s  INFO prepare_target{force=false package_id=openprot-mctp-transport-i2c v0.1.0 (/home/rusty1968/work/openprot/services/mctp/transport-i2c) target="openprot_mctp_transport_i2c"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-mctp-transport-i2c-4adf7002ca86341d/test-lib-openprot_mctp_transport_i2c`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.069933750s  INFO prepare_target{force=false package_id=openprot-spdm-requester v0.1.0 (/home/rusty1968/work/openprot/services/spdm/requester) target="openprot_spdm_requester"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-spdm-requester v0.1.0 (/home/rusty1968/work/openprot/services/spdm/requester)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("openprot_spdm_requester", ["lib"], "/home/rusty1968/work/openprot/services/spdm/requester/src/lib.rs", Edition2021) }
+   0.069966762s  INFO prepare_target{force=false package_id=openprot-spdm-requester v0.1.0 (/home/rusty1968/work/openprot/services/spdm/requester) target="openprot_spdm_requester"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-spdm-requester-0f87a498a57acbe1/lib-openprot_spdm_requester`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.070152330s  INFO prepare_target{force=false package_id=openprot-spdm-transport-mctp v0.1.0 (/home/rusty1968/work/openprot/services/spdm/transport-mctp) target="openprot_spdm_transport_mctp"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-spdm-transport-mctp v0.1.0 (/home/rusty1968/work/openprot/services/spdm/transport-mctp)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("openprot_spdm_transport_mctp", ["lib"], "/home/rusty1968/work/openprot/services/spdm/transport-mctp/src/lib.rs", Edition2021) }
+   0.070178379s  INFO prepare_target{force=false package_id=openprot-spdm-transport-mctp v0.1.0 (/home/rusty1968/work/openprot/services/spdm/transport-mctp) target="openprot_spdm_transport_mctp"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-spdm-transport-mctp-b39f672ee934b901/lib-openprot_spdm_transport_mctp`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  16: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  17: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  18: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  19: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  20: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  21: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  22: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  23: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  24: main
+  25: <unknown>
+  26: __libc_start_main
+  27: <unknown>
+   0.070315015s  INFO prepare_target{force=false package_id=spdm-lib v0.1.0 (https://github.com/9elements/spdm-lib.git?branch=buildup#dcd0f23f) target="spdm_lib"}: cargo::core::compiler::fingerprint: fingerprint error for spdm-lib v0.1.0 (https://github.com/9elements/spdm-lib.git?branch=buildup#dcd0f23f)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("spdm_lib", ["lib"], "/home/rusty1968/.cargo/git/checkouts/spdm-lib-3ad2524fd68dba08/dcd0f23/src/lib.rs", Edition2021) }
+   0.070340803s  INFO prepare_target{force=false package_id=spdm-lib v0.1.0 (https://github.com/9elements/spdm-lib.git?branch=buildup#dcd0f23f) target="spdm_lib"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/spdm-lib-a2d13694f6b60173/lib-spdm_lib`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  17: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  18: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  19: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  20: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  21: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  22: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  23: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  24: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  25: main
+  26: <unknown>
+  27: __libc_start_main
+  28: <unknown>
+   0.070694256s  INFO prepare_target{force=false package_id=openprot-spdm-requester v0.1.0 (/home/rusty1968/work/openprot/services/spdm/requester) target="openprot_spdm_requester"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-spdm-requester v0.1.0 (/home/rusty1968/work/openprot/services/spdm/requester)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("openprot_spdm_requester", ["lib"], "/home/rusty1968/work/openprot/services/spdm/requester/src/lib.rs", Edition2021) }
+   0.070720014s  INFO prepare_target{force=false package_id=openprot-spdm-requester v0.1.0 (/home/rusty1968/work/openprot/services/spdm/requester) target="openprot_spdm_requester"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-spdm-requester-d9bed3ca4eb292e2/test-lib-openprot_spdm_requester`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.070891345s  INFO prepare_target{force=false package_id=openprot-spdm-responder v0.1.0 (/home/rusty1968/work/openprot/services/spdm/responder) target="openprot_spdm_responder"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-spdm-responder v0.1.0 (/home/rusty1968/work/openprot/services/spdm/responder)/Check { test: false }/TargetInner { name_inferred: true, ..: lib_target("openprot_spdm_responder", ["lib"], "/home/rusty1968/work/openprot/services/spdm/responder/src/lib.rs", Edition2021) }
+   0.070916913s  INFO prepare_target{force=false package_id=openprot-spdm-responder v0.1.0 (/home/rusty1968/work/openprot/services/spdm/responder) target="openprot_spdm_responder"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-spdm-responder-e7ebaf6963a779b0/lib-openprot_spdm_responder`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.071083595s  INFO prepare_target{force=false package_id=openprot-spdm-responder v0.1.0 (/home/rusty1968/work/openprot/services/spdm/responder) target="openprot_spdm_responder"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-spdm-responder v0.1.0 (/home/rusty1968/work/openprot/services/spdm/responder)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("openprot_spdm_responder", ["lib"], "/home/rusty1968/work/openprot/services/spdm/responder/src/lib.rs", Edition2021) }
+   0.071110355s  INFO prepare_target{force=false package_id=openprot-spdm-responder v0.1.0 (/home/rusty1968/work/openprot/services/spdm/responder) target="openprot_spdm_responder"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-spdm-responder-a3dd8d718c07dc5a/test-lib-openprot_spdm_responder`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.071263552s  INFO prepare_target{force=false package_id=openprot-spdm-transport-mctp v0.1.0 (/home/rusty1968/work/openprot/services/spdm/transport-mctp) target="openprot_spdm_transport_mctp"}: cargo::core::compiler::fingerprint: fingerprint error for openprot-spdm-transport-mctp v0.1.0 (/home/rusty1968/work/openprot/services/spdm/transport-mctp)/Check { test: true }/TargetInner { name_inferred: true, ..: lib_target("openprot_spdm_transport_mctp", ["lib"], "/home/rusty1968/work/openprot/services/spdm/transport-mctp/src/lib.rs", Edition2021) }
+   0.071289491s  INFO prepare_target{force=false package_id=openprot-spdm-transport-mctp v0.1.0 (/home/rusty1968/work/openprot/services/spdm/transport-mctp) target="openprot_spdm_transport_mctp"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/openprot-spdm-transport-mctp-29bf7b1ca14dcf5b/test-lib-openprot_spdm_transport_mctp`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.071925499s  INFO prepare_target{force=false package_id=xtask v0.1.0 (/home/rusty1968/work/openprot/xtask) target="xtask"}: cargo::core::compiler::fingerprint: fingerprint error for xtask v0.1.0 (/home/rusty1968/work/openprot/xtask)/Check { test: false }/TargetInner { name: "xtask", doc: true, ..: with_path("/home/rusty1968/work/openprot/xtask/src/main.rs", Edition2021) }
+   0.071994499s  INFO prepare_target{force=false package_id=xtask v0.1.0 (/home/rusty1968/work/openprot/xtask) target="xtask"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/xtask-81ba4b012847d56f/bin-xtask`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   0.072596551s  INFO prepare_target{force=false package_id=xshell v0.2.7 target="xshell"}: cargo::core::compiler::fingerprint: fingerprint error for xshell v0.2.7/Check { test: false }/TargetInner { ..: lib_target("xshell", ["lib"], "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xshell-0.2.7/src/lib.rs", Edition2021) }
+   0.072623161s  INFO prepare_target{force=false package_id=xshell v0.2.7 target="xshell"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/xshell-a562af80c757738e/lib-xshell`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   7: cargo::ops::cargo_compile::compile_ws
+   8: cargo::ops::cargo_compile::compile_with_exec
+   9: cargo::ops::cargo_compile::compile
+  10: cargo::commands::check::exec
+  11: <cargo::cli::Exec>::exec
+  12: cargo::main
+  13: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  14: std::rt::lang_start::<()>::{closure#0}
+  15: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  16: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  17: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  18: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  19: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  20: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  21: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  22: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  23: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  24: main
+  25: <unknown>
+  26: __libc_start_main
+  27: <unknown>
+   0.072745259s  INFO prepare_target{force=false package_id=xshell-macros v0.2.7 target="xshell_macros"}: cargo::core::compiler::fingerprint: fingerprint error for xshell-macros v0.2.7/Build/TargetInner { for_host: true, proc_macro: true, ..: lib_target("xshell_macros", ["proc-macro"], "/home/rusty1968/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/xshell-macros-0.2.7/src/lib.rs", Edition2021) }
+   0.072769625s  INFO prepare_target{force=false package_id=xshell-macros v0.2.7 target="xshell_macros"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/xshell-macros-e6ae60c8313342d5/lib-xshell_macros`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: cargo::core::compiler::compile
+   6: cargo::core::compiler::compile
+   7: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   8: cargo::ops::cargo_compile::compile_ws
+   9: cargo::ops::cargo_compile::compile_with_exec
+  10: cargo::ops::cargo_compile::compile
+  11: cargo::commands::check::exec
+  12: <cargo::cli::Exec>::exec
+  13: cargo::main
+  14: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  15: std::rt::lang_start::<()>::{closure#0}
+  16: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  17: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  18: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  19: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  20: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  21: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  22: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  23: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  24: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  25: main
+  26: <unknown>
+  27: __libc_start_main
+  28: <unknown>
+   0.073210652s  INFO prepare_target{force=false package_id=xtask v0.1.0 (/home/rusty1968/work/openprot/xtask) target="xtask"}: cargo::core::compiler::fingerprint: fingerprint error for xtask v0.1.0 (/home/rusty1968/work/openprot/xtask)/Check { test: true }/TargetInner { name: "xtask", doc: true, ..: with_path("/home/rusty1968/work/openprot/xtask/src/main.rs", Edition2021) }
+   0.073235588s  INFO prepare_target{force=false package_id=xtask v0.1.0 (/home/rusty1968/work/openprot/xtask) target="xtask"}: cargo::core::compiler::fingerprint:     err: failed to read `/home/rusty1968/work/openprot/target/debug/.fingerprint/xtask-9d5ee6fa440666bd/test-bin-xtask`
+
+Caused by:
+    No such file or directory (os error 2)
+
+Stack backtrace:
+   0: cargo_util::paths::read_bytes
+   1: cargo_util::paths::read
+   2: cargo::core::compiler::fingerprint::_compare_old_fingerprint
+   3: cargo::core::compiler::fingerprint::prepare_target
+   4: cargo::core::compiler::compile
+   5: <cargo::core::compiler::build_runner::BuildRunner>::compile
+   6: cargo::ops::cargo_compile::compile_ws
+   7: cargo::ops::cargo_compile::compile_with_exec
+   8: cargo::ops::cargo_compile::compile
+   9: cargo::commands::check::exec
+  10: <cargo::cli::Exec>::exec
+  11: cargo::main
+  12: std::sys::backtrace::__rust_begin_short_backtrace::<fn(), ()>
+  13: std::rt::lang_start::<()>::{closure#0}
+  14: core::ops::function::impls::<impl core::ops::function::FnOnce<A> for &F>::call_once
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/core/src/ops/function.rs:290:21
+  15: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  16: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  17: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  18: std::rt::lang_start_internal::{{closure}}
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:175:24
+  19: std::panicking::catch_unwind::do_call
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:589:40
+  20: std::panicking::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panicking.rs:552:19
+  21: std::panic::catch_unwind
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/panic.rs:359:14
+  22: std::rt::lang_start_internal
+             at /rustc/0d9592026226f5a667a0da60c13b955e0b486a07/library/std/src/rt.rs:171:5
+  23: main
+  24: <unknown>
+  25: __libc_start_main
+  26: <unknown>
+   Compiling proc-macro2 v1.0.97
+   Compiling zerocopy v0.8.27
+   Compiling heapless v0.9.1
+   Compiling heapless v0.8.0
+   Compiling embedded-io-async v0.6.1
+   Compiling smbus-pec v1.0.1
+   Compiling embedded-hal-async v1.0.0
+   Compiling xshell-macros v0.2.7
+error: could not compile `smbus-pec` (build script) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `embedded-io-async` (build script) due to 1 previous error
+error: could not compile `heapless` (build script) due to 1 previous error
+error: could not compile `embedded-hal-async` (build script) due to 1 previous error
+error: could not compile `proc-macro2` (build script) due to 1 previous error
+error: could not compile `heapless` (build script) due to 1 previous error
+error: could not compile `xshell-macros` (lib) due to 1 previous error
+error: could not compile `zerocopy` (build script) due to 1 previous error

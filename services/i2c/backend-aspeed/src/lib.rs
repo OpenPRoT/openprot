@@ -611,13 +611,22 @@ impl AspeedI2cBackend {
     /// Called once from the server's IRQ handler — no polling loop.  If a
     /// `DataReceived` event is pending, the bytes are copied into the per-bus
     /// flat buffer and the byte count is returned.  Returns `Ok(0)` for any
-    /// other event (Stop, no event) so the caller can decide whether to signal
-    /// the registered client.
+    /// non-data event so the caller can distinguish a real receive from a
+    /// spurious wakeup:
+    ///
+    /// | Event | Return |
+    /// |---|---|
+    /// | `DataReceived` | `Ok(n)` where n > 0 |
+    /// | `Stop` | `Ok(0)` — master ended transaction, no data |
+    /// | `WriteRequest` | `Ok(0)` — address phase only; `DataReceived` follows |
+    /// | `ReadRequest` / `DataSent` | `Ok(0)` — master-read path, not RX |
+    /// | None | `Ok(0)` — no event pending |
     ///
     /// # Errors
     ///
-    /// Returns `ResponseCode::NotInitialized` if notification has not been
-    /// enabled for this bus via `enable_slave_notification()`.
+    /// Returns `ResponseCode::ServerError` if the bus is not initialized, or
+    /// `ResponseCode::NotInitialized` if notification has not been enabled for
+    /// this bus via `enable_slave_notification()`.
     pub fn drain_slave_rx(&mut self, bus: u8) -> Result<usize, ResponseCode> {
         if !self.is_bus_initialized(bus) {
             return Err(ResponseCode::ServerError);
@@ -639,9 +648,24 @@ impl AspeedI2cBackend {
         let mut local_rx = [0u8; SLAVE_RX_BUF_SIZE];
         let len = match i2c.handle_slave_interrupt() {
             Some(SlaveEvent::DataReceived { len: _ }) => {
+                // Data is ready in the hardware buffer — read it out.
                 i2c.slave_read(&mut local_rx).map_err(map_i2c_error)?
             }
-            _ => 0,
+            Some(SlaveEvent::Stop) => {
+                // Master ended the transaction without data (e.g. probe or
+                // zero-length write). Not an error; nothing to latch.
+                0
+            }
+            Some(SlaveEvent::WriteRequest) => {
+                // Address phase seen but DataReceived not yet posted.
+                // The hardware will fire another interrupt when data arrives.
+                0
+            }
+            Some(SlaveEvent::ReadRequest) | Some(SlaveEvent::DataSent { len: _ }) => {
+                // Master-read path; not relevant for the slave-RX notification.
+                0
+            }
+            None => 0,
         };
         drop(i2c);
 

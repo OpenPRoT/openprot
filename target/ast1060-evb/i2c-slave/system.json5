@@ -14,7 +14,7 @@
     arch: {
         type: "armv7m",
         vector_table_start_address: 0x00000000,
-        vector_table_size_bytes: 1664,  // 0x680 (includes vector table + annotations)
+        vector_table_size_bytes: 1664,  // 0x680 = 0x200 (ARM exception table, 512B aligned) + 0x480 (PW_KERNEL_INTERRUPT_TABLE_ARRAY, 113 entries × 4B)
     },
     kernel: {
         flash_start_address: 0x00000680,
