@@ -1,0 +1,46 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "console",
+    srcs = [
+        "lib.rs",
+    ],
+    edition = "2024",
+    deps = [
+        "@rust_crates//:ufmt",
+    ] + select({
+        "@platforms//os:none": [":pigweed"],
+        "//conditions:default": [":stdout"],
+    }),
+)
+
+rust_doc(
+    name = "console_doc",
+    crate = ":console",
+)
+
+rust_library(
+    name = "stdout",
+    srcs = [
+        "stdout.rs",
+    ],
+    crate_name = "console_stdout",
+    edition = "2024",
+)
+
+rust_library(
+    name = "pigweed",
+    srcs = [
+        "pigweed.rs",
+    ],
+    crate_name = "console_pigweed",
+    edition = "2024",
+    deps = [
+        "@pigweed//pw_kernel/userspace",
+    ],
+)

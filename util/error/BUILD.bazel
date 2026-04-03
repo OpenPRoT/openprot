@@ -1,0 +1,24 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "error",
+    srcs = [
+        "lib.rs",
+    ],
+    crate_name = "util_error",
+    edition = "2024",
+    deps = [
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:ufmt",
+    ],
+)
+
+rust_doc(
+    name = "error_doc",
+    crate = ":error",
+)
