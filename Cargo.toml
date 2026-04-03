@@ -14,6 +14,7 @@ members = [
     "services/mctp/api",
     "services/mctp/server",
     "services/mctp/transport-i2c",
+    "services/mctp/transport-loopback",
     "services/mctp/client",
     "services/spdm/requester",
     "services/spdm/responder",

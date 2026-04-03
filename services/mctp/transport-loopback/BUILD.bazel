@@ -1,0 +1,21 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "mctp_transport_loopback",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "openprot_mctp_transport_loopback",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/mctp/api:mctp_api",
+        "//services/mctp/server:mctp_server_lib",
+        "@rust_crates//:mctp",
+        "@rust_crates//:mctp-lib",
+    ],
+)
+
+rust_test(
+    name = "transport_loopback_test",
+    crate = ":mctp_transport_loopback",
+    edition = "2024",
+)

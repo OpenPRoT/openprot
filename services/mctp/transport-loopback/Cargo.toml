@@ -1,0 +1,15 @@
+[package]
+name = "openprot-mctp-transport-loopback"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "In-memory loopback transport for MCTP testing"
+
+[dependencies]
+openprot-mctp-api = { path = "../api" }
+openprot-mctp-server = { path = "../server" }
+mctp-lib = { git = "https://github.com/9elements/mctp-lib.git", branch = "buildup", package = "mctp-lib" }
+mctp = { git = "https://github.com/OpenPRoT/mctp-rs.git", branch = "sync-features", default-features = false }
+
+[dev-dependencies]
+# No additional dev dependencies needed
