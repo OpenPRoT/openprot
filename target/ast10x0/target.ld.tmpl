@@ -1,0 +1,143 @@
+/*
+ * Licensed under the Apache-2.0 license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* Linker script for ASPEED AST10x0 (ARMv7-M / Cortex-M4)
+ *
+ * The AST10x0 is a RAM-based (non-XIP) target. All code and data
+ * reside in SRAM. Memory regions:
+ *   - VECTOR_TABLE: Vector table at start of SRAM
+ *   - FLASH: Code section in SRAM (named "FLASH" for linker compatibility)
+ *   - RAM: Data section in SRAM (after code)
+ *
+ * TODO(ast10x0): Verify SRAM size against production hardware datasheet.
+ * The upstream ast1030 reference uses 768 KB SRAM total.
+ */
+
+ENTRY(Reset)
+
+MEMORY
+{
+  VECTOR_TABLE(rx) : ORIGIN = {{arch.vector_table_start_address | hex}},
+                     LENGTH = {{arch.vector_table_size_bytes}}
+  FLASH(rx)        : ORIGIN = {{kernel.flash_start_address | hex}},
+                     LENGTH = {{kernel.flash_size_bytes}}
+  RAM(rwx)         : ORIGIN = {{kernel.ram_start_address | hex}},
+                     LENGTH = {{kernel.ram_size_bytes}}
+}
+
+SECTIONS
+{
+  .vector_table : ALIGN(512)
+  {
+    LONG(pw_boot_stack_high_addr);
+    pw_boot_vector_table_addr = .;
+    KEEP(*(.vector_table))
+    KEEP(*(.vector_table.reset_vector))
+    KEEP(*(.vector_table.exceptions))
+    KEEP(*(.vector_table.interrupts))
+  } >VECTOR_TABLE
+
+  .VECTOR_TABLE.unused_space (NOLOAD) : ALIGN(4)
+  {
+    . = ABSOLUTE(ORIGIN(VECTOR_TABLE) + LENGTH(VECTOR_TABLE));
+  } >VECTOR_TABLE
+
+  .code : ALIGN(4)
+  {
+    . = ALIGN(4);
+    *(.PreResetTrampoline);
+    *(.Reset);
+    *(.HardFaultTrampoline);
+    *(.HardFault.*);
+    *(.text)
+    *(.text*)
+    KEEP(*(.init))
+    KEEP(*(.fini))
+    . = ALIGN(4);
+    *(.rodata)
+    *(.rodata*)
+    . = ALIGN(4);
+    PROVIDE_HIDDEN(__preinit_array_start = .);
+    KEEP(*(.preinit_array*))
+    PROVIDE_HIDDEN(__preinit_array_end = .);
+    PROVIDE_HIDDEN(__init_array_start = .);
+    KEEP(*(SORT(.init_array.*)))
+    KEEP(*(.init_array*))
+    PROVIDE_HIDDEN(__init_array_end = .);
+    PROVIDE_HIDDEN(__fini_array_start = .);
+    KEEP(*(SORT(.fini_array.*)))
+    KEEP(*(.fini_array*))
+    PROVIDE_HIDDEN(__fini_array_end = .);
+  } >FLASH
+
+  .ARM : ALIGN(4)
+  {
+    __exidx_start = .;
+    *(.ARM.exidx*)
+    __exidx_end = .;
+  } >FLASH
+
+  .static_init_ram : ALIGN(4)
+  {
+    *(.data)
+    *(.data*)
+    . = ALIGN(4);
+  } >RAM AT> FLASH
+
+  .FLASH.unused_space (NOLOAD) : ALIGN(4)
+  {
+    . = ABSOLUTE(ORIGIN(FLASH) + LENGTH(FLASH));
+  } >FLASH
+
+  .zero_init_ram (NOLOAD) : ALIGN(4)
+  {
+    *(.bss)
+    *(.bss*)
+    *(COMMON)
+    . = ALIGN(4);
+  } >RAM
+
+  .heap (NOLOAD) : ALIGN(4)
+  {
+    pw_boot_heap_low_addr = .;
+    . = . + 0;
+    . = ALIGN(4);
+    pw_boot_heap_high_addr = .;
+  } >RAM
+
+  .stack (NOLOAD) : ALIGN(8)
+  {
+    pw_boot_stack_low_addr = .;
+    HIDDEN(_stack_size = ORIGIN(RAM) + LENGTH(RAM) - .);
+    HIDDEN(_stack_high = (. + _stack_size) & ~0x7);
+    ASSERT(_stack_high - . >= 1K,
+           "Error: Not enough RAM for desired minimum stack size.");
+    . = _stack_high;
+    pw_boot_stack_high_addr = .;
+  } >RAM
+
+  .RAM.unused_space (NOLOAD) : ALIGN(4)
+  {
+    . = ABSOLUTE(ORIGIN(RAM) + LENGTH(RAM));
+  } >RAM
+
+  .ARM.extab 0x0 (INFO) :
+  {
+    KEEP(*(.ARM.extab*))
+  }
+}
+
+_pw_static_init_flash_start = LOADADDR(.static_init_ram);
+_pw_static_init_ram_start   = ADDR(.static_init_ram);
+_pw_static_init_ram_end     = _pw_static_init_ram_start + SIZEOF(.static_init_ram);
+_pw_zero_init_ram_start     = ADDR(.zero_init_ram);
+_pw_zero_init_ram_end       = _pw_zero_init_ram_start + SIZEOF(.zero_init_ram);
+
+__sbss    = _pw_zero_init_ram_start;
+__ebss    = _pw_zero_init_ram_end;
+__sdata   = _pw_static_init_ram_start;
+__edata   = _pw_static_init_ram_end;
+__sidata  = LOADADDR(.static_init_ram);
+__pre_init = DefaultPreInit;
