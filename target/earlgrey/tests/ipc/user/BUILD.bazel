@@ -12,10 +12,7 @@ load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_test")
 
 system_image(
     name = "ipc",
-    apps = [
-        "@pigweed//pw_kernel/tests/ipc/user:initiator",
-        "@pigweed//pw_kernel/tests/ipc/user:handler",
-    ],
+    apps = ["@pigweed//pw_kernel/tests/ipc/user:ipc"],
     kernel = ":target",
     platform = "//target/earlgrey",
     system_config = ":system_config",

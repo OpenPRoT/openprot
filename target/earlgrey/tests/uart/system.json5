@@ -18,74 +18,105 @@
       name: "test_uart",
       flash_size_bytes: 16384,
       ram_size_bytes: 4096,
-      process: {
-        name: "test_uart process",
-        objects: [
-          {
-            name: "ipc",
-            type: "channel_handler",
-          },
-        ],
-        memory_mappings: [
-          {
-            name: "uart1",
-            type: "device",
-            start_address: 0x40010000,
-            size_bytes: 0x40,
-          }
-        ],
-        threads: [
-          {
-            name: "uart thread",
-            stack_size_bytes: 2048,
-          },
-        ],
-      },
+      processes: [
+        {
+          name: "test_uart",
+          objects: [
+            {
+              name: "ipc",
+              type: "channel_handler",
+            },
+          ],
+          memory_mappings: [
+            {
+              name: "uart1",
+              type: "device",
+              start_address: 0x40010000,
+              size_bytes: 0x40,
+            }
+          ],
+          threads: [
+            {
+              name: "uart thread",
+              stack_size_bytes: 2048,
+            },
+          ],
+        },
+      ],
     },
     {
       name: "test_uart_listener",
       flash_size_bytes: 16384,
       ram_size_bytes: 4096,
-      process: {
-        name: "test_uart_listener process",
-        objects: [
-          {
-            name: "uart_interrupts",
-            type: "interrupt",
-            irqs: [
-              { name: "uart1_tx_watermark", number: 10 },
-              { name: "uart1_rx_watermark", number: 11 },
-              { name: "uart1_tx_done", number: 12 },
-              { name: "uart1_rx_overflow", number: 13 },
-              { name: "uart1_rx_frame_err", number: 14 },
-              { name: "uart1_rx_break_err", number: 15 },
-              { name: "uart1_rx_timeout", number: 16 },
-              { name: "uart1_rx_parity_err", number: 17 },
-              { name: "uart1_tx_empty", number: 18 },
-            ],
-          },
-          {
-            name: "ipc",
-            type: "channel_initiator",
-            handler_app: "test_uart",
-            handler_object_name: "ipc",
-          },
-        ],
-        memory_mappings: [
-          {
-            name: "uart1",
-            type: "device",
-            start_address: 0x40010000,
-            size_bytes: 0x40,
-          }
-        ],
-        threads: [
-          {
-            name: "uart thread",
-            stack_size_bytes: 2048,
-          },
-        ],
-      },
+      processes: [
+        {
+          name: "test_uart_listener",
+          objects: [
+            {
+              name: "uart_interrupts",
+              type: "interrupt",
+              irqs: [
+                {
+                  name: "uart1_tx_watermark",
+                  number: 10
+                },
+                {
+                  name: "uart1_rx_watermark",
+                  number: 11
+                },
+                {
+                  name: "uart1_tx_done",
+                  number: 12
+                },
+                {
+                  name: "uart1_rx_overflow",
+                  number: 13
+                },
+                {
+                  name: "uart1_rx_frame_err",
+                  number: 14
+                },
+                {
+                  name: "uart1_rx_break_err",
+                  number: 15
+                },
+                {
+                  name: "uart1_rx_timeout",
+                  number: 16
+                },
+                {
+                  name: "uart1_rx_parity_err",
+                  number: 17
+                },
+                {
+                  name: "uart1_tx_empty",
+                  number: 18
+                },
+              ],
+            },
+            {
+              name: "ipc",
+              type: "channel_initiator",
+              handler_process: "test_uart",
+              handler_object_name: "ipc",
+            },
+          ],
+          memory_mappings: [
+            {
+              name: "uart1",
+              type: "device",
+              start_address: 0x40010000,
+              size_bytes: 0x40,
+            }
+          ],
+          threads: [
+            {
+              name: "uart thread",
+              stack_size_bytes: 2048,
+            },
+          ],
+        },
+      ],
     },
   ],
 }
