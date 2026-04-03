@@ -21,6 +21,32 @@ common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 test --@pigweed//pw_kernel:enable_tests=true
 test --platform_suffix=test
 
+# AST10x0 target configuration (ARMv7-M / Cortex-M4)
+# =======================================
+common:k_common --build_tag_filters=-do_not_build,-kernel_doc_test
+test:k_common --test_tag_filters=-integration,-do_not_build,-do_not_run_test,-kernel_doc_test
+test:k_common --@pigweed//pw_kernel:enable_tests=true
+test:k_common --platform_suffix=test
+
+common:k_ast10x0 --config=k_common
+common:k_ast10x0 --platforms=//target/ast10x0:ast10x0
+common:k_ast10x0 --@pigweed//pw_toolchain:cortex-m_toolchain_kind=clang
+
+# QEMU AST10x0 target configuration (ARMv7-M / Cortex-M4)
+# =======================================
+common:k_qemu_ast10x0 --config=k_ast10x0
+common:k_qemu_ast10x0 --//target/ast10x0:qemu=true
+run:k_qemu_ast10x0 --run_under="@pigweed//pw_kernel/tooling:qemu \
+  --cpu cortex-m4 \
+  --machine ast1030-evb \
+  --semihosting \
+  --image "
+test:k_qemu_ast10x0 --run_under="@pigweed//pw_kernel/tooling:qemu \
+  --cpu cortex-m4 \
+  --machine ast1030-evb \
+  --semihosting \
+  --image "
+
 # Remote execution config definitions
 # ===================================
 # Use the remote cache. This will only work for users who have permission to access it.

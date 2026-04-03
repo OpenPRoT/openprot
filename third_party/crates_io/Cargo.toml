@@ -36,6 +36,8 @@ syn = { version = "2.0.104", features = ["full", "extra-traits"] }
 toml = "0.8.23"
 
 cortex-m = "0.7.7"
+cortex-m-rt = "0.7.5"
+cortex-m-semihosting = "0.5.0"
 embedded-hal = "1.0"
 embedded-hal-async = "1.0"
 embedded-hal-nb = "1.0"
@@ -64,4 +66,5 @@ aes = { version = "0.8", default-features = false }
 ctr = { version = "0.9", default-features = false }
 aes-gcm = { version = "0.10", default-features = false, features = ["aes"] }
 cipher = { version = "0.4", default-features = false }
+
 
