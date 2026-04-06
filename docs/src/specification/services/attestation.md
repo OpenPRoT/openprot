@@ -518,7 +518,7 @@ OpenPRoT firmware operates within the trust chain established by the underlying 
 
 The underlying measurement and key derivation mechanisms are hardware-dependent.
 
-#### 5.5.3 Cryptographic Trust
+### 5.6 Threats and Migitations
 
 **Cryptographic Assumptions:**
 
@@ -527,28 +527,7 @@ The underlying measurement and key derivation mechanisms are hardware-dependent.
 - Key derivation functions provide one-way security
 - COSE signature scheme provides authenticity and integrity
 
-**Key Protection:**
-**Threat:** Attacker provides false reference values to verifier
-
-**Mitigation:**
-
-- CoRIM signed by trusted authority
-- Verifier validates CoRIM signature before use
-- Secure distribution channels for reference values
-- Verifier configured with trusted root certificates
-
-#### 5.6.7 Man-in-the-Middle Attacks
-
-**Threat:** Attacker intercepts and modifies attestation messages
-
-**Mitigation:**
-
-- SPDM secure sessions provide encryption and authentication
-- Evidence signed by device prevents modification
-- Certificate-based mutual authentication
-- Integrity protection on all messages
-
-#### 5.6.8 Plugin Exploitation
+#### 5.6.1 False Reference Values
 
 **Threat:** Attacker provides false reference values to verifier
 
@@ -559,7 +538,7 @@ The underlying measurement and key derivation mechanisms are hardware-dependent.
 - Secure distribution channels for reference values
 - Verifier configured with trusted root certificates
 
-#### 5.6.7 Man-in-the-Middle Attacks
+#### 5.6.2 Man-in-the-Middle Attacks
 
 **Threat:** Attacker intercepts and modifies attestation messages
 
@@ -569,6 +548,10 @@ The underlying measurement and key derivation mechanisms are hardware-dependent.
 - Evidence signed by device prevents modification
 - Certificate-based mutual authentication
 - Integrity protection on all messages
+
+#### 5.6.3 Plugin Exploitation
+
+N/A.  OpenPRoT does not support plugins.
 
 ### 5.7 Device Identity Provisioning
 
