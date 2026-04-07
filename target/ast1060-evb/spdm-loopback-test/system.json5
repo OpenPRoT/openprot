@@ -1,0 +1,36 @@
+// Licensed under the Apache-2.0 license
+
+// ASPEED AST1060-EVB SPDM Loopback Test Configuration
+// ARM Cortex-M4F with UART console
+//
+// Minimal system with just test application and kernel
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,
+    },
+    kernel: {
+        flash_start_address: 0x00000500,
+        flash_size_bytes: 129792,  // ~127KB
+        ram_start_address: 0x00040000,
+        ram_size_bytes: 65536,     // 64KB
+    },
+    apps: [
+        {
+            name: "spdm_loopback_test",
+            flash_size_bytes: 131072,  // 128KB for test app
+            ram_size_bytes: 65536,     // 64KB RAM for loopback buffers
+            process: {
+                name: "spdm_loopback_test_process",
+                objects: [],
+                threads: [
+                    {
+                        name: "spdm_loopback_test_thread",
+                        stack_size_bytes: 16384,  // 16KB stack
+                    },
+                ],
+            },
+        },
+    ],
+}
