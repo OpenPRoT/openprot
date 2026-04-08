@@ -36,10 +36,12 @@
 #![warn(missing_docs)]
 
 mod error;
+pub mod stack;
 mod traits;
 pub mod wire;
 
 pub use error::{MctpError, ResponseCode};
+pub use stack::{Stack, StackListener, StackReqChannel, StackRespChannel};
 pub use traits::{MctpClient, MctpListener, MctpReqChannel, MctpRespChannel};
 
 /// An opaque handle for a listener, request, or response channel.

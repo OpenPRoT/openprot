@@ -16,6 +16,7 @@ mod common;
 use std::cell::RefCell;
 
 use mctp::Eid;
+use openprot_mctp_api::stack::Stack;
 use openprot_mctp_api::{MctpClient, MctpListener, MctpReqChannel, MctpRespChannel};
 use openprot_mctp_server::Server;
 
@@ -321,3 +322,162 @@ fn response_without_handle_eid_tag_threading() {
     assert_eq!(resp.remote_eid, 8);
     assert_eq!(resp.msg_type, 5);
 }
+
+// ---------------------------------------------------------------------------
+// Stack facade (openprot-mctp-api::stack)
+// ---------------------------------------------------------------------------
+//
+// These tests exercise `Stack<DirectClient>` — the same code path used by the
+// real application (`mctp_echo.rs` with `Stack<IpcMctpClient>`), but running
+// entirely on the host with no IPC or embedded target.
+
+/// Echo via `Stack::listener` → `StackListener::recv` → `StackRespChannel::send`.
+///
+/// This is the exact sequence used by `mctp_echo.rs`:
+/// ```ignore
+/// let mut listener = stack.listener(ECHO_MSG_TYPE, 0).unwrap();
+/// let (meta, msg, mut resp) = listener.recv(&mut buf).unwrap();
+/// resp.send(msg).unwrap();
+/// ```
+#[test]
+fn stack_listener_echo() {
+    let buf_a = RefCell::new(Vec::new());
+    let buf_b = RefCell::new(Vec::new());
+
+    let server_a: RefCell<Server<_, 16>> =
+        RefCell::new(Server::new(Eid(8), 0, BufferSender { packets: &buf_a }));
+    let server_b: RefCell<Server<_, 16>> =
+        RefCell::new(Server::new(Eid(42), 0, BufferSender { packets: &buf_b }));
+
+    // Application A uses Stack — the same API as in production.
+    let stack_a = Stack::new(DirectClient::new(&server_a));
+    // Application B uses a raw client to send the request and check the reply.
+    let client_b = DirectClient::new(&server_b);
+
+    let mut listener = stack_a.listener(1, 0).expect("listener alloc");
+    let req_handle = client_b.req(8).unwrap();
+
+    // B sends a request
+    client_b
+        .send(Some(req_handle), 1, None, None, false, b"hello from B")
+        .unwrap();
+    transfer(&buf_b, &mut server_a.borrow_mut());
+
+    // A echoes back via Stack facade
+    let mut recv_buf = [0u8; 255];
+    let (meta, payload, mut resp) = listener
+        .recv(&mut recv_buf)
+        .expect("stack listener should receive the message");
+
+    assert_eq!(payload, b"hello from B");
+    assert_eq!(meta.remote_eid, 42);
+
+    resp.send(payload).expect("stack resp send");
+
+    // Deliver A → B and verify
+    transfer(&buf_a, &mut server_b.borrow_mut());
+
+    let mut resp_buf = [0u8; 255];
+    let resp_meta = client_b
+        .recv(req_handle, 0, &mut resp_buf)
+        .expect("B should receive the echo");
+
+    assert_eq!(&resp_buf[..resp_meta.payload_size], b"hello from B");
+    assert_eq!(resp_meta.remote_eid, 8);
+    assert_eq!(resp_meta.msg_type, 1);
+}
+
+/// Echo via `Stack::req` → `StackReqChannel::send` + `StackReqChannel::recv`.
+#[test]
+fn stack_req_channel_roundtrip() {
+    let buf_a = RefCell::new(Vec::new());
+    let buf_b = RefCell::new(Vec::new());
+
+    let server_a: RefCell<Server<_, 16>> =
+        RefCell::new(Server::new(Eid(8), 0, BufferSender { packets: &buf_a }));
+    let server_b: RefCell<Server<_, 16>> =
+        RefCell::new(Server::new(Eid(42), 0, BufferSender { packets: &buf_b }));
+
+    let client_a = DirectClient::new(&server_a);
+    // B uses Stack for the request side.
+    let stack_b = Stack::new(DirectClient::new(&server_b));
+
+    let listener_handle = client_a.listener(1).unwrap();
+
+    let mut req = stack_b.req(8, 0).expect("req channel alloc");
+    req.send(1, b"stack req test").expect("req send");
+    assert_eq!(req.remote_eid(), 8);
+
+    transfer(&buf_b, &mut server_a.borrow_mut());
+
+    // A echoes back manually
+    let mut echo_buf = [0u8; 255];
+    let meta = client_a.recv(listener_handle, 0, &mut echo_buf).unwrap();
+    client_a
+        .send(
+            None,
+            meta.msg_type,
+            Some(meta.remote_eid),
+            Some(meta.msg_tag),
+            false,
+            &echo_buf[..meta.payload_size],
+        )
+        .unwrap();
+
+    transfer(&buf_a, &mut server_b.borrow_mut());
+
+    let mut resp_buf = [0u8; 255];
+    let (resp_meta, resp_payload) = req.recv(&mut resp_buf).expect("req channel recv");
+
+    assert_eq!(resp_payload, b"stack req test");
+    assert_eq!(resp_meta.remote_eid, 8);
+    assert_eq!(resp_meta.msg_type, 1);
+}
+
+/// Both sides use `Stack` — listener on A, request channel on B.
+#[test]
+fn stack_both_sides_echo() {
+    let buf_a = RefCell::new(Vec::new());
+    let buf_b = RefCell::new(Vec::new());
+
+    let server_a: RefCell<Server<_, 16>> =
+        RefCell::new(Server::new(Eid(8), 0, BufferSender { packets: &buf_a }));
+    let server_b: RefCell<Server<_, 16>> =
+        RefCell::new(Server::new(Eid(42), 0, BufferSender { packets: &buf_b }));
+
+    let stack_a = Stack::new(DirectClient::new(&server_a));
+    let stack_b = Stack::new(DirectClient::new(&server_b));
+
+    let mut listener = stack_a.listener(1, 0).expect("listener alloc");
+    let mut req = stack_b.req(8, 0).expect("req alloc");
+
+    // B sends
+    req.send(1, b"both sides").expect("req send");
+    transfer(&buf_b, &mut server_a.borrow_mut());
+
+    // A receives and replies via Stack
+    let mut recv_buf = [0u8; 255];
+    let (_, payload, mut resp) = listener.recv(&mut recv_buf).expect("listener recv");
+    assert_eq!(payload, b"both sides");
+    resp.send(payload).expect("resp send");
+    transfer(&buf_a, &mut server_b.borrow_mut());
+
+    // B receives via Stack req channel
+    let mut resp_buf = [0u8; 255];
+    let (meta, data) = req.recv(&mut resp_buf).expect("req recv");
+    assert_eq!(data, b"both sides");
+    assert_eq!(meta.remote_eid, 8);
+}
+
+/// `Stack::get_eid` and `Stack::set_eid` delegate correctly.
+#[test]
+fn stack_eid_accessors() {
+    let server: RefCell<Server<_, 16>> =
+        RefCell::new(Server::new(Eid(8), 0, common::DroppingBufferSender));
+    let stack = Stack::new(DirectClient::new(&server));
+
+    assert_eq!(stack.get_eid(), 8);
+    stack.set_eid(99).expect("set_eid should succeed");
+    assert_eq!(stack.get_eid(), 99);
+}
+

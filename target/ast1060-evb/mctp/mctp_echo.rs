@@ -17,7 +17,8 @@
 #![no_main]
 #![no_std]
 
-use openprot_mctp_api::MctpClient;
+use openprot_mctp_api::stack::Stack;
+use openprot_mctp_api::{MctpListener, MctpRespChannel};
 use openprot_mctp_client::IpcMctpClient;
 
 use pw_status::Result;
@@ -32,19 +33,19 @@ const ECHO_MSG_TYPE: u8 = 1;
 fn mctp_echo_loop() -> Result<()> {
     pw_log::info!("MCTP echo starting");
 
-    let client = IpcMctpClient::new(handle::MCTP);
+    let stack = Stack::new(IpcMctpClient::new(handle::MCTP));
 
-    // Register a listener for type-1 messages
-    let listener = client
-        .listener(ECHO_MSG_TYPE)
+    let mut listener = stack
+        .listener(ECHO_MSG_TYPE, 0)
         .map_err(|_| pw_status::Error::Internal)?;
 
     let mut buf = [0u8; 1024];
 
     loop {
-        // Block until a message arrives
-        let meta = client
-            .recv(listener, 0, &mut buf)
+        // Block until a message arrives; recv returns the payload slice and
+        // a response channel already bound to the sender's EID and tag.
+        let (meta, msg, mut resp) = listener
+            .recv(&mut buf)
             .map_err(|_| pw_status::Error::Internal)?;
 
         pw_log::info!(
@@ -53,18 +54,10 @@ fn mctp_echo_loop() -> Result<()> {
             meta.remote_eid as u32,
         );
 
-        // Echo the payload back
-        let payload = &buf[..meta.payload_size];
-        client
-            .send(
-                None,                    // no request handle (this is a response)
-                meta.msg_type,           // same message type
-                Some(meta.remote_eid),   // back to sender
-                Some(meta.msg_tag),      // same tag
-                meta.msg_ic,             // preserve integrity check
-                payload,
-            )
-            .map_err(|_| pw_status::Error::Internal)?;
+        // Echo the payload back through the response channel.
+        if let Err(_) = resp.send(msg) {
+            pw_log::error!("Echo: failed to send response to EID {}", meta.remote_eid as u32);
+        }
     }
 }
 
