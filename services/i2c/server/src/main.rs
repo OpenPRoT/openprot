@@ -54,7 +54,7 @@ use userspace::entry;
 use userspace::syscall::{self, Signals};
 use userspace::time::Instant;
 
-use app_i2c_server::{handle, signals};
+use app_i2c_server::{handle}; //, signals};
 
 // ---------------------------------------------------------------------------
 // Server loop
@@ -80,18 +80,19 @@ fn i2c_server_loop() -> Result<()> {
     // Register both event sources with the WaitGroup.
     // user_data=0 → IPC request from client  (I2C channel becomes READABLE).
     // user_data=1 → hardware I2C2 interrupt  (I2C2_IRQ fires signals::I2C2).
-    syscall::wait_group_add(handle::WG, handle::I2C, Signals::READABLE, 0usize)?;
-    syscall::wait_group_add(handle::WG, handle::I2C2_IRQ, signals::I2C2, 1usize)?;
+    //syscall::wait_group_add(handle::WG, handle::I2C, Signals::READABLE, 0usize)?;
+    //syscall::wait_group_add(handle::WG, handle::I2C2_IRQ, signals::I2C2, 1usize)?;
 
     loop {
-        let wait_return = syscall::object_wait(handle::WG, Signals::READABLE, Instant::MAX)?;
+        syscall::object_wait(handle::I2C, Signals::READABLE, Instant::MAX)?;
+//        let wait_return = syscall::object_wait(handle::WG, Signals::READABLE, Instant::MAX)?;
 
-        if wait_return.user_data == 1 {
-            // Hardware I2C2 slave interrupt: drain data into flat buffers and
-            // wake the client. Re-enable the IRQ after draining.
-            handle_i2c_interrupt(&mut backend, &notification_enabled);
-            let _ = syscall::interrupt_ack(handle::I2C2_IRQ, signals::I2C2);
-        } else {
+//        if wait_return.user_data == 1 {
+//            // Hardware I2C2 slave interrupt: drain data into flat buffers and
+//            // wake the client. Re-enable the IRQ after draining.
+//            handle_i2c_interrupt(&mut backend, &notification_enabled);
+//            let _ = syscall::interrupt_ack(handle::I2C2_IRQ, signals::I2C2);
+//        } else {
             // IPC request from client — channel_read returns immediately since
             // the channel was already READABLE when the WaitGroup fired.
             let len = syscall::channel_read(handle::I2C, 0, &mut request_buf)?;
@@ -110,7 +111,7 @@ fn i2c_server_loop() -> Result<()> {
                 &mut notification_enabled,
             );
             syscall::channel_respond(handle::I2C, &response_buf[..response_len])?;
-        }
+//        }
     }
 }
 
@@ -124,7 +125,7 @@ fn i2c_server_loop() -> Result<()> {
 /// into the per-bus flat buffer for every notification-enabled bus, then raises
 /// `Signals::USER` on the IPC channel to wake the client registered via
 /// `EnableSlaveNotification`.
-fn handle_i2c_interrupt(backend: &mut AspeedI2cBackend, notification_enabled: &[bool; 14]) {
+fn _handle_i2c_interrupt(backend: &mut AspeedI2cBackend, notification_enabled: &[bool; 14]) {
     for bus in 0..14u8 {
         if notification_enabled[bus as usize] {
             let _ = backend.drain_slave_rx(bus);
@@ -274,9 +275,7 @@ fn dispatch_i2c_op(
             }
         }
 
-        // ------------------------------------------------------------------
-        // SlaveReceive: fetch buffered data (non-blocking, interrupt-driven)
-        // ------------------------------------------------------------------
+        // Polling verison for now
         I2cOp::SlaveReceive => {
             pw_log::info!("I2C dispatch slave receive");
             let rlen = header.read_len as usize;
@@ -285,11 +284,27 @@ fn dispatch_i2c_op(
                 return encode_error(response, ResponseCode::BufferTooLarge);
             }
             let buf = &mut response[I2cResponseHeader::SIZE..I2cResponseHeader::SIZE + rlen];
-            match backend.get_buffered_slave_message(header.bus, buf) {
+            match backend.slave_receive(header.bus, buf) {
                 Ok(n) => encode_success(response, n),
                 Err(code) => encode_error(response, code),
             }
         }
+        // ------------------------------------------------------------------
+        // SlaveReceive: fetch buffered data (non-blocking, interrupt-driven)
+        // ------------------------------------------------------------------
+//        I2cOp::SlaveReceive => {
+//            pw_log::info!("I2C dispatch slave receive");
+//            let rlen = header.read_len as usize;
+//            let avail = response.len().saturating_sub(I2cResponseHeader::SIZE);
+//            if rlen > avail {
+//                return encode_error(response, ResponseCode::BufferTooLarge);
+//            }
+//            let buf = &mut response[I2cResponseHeader::SIZE..I2cResponseHeader::SIZE + rlen];
+//            match backend.get_buffered_slave_message(header.bus, buf) {
+//                Ok(n) => encode_success(response, n),
+//                Err(code) => encode_error(response, code),
+//            }
+//        }
 
         // ------------------------------------------------------------------
         // SlaveSetResponse: pre-load TX buffer for next master read

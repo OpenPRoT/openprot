@@ -493,21 +493,25 @@ impl AspeedI2cBackend {
         const POLL_BUDGET: usize = 10_000;
         for _ in 0..POLL_BUDGET {
             match i2c.handle_slave_interrupt() {
-                Some(SlaveEvent::DataReceived { len: _ }) => {
-                    let n = i2c.slave_read(rx_buf).map_err(map_i2c_error)?;
-                    return Ok((SlaveEventKind::DataReceived, n));
-                }
-                Some(SlaveEvent::ReadRequest) => {
-                    // TX buffer was pre-armed in slave_set_response(), so the hardware
-                    // should respond automatically. We just need to wait for DataSent.
-                    continue;
-                }
+                // Process DataSent BEFORE DataReceived to ensure read completions
+                // are handled before new writes when both events are pending.
                 Some(SlaveEvent::DataSent { len: _ }) => {
+                    pw_log::info!("slave_wait_event: DataSent, read complete");
                     // Read transaction completed. Re-arm RX mode for next write.
                     // Drop i2c to release register borrows before calling slave_rearm_rx.
                     drop(i2c);
                     let _ = self.slave_rearm_rx(bus);
                     return Ok((SlaveEventKind::ReadRequest, 0));
+                }
+                Some(SlaveEvent::ReadRequest) => {
+                    pw_log::info!("slave_wait_event: ReadRequest detected");
+                    // TX buffer was pre-armed in slave_set_response(), so the hardware
+                    // should respond automatically. We just need to wait for DataSent.
+                    continue;
+                }
+                Some(SlaveEvent::DataReceived { len: _ }) => {
+                    let n = i2c.slave_read(rx_buf).map_err(map_i2c_error)?;
+                    return Ok((SlaveEventKind::DataReceived, n));
                 }
                 Some(SlaveEvent::Stop) => {
                     return Ok((SlaveEventKind::Stop, 0));
