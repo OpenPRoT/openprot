@@ -31,7 +31,7 @@
           ],
           threads: [
             {
-              name: "initiator thread",
+              name: "initiator_thread",
               stack_size_bytes: 1024,
             },
           ],
@@ -46,7 +46,7 @@
           ],
           threads: [
             {
-              name: "handler thread",
+              name: "handler_thread",
               stack_size_bytes: 1024,
             },
           ],

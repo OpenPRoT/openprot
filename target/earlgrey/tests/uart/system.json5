@@ -37,7 +37,7 @@
           ],
           threads: [
             {
-              name: "uart thread",
+              name: "uart_thread",
               stack_size_bytes: 2048,
             },
           ],
@@ -111,7 +111,7 @@
           ],
           threads: [
             {
-              name: "uart thread",
+              name: "uart_thread",
               stack_size_bytes: 2048,
             },
           ],
