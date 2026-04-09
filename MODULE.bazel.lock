@@ -190,8 +190,8 @@
     "https://bcr.bazel.build/modules/package_metadata/0.0.3/MODULE.bazel": "77890552ecea9e284b5424c9de827a58099348763a4359e975c359a83d4faa83",
     "https://bcr.bazel.build/modules/package_metadata/0.0.3/source.json": "742075a428ad12a3fa18a69014c2f57f01af910c6d9d18646c990200853e641a",
     "https://bcr.bazel.build/modules/pico-sdk/2.1.0/MODULE.bazel": "93dabc91a5b4736f5a5e299ccdc224cd1fb6b29fa667619cb8e985311bb469d5",
-    "https://bcr.bazel.build/modules/pico-sdk/2.2.2-develop.bcr.20260105-1cc19a21/MODULE.bazel": "8d430bd56bc15917b87bb198c21c2a3b4ba96391952c029ff41f14133d99c17f",
-    "https://bcr.bazel.build/modules/pico-sdk/2.2.2-develop.bcr.20260105-1cc19a21/source.json": "6035ea2dc3b776908476bae8bc0110ea1d3061197d7c96f90a4ca7b91be524b9",
+    "https://bcr.bazel.build/modules/pico-sdk/2.2.2-develop.bcr.20260401-79b38e95/MODULE.bazel": "9a5db438371bcdbc3c3c390d41029a90b9cc3cc4ec30e3d09997f3cc0cf77b4d",
+    "https://bcr.bazel.build/modules/pico-sdk/2.2.2-develop.bcr.20260401-79b38e95/source.json": "ac5b4be63a85738b3f2c2362225b69ba7c082da2a195185ce8b31631aab9d3a3",
     "https://bcr.bazel.build/modules/picotool/2.1.0/MODULE.bazel": "809dcf7795f3846ce29b4d676dabc664e57e935926ec5c147ffe02602a63a76f",
     "https://bcr.bazel.build/modules/picotool/2.2.0/MODULE.bazel": "885720d6e8e2b5c5f03aabe4a326904e2b44ba466f55ad0a9554b81a2e1d2e75",
     "https://bcr.bazel.build/modules/picotool/2.2.0/source.json": "d341098d79d543cdcdae2a6cf8b60476721e22e48e4a23d640e6221d325e437c",
@@ -735,7 +735,7 @@
     "@@pigweed+//pw_toolchain/cc:pw_cxx_toolchain.bzl%pw_cxx_toolchain": {
       "general": {
         "bzlTransitiveDigest": "hciO8VUJTXRWfoaBvBdqqwBlHLoS7lHSff+HOQIyMd0=",
-        "usagesDigest": "O2knOOLSyJ37Fy1WVpzIxERmMhIfU0nZBGszwkm4yKE=",
+        "usagesDigest": "5xG8qwOyuJXwfJGV7O5wCHKgerghsLmrLOylWOxZhsk=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -753,7 +753,7 @@
             "attributes": {
               "build_file": "@@pigweed+//pw_toolchain/build_external:llvm_clang.BUILD",
               "path": "fuchsia/third_party/clang/${os}-${arch}",
-              "tag": "git_revision:9de31c4a3e77ceb1e736d4df3ae9e3f5a1dc8748"
+              "tag": "git_revision:26697f4d07eb921aebabdaa7d064c5165c70717e"
             }
           },
           "zephyr_toolchain": {
@@ -777,7 +777,7 @@
     "@@pigweed+//pw_toolchain/rust:extensions.bzl%pw_rust": {
       "general": {
         "bzlTransitiveDigest": "VbWv5Ea8Ymo5+WBLsxmIiRRjVMUDImyeIdt8xvmCgsU=",
-        "usagesDigest": "wpDqcqNUFwXJu90D9XuGDPoMSPIgNMMs5LqjbnCpv7Q=",
+        "usagesDigest": "f7wG0DEd3fJdR2gWb5hpif61lgPhCG9iIS20VRxgr9k=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
@@ -803,7 +803,7 @@
             "attributes": {
               "build_file": "@@pigweed+//pw_toolchain/rust:rust_analyzer.BUILD",
               "path": "fuchsia/third_party/rust-analyzer/linux-arm64",
-              "tag": "git_revision:768710166f2992fec06a77a10c695864dc47000b"
+              "tag": "git_revision:f4b77dc99d9925667246e2887783b79bdc46a50d"
             }
           },
           "rust_toolchain_host_linux_x86_64": {
@@ -827,7 +827,7 @@
             "attributes": {
               "build_file": "@@pigweed+//pw_toolchain/rust:rust_analyzer.BUILD",
               "path": "fuchsia/third_party/rust-analyzer/linux-amd64",
-              "tag": "git_revision:768710166f2992fec06a77a10c695864dc47000b"
+              "tag": "git_revision:f4b77dc99d9925667246e2887783b79bdc46a50d"
             }
           },
           "rust_toolchain_host_macos_aarch64": {
@@ -851,7 +851,7 @@
             "attributes": {
               "build_file": "@@pigweed+//pw_toolchain/rust:rust_analyzer.BUILD",
               "path": "fuchsia/third_party/rust-analyzer/mac-arm64",
-              "tag": "git_revision:768710166f2992fec06a77a10c695864dc47000b"
+              "tag": "git_revision:f4b77dc99d9925667246e2887783b79bdc46a50d"
             }
           },
           "rust_toolchain_host_macos_x86_64": {
@@ -875,7 +875,7 @@
             "attributes": {
               "build_file": "@@pigweed+//pw_toolchain/rust:rust_analyzer.BUILD",
               "path": "fuchsia/third_party/rust-analyzer/mac-amd64",
-              "tag": "git_revision:768710166f2992fec06a77a10c695864dc47000b"
+              "tag": "git_revision:f4b77dc99d9925667246e2887783b79bdc46a50d"
             }
           },
           "rust_toolchain_target_thumbv6m-none-eabi_armv6-m": {

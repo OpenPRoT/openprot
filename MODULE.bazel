@@ -17,7 +17,7 @@ bazel_dep(name = "ureg")
 
 git_override(
     module_name = "pigweed",
-    commit = "a7059ed6124319250a9c102dd9f0514d8a65be4d",
+    commit = "df420838bb46ee23bc63901874b9c88f8789c973",
     remote = "https://pigweed.googlesource.com/pigweed/pigweed",
 )
 

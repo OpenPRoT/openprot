@@ -20,10 +20,10 @@
       ram_size_bytes: 4096,
       processes: [
         {
-          name: "syscall latency",
+          name: "syscall_latency",
           memory_mappings: [
             {
-              name: "RV_TIMER",
+              name: "rv_timer",
               type: "device",
               start_address: 0x40100000,
               size_bytes: 0x200,

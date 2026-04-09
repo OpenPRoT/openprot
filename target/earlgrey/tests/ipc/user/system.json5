@@ -23,15 +23,15 @@
           name: "initiator",
           objects: [
             {
-              name: "IPC",
+              name: "ipc",
               type: "channel_initiator",
               handler_process: "handler",
-              handler_object_name: "IPC",
+              handler_object_name: "ipc",
             },
           ],
           threads: [
             {
-              name: "initiator thread",
+              name: "initiator_thread",
               stack_size_bytes: 1024,
             },
           ],
@@ -40,13 +40,13 @@
           name: "handler",
           objects: [
             {
-              name: "IPC",
+              name: "ipc",
               type: "channel_handler",
             },
           ],
           threads: [
             {
-              name: "handler thread",
+              name: "handler_thread",
               stack_size_bytes: 1024,
             },
           ],
