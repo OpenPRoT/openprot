@@ -15,43 +15,46 @@
   },
   apps: [
     {
-      name: "ipc",
+      name: "initiator",
       flash_size_bytes: 32768,
       ram_size_bytes: 8192,
-      processes: [
-        {
-          name: "initiator",
-          objects: [
-            {
-              name: "IPC",
-              type: "channel_initiator",
-              handler_process: "handler",
-              handler_object_name: "IPC",
-            },
-          ],
-          threads: [
-            {
-              name: "initiator thread",
-              stack_size_bytes: 1024,
-            },
-          ],
-        },
-        {
-          name: "handler",
-          objects: [
-            {
-              name: "IPC",
-              type: "channel_handler",
-            },
-          ],
-          threads: [
-            {
-              name: "handler thread",
-              stack_size_bytes: 1024,
-            },
-          ],
-        },
-      ],
+      process: {
+        name: "initiator",
+        objects: [
+          {
+            name: "IPC",
+            type: "channel_initiator",
+            handler_app: "handler",
+            handler_object_name: "IPC",
+          },
+        ],
+        threads: [
+          {
+            name: "initiator thread",
+            stack_size_bytes: 1024,
+          },
+        ],
+      },
+    },
+    {
+      name: "handler",
+      flash_size_bytes: 32768,
+      ram_size_bytes: 8192,
+      process: {
+        name: "handler",
+        objects: [
+          {
+            name: "IPC",
+            type: "channel_handler",
+          },
+        ],
+        threads: [
+          {
+            name: "handler thread",
+            stack_size_bytes: 1024,
+          },
+        ],
+      },
     },
   ],
 }

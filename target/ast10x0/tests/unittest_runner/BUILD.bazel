@@ -1,0 +1,38 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@rules_rust//rust:defs.bzl", "rust_test")
+load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
+
+target_linker_script(
+    name = "linker_script",
+    system_config = "system.json5",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    template = "//target/ast10x0:linker_script_template",
+)
+
+rust_test(
+    name = "unittest_runner",
+    srcs = ["target.rs"],
+    edition = "2024",
+    tags = [
+        "kernel",
+        # Clippy lints do not work with `use_libtest_harness = False`
+        "no_clippy",
+    ],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    use_libtest_harness = False,
+    deps = [
+        ":linker_script",
+        "//target/ast10x0:entry",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/kernel/tests:integration_tests",
+        "@pigweed//pw_kernel/lib/unittest:unittest_core",
+        "@pigweed//pw_kernel/subsys/console:console_backend",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_log/rust:pw_log",
+        "@rust_crates//:cortex-m-semihosting",
+    ],
+)

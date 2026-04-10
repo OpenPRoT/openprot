@@ -18,8 +18,7 @@
       name: "test_uart",
       flash_size_bytes: 16384,
       ram_size_bytes: 4096,
-      processes: [
-        {
+      process: {
           name: "test_uart",
           objects: [
             {
@@ -41,15 +40,13 @@
               stack_size_bytes: 2048,
             },
           ],
-        },
-      ],
+      },
     },
     {
       name: "test_uart_listener",
       flash_size_bytes: 16384,
       ram_size_bytes: 4096,
-      processes: [
-        {
+      process: {
           name: "test_uart_listener",
           objects: [
             {
@@ -97,7 +94,7 @@
             {
               name: "ipc",
               type: "channel_initiator",
-              handler_process: "test_uart",
+              handler_app: "test_uart",
               handler_object_name: "ipc",
             },
           ],
@@ -115,8 +112,7 @@
               stack_size_bytes: 2048,
             },
           ],
-        },
-      ],
+      },
     },
   ],
 }

@@ -17,7 +17,7 @@ bazel_dep(name = "ureg")
 
 git_override(
     module_name = "pigweed",
-    commit = "a7059ed6124319250a9c102dd9f0514d8a65be4d",
+    commit = "1fbf83ca3ffb9631e4450af2cd4396d426363b1b",
     remote = "https://pigweed.googlesource.com/pigweed/pigweed",
 )
 
@@ -34,6 +34,7 @@ use_repo(pw_rust, "pw_rust_toolchains")
 register_toolchains(
     "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_linux",
     "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_macos",
+    "@pigweed//pw_toolchain/arm_clang:arm_clang_cc_toolchain_cortex-m4",
     "@pigweed//pw_toolchain/riscv_clang:riscv_clang_cc_toolchain_rv32imc",
     "@pw_rust_toolchains//:all",
 )
@@ -54,6 +55,7 @@ crate.from_cargo(
 
         # Target platforms
         "riscv32imc-unknown-none-elf",
+        "thumbv7em-none-eabi",
     ],
 )
 use_repo(crate, "rust_crates")
