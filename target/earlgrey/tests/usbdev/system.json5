@@ -1,0 +1,77 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+{
+  arch: {
+    type: "riscv",
+  },
+  kernel: {
+    flash_start_address: 0xA0010000,
+    flash_size_bytes: 65536,
+    ram_start_address: 0x10000000,
+    ram_size_bytes: 32768,
+    interrupt_table: {
+      table: {}
+    },
+  },
+  apps: [
+    {
+      name: "test_usb",
+      flash_size_bytes: 16384,
+      ram_size_bytes: 4096,
+      process: {
+        name: "test_uart_listener process",
+        objects: [
+          {
+            name: "usbdev_interrupts",
+            type: "interrupt",
+            irqs: [
+                { name: "usbdev_pkt_received", number: 135 },
+                { name: "usbdev_pkt_sent", number: 136 },
+                { name: "usbdev_disconnected", number: 137 },
+                { name: "usbdev_host_lost", number: 138 },
+
+                { name: "usbdev_link_reset", number: 139 },
+                { name: "usbdev_link_suspend", number: 140 },
+                { name: "usbdev_link_resume", number: 141 },
+                { name: "usbdev_av_out_empty", number: 142 },
+
+                { name: "usbdev_rx_full", number: 143 },
+                { name: "usbdev_av_overflow", number: 144 },
+                //{ name: "usbdev_link_in_err", number: 145 },
+                { name: "usbdev_rx_crc_err", number: 146 },
+
+                { name: "usbdev_rx_pid_err", number: 147 },
+                { name: "usbdev_rx_bitstuff_err", number: 148 },
+                { name: "usbdev_frame", number: 149 },
+                //{ name: "usbdev_powered", number: 150 },
+
+                //{ name: "usbdev_link_out_err", number: 151 },
+                { name: "usbdev_av_setup_empty", number: 152 },
+            ],
+          },
+        ],
+        memory_mappings: [
+          {
+            name: "usbdev",
+            type: "device",
+            start_address: 0x40320000,
+            size_bytes: 0x1000,
+          },
+          {
+            name: "pinmux",
+            type: "device",
+            start_address: 0x40460000,
+            size_bytes: 0x1000,
+          }
+
+        ],
+        threads: [
+          {
+            name: "usb thread",
+            stack_size_bytes: 2048,
+          },
+        ],
+      },
+    },
+  ],
+}

@@ -1,0 +1,448 @@
+#![no_std]
+
+use aligned::Aligned;
+use aligned::A4;
+use core::mem::size_of;
+use hal_usb::driver::UsbDriver;
+use hal_usb::driver::UsbEvent;
+use hal_usb::driver::UsbPacket;
+use hal_usb::DescriptorInfo;
+use hal_usb::DescriptorType;
+use hal_usb::Request;
+use hal_usb::SetupPacket;
+use hal_usb::StringDescriptorRef;
+use hal_usb::StringHandle;
+use util_error::{ErrorCode, ErrorModule};
+use zerocopy::IntoBytes;
+
+pub const MODULE_USB: ErrorModule = ErrorModule::new(0x5550); // ascii `US`
+pub const USB_TRANSFER_BUFFER_OVERFLOW: ErrorCode = MODULE_USB.error(0x0001);
+
+pub trait DescriptorSource {
+    const DEVICE_DESC_BYTES: &'static Aligned<A4, [u8]>;
+    const CONFIG_DESC_BYTES: &'static Aligned<A4, [u8]>;
+    const STRING_DESC_0_BYTES: &'static Aligned<A4, [u8]>;
+
+    fn get_string(&self, handle: StringHandle, lang: u16) -> Option<StringDescriptorRef<'_>>;
+}
+
+pub const EMPTY: &Aligned<A4, [u8]> = &Aligned([]);
+
+pub struct SimpleEp0 {
+    new_address: Option<u8>,
+}
+
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum UsbActionRun {
+    NoOp,
+    HasMoreData,
+    Done,
+}
+
+pub enum UsbAction<'a> {
+    None,
+    TransferIn {
+        endpoint: u8,
+        data: &'a Aligned<A4, [u8]>,
+        /// If zlp=true and `data.len()` is a multiple of MAX_PACKET_SIZE,
+        /// send a zero-length packet after sending all the data.
+        zlp: bool,
+    },
+    StallInAndOut {
+        endpoint: u8,
+    },
+    SetAddress {
+        new_address: u8,
+    },
+}
+impl<'a> UsbAction<'a> {
+    #[inline(always)]
+    #[track_caller]
+    pub fn control_transfer_in_or_stall(
+        endpoint: u8,
+        pkt: &SetupPacket,
+        data: &'a Aligned<A4, [u8]>,
+    ) -> Self {
+        if data.len() > pkt.length().into() {
+            Self::StallInAndOut { endpoint }
+        } else {
+            Self::TransferIn {
+                endpoint,
+                data,
+                // Per USB Specs 5.5.3, we need to send ZLP for control transfers
+                // if the response is less than requested.
+                zlp: data.is_empty() || data.len() < pkt.length().into(),
+            }
+        }
+    }
+    pub fn merge(&mut self, new_action: UsbAction<'a>) {
+        match new_action {
+            UsbAction::None => {}
+            _ => *self = new_action,
+        }
+    }
+
+    pub fn run<TDriver: UsbDriver>(&mut self, driver: &mut TDriver) -> UsbActionRun {
+        match self {
+            Self::None => return UsbActionRun::NoOp,
+            Self::TransferIn {
+                endpoint,
+                data,
+                zlp,
+            } => {
+                let bytes_transferred = driver.transfer_in(*endpoint, data, *zlp);
+                // Note: bytes_transferred is guaranteed to be a multiple of
+                // UsbDriver::MAX_PACKET_SIZE, which is guaranteed to be a
+                // multiple of 4.
+                if bytes_transferred < data.len() && (bytes_transferred & 3) == 0 {
+                    // We're not done yet...
+                    *data = &data[bytes_transferred..];
+                    return UsbActionRun::HasMoreData;
+                }
+            }
+            Self::SetAddress { new_address } => driver.set_address(*new_address),
+            Self::StallInAndOut { endpoint } => {
+                driver.stall_in(*endpoint, true);
+                driver.stall_out(*endpoint, true);
+            }
+        }
+        *self = UsbAction::None;
+        UsbActionRun::Done
+    }
+}
+
+impl SimpleEp0 {
+    pub fn new() -> Self {
+        Self { new_address: None }
+    }
+    /// A helper function to process a driver UsbEvent.
+    ///
+    /// This function returns the action that should be performed on the driver
+    /// (we can't take the driver as a parameter because the UsbPacket in the
+    /// event may capture the driver's lifetime).
+    pub fn handle_event<'a>(
+        &mut self,
+        ev: UsbEvent<impl UsbPacket>,
+        descriptor_source: &'a impl DescriptorSource,
+    ) -> UsbAction<'a> {
+        match ev {
+            UsbEvent::SetupPacket { endpoint, pkt } => {
+                if endpoint == 0 {
+                    return self.handle_setup(pkt, descriptor_source);
+                }
+            }
+            UsbEvent::PacketSent { endpoint } => {
+                if endpoint == 0 {
+                    return self.handle_packet_sent();
+                }
+            }
+            _ => {}
+        }
+        UsbAction::None
+    }
+
+    /// Process a SETUP transfer, and return the action that should be performed.
+    fn handle_setup<'a, TDescriptorSource: DescriptorSource>(
+        &mut self,
+        setup_pkt: SetupPacket,
+        descriptor_source: &'a TDescriptorSource,
+    ) -> UsbAction<'a> {
+        match setup_pkt.request() {
+            Request::DEVICE_GET_DESCRIPTOR => {
+                let descriptor = DescriptorInfo::from(&setup_pkt);
+                #[rustfmt::skip]
+                let mut response: Option<&Aligned<A4, [u8]>> = match descriptor {
+                    DescriptorInfo { ty: DescriptorType::DEVICE, index: 0, .. } => {
+                        Some(TDescriptorSource::DEVICE_DESC_BYTES)
+                    }
+                    DescriptorInfo { ty: DescriptorType::CONFIGURATION, index: 0, .. } => {
+                        Some(TDescriptorSource::CONFIG_DESC_BYTES)
+                    }
+                    DescriptorInfo { ty: DescriptorType::STRING, index: 0, .. } => {
+                        Some(TDescriptorSource::STRING_DESC_0_BYTES)
+                    }
+                    DescriptorInfo { ty: DescriptorType::STRING, index, .. } => {
+                        descriptor_source
+                            .get_string(StringHandle(index), setup_pkt.index())
+                            .map(|desc| desc.as_bytes())
+                    }
+                    _ => None,
+                };
+                if let Some(response) = &mut response {
+                    if response.len() > setup_pkt.length().into() {
+                        *response = &(*response)[..setup_pkt.length().into()];
+                    }
+                    UsbAction::control_transfer_in_or_stall(0, &setup_pkt, response)
+                } else {
+                    UsbAction::StallInAndOut { endpoint: 0 }
+                }
+            }
+            Request::DEVICE_SET_ADDRESS => {
+                self.new_address = Some(setup_pkt.value() as u8);
+                UsbAction::TransferIn {
+                    endpoint: 0,
+                    data: EMPTY,
+                    zlp: true,
+                }
+            }
+            Request::DEVICE_SET_CONFIGURATION => {
+                if setup_pkt.value() == 1 {
+                    UsbAction::TransferIn {
+                        endpoint: 0,
+                        data: EMPTY,
+                        zlp: true,
+                    }
+                } else {
+                    UsbAction::StallInAndOut { endpoint: 0 }
+                }
+            }
+            _ => UsbAction::StallInAndOut { endpoint: 0 },
+        }
+    }
+    fn handle_packet_sent(&mut self) -> UsbAction<'static> {
+        if let Some(new_address) = self.new_address.take() {
+            // Now that the transfer is complete it's safe to change the address..
+            return UsbAction::SetAddress { new_address };
+        }
+        UsbAction::None
+    }
+}
+
+impl Default for SimpleEp0 {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// A helper struct to handle multi-packet USB transfers.
+///
+/// It accumulates incoming USB packets into an internal buffer until a short
+/// packet or a zero-length packet (ZLP) is received, indicating the end of a transfer.
+///
+/// `N` is the number of **words** (`u32`s) in the internal buffer and NOT bytes.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Transfer<const N: usize> {
+    buffer: [u32; N],
+    word_offset: usize,
+}
+
+impl<const N: usize> Transfer<N> {
+    // TODO: ckungler - This could be a const generic if we need to support
+    // other packet sizes.
+    pub const MAX_PACKET_SIZE: usize = 64;
+
+    pub fn new() -> Self {
+        Self {
+            buffer: [0; N],
+            word_offset: 0,
+        }
+    }
+
+    /// Splices a USB packet into the buffer.
+    ///
+    /// Returns `Ok(Some(slice))` if the transfer is complete, `Ok(None)` otherwise.
+    pub fn splice(
+        &mut self,
+        packet: impl UsbPacket,
+    ) -> Result<Option<&Aligned<A4, [u8]>>, ErrorCode> {
+        const {
+            assert!(Self::MAX_PACKET_SIZE % size_of::<u32>() == 0);
+        }
+        let packet_len = packet.len();
+        let dest = {
+            let start = self.word_offset;
+            let end = start + packet_len.div_ceil(size_of::<u32>());
+            self.buffer
+                .get_mut(start..end)
+                .ok_or(USB_TRANSFER_BUFFER_OVERFLOW)?
+        };
+        packet.copy_to(dest);
+        if packet_len < Self::MAX_PACKET_SIZE {
+            let result = &self
+                .buffer
+                .as_bytes()
+                .get(..self.word_offset * size_of::<u32>() + packet_len)
+                .ok_or(USB_TRANSFER_BUFFER_OVERFLOW)?;
+            self.word_offset = 0;
+            // This is safe because `self.buffer` is `[u32]` which has alignment of 4.
+            Ok(Some(unsafe {
+                core::mem::transmute::<&[u8], &Aligned<A4, [u8]>>(result)
+            }))
+        } else {
+            self.word_offset += Self::MAX_PACKET_SIZE / size_of::<u32>();
+            Ok(None)
+        }
+    }
+}
+
+impl<const N: usize> Default for Transfer<N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub mod testing {
+    use aligned::Aligned;
+    use aligned::A4;
+    use hal_usb::driver::UsbPacket;
+    use zerocopy::IntoBytes;
+
+    #[derive(Debug)]
+    pub struct FakeUsbPacket<'a> {
+        pub data: &'a [u8],
+        pub ep: usize,
+    }
+
+    impl UsbPacket for FakeUsbPacket<'_> {
+        fn endpoint_index(&self) -> usize {
+            self.ep
+        }
+
+        fn len(&self) -> usize {
+            self.data.len()
+        }
+
+        fn copy_to_uninit(self, _dest: &mut [core::mem::MaybeUninit<u32>]) -> &Aligned<A4, [u8]> {
+            unimplemented!()
+        }
+
+        fn copy_to(self, dest: &mut [u32]) -> &Aligned<A4, [u8]> {
+            let dest_bytes = dest.as_mut_bytes();
+            let copy_len = self.data.len().min(dest_bytes.len());
+            dest_bytes[..copy_len].copy_from_slice(&self.data[..copy_len]);
+            // This is safe because `dest` is a `&mut [u32]`, which is guaranteed to be 4-byte
+            // aligned. `dest_bytes` is a byte slice view of the same memory, so it's also
+            // 4-byte aligned. The subslice `&dest_bytes[..copy_len]` maintains this alignment.
+            unsafe { core::mem::transmute::<&[u8], &Aligned<A4, [u8]>>(&dest_bytes[..copy_len]) }
+        }
+    }
+}
+
+#[cfg(test)]
+mod splice_tests {
+    use super::testing::FakeUsbPacket;
+    use super::*;
+
+    const MAX_PACKET_SIZE: usize = Transfer::<0>::MAX_PACKET_SIZE;
+
+    #[test]
+    fn test_splice_single_short_packet() {
+        let packet_data = [1, 2, 3, 4];
+        let packet = FakeUsbPacket {
+            data: &packet_data,
+            ep: 0,
+        };
+
+        let mut transfer = Transfer::<32>::new();
+        let result = transfer.splice(packet).unwrap();
+
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().as_ref(), &packet_data[..]);
+    }
+
+    #[test]
+    fn test_splice_single_full_packet_then_zlp() {
+        let packet_data = [42; MAX_PACKET_SIZE];
+        let packet = FakeUsbPacket {
+            data: &packet_data,
+            ep: 0,
+        };
+
+        let mut transfer = Transfer::<32>::new();
+        let result = transfer.splice(packet).unwrap();
+
+        assert!(result.is_none());
+
+        let zlp = FakeUsbPacket { data: &[], ep: 0 };
+        let result = transfer.splice(zlp).unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().as_ref(), &packet_data[..]);
+    }
+
+    #[test]
+    fn test_splice_multiple_packets() {
+        let packet1_data = [1; MAX_PACKET_SIZE];
+        let packet2_data = [2; MAX_PACKET_SIZE];
+        let packet3_data = [3; 32];
+
+        // Packet 1
+        let packet1 = FakeUsbPacket {
+            data: &packet1_data,
+            ep: 0,
+        };
+        let mut transfer = Transfer::<64>::new();
+        let result = transfer.splice(packet1).unwrap();
+        assert!(result.is_none());
+
+        // Packet 2
+        let packet2 = FakeUsbPacket {
+            data: &packet2_data,
+            ep: 0,
+        };
+        let result = transfer.splice(packet2).unwrap();
+        assert!(result.is_none());
+
+        // Packet 3 (short packet)
+        let packet3 = FakeUsbPacket {
+            data: &packet3_data,
+            ep: 0,
+        };
+        let result = transfer.splice(packet3).unwrap();
+        assert!(result.is_some());
+
+        let mut expected_data = [0u8; 2 * MAX_PACKET_SIZE + 32];
+        expected_data[..MAX_PACKET_SIZE].copy_from_slice(&packet1_data);
+        expected_data[MAX_PACKET_SIZE..2 * MAX_PACKET_SIZE].copy_from_slice(&packet2_data);
+        expected_data[2 * MAX_PACKET_SIZE..].copy_from_slice(&packet3_data);
+
+        assert_eq!(result.unwrap().as_ref(), &expected_data[..]);
+    }
+
+    #[test]
+    fn test_splice_buffer_overflow() {
+        let packet_data = [1; 1];
+        let packet = FakeUsbPacket {
+            data: &packet_data,
+            ep: 0,
+        };
+
+        let mut transfer = Transfer::<16>::new();
+        transfer
+            .splice(FakeUsbPacket {
+                data: &[0; MAX_PACKET_SIZE],
+                ep: 0,
+            })
+            .unwrap();
+        let result = transfer.splice(packet);
+        assert_eq!(result.err(), Some(USB_TRANSFER_BUFFER_OVERFLOW));
+    }
+
+    #[test]
+    fn test_full_capacity_with_full_packets_then_partial_packet() {
+        const PARTIAL_SIZE: usize = 16;
+        const FULL1_DATA: &[u8] = &[0xaa; MAX_PACKET_SIZE];
+        const FULL2_DATA: &[u8] = &[0xbb; MAX_PACKET_SIZE];
+        const PARTIAL_DATA: &[u8] = &[0xcc; PARTIAL_SIZE];
+        const RECEIVE_BUFFER_WORDS: usize =
+            (FULL1_DATA.len() + FULL2_DATA.len() + PARTIAL_DATA.len()) / size_of::<u32>();
+        let full1 = FakeUsbPacket {
+            data: FULL1_DATA,
+            ep: 0,
+        };
+        let full2 = FakeUsbPacket {
+            data: FULL2_DATA,
+            ep: 0,
+        };
+        let partial = FakeUsbPacket {
+            data: PARTIAL_DATA,
+            ep: 0,
+        };
+        let mut transfer = Transfer::<RECEIVE_BUFFER_WORDS>::new();
+        assert!(transfer.splice(full1).unwrap().is_none());
+        assert!(transfer.splice(full2).unwrap().is_none());
+        let buffer = transfer.splice(partial).unwrap().unwrap().as_ref();
+        assert_eq!(&buffer[..MAX_PACKET_SIZE], FULL1_DATA);
+        assert_eq!(&buffer[MAX_PACKET_SIZE..2 * MAX_PACKET_SIZE], FULL2_DATA);
+        assert_eq!(&buffer[2 * MAX_PACKET_SIZE..], PARTIAL_DATA);
+    }
+}
