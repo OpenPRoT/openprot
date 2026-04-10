@@ -79,6 +79,13 @@ archive_override(
     url = "https://storage.googleapis.com/artifacts.opentitan.org/dev_bundle/devbundle-20260401.tar.xz",
 )
 
+bazel_dep(name = "caliptra_devbundle")
+archive_override(
+    module_name = "caliptra_devbundle",
+    integrity = "sha256-k5EobAyBQqApv/s4QsMVEaJKRptnS6Ic//eJr8F4yOw=",
+    url = "https://storage.googleapis.com/artifacts.opentitan.org/dev_bundle/experimental/cptra-dev-20260330.zip",
+)
+
 nonhermetic_repo = use_repo_rule("//target/earlgrey/tooling/signing:nonhermetic.bzl", "nonhermetic_repo")
 
 nonhermetic_repo(name = "nonhermetic")
