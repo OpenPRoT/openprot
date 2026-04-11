@@ -21,8 +21,8 @@ platform(
     flags = flags_from_dict(
         KERNEL_DEVICE_COMMON_FLAGS | {
             "@pigweed//pw_kernel/config:kernel_config": ":config",
-            # TODO: Switch to :console_backend_uart when aspeed-ddk uart driver is available
-            "@pigweed//pw_kernel/subsys/console:console_backend": "@pigweed//pw_kernel/subsys/console:console_backend_semihosting",
+            # Using UART console backend - output on UART at 115200 baud
+            "@pigweed//pw_kernel/subsys/console:console_backend": ":console_backend_uart",
         },
     ),
 )

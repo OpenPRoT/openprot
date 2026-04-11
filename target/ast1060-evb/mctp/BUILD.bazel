@@ -43,9 +43,9 @@ app_package(
 system_image(
     name = "mctp",
     apps = [
-        ":mctp_echo",
         "//services/i2c/server:i2c_server",
         "//services/mctp/server:mctp_server",
+        ":mctp_echo",
     ],
     kernel = ":target",
     platform = "//target/ast1060-evb",

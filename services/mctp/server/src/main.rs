@@ -47,7 +47,7 @@ use openprot_mctp_api::wire::{MctpRequestHeader, MAX_REQUEST_SIZE, MAX_RESPONSE_
 use openprot_mctp_api::ResponseCode;
 use openprot_mctp_server::dispatch;
 
-use i2c_api::{BusIndex, I2cTargetClient, TargetMessage};
+use i2c_api::{BusIndex, I2cAddress, I2cTargetClient, TargetMessage};
 use i2c_client::IpcI2cClient;
 use openprot_mctp_transport_i2c::{I2cSender, MctpI2cReceiver};
 
@@ -70,12 +70,25 @@ fn mctp_server_loop() -> Result<()> {
 
     // I2C notification client: receives slave-mode interrupts via Signals::USER.
     let mut i2c_notify = IpcI2cClient::new(handle::I2C);
+
+    // Configure I2C bus 2 as slave at our address
+    let addr = I2cAddress::new(OWN_I2C_ADDR).map_err(|_| pw_status::Error::InvalidArgument)?;
     i2c_notify
-        .register_notification(BusIndex::BUS_0, 0)
+        .configure_target_address(BusIndex::BUS_2, addr)
+        .map_err(|_| pw_status::Error::Internal)?;
+
+    // Enable slave receive mode
+    i2c_notify
+        .enable_receive(BusIndex::BUS_2)
+        .map_err(|_| pw_status::Error::Internal)?;
+
+    // Register for notifications
+    i2c_notify
+        .register_notification(BusIndex::BUS_2, 0)
         .map_err(|_| pw_status::Error::Internal)?;
 
     // Separate handle for the sender — I2cSender takes ownership.
-    let sender = I2cSender::new(IpcI2cClient::new(handle::I2C), BusIndex::BUS_0, OWN_I2C_ADDR);
+    let sender = I2cSender::new(IpcI2cClient::new(handle::I2C), BusIndex::BUS_2, OWN_I2C_ADDR);
     let receiver = MctpI2cReceiver::new(OWN_I2C_ADDR);
     let mut server = openprot_mctp_server::Server::<_, 16>::new(
         mctp::Eid(OWN_EID),
@@ -93,6 +106,8 @@ fn mctp_server_loop() -> Result<()> {
     syscall::wait_group_add(handle::WG, handle::MCTP, Signals::READABLE, 0usize)?;
     syscall::wait_group_add(handle::WG, handle::I2C,  Signals::USER,     1usize)?;
 
+    pw_log::info!("MCTP server ready, entering event loop");
+
     loop {
         let ev = syscall::object_wait(handle::WG, Signals::READABLE, Instant::MAX)?;
 
@@ -100,7 +115,7 @@ fn mctp_server_loop() -> Result<()> {
             // Inbound I2C data: drain pending messages, decode I2C framing,
             // feed raw MCTP packets into the router.
             let mut msgs = [TargetMessage::default(); 1];
-            if let Ok(n) = i2c_notify.get_pending_messages(BusIndex::BUS_0, &mut msgs) {
+            if let Ok(n) = i2c_notify.get_pending_messages(BusIndex::BUS_2, &mut msgs) {
                 for msg in &msgs[..n] {
                     if let Ok((pkt, _src_addr)) = receiver.decode(msg) {
                         let _ = server.inbound(pkt);
