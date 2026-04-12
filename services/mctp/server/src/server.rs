@@ -111,9 +111,12 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
         let msg = self.stack.recv(cookie)?;
 
         let payload_len = msg.payload.len();
-        if payload_len <= buf.len() {
-            buf[..payload_len].copy_from_slice(msg.payload);
+        if payload_len > buf.len() {
+            // Payload too large for the provided buffer — discard the message
+            // and report the error to the caller rather than silently truncating.
+            return None;
         }
+        buf[..payload_len].copy_from_slice(msg.payload);
 
         Some(RecvMetadata {
             msg_type: msg.typ.0,

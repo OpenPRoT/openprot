@@ -35,13 +35,13 @@ fn dispatch_set_get_eid() {
 
     // SetEid(42)
     let req_len = wire::encode_set_eid(&mut req, 42).unwrap();
-    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server, &mut recv_buf);
+    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server, &mut recv_buf).unwrap();
     let header = wire::decode_response_header(&resp[..resp_len]).unwrap();
     assert!(header.is_success());
 
     // GetEid → 42
     let req_len = wire::encode_get_eid(&mut req).unwrap();
-    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server, &mut recv_buf);
+    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server, &mut recv_buf).unwrap();
     let header = wire::decode_response_header(&resp[..resp_len]).unwrap();
     assert!(header.is_success());
     assert_eq!(header.eid, 42);
@@ -66,14 +66,14 @@ fn dispatch_echo_roundtrip() {
 
     // Register listener on A for MsgType(1)
     let req_len = wire::encode_listener(&mut req, 1).unwrap();
-    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server_a, &mut recv_buf);
+    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server_a, &mut recv_buf).unwrap();
     let header = wire::decode_response_header(&resp[..resp_len]).unwrap();
     assert!(header.is_success());
     let listener_handle = header.handle;
 
     // Register req on B targeting EID 8
     let req_len = wire::encode_req(&mut req, 8).unwrap();
-    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server_b, &mut recv_buf);
+    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server_b, &mut recv_buf).unwrap();
     let header = wire::decode_response_header(&resp[..resp_len]).unwrap();
     assert!(header.is_success());
     let req_handle = header.handle;
@@ -90,16 +90,16 @@ fn dispatch_echo_roundtrip() {
         payload,
     )
     .unwrap();
-    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server_b, &mut recv_buf);
+    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server_b, &mut recv_buf).unwrap();
     let header = wire::decode_response_header(&resp[..resp_len]).unwrap();
     assert!(header.is_success());
 
     // Transfer B → A
     transfer(&buf_b, &mut server_a);
 
-    // A receives via dispatch
+    // A receives via dispatch (message already queued by transfer above)
     let req_len = wire::encode_recv(&mut req, listener_handle, 0).unwrap();
-    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server_a, &mut recv_buf);
+    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server_a, &mut recv_buf).unwrap();
     let header = wire::decode_response_header(&resp[..resp_len]).unwrap();
     assert!(header.is_success());
     assert_eq!(header.msg_type, 1);
@@ -118,16 +118,16 @@ fn dispatch_echo_roundtrip() {
         recv_payload,
     )
     .unwrap();
-    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server_a, &mut recv_buf);
+    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server_a, &mut recv_buf).unwrap();
     let send_header = wire::decode_response_header(&resp[..resp_len]).unwrap();
     assert!(send_header.is_success());
 
     // Transfer A → B
     transfer(&buf_a, &mut server_b);
 
-    // B receives the echo via dispatch
+    // B receives the echo via dispatch (message already queued by transfer above)
     let req_len = wire::encode_recv(&mut req, req_handle, 0).unwrap();
-    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server_b, &mut recv_buf);
+    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server_b, &mut recv_buf).unwrap();
     let header = wire::decode_response_header(&resp[..resp_len]).unwrap();
     assert!(header.is_success());
     assert_eq!(header.msg_type, 1);
@@ -154,7 +154,7 @@ fn dispatch_malformed_request_returns_bad_argument() {
 
     // Two bytes — shorter than MctpRequestHeader::SIZE (12)
     let bad_request = [0u8; 2];
-    let resp_len = dispatch_mctp_op(&bad_request, &mut resp, &mut server, &mut recv_buf);
+    let resp_len = dispatch_mctp_op(&bad_request, &mut resp, &mut server, &mut recv_buf).unwrap();
 
     let header = wire::decode_response_header(&resp[..resp_len]).unwrap();
     assert!(!header.is_success());
@@ -176,7 +176,7 @@ fn dispatch_unknown_opcode_returns_bad_argument() {
     // 12-byte header with opcode 0xFF (unrecognised)
     let mut bad_request = [0u8; 12];
     bad_request[0] = 0xFF;
-    let resp_len = dispatch_mctp_op(&bad_request, &mut resp, &mut server, &mut recv_buf);
+    let resp_len = dispatch_mctp_op(&bad_request, &mut resp, &mut server, &mut recv_buf).unwrap();
 
     let header = wire::decode_response_header(&resp[..resp_len]).unwrap();
     assert!(!header.is_success());
@@ -184,14 +184,14 @@ fn dispatch_unknown_opcode_returns_bad_argument() {
 }
 
 // ---------------------------------------------------------------------------
-// MctpOp::Recv when no message is ready → TimedOut
+// MctpOp::Recv deferred behaviour
 // ---------------------------------------------------------------------------
 
-/// `Recv` dispatched when no message has arrived must return `TimedOut`.
+/// `Recv` dispatched when no message has arrived must return `None` (deferred):
+/// the client is parked in the server's outstanding table rather than
+/// immediately answered with `TimedOut`.
 #[test]
-fn dispatch_recv_no_message_returns_timed_out() {
-    use openprot_mctp_api::ResponseCode;
-
+fn dispatch_recv_no_message_parks_client() {
     let buf = RefCell::new(Vec::new());
     let sender = BufferSender { packets: &buf };
     let mut server: Server<_, 16> = Server::new(Eid(8), 0, sender);
@@ -202,17 +202,70 @@ fn dispatch_recv_no_message_returns_timed_out() {
 
     // Register a listener
     let req_len = wire::encode_listener(&mut req, 1).unwrap();
-    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server, &mut recv_buf);
+    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server, &mut recv_buf).unwrap();
     let h = wire::decode_response_header(&resp[..resp_len]).unwrap();
     assert!(h.is_success());
     let listener_handle = h.handle;
 
-    // Attempt Recv immediately — no inbound packet
+    // Attempt Recv immediately — no inbound packet → must be deferred
     let req_len = wire::encode_recv(&mut req, listener_handle, 0).unwrap();
-    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server, &mut recv_buf);
-    let header = wire::decode_response_header(&resp[..resp_len]).unwrap();
-    assert!(!header.is_success());
-    assert_eq!(header.response_code(), ResponseCode::TimedOut);
+    let result = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server, &mut recv_buf);
+    assert!(result.is_none(), "expected deferred recv (None)");
+}
+
+/// After parking a `Recv`, feeding an inbound packet via `server.inbound()` +
+/// `server.update()` must fulfil the outstanding recv and make the message
+/// retrievable.
+#[test]
+fn dispatch_recv_deferred_then_fulfilled() {
+    use openprot_mctp_server::RecvResult;
+    use common::BufferSender;
+
+    // Server A: listener (EID 8)
+    let buf_a = RefCell::new(Vec::new());
+    let mut server_a: Server<_, 16> = Server::new(Eid(8), 0, BufferSender { packets: &buf_a });
+
+    // Server B: requester (EID 42) — used only to generate a valid MCTP packet
+    let buf_b = RefCell::new(Vec::new());
+    let mut server_b: Server<_, 16> = Server::new(Eid(42), 0, BufferSender { packets: &buf_b });
+
+    let mut req = [0u8; 128];
+    let mut resp = [0u8; 128];
+    let mut recv_buf = [0u8; 255];
+
+    // A registers listener for MsgType(1)
+    let req_len = wire::encode_listener(&mut req, 1).unwrap();
+    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server_a, &mut recv_buf).unwrap();
+    let listener_handle = wire::decode_response_header(&resp[..resp_len]).unwrap().handle;
+
+    // B allocates a req handle → sends a message → packet lands in buf_b
+    let req_len = wire::encode_req(&mut req, 8).unwrap();
+    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server_b, &mut recv_buf).unwrap();
+    let req_handle = wire::decode_response_header(&resp[..resp_len]).unwrap().handle;
+
+    let payload = b"hello deferred";
+    let req_len = wire::encode_send(&mut req, Some(req_handle), 1, None, None, false, payload).unwrap();
+    dispatch_mctp_op(&req[..req_len], &mut resp, &mut server_b, &mut recv_buf).unwrap();
+
+    // A calls Recv before any transfer — must park (None)
+    let req_len = wire::encode_recv(&mut req, listener_handle, 5000).unwrap();
+    let result = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server_a, &mut recv_buf);
+    assert!(result.is_none(), "expected deferred recv");
+
+    // Now deliver the packet from B to A's router
+    transfer(&buf_b, &mut server_a);
+
+    // update() must fulfil the parked recv
+    let (_, ready) = server_a.update(0, &mut recv_buf);
+    assert_eq!(ready.len(), 1);
+    match ready[0].1 {
+        RecvResult::Message(ref meta) => {
+            assert_eq!(meta.msg_type, 1);
+            assert_eq!(meta.remote_eid, 42);
+            assert_eq!(&recv_buf[..meta.payload_size], payload);
+        }
+        RecvResult::TimedOut => panic!("unexpected timeout"),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -232,14 +285,14 @@ fn dispatch_unbind_valid_handle() {
 
     // Allocate a listener handle
     let req_len = wire::encode_listener(&mut req, 1).unwrap();
-    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server, &mut recv_buf);
+    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server, &mut recv_buf).unwrap();
     let h = wire::decode_response_header(&resp[..resp_len]).unwrap();
     assert!(h.is_success());
     let listener_handle = h.handle;
 
     // Unbind it
     let req_len = wire::encode_unbind(&mut req, listener_handle).unwrap();
-    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server, &mut recv_buf);
+    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server, &mut recv_buf).unwrap();
     let header = wire::decode_response_header(&resp[..resp_len]).unwrap();
     assert!(header.is_success());
 }
@@ -257,7 +310,7 @@ fn dispatch_unbind_unknown_handle_is_idempotent() {
     let mut recv_buf = [0u8; 255];
 
     let req_len = wire::encode_unbind(&mut req, 0xDEAD_BEEF).unwrap();
-    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server, &mut recv_buf);
+    let resp_len = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server, &mut recv_buf).unwrap();
     let header = wire::decode_response_header(&resp[..resp_len]).unwrap();
     assert!(header.is_success());
 }
