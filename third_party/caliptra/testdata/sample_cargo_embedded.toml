@@ -1,0 +1,31 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "sample_embedded"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "fake.rs"
+
+[dependencies]
+# Inline table with default-features = false
+caliptra-api = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", default-features = false }
+
+# Inline table with features list
+caliptra-cfi-lib-git = { git = "https://github.com/chipsalliance/caliptra-cfi", rev = "cccccccccccccccccccccccccccccccccccccccc", default-features = false, features = ["cfi"] }
+caliptra-cfi-derive-git = { git = "https://github.com/chipsalliance/caliptra-cfi", rev = "cccccccccccccccccccccccccccccccccccccccc" }
+
+# DPE platform — uses package rename
+caliptra-dpe-platform = { package = "platform", git = "https://github.com/chipsalliance/caliptra-dpe", rev = "dddddddddddddddddddddddddddddddddddddddd", default-features = false }
+caliptra-dpe-crypto = { package = "crypto", git = "https://github.com/chipsalliance/caliptra-dpe", rev = "dddddddddddddddddddddddddddddddddddddddd", default-features = false }
+caliptra-dpe = { package = "dpe", git = "https://github.com/chipsalliance/caliptra-dpe", rev = "dddddddddddddddddddddddddddddddddddddddd", default-features = false }
+
+# Non-caliptra dep for contrast
+serde = { version = "1.0", default-features = false }
+
+# Multi-line table form
+[dependencies.caliptra-error]
+git = "https://github.com/chipsalliance/caliptra-sw"
+rev = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+default-features = false

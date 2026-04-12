@@ -40,3 +40,12 @@ common:remote_cache --remote_upload_local_results=false
 # runfiles handling with remote caching, and causes a bunch of
 # java.io.FileNotFoundException when creating runfiles trees.
 common:remote_cache --experimental_inprocess_symlink_creation=false
+
+# Force `-C embed-bitcode=yes` for every Rust compile. rules_rust defaults to
+# `embed-bitcode=no` for build speed, but `//third_party/caliptra/caliptra-sw:caliptra_rom`
+# needs `-C lto=fat` to match upstream caliptra-sw's release profile so the
+# linked ROM fits in its 96 KiB region, and `lto` is incompatible with
+# `embed-bitcode=no`. Applying this globally keeps the transitive caliptra_*
+# rlibs consistent without annotating every dep individually.
+common --@rules_rust//:extra_rustc_flags=-Cembed-bitcode=yes
+common --@rules_rust//:extra_exec_rustc_flags=-Cembed-bitcode=yes

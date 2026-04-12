@@ -1,0 +1,24 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+package(default_visibility = ["//visibility:public"])
+
+constraint_value(
+    name = "target_caliptra",
+    constraint_setting = "@pigweed//pw_kernel/target:target",
+    visibility = ["//visibility:public"],
+)
+
+platform(
+    name = "caliptra",
+    constraint_values = [
+        ":target_caliptra",
+        "@pigweed//pw_build/constraints/riscv/extensions:I",
+        "@pigweed//pw_build/constraints/riscv/extensions:M",
+        "@pigweed//pw_build/constraints/riscv/extensions:C",
+        "@pigweed//pw_build/constraints/riscv/extensions:A.not",
+        "@pigweed//pw_build/constraints/rust:no_std",
+        "@platforms//cpu:riscv32",
+        "@platforms//os:none",
+    ],
+)

@@ -15,7 +15,8 @@
       "build_type": "bazel",
       "args": [
         "--keep_going",
-        "--build_tag_filters=-hardware,-disabled"
+        "--build_tag_filters=-hardware,-disabled",
+        "--"
       ],
       "env": {},
       "driver_options": {
@@ -29,7 +30,8 @@
       "name": "wildcard_build",
       "use_config": "bazel_default_notest",
       "targets": [
-        "//..."
+        "//...",
+        "-//third_party/caliptra/..."
       ]
     },
     {
@@ -40,7 +42,8 @@
         "build_type": "bazel",
         "args": [
           "--aspects=@rules_rust//rust:defs.bzl%rust_clippy_aspect",
-          "--output_groups=clippy_checks"
+          "--output_groups=clippy_checks",
+          "--"
         ],
         "driver_options": {
           "@type": "pw.build.proto.BazelDriverOptions",
@@ -48,7 +51,8 @@
         }
       },
       "targets": [
-        "//..."
+        "//...",
+        "-//third_party/caliptra/..."
       ]
     },
     {
@@ -61,7 +65,8 @@
           "--keep_going",
           "--build_tag_filters=-hardware,-disabled,-verilator",
           "--test_tag_filters=-hardware,-disabled,-verilator",
-          "--test_output=streamed"
+          "--test_output=streamed",
+          "--"
         ],
         "driver_options": {
           "@type": "pw.build.proto.BazelDriverOptions",
@@ -69,7 +74,8 @@
         }
       },
       "targets": [
-        "//..."
+        "//...",
+        "-//third_party/caliptra/..."
       ]
     },
     {

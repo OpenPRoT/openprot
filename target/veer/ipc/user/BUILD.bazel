@@ -10,7 +10,8 @@ load("//target/veer:defs.bzl", "TARGET_COMPATIBLE_WITH")
 load("//target/veer/tooling:caliptra_runner.bzl", "caliptra_runner", "caliptra_test")
 
 APPS = [
-    "@pigweed//pw_kernel/tests/ipc/user:ipc",
+    "@pigweed//pw_kernel/tests/ipc/user:handler",
+    "@pigweed//pw_kernel/tests/ipc/user:initiator",
 ]
 
 system_image(

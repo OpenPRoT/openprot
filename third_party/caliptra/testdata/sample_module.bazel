@@ -1,0 +1,39 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+"""Sample MODULE.bazel fragment for uprev_test.py fixtures.
+
+Contains two caliptra_repos blocks and one git_override block.
+Edge case: caliptra_mcu_sw and caliptra_sw intentionally share the
+same commit SHA (aaaa...) to verify block-scoped regex correctness —
+bumping one must not touch the other.
+"""
+
+module(
+    name = "sample",
+    version = "0.1.0",
+)
+
+caliptra_repos = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+
+caliptra_repos(
+    name = "caliptra_mcu_sw",
+    build_file = "//third_party/caliptra/caliptra-mcu-sw:overlay.BUILD",
+    commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    remote = "https://github.com/chipsalliance/caliptra-mcu-sw",
+)
+
+caliptra_repos(
+    name = "caliptra_sw",
+    build_file = "//third_party/caliptra/caliptra-sw:overlay.BUILD",
+    commit = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    remote = "https://github.com/chipsalliance/caliptra-sw",
+)
+
+# ureg uses git_override (different block type)
+bazel_dep(name = "ureg")
+
+git_override(
+    module_name = "ureg",
+    commit = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    remote = "https://github.com/chipsalliance/caliptra-ureg",
+)

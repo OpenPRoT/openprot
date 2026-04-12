@@ -1,5 +1,5 @@
-# Copyright 2025 The Pigweed Authors
 # Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
 """Utility to invoke the caliptra emulator and pipe the output through the detokenizer."""
 
 import argparse
@@ -112,18 +112,19 @@ def _detokenizer(image: Path, tokenized_file: Path, finished: threading.Event):
 
 
 def load_and_run(
-    image: Path, interface: str, manifest: str, vendor_pk_hash: str,
+    image: Path,
+    interface: str,
+    manifest: str,
+    vendor_pk_hash: str,
 ) -> list[str]:
     """Prepare arguments to load an image into a board and spawn a console."""
     if interface == "emulator":
-        return [
+        cmd = [
             _EMULATOR,
             f"--rom={_MCU_ROM}",
             f"--firmware={image}",
             f"--caliptra-rom={_CPTRA_ROM}",
             f"--caliptra-firmware={_CPTRA_FIRMWARE}",
-            f"--soc-manifest={manifest}",
-            f"--vendor-pk-hash={vendor_pk_hash}",
             "--i3c-port=65534",
             "--rom-offset=0x80000000",
             "--rom-size=0x8000",
@@ -144,8 +145,12 @@ def load_and_run(
             "--otp-size=0x140",
             "--lc-offset=0x70000400",
             "--lc-size=0x8c",
-
         ]
+        if manifest and str(manifest) != "None":
+            cmd.append(f"--soc-manifest={manifest}")
+        if vendor_pk_hash and str(vendor_pk_hash) != "None":
+            cmd.append(f"--vendor-pk-hash={vendor_pk_hash}")
+        return cmd
     else:
         raise Exception("unknown mechanism", mechanism)
 
@@ -153,8 +158,7 @@ def load_and_run(
 def simple_console(cmd: list[str]):
     """Invoke for a simple (non-tokenized) console."""
     _LOG.info("Invoking mcu emulator: %s", cmd)
-    process = subprocess.run(cmd, check=False)
-    return process.returncode
+    return subprocess.run(cmd, check=False).returncode
 
 
 def tokenized_console(cmd: list[str]):
@@ -192,7 +196,10 @@ def tokenized_console(cmd: list[str]):
 
 def _main(args) -> int:
     cmd = load_and_run(
-        args.bin, args.interface, args.manifest, args.vendor_pk_hash,
+        args.bin,
+        args.interface,
+        args.manifest,
+        args.vendor_pk_hash,
     )
     # TODO(cfrantz): add support for the tokenized console.
     return_code = simple_console(cmd)

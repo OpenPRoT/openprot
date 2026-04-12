@@ -9,3 +9,8 @@ target/
 
 # Ignore external dependencies and examples
 external/
+
+# Ignore vendor-adjacent caliptra integration layer. Host-side helpers
+# (e.g. caliptra_rom_packager, caliptra_firmware_bundler) are simple CLI
+# tools that trigger false positives on rules targeting production code.
+third_party/caliptra/

@@ -1,0 +1,72 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+module(
+    name = "caliptra_deps",
+    version = "0.0.0",
+    compatibility_level = 0,
+)
+
+bazel_dep(name = "rules_rust", version = "0.68.1")
+
+crate = use_extension("@rules_rust//crate_universe:extension.bzl", "crate")
+
+# Caliptra embedded crate workspace — caliptra-domain-specific crates resolved
+# for both host (proc macros / build scripts) and embedded triples.
+crate.from_cargo(
+    name = "rust_caliptra_crates",
+    cargo_lockfile = "//crates_io/embedded:Cargo.lock",
+    manifests = ["//crates_io/embedded:Cargo.toml"],
+    supported_platform_triples = [
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin",
+        "riscv32imc-unknown-none-elf",
+    ],
+)
+crate.annotation(
+    crate = "caliptra-lms-types",
+    proc_macro_deps = ["@rust_caliptra_crates__serde_derive-1.0.228//:serde_derive"],
+    repositories = ["rust_caliptra_crates"],
+    deps = ["@rust_caliptra_crates__serde-1.0.228//:serde"],
+)
+
+# Caliptra host-only crate workspace — resolves for host triples only so
+# features like ecdsa/pem that pull in alloc do NOT leak into riscv32 builds.
+crate.from_cargo(
+    name = "rust_caliptra_crates_host",
+    cargo_lockfile = "//crates_io/host:Cargo.lock",
+    manifests = ["//crates_io/host:Cargo.toml"],
+    supported_platform_triples = [
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin",
+    ],
+)
+crate.annotation(
+    crate = "caliptra-lms-types",
+    proc_macro_deps = ["@rust_caliptra_crates_host__serde_derive-1.0.228//:serde_derive"],
+    repositories = ["rust_caliptra_crates_host"],
+    deps = ["@rust_caliptra_crates_host__serde-1.0.228//:serde"],
+)
+
+# pldm-common upstream has `mismatched_lifetime_syntaxes` occurrences that
+# trip a lint in our toolchain.
+crate.annotation(
+    crate = "pldm-common",
+    repositories = ["rust_caliptra_crates_host"],
+    rustc_flags = [
+        "-A",
+        "mismatched_lifetime_syntaxes",
+    ],
+)
+use_repo(crate, "rust_caliptra_crates", "rust_caliptra_crates_host")
+
+# Caliptra source repositories (@caliptra_sw, @caliptra_mcu_sw) are
+# declared via a module_extension in extensions.bzl in this same
+# package. The root MODULE.bazel instantiates that extension and
+# uses `use_repo(...)` to lift the repos into its label space so
+# the overlay BUILD files at //third_party/caliptra/caliptra-*:BUILD.bazel
+# can reference @caliptra_sw / @caliptra_mcu_sw directly.

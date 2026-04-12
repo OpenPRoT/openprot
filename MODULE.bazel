@@ -14,6 +14,11 @@ bazel_dep(name = "rules_rust_mdbook", version = "0.68.1")
 bazel_dep(name = "rules_platform", version = "0.1.0")
 bazel_dep(name = "rules_python", version = "1.8.3")
 bazel_dep(name = "ureg")
+bazel_dep(name = "caliptra_deps", version = "0.0.0")
+local_path_override(
+    module_name = "caliptra_deps",
+    path = "third_party/caliptra",
+)
 
 git_override(
     module_name = "pigweed",
@@ -56,7 +61,7 @@ crate.from_cargo(
         "riscv32imc-unknown-none-elf",
     ],
 )
-use_repo(crate, "rust_crates")
+use_repo(crate, "rust_caliptra_crates", "rust_caliptra_crates_host", "rust_crates")
 
 pw_rust_crates_ext = use_extension("@pigweed//pw_build:pw_rust_crates_extension.bzl", "pw_rust_crates_extension")
 
@@ -79,35 +84,29 @@ archive_override(
     url = "https://storage.googleapis.com/artifacts.opentitan.org/dev_bundle/devbundle-20260401.tar.xz",
 )
 
-bazel_dep(name = "caliptra_devbundle")
-archive_override(
-    module_name = "caliptra_devbundle",
-    integrity = "sha256-k5EobAyBQqApv/s4QsMVEaJKRptnS6Ic//eJr8F4yOw=",
-    url = "https://storage.googleapis.com/artifacts.opentitan.org/dev_bundle/experimental/cptra-dev-20260330.zip",
+# Caliptra source repositories — declared via a module_extension in
+# third_party/caliptra/extensions.bzl so the git_repository commits
+# can be driven by versions.bzl at BUILD load time. bzlmod forbids
+# `load()` in MODULE.bazel files directly, but allows it in .bzl
+# files that back module extensions — that is how CALIPTRA_VERSIONS
+# gets threaded from versions.bzl to the git_repository commits
+# here.
+#
+# A previous attempt to move these declarations via `use_repo_rule`
+# from the nested caliptra_deps module rolled back (Task 1.1 of
+# cargo_universe.md) because the repos ended up in the nested
+# module's namespace, invisible to the overlay BUILD files at
+# //third_party/caliptra/caliptra-*:overlay.BUILD. The module
+# extension pattern sidesteps that trap: `use_repo` below lifts the
+# extension's repos into the root module's namespace, so every
+# downstream target sees @caliptra_sw / @caliptra_mcu_sw exactly as
+# they did when the declarations were inline.
+caliptra_repos_ext = use_extension(
+    "//third_party/caliptra:extensions.bzl",
+    "caliptra_repos",
 )
+use_repo(caliptra_repos_ext, "caliptra_mcu_sw", "caliptra_sw")
 
-caliptra_repos = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
-
-caliptra_repos(
-    name = "caliptra_mcu_sw",
-    build_file = "//third_party/caliptra:caliptra_mcu_sw.BUILD",
-    commit = "b7e45fc139620754e8d32e70d6cc90845d1756df",
-    remote = "https://github.com/chipsalliance/caliptra-mcu-sw",
-)
-
-caliptra_repos(
-    name = "caliptra_sw",
-    build_file = "//third_party/caliptra:caliptra_sw.BUILD",
-    commit = "2fe38a094bd06188714ff7c040252bc3059d9699",
-    remote = "https://github.com/chipsalliance/caliptra-sw",
-)
-
-caliptra_repos(
-    name = "caliptra_ss",
-    build_file = "//third_party/caliptra:caliptra_ss.BUILD",
-    commit = "9022fc2a57bb9af2f3ebc2376b98a807812e2e0f",
-    remote = "https://github.com/chipsalliance/caliptra-ss",
-)
 nonhermetic_repo = use_repo_rule("//target/earlgrey/tooling/signing:nonhermetic.bzl", "nonhermetic_repo")
 
 nonhermetic_repo(name = "nonhermetic")

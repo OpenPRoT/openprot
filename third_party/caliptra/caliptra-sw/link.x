@@ -1,0 +1,97 @@
+/*
+ * Licensed under the Apache-2.0 license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* Caliptra FMC/Runtime link script */
+
+SECTIONS
+{
+    .text : ALIGN(4)
+    {
+        _stext = .;
+        KEEP(*(.init .init.*));
+        *(.text .text.*);
+        KEEP(*(.vectors))
+        . = ALIGN(4);
+        _etext = .;
+    } > REGION_TEXT
+
+    .rodata : ALIGN(4)
+    {
+        _srodata = .;
+        *(.srodata .srodata.*);
+        *(.rodata .rodata.*);
+        . = ALIGN(4);
+        _erodata = .;
+    } > REGION_RODATA
+
+    .data : AT (_erodata) ALIGN(4)
+    {
+        _sidata = LOADADDR(.data);
+        _sdata = .;
+        PROVIDE(__global_pointer$ = . + 0x800);
+        *(.sdata .sdata.* .sdata2 .sdata2.*);
+        *(.data .data.*);
+        . = ALIGN(4);
+        _edata = .;
+    } > REGION_DATA
+
+    .bss (NOLOAD) : ALIGN(4)
+    {
+        _sbss = .;
+        *(.bss*)
+        *(.sbss*)
+        *(COMMON)
+        . = ALIGN(4);
+        _ebss = .;
+    } > REGION_BSS
+
+    .stack (NOLOAD): ALIGN(4)
+    {
+        _estack = .;
+        . = . + STACK_SIZE;
+        . = ALIGN(4);
+        _sstack = .;
+    } > REGION_STACK
+
+    .estack (NOLOAD): ALIGN(4)
+    {
+        _eestack = .;
+        . = . + ESTACK_SIZE;
+        . = ALIGN(4);
+        _sestack = .;
+    } > REGION_ESTACK
+
+    .nstack (NOLOAD): ALIGN(4)
+    {
+        _enstack = .;
+        . = . + NSTACK_SIZE;
+        . = ALIGN(4);
+        _snstack = .;
+    } > REGION_NSTACK
+
+    .got (INFO) :
+    {
+        KEEP(*(.got .got.*));
+    }
+
+    .eh_frame (INFO) :
+    {
+        KEEP(*(.eh_frame))
+    }
+
+    .eh_frame_hdr (INFO) :
+    {
+        *(.eh_frame_hdr)
+    }
+}
+
+_bss_len  = SIZEOF(.bss);
+_data_len = SIZEOF(.data);
+
+ASSERT(SIZEOF(.got) == 0, ".got section detected");
+ASSERT(SIZEOF(.bss) == 0, ".bss section detected");
+ASSERT(SIZEOF(.stack) == STACK_SIZE, ".stack section overflow");
+ASSERT(SIZEOF(.estack) == ESTACK_SIZE, ".estack section overflow");
+ASSERT(SIZEOF(.nstack) == NSTACK_SIZE, ".nstack section overflow");

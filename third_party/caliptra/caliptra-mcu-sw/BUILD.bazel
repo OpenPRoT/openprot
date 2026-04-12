@@ -1,0 +1,393 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+load(
+    "//third_party/caliptra:caliptra_build.bzl",
+    "caliptra_linker_script",
+    "caliptra_objcopy",
+)
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "emulator_registers_generated",
+    srcs = ["@caliptra_mcu_sw//:emulator_registers_generated_srcs"],
+    crate_root = "@caliptra_mcu_sw//:registers/generated-emulator/src/lib.rs",
+    edition = "2021",
+    deps = [
+        "//third_party/caliptra:crate_tock-registers",
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_bus",
+        "@rust_caliptra_crates_host//:caliptra-emu-types",
+        "@rust_caliptra_crates_host//:registers-generated",
+    ],
+)
+
+rust_library(
+    name = "emulator_bmc",
+    srcs = ["@caliptra_mcu_sw//:emulator_bmc_srcs"],
+    crate_root = "@caliptra_mcu_sw//:emulator/bmc/src/lib.rs",
+    edition = "2021",
+    deps = [
+        "//third_party/caliptra:crate_log",
+        "//third_party/caliptra:crate_serde",
+        "//third_party/caliptra:crate_smlang",
+        "//third_party/caliptra:crate_tock-registers",
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_bus",
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_periph",
+        "@rust_caliptra_crates_host//:anyhow",
+    ],
+)
+
+rust_library(
+    name = "emulator_caliptra",
+    srcs = ["@caliptra_mcu_sw//:emulator_caliptra_srcs"],
+    crate_root = "@caliptra_mcu_sw//:emulator/caliptra/src/lib.rs",
+    edition = "2021",
+    deps = [
+        "//third_party/caliptra:crate_tock-registers",
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_bus",
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_cpu",
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_periph",
+        "@rust_caliptra_crates//:caliptra-api-types",
+        "@rust_caliptra_crates//:caliptra-registers",
+        "@rust_caliptra_crates_host//:caliptra-emu-types",
+    ],
+)
+
+rust_library(
+    name = "emulator_consts",
+    srcs = ["@caliptra_mcu_sw//:all_files"],
+    crate_root = "@caliptra_mcu_sw//:emulator/consts/src/lib.rs",
+    edition = "2021",
+    deps = [
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_cpu",
+    ],
+)
+
+rust_library(
+    name = "emulator_periph",
+    srcs = ["@caliptra_mcu_sw//:emulator_periph_srcs"],
+    crate_root = "@caliptra_mcu_sw//:emulator/periph/src/lib.rs",
+    edition = "2021",
+    deps = [
+        ":emulator_caliptra",
+        ":emulator_consts",
+        ":emulator_registers_generated",
+        ":mcu_testing_common",
+        "//third_party/caliptra:crate_serde",
+        "//third_party/caliptra:crate_tock-registers",
+        "//third_party/caliptra:crate_zerocopy",
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_bus",
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_cpu",
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_periph",
+        "@rust_caliptra_crates//:caliptra-registers",
+        "@rust_caliptra_crates_host//:caliptra-emu-types",
+        "@rust_caliptra_crates_host//:caliptra-image-types",
+        "@rust_caliptra_crates_host//:registers-generated",
+        "@rust_caliptra_crates_host//:semver",
+        "@rust_caliptra_crates_host//:serde_json",
+    ],
+)
+
+rust_library(
+    name = "emulator_mcu_mbox",
+    srcs = ["@caliptra_mcu_sw//:all_files"],
+    crate_root = "@caliptra_mcu_sw//:emulator/app/mcu-mbox/src/lib.rs",
+    edition = "2021",
+    deps = [
+        ":emulator_consts",
+        ":emulator_periph",
+        "//third_party/caliptra:crate_tock-registers",
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_bus",
+        "@rust_caliptra_crates_host//:caliptra-emu-types",
+        "@rust_caliptra_crates_host//:registers-generated",
+    ],
+)
+
+rust_library(
+    name = "caliptra_mailbox_server",
+    srcs = ["@caliptra_mcu_sw//:all_files"],
+    crate_root = "@caliptra_mcu_sw//:caliptra-util-host/apps/mailbox/server/src/lib.rs",
+    edition = "2021",
+    deps = [
+        "//third_party/caliptra:crate_tock-registers",
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_bus",
+        "@rust_caliptra_crates//:caliptra-registers",
+        "@rust_caliptra_crates_host//:anyhow",
+        "@rust_caliptra_crates_host//:caliptra-emu-types",
+        "@rust_caliptra_crates_host//:caliptra-util-host-mailbox-test-config",
+    ],
+)
+
+rust_library(
+    name = "emulator_lib",
+    srcs = ["@caliptra_mcu_sw//:emulator_srcs"],
+    crate_root = "@caliptra_mcu_sw//:emulator/app/src/lib.rs",
+    edition = "2021",
+    proc_macro_deps = [
+        "@rust_caliptra_crates_host//:strum_macros",
+    ],
+    rustc_flags = [
+        "-A",
+        "mismatched_lifetime_syntaxes",
+    ],
+    deps = [
+        ":caliptra_mailbox_server",
+        ":emulator_bmc",
+        ":emulator_caliptra",
+        ":emulator_consts",
+        ":emulator_mcu_mbox",
+        ":emulator_periph",
+        ":emulator_registers_generated",
+        ":mcu_testing_common",
+        "//third_party/caliptra:crate_bitfield",
+        "//third_party/caliptra:crate_log",
+        "//third_party/caliptra:crate_smlang",
+        "//third_party/caliptra:crate_tock-registers",
+        "//third_party/caliptra:crate_zerocopy",
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_bus",
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_cpu",
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_periph",
+        "@rust_caliptra_crates//:caliptra-api-types",
+        "@rust_caliptra_crates//:caliptra-registers",
+        "@rust_caliptra_crates_host//:anyhow",
+        "@rust_caliptra_crates_host//:caliptra-emu-types",
+        "@rust_caliptra_crates_host//:caliptra-image-types",
+        "@rust_caliptra_crates_host//:caliptra-util-host-mailbox-test-config",
+        "@rust_caliptra_crates_host//:chrono",
+        "@rust_caliptra_crates_host//:clap",
+        "@rust_caliptra_crates_host//:clap-num",
+        "@rust_caliptra_crates_host//:crc",
+        "@rust_caliptra_crates_host//:crossterm",
+        "@rust_caliptra_crates_host//:ctrlc",
+        "@rust_caliptra_crates_host//:ecdsa",
+        "@rust_caliptra_crates_host//:elf",
+        "@rust_caliptra_crates_host//:gdbstub",
+        "@rust_caliptra_crates_host//:gdbstub_arch",
+        "@rust_caliptra_crates_host//:hex",
+        "@rust_caliptra_crates_host//:lazy_static",
+        "@rust_caliptra_crates_host//:p384",
+        "@rust_caliptra_crates_host//:pldm-common",
+        "@rust_caliptra_crates_host//:pldm-fw-pkg",
+        "@rust_caliptra_crates_host//:pldm-ua",
+        "@rust_caliptra_crates_host//:rand",
+        "@rust_caliptra_crates_host//:registers-generated",
+        "@rust_caliptra_crates_host//:sec1",
+        "@rust_caliptra_crates_host//:semver",
+        "@rust_caliptra_crates_host//:sha2",
+        "@rust_caliptra_crates_host//:simple_logger",
+        "@rust_caliptra_crates_host//:strum",
+        "@rust_caliptra_crates_host//:tempfile",
+        "@rust_caliptra_crates_host//:uuid",
+    ],
+)
+
+# Emulator host binary
+rust_binary(
+    name = "emulator",
+    srcs = ["@caliptra_mcu_sw//:emulator_srcs"],
+    aliases = {
+        ":emulator_lib": "emulator",
+    },
+    crate_root = "@caliptra_mcu_sw//:emulator/app/src/main.rs",
+    edition = "2021",
+    deps = [
+        ":emulator_lib",
+        ":mcu_testing_common",
+        "//third_party/caliptra:crate_log",
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_cpu",
+        "@rust_caliptra_crates_host//:clap",
+        "@rust_caliptra_crates_host//:ctrlc",
+        "@rust_caliptra_crates_host//:simple_logger",
+    ],
+)
+
+rust_library(
+    name = "romtime",
+    srcs = ["@caliptra_mcu_sw//:all_files"],
+    crate_root = "@caliptra_mcu_sw//:romtime/src/lib.rs",
+    edition = "2021",
+    rustc_flags = ["--cap-lints=allow"],
+    deps = [
+        "//third_party/caliptra:crate_registers-generated",
+        "//third_party/caliptra:crate_tock-registers",
+        "//third_party/caliptra:crate_zerocopy",
+        "@rust_caliptra_crates//:caliptra-api",
+        "@rust_caliptra_crates//:caliptra-registers",
+        "@rust_caliptra_crates//:riscv-csr",
+        "@rust_caliptra_crates//:ureg",
+    ],
+)
+
+rust_library(
+    name = "mcu_testing_common",
+    srcs = ["@caliptra_mcu_sw//:all_files"],
+    crate_root = "@caliptra_mcu_sw//:common/testing/src/lib.rs",
+    edition = "2021",
+    deps = [
+        "//third_party/caliptra:crate_bitfield",
+        "//third_party/caliptra:crate_zerocopy",
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_bus",
+        "@rust_caliptra_crates//:caliptra-api-types",
+        "@rust_caliptra_crates_host//:anyhow",
+        "@rust_caliptra_crates_host//:caliptra-emu-types",
+        "@rust_caliptra_crates_host//:crc",
+        "@rust_caliptra_crates_host//:mctp-vdm-common",
+        "@rust_caliptra_crates_host//:pldm-common",
+        "@rust_caliptra_crates_host//:pldm-ua",
+    ],
+)
+
+# NOTE: This target has unresolved upstream deps (caliptra_image_fake_keys, Crypto type, etc.)
+# and is not currently used by any build path.
+rust_library(
+    name = "mcu_builder",
+    srcs = ["@caliptra_mcu_sw//:builder_srcs"],
+    crate_root = "@caliptra_mcu_sw//:builder/src/lib.rs",
+    edition = "2021",
+    tags = ["manual"],
+    deps = [
+        "//third_party/caliptra:crate_log",
+        "//third_party/caliptra/caliptra-sw:caliptra_builder",
+        "//third_party/caliptra/caliptra-sw:caliptra_image_crypto",
+        "//third_party/caliptra/caliptra-sw:caliptra_image_fake_keys",
+        "//third_party/caliptra/caliptra-sw:caliptra_image_gen",
+        "@rust_caliptra_crates//:caliptra-api-types",
+        "@rust_caliptra_crates_host//:anyhow",
+        "@rust_caliptra_crates_host//:elf",
+        "@rust_caliptra_crates_host//:flash-image",
+        "@rust_caliptra_crates_host//:hex",
+        "@rust_caliptra_crates_host//:mcu-config",
+        "@rust_caliptra_crates_host//:mcu-config-emulator",
+        "@rust_caliptra_crates_host//:mcu-config-fpga",
+    ],
+)
+
+# Signer / Firmware Bundler host binary with auth-manifest support
+rust_binary(
+    name = "signer",
+    srcs = ["src/signer_main.rs"],
+    aliases = {
+        "@rust_caliptra_crates_host//:mcu-firmware-bundler": "firmware_bundler",
+    },
+    edition = "2021",
+    deps = [
+        "//third_party/caliptra:crate_zerocopy",
+        "//third_party/caliptra/caliptra-sw:caliptra_auth_man_gen",
+        "//third_party/caliptra/caliptra-sw:caliptra_image_crypto",
+        "//third_party/caliptra/caliptra-sw:caliptra_image_fake_keys",
+        "//third_party/caliptra/caliptra-sw:caliptra_image_gen",
+        "@rust_caliptra_crates_host//:anyhow",
+        "@rust_caliptra_crates_host//:caliptra-auth-man-types",
+        "@rust_caliptra_crates_host//:caliptra-image-types",
+        "@rust_caliptra_crates_host//:clap",
+        "@rust_caliptra_crates_host//:mcu-firmware-bundler",
+    ],
+)
+
+rust_library(
+    name = "mcu_rom_common",
+    srcs = ["@caliptra_mcu_sw//:rom_srcs"],
+    crate_root = "@caliptra_mcu_sw//:rom/src/lib.rs",
+    edition = "2021",
+    deps = [
+        ":romtime",
+        "//third_party/caliptra:crate_bitfield",
+        "//third_party/caliptra:crate_bitflags",
+        "//third_party/caliptra:crate_smlang",
+        "//third_party/caliptra:crate_tock-registers",
+        "//third_party/caliptra:crate_zerocopy",
+        "//third_party/caliptra:crate_zeroize",
+        "//third_party/caliptra/caliptra-sw:caliptra_drivers",
+        "@rust_caliptra_crates//:caliptra-api",
+        "@rust_caliptra_crates//:caliptra-api-types",
+        "@rust_caliptra_crates//:constant_time_eq",
+        "@rust_caliptra_crates//:flash-image",
+        "@rust_caliptra_crates//:mcu-config",
+        "@rust_caliptra_crates//:mcu-error",
+        "@rust_caliptra_crates//:registers-generated",
+        "@rust_caliptra_crates//:ureg",
+    ],
+)
+
+# MCU ROM linker script generator
+rust_binary(
+    name = "generate_rom_ld",
+    srcs = ["src/generate_rom_ld.rs"],
+    edition = "2021",
+    deps = [
+        "@rust_caliptra_crates_host//:mcu-config-emulator",
+        "@rust_caliptra_crates_host//:subst",
+    ],
+)
+
+caliptra_linker_script(
+    name = "emulator_rom_layout",
+    out = "emulator-rom-layout.ld",
+    generator = ":generate_rom_ld",
+)
+
+# NOTE: This target requires the caliptra RISC-V platform transition to build.
+# Build via //target/veer/tooling:mcu_rom_bin_transitioned instead of directly.
+rust_binary(
+    name = "mcu_rom",
+    srcs = ["@caliptra_mcu_sw//:all_files"],
+    compile_data = [":emulator-rom-layout.ld"],
+    crate_root = "@caliptra_mcu_sw//:platforms/emulator/rom/src/main.rs",
+    edition = "2021",
+    rustc_flags = [
+        "-A",
+        "dead_code",
+        "-C",
+        "link-arg=-T$(location :emulator-rom-layout.ld)",
+        "--cap-lints=allow",
+        "--cfg",
+        'target_arch="riscv32"',
+        "-C",
+        "panic=abort",
+        "-C",
+        "target-feature=+relax,+zba,+zbb,+zbc,+zbs",
+        "-C",
+        "force-frame-pointers=no",
+        "-C",
+        "relocation-model=static",
+        "-C",
+        "symbol-mangling-version=v0",
+        "-C",
+        "link-arg=-Wl,-nmagic",
+        "-C",
+        "link-arg=-Wl,--icf=all",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":mcu_rom_common",
+        ":romtime",
+        "//third_party/caliptra:crate_bitfield",
+        "//third_party/caliptra:crate_smlang",
+        "//third_party/caliptra:crate_tock-registers",
+        "//third_party/caliptra:crate_zerocopy",
+        "//third_party/caliptra:crate_zeroize",
+        "//third_party/caliptra/caliptra-sw:caliptra_drivers",
+        "@rust_caliptra_crates//:caliptra-api",
+        "@rust_caliptra_crates//:caliptra-api-types",
+        "@rust_caliptra_crates//:mcu-config",
+        "@rust_caliptra_crates//:mcu-config-emulator",
+        "@rust_caliptra_crates//:mcu-error",
+        "@rust_caliptra_crates//:mcu-image-header",
+        "@rust_caliptra_crates//:panic-halt",
+        "@rust_caliptra_crates//:registers-generated",
+        "@rust_caliptra_crates//:rv32i",
+        "@rust_caliptra_crates//:ureg",
+    ],
+)
+
+caliptra_objcopy(
+    name = "mcu_rom_bin",
+    src = ":mcu_rom",
+    out = "mcu_rom.bin",
+    tags = [
+        "manual",
+        "no-sandbox",
+    ],
+)

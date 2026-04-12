@@ -1,0 +1,85 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+#
+# Caliptra embedded crate workspace for crate_universe.
+# These are caliptra-domain-specific crates used by embedded targets
+# (riscv32imc-unknown-none-elf). No alloc-requiring features.
+
+[package]
+name = "rust_caliptra_crates"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[lib]
+path = "fake.rs"
+
+[dependencies]
+# Caliptra embedded crates
+caliptra-api = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "2fe38a094bd06188714ff7c040252bc3059d9699", default-features = false }
+caliptra-api-types = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "2fe38a094bd06188714ff7c040252bc3059d9699", default-features = false }
+caliptra-error = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "2fe38a094bd06188714ff7c040252bc3059d9699", default-features = false }
+caliptra-image-types = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "2fe38a094bd06188714ff7c040252bc3059d9699", default-features = false }
+caliptra-okref = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "2fe38a094bd06188714ff7c040252bc3059d9699", default-features = false }
+caliptra-lms-types = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "2fe38a094bd06188714ff7c040252bc3059d9699", default-features = false }
+caliptra-auth-man-types = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "2fe38a094bd06188714ff7c040252bc3059d9699", default-features = false }
+caliptra-registers = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "2fe38a094bd06188714ff7c040252bc3059d9699", default-features = false }
+ureg = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "2fe38a094bd06188714ff7c040252bc3059d9699", default-features = false }
+caliptra-x509 = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "2fe38a094bd06188714ff7c040252bc3059d9699", default-features = false }
+caliptra-cfi-derive = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "2fe38a094bd06188714ff7c040252bc3059d9699", default-features = false }
+caliptra-cfi-lib-git = { git = "https://github.com/chipsalliance/caliptra-cfi", rev = "a98e499d279e81ae85881991b1e9eee354151189", default-features = false, features = ["cfi", "cfi-counter"] }
+caliptra-cfi-derive-git = { git = "https://github.com/chipsalliance/caliptra-cfi", rev = "a98e499d279e81ae85881991b1e9eee354151189" }
+caliptra-dpe-platform = { package = "platform", git = "https://github.com/chipsalliance/caliptra-dpe", rev = "f56f66ef4ada62bd99b5670c8384dc2e97e04e94", default-features = false, features = ["dpe_profile_p384_sha384"] }
+caliptra-dpe-crypto = { package = "crypto", git = "https://github.com/chipsalliance/caliptra-dpe", rev = "f56f66ef4ada62bd99b5670c8384dc2e97e04e94", default-features = false }
+caliptra-dpe = { package = "dpe", git = "https://github.com/chipsalliance/caliptra-dpe", rev = "f56f66ef4ada62bd99b5670c8384dc2e97e04e94", default-features = false, features = ["dpe_profile_p384_sha384"] }
+
+# MCU embedded crates
+mcu-error = { git = "https://github.com/chipsalliance/caliptra-mcu-sw", rev = "b7e45fc139620754e8d32e70d6cc90845d1756df", default-features = false }
+romtime = { git = "https://github.com/chipsalliance/caliptra-mcu-sw", rev = "b7e45fc139620754e8d32e70d6cc90845d1756df", default-features = false }
+registers-generated = { git = "https://github.com/chipsalliance/caliptra-mcu-sw", rev = "b7e45fc139620754e8d32e70d6cc90845d1756df", default-features = false }
+mcu-config = { git = "https://github.com/chipsalliance/caliptra-mcu-sw", rev = "b7e45fc139620754e8d32e70d6cc90845d1756df", default-features = false }
+mcu-config-emulator = { git = "https://github.com/chipsalliance/caliptra-mcu-sw", rev = "b7e45fc139620754e8d32e70d6cc90845d1756df", default-features = false }
+mcu-image-header = { git = "https://github.com/chipsalliance/caliptra-mcu-sw", rev = "b7e45fc139620754e8d32e70d6cc90845d1756df", default-features = false }
+flash-image = { git = "https://github.com/chipsalliance/caliptra-mcu-sw", rev = "b7e45fc139620754e8d32e70d6cc90845d1756df", default-features = false }
+
+# Caliptra-only utility crates
+arrayvec = { version = "0.7.6", default-features = false }
+constant_time_eq = { version = "0.4.2", default-features = false }
+panic-halt = "1.0.0"
+riscv-csr = { git = "https://github.com/tock/tock.git", rev = "release-2.2" }
+rv32i = { git = "https://github.com/tock/tock.git", rev = "release-2.2" }
+ufmt = "0.2.0"
+# Shared crates needed for type compatibility and platform-switching aliases
+bitfield = "0.14.0"
+bitfield-struct = "0.11.0"
+bitflags = "2.9.1"
+cfg-if = "1.0.0"
+embedded-io = "0.6.1"
+log = "0.4.26"
+memoffset = "0.9.1"
+paste = "1.0.15"
+proc-macro2 = "1.0.104"
+quote = "1.0.38"
+riscv = "0.12.1"
+serde = { version = "1.0.219", default-features = false, features = ["derive"] }
+smlang = { version = "0.8.0", default-features = false }
+serde_derive = "1.0.228"
+syn = { version = "2.0.104", features = ["full", "extra-traits"] }
+syn1 = { package = "syn", version = "1.0.109", features = ["full", "extra-traits"] }
+tock-registers = "0.9.0"
+zerocopy = { version = "0.8.48", default-features = false, features = ["derive"] }
+zeroize = { version = "1.8", default-features = false, features = ["derive"] }
+
+# No [patch] section needed — deps already point to the upstream GitHub rev.
+# The Bazel git_repository rules handle local source.
+
+[patch.crates-io]
+# Tock patches
+tock-registers = { git = "https://github.com/tock/tock.git", rev = "release-2.2" }
+riscv-csr = { git = "https://github.com/tock/tock.git", rev = "release-2.2" }
+rv32i = { git = "https://github.com/tock/tock.git", rev = "release-2.2" }
+
+# ufmt patch
+ufmt = { git = "https://github.com/korran/ufmt.git", rev = "1d0743c1ffffc68bc05ca8eeb81c166192863f33", features = ["inline"] }
+ufmt-write = { git = "https://github.com/korran/ufmt.git", rev = "1d0743c1ffffc68bc05ca8eeb81c166192863f33" }
+ufmt-macros = { git = "https://github.com/korran/ufmt.git", rev = "1d0743c1ffffc68bc05ca8eeb81c166192863f33" }

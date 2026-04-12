@@ -1,0 +1,73 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//third_party/caliptra:versions.bzl", "CALIPTRA_VERSIONS")
+
+# Shared configuration for all caliptra sub-packages.
+# Per-repo targets live in caliptra-sw/ and caliptra-mcu-sw/ subdirectories.
+#
+# Uprev workflow:
+#   bazel run //third_party/caliptra:uprev -- bump <new-mcu-sw-sha>
+#   bazel run //third_party/caliptra:uprev -- verify
+
+package(default_visibility = ["//visibility:public"])
+
+config_setting(
+    name = "is_riscv32imc",
+    constraint_values = [
+        "@platforms//cpu:riscv32",
+        "@platforms//os:none",
+    ],
+)
+
+# Platform-switching aliases: embedded targets use @rust_caliptra_crates (no alloc
+# leak), host targets use @rust_caliptra_crates_host (with std features for serde,
+# zerocopy, etc.).  This avoids type boundary mismatches when shared caliptra
+# targets are used by both embedded and host builds.
+[
+    alias(
+        name = "crate_" + crate_name,
+        actual = select({
+            ":is_riscv32imc": "@rust_caliptra_crates//:" + crate_name,
+            "//conditions:default": "@rust_caliptra_crates_host//:" + crate_name,
+        }),
+    )
+    for crate_name in [
+        "bitfield",
+        "bitflags",
+        "cfg-if",
+        "log",
+        "memoffset",
+        "registers-generated",
+        "serde",
+        "serde_derive",
+        "smlang",
+        "tock-registers",
+        "zerocopy",
+        "zeroize",
+    ]
+]
+
+py_library(
+    name = "uprev_lib",
+    srcs = ["uprev.py"],
+    visibility = ["//visibility:private"],
+)
+
+py_binary(
+    name = "uprev",
+    srcs = ["uprev.py"],
+    args = ["--versions-json='" + json.encode(CALIPTRA_VERSIONS) + "'"],
+    main = "uprev.py",
+    python_version = "PY3",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "uprev_test",
+    srcs = ["uprev_test.py"],
+    data = glob(["testdata/**"]),
+    deps = [":uprev_lib"],
+)

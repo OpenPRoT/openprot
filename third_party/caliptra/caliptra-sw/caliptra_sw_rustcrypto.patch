@@ -1,0 +1,6 @@
+--- image/crypto/Cargo.toml
++++ image/crypto/Cargo.toml
+@@ -25,2 +25,2 @@
+ [features]
+-default = ["openssl"]
++default = ["rustcrypto"]

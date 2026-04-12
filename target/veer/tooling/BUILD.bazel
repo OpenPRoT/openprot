@@ -3,31 +3,49 @@
 
 load("@pigweed//pw_build:pw_py_importable_runfile.bzl", "pw_py_importable_runfile")
 load("@rules_python//python:defs.bzl", "py_binary")
+load(":caliptra_runner.bzl", "mcu_rom_wrapper")
+
+mcu_rom_wrapper(
+    name = "caliptra_rom_transitioned",
+    target = "//third_party/caliptra/caliptra-sw:caliptra_rom_bin",
+    visibility = ["//target/veer:__subpackages__"],
+)
 
 pw_py_importable_runfile(
     name = "emulator-cptra-rom-runfiles",
-    src = "@caliptra_devbundle//:emulator/cptra-rom.bin",
+    src = ":caliptra_rom_transitioned",
     executable = False,
     import_location = "caliptra.emulator_cptra_rom",
 )
 
+mcu_rom_wrapper(
+    name = "caliptra_firmware_bin_transitioned",
+    target = "//third_party/caliptra/caliptra-sw:caliptra_firmware_bin",
+    visibility = ["//target/veer:__subpackages__"],
+)
+
 pw_py_importable_runfile(
     name = "emulator-cptra-firmware-runfiles",
-    src = "@caliptra_devbundle//:emulator/cptra-firmware.bin",
+    src = ":caliptra_firmware_bin_transitioned",
     executable = False,
     import_location = "caliptra.emulator_cptra_firmware",
 )
 
+mcu_rom_wrapper(
+    name = "mcu_rom_bin_transitioned",
+    target = "//third_party/caliptra/caliptra-mcu-sw:mcu_rom_bin",
+)
+
 pw_py_importable_runfile(
     name = "emulator-mcu-rom-runfiles",
-    src = "//third_party/caliptra:mcu_rom_bin",
+    src = ":mcu_rom_bin_transitioned",
     executable = False,
     import_location = "caliptra.emulator_mcu_rom",
 )
 
 pw_py_importable_runfile(
     name = "emulator-exe-runfiles",
-    src = "@caliptra_devbundle//:tools/emulator",
+    src = "//third_party/caliptra/caliptra-mcu-sw:emulator",
     executable = True,
     import_location = "caliptra.emulator_exe",
 )

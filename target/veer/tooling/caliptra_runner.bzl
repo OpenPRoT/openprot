@@ -19,6 +19,15 @@ _target_type_transition = transition(
     outputs = ["//target/veer:target_type"],
 )
 
+def _mcu_rom_transition_impl(settings, attr):
+    return {"//command_line_option:platforms": ["//third_party/caliptra/platforms:caliptra"]}
+
+_mcu_rom_transition = transition(
+    implementation = _mcu_rom_transition_impl,
+    inputs = [],
+    outputs = ["//command_line_option:platforms"],
+)
+
 def _caliptra_runner_impl(ctx):
     system_image_info = ctx.attr.target[0][SystemImageInfo]
     bin_file = system_image_info.bin
@@ -77,6 +86,16 @@ def _caliptra_runner_impl(ctx):
     )]
 
 _BASE_ATTRS = {
+    "caliptra_firmware": attr.label(
+        allow_single_file = True,
+        default = "//target/veer/tooling:caliptra_firmware_bin_transitioned",
+        doc = "caliptra firmware",
+    ),
+    "caliptra_rom": attr.label(
+        allow_single_file = True,
+        default = "//target/veer/tooling:caliptra_rom_transitioned",
+        doc = "caliptra ROM",
+    ),
     "interface": attr.string(
         doc = "The interface to use.",
         mandatory = True,
@@ -87,6 +106,10 @@ _BASE_ATTRS = {
         providers = [SystemImageInfo],
         cfg = _target_type_transition,
     ),
+    "vendor_pk_hash": attr.string(
+        default = "b17ca877666657ccd100e6926c7206b60c995cb68992c6c9baefce728af05441dee1ff415adfc187e1e4edb4d3b2d909",
+        doc = "SHA384 of vendor public key",
+    ),
     "_caliptra_runner": attr.label(
         executable = True,
         cfg = "exec",
@@ -96,22 +119,8 @@ _BASE_ATTRS = {
         executable = True,
         allow_single_file = True,
         cfg = "exec",
-        default = "@caliptra_devbundle//:tools/signer",
+        default = "//third_party/caliptra/caliptra-mcu-sw:signer",
         doc = "caliptra signer",
-    ),
-    "caliptra_rom": attr.label(
-        allow_single_file = True,
-        default = "@caliptra_devbundle//:emulator/cptra-rom.bin",
-        doc = "caliptra ROM",
-    ),
-    "caliptra_firmware": attr.label(
-        allow_single_file = True,
-        default = "@caliptra_devbundle//:emulator/cptra-firmware.bin",
-        doc = "caliptra firmware",
-    ),
-    "vendor_pk_hash": attr.string(
-        default = "b17ca877666657ccd100e6926c7206b60c995cb68992c6c9baefce728af05441dee1ff415adfc187e1e4edb4d3b2d909",
-        doc = "SHA384 of vendor public key",
     ),
 }
 
@@ -125,4 +134,18 @@ caliptra_test = rule(
     implementation = _caliptra_runner_impl,
     test = True,
     attrs = _BASE_ATTRS,
+)
+
+def _mcu_rom_wrapper_impl(ctx):
+    files = ctx.attr.target[0][DefaultInfo].files.to_list()
+    return [DefaultInfo(files = depset(files))]
+
+mcu_rom_wrapper = rule(
+    implementation = _mcu_rom_wrapper_impl,
+    attrs = {
+        "target": attr.label(cfg = _mcu_rom_transition),
+        "_allowlist_function_transition": attr.label(
+            default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
+        ),
+    },
 )
