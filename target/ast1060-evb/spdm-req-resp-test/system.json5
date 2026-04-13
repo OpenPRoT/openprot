@@ -1,0 +1,122 @@
+// Licensed under the Apache-2.0 license
+
+// AST1060-EVB SPDM Requester-Responder Test Configuration
+// ARM Cortex-M4F with UART console
+//
+// Three-process system for testing SPDM requester/responder communication:
+//   1. mctp_loopback_server  - Routes MCTP messages between requester and responder
+//   2. spdm_requester        - SPDM requester using spdm-lib requester API
+//   3. spdm_responder        - SPDM responder using spdm-lib responder API
+//
+// Memory Layout (PMSAv7-friendly, power-of-2 aligned regions):
+//   0x00000000 - 0x00000500: Vector table + kernel annotations (1280 bytes)
+//   0x00000500 - 0x00020000: Kernel flash (~127KB)
+//   0x00020000 - 0x00028000: mctp_loopback_server flash (32KB)
+//   0x00028000 - 0x00040000: spdm_requester flash (96KB)
+//   0x00040000 - 0x00058000: spdm_responder flash (96KB)
+//   0x00058000 - 0x00070000: Kernel RAM (96KB)
+//   0x00070000 - 0x00078000: mctp_loopback_server RAM (32KB)
+//   0x00078000 - 0x00090000: spdm_requester RAM (96KB)
+//   0x00090000 - 0x000A0000: spdm_responder RAM (64KB)
+//
+// Total: 0xA0000 = 640KB (fits within the 640KB usable window of the AST1060's 768KB SRAM).
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,
+    },
+    kernel: {
+        flash_start_address: 0x00000500,
+        flash_size_bytes: 129792,         // ~127KB, ends at 0x20000
+        ram_start_address: 0x00058000,
+        ram_size_bytes: 98304,            // 96KB
+    },
+    apps: [
+        // ──── MCTP Loopback Server ────
+        // Routes MCTP messages between requester and responder via in-memory
+        // loopback. Has two IPC channel handlers (one per client) and a
+        // wait_group for event multiplexing.
+        {
+            name: "mctp_loopback_server",
+            flash_size_bytes: 32768,      // 32KB for server code
+            ram_size_bytes: 32768,        // 32KB RAM (two Server instances + buffers)
+            process: {
+                name: "mctp loopback server process",
+                objects: [
+                    {
+                        // IPC channel for the SPDM requester client
+                        name: "MCTP_REQ",
+                        type: "channel_handler",
+                    },
+                    {
+                        // IPC channel for the SPDM responder client
+                        name: "MCTP_RESP",
+                        type: "channel_handler",
+                    },
+                    {
+                        // WaitGroup for multiplexing both IPC channels
+                        name: "WG",
+                        type: "wait_group",
+                    },
+                ],
+                threads: [
+                    {
+                        name: "mctp loopback server thread",
+                        stack_size_bytes: 4096,
+                    },
+                ],
+            },
+        },
+        // ──── SPDM Requester ────
+        // Runs the SPDM requester flow using spdm-lib's requester API.
+        // Connects to the MCTP loopback server to send/receive SPDM messages.
+        {
+            name: "spdm_requester",
+            flash_size_bytes: 98304,      // 96KB for requester code
+            ram_size_bytes: 98304,        // 96KB RAM (SPDM context + buffers)
+            process: {
+                name: "spdm requester process",
+                objects: [
+                    {
+                        name: "MCTP",
+                        type: "channel_initiator",
+                        handler_app: "mctp_loopback_server",
+                        handler_object_name: "MCTP_REQ",
+                    },
+                ],
+                threads: [
+                    {
+                        name: "spdm requester thread",
+                        stack_size_bytes: 16384,  // 16KB stack
+                    },
+                ],
+            },
+        },
+        // ──── SPDM Responder ────
+        // Runs the SPDM responder using spdm-lib's responder API.
+        // Connects to the MCTP loopback server to receive/send SPDM messages.
+        {
+            name: "spdm_responder",
+            flash_size_bytes: 98304,      // 96KB for responder code
+            ram_size_bytes: 65536,        // 64KB RAM (SPDM context + buffers)
+            process: {
+                name: "spdm responder process",
+                objects: [
+                    {
+                        name: "MCTP",
+                        type: "channel_initiator",
+                        handler_app: "mctp_loopback_server",
+                        handler_object_name: "MCTP_RESP",
+                    },
+                ],
+                threads: [
+                    {
+                        name: "spdm responder thread",
+                        stack_size_bytes: 16384,  // 16KB stack
+                    },
+                ],
+            },
+        },
+    ],
+}
