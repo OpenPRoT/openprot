@@ -18,23 +18,25 @@
       name: "syscall_latency",
       flash_size_bytes: 32768,
       ram_size_bytes: 4096,
-      process: {
-        name: "syscall latency",
-        memory_mappings: [
-          {
-            name: "MCI",
-            type: "device",
-            start_address: 0x21000000,
-            size_bytes: 0x100,
-          },
-        ],
-        threads: [
-          {
-            name: "syscall_latency",
-            stack_size_bytes: 4096,
-          },
-        ],
-      },
+      processes: [
+        {
+          name: "syscall latency",
+          memory_mappings: [
+            {
+              name: "MCI",
+              type: "device",
+              start_address: 0x21000000,
+              size_bytes: 0x100,
+            },
+          ],
+          threads: [
+            {
+              name: "syscall_latency",
+              stack_size_bytes: 4096,
+            },
+          ],
+        },
+      ],
     },
   ],
 }

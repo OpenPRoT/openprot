@@ -9,14 +9,11 @@ load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/veer:defs.bzl", "TARGET_COMPATIBLE_WITH")
 load("//target/veer/tooling:caliptra_runner.bzl", "caliptra_runner", "caliptra_test")
 
-APPS = [
-    "@pigweed//pw_kernel/tests/ipc/user:handler",
-    "@pigweed//pw_kernel/tests/ipc/user:initiator",
-]
+package(default_visibility = ["//visibility:public"])
 
 system_image(
     name = "ipc",
-    apps = APPS,
+    apps = ["@pigweed//pw_kernel/tests/ipc/user:ipc"],
     kernel = ":target",
     platform = "//target/veer",
     system_config = ":system_config",
@@ -67,7 +64,6 @@ rust_binary(
         "@pigweed//pw_log/rust:pw_log",
     ],
 )
-
 
 caliptra_runner(
     name = "ipc_runner_emulator",

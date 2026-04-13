@@ -1,0 +1,28 @@
+--- a/pw_kernel/tooling/rust_process.bzl
++++ b/pw_kernel/tooling/rust_process.bzl
+@@ -49,6 +49,7 @@
+     rust_library(
+         name = name,
+         srcs = srcs,
+         deps = deps + [
+             ":" + codegen_crate_name,
+         ],
++        visibility = ["//visibility:public"],
+         **kwargs
+     )
+--- a/pw_kernel/tooling/multi_process_app.bzl
++++ b/pw_kernel/tooling/multi_process_app.bzl
+@@ -102,6 +102,7 @@
+     rust_binary(
+         name = name,
+         srcs = [":" + name + ".src"],
+         edition = "2024",
+         deps = deps + [
+             ":" + name + ".linker_script",
+             "@pigweed//pw_kernel/userspace",
+             "@pigweed//pw_kernel/syscall:syscall_user",
+             "@pigweed//pw_status/rust:pw_status",
+         ],
++        visibility = ["//visibility:public"],
+         **kwargs
+     )

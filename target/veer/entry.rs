@@ -25,6 +25,9 @@ fn main() -> ! {
 }
 
 pub fn exit(code: u32) -> ! {
+    #[cfg(not(feature = "emulator"))]
+    let _ = code;
+
     #[cfg(feature = "emulator")]
     unsafe {
         // SAFETY: writing to this address will cause the emulator to exit.

@@ -1,31 +1,33 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
-
-load("@pigweed//pw_kernel/tooling:app_package.bzl", "app_package")
+load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app")
 load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
 load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/veer:defs.bzl", "TARGET_COMPATIBLE_WITH")
-load("//target/veer/tooling:caliptra_runner.bzl", "caliptra_runner")
+load("//target/veer/tooling:caliptra_runner.bzl", "caliptra_runner", "caliptra_test")
 
-rust_binary(
+rust_app(
     name = "syscall_latency",
     srcs = [
         "main.rs",
     ],
+    codegen_crate_name = "app_syscall_latency",
     crate_features = select({
+        "//target/veer:emulator": ["emulator"],
         "//target/veer:fpga": ["fpga"],
         "//target/veer:silicon": ["silicon"],
-        "//target/veer:emulator": ["emulator"],
         "//conditions:default": [],
     }),
     crate_name = "syscall_latency",
     edition = "2024",
+    system_config = "@pigweed//pw_kernel/target:system_config_file",
+    tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        ":app_syscall_latency",
         "//target/veer:config",
         "@pigweed//pw_base64/rust:pw_base64",
         "@pigweed//pw_kernel/syscall:syscall_user",
@@ -33,14 +35,6 @@ rust_binary(
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
     ],
-)
-
-app_package(
-    name = "app_syscall_latency",
-    app_name = "syscall_latency",
-    edition = "2024",
-    system_config = "@pigweed//pw_kernel/target:system_config_file",
-    tags = ["kernel"],
 )
 
 system_image(
@@ -94,8 +88,25 @@ rust_binary(
     ],
 )
 
+rust_binary_no_panics_test(
+    name = "no_panics_test",
+    binary = ":measure_syscall_latency",
+    tags = ["kernel"],
+)
+
 caliptra_runner(
     name = "measure_syscall_latency_emulator",
     interface = "emulator",
+    tags = ["manual"],
+    target = ":measure_syscall_latency",
+)
+
+caliptra_test(
+    name = "measure_syscall_latency_emulator_test",
+    timeout = "long",
+    interface = "emulator",
+    # caliptra_runner.py hardcodes --i3c-port=65534, so caliptra emulator
+    # tests cannot run in parallel without an EADDRINUSE collision.
+    tags = ["exclusive"],
     target = ":measure_syscall_latency",
 )
