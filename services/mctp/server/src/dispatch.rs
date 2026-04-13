@@ -15,7 +15,13 @@ use crate::{Sender, Server};
 /// Dispatch an IPC request to the MCTP server.
 ///
 /// Decodes the request header, calls the appropriate `Server` method,
-/// and encodes the response into `response`. Returns the response length.
+/// and encodes the response into `response`.
+///
+/// Returns `Some(len)` when the caller should immediately call
+/// `channel_respond` with `response[..len]`.  Returns `None` for a
+/// deferred `Recv`: the client is parked in `server.outstanding` and will
+/// be unblocked by a subsequent call to `server.update()` after an inbound
+/// MCTP packet arrives.
 ///
 /// This is the MCTP equivalent of `dispatch_i2c_op` in the I2C server.
 pub fn dispatch_mctp_op<S: Sender, const N: usize>(
@@ -23,46 +29,47 @@ pub fn dispatch_mctp_op<S: Sender, const N: usize>(
     response: &mut [u8],
     server: &mut Server<S, N>,
     recv_buf: &mut [u8],
-) -> usize {
+) -> Option<usize> {
     let header = match MctpRequestHeader::from_bytes(request) {
         Some(h) => h,
-        None => return encode_error(response, ResponseCode::BadArgument),
+        None => return Some(encode_error(response, ResponseCode::BadArgument)),
     };
 
     let Some(op) = header.operation() else {
-        return encode_error(response, ResponseCode::BadArgument);
+        return Some(encode_error(response, ResponseCode::BadArgument));
     };
 
     match op {
-        MctpOp::SetEid => match server.set_eid(header.eid) {
+        MctpOp::SetEid => Some(match server.set_eid(header.eid) {
             Ok(()) => encode_success(response),
             Err(e) => encode_error(response, e.code),
-        },
+        }),
 
-        MctpOp::GetEid => {
+        MctpOp::GetEid => Some({
             let eid = server.get_eid();
             wire::encode_get_eid_response(response, eid)
                 .unwrap_or_else(|_| encode_error(response, ResponseCode::InternalError))
-        }
+        }),
 
-        MctpOp::Listener => match server.listener(header.msg_type) {
+        MctpOp::Listener => Some(match server.listener(header.msg_type) {
             Ok(handle) => wire::encode_handle_response(response, handle.0)
                 .unwrap_or_else(|_| encode_error(response, ResponseCode::InternalError)),
             Err(e) => encode_error(response, e.code),
-        },
+        }),
 
-        MctpOp::Req => match server.req(header.eid) {
+        MctpOp::Req => Some(match server.req(header.eid) {
             Ok(handle) => wire::encode_handle_response(response, handle.0)
                 .unwrap_or_else(|_| encode_error(response, ResponseCode::InternalError)),
             Err(e) => encode_error(response, e.code),
-        },
+        }),
 
         MctpOp::Recv => {
             let handle = openprot_mctp_api::Handle(header.handle);
 
-            match server.try_recv(handle, recv_buf) {
-                Some(meta) => {
-                    let payload = &recv_buf[..meta.payload_size];
+            if let Some(meta) = server.try_recv(handle, recv_buf) {
+                // Message already queued — reply immediately.
+                let payload = &recv_buf[..meta.payload_size];
+                Some(
                     wire::encode_recv_response(
                         response,
                         meta.msg_type,
@@ -71,18 +78,24 @@ pub fn dispatch_mctp_op<S: Sender, const N: usize>(
                         meta.msg_tag,
                         payload,
                     )
-                    .unwrap_or_else(|_| encode_error(response, ResponseCode::InternalError))
-                }
-                None => {
-                    // No message available yet.
-                    // In a real Pigweed server, we'd register a pending recv
-                    // and respond later. For now, return TimedOut.
-                    encode_error(response, ResponseCode::TimedOut)
-                }
+                    .unwrap_or_else(|_| encode_error(response, ResponseCode::InternalError)),
+                )
+            } else {
+                // No message yet — park the client.  Decode timeout_millis
+                // from the 4-byte payload appended by encode_recv().
+                let payload = wire::get_request_payload(request);
+                let timeout_millis = if payload.len() >= 4 {
+                    u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]])
+                } else {
+                    0
+                };
+                server.register_recv(handle, timeout_millis, 0).ok();
+                // Return None — main loop must NOT call channel_respond yet.
+                None
             }
         }
 
-        MctpOp::Send => {
+        MctpOp::Send => Some({
             let handle = if header.flags & flags::HAS_HANDLE != 0 {
                 Some(openprot_mctp_api::Handle(header.handle))
             } else {
@@ -106,15 +119,15 @@ pub fn dispatch_mctp_op<S: Sender, const N: usize>(
                     .unwrap_or_else(|_| encode_error(response, ResponseCode::InternalError)),
                 Err(e) => encode_error(response, e.code),
             }
-        }
+        }),
 
-        MctpOp::Unbind => {
+        MctpOp::Unbind => Some({
             let handle = openprot_mctp_api::Handle(header.handle);
             match server.unbind(handle) {
                 Ok(()) => encode_success(response),
                 Err(e) => encode_error(response, e.code),
             }
-        }
+        }),
     }
 }
 

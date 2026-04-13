@@ -43,9 +43,9 @@
 #![no_main]
 #![no_std]
 
-use openprot_mctp_api::wire::{MctpRequestHeader, MAX_REQUEST_SIZE, MAX_RESPONSE_SIZE, MAX_PAYLOAD_SIZE};
+use openprot_mctp_api::wire::{self, MctpRequestHeader, MAX_REQUEST_SIZE, MAX_RESPONSE_SIZE, MAX_PAYLOAD_SIZE};
 use openprot_mctp_api::ResponseCode;
-use openprot_mctp_server::dispatch;
+use openprot_mctp_server::{dispatch, RecvResult};
 
 use i2c_api::{BusIndex, I2cTargetClient, TargetMessage};
 use i2c_client::IpcI2cClient;
@@ -107,6 +107,39 @@ fn mctp_server_loop() -> Result<()> {
                     }
                 }
             }
+            // After routing inbound packets, fulfil any clients parked on recv.
+            let (_, ready) = server.update(0, &mut recv_buf);
+            for (_, result) in ready {
+                match result {
+                    RecvResult::Message(meta) => {
+                        let payload = &recv_buf[..meta.payload_size];
+                        if let Ok(len) = wire::encode_recv_response(
+                            &mut response_buf,
+                            meta.msg_type,
+                            meta.msg_ic,
+                            meta.remote_eid,
+                            meta.msg_tag,
+                            payload,
+                        ) {
+                            let _ = syscall::channel_respond(
+                                handle::MCTP,
+                                &response_buf[..len],
+                            );
+                        }
+                    }
+                    RecvResult::TimedOut => {
+                        let resp = openprot_mctp_api::wire::MctpResponseHeader::error(
+                            ResponseCode::TimedOut,
+                        );
+                        response_buf[..openprot_mctp_api::wire::MctpResponseHeader::SIZE]
+                            .copy_from_slice(&resp.to_bytes());
+                        let _ = syscall::channel_respond(
+                            handle::MCTP,
+                            &response_buf[..openprot_mctp_api::wire::MctpResponseHeader::SIZE],
+                        );
+                    }
+                }
+            }
         } else {
             // IPC from a client — channel_read is non-blocking here because
             // the WaitGroup only fires after READABLE is set.
@@ -124,14 +157,16 @@ fn mctp_server_loop() -> Result<()> {
                 continue;
             }
 
-            // Dispatch and respond
-            let response_len = dispatch::dispatch_mctp_op(
+            // Dispatch; for deferred Recv the response is sent later from
+            // the I2C inbound path via server.update().
+            if let Some(response_len) = dispatch::dispatch_mctp_op(
                 &request_buf[..len],
                 &mut response_buf,
                 &mut server,
                 &mut recv_buf,
-            );
-            syscall::channel_respond(handle::MCTP, &response_buf[..response_len])?;
+            ) {
+                syscall::channel_respond(handle::MCTP, &response_buf[..response_len])?;
+            }
         }
     }
 }

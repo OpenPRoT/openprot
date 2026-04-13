@@ -10,10 +10,10 @@
 //   0x00020000 - 0x00040000: i2c_server flash (128KB)
 //   0x00040000 - 0x00060000: mctp_server flash (128KB)
 //   0x00060000 - 0x00080000: mctp_echo flash (128KB)
-//   0x00080000 - 0x00088000: i2c_server RAM (32KB)
-//   0x00088000 - 0x00090000: mctp_server RAM (32KB)
-//   0x00090000 - 0x00098000: mctp_echo RAM (32KB)
-//   0x00098000 - 0x000A0000: Kernel RAM (32KB)
+//   0x00080000 - 0x00088000: Kernel RAM (32KB)
+//   0x00088000 - 0x00090000: i2c_server RAM (32KB)
+//   0x00090000 - 0x00098000: mctp_server RAM (32KB)
+//   0x00098000 - 0x000A0000: mctp_echo RAM (32KB)
 //
 // Total: 0xA0000 = 640KB (fits within the 640KB usable window of the AST1060's 768KB SRAM).
 {
@@ -25,8 +25,8 @@
     kernel: {
         flash_start_address: 0x00000500,  // After vector table + annotations
         flash_size_bytes: 129792,         // 0x1FB00: ends at exactly 0x20000 (128KB boundary)
-        ram_start_address: 0x00098000,    // After all app RAM (3 × 32KB = 0x18000 past 0x80000)
-        ram_size_bytes: 32768,            // 32KB
+        ram_start_address: 0x00080000,    // Immediately after all code flash regions
+        ram_size_bytes: 32768,            // 32KB; apps follow at 0x88000, 0x90000, 0x98000
     },
     apps: [
         // ──── I2C Server ────
