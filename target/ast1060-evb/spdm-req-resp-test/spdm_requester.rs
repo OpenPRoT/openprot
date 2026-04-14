@@ -40,7 +40,7 @@ use userspace::syscall;
 use app_spdm_requester::handle;
 
 mod mock_platform;
-use mock_platform::{MockCertStore, MockEvidence, MockHash, MockRng};
+use mock_platform::{DemoPeerCertStore, MockCertStore, MockEvidence, MockHash, MockRng};
 
 /// Remote EID of the SPDM responder
 const RESPONDER_EID: u8 = 42;
@@ -124,6 +124,7 @@ fn spdm_requester_test() -> Result<(), &'static str> {
     let mut l1_hash = MockHash::new();
     let mut rng = MockRng::new();
     let evidence = MockEvidence::new();
+    let mut peer_cert_store = DemoPeerCertStore::default();
 
     // Configure requester capabilities
     let mut flags = CapabilityFlags::default();
@@ -154,7 +155,7 @@ fn spdm_requester_test() -> Result<(), &'static str> {
         capabilities,
         algorithms,
         &mut cert_store,
-        None, // TODO: Add MockPeerCertStore when testing beyond VCA
+        Some(&mut peer_cert_store),
         &mut hash,
         &mut m1_hash,
         &mut l1_hash,

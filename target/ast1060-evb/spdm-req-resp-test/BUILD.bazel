@@ -186,6 +186,8 @@ rust_binary(
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
         "@oot_crates_no_std//:spdm-lib",
+        "@rust_crates//:heapless",
+        "@rust_crates//:zerocopy",
     ],
 )
 
@@ -221,5 +223,7 @@ rust_binary(
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
         "@oot_crates_no_std//:spdm-lib",
+        "@rust_crates//:heapless",
+        "@rust_crates//:zerocopy",
     ],
 )
