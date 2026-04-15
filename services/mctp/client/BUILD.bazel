@@ -5,6 +5,7 @@ load("@rules_rust//rust:defs.bzl", "rust_library")
 rust_library(
     name = "mctp_client",
     srcs = ["src/lib.rs"],
+    crate_features = ["pigweed"],
     crate_name = "openprot_mctp_client",
     edition = "2024",
     visibility = ["//visibility:public"],

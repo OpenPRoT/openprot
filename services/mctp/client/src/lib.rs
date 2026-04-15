@@ -91,10 +91,18 @@ impl IpcMctpClient {
     /// Returns a stub error when built under Cargo (no `userspace` crate).
     #[cfg(feature = "pigweed")]
     fn send_recv(&self, req_len: usize) -> Result<usize, MctpError> {
+        // Copy request to a local buffer to avoid borrow conflicts between
+        // the immutable send slice and mutable receive slice within `inner`.
+        let req_copy = {
+            let inner = self.inner.borrow();
+            let mut buf = [0u8; MAX_REQUEST_SIZE];
+            buf[..req_len].copy_from_slice(&inner.request_buf[..req_len]);
+            buf
+        };
         let mut inner = self.inner.borrow_mut();
         userspace::syscall::channel_transact(
             self.handle,
-            &inner.request_buf[..req_len],
+            &req_copy[..req_len],
             &mut inner.response_buf,
             userspace::time::Instant::MAX,
         )
