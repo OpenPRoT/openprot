@@ -17,10 +17,10 @@
     {
       name: "syscall_latency",
       flash_size_bytes: 32768,
-      ram_size_bytes: 4096,
       processes: [
         {
           name: "syscall_latency",
+          ram_size_bytes: 4096,
           memory_mappings: [
             {
               name: "rv_timer",
@@ -32,7 +32,7 @@
           threads: [
             {
               name: "syscall_latency",
-              stack_size_bytes: 4096,
+              kernel_stack_size_bytes: 4096,
             },
           ],
         },

@@ -17,10 +17,10 @@
     {
       name: "test_uart",
       flash_size_bytes: 16384,
-      ram_size_bytes: 4096,
       processes: [
         {
           name: "test_uart",
+          ram_size_bytes: 4096,
           objects: [
             {
               name: "ipc",
@@ -38,7 +38,7 @@
           threads: [
             {
               name: "uart_thread",
-              stack_size_bytes: 2048,
+              kernel_stack_size_bytes: 2048,
             },
           ],
         },
@@ -47,10 +47,10 @@
     {
       name: "test_uart_listener",
       flash_size_bytes: 16384,
-      ram_size_bytes: 4096,
       processes: [
         {
           name: "test_uart_listener",
+          ram_size_bytes: 4096,
           objects: [
             {
               name: "uart_interrupts",
@@ -112,7 +112,7 @@
           threads: [
             {
               name: "uart_thread",
-              stack_size_bytes: 2048,
+              kernel_stack_size_bytes: 2048,
             },
           ],
         },

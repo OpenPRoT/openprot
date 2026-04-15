@@ -17,10 +17,10 @@
     {
       name: "ipc",
       flash_size_bytes: 32768,
-      ram_size_bytes: 8192,
       processes: [
         {
           name: "initiator",
+          ram_size_bytes: 4096,
           objects: [
             {
               name: "ipc",
@@ -32,12 +32,13 @@
           threads: [
             {
               name: "initiator_thread",
-              stack_size_bytes: 1024,
+              kernel_stack_size_bytes: 1024,
             },
           ],
         },
         {
           name: "handler",
+          ram_size_bytes: 4096,
           objects: [
             {
               name: "ipc",
@@ -47,7 +48,7 @@
           threads: [
             {
               name: "handler_thread",
-              stack_size_bytes: 1024,
+              kernel_stack_size_bytes: 1024,
             },
           ],
         },
