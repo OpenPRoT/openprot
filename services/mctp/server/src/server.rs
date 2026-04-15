@@ -71,18 +71,20 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
 
     /// Allocate a request handle for sending messages to the given EID.
     pub fn req(&mut self, eid: u8) -> Result<Handle, MctpError> {
-        match self.stack.req(Eid(eid)) {
-            Ok(cookie) => Ok(Handle(cookie.0 as u32)),
-            Err(e) => Err(mctp_error_to_server_error(e)),
-        }
+        self.stack.req(Eid(eid)).map(|cookie| Handle(cookie.0 as u32)).map_err(|e| {
+            let err = mctp_error_to_server_error(e);
+            pw_log::error!("server: req(eid={}) ResponseCode={}", eid as u32, err.code as u8);
+            err
+        })
     }
 
     /// Register a listener for incoming messages of the given type.
     pub fn listener(&mut self, typ: u8) -> Result<Handle, MctpError> {
-        match self.stack.listener(MsgType(typ)) {
-            Ok(cookie) => Ok(Handle(cookie.0 as u32)),
-            Err(e) => Err(mctp_error_to_server_error(e)),
-        }
+        self.stack.listener(MsgType(typ)).map(|cookie| Handle(cookie.0 as u32)).map_err(|e| {
+            let err = mctp_error_to_server_error(e);
+            pw_log::error!("server: listener(typ={}) ResponseCode={}", typ as u32, err.code as u8);
+            err
+        })
     }
 
     /// Get the currently configured EID.

@@ -94,18 +94,35 @@ impl<C: MctpClient> SpdmTransport for MctpSpdmTransport<C> {
     fn init_sequence(&mut self) -> TransportResult<()> {
         if let Some(remote_eid) = self.remote_eid {
             // Requester mode: get request handle for remote EID
+            pw_log::debug!("MctpSpdmTransport: req(eid={})", remote_eid as u32);
             self.req_handle = Some(
                 self.client
                     .req(remote_eid)
-                    .map_err(|_| TransportError::DriverError)?,
+                    .map_err(|e| {
+                        pw_log::error!(
+                            "MctpSpdmTransport: req(eid={}) failed: ResponseCode={}",
+                            remote_eid as u32,
+                            e.code as u8,
+                        );
+                        TransportError::DriverError
+                    })?,
             );
+            pw_log::debug!("MctpSpdmTransport: req handle allocated");
         } else {
             // Responder mode: register listener for SPDM messages
+            pw_log::debug!("MctpSpdmTransport: listener(msg_type=0x{:02x})", MCTP_MSG_TYPE_SPDM as u32);
             self.listener_handle = Some(
                 self.client
                     .listener(MCTP_MSG_TYPE_SPDM)
-                    .map_err(|_| TransportError::DriverError)?,
+                    .map_err(|e| {
+                        pw_log::error!(
+                            "MctpSpdmTransport: listener(msg_type=0x05) failed: ResponseCode={}",
+                            e.code as u8,
+                        );
+                        TransportError::DriverError
+                    })?,
             );
+            pw_log::debug!("MctpSpdmTransport: listener handle allocated");
         }
 
         Ok(())

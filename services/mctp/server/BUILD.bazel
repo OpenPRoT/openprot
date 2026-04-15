@@ -18,6 +18,7 @@ rust_library(
         "@rust_crates//:heapless",
         "@rust_crates//:mctp",
         "@rust_crates//:mctp-lib",
+        "@pigweed//pw_log/rust:pw_log",
     ],
 )
 

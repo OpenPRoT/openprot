@@ -51,11 +51,20 @@ pub fn dispatch_mctp_op<S: Sender, const N: usize>(
             Err(e) => encode_error(response, e.code),
         },
 
-        MctpOp::Req => match server.req(header.eid) {
-            Ok(handle) => wire::encode_handle_response(response, handle.0)
-                .unwrap_or_else(|_| encode_error(response, ResponseCode::InternalError)),
-            Err(e) => encode_error(response, e.code),
-        },
+        MctpOp::Req => {
+            pw_log::debug!("dispatch: Req(eid={})", header.eid as u32);
+            match server.req(header.eid) {
+                Ok(handle) => {
+                    pw_log::debug!("dispatch: Req(eid={}) -> handle {}", header.eid as u32, handle.0 as u32);
+                    wire::encode_handle_response(response, handle.0)
+                        .unwrap_or_else(|_| encode_error(response, ResponseCode::InternalError))
+                }
+                Err(e) => {
+                    pw_log::error!("dispatch: Req(eid={}) failed: ResponseCode={}", header.eid as u32, e.code as u8);
+                    encode_error(response, e.code)
+                }
+            }
+        }
 
         MctpOp::Recv => {
             let handle = openprot_mctp_api::Handle(header.handle);

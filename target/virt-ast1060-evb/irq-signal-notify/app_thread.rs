@@ -2,10 +2,19 @@
 
 //! App thread process
 //!
-//! Drives the test: triggers IRQ 42 three times, waiting for `Signals::USER`
-//! on the `notify` channel_initiator after each trigger.  The `USER` signal
-//! is raised by `irq_listener` via `object_raise_peer_user_signal` once it has
-//! acknowledged the interrupt.
+//! Drives the test: triggers IRQ 42 three times.  After each trigger it
+//! waits via a wait group that contains the `notify` channel_initiator handle.
+//! Using a wait group demonstrates how the app can later multiplex across
+//! multiple notification sources (e.g. a second IRQ or a timer) without
+//! changing the wait call-site.
+//!
+//! Wait group setup (done once before the loop):
+//!   wait_group_add(wg, notify, Signals::USER, user_data=1)
+//!
+//! Each iteration:
+//!   1. debug_trigger_interrupt(42)   – fires IRQ in QEMU
+//!   2. object_wait(wg, Signals::USER) – blocks until irq_listener raises USER
+//!   3. Validate user_data and pending_signals from WaitReturn
 
 #![no_main]
 #![no_std]
@@ -18,25 +27,56 @@ use userspace::time::Instant;
 
 const EXPECTED_NOTIFICATIONS: u32 = 3;
 const TEST_IRQ: u32 = 42;
+// Arbitrary tag returned by object_wait when the notify handle fires
+const NOTIFY_USER_DATA: usize = 0xBEEF;
 
 fn run() -> Result<()> {
+    // Register the notify channel_initiator in the wait group.
+    // From this point on we call object_wait on `wg`, not on `notify` directly.
+    // This makes it trivial to add a second notification source later:
+    //   wait_group_add(handle::WG, handle::OTHER, Signals::USER, OTHER_DATA)
+    syscall::wait_group_add(
+        handle::WG,
+        handle::NOTIFY,
+        Signals::USER,
+        NOTIFY_USER_DATA,
+    )?;
+    pw_log::info!("Registered notify handle in wait group");
+
     for i in 1..=EXPECTED_NOTIFICATIONS {
-        // Trigger the hardware interrupt.  In production this would be a real
-        // hardware event; here we use the kernel debug syscall.
+        // Fire the hardware interrupt (QEMU debug syscall).
         syscall::debug_trigger_interrupt(TEST_IRQ)?;
 
-        // Block until irq_listener raises Signals::USER on our channel handle.
+        // Block on the wait group — wakes when any member's signal fires.
         let wait_return =
-            syscall::object_wait(handle::NOTIFY, Signals::USER, Instant::MAX)?;
+            syscall::object_wait(handle::WG, Signals::USER, Instant::MAX)?;
 
         if !wait_return.pending_signals.contains(Signals::USER) {
-            pw_log::error!("Unexpected signals: {}", wait_return.pending_signals.bits() as u32);
+            pw_log::error!(
+                "Unexpected signals: {:#x}",
+                wait_return.pending_signals.bits() as u32,
+            );
             return Err(pw_status::Error::Internal);
         }
 
-        pw_log::info!("Notification {} / {} received", i as u32, EXPECTED_NOTIFICATIONS as u32);
+        if wait_return.user_data != NOTIFY_USER_DATA {
+            pw_log::error!(
+                "Unexpected user_data: {} (expected {})",
+                wait_return.user_data as usize,
+                NOTIFY_USER_DATA as usize,
+            );
+            return Err(pw_status::Error::Internal);
+        }
+
+        pw_log::info!(
+            "Notification {} / {} received (user_data={:#x})",
+            i as u32,
+            EXPECTED_NOTIFICATIONS as u32,
+            wait_return.user_data as usize,
+        );
     }
 
+    syscall::wait_group_remove(handle::WG, handle::NOTIFY)?;
     pw_log::info!("All {} notifications received", EXPECTED_NOTIFICATIONS as u32);
     Ok(())
 }
@@ -56,3 +96,4 @@ fn entry() -> ! {
     let _ = syscall::debug_shutdown(ret);
     loop {}
 }
+

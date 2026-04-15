@@ -98,7 +98,10 @@ impl IpcMctpClient {
             &mut inner.response_buf,
             userspace::time::Instant::MAX,
         )
-        .map_err(|_| MctpError::from_code(ResponseCode::InternalError))
+        .map_err(|e| {
+            pw_log::error!("IpcMctpClient: channel_transact failed: err={}", e as u32);
+            MctpError::from_code(ResponseCode::InternalError)
+        })
     }
 
     /// Stub for non-Pigweed builds (Cargo workspace).

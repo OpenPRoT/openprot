@@ -11,6 +11,7 @@ rust_library(
     deps = [
         "//services/mctp/api:mctp_api",
         "@oot_crates_no_std//:spdm-lib",
+        "@pigweed//pw_log/rust:pw_log",
     ],
 )
 

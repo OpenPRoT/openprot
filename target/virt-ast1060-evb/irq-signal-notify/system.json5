@@ -69,6 +69,12 @@
                             handler_process: "irq_listener",
                             handler_object_name: "notify",
                         },
+                        {
+                            // Wait group used to multiplex object_wait across
+                            // multiple channel handles (extensible to N sources).
+                            name: "wg",
+                            type: "wait_group",
+                        },
                     ],
                     threads: [
                         {
