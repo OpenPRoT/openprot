@@ -38,8 +38,10 @@ bazel_dep(name = "ureg")
 
 git_override(
     module_name = "pigweed",
-    commit = "24eca9f8ba5f92e50b09ae95c871c6e128122780",
-    remote = "https://github.com/OpenPRoT/pigweed",
+    # CL 376072 patchset 8: pw_kernel: Add raise_peer_user_signal syscall
+    # https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/376072
+    commit = "2549ab82f99418d52393bce703d7630318dfb775",
+    remote = "https://pigweed.googlesource.com/pigweed/pigweed",
 )
 
 git_override(

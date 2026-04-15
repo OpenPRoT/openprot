@@ -1,0 +1,83 @@
+// Licensed under the Apache-2.0 license
+
+// Virtual AST1060-EVB IRQ → peer user signal notification test (QEMU)
+// ARM Cortex-M4, executes from RAM. Two processes in one app:
+//   irq_listener  – owns the interrupt object + channel_handler (notify)
+//   app_thread    – owns the channel_initiator (notify), drives the test
+//
+// Memory layout (same as ipc test):
+//   0x00000000 - 0x000004A0: Vector table + kernel annotations
+//   0x000004A0 - 0x00020000: Kernel code (~126 KB)
+//   0x00020000 - 0x00060000: App code (256 KB, two processes)
+//   0x00060000 - 0x00080000: Kernel RAM (128 KB)
+//   0x00080000 - 0x00090000: App RAM   (64 KB)
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1184,
+    },
+    kernel: {
+        flash_start_address: 0x000004A0,
+        flash_size_bytes: 129888,
+        ram_start_address: 0x00060000,
+        ram_size_bytes: 131072,
+    },
+    apps: [
+        {
+            name: "irq_signal_notify",
+            flash_size_bytes: 262144,
+            ram_size_bytes: 65536,
+            processes: [
+                {
+                    name: "irq_listener",
+                    objects: [
+                        {
+                            // Receives hardware IRQ 42
+                            name: "irq",
+                            type: "interrupt",
+                            irqs: [
+                                {
+                                    name: "test_irq",
+                                    number: 42,
+                                },
+                            ],
+                        },
+                        {
+                            // Handler end of the notify channel.
+                            // Calling object_raise_peer_user_signal on this
+                            // raises Signals::USER on app_thread's initiator.
+                            name: "notify",
+                            type: "channel_handler",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "irq listener thread",
+                            stack_size_bytes: 2048,
+                        },
+                    ],
+                },
+                {
+                    name: "app_thread",
+                    objects: [
+                        {
+                            // Initiator end of the notify channel.
+                            // Waits for Signals::USER raised by irq_listener.
+                            name: "notify",
+                            type: "channel_initiator",
+                            handler_process: "irq_listener",
+                            handler_object_name: "notify",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "app thread",
+                            stack_size_bytes: 2048,
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}

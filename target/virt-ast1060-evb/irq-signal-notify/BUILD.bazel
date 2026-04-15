@@ -1,0 +1,126 @@
+# Licensed under the Apache-2.0 license
+
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//target/virt-ast1060-evb:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("@pigweed//pw_kernel/tooling:multi_process_app.bzl", "multi_process_app")
+load("@pigweed//pw_kernel/tooling:rust_process.bzl", "rust_process")
+load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image", "system_image_test")
+load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
+
+# ── User-space processes ───────────────────────────────────────────────────────
+#
+# irq_listener: waits on IRQ 42, acks it, raises Signals::USER on the notify
+#               channel peer via object_raise_peer_user_signal.
+#
+# app_thread:   triggers the interrupt, then waits for Signals::USER on the
+#               notify channel_initiator.
+
+multi_process_app(
+    name = "irq_signal_notify",
+    processes = [
+        ":irq_listener",
+        ":app_thread",
+    ],
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+)
+
+rust_process(
+    name = "irq_listener",
+    srcs = ["irq_listener.rs"],
+    codegen_crate_name = "irq_listener_codegen",
+    edition = "2024",
+    multi_process_app = ":irq_signal_notify",
+    tags = ["kernel"],
+    deps = [
+        "@pigweed//pw_kernel/syscall:syscall_user",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
+rust_process(
+    name = "app_thread",
+    srcs = ["app_thread.rs"],
+    codegen_crate_name = "app_thread_codegen",
+    edition = "2024",
+    multi_process_app = ":irq_signal_notify",
+    tags = ["kernel"],
+    deps = [
+        "@pigweed//pw_kernel/syscall:syscall_user",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
+# ── System image ───────────────────────────────────────────────────────────────
+
+system_image(
+    name = "irq_signal_notify_image",
+    apps = [
+        ":irq_signal_notify",
+    ],
+    kernel = ":target",
+    platform = "//target/virt-ast1060-evb",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+)
+
+system_image_test(
+    name = "irq_signal_notify_test",
+    image = ":irq_signal_notify_image",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+rust_binary_no_panics_test(
+    name = "no_panics_test",
+    binary = ":irq_signal_notify_image",
+    tags = ["kernel"],
+)
+
+filegroup(
+    name = "system_config",
+    srcs = ["system.json5"],
+)
+
+# ── Kernel target ──────────────────────────────────────────────────────────────
+
+target_codegen(
+    name = "codegen",
+    arch = "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+    system_config = ":system_config",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    template = "//target/virt-ast1060-evb:linker_script_template",
+)
+
+rust_binary(
+    name = "target",
+    srcs = ["target.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":codegen",
+        ":linker_script",
+        "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/subsys/console:console_backend",
+        "@pigweed//pw_kernel/target:target_common",
+        "//target/virt-ast1060-evb:entry",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@rust_crates//:cortex-m-semihosting",
+    ],
+)
