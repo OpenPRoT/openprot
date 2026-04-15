@@ -8,11 +8,10 @@
 #![no_main]
 
 use arch_arm_cortex_m::Arch;
-use kernel::{self as _};
 
 #[unsafe(no_mangle)]
 #[allow(non_snake_case)]
-pub unsafe extern "C" fn pw_assert_HandleFailure() -> ! {
+pub extern "C" fn pw_assert_HandleFailure() -> ! {
     use kernel::Arch as _;
     Arch::panic()
 }

@@ -32,9 +32,10 @@
             name: "i2c_server",
             flash_size_bytes: 131072,     // 128KB for server code
             ram_size_bytes: 65536,        // 64KB RAM (register maps + buffers)
-            process: {
-                name: "i2c server process",
-                objects: [
+            processes: [
+                {
+                    name: "i2c server process",
+                    objects: [
                     {
                         name: "I2C",
                         type: "channel_handler",  // Server side of client→server channel
@@ -76,7 +77,8 @@
                         stack_size_bytes: 4096,   // 4KB stack (register ops, buffers)
                     },
                 ],
-            },
+                },
+            ],
         },
         // ──── I2C Client (test) ────
         // Sends I2C read/write requests to the server via IPC.
@@ -84,23 +86,25 @@
             name: "i2c_client",
             flash_size_bytes: 65536,      // 64KB for client/test code
             ram_size_bytes: 32768,        // 32KB RAM
-            process: {
-                name: "i2c client process",
-                objects: [
-                    {
-                        name: "I2C",
-                        type: "channel_initiator",  // Client side
-                        handler_app: "i2c_server",
-                        handler_object_name: "I2C",
-                    },
-                ],
-                threads: [
-                    {
-                        name: "i2c client thread",
-                        stack_size_bytes: 2048,   // 2KB stack
-                    },
-                ],
-            },
+            processes: [
+                {
+                    name: "i2c client process",
+                    objects: [
+                        {
+                            name: "I2C",
+                            type: "channel_initiator",  // Client side
+                            handler_process: "i2c server process",
+                            handler_object_name: "I2C",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "i2c client thread",
+                            stack_size_bytes: 2048,   // 2KB stack
+                        },
+                    ],
+                },
+            ],
         },
     ],
 }

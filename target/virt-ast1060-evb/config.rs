@@ -17,19 +17,18 @@ pub use kernel_config::{
 /// AST1060 kernel configuration.
 pub struct KernelConfig;
 
-impl KernelConfigInterface for KernelConfig {
+impl CortexMKernelConfigInterface for KernelConfig {
     // QEMU AST1060 runs at 12 MHz.
-    const SYSTEM_CLOCK_HZ: u64 = 12_000_000;
+    const SYS_TICK_HZ: u32 = 12_000_000;
+    const NUM_MPU_REGIONS: usize = 8;
 }
 
-impl CortexMKernelConfigInterface for KernelConfig {
-    const SYS_TICK_HZ: u32 = KernelConfig::SYSTEM_CLOCK_HZ as u32;
-    const NUM_MPU_REGIONS: usize = 8;
+impl KernelConfigInterface for KernelConfig {
+    const SYSTEM_CLOCK_HZ: u64 = KernelConfig::SYS_TICK_HZ as u64;
 }
 
 /// AST1060 NVIC configuration.
 pub struct NvicConfig;
 
-impl NvicConfigInterface for NvicConfig {
-    // AST1060 supports up to 480 external interrupts.
-}
+// Uses default configuration (480 interrupts).
+impl NvicConfigInterface for NvicConfig {}

@@ -29,43 +29,47 @@
             name: "crypto_client",
             flash_size_bytes: 131072,     // 128KB for client test app
             ram_size_bytes: 32768,        // 32KB RAM
-            process: {
-                name: "crypto_client_process",
-                objects: [
-                    {
-                        name: "CRYPTO",
-                        type: "channel_initiator",
-                        handler_app: "crypto_server",
-                        handler_object_name: "CRYPTO",
-                    }
-                ],
-                threads: [
-                    {
-                        name: "crypto_client_thread",
-                        stack_size_bytes: 8192,  // 8KB stack for crypto ops
-                    },
-                ],
-            },
+            processes: [
+                {
+                    name: "crypto_client_process",
+                    objects: [
+                        {
+                            name: "CRYPTO",
+                            type: "channel_initiator",
+                            handler_process: "crypto_server_process",
+                            handler_object_name: "CRYPTO",
+                        }
+                    ],
+                    threads: [
+                        {
+                            name: "crypto_client_thread",
+                            stack_size_bytes: 8192,  // 8KB stack for crypto ops
+                        },
+                    ],
+                },
+            ],
         },
         {
             name: "crypto_server",
             flash_size_bytes: 131072,     // 128KB for server (RustCrypto is large)
             ram_size_bytes: 65536,        // 64KB RAM for crypto contexts
-            process: {
-                name: "crypto_server_process",
-                objects: [
-                    {
-                        name: "CRYPTO",
-                        type: "channel_handler",
-                    },
-                ],
-                threads: [
-                    {
-                        name: "crypto_server_thread",
-                        stack_size_bytes: 8192,  // 8KB stack for crypto ops
-                    },
-                ],
-            },
+            processes: [
+                {
+                    name: "crypto_server_process",
+                    objects: [
+                        {
+                            name: "CRYPTO",
+                            type: "channel_handler",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "crypto_server_thread",
+                            stack_size_bytes: 8192,  // 8KB stack for crypto ops
+                        },
+                    ],
+                },
+            ],
         },
     ],
 }

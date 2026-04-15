@@ -41,32 +41,31 @@
             name: "mctp_loopback_server",
             flash_size_bytes: 32768,      // 32KB for server code
             ram_size_bytes: 32768,        // 32KB RAM (two Server instances + buffers)
-            process: {
-                name: "mctp loopback server process",
-                objects: [
-                    {
-                        // IPC channel for the SPDM requester client
-                        name: "MCTP_REQ",
-                        type: "channel_handler",
-                    },
-                    {
-                        // IPC channel for the SPDM responder client
-                        name: "MCTP_RESP",
-                        type: "channel_handler",
-                    },
-                    {
-                        // WaitGroup for multiplexing both IPC channels
-                        name: "WG",
-                        type: "wait_group",
-                    },
-                ],
-                threads: [
-                    {
-                        name: "mctp loopback server thread",
-                        stack_size_bytes: 4096,
-                    },
-                ],
-            },
+            processes: [
+                {
+                    name: "mctp loopback server process",
+                    objects: [
+                        {
+                            name: "MCTP_REQ",
+                            type: "channel_handler",
+                        },
+                        {
+                            name: "MCTP_RESP",
+                            type: "channel_handler",
+                        },
+                        {
+                            name: "WG",
+                            type: "wait_group",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "mctp loopback server thread",
+                            stack_size_bytes: 4096,
+                        },
+                    ],
+                },
+            ],
         },
         // ──── SPDM Requester ────
         // Runs the SPDM requester flow using spdm-lib's requester API.
@@ -75,23 +74,25 @@
             name: "spdm_requester",
             flash_size_bytes: 98304,      // 96KB for requester code
             ram_size_bytes: 98304,        // 96KB RAM (SPDM context + buffers)
-            process: {
-                name: "spdm requester process",
-                objects: [
-                    {
-                        name: "MCTP",
-                        type: "channel_initiator",
-                        handler_app: "mctp_loopback_server",
-                        handler_object_name: "MCTP_REQ",
-                    },
-                ],
-                threads: [
-                    {
-                        name: "spdm requester thread",
-                        stack_size_bytes: 16384,  // 16KB stack
-                    },
-                ],
-            },
+            processes: [
+                {
+                    name: "spdm requester process",
+                    objects: [
+                        {
+                            name: "MCTP",
+                            type: "channel_initiator",
+                            handler_process: "mctp loopback server process",
+                            handler_object_name: "MCTP_REQ",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "spdm requester thread",
+                            stack_size_bytes: 16384,
+                        },
+                    ],
+                },
+            ],
         },
         // ──── SPDM Responder ────
         // Runs the SPDM responder using spdm-lib's responder API.
@@ -100,23 +101,25 @@
             name: "spdm_responder",
             flash_size_bytes: 98304,      // 96KB for responder code
             ram_size_bytes: 65536,        // 64KB RAM (SPDM context + buffers)
-            process: {
-                name: "spdm responder process",
-                objects: [
-                    {
-                        name: "MCTP",
-                        type: "channel_initiator",
-                        handler_app: "mctp_loopback_server",
-                        handler_object_name: "MCTP_RESP",
-                    },
-                ],
-                threads: [
-                    {
-                        name: "spdm responder thread",
-                        stack_size_bytes: 16384,  // 16KB stack
-                    },
-                ],
-            },
+            processes: [
+                {
+                    name: "spdm responder process",
+                    objects: [
+                        {
+                            name: "MCTP",
+                            type: "channel_initiator",
+                            handler_process: "mctp loopback server process",
+                            handler_object_name: "MCTP_RESP",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "spdm responder thread",
+                            stack_size_bytes: 16384,
+                        },
+                    ],
+                },
+            ],
         },
     ],
 }

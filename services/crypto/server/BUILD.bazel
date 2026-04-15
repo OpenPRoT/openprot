@@ -1,15 +1,16 @@
 # Licensed under the Apache-2.0 license
 
-load("@rules_rust//rust:defs.bzl", "rust_binary")
-load("@pigweed//pw_kernel/tooling:app_package.bzl", "app_package")
-rust_binary(
+load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app")
+
+rust_app(
     name = "crypto_server",
+    codegen_crate_name = "app_crypto_server",
     srcs = ["src/main.rs"],
     edition = "2024",
+    system_config = "//target/ast1060-evb/crypto:system_config",
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
-        ":app_crypto_server",
         "//services/crypto/api:crypto_api",
         "//services/crypto/backend-rustcrypto:crypto-backend-rustcrypto",
         "@pigweed//pw_kernel/syscall:syscall_user",
@@ -18,12 +19,4 @@ rust_binary(
         "@pigweed//pw_status/rust:pw_status",
         "@oot_crates_no_std//:zerocopy",
     ],
-)
-
-app_package(
-    name = "app_crypto_server",
-    app_name = "crypto_server",
-    edition = "2024",
-    system_config = "//target/ast1060/crypto:system_config",
-    tags = ["kernel"],
 )

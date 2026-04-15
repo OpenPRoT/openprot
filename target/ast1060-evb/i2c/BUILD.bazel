@@ -1,6 +1,7 @@
 # Licensed under the Apache-2.0 license
 
-load("@pigweed//pw_kernel/tooling:app_package.bzl", "app_package")
+load("@pigweed//pw_kernel/tooling:app_linker_script.bzl", "app_linker_script")
+load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app_codegen")
 load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image", "system_image_test")
 load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
@@ -14,6 +15,22 @@ load("//target/ast1060-evb/harness:uart_upload_test.bzl", "uart_upload", "uart_u
 # I2C client test binary (board-specific: ADT7490 on I2C1)
 # ---------------------------------------------------------------------------
 
+rust_app_codegen(
+    name = "app_i2c_client",
+    app_name = "i2c_client",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+app_linker_script(
+    name = "i2c_client_test.linker_script",
+    app_name = "i2c_client",
+    system_config = ":system_config",
+    tags = ["kernel"],
+)
+
 rust_binary(
     name = "i2c_client_test",
     srcs = ["i2c_client_test.rs"],
@@ -21,6 +38,7 @@ rust_binary(
     tags = ["kernel"],
     deps = [
         ":app_i2c_client",
+        ":i2c_client_test.linker_script",
         "//services/i2c/api:i2c_api",
         "//services/i2c/client:i2c_client",
         "@pigweed//pw_kernel/syscall:syscall_user",
@@ -28,14 +46,6 @@ rust_binary(
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
     ],
-)
-
-app_package(
-    name = "app_i2c_client",
-    app_name = "i2c_client",
-    edition = "2024",
-    system_config = ":system_config",
-    tags = ["kernel"],
 )
 
 # ---------------------------------------------------------------------------

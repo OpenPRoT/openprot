@@ -21,16 +21,18 @@
             name: "spdm_loopback_test",
             flash_size_bytes: 131072,  // 128KB for test app
             ram_size_bytes: 65536,     // 64KB RAM for loopback buffers
-            process: {
-                name: "spdm_loopback_test_process",
-                objects: [],
-                threads: [
-                    {
-                        name: "spdm_loopback_test_thread",
-                        stack_size_bytes: 16384,  // 16KB stack
-                    },
-                ],
-            },
+            processes: [
+                {
+                    name: "spdm_loopback_test_process",
+                    objects: [],
+                    threads: [
+                        {
+                            name: "spdm_loopback_test_thread",
+                            stack_size_bytes: 16384,  // 16KB stack
+                        },
+                    ],
+                },
+            ],
         },
     ],
 }

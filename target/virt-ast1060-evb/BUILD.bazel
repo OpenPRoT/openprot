@@ -13,8 +13,8 @@ platform(
     name = "virt-ast1060-evb",
     constraint_values = [
         ":target_virt_ast1060_evb",
-        # Use cortex-m3 to get soft-float ABI (compatible with thumbv7m-none-eabi Rust target)
-        "@pigweed//pw_build/constraints/arm:cortex-m3",
+        # Cortex-M4 with soft-float ABI (thumbv7em-none-eabi).
+        "@pigweed//pw_build/constraints/arm:cortex-m4",
         "@platforms//cpu:armv7-m",
         "@platforms//os:none",
         "@pigweed//pw_build/constraints/rust:no_std",

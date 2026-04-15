@@ -37,8 +37,9 @@
             name: "i2c_server",
             flash_size_bytes: 131072,     // 128KB for server code
             ram_size_bytes: 65536,        // 64KB RAM (register maps + buffers)
-            process: {
-                name: "i2c server process",
+            processes: [
+                {
+                    name: "i2c server process",
                 objects: [
                     {
                         name: "I2C",
@@ -78,33 +79,33 @@
             name: "mctp_server",
             flash_size_bytes: 65536,      // 64KB for MCTP server code
             ram_size_bytes: 32768,        // 32KB RAM (Router state, buffers)
-            process: {
-                name: "mctp server process",
-                objects: [
-                    {
-                        name: "MCTP",
-                        type: "channel_handler",  // Server side: echo client → MCTP server
-                    },
-                    {
-                        name: "I2C",
-                        type: "channel_initiator",  // Client side: MCTP server → I2C server
-                        handler_app: "i2c_server",
-                        handler_object_name: "I2C",
-                    },
-                    {
-                        // WaitGroup: multiplexes IPC channel (READABLE) and I2C slave
-                        // notification (USER). user_data=0 → IPC from a client, user_data=1 → inbound.
-                        name: "WG",
-                        type: "wait_group",
-                    },
-                ],
-                threads: [
-                    {
-                        name: "mctp server thread",
-                        stack_size_bytes: 8192,   // 8KB stack (Router + fragmentation buffers)
-                    },
-                ],
-            },
+            processes: [
+                {
+                    name: "mctp server process",
+                    objects: [
+                        {
+                            name: "MCTP",
+                            type: "channel_handler",  // Server side: echo client → MCTP server
+                        },
+                        {
+                            name: "I2C",
+                            type: "channel_initiator",  // Client side: MCTP server → I2C server
+                            handler_process: "i2c server process",
+                            handler_object_name: "I2C",
+                        },
+                        {
+                            name: "WG",
+                            type: "wait_group",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "mctp server thread",
+                            stack_size_bytes: 8192,   // 8KB stack (Router + fragmentation buffers)
+                        },
+                    ],
+                },
+            ],
         },
         // ──── MCTP Echo Client ────
         // Listens for MCTP type-1 messages and echoes the payload back.
@@ -112,23 +113,25 @@
             name: "mctp_echo",
             flash_size_bytes: 65536,      // 64KB for echo app
             ram_size_bytes: 32768,        // 32KB RAM
-            process: {
-                name: "mctp echo process",
-                objects: [
-                    {
-                        name: "MCTP",
-                        type: "channel_initiator",  // Client side: echo → MCTP server
-                        handler_app: "mctp_server",
-                        handler_object_name: "MCTP",
-                    },
-                ],
-                threads: [
-                    {
-                        name: "mctp echo thread",
-                        stack_size_bytes: 4096,   // 4KB stack
-                    },
-                ],
-            },
+            processes: [
+                {
+                    name: "mctp echo process",
+                    objects: [
+                        {
+                            name: "MCTP",
+                            type: "channel_initiator",  // Client side: echo → MCTP server
+                            handler_process: "mctp server process",
+                            handler_object_name: "MCTP",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "mctp echo thread",
+                            stack_size_bytes: 4096,   // 4KB stack
+                        },
+                    ],
+                },
+            ],
         },
     ],
 }

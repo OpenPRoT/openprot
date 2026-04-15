@@ -1,7 +1,24 @@
 # Licensed under the Apache-2.0 license
 
 load("@rules_rust//rust:defs.bzl", "rust_binary")
-load("@pigweed//pw_kernel/tooling:app_package.bzl", "app_package")
+load("@pigweed//pw_kernel/tooling:app_linker_script.bzl", "app_linker_script")
+load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app_codegen")
+
+rust_app_codegen(
+    name = "app_crypto_client",
+    app_name = "crypto_client",
+    edition = "2024",
+    system_config = "//target/ast1060-evb/crypto:system_config",
+    tags = ["kernel"],
+)
+
+app_linker_script(
+    name = "crypto_client_test.linker_script",
+    app_name = "crypto_client",
+    system_config = "//target/ast1060-evb/crypto:system_config",
+    tags = ["kernel"],
+)
+
 rust_binary(
     name = "crypto_client_test",
     srcs = ["src/main.rs"],
@@ -10,6 +27,7 @@ rust_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":app_crypto_client",
+        ":crypto_client_test.linker_script",
         "//services/crypto/api:crypto_api",
         "//services/crypto/client:crypto_client",
         "@pigweed//pw_kernel/syscall:syscall_user",
@@ -17,12 +35,4 @@ rust_binary(
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
     ],
-)
-
-app_package(
-    name = "app_crypto_client",
-    app_name = "crypto_client",
-    edition = "2024",
-    system_config = "//target/ast1060/crypto:system_config",
-    tags = ["kernel"],
 )

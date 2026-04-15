@@ -16,9 +16,8 @@ pub struct KernelConfig;
 
 impl CortexMKernelConfigInterface for KernelConfig {
     /// SysTick clock frequency in Hz.
-    /// Using 12 MHz for QEMU compatibility (LM3S6965EVB SysTick clock).
-    /// Real AST1060 hardware runs at 200 MHz.
-    const SYS_TICK_HZ: u32 = 12_000_000;
+    /// AST1060 hardware runs at 200 MHz.
+    const SYS_TICK_HZ: u32 = 200_000_000;
 
     /// Number of MPU regions available.
     /// ARM Cortex-M4 with PMSAv7 has 8 regions.

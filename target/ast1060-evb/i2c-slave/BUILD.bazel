@@ -1,6 +1,5 @@
 # Licensed under the Apache-2.0 license
 
-load("@pigweed//pw_kernel/tooling:app_package.bzl", "app_package")
 load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
 load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")

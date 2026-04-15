@@ -10,8 +10,7 @@ load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl"
 system_image(
     name = "ipc",
     apps = [
-        "@pigweed//pw_kernel/tests/ipc/user:initiator",
-        "@pigweed//pw_kernel/tests/ipc/user:handler",
+        "@pigweed//pw_kernel/tests/ipc/user:ipc",
     ],
     kernel = ":target",
     platform = "//target/ast1060-evb",

@@ -1,6 +1,6 @@
 # Licensed under the Apache-2.0 license
 
-load("@pigweed//pw_kernel/tooling:app_package.bzl", "app_package")
+load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app")
 load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image", "system_image_test")
 load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
@@ -12,13 +12,14 @@ load("//target:uart_boot_image.bzl", "uart_boot_image")
 # MCTP echo binary (userspace process)
 # ---------------------------------------------------------------------------
 
-rust_binary(
+rust_app(
     name = "mctp_echo",
+    codegen_crate_name = "app_mctp_echo",
     srcs = ["mctp_echo.rs"],
     edition = "2024",
+    system_config = ":system_config",
     tags = ["kernel"],
     deps = [
-        ":app_mctp_echo",
         "//services/mctp/api:mctp_api",
         "//services/mctp/client:mctp_client",
         "@pigweed//pw_kernel/syscall:syscall_user",
@@ -26,14 +27,6 @@ rust_binary(
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
     ],
-)
-
-app_package(
-    name = "app_mctp_echo",
-    app_name = "mctp_echo",
-    edition = "2024",
-    system_config = ":system_config",
-    tags = ["kernel"],
 )
 
 # ---------------------------------------------------------------------------
