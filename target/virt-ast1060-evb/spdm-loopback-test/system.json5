@@ -1,0 +1,45 @@
+// Licensed under the Apache-2.0 license
+
+// Virtual AST1060-EVB SPDM Loopback Test Configuration (QEMU)
+// ARM Cortex-M4 with semihosting console, 768KB SRAM
+//
+// Memory Layout:
+//   0x00000000 - 0x00000500: Vector table + kernel annotations (1280 bytes)
+//   0x00000500 - 0x00020000: Kernel code (~127KB)
+//   0x00020000 - 0x00040000: SPDM loopback test app (128KB)
+//   0x00040000 - 0x00060000: Kernel RAM (128KB)
+//   0x00060000 - 0x00070000: App RAM (64KB)
+//
+// Total: ~448KB, fits within AST1060's 768KB SRAM.
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,
+    },
+    kernel: {
+        flash_start_address: 0x00000500,
+        flash_size_bytes: 129792,  // ~127KB, ends at 0x20000
+        ram_start_address: 0x00040000,
+        ram_size_bytes: 131072,    // 128KB
+    },
+    apps: [
+        {
+            name: "spdm_loopback_test",
+            flash_size_bytes: 131072,  // 128KB for test app
+            ram_size_bytes: 65536,     // 64KB RAM for loopback buffers
+            processes: [
+                {
+                    name: "spdm_loopback_test_process",
+                    objects: [],
+                    threads: [
+                        {
+                            name: "spdm_loopback_test_thread",
+                            stack_size_bytes: 16384,  // 16KB stack
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}
