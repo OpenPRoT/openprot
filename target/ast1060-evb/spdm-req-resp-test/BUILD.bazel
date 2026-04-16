@@ -7,7 +7,7 @@ exports_files([
     "spdm_responder.rs",
 ])
 
-load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
 load("//target/ast1060-evb:defs.bzl", "TARGET_COMPATIBLE_WITH")
 load("@pigweed//pw_kernel/tooling:app_linker_script.bzl", "app_linker_script")
 load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app_codegen")
@@ -172,6 +172,25 @@ rust_binary(
 )
 
 # ---------------------------------------------------------------------------
+# Mock platform library (shared by requester and responder)
+# ---------------------------------------------------------------------------
+
+rust_library(
+    name = "mock_platform",
+    srcs = ["mock_platform.rs"],
+    crate_name = "mock_platform",
+    edition = "2024",
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@oot_crates_no_std//:spdm-lib",
+        "@rust_crates//:heapless",
+        "@rust_crates//:zerocopy",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)
+
+# ---------------------------------------------------------------------------
 # App 2: SPDM Requester
 # ---------------------------------------------------------------------------
 
@@ -195,7 +214,6 @@ rust_binary(
     name = "spdm_requester_app",
     srcs = [
         "spdm_requester.rs",
-        "mock_platform.rs",
     ],
     crate_root = "spdm_requester.rs",
     edition = "2024",
@@ -203,6 +221,7 @@ rust_binary(
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
         ":app_spdm_requester",
+        ":mock_platform",
         ":spdm_requester_app.linker_script",
         "//services/mctp/api:mctp_api",
         "//services/mctp/client:mctp_client",
@@ -241,7 +260,6 @@ rust_binary(
     name = "spdm_responder_app",
     srcs = [
         "spdm_responder.rs",
-        "mock_platform.rs",
     ],
     crate_root = "spdm_responder.rs",
     edition = "2024",
@@ -249,6 +267,7 @@ rust_binary(
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
         ":app_spdm_responder",
+        ":mock_platform",
         ":spdm_responder_app.linker_script",
         "//services/mctp/api:mctp_api",
         "//services/mctp/client:mctp_client",

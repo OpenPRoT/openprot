@@ -1,20 +1,15 @@
 // Licensed under the Apache-2.0 license
 
-//! SPDM Responder Application
+//! SPDM Responder Application (virt-ast1060-evb)
 //!
-//! Runs the SPDM responder using spdm-lib's responder API. Communicates with
-//! the SPDM requester via the MCTP loopback server using IPC channels.
-//!
-//! The responder:
-//! 1. Connects to the MCTP loopback server via an IPC channel
-//! 2. Creates an `MctpSpdmTransport` in responder mode (listener for SPDM messages)
-//! 3. Creates an `SpdmContext` with mock platform implementations
-//! 4. Loops processing incoming SPDM requests via `responder_process_message`
+//! Uses the IPC crypto server (SpdmCryptoHash, SpdmCryptoRng) instead of mocks.
 
 #![no_std]
 #![no_main]
 
 use openprot_mctp_client::IpcMctpClient;
+use openprot_spdm_hash::SpdmCryptoHash;
+use openprot_spdm_rng::SpdmCryptoRng;
 use openprot_spdm_transport_mctp::MctpSpdmTransport;
 use pw_log::{error, info};
 use spdm_lib::codec::MessageBuf;
@@ -31,23 +26,18 @@ use userspace::syscall;
 
 use app_spdm_responder::handle;
 
-use mock_platform::{MockCertStore, MockEvidence, MockHash, MockRng};
+use mock_platform::{MockCertStore, MockEvidence};
 
-/// Create local device algorithms configuration for SPDM responder
 fn create_local_algorithms<'a>() -> LocalDeviceAlgorithms<'a> {
-    // Measurement specification (DMTF)
     let mut measurement_spec = MeasurementSpecification::default();
     measurement_spec.set_dmtf_measurement_spec(1);
 
-    // Measurement hash algorithm (SHA-384)
     let mut measurement_hash_algo = MeasurementHashAlgo::default();
     measurement_hash_algo.set_tpm_alg_sha_384(1);
 
-    // Base asymmetric algorithm (ECDSA P-384)
     let mut base_asym_algo = BaseAsymAlgo::default();
     base_asym_algo.set_tpm_alg_ecdsa_ecc_nist_p384(1);
 
-    // Base hash algorithm (SHA-384)
     let mut base_hash_algo = BaseHashAlgo::default();
     base_hash_algo.set_tpm_alg_sha_384(1);
 
@@ -85,13 +75,9 @@ fn create_local_algorithms<'a>() -> LocalDeviceAlgorithms<'a> {
 fn spdm_responder_loop() -> Result<(), &'static str> {
     info!("SPDM responder starting");
 
-    // Create MCTP client via IPC to loopback server
     let mctp_client = IpcMctpClient::new(handle::MCTP);
-
-    // Create SPDM transport in responder mode
     let mut transport = MctpSpdmTransport::new_responder(mctp_client);
 
-    // Initialize transport (registers MCTP listener for SPDM message type 0x05)
     if let Err(_) = transport.init_sequence() {
         error!("Failed to initialize responder transport");
         return Err("Transport init failed");
@@ -99,21 +85,19 @@ fn spdm_responder_loop() -> Result<(), &'static str> {
 
     info!("SPDM transport initialized (responder mode)");
 
-    // Create mock platform implementations
     let mut cert_store = MockCertStore::new();
-    let mut hash = MockHash::new();
-    let mut m1_hash = MockHash::new();
-    let mut l1_hash = MockHash::new();
-    let mut rng = MockRng::new();
+    let mut hash = SpdmCryptoHash::new(handle::CRYPTO);
+    let mut m1_hash = SpdmCryptoHash::new(handle::CRYPTO);
+    let mut l1_hash = SpdmCryptoHash::new(handle::CRYPTO);
+    let mut rng = SpdmCryptoRng::new(handle::CRYPTO);
     let evidence = MockEvidence::new();
 
-    // Configure device capabilities
     let mut flags = CapabilityFlags::default();
-    flags.set_cert_cap(1); // Certificate capability
-    flags.set_chal_cap(1); // Challenge capability
-    flags.set_meas_cap(2); // Measurements with signature
-    flags.set_meas_fresh_cap(1); // Measurements freshness
-    flags.set_chunk_cap(1); // Chunk capability
+    flags.set_cert_cap(1);
+    flags.set_chal_cap(1);
+    flags.set_meas_cap(2);
+    flags.set_meas_fresh_cap(1);
+    flags.set_chunk_cap(1);
 
     let capabilities = DeviceCapabilities {
         ct_exponent: 0,
@@ -123,20 +107,17 @@ fn spdm_responder_loop() -> Result<(), &'static str> {
         include_supported_algorithms: true,
     };
 
-    // Configure supported algorithms
     let algorithms = create_local_algorithms();
 
-    // Supported SPDM versions
     static SUPPORTED_VERSIONS: [SpdmVersion; 2] = [SpdmVersion::V12, SpdmVersion::V13];
 
-    // Create SPDM responder context
     let mut ctx = match SpdmContext::new(
         &SUPPORTED_VERSIONS,
         &mut transport,
         capabilities,
         algorithms,
         &mut cert_store,
-        None, // No peer cert store for responder
+        None,
         &mut hash,
         &mut m1_hash,
         &mut l1_hash,
@@ -152,7 +133,6 @@ fn spdm_responder_loop() -> Result<(), &'static str> {
 
     info!("SPDM responder context created, entering message loop");
 
-    // Responder loop: process incoming SPDM requests
     let mut response_buf = [0u8; 4096];
     let mut msg_buf = MessageBuf::new(&mut response_buf);
     loop {
@@ -163,7 +143,6 @@ fn spdm_responder_loop() -> Result<(), &'static str> {
             }
             Err(_) => {
                 error!("Error processing SPDM request");
-                // Continue processing — don't exit on individual message errors
             }
         }
     }
@@ -175,7 +154,6 @@ fn entry() -> ! {
 
     match spdm_responder_loop() {
         Ok(_) => {
-            // Responder loop should not return Ok — it loops forever
             info!("SPDM responder exited unexpectedly");
             let _ = syscall::debug_shutdown(Ok(()));
         }

@@ -1,5 +1,7 @@
 // Licensed under the Apache-2.0 license
 
+#![no_std]
+
 //! Mock platform implementations for SPDM loopback testing
 //!
 //! Provides minimal implementations of SPDM platform traits without

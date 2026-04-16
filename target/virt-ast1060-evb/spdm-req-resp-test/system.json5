@@ -83,6 +83,12 @@
                             handler_process: "mctp loopback server process",
                             handler_object_name: "MCTP_REQ",
                         },
+                        {
+                            name: "CRYPTO",
+                            type: "channel_initiator",
+                            handler_process: "crypto_server_process",
+                            handler_object_name: "CRYPTO",
+                        },
                     ],
                     threads: [
                         {
@@ -107,6 +113,12 @@
                             type: "channel_initiator",
                             handler_process: "mctp loopback server process",
                             handler_object_name: "MCTP_RESP",
+                        },
+                        {
+                            name: "CRYPTO",
+                            type: "channel_initiator",
+                            handler_process: "crypto_server_process",
+                            handler_object_name: "CRYPTO",
                         },
                     ],
                     threads: [

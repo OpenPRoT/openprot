@@ -1,24 +1,15 @@
 // Licensed under the Apache-2.0 license
 
-//! SPDM Requester Application
+//! SPDM Requester Application (virt-ast1060-evb)
 //!
-//! Runs the SPDM requester flow using spdm-lib's requester API. Communicates
-//! with the SPDM responder via the MCTP loopback server using IPC channels.
-//!
-//! The requester:
-//! 1. Connects to the MCTP loopback server via an IPC channel
-//! 2. Creates an `MctpSpdmTransport` in requester mode (targeting responder EID)
-//! 3. Creates an `SpdmContext` with mock platform implementations
-//! 4. Executes the SPDM VCA flow:
-//!    - GET_VERSION → VERSION
-//!    - GET_CAPABILITIES → CAPABILITIES
-//!    - NEGOTIATE_ALGORITHMS → ALGORITHMS
-//! 5. Reports success/failure and shuts down
+//! Uses the IPC crypto server (SpdmCryptoHash, SpdmCryptoRng) instead of mocks.
 
 #![no_std]
 #![no_main]
 
 use openprot_mctp_client::IpcMctpClient;
+use openprot_spdm_hash::SpdmCryptoHash;
+use openprot_spdm_rng::SpdmCryptoRng;
 use openprot_spdm_transport_mctp::MctpSpdmTransport;
 use pw_log::{error, info};
 use spdm_lib::codec::MessageBuf;
@@ -39,26 +30,21 @@ use userspace::syscall;
 
 use app_spdm_requester::handle;
 
-use mock_platform::{DemoPeerCertStore, MockCertStore, MockEvidence, MockHash, MockRng};
+use mock_platform::{DemoPeerCertStore, MockCertStore, MockEvidence};
 
 /// Remote EID of the SPDM responder
 const RESPONDER_EID: u8 = 42;
 
-/// Create local device algorithms configuration for SPDM requester
 fn create_local_algorithms<'a>() -> LocalDeviceAlgorithms<'a> {
-    // Measurement specification (DMTF)
     let mut measurement_spec = MeasurementSpecification::default();
     measurement_spec.set_dmtf_measurement_spec(1);
 
-    // Measurement hash algorithm (SHA-384)
     let mut measurement_hash_algo = MeasurementHashAlgo::default();
     measurement_hash_algo.set_tpm_alg_sha_384(1);
 
-    // Base asymmetric algorithm (ECDSA P-384)
     let mut base_asym_algo = BaseAsymAlgo::default();
     base_asym_algo.set_tpm_alg_ecdsa_ecc_nist_p384(1);
 
-    // Base hash algorithm (SHA-384)
     let mut base_hash_algo = BaseHashAlgo::default();
     base_hash_algo.set_tpm_alg_sha_384(1);
 
@@ -94,42 +80,28 @@ fn create_local_algorithms<'a>() -> LocalDeviceAlgorithms<'a> {
 }
 
 fn spdm_requester_test() -> Result<(), &'static str> {
-    info!("SPDM requester starting");
-    info!("========================================");
-
-    // Create MCTP client via IPC to loopback server
     let mctp_client = IpcMctpClient::new(handle::MCTP);
-
-    // Create SPDM transport in requester mode (targeting responder EID)
     let mut transport = MctpSpdmTransport::new_requester(mctp_client, RESPONDER_EID);
 
-    // Initialize transport (establishes MCTP request handle)
     if let Err(_) = transport.init_sequence() {
         error!("Failed to initialize requester transport");
         return Err("Transport init failed");
     }
 
-    info!(
-        "SPDM transport initialized (requester mode, target EID {})",
-        RESPONDER_EID as u32
-    );
+    info!("SPDM transport initialized (requester mode, target EID {})", RESPONDER_EID as u32);
 
-    // Create mock platform implementations
-    // Note: The requester needs a cert store for its own identity (even if unused
-    // in the VCA flow) and the context constructor requires it.
     let mut cert_store = MockCertStore::new();
-    let mut hash = MockHash::new();
-    let mut m1_hash = MockHash::new();
-    let mut l1_hash = MockHash::new();
-    let mut rng = MockRng::new();
+    let mut hash = SpdmCryptoHash::new(handle::CRYPTO);
+    let mut m1_hash = SpdmCryptoHash::new(handle::CRYPTO);
+    let mut l1_hash = SpdmCryptoHash::new(handle::CRYPTO);
+    let mut rng = SpdmCryptoRng::new(handle::CRYPTO);
     let evidence = MockEvidence::new();
     let mut peer_cert_store = DemoPeerCertStore::default();
 
-    // Configure requester capabilities
     let mut flags = CapabilityFlags::default();
     flags.set_cert_cap(1);
     flags.set_chal_cap(1);
-    flags.set_meas_cap(0); // Requester doesn't need measurement capability
+    flags.set_meas_cap(0);
     flags.set_chunk_cap(1);
 
     let capabilities = DeviceCapabilities {
@@ -137,20 +109,13 @@ fn spdm_requester_test() -> Result<(), &'static str> {
         flags,
         data_transfer_size: 1024,
         max_spdm_msg_size: 4096,
-        // Setting true at V1.3 encodes param1 bit 2 of GET_CAPABILITIES, which the
-        // responder currently rejects as an unexpected reserved field. We handle
-        // algorithm negotiation via NEGOTIATE_ALGORITHMS instead.
         include_supported_algorithms: false,
     };
 
     let algorithms = create_local_algorithms();
 
-    // Supported SPDM versions
     static SUPPORTED_VERSIONS: [SpdmVersion; 2] = [SpdmVersion::V12, SpdmVersion::V13];
 
-    // Create SPDM requester context
-    // Note: peer_cert_store is None for now (VCA flow doesn't need it).
-    // For GET_DIGESTS/GET_CERTIFICATE flows, a PeerCertStore would be required.
     let mut ctx = match SpdmContext::new(
         &SUPPORTED_VERSIONS,
         &mut transport,
@@ -174,7 +139,6 @@ fn spdm_requester_test() -> Result<(), &'static str> {
     info!("SPDM requester context created");
     info!("========================================");
 
-    // Buffer for SPDM message encoding/decoding
     let mut buf = [0u8; 4096];
     let mut msg_buf = MessageBuf::new(&mut buf);
 
@@ -251,6 +215,5 @@ fn entry() -> ! {
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
-    error!("PANIC in SPDM requester");
     loop {}
 }
