@@ -11,7 +11,7 @@
 //   0x00060000 - 0x00080000: Kernel RAM (128KB)
 //   0x00080000 - 0x000A0000: App RAM (128KB total)
 //
-// Total: ~640KB, fits within AST1060's 768KB SRAM.
+// Total: ~640KB, fits within AST1060's 640kb
 {
     arch: {
         type: "armv7m",

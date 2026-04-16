@@ -2,6 +2,7 @@
 
 // Virtual AST1060-EVB SPDM Requester-Responder Test Configuration (QEMU)
 // ARM Cortex-M4 with semihosting console
+// PMSAv7 power-of-2 alignment constraint.`
 //
 // Three-process system for testing SPDM requester/responder communication:
 //   1. mctp_loopback_server  - Routes MCTP messages between requester and responder
@@ -10,16 +11,16 @@
 //
 // Memory Layout (PMSAv7-friendly, power-of-2 aligned regions):
 //   0x00000000 - 0x00000500: Vector table + kernel annotations (1280 bytes)
-//   0x00000500 - 0x00020000: Kernel flash (~127KB)
-//   0x00020000 - 0x00028000: mctp_loopback_server flash (32KB)
-//   0x00028000 - 0x00040000: spdm_requester flash (96KB)
-//   0x00040000 - 0x00058000: spdm_responder flash (96KB)
+//   0x00000500 - 0x00010000: Kernel flash (~62KB)
+//   0x00010000 - 0x00018000: mctp_loopback_server flash (32KB)
+//   0x00018000 - 0x00020000: spdm_requester flash (32KB)
+//   0x00020000 - 0x00028000: spdm_responder flash (32KB)
 //   0x00058000 - 0x00070000: Kernel RAM (96KB)
 //   0x00070000 - 0x00078000: mctp_loopback_server RAM (32KB)
 //   0x00078000 - 0x00090000: spdm_requester RAM (96KB)
 //   0x00090000 - 0x000A0000: spdm_responder RAM (64KB)
 //
-// Total: 0xA0000 = 640KB (fits within the 640KB usable window of the AST1060's 768KB SRAM).
+// Total: 0xA0000 = 640KB (fits within the 640KB usable window of the AST1060's 640KB SRAM).
 {
     arch: {
         type: "armv7m",
@@ -28,7 +29,7 @@
     },
     kernel: {
         flash_start_address: 0x00000500,
-        flash_size_bytes: 129792,         // ~127KB, ends at 0x20000
+        flash_size_bytes: 64256,          // ~62KB, ends at 0x10000
         ram_start_address: 0x00058000,
         ram_size_bytes: 98304,            // 96KB
     },
@@ -67,7 +68,7 @@
         // ──── SPDM Requester ────
         {
             name: "spdm_requester",
-            flash_size_bytes: 98304,
+            flash_size_bytes: 32768,          // 32KB (actual ~16KB)
             ram_size_bytes: 98304,
             processes: [
                 {
@@ -92,7 +93,7 @@
         // ──── SPDM Responder ────
         {
             name: "spdm_responder",
-            flash_size_bytes: 98304,
+            flash_size_bytes: 32768,          // 32KB (actual ~23KB)
             ram_size_bytes: 65536,
             processes: [
                 {
