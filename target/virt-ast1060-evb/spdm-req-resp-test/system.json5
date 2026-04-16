@@ -87,7 +87,19 @@
                             name: "CRYPTO",
                             type: "channel_initiator",
                             handler_process: "crypto_server_process",
-                            handler_object_name: "CRYPTO",
+                            handler_object_name: "CRYPTO_REQ",
+                        },
+                        {
+                            name: "CRYPTO_M1",
+                            type: "channel_initiator",
+                            handler_process: "crypto_server_process",
+                            handler_object_name: "CRYPTO_REQ_M1",
+                        },
+                        {
+                            name: "CRYPTO_L1",
+                            type: "channel_initiator",
+                            handler_process: "crypto_server_process",
+                            handler_object_name: "CRYPTO_REQ_L1",
                         },
                     ],
                     threads: [
@@ -118,7 +130,19 @@
                             name: "CRYPTO",
                             type: "channel_initiator",
                             handler_process: "crypto_server_process",
-                            handler_object_name: "CRYPTO",
+                            handler_object_name: "CRYPTO_RESP",
+                        },
+                        {
+                            name: "CRYPTO_M1",
+                            type: "channel_initiator",
+                            handler_process: "crypto_server_process",
+                            handler_object_name: "CRYPTO_RESP_M1",
+                        },
+                        {
+                            name: "CRYPTO_L1",
+                            type: "channel_initiator",
+                            handler_process: "crypto_server_process",
+                            handler_object_name: "CRYPTO_RESP_L1",
                         },
                     ],
                     threads: [
@@ -139,10 +163,13 @@
                 {
                     name: "crypto_server_process",
                     objects: [
-                        {
-                            name: "CRYPTO",
-                            type: "channel_handler",
-                        },
+                        { name: "CRYPTO_REQ",      type: "channel_handler" },
+                        { name: "CRYPTO_REQ_M1",   type: "channel_handler" },
+                        { name: "CRYPTO_REQ_L1",   type: "channel_handler" },
+                        { name: "CRYPTO_RESP",     type: "channel_handler" },
+                        { name: "CRYPTO_RESP_M1",  type: "channel_handler" },
+                        { name: "CRYPTO_RESP_L1",  type: "channel_handler" },
+                        { name: "WG",              type: "wait_group" },
                     ],
                     threads: [
                         {

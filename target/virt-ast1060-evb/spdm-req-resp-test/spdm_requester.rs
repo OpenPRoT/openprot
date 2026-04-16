@@ -15,6 +15,7 @@ use pw_log::{error, info};
 use spdm_lib::codec::MessageBuf;
 use spdm_lib::commands::algorithms::request::generate_negotiate_algorithms_request;
 use spdm_lib::commands::capabilities::request::generate_capabilities_request_local;
+use spdm_lib::commands::digests::request::generate_digest_request;
 use spdm_lib::commands::version::VersionReqPayload;
 use spdm_lib::commands::version::request::generate_get_version;
 use spdm_lib::context::SpdmContext;
@@ -92,8 +93,8 @@ fn spdm_requester_test() -> Result<(), &'static str> {
 
     let mut cert_store = MockCertStore::new();
     let mut hash = SpdmCryptoHash::new(handle::CRYPTO);
-    let mut m1_hash = SpdmCryptoHash::new(handle::CRYPTO);
-    let mut l1_hash = SpdmCryptoHash::new(handle::CRYPTO);
+    let mut m1_hash = SpdmCryptoHash::new(handle::CRYPTO_M1);
+    let mut l1_hash = SpdmCryptoHash::new(handle::CRYPTO_L1);
     let mut rng = SpdmCryptoRng::new(handle::CRYPTO);
     let evidence = MockEvidence::new();
     let mut peer_cert_store = DemoPeerCertStore::default();
@@ -189,8 +190,26 @@ fn spdm_requester_test() -> Result<(), &'static str> {
     }
     info!("  NEGOTIATE_ALGORITHMS completed successfully");
 
+    // ── Step 4: GET_DIGESTS ───────────────────────────────────────────────
+    // This is the first step that invokes the crypto server (SHA-384 hash
+    // of the responder's certificate chain).
+    info!("Step 4: GET_DIGESTS");
+    {
+        msg_buf.reset();
+        generate_digest_request(&mut ctx, &mut msg_buf)
+            .map_err(|_| "Failed to generate GET_DIGESTS request")?;
+        ctx.requester_send_request(&mut msg_buf, RESPONDER_EID)
+            .map_err(|_| "Failed to send GET_DIGESTS request")?;
+    }
+    {
+        msg_buf.reset();
+        ctx.requester_process_message(&mut msg_buf)
+            .map_err(|_| "Failed to process DIGESTS response")?;
+    }
+    info!("  GET_DIGESTS completed successfully");
+
     info!("========================================");
-    info!("VCA (Version, Capabilities, Algorithms) flow completed!");
+    info!("VCA + GET_DIGESTS flow completed!");
 
     Ok(())
 }

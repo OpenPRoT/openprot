@@ -87,8 +87,8 @@ fn spdm_responder_loop() -> Result<(), &'static str> {
 
     let mut cert_store = MockCertStore::new();
     let mut hash = SpdmCryptoHash::new(handle::CRYPTO);
-    let mut m1_hash = SpdmCryptoHash::new(handle::CRYPTO);
-    let mut l1_hash = SpdmCryptoHash::new(handle::CRYPTO);
+    let mut m1_hash = SpdmCryptoHash::new(handle::CRYPTO_M1);
+    let mut l1_hash = SpdmCryptoHash::new(handle::CRYPTO_L1);
     let mut rng = SpdmCryptoRng::new(handle::CRYPTO);
     let evidence = MockEvidence::new();
 

@@ -33,9 +33,7 @@ use app_crypto_server::handle;
 const MAX_REQUEST_SIZE: usize = 1024;
 const MAX_RESPONSE_SIZE: usize = 1024;
 
-/// Active streaming hash session.
-/// Only one session can be active at a time per server instance.
-/// Uses backend session types via the [`Streaming<A>`] trait.
+/// Per-channel streaming hash session state.
 enum HashSession {
     None,
     Sha256(Sha256Session),
@@ -49,33 +47,61 @@ impl HashSession {
     }
 }
 
+/// All channel handles served by this crypto server instance.
+/// Each entry: (channel_handle, user_data for WG)
+const CHANNELS: [(u32, usize); 6] = [
+    (handle::CRYPTO_REQ,     0),
+    (handle::CRYPTO_REQ_M1,  1),
+    (handle::CRYPTO_REQ_L1,  2),
+    (handle::CRYPTO_RESP,    3),
+    (handle::CRYPTO_RESP_M1, 4),
+    (handle::CRYPTO_RESP_L1, 5),
+];
+
 fn crypto_server_loop() -> Result<()> {
     pw_log::info!("Crypto server starting");
-    
+
     let mut request_buf = [0u8; MAX_REQUEST_SIZE];
     let mut response_buf = [0u8; MAX_RESPONSE_SIZE];
-    let mut session = HashSession::None;
+
+    // Independent session state per channel
+    let mut sessions: [HashSession; 6] = [
+        HashSession::None,
+        HashSession::None,
+        HashSession::None,
+        HashSession::None,
+        HashSession::None,
+        HashSession::None,
+    ];
     let mut backend = RustCryptoBackend::new();
 
-    loop {
-        // Wait for an IPC request
-        syscall::object_wait(handle::CRYPTO, Signals::READABLE, Instant::MAX)?;
+    // Register all channels in the WaitGroup
+    for (chan, ud) in CHANNELS {
+        syscall::wait_group_add(handle::WG, chan, Signals::READABLE, ud)?;
+    }
 
-        // Read the request
-        let len = syscall::channel_read(handle::CRYPTO, 0, &mut request_buf)?;
-        
+    loop {
+        let ev = syscall::object_wait(handle::WG, Signals::READABLE, Instant::MAX)?;
+        let idx = ev.user_data;
+        let chan = CHANNELS[idx].0;
+
+        let len = syscall::channel_read(chan, 0, &mut request_buf)?;
+
         if len < CryptoRequestHeader::SIZE {
-            // Invalid request - too short
             let header = CryptoResponseHeader::error(CryptoError::InvalidDataLength);
             let header_bytes = zerocopy::IntoBytes::as_bytes(&header);
             response_buf[..CryptoResponseHeader::SIZE].copy_from_slice(header_bytes);
-            syscall::channel_respond(handle::CRYPTO, &response_buf[..CryptoResponseHeader::SIZE])?;
+            syscall::channel_respond(chan, &response_buf[..CryptoResponseHeader::SIZE])?;
             continue;
         }
 
-        // Parse and dispatch
-        let response_len = dispatch_crypto_op(&request_buf[..len], &mut response_buf, &mut session, &mut backend);
-        syscall::channel_respond(handle::CRYPTO, &response_buf[..response_len])?;
+        let response_len = dispatch_crypto_op(
+            &request_buf[..len],
+            &mut response_buf,
+            &mut sessions[idx],
+            &mut backend,
+        );
+        syscall::channel_respond(chan, &response_buf[..response_len])?;
     }
 }
 
