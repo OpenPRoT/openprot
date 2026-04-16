@@ -132,9 +132,15 @@ impl<C: MctpClient> SpdmTransport for MctpSpdmTransport<C> {
         // Get the request handle (should be set by init_sequence)
         let handle = self.req_handle.ok_or(TransportError::NoRequestInFlight)?;
 
-        // Get the message data from MessageBuf
-        let msg_len = req.data_len();
-        let msg_data = req.data(msg_len).map_err(|_| TransportError::SendError)?;
+        // message_data() returns buffer[head..tail] — the full serialized SPDM message
+        // including header bytes that have been consumed by pull_data during encoding.
+        // data_len() only returns the uncommitted tail bytes and must NOT be used here.
+        let msg_data = req.message_data().map_err(|_| TransportError::SendError)?;
+        pw_log::debug!("send_request: eid={} len={} [0]={:#04x} [1]={:#04x}",
+            dest_eid as u32, msg_data.len() as u32,
+            msg_data.first().copied().unwrap_or(0) as u32,
+            msg_data.get(1).copied().unwrap_or(0) as u32,
+        );
 
         // Send via MCTP
         self.client
@@ -170,6 +176,11 @@ impl<C: MctpClient> SpdmTransport for MctpSpdmTransport<C> {
 
         // Copy payload into MessageBuf
         let payload = &recv_buf[..meta.payload_size];
+        pw_log::debug!("receive_response: len={} [0]={:#04x} [1]={:#04x}",
+            meta.payload_size as u32,
+            payload.first().copied().unwrap_or(0) as u32,
+            payload.get(1).copied().unwrap_or(0) as u32,
+        );
         rsp.reserve(MCTP_HEADER_SIZE).map_err(|_| TransportError::BufferTooSmall)?;
         rsp.put_data(meta.payload_size).map_err(|_| TransportError::BufferTooSmall)?;
 
@@ -201,6 +212,11 @@ impl<C: MctpClient> SpdmTransport for MctpSpdmTransport<C> {
 
         // Copy payload into MessageBuf
         let payload = &recv_buf[..meta.payload_size];
+        pw_log::debug!("receive_request: len={} [0]={:#04x} [1]={:#04x}",
+            meta.payload_size as u32,
+            payload.first().copied().unwrap_or(0) as u32,
+            payload.get(1).copied().unwrap_or(0) as u32,
+        );
         req.reserve(MCTP_HEADER_SIZE).map_err(|_| TransportError::BufferTooSmall)?;
         req.put_data(meta.payload_size).map_err(|_| TransportError::BufferTooSmall)?;
 
@@ -214,9 +230,13 @@ impl<C: MctpClient> SpdmTransport for MctpSpdmTransport<C> {
         // Get metadata from last received request
         let meta = self.last_request_meta.ok_or(TransportError::NoRequestInFlight)?;
 
-        // Get the response data from MessageBuf
-        let msg_len = resp.data_len();
-        let msg_data = resp.data(msg_len).map_err(|_| TransportError::SendError)?;
+        // message_data() returns buffer[head..tail] — the full serialized SPDM message.
+        let msg_data = resp.message_data().map_err(|_| TransportError::SendError)?;
+        pw_log::debug!("send_response: eid={} len={} [0]={:#04x} [1]={:#04x}",
+            meta.remote_eid as u32, msg_data.len() as u32,
+            msg_data.first().copied().unwrap_or(0) as u32,
+            msg_data.get(1).copied().unwrap_or(0) as u32,
+        );
 
         // Send response back to requester
         self.client

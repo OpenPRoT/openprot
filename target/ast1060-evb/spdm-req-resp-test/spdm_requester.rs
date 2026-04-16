@@ -138,7 +138,10 @@ fn spdm_requester_test() -> Result<(), &'static str> {
         flags,
         data_transfer_size: 1024,
         max_spdm_msg_size: 4096,
-        include_supported_algorithms: true,
+        // Setting true at V1.3 encodes param1 bit 2 of GET_CAPABILITIES, which the
+        // responder currently rejects as an unexpected reserved field. We handle
+        // algorithm negotiation via NEGOTIATE_ALGORITHMS instead.
+        include_supported_algorithms: false,
     };
 
     let algorithms = create_local_algorithms();
