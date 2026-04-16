@@ -37,7 +37,7 @@ jobs:
       id: build-docs
       run: |
         bazel build //docs
-        echo "path=$(bazel cquery --output=files //docs 2>/dev/null)" >> "$GITHUB_OUTPUT"
+        echo "path=$(bazel cquery --output=files --platform_suffix= --@@pigweed+//pw_kernel:enable_tests=false //docs 2>/dev/null)" >> "$GITHUB_OUTPUT"
 
     - name: Setup Pages
       uses: actions/configure-pages@v6
