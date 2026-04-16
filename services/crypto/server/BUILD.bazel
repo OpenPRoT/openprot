@@ -1,5 +1,7 @@
 # Licensed under the Apache-2.0 license
 
+exports_files(["src/main.rs"])
+
 load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app")
 
 rust_app(

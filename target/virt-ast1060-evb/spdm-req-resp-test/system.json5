@@ -4,10 +4,11 @@
 // ARM Cortex-M4 with semihosting console
 // PMSAv7 power-of-2 alignment constraint.`
 //
-// Three-process system for testing SPDM requester/responder communication:
+// Four-process system for testing SPDM requester/responder communication:
 //   1. mctp_loopback_server  - Routes MCTP messages between requester and responder
 //   2. spdm_requester        - SPDM requester using spdm-lib requester API
 //   3. spdm_responder        - SPDM responder using spdm-lib responder API
+//   4. crypto_server         - Crypto service (RustCrypto backend)
 //
 // Memory Layout (PMSAv7-friendly, power-of-2 aligned regions):
 //   0x00000000 - 0x00000500: Vector table + kernel annotations (1280 bytes)
@@ -15,10 +16,12 @@
 //   0x00010000 - 0x00018000: mctp_loopback_server flash (32KB)
 //   0x00018000 - 0x00020000: spdm_requester flash (32KB)
 //   0x00020000 - 0x00028000: spdm_responder flash (32KB)
+//   0x00028000 - 0x00038000: crypto_server flash (64KB)
 //   0x00058000 - 0x00070000: Kernel RAM (96KB)
 //   0x00070000 - 0x00078000: mctp_loopback_server RAM (32KB)
-//   0x00078000 - 0x00090000: spdm_requester RAM (96KB)
-//   0x00090000 - 0x000A0000: spdm_responder RAM (64KB)
+//   0x00078000 - 0x00080000: spdm_requester RAM (32KB)
+//   0x00080000 - 0x00090000: spdm_responder RAM (64KB)
+//   0x00090000 - 0x000A0000: crypto_server RAM (64KB)
 //
 // Total: 0xA0000 = 640KB (fits within the 640KB usable window of the AST1060's 640KB SRAM).
 {
@@ -69,7 +72,7 @@
         {
             name: "spdm_requester",
             flash_size_bytes: 32768,          // 32KB (actual ~16KB)
-            ram_size_bytes: 98304,
+            ram_size_bytes: 32768,            // 32KB (stack 16KB + buffers)
             processes: [
                 {
                     name: "spdm requester process",
@@ -110,6 +113,29 @@
                         {
                             name: "spdm responder thread",
                             stack_size_bytes: 16384,
+                        },
+                    ],
+                },
+            ],
+        },
+        // ──── Crypto Server ────
+        {
+            name: "crypto_server",
+            flash_size_bytes: 65536,          // 64KB (RustCrypto backend)
+            ram_size_bytes: 65536,            // 64KB RAM for crypto contexts
+            processes: [
+                {
+                    name: "crypto_server_process",
+                    objects: [
+                        {
+                            name: "CRYPTO",
+                            type: "channel_handler",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "crypto_server_thread",
+                            stack_size_bytes: 8192,
                         },
                     ],
                 },

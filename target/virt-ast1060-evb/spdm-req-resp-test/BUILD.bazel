@@ -19,6 +19,7 @@ system_image(
         ":mctp_loopback_server_app",
         ":spdm_requester_app",
         ":spdm_responder_app",
+        ":crypto_server_app",
     ],
     kernel = ":target",
     platform = "//target/virt-ast1060-evb",
@@ -222,5 +223,46 @@ rust_binary(
         "@oot_crates_no_std//:spdm-lib",
         "@rust_crates//:heapless",
         "@rust_crates//:zerocopy",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# App 4: Crypto Server
+# ---------------------------------------------------------------------------
+
+rust_app_codegen(
+    name = "app_crypto_server",
+    app_name = "crypto_server",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+app_linker_script(
+    name = "crypto_server_app.linker_script",
+    app_name = "crypto_server",
+    system_config = ":system_config",
+    tags = ["kernel"],
+)
+
+rust_binary(
+    name = "crypto_server_app",
+    srcs = [
+        "//services/crypto/server:src/main.rs",
+    ],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":app_crypto_server",
+        ":crypto_server_app.linker_script",
+        "//services/crypto/api:crypto_api",
+        "//services/crypto/backend-rustcrypto:crypto-backend-rustcrypto",
+        "@pigweed//pw_kernel/syscall:syscall_user",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+        "@oot_crates_no_std//:zerocopy",
     ],
 )
