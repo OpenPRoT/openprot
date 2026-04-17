@@ -95,8 +95,11 @@ fn transfer_and_clear<S: openprot_mctp_server::Sender, const N: usize>(
 ///
 /// If a message is available: encodes the response, calls `channel_respond`
 /// to wake the client, then re-adds the channel to the WG.
-/// If the inbox is still empty (shouldn't happen in loopback): responds with
-/// `InternalError` so the client is not left stranded, then re-adds to WG.
+/// If the inbox is still empty (race: both sides parked simultaneously before
+/// any data arrived): **re-parks** the pending recv and returns `Ok(())`.
+/// The parked Recv will be answered the next time data arrives from the other
+/// side.  Sending `InternalError` in this case would corrupt the client's
+/// state and is never correct.
 fn try_service_pending<S: openprot_mctp_server::Sender, const N: usize>(
     pending: &mut Option<PendingRecv>,
     server: &mut openprot_mctp_server::Server<S, N>,
@@ -115,32 +118,34 @@ fn try_service_pending<S: openprot_mctp_server::Sender, const N: usize>(
         chan_handle as u32, wg_handle as u32, wg_user_data as u32, p.handle.0 as u32
     );
 
-    let resp_len = if let Some(meta) = server.try_recv(p.handle, recv_buf) {
+    let Some(meta) = server.try_recv(p.handle, recv_buf) else {
+        // Inbox still empty — both sides parked simultaneously (startup race).
+        // Re-park and return; the Recv will be answered when data arrives.
         pw_log::debug!(
-            "try_service_pending: try_recv(handle={}) hit: type={} size={}",
-            p.handle.0 as u32, meta.msg_type as u32, meta.payload_size as u32
-        );
-        let payload = &recv_buf[..meta.payload_size];
-        wire::encode_recv_response(
-            response_buf,
-            meta.msg_type,
-            meta.msg_ic,
-            meta.remote_eid,
-            meta.msg_tag,
-            payload,
-        )
-        .unwrap_or_else(|_| {
-            wire::encode_error_response(response_buf, ResponseCode::InternalError)
-                .unwrap_or_default()
-        })
-    } else {
-        pw_log::error!(
-            "try_service_pending: try_recv(handle={}) miss on chan={}",
+            "try_service_pending: try_recv(handle={}) miss — re-parking on chan={}",
             p.handle.0 as u32, chan_handle as u32
         );
+        *pending = Some(p);
+        return Ok(());
+    };
+
+    pw_log::debug!(
+        "try_service_pending: try_recv(handle={}) hit: type={} size={}",
+        p.handle.0 as u32, meta.msg_type as u32, meta.payload_size as u32
+    );
+    let payload = &recv_buf[..meta.payload_size];
+    let resp_len = wire::encode_recv_response(
+        response_buf,
+        meta.msg_type,
+        meta.msg_ic,
+        meta.remote_eid,
+        meta.msg_tag,
+        payload,
+    )
+    .unwrap_or_else(|_| {
         wire::encode_error_response(response_buf, ResponseCode::InternalError)
             .unwrap_or_default()
-    };
+    });
 
     syscall::channel_respond(chan_handle, &response_buf[..resp_len])
         .map_err(|e| {
