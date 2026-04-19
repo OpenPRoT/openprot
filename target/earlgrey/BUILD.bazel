@@ -89,6 +89,34 @@ rust_library(
 )
 
 rust_library(
+    name = "gpio",
+    srcs = ["gpio.rs"],
+    crate_name = "earlgrey_gpio",
+    edition = "2024",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":pinmux",
+        "//hal/blocking",
+        "//target/earlgrey/registers",
+        "@ureg",
+    ],
+)
+
+rust_library(
+    name = "pinmux",
+    srcs = ["pinmux.rs"],
+    crate_name = "earlgrey_pinmux",
+    edition = "2024",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+    deps = [
+        "//target/earlgrey/registers",
+        "@ureg",
+    ],
+)
+
+rust_library(
     name = "console",
     srcs = ["console.rs"],
     crate_name = "console_backend",
