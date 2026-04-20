@@ -206,8 +206,8 @@ trait by accessing memory mapped registers directly and it is distributed as a
 
 A `no_std` crate like the one depicted below would be linked directly into a
 user mode task with exclusive peripheral ownership. This use case is encountered
-in microkernel-based embedded O/S such as Oxide HUBRIS where drivers run in
-unprivileged mode.
+in microkernel-based embedded operating systems such as openprot's kernel,
+Pigweed's `pw_kernel`, where drivers run in unprivileged mode.
 
 <img src="figure1.png" alt="figure1" width="300"/>
 

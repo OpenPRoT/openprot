@@ -21,8 +21,12 @@ The code of conduct can be found [here](https://github.com/OpenPRoT/.github/blob
 2. Use the Pigweed workflow launcher `pw` or `bazel` for common tasks:
    - `./pw presubmit` - Run presubmit checks: formatting, license checks, C/C++ header checks, and `clippy`.
    - `./pw format` - Run the code formatters.
-   - `bazel test //...` - Run all tests.
+   - `./pw ci` - Build and run the host test suite.
+   - `./pw default` - Build everything buildable on a dev host without running tests.
    - `bazel build //docs` - Build documentation.
+
+Firmware builds are driven per target platform. See the target's `defs.bzl`
+for the Bazel flags and constraints used when building firmware for it.
 
 ## Code Style
 
