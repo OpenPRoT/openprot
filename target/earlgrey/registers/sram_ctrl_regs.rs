@@ -18,7 +18,7 @@ impl SramCtrlRetAon {
     #[doc = r" way. The simplest way to enforce this is to only call"]
     #[doc = r" this function once."]
     #[inline(always)]
-    pub unsafe fn new() -> Self {
+    pub const unsafe fn new() -> Self {
         Self { _priv: () }
     }
     #[doc = r" Returns a register block that can be used to read"]
@@ -57,7 +57,7 @@ impl SramCtrlMain {
     #[doc = r" way. The simplest way to enforce this is to only call"]
     #[doc = r" this function once."]
     #[inline(always)]
-    pub unsafe fn new() -> Self {
+    pub const unsafe fn new() -> Self {
         Self { _priv: () }
     }
     #[doc = r" Returns a register block that can be used to read"]
@@ -118,6 +118,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Alert Test Register\n\nRead value: [`regs::AlertTestReadVal`]; Write value: [`regs::AlertTestWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_alert_test(self) -> ureg::RegRef<crate::meta::AlertTest, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "SRAM status register.\n\nRead value: [`regs::StatusReadVal`]; Write value: [`regs::StatusWriteVal`]"]
     #[inline(always)]
     pub fn status(&self) -> ureg::RegRef<crate::meta::Status, &TMmio> {
@@ -125,6 +136,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "SRAM status register.\n\nRead value: [`regs::StatusReadVal`]; Write value: [`regs::StatusWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_status(self) -> ureg::RegRef<crate::meta::Status, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -138,6 +160,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Lock register for execution enable register.\n\nRead value: [`regs::ExecRegwenReadVal`]; Write value: [`regs::ExecRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_exec_regwen(self) -> ureg::RegRef<crate::meta::ExecRegwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(8 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Sram execution enable.\n\nRead value: [`regs::ExecReadVal`]; Write value: [`regs::ExecWriteVal`]"]
     #[inline(always)]
     pub fn exec(&self) -> ureg::RegRef<crate::meta::Exec, &TMmio> {
@@ -145,6 +178,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0xc / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Sram execution enable.\n\nRead value: [`regs::ExecReadVal`]; Write value: [`regs::ExecWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_exec(self) -> ureg::RegRef<crate::meta::Exec, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xc / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -158,6 +202,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Lock register for control register.\n\nRead value: [`regs::CtrlRegwenReadVal`]; Write value: [`regs::CtrlRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_ctrl_regwen(self) -> ureg::RegRef<crate::meta::CtrlRegwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x10 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "SRAM ctrl register.\n\nRead value: [`regs::CtrlReadVal`]; Write value: [`regs::CtrlWriteVal`]"]
     #[inline(always)]
     pub fn ctrl(&self) -> ureg::RegRef<crate::meta::Ctrl, &TMmio> {
@@ -165,6 +220,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x14 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "SRAM ctrl register.\n\nRead value: [`regs::CtrlReadVal`]; Write value: [`regs::CtrlWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_ctrl(self) -> ureg::RegRef<crate::meta::Ctrl, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x14 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -178,6 +244,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Clearable SRAM key request status.\n\nRead value: [`regs::ScrKeyRotatedReadVal`]; Write value: [`regs::ScrKeyRotatedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_scr_key_rotated(self) -> ureg::RegRef<crate::meta::ScrKeyRotated, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x18 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Lock register for readback enable register.\n\nRead value: [`regs::ReadbackRegwenReadVal`]; Write value: [`regs::ReadbackRegwenWriteVal`]"]
     #[inline(always)]
     pub fn readback_regwen(&self) -> ureg::RegRef<crate::meta::ReadbackRegwen, &TMmio> {
@@ -185,6 +262,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x1c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Lock register for readback enable register.\n\nRead value: [`regs::ReadbackRegwenReadVal`]; Write value: [`regs::ReadbackRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_readback_regwen(self) -> ureg::RegRef<crate::meta::ReadbackRegwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x1c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -198,16 +286,27 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "readback enable.\n\nRead value: [`regs::ReadbackReadVal`]; Write value: [`regs::ReadbackWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_readback(self) -> ureg::RegRef<crate::meta::Readback, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x20 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
 }
 pub mod regs {
     #![doc = r" Types that represent the values held by registers."]
     #[derive(Clone, Copy)]
-    pub struct AlertTestWriteVal(u32);
+    pub struct AlertTestWriteVal(pub u32);
     impl AlertTestWriteVal {
         #[doc = "Write 1 to trigger one alert event of this kind."]
         #[inline(always)]
-        pub fn fatal_error(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn fatal_error(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for AlertTestWriteVal {
@@ -223,17 +322,17 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct CtrlWriteVal(u32);
+    pub struct CtrlWriteVal(pub u32);
     impl CtrlWriteVal {
         #[doc = "Write 1 to request a new scrambling key from OTP. After writing to this register, SRAM transactions will\nbe blocked until !!STATUS.SCR_KEY_VALID has been set to 1. If !!STATUS.SCR_KEY_VALID was already 1\nbefore triggering a key renewal, hardware will automatically clear that status bit such that software\ncan poll its status. Note that requesting a new scrambling key takes ~200 OTP cycles, which translates\nto ~800 CPU cycles (OTP runs at 24MHz, CPU runs at 100MHz). Note that writing 1 to this register while\na key request or a memory initialization request is already pending has no effect."]
         #[inline(always)]
-        pub fn renew_scr_key(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn renew_scr_key(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Write 1 to request memory init.\nThe init mechanism uses an LFSR that is seeded with a part of the nonce supplied when requesting a scrambling key.\nOnce seeded, the memory is initialized with pseudo-random data pulled from the LFSR.\nNote that !!CTRL.RENEW_SCR_KEY takes priority when writing 1 to both !!CTRL.RENEW_SCR_KEY and !!CTRL.INIT with the same write transaction.\nThis means that the key request will complete first, followed by SRAM initialization. Note that writing 1 to this register while\nan init request is already pending has no effect."]
         #[inline(always)]
-        pub fn init(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn init(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
     }
     impl From<u32> for CtrlWriteVal {
@@ -249,11 +348,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct CtrlRegwenReadVal(u32);
+    pub struct CtrlRegwenReadVal(pub u32);
     impl CtrlRegwenReadVal {
         #[doc = "When cleared to zero, !!CTRL can not be written anymore."]
         #[inline(always)]
-        pub fn ctrl_regwen(&self) -> bool {
+        pub const fn ctrl_regwen(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -275,11 +374,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct CtrlRegwenWriteVal(u32);
+    pub struct CtrlRegwenWriteVal(pub u32);
     impl CtrlRegwenWriteVal {
         #[doc = "When cleared to zero, !!CTRL can not be written anymore."]
         #[inline(always)]
-        pub fn ctrl_regwen_clear(self) -> Self {
+        pub const fn ctrl_regwen_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -296,11 +395,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ExecReadVal(u32);
+    pub struct ExecReadVal(pub u32);
     impl ExecReadVal {
         #[doc = "Write kMultiBitBool4True to this field to enable execution from SRAM.\nNote that this register only takes effect if the EN_SRAM_IFETCH switch\nin the OTP HW_CFG1 partition is set to kMultiBitBool8True. Otherwise execution\nfrom SRAM cannot be enabled via this register."]
         #[inline(always)]
-        pub fn en(&self) -> u32 {
+        pub const fn en(&self) -> u32 {
             (self.0 >> 0) & 0xf
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -322,11 +421,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ExecWriteVal(u32);
+    pub struct ExecWriteVal(pub u32);
     impl ExecWriteVal {
         #[doc = "Write kMultiBitBool4True to this field to enable execution from SRAM.\nNote that this register only takes effect if the EN_SRAM_IFETCH switch\nin the OTP HW_CFG1 partition is set to kMultiBitBool8True. Otherwise execution\nfrom SRAM cannot be enabled via this register."]
         #[inline(always)]
-        pub fn en(self, val: u32) -> Self {
+        pub const fn en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 0)) | ((val & 0xf) << 0))
         }
     }
@@ -343,11 +442,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ExecRegwenReadVal(u32);
+    pub struct ExecRegwenReadVal(pub u32);
     impl ExecRegwenReadVal {
         #[doc = "When cleared to zero, !!EXEC can not be written anymore."]
         #[inline(always)]
-        pub fn exec_regwen(&self) -> bool {
+        pub const fn exec_regwen(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -369,11 +468,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ExecRegwenWriteVal(u32);
+    pub struct ExecRegwenWriteVal(pub u32);
     impl ExecRegwenWriteVal {
         #[doc = "When cleared to zero, !!EXEC can not be written anymore."]
         #[inline(always)]
-        pub fn exec_regwen_clear(self) -> Self {
+        pub const fn exec_regwen_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -390,11 +489,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ReadbackReadVal(u32);
+    pub struct ReadbackReadVal(pub u32);
     impl ReadbackReadVal {
         #[doc = "Write kMultiBitBool4True to this field to enable the readback security feature for the SRAM.\nA readback of each memory write or read request will be performed and a comparison happens.\nAny other value than kMultiBitBool4False written to this field is interpreted as kMultiBitBool4True."]
         #[inline(always)]
-        pub fn en(&self) -> u32 {
+        pub const fn en(&self) -> u32 {
             (self.0 >> 0) & 0xf
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -416,11 +515,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ReadbackWriteVal(u32);
+    pub struct ReadbackWriteVal(pub u32);
     impl ReadbackWriteVal {
         #[doc = "Write kMultiBitBool4True to this field to enable the readback security feature for the SRAM.\nA readback of each memory write or read request will be performed and a comparison happens.\nAny other value than kMultiBitBool4False written to this field is interpreted as kMultiBitBool4True."]
         #[inline(always)]
-        pub fn en(self, val: u32) -> Self {
+        pub const fn en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 0)) | ((val & 0xf) << 0))
         }
     }
@@ -437,11 +536,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ReadbackRegwenReadVal(u32);
+    pub struct ReadbackRegwenReadVal(pub u32);
     impl ReadbackRegwenReadVal {
         #[doc = "When cleared to zero, !!READBACK can not be written anymore."]
         #[inline(always)]
-        pub fn readback_regwen(&self) -> bool {
+        pub const fn readback_regwen(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -463,11 +562,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ReadbackRegwenWriteVal(u32);
+    pub struct ReadbackRegwenWriteVal(pub u32);
     impl ReadbackRegwenWriteVal {
         #[doc = "When cleared to zero, !!READBACK can not be written anymore."]
         #[inline(always)]
-        pub fn readback_regwen_clear(self) -> Self {
+        pub const fn readback_regwen_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -484,11 +583,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ScrKeyRotatedReadVal(u32);
+    pub struct ScrKeyRotatedReadVal(pub u32);
     impl ScrKeyRotatedReadVal {
         #[doc = "This status register is similar to !!SCR_KEY_VALID with the difference that the status is multibit encoded,\nSW clearable and sticky (i.e., HW does not auto-clear the register except during escalation). That way,\nSW can use this for a hardened acknowledgement mechanism where it clears the register before requesting a key.\n\nkMultiBitBool4True indicates that a valid scrambling key has been obtained from OTP.\nWrite kMultiBitBool4True to clear."]
         #[inline(always)]
-        pub fn success(&self) -> u32 {
+        pub const fn success(&self) -> u32 {
             (self.0 >> 0) & 0xf
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -510,11 +609,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ScrKeyRotatedWriteVal(u32);
+    pub struct ScrKeyRotatedWriteVal(pub u32);
     impl ScrKeyRotatedWriteVal {
         #[doc = "This status register is similar to !!SCR_KEY_VALID with the difference that the status is multibit encoded,\nSW clearable and sticky (i.e., HW does not auto-clear the register except during escalation). That way,\nSW can use this for a hardened acknowledgement mechanism where it clears the register before requesting a key.\n\nkMultiBitBool4True indicates that a valid scrambling key has been obtained from OTP.\nWrite kMultiBitBool4True to clear."]
         #[inline(always)]
-        pub fn success(self, val: u32) -> Self {
+        pub const fn success(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 0)) | ((val & 0xf) << 0))
         }
     }
@@ -531,46 +630,46 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct StatusReadVal(u32);
+    pub struct StatusReadVal(pub u32);
     impl StatusReadVal {
         #[doc = "This bit is set to 1 if a fatal bus integrity fault is detected.\nThis error triggers a fatal_error alert.\nThis condition is terminal."]
         #[inline(always)]
-        pub fn bus_integ_error(&self) -> bool {
+        pub const fn bus_integ_error(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "This bit is set to 1 if a the initialization counter has reached an invalid state.\nThis error triggers a fatal_error alert.\nThis condition is terminal."]
         #[inline(always)]
-        pub fn init_error(&self) -> bool {
+        pub const fn init_error(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "Set to 1 if the sram controller has received an escalate request.\nIf this is set to 1, the scrambling keys have been reset to the default values\nand all subsequent memory requests will be blocked.\nThis condition is terminal."]
         #[inline(always)]
-        pub fn escalated(&self) -> bool {
+        pub const fn escalated(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "Set to 1 if a new scrambling key has been successfully obtained from OTP.\nNote that if this is set to 0, the SRAM contents are still scrambled, but a\ndefault all-zero key and nonce are used to do so."]
         #[inline(always)]
-        pub fn scr_key_valid(&self) -> bool {
+        pub const fn scr_key_valid(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "Set to 1 if the scrambling key has been derived from a valid key seed in OTP.\nIf !!STATUS.SCR_KEY_VALID is set to 1, !!STATUS.SCR_KEY_SEED_VALID should be 1\nexcept for cases where the scrambling key seeds have not yet been provisioned to\nOTP. In such a case, the scrambling key is still ephemeral (i.e., it is derived\nusing entropy from CSRNG), but a default all-zero value is used as the key seed."]
         #[inline(always)]
-        pub fn scr_key_seed_valid(&self) -> bool {
+        pub const fn scr_key_seed_valid(&self) -> bool {
             ((self.0 >> 4) & 1) != 0
         }
         #[doc = "Set to 1 if the hardware initialization triggered via !!CTRL.INIT has completed."]
         #[inline(always)]
-        pub fn init_done(&self) -> bool {
+        pub const fn init_done(&self) -> bool {
             ((self.0 >> 5) & 1) != 0
         }
         #[doc = "This bit is set to 1 if a SRAM readback check failed.\nThis error triggers a fatal_error alert.\nThis condition is terminal."]
         #[inline(always)]
-        pub fn readback_error(&self) -> bool {
+        pub const fn readback_error(&self) -> bool {
             ((self.0 >> 6) & 1) != 0
         }
         #[doc = "This bit is set to 1 if a multi bit encoding error has been detected inside the RAM modules.\nThis error triggers a fatal_error alert.\nThis condition is terminal."]
         #[inline(always)]
-        pub fn sram_alert(&self) -> bool {
+        pub const fn sram_alert(&self) -> bool {
             ((self.0 >> 7) & 1) != 0
         }
     }

@@ -18,7 +18,7 @@ impl RvDm {
     #[doc = r" way. The simplest way to enforce this is to only call"]
     #[doc = r" this function once."]
     #[inline(always)]
-    pub unsafe fn new() -> Self {
+    pub const unsafe fn new() -> Self {
         Self { _priv: () }
     }
     #[doc = r" Returns a register block that can be used to read"]
@@ -79,6 +79,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Alert Test Register\n\nRead value: [`regs::AlertTestReadVal`]; Write value: [`regs::AlertTestWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_alert_test(self) -> ureg::RegRef<crate::meta::AlertTest, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Lock bit for !!LATE_DEBUG_ENABLE register.\n\nRead value: [`regs::LateDebugEnableRegwenReadVal`]; Write value: [`regs::LateDebugEnableRegwenWriteVal`]"]
     #[inline(always)]
     pub fn late_debug_enable_regwen(
@@ -88,6 +99,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Lock bit for !!LATE_DEBUG_ENABLE register.\n\nRead value: [`regs::LateDebugEnableRegwenReadVal`]; Write value: [`regs::LateDebugEnableRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_late_debug_enable_regwen(
+        self,
+    ) -> ureg::RegRef<crate::meta::LateDebugEnableRegwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -101,16 +125,27 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Debug enable register.\n\nIf the device is in the DEV lifecycle state and the\nDIS_RV_DM_LATE_DEBUG_IN_DEV has been programmed to kMuBi8False\n(or an invalid value), the RV_DM gating mechanisms are by default\nnot ungated until SW writes kMuBi32True to this register.\n\nThis can be leveraged to implement a \"late debug enable in DEV\"\npolicy, whereby ROM_EXT first locks out any sensitive areas and\nfunctionalities of the device before enabling debug access via\nRV_DM.\n\nThis register can be locked out via !!LATE_DEBUG_ENABLE_REGWEN.\n\nThis register does not have any effect in the following cases:\n  - If the device is in a DFT-enabled life cycle state (TEST_UNLOCKED*, RMA)\n  - If the device is in the DEV life cycle state and DIS_RV_DM_LATE_DEBUG_IN_DEV has been programmed to kMuBi8True\n  - If the device is in a life cycle state where hardware debugging is disabled (TEST_LOCKED*, PROD*, invalid states).\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_late_debug_enable(self) -> ureg::RegRef<crate::meta::LateDebugEnable, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(8 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
 }
 pub mod regs {
     #![doc = r" Types that represent the values held by registers."]
     #[derive(Clone, Copy)]
-    pub struct AlertTestWriteVal(u32);
+    pub struct AlertTestWriteVal(pub u32);
     impl AlertTestWriteVal {
         #[doc = "Write 1 to trigger one alert event of this kind."]
         #[inline(always)]
-        pub fn fatal_fault(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn fatal_fault(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for AlertTestWriteVal {
@@ -126,11 +161,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct LateDebugEnableRegwenReadVal(u32);
+    pub struct LateDebugEnableRegwenReadVal(pub u32);
     impl LateDebugEnableRegwenReadVal {
         #[doc = "LATE_DEBUG_ENABLE register configuration enable bit. If\n  this is cleared to 0, the !!LATE_DEBUG_ENABLE register\n  cannot be written anymore."]
         #[inline(always)]
-        pub fn late_debug_enable_regwen(&self) -> bool {
+        pub const fn late_debug_enable_regwen(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -152,11 +187,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct LateDebugEnableRegwenWriteVal(u32);
+    pub struct LateDebugEnableRegwenWriteVal(pub u32);
     impl LateDebugEnableRegwenWriteVal {
         #[doc = "LATE_DEBUG_ENABLE register configuration enable bit. If\n  this is cleared to 0, the !!LATE_DEBUG_ENABLE register\n  cannot be written anymore."]
         #[inline(always)]
-        pub fn late_debug_enable_regwen_clear(self) -> Self {
+        pub const fn late_debug_enable_regwen_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }

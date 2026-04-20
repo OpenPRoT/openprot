@@ -18,7 +18,7 @@ impl PwmAon {
     #[doc = r" way. The simplest way to enforce this is to only call"]
     #[doc = r" this function once."]
     #[inline(always)]
-    pub unsafe fn new() -> Self {
+    pub const unsafe fn new() -> Self {
         Self { _priv: () }
     }
     #[doc = r" Returns a register block that can be used to read"]
@@ -79,6 +79,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Alert Test Register\n\nRead value: [`regs::AlertTestReadVal`]; Write value: [`regs::AlertTestWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_alert_test(self) -> ureg::RegRef<crate::meta::AlertTest, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Register write enable for all control registers\n\nRead value: [`regs::RegwenReadVal`]; Write value: [`regs::RegwenWriteVal`]"]
     #[inline(always)]
     pub fn regwen(&self) -> ureg::RegRef<crate::meta::Regwen, &TMmio> {
@@ -86,6 +97,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Register write enable for all control registers\n\nRead value: [`regs::RegwenReadVal`]; Write value: [`regs::RegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_regwen(self) -> ureg::RegRef<crate::meta::Regwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -99,6 +121,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Configuration register\n\nRead value: [`regs::CfgReadVal`]; Write value: [`regs::CfgWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_cfg(self) -> ureg::RegRef<crate::meta::Cfg, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(8 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Enable PWM operation for each channel\n\nRead value: [`regs::PwmEn0ReadVal`]; Write value: [`regs::PwmEn0WriteVal`]"]
     #[inline(always)]
     pub fn pwm_en0(&self) -> ureg::RegRef<crate::meta::PwmEn0, &TMmio> {
@@ -106,6 +139,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0xc / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Enable PWM operation for each channel\n\nRead value: [`regs::PwmEn0ReadVal`]; Write value: [`regs::PwmEn0WriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_pwm_en0(self) -> ureg::RegRef<crate::meta::PwmEn0, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xc / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -119,6 +163,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Invert the PWM output for each channel\n\nRead value: [`regs::Invert0ReadVal`]; Write value: [`regs::Invert0WriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_invert0(self) -> ureg::RegRef<crate::meta::Invert0, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x10 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Basic PWM Channel Parameters\n\nRead value: [`regs::PwmParamReadVal`]; Write value: [`regs::PwmParamWriteVal`]"]
     #[inline(always)]
     pub fn pwm_param(&self) -> ureg::Array<6, ureg::RegRef<crate::meta::PwmParam, &TMmio>> {
@@ -126,6 +181,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0x14 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Basic PWM Channel Parameters\n\nRead value: [`regs::PwmParamReadVal`]; Write value: [`regs::PwmParamWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_pwm_param(self) -> ureg::Array<6, ureg::RegRef<crate::meta::PwmParam, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x14 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -139,6 +205,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Controls the duty_cycle of each channel.\n\nRead value: [`regs::DutyCycleReadVal`]; Write value: [`regs::DutyCycleWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_duty_cycle(self) -> ureg::Array<6, ureg::RegRef<crate::meta::DutyCycle, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x2c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Hardware controlled blink/heartbeat parameters.\n\nRead value: [`regs::BlinkParamReadVal`]; Write value: [`regs::BlinkParamWriteVal`]"]
     #[inline(always)]
     pub fn blink_param(&self) -> ureg::Array<6, ureg::RegRef<crate::meta::BlinkParam, &TMmio>> {
@@ -149,16 +226,27 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Hardware controlled blink/heartbeat parameters.\n\nRead value: [`regs::BlinkParamReadVal`]; Write value: [`regs::BlinkParamWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_blink_param(self) -> ureg::Array<6, ureg::RegRef<crate::meta::BlinkParam, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x44 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
 }
 pub mod regs {
     #![doc = r" Types that represent the values held by registers."]
     #[derive(Clone, Copy)]
-    pub struct AlertTestWriteVal(u32);
+    pub struct AlertTestWriteVal(pub u32);
     impl AlertTestWriteVal {
         #[doc = "Write 1 to trigger one alert event of this kind."]
         #[inline(always)]
-        pub fn fatal_fault(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn fatal_fault(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for AlertTestWriteVal {
@@ -174,16 +262,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct BlinkParamReadVal(u32);
+    pub struct BlinkParamReadVal(pub u32);
     impl BlinkParamReadVal {
         #[doc = "This blink-rate timing parameter has two different\n   interpretations depending on whether or not the heartbeat\n   feature is enabled. If heartbeat is disabled, a blinking\n   PWM will pulse at duty cycle A for (X+1) pulses before\n   switching to duty cycle B. If heartbeat is enabled\n   the duty-cycle will start at the duty cycle A, but\n   will be incremented (or decremented) every (X+1) cycles.\n   In heartbeat mode is enabled, the size of each step is\n   controlled by BLINK_PARAM.Y."]
         #[inline(always)]
-        pub fn x(&self) -> u32 {
+        pub const fn x(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = "This blink-rate timing parameter has two different\n   interpretations depending on whether or not the heartbeat\n   feature is enabled. If heartbeat is disabled, a blinking\n   PWM will pulse at duty cycle B for (Y+1) pulse cycles\n   before returning to duty cycle A. If heartbeat is enabled\n   the duty cycle will increase (or decrease) by (Y+1) units\n   every time it is incremented (or decremented)"]
         #[inline(always)]
-        pub fn y(&self) -> u32 {
+        pub const fn y(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -205,16 +293,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct BlinkParamWriteVal(u32);
+    pub struct BlinkParamWriteVal(pub u32);
     impl BlinkParamWriteVal {
         #[doc = "This blink-rate timing parameter has two different\n   interpretations depending on whether or not the heartbeat\n   feature is enabled. If heartbeat is disabled, a blinking\n   PWM will pulse at duty cycle A for (X+1) pulses before\n   switching to duty cycle B. If heartbeat is enabled\n   the duty-cycle will start at the duty cycle A, but\n   will be incremented (or decremented) every (X+1) cycles.\n   In heartbeat mode is enabled, the size of each step is\n   controlled by BLINK_PARAM.Y."]
         #[inline(always)]
-        pub fn x(self, val: u32) -> Self {
+        pub const fn x(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 0)) | ((val & 0xffff) << 0))
         }
         #[doc = "This blink-rate timing parameter has two different\n   interpretations depending on whether or not the heartbeat\n   feature is enabled. If heartbeat is disabled, a blinking\n   PWM will pulse at duty cycle B for (Y+1) pulse cycles\n   before returning to duty cycle A. If heartbeat is enabled\n   the duty cycle will increase (or decrease) by (Y+1) units\n   every time it is incremented (or decremented)"]
         #[inline(always)]
-        pub fn y(self, val: u32) -> Self {
+        pub const fn y(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 16)) | ((val & 0xffff) << 16))
         }
     }
@@ -231,21 +319,21 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct CfgReadVal(u32);
+    pub struct CfgReadVal(pub u32);
     impl CfgReadVal {
         #[doc = "Sets the period of each PWM beat to be (CLK_DIV+1)\n   input clock periods.  Since PWM pulses are generated once\n   every 2^(DC_RESN+1) beats, the period between output\n   pulses is 2^(DC_RESN+1)*(CLK_DIV+1) times longer than the\n   input clock period."]
         #[inline(always)]
-        pub fn clk_div(&self) -> u32 {
+        pub const fn clk_div(&self) -> u32 {
             (self.0 >> 0) & 0x7ffffff
         }
         #[doc = "Phase Resolution (logarithmic). All duty-cycle and phase\n   shift registers represent fractional PWM cycles, expressed in\n   units of 2^16 PWM cycles. Each PWM cycle  is divided\n   into 2^(DC_RESN+1) time slices, and thus only the (DC_RESN+1)\n   most significant bits of each phase or duty cycle register\n   are relevant."]
         #[inline(always)]
-        pub fn dc_resn(&self) -> u32 {
+        pub const fn dc_resn(&self) -> u32 {
             (self.0 >> 27) & 0xf
         }
         #[doc = "Assert this bit to enable the PWM phase counter.\n   Clearing this bit disables and resets the phase counter."]
         #[inline(always)]
-        pub fn cntr_en(&self) -> bool {
+        pub const fn cntr_en(&self) -> bool {
             ((self.0 >> 31) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -267,22 +355,22 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct CfgWriteVal(u32);
+    pub struct CfgWriteVal(pub u32);
     impl CfgWriteVal {
         #[doc = "Sets the period of each PWM beat to be (CLK_DIV+1)\n   input clock periods.  Since PWM pulses are generated once\n   every 2^(DC_RESN+1) beats, the period between output\n   pulses is 2^(DC_RESN+1)*(CLK_DIV+1) times longer than the\n   input clock period."]
         #[inline(always)]
-        pub fn clk_div(self, val: u32) -> Self {
+        pub const fn clk_div(self, val: u32) -> Self {
             Self((self.0 & !(0x7ffffff << 0)) | ((val & 0x7ffffff) << 0))
         }
         #[doc = "Phase Resolution (logarithmic). All duty-cycle and phase\n   shift registers represent fractional PWM cycles, expressed in\n   units of 2^16 PWM cycles. Each PWM cycle  is divided\n   into 2^(DC_RESN+1) time slices, and thus only the (DC_RESN+1)\n   most significant bits of each phase or duty cycle register\n   are relevant."]
         #[inline(always)]
-        pub fn dc_resn(self, val: u32) -> Self {
+        pub const fn dc_resn(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 27)) | ((val & 0xf) << 27))
         }
         #[doc = "Assert this bit to enable the PWM phase counter.\n   Clearing this bit disables and resets the phase counter."]
         #[inline(always)]
-        pub fn cntr_en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 31)) | (u32::from(val) << 31))
+        pub const fn cntr_en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 31)) | (val as u32) << 31)
         }
     }
     impl From<u32> for CfgWriteVal {
@@ -298,16 +386,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct DutyCycleReadVal(u32);
+    pub struct DutyCycleReadVal(pub u32);
     impl DutyCycleReadVal {
         #[doc = "The initial duty cycle for PWM output, in units\n   of 2^(-16)ths of a pulse cycle. The actual precision is\n   however limited to the (DC_RESN+1) most significant bits.\n   This setting applies continuously when not blinking\n   and determines the initial duty cycle when blinking."]
         #[inline(always)]
-        pub fn a(&self) -> u32 {
+        pub const fn a(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = "The target duty cycle for PWM output, in units\n   of 2^(-16)ths of a pulse cycle. The actual precision is\n   however limited to the (DC_RESN+1) most significant bits.\n   This setting only applies when blinking, and determines\n   the target duty cycle."]
         #[inline(always)]
-        pub fn b(&self) -> u32 {
+        pub const fn b(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -329,16 +417,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct DutyCycleWriteVal(u32);
+    pub struct DutyCycleWriteVal(pub u32);
     impl DutyCycleWriteVal {
         #[doc = "The initial duty cycle for PWM output, in units\n   of 2^(-16)ths of a pulse cycle. The actual precision is\n   however limited to the (DC_RESN+1) most significant bits.\n   This setting applies continuously when not blinking\n   and determines the initial duty cycle when blinking."]
         #[inline(always)]
-        pub fn a(self, val: u32) -> Self {
+        pub const fn a(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 0)) | ((val & 0xffff) << 0))
         }
         #[doc = "The target duty cycle for PWM output, in units\n   of 2^(-16)ths of a pulse cycle. The actual precision is\n   however limited to the (DC_RESN+1) most significant bits.\n   This setting only applies when blinking, and determines\n   the target duty cycle."]
         #[inline(always)]
-        pub fn b(self, val: u32) -> Self {
+        pub const fn b(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 16)) | ((val & 0xffff) << 16))
         }
     }
@@ -355,36 +443,36 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct Invert0ReadVal(u32);
+    pub struct Invert0ReadVal(pub u32);
     impl Invert0ReadVal {
         #[doc = "Write 1 to this bit to invert the output for each channel,\n   so that the corresponding output is active-low."]
         #[inline(always)]
-        pub fn invert0(&self) -> bool {
+        pub const fn invert0(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Write 1 to this bit to invert the output for each channel,\n   so that the corresponding output is active-low."]
         #[inline(always)]
-        pub fn invert1(&self) -> bool {
+        pub const fn invert1(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "Write 1 to this bit to invert the output for each channel,\n   so that the corresponding output is active-low."]
         #[inline(always)]
-        pub fn invert2(&self) -> bool {
+        pub const fn invert2(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "Write 1 to this bit to invert the output for each channel,\n   so that the corresponding output is active-low."]
         #[inline(always)]
-        pub fn invert3(&self) -> bool {
+        pub const fn invert3(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "Write 1 to this bit to invert the output for each channel,\n   so that the corresponding output is active-low."]
         #[inline(always)]
-        pub fn invert4(&self) -> bool {
+        pub const fn invert4(&self) -> bool {
             ((self.0 >> 4) & 1) != 0
         }
         #[doc = "Write 1 to this bit to invert the output for each channel,\n   so that the corresponding output is active-low."]
         #[inline(always)]
-        pub fn invert5(&self) -> bool {
+        pub const fn invert5(&self) -> bool {
             ((self.0 >> 5) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -406,37 +494,37 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct Invert0WriteVal(u32);
+    pub struct Invert0WriteVal(pub u32);
     impl Invert0WriteVal {
         #[doc = "Write 1 to this bit to invert the output for each channel,\n   so that the corresponding output is active-low."]
         #[inline(always)]
-        pub fn invert0(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn invert0(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Write 1 to this bit to invert the output for each channel,\n   so that the corresponding output is active-low."]
         #[inline(always)]
-        pub fn invert1(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn invert1(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
         #[doc = "Write 1 to this bit to invert the output for each channel,\n   so that the corresponding output is active-low."]
         #[inline(always)]
-        pub fn invert2(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 2)) | (u32::from(val) << 2))
+        pub const fn invert2(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 2)) | (val as u32) << 2)
         }
         #[doc = "Write 1 to this bit to invert the output for each channel,\n   so that the corresponding output is active-low."]
         #[inline(always)]
-        pub fn invert3(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 3)) | (u32::from(val) << 3))
+        pub const fn invert3(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 3)) | (val as u32) << 3)
         }
         #[doc = "Write 1 to this bit to invert the output for each channel,\n   so that the corresponding output is active-low."]
         #[inline(always)]
-        pub fn invert4(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 4)) | (u32::from(val) << 4))
+        pub const fn invert4(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 4)) | (val as u32) << 4)
         }
         #[doc = "Write 1 to this bit to invert the output for each channel,\n   so that the corresponding output is active-low."]
         #[inline(always)]
-        pub fn invert5(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 5)) | (u32::from(val) << 5))
+        pub const fn invert5(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 5)) | (val as u32) << 5)
         }
     }
     impl From<u32> for Invert0WriteVal {
@@ -452,36 +540,36 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct PwmEn0ReadVal(u32);
+    pub struct PwmEn0ReadVal(pub u32);
     impl PwmEn0ReadVal {
         #[doc = "Write 1 to this bit to enable PWM pulses on the\n   corresponding channel."]
         #[inline(always)]
-        pub fn en0(&self) -> bool {
+        pub const fn en0(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Write 1 to this bit to enable PWM pulses on the\n   corresponding channel."]
         #[inline(always)]
-        pub fn en1(&self) -> bool {
+        pub const fn en1(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "Write 1 to this bit to enable PWM pulses on the\n   corresponding channel."]
         #[inline(always)]
-        pub fn en2(&self) -> bool {
+        pub const fn en2(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "Write 1 to this bit to enable PWM pulses on the\n   corresponding channel."]
         #[inline(always)]
-        pub fn en3(&self) -> bool {
+        pub const fn en3(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "Write 1 to this bit to enable PWM pulses on the\n   corresponding channel."]
         #[inline(always)]
-        pub fn en4(&self) -> bool {
+        pub const fn en4(&self) -> bool {
             ((self.0 >> 4) & 1) != 0
         }
         #[doc = "Write 1 to this bit to enable PWM pulses on the\n   corresponding channel."]
         #[inline(always)]
-        pub fn en5(&self) -> bool {
+        pub const fn en5(&self) -> bool {
             ((self.0 >> 5) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -503,37 +591,37 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct PwmEn0WriteVal(u32);
+    pub struct PwmEn0WriteVal(pub u32);
     impl PwmEn0WriteVal {
         #[doc = "Write 1 to this bit to enable PWM pulses on the\n   corresponding channel."]
         #[inline(always)]
-        pub fn en0(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn en0(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Write 1 to this bit to enable PWM pulses on the\n   corresponding channel."]
         #[inline(always)]
-        pub fn en1(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn en1(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
         #[doc = "Write 1 to this bit to enable PWM pulses on the\n   corresponding channel."]
         #[inline(always)]
-        pub fn en2(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 2)) | (u32::from(val) << 2))
+        pub const fn en2(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 2)) | (val as u32) << 2)
         }
         #[doc = "Write 1 to this bit to enable PWM pulses on the\n   corresponding channel."]
         #[inline(always)]
-        pub fn en3(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 3)) | (u32::from(val) << 3))
+        pub const fn en3(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 3)) | (val as u32) << 3)
         }
         #[doc = "Write 1 to this bit to enable PWM pulses on the\n   corresponding channel."]
         #[inline(always)]
-        pub fn en4(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 4)) | (u32::from(val) << 4))
+        pub const fn en4(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 4)) | (val as u32) << 4)
         }
         #[doc = "Write 1 to this bit to enable PWM pulses on the\n   corresponding channel."]
         #[inline(always)]
-        pub fn en5(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 5)) | (u32::from(val) << 5))
+        pub const fn en5(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 5)) | (val as u32) << 5)
         }
     }
     impl From<u32> for PwmEn0WriteVal {
@@ -549,21 +637,21 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct PwmParamReadVal(u32);
+    pub struct PwmParamReadVal(pub u32);
     impl PwmParamReadVal {
         #[doc = "Phase delay of the PWM rising edge, in units of 2^(-16) PWM\n   cycles"]
         #[inline(always)]
-        pub fn phase_delay(&self) -> u32 {
+        pub const fn phase_delay(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = "Modulates blink behavior to create a heartbeat effect. When\n   HTBT_EN is set, the duty cycle increases (or decreases)\n   linearly from DUTY_CYCLE.A to DUTY_CYCLE.B and back, in\n   steps of (BLINK_PARAM.Y+1), with an increment (decrement)\n   once every (BLINK_PARAM.X+1) PWM cycles. When HTBT_EN is\n   cleared, the standard blink behavior applies, meaning that\n   the output duty cycle alternates between DUTY_CYCLE.A for\n   (BLINK_PARAM.X+1) pulses and DUTY_CYCLE.B for\n   (BLINK_PARAM.Y+1) pulses."]
         #[inline(always)]
-        pub fn htbt_en(&self) -> bool {
+        pub const fn htbt_en(&self) -> bool {
             ((self.0 >> 30) & 1) != 0
         }
         #[doc = "Enables blink (or heartbeat).  If cleared, the output duty\n   cycle will remain constant at DUTY_CYCLE.A. Enabling this\n   bit  causes the PWM duty cycle to fluctuate between\n   DUTY_CYCLE.A and DUTY_CYCLE.B"]
         #[inline(always)]
-        pub fn blink_en(&self) -> bool {
+        pub const fn blink_en(&self) -> bool {
             ((self.0 >> 31) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -585,22 +673,22 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct PwmParamWriteVal(u32);
+    pub struct PwmParamWriteVal(pub u32);
     impl PwmParamWriteVal {
         #[doc = "Phase delay of the PWM rising edge, in units of 2^(-16) PWM\n   cycles"]
         #[inline(always)]
-        pub fn phase_delay(self, val: u32) -> Self {
+        pub const fn phase_delay(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 0)) | ((val & 0xffff) << 0))
         }
         #[doc = "Modulates blink behavior to create a heartbeat effect. When\n   HTBT_EN is set, the duty cycle increases (or decreases)\n   linearly from DUTY_CYCLE.A to DUTY_CYCLE.B and back, in\n   steps of (BLINK_PARAM.Y+1), with an increment (decrement)\n   once every (BLINK_PARAM.X+1) PWM cycles. When HTBT_EN is\n   cleared, the standard blink behavior applies, meaning that\n   the output duty cycle alternates between DUTY_CYCLE.A for\n   (BLINK_PARAM.X+1) pulses and DUTY_CYCLE.B for\n   (BLINK_PARAM.Y+1) pulses."]
         #[inline(always)]
-        pub fn htbt_en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 30)) | (u32::from(val) << 30))
+        pub const fn htbt_en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 30)) | (val as u32) << 30)
         }
         #[doc = "Enables blink (or heartbeat).  If cleared, the output duty\n   cycle will remain constant at DUTY_CYCLE.A. Enabling this\n   bit  causes the PWM duty cycle to fluctuate between\n   DUTY_CYCLE.A and DUTY_CYCLE.B"]
         #[inline(always)]
-        pub fn blink_en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 31)) | (u32::from(val) << 31))
+        pub const fn blink_en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 31)) | (val as u32) << 31)
         }
     }
     impl From<u32> for PwmParamWriteVal {
@@ -616,11 +704,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct RegwenReadVal(u32);
+    pub struct RegwenReadVal(pub u32);
     impl RegwenReadVal {
         #[doc = "When true, all writable registers can be modified.\n    When false, they become read-only. Defaults true, write\n    zero to clear. This can be cleared after initial\n    configuration at boot in order to lock in the listed\n    register settings."]
         #[inline(always)]
-        pub fn regwen(&self) -> bool {
+        pub const fn regwen(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -642,11 +730,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct RegwenWriteVal(u32);
+    pub struct RegwenWriteVal(pub u32);
     impl RegwenWriteVal {
         #[doc = "When true, all writable registers can be modified.\n    When false, they become read-only. Defaults true, write\n    zero to clear. This can be cleared after initial\n    configuration at boot in order to lock in the listed\n    register settings."]
         #[inline(always)]
-        pub fn regwen_clear(self) -> Self {
+        pub const fn regwen_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }

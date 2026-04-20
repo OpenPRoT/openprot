@@ -18,7 +18,7 @@ impl AdcCtrlAon {
     #[doc = r" way. The simplest way to enforce this is to only call"]
     #[doc = r" this function once."]
     #[inline(always)]
-    pub unsafe fn new() -> Self {
+    pub const unsafe fn new() -> Self {
         Self { _priv: () }
     }
     #[doc = r" Returns a register block that can be used to read"]
@@ -79,6 +79,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Interrupt State Register\n\nRead value: [`regs::IntrStateReadVal`]; Write value: [`regs::IntrStateWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_intr_state(self) -> ureg::RegRef<crate::meta::IntrState, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Interrupt Enable Register\n\nRead value: [`regs::IntrEnableReadVal`]; Write value: [`regs::IntrEnableWriteVal`]"]
     #[inline(always)]
     pub fn intr_enable(&self) -> ureg::RegRef<crate::meta::IntrEnable, &TMmio> {
@@ -86,6 +97,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Interrupt Enable Register\n\nRead value: [`regs::IntrEnableReadVal`]; Write value: [`regs::IntrEnableWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_intr_enable(self) -> ureg::RegRef<crate::meta::IntrEnable, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -99,6 +121,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Interrupt Test Register\n\nRead value: [`regs::IntrTestReadVal`]; Write value: [`regs::IntrTestWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_intr_test(self) -> ureg::RegRef<crate::meta::IntrTest, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(8 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Alert Test Register\n\nRead value: [`regs::AlertTestReadVal`]; Write value: [`regs::AlertTestWriteVal`]"]
     #[inline(always)]
     pub fn alert_test(&self) -> ureg::RegRef<crate::meta::AlertTest, &TMmio> {
@@ -106,6 +139,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0xc / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Alert Test Register\n\nRead value: [`regs::AlertTestReadVal`]; Write value: [`regs::AlertTestWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_alert_test(self) -> ureg::RegRef<crate::meta::AlertTest, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xc / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -119,6 +163,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "ADC enable control register\n\nRead value: [`regs::AdcEnCtlReadVal`]; Write value: [`regs::AdcEnCtlWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_adc_en_ctl(self) -> ureg::RegRef<crate::meta::AdcEnCtl, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x10 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "ADC PowerDown(PD) control register\n\nRead value: [`regs::AdcPdCtlReadVal`]; Write value: [`regs::AdcPdCtlWriteVal`]"]
     #[inline(always)]
     pub fn adc_pd_ctl(&self) -> ureg::RegRef<crate::meta::AdcPdCtl, &TMmio> {
@@ -126,6 +181,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x14 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "ADC PowerDown(PD) control register\n\nRead value: [`regs::AdcPdCtlReadVal`]; Write value: [`regs::AdcPdCtlWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_adc_pd_ctl(self) -> ureg::RegRef<crate::meta::AdcPdCtl, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x14 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -139,6 +205,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "ADC Low-Power(LP) sample control register\n\nRead value: [`regs::AdcLpSampleCtlReadVal`]; Write value: [`regs::AdcLpSampleCtlWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_adc_lp_sample_ctl(self) -> ureg::RegRef<crate::meta::AdcLpSampleCtl, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x18 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "ADC sample control register\n\nRead value: [`regs::AdcSampleCtlReadVal`]; Write value: [`regs::AdcSampleCtlWriteVal`]"]
     #[inline(always)]
     pub fn adc_sample_ctl(&self) -> ureg::RegRef<crate::meta::AdcSampleCtl, &TMmio> {
@@ -149,6 +226,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "ADC sample control register\n\nRead value: [`regs::AdcSampleCtlReadVal`]; Write value: [`regs::AdcSampleCtlWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_adc_sample_ctl(self) -> ureg::RegRef<crate::meta::AdcSampleCtl, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x1c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "ADC FSM reset control\n\nRead value: [`regs::AdcFsmRstReadVal`]; Write value: [`regs::AdcFsmRstWriteVal`]"]
     #[inline(always)]
     pub fn adc_fsm_rst(&self) -> ureg::RegRef<crate::meta::AdcFsmRst, &TMmio> {
@@ -156,6 +244,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x20 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "ADC FSM reset control\n\nRead value: [`regs::AdcFsmRstReadVal`]; Write value: [`regs::AdcFsmRstWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_adc_fsm_rst(self) -> ureg::RegRef<crate::meta::AdcFsmRst, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x20 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -171,6 +270,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "ADC channel0 filter range\n\nUp to 8 filters can be configured per channel and each filter has an associated [min, max] range.\nThe condition bit then defines whether the sample values of that channel need to lie within the range or outside to create a match.\nThe filter range bounds can be configured with a granularity of 2.148mV.\n\nRead value: [`regs::AdcChnxFilterCtlReadVal`]; Write value: [`regs::AdcChnxFilterCtlWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_adc_chn0_filter_ctl(
+        self,
+    ) -> ureg::Array<8, ureg::RegRef<crate::meta::AdcChn0FilterCtl, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x24 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "ADC channel1 filter range\n\nUp to 8 filters can be configured per channel and each filter has an associated [min, max] range.\nThe condition bit then defines whether the sample values of that channel need to lie within the range or outside to create a match.\nThe filter range bounds can be configured with a granularity of 2.148mV.\n\nRead value: [`regs::AdcChnxFilterCtlReadVal`]; Write value: [`regs::AdcChnxFilterCtlWriteVal`]"]
     #[inline(always)]
     pub fn adc_chn1_filter_ctl(
@@ -180,6 +292,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0x44 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "ADC channel1 filter range\n\nUp to 8 filters can be configured per channel and each filter has an associated [min, max] range.\nThe condition bit then defines whether the sample values of that channel need to lie within the range or outside to create a match.\nThe filter range bounds can be configured with a granularity of 2.148mV.\n\nRead value: [`regs::AdcChnxFilterCtlReadVal`]; Write value: [`regs::AdcChnxFilterCtlWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_adc_chn1_filter_ctl(
+        self,
+    ) -> ureg::Array<8, ureg::RegRef<crate::meta::AdcChn1FilterCtl, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x44 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -193,6 +318,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "ADC value sampled on channel\n\nRead value: [`regs::AdcChnValReadVal`]; Write value: [`regs::AdcChnValWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_adc_chn_val(self) -> ureg::Array<2, ureg::RegRef<crate::meta::AdcChnVal, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x64 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Enable filter matches as wakeups\n\nRead value: [`regs::AdcWakeupCtlReadVal`]; Write value: [`regs::AdcWakeupCtlWriteVal`]"]
     #[inline(always)]
     pub fn adc_wakeup_ctl(&self) -> ureg::RegRef<crate::meta::AdcWakeupCtl, &TMmio> {
@@ -200,6 +336,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x6c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Enable filter matches as wakeups\n\nRead value: [`regs::AdcWakeupCtlReadVal`]; Write value: [`regs::AdcWakeupCtlWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_adc_wakeup_ctl(self) -> ureg::RegRef<crate::meta::AdcWakeupCtl, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x6c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -213,6 +360,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Adc filter match status\n\nIndicates whether a particular filter has matched on all channels.\n\nRead value: [`regs::FilterStatusReadVal`]; Write value: [`regs::FilterStatusWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_filter_status(self) -> ureg::RegRef<crate::meta::FilterStatus, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x70 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Interrupt enable controls.\n\nadc_ctrl sends out only 1 interrupt, so this register controls\nwhich internal sources are actually registered.\n\nThis register uses the same bit enumeration as !!ADC_INTR_STATUS\n\nRead value: [`regs::AdcIntrCtlReadVal`]; Write value: [`regs::AdcIntrCtlWriteVal`]"]
     #[inline(always)]
     pub fn adc_intr_ctl(&self) -> ureg::RegRef<crate::meta::AdcIntrCtl, &TMmio> {
@@ -220,6 +378,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x74 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Interrupt enable controls.\n\nadc_ctrl sends out only 1 interrupt, so this register controls\nwhich internal sources are actually registered.\n\nThis register uses the same bit enumeration as !!ADC_INTR_STATUS\n\nRead value: [`regs::AdcIntrCtlReadVal`]; Write value: [`regs::AdcIntrCtlWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_adc_intr_ctl(self) -> ureg::RegRef<crate::meta::AdcIntrCtl, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x74 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -233,6 +402,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Debug cable internal status\n\nRead value: [`regs::AdcIntrStatusReadVal`]; Write value: [`regs::AdcIntrStatusWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_adc_intr_status(self) -> ureg::RegRef<crate::meta::AdcIntrStatus, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x78 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "State of the internal state machine\n\nRead value: [`regs::AdcFsmStateReadVal`]; Write value: [`regs::AdcFsmStateWriteVal`]"]
     #[inline(always)]
     pub fn adc_fsm_state(&self) -> ureg::RegRef<crate::meta::AdcFsmState, &TMmio> {
@@ -243,16 +423,27 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "State of the internal state machine\n\nRead value: [`regs::AdcFsmStateReadVal`]; Write value: [`regs::AdcFsmStateWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_adc_fsm_state(self) -> ureg::RegRef<crate::meta::AdcFsmState, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x7c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
 }
 pub mod regs {
     #![doc = r" Types that represent the values held by registers."]
     #[derive(Clone, Copy)]
-    pub struct AlertTestWriteVal(u32);
+    pub struct AlertTestWriteVal(pub u32);
     impl AlertTestWriteVal {
         #[doc = "Write 1 to trigger one alert event of this kind."]
         #[inline(always)]
-        pub fn fatal_fault(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn fatal_fault(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for AlertTestWriteVal {
@@ -268,11 +459,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrEnableReadVal(u32);
+    pub struct IntrEnableReadVal(pub u32);
     impl IntrEnableReadVal {
         #[doc = "Enable interrupt when !!INTR_STATE.match_pending is set."]
         #[inline(always)]
-        pub fn match_pending(&self) -> bool {
+        pub const fn match_pending(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -294,12 +485,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrEnableWriteVal(u32);
+    pub struct IntrEnableWriteVal(pub u32);
     impl IntrEnableWriteVal {
         #[doc = "Enable interrupt when !!INTR_STATE.match_pending is set."]
         #[inline(always)]
-        pub fn match_pending(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn match_pending(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for IntrEnableWriteVal {
@@ -315,11 +506,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrStateReadVal(u32);
+    pub struct IntrStateReadVal(pub u32);
     impl IntrStateReadVal {
         #[doc = "ADC match or measurement event has occurred"]
         #[inline(always)]
-        pub fn match_pending(&self) -> bool {
+        pub const fn match_pending(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
     }
@@ -336,12 +527,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrTestWriteVal(u32);
+    pub struct IntrTestWriteVal(pub u32);
     impl IntrTestWriteVal {
         #[doc = "Write 1 to force !!INTR_STATE.match_pending to 1."]
         #[inline(always)]
-        pub fn match_pending(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn match_pending(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for IntrTestWriteVal {
@@ -357,26 +548,26 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdcChnValReadVal(u32);
+    pub struct AdcChnValReadVal(pub u32);
     impl AdcChnValReadVal {
         #[doc = "2-bit extension; RO 0"]
         #[inline(always)]
-        pub fn adc_chn_value_ext(&self) -> u32 {
+        pub const fn adc_chn_value_ext(&self) -> u32 {
             (self.0 >> 0) & 3
         }
         #[doc = "Latest ADC value sampled on channel. each step is 2.148mV"]
         #[inline(always)]
-        pub fn adc_chn_value(&self) -> u32 {
+        pub const fn adc_chn_value(&self) -> u32 {
             (self.0 >> 2) & 0x3ff
         }
         #[doc = "2-bit extension; RO 0"]
         #[inline(always)]
-        pub fn adc_chn_value_intr_ext(&self) -> u32 {
+        pub const fn adc_chn_value_intr_ext(&self) -> u32 {
             (self.0 >> 16) & 3
         }
         #[doc = "ADC value sampled on channel when the interrupt is raised(debug cable is attached or disconnected), each step is 2.148mV"]
         #[inline(always)]
-        pub fn adc_chn_value_intr(&self) -> u32 {
+        pub const fn adc_chn_value_intr(&self) -> u32 {
             (self.0 >> 18) & 0x3ff
         }
     }
@@ -393,26 +584,26 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdcChnxFilterCtlReadVal(u32);
+    pub struct AdcChnxFilterCtlReadVal(pub u32);
     impl AdcChnxFilterCtlReadVal {
         #[doc = "10-bit for chn0 filter min value "]
         #[inline(always)]
-        pub fn min_v(&self) -> u32 {
+        pub const fn min_v(&self) -> u32 {
             (self.0 >> 2) & 0x3ff
         }
         #[doc = "1-bit for the condition; 1'b0 means min<=ADC<=max, 1'b1 means ADC>max or ADC<min "]
         #[inline(always)]
-        pub fn cond(&self) -> bool {
+        pub const fn cond(&self) -> bool {
             ((self.0 >> 12) & 1) != 0
         }
         #[doc = "10-bit for chn0 filter max value "]
         #[inline(always)]
-        pub fn max_v(&self) -> u32 {
+        pub const fn max_v(&self) -> u32 {
             (self.0 >> 18) & 0x3ff
         }
         #[doc = "Enable for filter"]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 31) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -434,27 +625,27 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdcChnxFilterCtlWriteVal(u32);
+    pub struct AdcChnxFilterCtlWriteVal(pub u32);
     impl AdcChnxFilterCtlWriteVal {
         #[doc = "10-bit for chn0 filter min value "]
         #[inline(always)]
-        pub fn min_v(self, val: u32) -> Self {
+        pub const fn min_v(self, val: u32) -> Self {
             Self((self.0 & !(0x3ff << 2)) | ((val & 0x3ff) << 2))
         }
         #[doc = "1-bit for the condition; 1'b0 means min<=ADC<=max, 1'b1 means ADC>max or ADC<min "]
         #[inline(always)]
-        pub fn cond(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 12)) | (u32::from(val) << 12))
+        pub const fn cond(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 12)) | (val as u32) << 12)
         }
         #[doc = "10-bit for chn0 filter max value "]
         #[inline(always)]
-        pub fn max_v(self, val: u32) -> Self {
+        pub const fn max_v(self, val: u32) -> Self {
             Self((self.0 & !(0x3ff << 18)) | ((val & 0x3ff) << 18))
         }
         #[doc = "Enable for filter"]
         #[inline(always)]
-        pub fn en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 31)) | (u32::from(val) << 31))
+        pub const fn en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 31)) | (val as u32) << 31)
         }
     }
     impl From<u32> for AdcChnxFilterCtlWriteVal {
@@ -470,16 +661,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdcEnCtlReadVal(u32);
+    pub struct AdcEnCtlReadVal(pub u32);
     impl AdcEnCtlReadVal {
         #[doc = "1'b0: to power down ADC and ADC_CTRL FSM will enter the reset state; 1'b1: to power up ADC and ADC_CTRL FSM will start"]
         #[inline(always)]
-        pub fn adc_enable(&self) -> bool {
+        pub const fn adc_enable(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Oneshot mode does not care about the filter value. 1'b0: disable; 1'b1: enable"]
         #[inline(always)]
-        pub fn oneshot_mode(&self) -> bool {
+        pub const fn oneshot_mode(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -501,17 +692,17 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdcEnCtlWriteVal(u32);
+    pub struct AdcEnCtlWriteVal(pub u32);
     impl AdcEnCtlWriteVal {
         #[doc = "1'b0: to power down ADC and ADC_CTRL FSM will enter the reset state; 1'b1: to power up ADC and ADC_CTRL FSM will start"]
         #[inline(always)]
-        pub fn adc_enable(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn adc_enable(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Oneshot mode does not care about the filter value. 1'b0: disable; 1'b1: enable"]
         #[inline(always)]
-        pub fn oneshot_mode(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn oneshot_mode(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
     }
     impl From<u32> for AdcEnCtlWriteVal {
@@ -527,11 +718,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdcFsmRstReadVal(u32);
+    pub struct AdcFsmRstReadVal(pub u32);
     impl AdcFsmRstReadVal {
         #[doc = "1'b0: Normal functional mode. 1'b1: SW to reset all the FSMs and timers"]
         #[inline(always)]
-        pub fn rst_en(&self) -> bool {
+        pub const fn rst_en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -553,12 +744,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdcFsmRstWriteVal(u32);
+    pub struct AdcFsmRstWriteVal(pub u32);
     impl AdcFsmRstWriteVal {
         #[doc = "1'b0: Normal functional mode. 1'b1: SW to reset all the FSMs and timers"]
         #[inline(always)]
-        pub fn rst_en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn rst_en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for AdcFsmRstWriteVal {
@@ -574,12 +765,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdcFsmStateReadVal(u32);
+    pub struct AdcFsmStateReadVal(pub u32);
     impl AdcFsmStateReadVal {
         #[doc = "Current FSM state (for debug purposes)"]
         #[inline(always)]
-        pub fn state(&self) -> super::enums::State {
-            super::enums::State::try_from((self.0 >> 0) & 0x1f).unwrap()
+        pub const fn state(&self) -> super::enums::State {
+            super::enums::State::from_raw((self.0 >> 0) & 0x1f).unwrap()
         }
     }
     impl From<u32> for AdcFsmStateReadVal {
@@ -595,21 +786,21 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdcIntrCtlReadVal(u32);
+    pub struct AdcIntrCtlReadVal(pub u32);
     impl AdcIntrCtlReadVal {
         #[doc = "Filter interrupt source.\n\n0: interrupt source is not enabled; 1: interrupt source is enabled"]
         #[inline(always)]
-        pub fn match_en(&self) -> u32 {
+        pub const fn match_en(&self) -> u32 {
             (self.0 >> 0) & 0xff
         }
         #[doc = "Interrupt due to FSM transition from low power sampling\nmode to normal sampling mode. This is mainly intended for debug.\n\nNote that this interrupt is primarily intended for debug purposes.\n\n0: interrupt source is not enabled; 1: interrupt source is enabled"]
         #[inline(always)]
-        pub fn trans_en(&self) -> bool {
+        pub const fn trans_en(&self) -> bool {
             ((self.0 >> 8) & 1) != 0
         }
         #[doc = "Interrupt due to oneshot sampling.\n\n0: interrupt source is not enabled; 1: interrupt source is enabled"]
         #[inline(always)]
-        pub fn oneshot_en(&self) -> bool {
+        pub const fn oneshot_en(&self) -> bool {
             ((self.0 >> 9) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -631,22 +822,22 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdcIntrCtlWriteVal(u32);
+    pub struct AdcIntrCtlWriteVal(pub u32);
     impl AdcIntrCtlWriteVal {
         #[doc = "Filter interrupt source.\n\n0: interrupt source is not enabled; 1: interrupt source is enabled"]
         #[inline(always)]
-        pub fn match_en(self, val: u32) -> Self {
+        pub const fn match_en(self, val: u32) -> Self {
             Self((self.0 & !(0xff << 0)) | ((val & 0xff) << 0))
         }
         #[doc = "Interrupt due to FSM transition from low power sampling\nmode to normal sampling mode. This is mainly intended for debug.\n\nNote that this interrupt is primarily intended for debug purposes.\n\n0: interrupt source is not enabled; 1: interrupt source is enabled"]
         #[inline(always)]
-        pub fn trans_en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 8)) | (u32::from(val) << 8))
+        pub const fn trans_en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 8)) | (val as u32) << 8)
         }
         #[doc = "Interrupt due to oneshot sampling.\n\n0: interrupt source is not enabled; 1: interrupt source is enabled"]
         #[inline(always)]
-        pub fn oneshot_en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 9)) | (u32::from(val) << 9))
+        pub const fn oneshot_en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 9)) | (val as u32) << 9)
         }
     }
     impl From<u32> for AdcIntrCtlWriteVal {
@@ -662,21 +853,21 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdcIntrStatusReadVal(u32);
+    pub struct AdcIntrStatusReadVal(pub u32);
     impl AdcIntrStatusReadVal {
         #[doc = "0: filter condition is not met; 1: filter condition is met"]
         #[inline(always)]
-        pub fn match_(&self) -> u32 {
+        pub const fn match_(&self) -> u32 {
             (self.0 >> 0) & 0xff
         }
         #[doc = "0: transition did not occur; 1: transition occurred"]
         #[inline(always)]
-        pub fn trans(&self) -> bool {
+        pub const fn trans(&self) -> bool {
             ((self.0 >> 8) & 1) != 0
         }
         #[doc = "0: oneshot sample is not done ; 1: oneshot sample is done"]
         #[inline(always)]
-        pub fn oneshot(&self) -> bool {
+        pub const fn oneshot(&self) -> bool {
             ((self.0 >> 9) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -698,16 +889,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdcIntrStatusWriteVal(u32);
+    pub struct AdcIntrStatusWriteVal(pub u32);
     impl AdcIntrStatusWriteVal {
         #[doc = "0: transition did not occur; 1: transition occurred"]
         #[inline(always)]
-        pub fn trans_clear(self) -> Self {
+        pub const fn trans_clear(self) -> Self {
             Self(self.0 | (1 << 8))
         }
         #[doc = "0: oneshot sample is not done ; 1: oneshot sample is done"]
         #[inline(always)]
-        pub fn oneshot_clear(self) -> Self {
+        pub const fn oneshot_clear(self) -> Self {
             Self(self.0 | (1 << 9))
         }
     }
@@ -724,11 +915,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdcLpSampleCtlReadVal(u32);
+    pub struct AdcLpSampleCtlReadVal(pub u32);
     impl AdcLpSampleCtlReadVal {
         #[doc = "The number of samples in low-power mode when the low-power mode is enabled.\nAfter the programmed number is met, ADC won't be powered down any more.\nThis value must be 1 or larger."]
         #[inline(always)]
-        pub fn lp_sample_cnt(&self) -> u32 {
+        pub const fn lp_sample_cnt(&self) -> u32 {
             (self.0 >> 0) & 0xff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -750,11 +941,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdcLpSampleCtlWriteVal(u32);
+    pub struct AdcLpSampleCtlWriteVal(pub u32);
     impl AdcLpSampleCtlWriteVal {
         #[doc = "The number of samples in low-power mode when the low-power mode is enabled.\nAfter the programmed number is met, ADC won't be powered down any more.\nThis value must be 1 or larger."]
         #[inline(always)]
-        pub fn lp_sample_cnt(self, val: u32) -> Self {
+        pub const fn lp_sample_cnt(self, val: u32) -> Self {
             Self((self.0 & !(0xff << 0)) | ((val & 0xff) << 0))
         }
     }
@@ -771,21 +962,21 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdcPdCtlReadVal(u32);
+    pub struct AdcPdCtlReadVal(pub u32);
     impl AdcPdCtlReadVal {
         #[doc = "1'b0: adc_pd is disabled, use adc_sample_ctl. 1'b1: adc_pd is enabled, use both adc_lp_sample_ctl & adc_sample_ctl"]
         #[inline(always)]
-        pub fn lp_mode(&self) -> bool {
+        pub const fn lp_mode(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "ADC power up time, measured in always on clock cycles.\nAfter power up time is reached, the ADC controller needs one additional cycle before an ADC channel is selected for access."]
         #[inline(always)]
-        pub fn pwrup_time(&self) -> u32 {
+        pub const fn pwrup_time(&self) -> u32 {
             (self.0 >> 4) & 0xf
         }
         #[doc = "How often FSM wakes up from ADC PD mode to take a sample, measured in always on clock cycles."]
         #[inline(always)]
-        pub fn wakeup_time(&self) -> u32 {
+        pub const fn wakeup_time(&self) -> u32 {
             (self.0 >> 8) & 0xffffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -807,21 +998,21 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdcPdCtlWriteVal(u32);
+    pub struct AdcPdCtlWriteVal(pub u32);
     impl AdcPdCtlWriteVal {
         #[doc = "1'b0: adc_pd is disabled, use adc_sample_ctl. 1'b1: adc_pd is enabled, use both adc_lp_sample_ctl & adc_sample_ctl"]
         #[inline(always)]
-        pub fn lp_mode(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn lp_mode(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "ADC power up time, measured in always on clock cycles.\nAfter power up time is reached, the ADC controller needs one additional cycle before an ADC channel is selected for access."]
         #[inline(always)]
-        pub fn pwrup_time(self, val: u32) -> Self {
+        pub const fn pwrup_time(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 4)) | ((val & 0xf) << 4))
         }
         #[doc = "How often FSM wakes up from ADC PD mode to take a sample, measured in always on clock cycles."]
         #[inline(always)]
-        pub fn wakeup_time(self, val: u32) -> Self {
+        pub const fn wakeup_time(self, val: u32) -> Self {
             Self((self.0 & !(0xffffff << 8)) | ((val & 0xffffff) << 8))
         }
     }
@@ -838,11 +1029,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdcSampleCtlReadVal(u32);
+    pub struct AdcSampleCtlReadVal(pub u32);
     impl AdcSampleCtlReadVal {
         #[doc = "The number of samples in normal-power mode to meet the debounce spec.\nUsed after the low-power mode condition is met or in the normal power mode.\nThis value must be 1 or larger."]
         #[inline(always)]
-        pub fn np_sample_cnt(&self) -> u32 {
+        pub const fn np_sample_cnt(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -864,11 +1055,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdcSampleCtlWriteVal(u32);
+    pub struct AdcSampleCtlWriteVal(pub u32);
     impl AdcSampleCtlWriteVal {
         #[doc = "The number of samples in normal-power mode to meet the debounce spec.\nUsed after the low-power mode condition is met or in the normal power mode.\nThis value must be 1 or larger."]
         #[inline(always)]
-        pub fn np_sample_cnt(self, val: u32) -> Self {
+        pub const fn np_sample_cnt(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 0)) | ((val & 0xffff) << 0))
         }
     }
@@ -885,16 +1076,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdcWakeupCtlReadVal(u32);
+    pub struct AdcWakeupCtlReadVal(pub u32);
     impl AdcWakeupCtlReadVal {
         #[doc = "Filter wakeup source.\n\n0: filter match will not generate wakeup;\n1: filter match will generate wakeup"]
         #[inline(always)]
-        pub fn match_en(&self) -> u32 {
+        pub const fn match_en(&self) -> u32 {
             (self.0 >> 0) & 0xff
         }
         #[doc = "Wakeup due to FSM transition from low power sampling\nmode to normal sampling mode.\n\nNote that this wakeup source is primarily intended for debug purposes.\nIf enabled all the time, this can lead to many wakeups due to false\npositives that are ruled out automatically by adc_ctrl after\ntransitioning from LP -> NP.\n\n0: transition match will not generate wakeup;\n1: transition match will generate wakeup"]
         #[inline(always)]
-        pub fn trans_en(&self) -> bool {
+        pub const fn trans_en(&self) -> bool {
             ((self.0 >> 8) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -916,17 +1107,17 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdcWakeupCtlWriteVal(u32);
+    pub struct AdcWakeupCtlWriteVal(pub u32);
     impl AdcWakeupCtlWriteVal {
         #[doc = "Filter wakeup source.\n\n0: filter match will not generate wakeup;\n1: filter match will generate wakeup"]
         #[inline(always)]
-        pub fn match_en(self, val: u32) -> Self {
+        pub const fn match_en(self, val: u32) -> Self {
             Self((self.0 & !(0xff << 0)) | ((val & 0xff) << 0))
         }
         #[doc = "Wakeup due to FSM transition from low power sampling\nmode to normal sampling mode.\n\nNote that this wakeup source is primarily intended for debug purposes.\nIf enabled all the time, this can lead to many wakeups due to false\npositives that are ruled out automatically by adc_ctrl after\ntransitioning from LP -> NP.\n\n0: transition match will not generate wakeup;\n1: transition match will generate wakeup"]
         #[inline(always)]
-        pub fn trans_en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 8)) | (u32::from(val) << 8))
+        pub const fn trans_en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 8)) | (val as u32) << 8)
         }
     }
     impl From<u32> for AdcWakeupCtlWriteVal {
@@ -942,16 +1133,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct FilterStatusReadVal(u32);
+    pub struct FilterStatusReadVal(pub u32);
     impl FilterStatusReadVal {
         #[doc = "0: filter condition is not met; 1: filter condition is met"]
         #[inline(always)]
-        pub fn match_(&self) -> u32 {
+        pub const fn match_(&self) -> u32 {
             (self.0 >> 0) & 0xff
         }
         #[doc = "0: transition did not occur; 1: transition occurred"]
         #[inline(always)]
-        pub fn trans(&self) -> bool {
+        pub const fn trans(&self) -> bool {
             ((self.0 >> 8) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -973,11 +1164,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct FilterStatusWriteVal(u32);
+    pub struct FilterStatusWriteVal(pub u32);
     impl FilterStatusWriteVal {
         #[doc = "0: transition did not occur; 1: transition occurred"]
         #[inline(always)]
-        pub fn trans_clear(self) -> Self {
+        pub const fn trans_clear(self) -> Self {
             Self(self.0 | (1 << 8))
         }
     }
@@ -1101,16 +1292,19 @@ pub mod enums {
         pub fn np_done(&self) -> bool {
             *self == Self::NpDone
         }
+        pub const fn from_raw(val: u32) -> Option<State> {
+            if val < 0x20 {
+                Some(unsafe { core::mem::transmute::<u32, State>(val) })
+            } else {
+                None
+            }
+        }
     }
     impl TryFrom<u32> for State {
         type Error = ();
         #[inline(always)]
         fn try_from(val: u32) -> Result<State, ()> {
-            if val < 0x20 {
-                Ok(unsafe { core::mem::transmute::<u32, State>(val) })
-            } else {
-                Err(())
-            }
+            State::from_raw(val).ok_or(())
         }
     }
     impl From<State> for u32 {

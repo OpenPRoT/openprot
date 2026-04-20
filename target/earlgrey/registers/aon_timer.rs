@@ -18,7 +18,7 @@ impl AonTimerAon {
     #[doc = r" way. The simplest way to enforce this is to only call"]
     #[doc = r" this function once."]
     #[inline(always)]
-    pub unsafe fn new() -> Self {
+    pub const unsafe fn new() -> Self {
         Self { _priv: () }
     }
     #[doc = r" Returns a register block that can be used to read"]
@@ -79,6 +79,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Alert Test Register\n\nRead value: [`regs::AlertTestReadVal`]; Write value: [`regs::AlertTestWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_alert_test(self) -> ureg::RegRef<crate::meta::AlertTest, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Wakeup Timer Control register\n\nRead value: [`regs::WkupCtrlReadVal`]; Write value: [`regs::WkupCtrlWriteVal`]"]
     #[inline(always)]
     pub fn wkup_ctrl(&self) -> ureg::RegRef<crate::meta::WkupCtrl, &TMmio> {
@@ -86,6 +97,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Wakeup Timer Control register\n\nRead value: [`regs::WkupCtrlReadVal`]; Write value: [`regs::WkupCtrlWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wkup_ctrl(self) -> ureg::RegRef<crate::meta::WkupCtrl, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -99,6 +121,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Wakeup Timer Threshold Register (bits 63 - 32)\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wkup_thold_hi(self) -> ureg::RegRef<crate::meta::WkupTholdHi, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(8 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Wakeup Timer Threshold Register (bits 31 - 0)\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn wkup_thold_lo(&self) -> ureg::RegRef<crate::meta::WkupTholdLo, &TMmio> {
@@ -106,6 +139,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0xc / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Wakeup Timer Threshold Register (bits 31 - 0)\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wkup_thold_lo(self) -> ureg::RegRef<crate::meta::WkupTholdLo, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xc / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -119,6 +163,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Wakeup Timer Count Register (bits 63 - 32)\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wkup_count_hi(self) -> ureg::RegRef<crate::meta::WkupCountHi, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x10 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Wakeup Timer Count Register (bits 31 - 0)\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn wkup_count_lo(&self) -> ureg::RegRef<crate::meta::WkupCountLo, &TMmio> {
@@ -126,6 +181,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x14 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Wakeup Timer Count Register (bits 31 - 0)\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wkup_count_lo(self) -> ureg::RegRef<crate::meta::WkupCountLo, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x14 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -139,6 +205,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Watchdog Timer Write Enable Register\n\nRead value: [`regs::WdogRegwenReadVal`]; Write value: [`regs::WdogRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wdog_regwen(self) -> ureg::RegRef<crate::meta::WdogRegwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x18 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Watchdog Timer Control register\n\nRead value: [`regs::WdogCtrlReadVal`]; Write value: [`regs::WdogCtrlWriteVal`]"]
     #[inline(always)]
     pub fn wdog_ctrl(&self) -> ureg::RegRef<crate::meta::WdogCtrl, &TMmio> {
@@ -146,6 +223,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x1c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Watchdog Timer Control register\n\nRead value: [`regs::WdogCtrlReadVal`]; Write value: [`regs::WdogCtrlWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wdog_ctrl(self) -> ureg::RegRef<crate::meta::WdogCtrl, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x1c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -159,6 +247,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Watchdog Timer Bark Threshold Register\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wdog_bark_thold(self) -> ureg::RegRef<crate::meta::WdogBarkThold, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x20 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Watchdog Timer Bite Threshold Register\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn wdog_bite_thold(&self) -> ureg::RegRef<crate::meta::WdogBiteThold, &TMmio> {
@@ -166,6 +265,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x24 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Watchdog Timer Bite Threshold Register\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wdog_bite_thold(self) -> ureg::RegRef<crate::meta::WdogBiteThold, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x24 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -179,6 +289,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Watchdog Timer Count Register\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wdog_count(self) -> ureg::RegRef<crate::meta::WdogCount, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x28 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Interrupt State Register\n\nRead value: [`regs::IntrStateReadVal`]; Write value: [`regs::IntrStateWriteVal`]"]
     #[inline(always)]
     pub fn intr_state(&self) -> ureg::RegRef<crate::meta::IntrState, &TMmio> {
@@ -186,6 +307,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x2c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Interrupt State Register\n\nRead value: [`regs::IntrStateReadVal`]; Write value: [`regs::IntrStateWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_intr_state(self) -> ureg::RegRef<crate::meta::IntrState, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x2c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -199,6 +331,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Interrupt Test Register\n\nRead value: [`regs::IntrTestReadVal`]; Write value: [`regs::IntrTestWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_intr_test(self) -> ureg::RegRef<crate::meta::IntrTest, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x30 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Wakeup request status\n\nRead value: [`regs::WkupCauseReadVal`]; Write value: [`regs::WkupCauseWriteVal`]"]
     #[inline(always)]
     pub fn wkup_cause(&self) -> ureg::RegRef<crate::meta::WkupCause, &TMmio> {
@@ -209,16 +352,27 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Wakeup request status\n\nRead value: [`regs::WkupCauseReadVal`]; Write value: [`regs::WkupCauseWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wkup_cause(self) -> ureg::RegRef<crate::meta::WkupCause, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x34 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
 }
 pub mod regs {
     #![doc = r" Types that represent the values held by registers."]
     #[derive(Clone, Copy)]
-    pub struct AlertTestWriteVal(u32);
+    pub struct AlertTestWriteVal(pub u32);
     impl AlertTestWriteVal {
         #[doc = "Write 1 to trigger one alert event of this kind."]
         #[inline(always)]
-        pub fn fatal_fault(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn fatal_fault(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for AlertTestWriteVal {
@@ -234,16 +388,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrStateReadVal(u32);
+    pub struct IntrStateReadVal(pub u32);
     impl IntrStateReadVal {
         #[doc = "Raised if the wakeup timer has hit the specified threshold"]
         #[inline(always)]
-        pub fn wkup_timer_expired(&self) -> bool {
+        pub const fn wkup_timer_expired(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Raised if the watchdog timer has hit the bark threshold"]
         #[inline(always)]
-        pub fn wdog_timer_bark(&self) -> bool {
+        pub const fn wdog_timer_bark(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -265,16 +419,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrStateWriteVal(u32);
+    pub struct IntrStateWriteVal(pub u32);
     impl IntrStateWriteVal {
         #[doc = "Raised if the wakeup timer has hit the specified threshold"]
         #[inline(always)]
-        pub fn wkup_timer_expired_clear(self) -> Self {
+        pub const fn wkup_timer_expired_clear(self) -> Self {
             Self(self.0 | (1 << 0))
         }
         #[doc = "Raised if the watchdog timer has hit the bark threshold"]
         #[inline(always)]
-        pub fn wdog_timer_bark_clear(self) -> Self {
+        pub const fn wdog_timer_bark_clear(self) -> Self {
             Self(self.0 | (1 << 1))
         }
     }
@@ -291,17 +445,17 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrTestWriteVal(u32);
+    pub struct IntrTestWriteVal(pub u32);
     impl IntrTestWriteVal {
         #[doc = "Write 1 to force wkup_timer_expired interrupt"]
         #[inline(always)]
-        pub fn wkup_timer_expired(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn wkup_timer_expired(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Write 1 to force wdog_timer_bark interrupt"]
         #[inline(always)]
-        pub fn wdog_timer_bark(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn wdog_timer_bark(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
     }
     impl From<u32> for IntrTestWriteVal {
@@ -317,16 +471,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WdogCtrlReadVal(u32);
+    pub struct WdogCtrlReadVal(pub u32);
     impl WdogCtrlReadVal {
         #[doc = "When set to 1, the watchdog timer will count"]
         #[inline(always)]
-        pub fn enable(&self) -> bool {
+        pub const fn enable(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "When set to 1, the watchdog timer will not count during sleep"]
         #[inline(always)]
-        pub fn pause_in_sleep(&self) -> bool {
+        pub const fn pause_in_sleep(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -348,17 +502,17 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WdogCtrlWriteVal(u32);
+    pub struct WdogCtrlWriteVal(pub u32);
     impl WdogCtrlWriteVal {
         #[doc = "When set to 1, the watchdog timer will count"]
         #[inline(always)]
-        pub fn enable(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn enable(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "When set to 1, the watchdog timer will not count during sleep"]
         #[inline(always)]
-        pub fn pause_in_sleep(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn pause_in_sleep(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
     }
     impl From<u32> for WdogCtrlWriteVal {
@@ -374,11 +528,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WdogRegwenReadVal(u32);
+    pub struct WdogRegwenReadVal(pub u32);
     impl WdogRegwenReadVal {
         #[doc = "Once cleared, the watchdog configuration will be locked until the next reset"]
         #[inline(always)]
-        pub fn regwen(&self) -> bool {
+        pub const fn regwen(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -400,11 +554,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WdogRegwenWriteVal(u32);
+    pub struct WdogRegwenWriteVal(pub u32);
     impl WdogRegwenWriteVal {
         #[doc = "Once cleared, the watchdog configuration will be locked until the next reset"]
         #[inline(always)]
-        pub fn regwen_clear(self) -> Self {
+        pub const fn regwen_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -421,11 +575,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WkupCauseReadVal(u32);
+    pub struct WkupCauseReadVal(pub u32);
     impl WkupCauseReadVal {
         #[doc = "AON timer requested wakeup, write 0 to clear"]
         #[inline(always)]
-        pub fn cause(&self) -> bool {
+        pub const fn cause(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -447,11 +601,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WkupCauseWriteVal(u32);
+    pub struct WkupCauseWriteVal(pub u32);
     impl WkupCauseWriteVal {
         #[doc = "AON timer requested wakeup, write 0 to clear"]
         #[inline(always)]
-        pub fn cause_clear(self) -> Self {
+        pub const fn cause_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -468,16 +622,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WkupCtrlReadVal(u32);
+    pub struct WkupCtrlReadVal(pub u32);
     impl WkupCtrlReadVal {
         #[doc = "When set to 1, the wakeup timer will count"]
         #[inline(always)]
-        pub fn enable(&self) -> bool {
+        pub const fn enable(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Pre-scaler value for wakeup timer count"]
         #[inline(always)]
-        pub fn prescaler(&self) -> u32 {
+        pub const fn prescaler(&self) -> u32 {
             (self.0 >> 1) & 0xfff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -499,16 +653,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WkupCtrlWriteVal(u32);
+    pub struct WkupCtrlWriteVal(pub u32);
     impl WkupCtrlWriteVal {
         #[doc = "When set to 1, the wakeup timer will count"]
         #[inline(always)]
-        pub fn enable(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn enable(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Pre-scaler value for wakeup timer count"]
         #[inline(always)]
-        pub fn prescaler(self, val: u32) -> Self {
+        pub const fn prescaler(self, val: u32) -> Self {
             Self((self.0 & !(0xfff << 1)) | ((val & 0xfff) << 1))
         }
     }

@@ -18,7 +18,7 @@ impl Kmac {
     #[doc = r" way. The simplest way to enforce this is to only call"]
     #[doc = r" this function once."]
     #[inline(always)]
-    pub unsafe fn new() -> Self {
+    pub const unsafe fn new() -> Self {
         Self { _priv: () }
     }
     #[doc = r" Returns a register block that can be used to read"]
@@ -79,6 +79,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Interrupt State Register\n\nRead value: [`regs::IntrStateReadVal`]; Write value: [`regs::IntrStateWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_intr_state(self) -> ureg::RegRef<crate::meta::IntrState, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Interrupt Enable Register\n\nRead value: [`regs::IntrEnableReadVal`]; Write value: [`regs::IntrEnableWriteVal`]"]
     #[inline(always)]
     pub fn intr_enable(&self) -> ureg::RegRef<crate::meta::IntrEnable, &TMmio> {
@@ -86,6 +97,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Interrupt Enable Register\n\nRead value: [`regs::IntrEnableReadVal`]; Write value: [`regs::IntrEnableWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_intr_enable(self) -> ureg::RegRef<crate::meta::IntrEnable, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -99,6 +121,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Interrupt Test Register\n\nRead value: [`regs::IntrTestReadVal`]; Write value: [`regs::IntrTestWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_intr_test(self) -> ureg::RegRef<crate::meta::IntrTest, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(8 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Alert Test Register\n\nRead value: [`regs::AlertTestReadVal`]; Write value: [`regs::AlertTestWriteVal`]"]
     #[inline(always)]
     pub fn alert_test(&self) -> ureg::RegRef<crate::meta::AlertTest, &TMmio> {
@@ -106,6 +139,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0xc / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Alert Test Register\n\nRead value: [`regs::AlertTestReadVal`]; Write value: [`regs::AlertTestWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_alert_test(self) -> ureg::RegRef<crate::meta::AlertTest, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xc / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -119,6 +163,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Controls the configurability of !!CFG_SHADOWED register.\n\nThis register ensures the contents of !!CFG_SHADOWED register cannot be\nchanged by the software while the KMAC/SHA3 is in operation mode.\n\nRead value: [`regs::CfgRegwenReadVal`]; Write value: [`regs::CfgRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_cfg_regwen(self) -> ureg::RegRef<crate::meta::CfgRegwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x10 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "KMAC Configuration register.\n\nThis register is  updated when the hashing engine is in Idle.\nIf the software updates the register while the engine computes, the\nupdated value will be discarded.\n\nRead value: [`regs::CfgShadowedReadVal`]; Write value: [`regs::CfgShadowedWriteVal`]"]
     #[inline(always)]
     pub fn cfg_shadowed(&self) -> ureg::RegRef<crate::meta::CfgShadowed, &TMmio> {
@@ -126,6 +181,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x14 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "KMAC Configuration register.\n\nThis register is  updated when the hashing engine is in Idle.\nIf the software updates the register while the engine computes, the\nupdated value will be discarded.\n\nRead value: [`regs::CfgShadowedReadVal`]; Write value: [`regs::CfgShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_cfg_shadowed(self) -> ureg::RegRef<crate::meta::CfgShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x14 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -139,6 +205,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "KMAC/ SHA3 command register.\n\nThis register is to control the KMAC to start accepting message,\nto process the message, and to manually run additional keccak\nrounds at the end. Only at certain stage, the CMD affects to the\ncontrol logic. It follows the sequence of\n\n`start` --> `process` --> {`run` if needed --> } `done`\n\nRead value: [`regs::CmdReadVal`]; Write value: [`regs::CmdWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_cmd(self) -> ureg::RegRef<crate::meta::Cmd, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x18 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "KMAC/SHA3 Status register.\n\nRead value: [`regs::StatusReadVal`]; Write value: [`regs::StatusWriteVal`]"]
     #[inline(always)]
     pub fn status(&self) -> ureg::RegRef<crate::meta::Status, &TMmio> {
@@ -149,6 +226,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "KMAC/SHA3 Status register.\n\nRead value: [`regs::StatusReadVal`]; Write value: [`regs::StatusWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_status(self) -> ureg::RegRef<crate::meta::Status, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x1c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Entropy Timer Periods.\n\nRead value: [`regs::EntropyPeriodReadVal`]; Write value: [`regs::EntropyPeriodWriteVal`]"]
     #[inline(always)]
     pub fn entropy_period(&self) -> ureg::RegRef<crate::meta::EntropyPeriod, &TMmio> {
@@ -156,6 +244,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x20 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Entropy Timer Periods.\n\nRead value: [`regs::EntropyPeriodReadVal`]; Write value: [`regs::EntropyPeriodWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_entropy_period(self) -> ureg::RegRef<crate::meta::EntropyPeriod, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x20 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -171,6 +270,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Entropy Refresh Counter\n\nKMAC entropy can be refreshed after the given threshold KMAC operations\nrun. If the KMAC hash counter !!ENTROPY_REFRESH_HASH_CNT hits (GTE) the\nconfigured threshold !!ENTROPY_REFRESH_THRESHOLD_SHADOWED, the entropy\nmodule in the KMAC IP requests new seed to EDN and reset the KMAC\nhash counter.\n\nIf the threshold is 0, the refresh by the counter does not work. And the\ncounter is only reset by the CMD.hash_cnt_clr CSR bit.\n\nRead value: [`regs::EntropyRefreshHashCntReadVal`]; Write value: [`regs::EntropyRefreshHashCntWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_entropy_refresh_hash_cnt(
+        self,
+    ) -> ureg::RegRef<crate::meta::EntropyRefreshHashCnt, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x24 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Entropy Refresh Threshold\n\nKMAC entropy can be refreshed after the given threshold KMAC operations\nrun. If the KMAC hash counter !!ENTROPY_REFRESH_HASH_CNT hits (GTE) the\nconfigured threshold !!ENTROPY_REFRESH_THRESHOLD_SHADOWED, the entropy\nmodule in the KMAC IP requests new seed to EDN and reset the KMAC\nhash counter.\n\nIf the threshold is 0, the refresh by the counter does not work. And the\ncounter is only reset by the CMD.hash_cnt_clr CSR bit.\n\nRead value: [`regs::EntropyRefreshThresholdShadowedReadVal`]; Write value: [`regs::EntropyRefreshThresholdShadowedWriteVal`]"]
     #[inline(always)]
     pub fn entropy_refresh_threshold_shadowed(
@@ -183,13 +295,37 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
-    #[doc = "Entropy Seed\n\nEntropy seed register for the integrated entropy generator.\n\nIf !!CFG_SHADOWED.entropy_mode is set to sw_mode, software first needs to set !!CFG_SHADOWED.entropy_ready.\nThen, software needs to write the !!ENTROPY_SEED register 9 times.\nUpon each write, the written value is loaded into the corresponding state chunk of the entropy generator.\n\nAfter writing the !!ENTROPY_SEED register 9 times, the entropy generator will start its operation.\nAfter this point, writing this register has no longer any effect.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "Entropy Refresh Threshold\n\nKMAC entropy can be refreshed after the given threshold KMAC operations\nrun. If the KMAC hash counter !!ENTROPY_REFRESH_HASH_CNT hits (GTE) the\nconfigured threshold !!ENTROPY_REFRESH_THRESHOLD_SHADOWED, the entropy\nmodule in the KMAC IP requests new seed to EDN and reset the KMAC\nhash counter.\n\nIf the threshold is 0, the refresh by the counter does not work. And the\ncounter is only reset by the CMD.hash_cnt_clr CSR bit.\n\nRead value: [`regs::EntropyRefreshThresholdShadowedReadVal`]; Write value: [`regs::EntropyRefreshThresholdShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_entropy_refresh_threshold_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::EntropyRefreshThresholdShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x28 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
+    #[doc = "Entropy Seed\n\nEntropy seed register for the integrated entropy generator.\n\nIf !!CFG_SHADOWED.entropy_mode is set to sw_mode, software first needs to set !!CFG_SHADOWED.entropy_ready.\nThen, software needs to write the !!ENTROPY_SEED register 6 times.\nUpon each write, the written value is loaded into the corresponding state chunk of the entropy generator.\n\nAfter writing the !!ENTROPY_SEED register 6 times, the entropy generator will start its operation.\nAfter this point, writing this register has no longer any effect.\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn entropy_seed(&self) -> ureg::RegRef<crate::meta::EntropySeed, &TMmio> {
         unsafe {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x2c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Entropy Seed\n\nEntropy seed register for the integrated entropy generator.\n\nIf !!CFG_SHADOWED.entropy_mode is set to sw_mode, software first needs to set !!CFG_SHADOWED.entropy_ready.\nThen, software needs to write the !!ENTROPY_SEED register 6 times.\nUpon each write, the written value is loaded into the corresponding state chunk of the entropy generator.\n\nAfter writing the !!ENTROPY_SEED register 6 times, the entropy generator will start its operation.\nAfter this point, writing this register has no longer any effect.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_entropy_seed(self) -> ureg::RegRef<crate::meta::EntropySeed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x2c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -203,6 +339,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "KMAC Secret Key\n\nKMAC secret key can be up to 512 bit.\nOrder of the secret key is:\nkey[512:0] = {KEY15, KEY14, ... , KEY0};\n\nThe registers are allowed to be updated when the engine is in Idle state.\nIf the engine computes the hash, it discards any attempts to update the secret keys\nand report an error.\n\nCurrent KMAC supports up to 512 bit secret key. It is the sw\nresponsibility to keep upper bits of the secret key to 0.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_key_share0(self) -> ureg::Array<16, ureg::RegRef<crate::meta::KeyShare0, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x30 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "KMAC Secret Key, 2nd share.\n\nKMAC secret key can be up to 512 bit.\nOrder of the secret key is:\nkey[512:0] = {KEY15, KEY14, ... , KEY0};\n\nThe registers are allowed to be updated when the engine is in Idle state.\nIf the engine computes the hash, it discards any attempts to update the secret keys\nand report an error.\n\nCurrent KMAC supports up to 512 bit secret key. It is the sw\nresponsibility to keep upper bits of the secret key to 0.\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn key_share1(&self) -> ureg::Array<16, ureg::RegRef<crate::meta::KeyShare1, &TMmio>> {
@@ -210,6 +357,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0x70 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "KMAC Secret Key, 2nd share.\n\nKMAC secret key can be up to 512 bit.\nOrder of the secret key is:\nkey[512:0] = {KEY15, KEY14, ... , KEY0};\n\nThe registers are allowed to be updated when the engine is in Idle state.\nIf the engine computes the hash, it discards any attempts to update the secret keys\nand report an error.\n\nCurrent KMAC supports up to 512 bit secret key. It is the sw\nresponsibility to keep upper bits of the secret key to 0.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_key_share1(self) -> ureg::Array<16, ureg::RegRef<crate::meta::KeyShare1, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x70 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -223,6 +381,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Secret Key length in bit.\n\nThis value is used to make encoded secret key in KMAC.\nKMAC supports certain lengths of the secret key. Currently it\nsupports 128b, 192b, 256b, 384b, and 512b secret keys.\n\nRead value: [`regs::KeyLenReadVal`]; Write value: [`regs::KeyLenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_key_len(self) -> ureg::RegRef<crate::meta::KeyLen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xb0 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "cSHAKE Prefix register.\n\nPrefix including Function Name N and Customization String S.\nThe SHA3 assumes this register value is encoded as:\n`encode_string(N) || encode_string(S) || 0`. It means that the\nsoftware can freely decide the length of N or S based on the\ngiven Prefix register size 320bit. 320bit is determined to have\n32-bit of N and up to 256-bit of S + encode of their length.\n\nIt is SW responsibility to fill the register with encoded value\nthat is described at Section 2.3.2 String Encoding in NIST SP\n800-185 specification.\n\nOrder of Prefix is:\nprefix[end:0] := {PREFIX(N-1), ..., PREFIX(1), PREFIX(0) }\n\nThe registers are allowed to be updated when the engine is in Idle state.\nIf the engine computes the hash, it discards any attempts to update the secret keys\nand report an error.\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn prefix(&self) -> ureg::Array<11, ureg::RegRef<crate::meta::Prefix, &TMmio>> {
@@ -230,6 +399,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0xb4 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "cSHAKE Prefix register.\n\nPrefix including Function Name N and Customization String S.\nThe SHA3 assumes this register value is encoded as:\n`encode_string(N) || encode_string(S) || 0`. It means that the\nsoftware can freely decide the length of N or S based on the\ngiven Prefix register size 320bit. 320bit is determined to have\n32-bit of N and up to 256-bit of S + encode of their length.\n\nIt is SW responsibility to fill the register with encoded value\nthat is described at Section 2.3.2 String Encoding in NIST SP\n800-185 specification.\n\nOrder of Prefix is:\nprefix[end:0] := {PREFIX(N-1), ..., PREFIX(1), PREFIX(0) }\n\nThe registers are allowed to be updated when the engine is in Idle state.\nIf the engine computes the hash, it discards any attempts to update the secret keys\nand report an error.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_prefix(self) -> ureg::Array<11, ureg::RegRef<crate::meta::Prefix, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0xb4 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -243,6 +423,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "KMAC/SHA3 Error Code\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_err_code(self) -> ureg::RegRef<crate::meta::ErrCode, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xe0 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Keccak State (1600 bit) memory.\n\nThe software can get the processed digest by reading this memory\nregion. Unlike MSG_FIFO, STATE memory space sees the addr[9:0].\nIf Masking feature is enabled, the software reads two shares from\nthis memory space.\n\n0x400 - 0x4C7: State share\n0x500 - 0x5C7: Mask share of the state, 0 if EnMasking = 0\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn state(&self) -> ureg::Array<128, ureg::RegRef<crate::meta::State, &TMmio>> {
@@ -250,6 +441,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0x400 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Keccak State (1600 bit) memory.\n\nThe software can get the processed digest by reading this memory\nregion. Unlike MSG_FIFO, STATE memory space sees the addr[9:0].\nIf Masking feature is enabled, the software reads two shares from\nthis memory space.\n\n0x400 - 0x4C7: State share\n0x500 - 0x5C7: Mask share of the state, 0 if EnMasking = 0\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_state(self) -> ureg::Array<128, ureg::RegRef<crate::meta::State, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x400 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -263,21 +465,32 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Message FIFO.\n\nAny write operation to this window will be appended to MSG_FIFO. SW can\nsimply write bytes/words to any address within this address range.\nOrdering and packing of the incoming bytes/words are handled\ninternally. Therefore, the least significant 12 bits of the address\nare ignored.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_msg_fifo(self) -> ureg::Array<512, ureg::RegRef<crate::meta::MsgFifo, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x800 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
 }
 pub mod regs {
     #![doc = r" Types that represent the values held by registers."]
     #[derive(Clone, Copy)]
-    pub struct AlertTestWriteVal(u32);
+    pub struct AlertTestWriteVal(pub u32);
     impl AlertTestWriteVal {
         #[doc = "Write 1 to trigger one alert event of this kind."]
         #[inline(always)]
-        pub fn recov_operation_err(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn recov_operation_err(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Write 1 to trigger one alert event of this kind."]
         #[inline(always)]
-        pub fn fatal_fault_err(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn fatal_fault_err(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
     }
     impl From<u32> for AlertTestWriteVal {
@@ -293,11 +506,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct CfgRegwenReadVal(u32);
+    pub struct CfgRegwenReadVal(pub u32);
     impl CfgRegwenReadVal {
         #[doc = "Configuration enable."]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
     }
@@ -314,61 +527,61 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct CfgShadowedReadVal(u32);
+    pub struct CfgShadowedReadVal(pub u32);
     impl CfgShadowedReadVal {
         #[doc = "KMAC datapath enable.\n\nIf this bit is 1, the incoming message is processed in KMAC\nwith the secret key."]
         #[inline(always)]
-        pub fn kmac_en(&self) -> bool {
+        pub const fn kmac_en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Hashing Strength\n\n3 bit field to select the security strength of SHA3 hashing\nengine. If mode field is set to SHAKE or cSHAKE, only 128 and\n256 strength can be selected. Other value will result error\nwhen hashing starts."]
         #[inline(always)]
-        pub fn kstrength(&self) -> super::enums::Kstrength {
-            super::enums::Kstrength::try_from((self.0 >> 1) & 7).unwrap()
+        pub const fn kstrength(&self) -> super::enums::Kstrength {
+            super::enums::Kstrength::from_raw((self.0 >> 1) & 7).unwrap()
         }
         #[doc = "Keccak hashing mode.\n\nThis module supports SHA3 main hashing algorithm and the part\nof its derived functions, SHAKE and cSHAKE with limitations.\nThis field is to select the mode."]
         #[inline(always)]
-        pub fn mode(&self) -> super::enums::Mode {
-            super::enums::Mode::try_from((self.0 >> 4) & 3).unwrap()
+        pub const fn mode(&self) -> super::enums::Mode {
+            super::enums::Mode::from_raw((self.0 >> 4) & 3).unwrap()
         }
         #[doc = "Message Endianness.\n\nIf 1 then each individual multi-byte value, regardless of its\nalignment, written to !!MSG_FIFO will be added to the message\nin big-endian byte order.\nIf 0, each value will be added to the message in little-endian\nbyte order.\nA message written to !!MSG_FIFO one byte at a time will not be\naffected by this setting.\nFrom a hardware perspective byte swaps are performed on a TL-UL\nword granularity."]
         #[inline(always)]
-        pub fn msg_endianness(&self) -> bool {
+        pub const fn msg_endianness(&self) -> bool {
             ((self.0 >> 8) & 1) != 0
         }
         #[doc = "State Endianness.\n\nIf 1 then each individual word in the !!STATE output register\nis converted to big-endian byte order.\nThe order of the words in relation to one another is not\nchanged.\nThis setting does not affect how the state is interpreted\nduring computation."]
         #[inline(always)]
-        pub fn state_endianness(&self) -> bool {
+        pub const fn state_endianness(&self) -> bool {
             ((self.0 >> 9) & 1) != 0
         }
         #[doc = "Sideloaded Key.\n\nIf 1, KMAC uses KeyMgr sideloaded key for SW initiated KMAC\noperation. KMAC uses the sideloaded key regardless of this\nconfiguration when KeyMgr initiates the KMAC operation for\nKey Derivation Function (KDF)."]
         #[inline(always)]
-        pub fn sideload(&self) -> bool {
+        pub const fn sideload(&self) -> bool {
             ((self.0 >> 12) & 1) != 0
         }
-        #[doc = "Entropy Mode\n\nUsing this field, software can configure mode of operation of the internal pseudo-random number generator (PRNG).\nFor the hardware to actually switch to an entropy mode other than the default idle_mode, software further needs to set the !!CFG_SHADOWED.entropy_ready bit.\nAfter that point, the hardware cannot be made to return to idle_mode unless the module is reset."]
+        #[doc = "Entropy Mode\n\nUsing this field, software can configure mode of operation of the internal pseudo-random number generator (PRNG).\n\nNote that once software has configured a value different from `idle_mode` after reset, and set the !!CFG_SHADOWED.entropy_ready bit afterwards, the PRNG configuration cannot be changed anymore (unless an EDN request timeout occurs when running in EDN mode).\nFurther writes to this field will change the value received upon reading the register, but they will be ignored by the internal hardware."]
         #[inline(always)]
-        pub fn entropy_mode(&self) -> super::enums::EntropyMode {
-            super::enums::EntropyMode::try_from((self.0 >> 16) & 3).unwrap()
+        pub const fn entropy_mode(&self) -> super::enums::EntropyMode {
+            super::enums::EntropyMode::from_raw((self.0 >> 16) & 3).unwrap()
         }
         #[doc = "Entropy Fast process mode.\n\nIf 1, entropy logic uses garbage data while not processing the KMAC\nkey block. It will re-use previous entropy value and will not\nexpand the entropy when it is consumed. Only it refreshes the\nentropy while processing the secret key block. This process should\nnot be used if SCA resistance is required because it may cause side\nchannel leakage."]
         #[inline(always)]
-        pub fn entropy_fast_process(&self) -> bool {
+        pub const fn entropy_fast_process(&self) -> bool {
             ((self.0 >> 19) & 1) != 0
         }
         #[doc = "Message Masking with PRNG.\n\nIf 1, KMAC applies PRNG to the input messages to the Keccak module\nwhen KMAC mode is on."]
         #[inline(always)]
-        pub fn msg_mask(&self) -> bool {
+        pub const fn msg_mask(&self) -> bool {
             ((self.0 >> 20) & 1) != 0
         }
         #[doc = "Entropy Ready status.\n\nSoftware sets this field to allow the entropy generator in KMAC to\nfetch the entropy and run."]
         #[inline(always)]
-        pub fn entropy_ready(&self) -> bool {
+        pub const fn entropy_ready(&self) -> bool {
             ((self.0 >> 24) & 1) != 0
         }
         #[doc = "Enable Unsupported Mode and Strength configs.\n\nSW may set this field for KMAC to move forward with unsupported\nKeccak Mode and Strength configurations, such as cSHAKE512.\n\nIf not set, KMAC won't propagate the SW command (CmdStart) to the\nrest of the blocks (AppIntf, KMAC Core, SHA3)."]
         #[inline(always)]
-        pub fn en_unsupported_modestrength(&self) -> bool {
+        pub const fn en_unsupported_modestrength(&self) -> bool {
             ((self.0 >> 26) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -390,12 +603,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct CfgShadowedWriteVal(u32);
+    pub struct CfgShadowedWriteVal(pub u32);
     impl CfgShadowedWriteVal {
         #[doc = "KMAC datapath enable.\n\nIf this bit is 1, the incoming message is processed in KMAC\nwith the secret key."]
         #[inline(always)]
-        pub fn kmac_en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn kmac_en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Hashing Strength\n\n3 bit field to select the security strength of SHA3 hashing\nengine. If mode field is set to SHAKE or cSHAKE, only 128 and\n256 strength can be selected. Other value will result error\nwhen hashing starts."]
         #[inline(always)]
@@ -408,6 +621,9 @@ pub mod regs {
                     | (u32::from(f(super::enums::selector::KstrengthSelector())) << 1),
             )
         }
+        pub const fn with_kstrength(self, val: super::enums::Kstrength) -> Self {
+            Self((self.0 & !(7 << 1)) | ((val as u32) << 1))
+        }
         #[doc = "Keccak hashing mode.\n\nThis module supports SHA3 main hashing algorithm and the part\nof its derived functions, SHAKE and cSHAKE with limitations.\nThis field is to select the mode."]
         #[inline(always)]
         pub fn mode(
@@ -416,22 +632,25 @@ pub mod regs {
         ) -> Self {
             Self((self.0 & !(3 << 4)) | (u32::from(f(super::enums::selector::ModeSelector())) << 4))
         }
+        pub const fn with_mode(self, val: super::enums::Mode) -> Self {
+            Self((self.0 & !(3 << 4)) | ((val as u32) << 4))
+        }
         #[doc = "Message Endianness.\n\nIf 1 then each individual multi-byte value, regardless of its\nalignment, written to !!MSG_FIFO will be added to the message\nin big-endian byte order.\nIf 0, each value will be added to the message in little-endian\nbyte order.\nA message written to !!MSG_FIFO one byte at a time will not be\naffected by this setting.\nFrom a hardware perspective byte swaps are performed on a TL-UL\nword granularity."]
         #[inline(always)]
-        pub fn msg_endianness(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 8)) | (u32::from(val) << 8))
+        pub const fn msg_endianness(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 8)) | (val as u32) << 8)
         }
         #[doc = "State Endianness.\n\nIf 1 then each individual word in the !!STATE output register\nis converted to big-endian byte order.\nThe order of the words in relation to one another is not\nchanged.\nThis setting does not affect how the state is interpreted\nduring computation."]
         #[inline(always)]
-        pub fn state_endianness(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 9)) | (u32::from(val) << 9))
+        pub const fn state_endianness(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 9)) | (val as u32) << 9)
         }
         #[doc = "Sideloaded Key.\n\nIf 1, KMAC uses KeyMgr sideloaded key for SW initiated KMAC\noperation. KMAC uses the sideloaded key regardless of this\nconfiguration when KeyMgr initiates the KMAC operation for\nKey Derivation Function (KDF)."]
         #[inline(always)]
-        pub fn sideload(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 12)) | (u32::from(val) << 12))
+        pub const fn sideload(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 12)) | (val as u32) << 12)
         }
-        #[doc = "Entropy Mode\n\nUsing this field, software can configure mode of operation of the internal pseudo-random number generator (PRNG).\nFor the hardware to actually switch to an entropy mode other than the default idle_mode, software further needs to set the !!CFG_SHADOWED.entropy_ready bit.\nAfter that point, the hardware cannot be made to return to idle_mode unless the module is reset."]
+        #[doc = "Entropy Mode\n\nUsing this field, software can configure mode of operation of the internal pseudo-random number generator (PRNG).\n\nNote that once software has configured a value different from `idle_mode` after reset, and set the !!CFG_SHADOWED.entropy_ready bit afterwards, the PRNG configuration cannot be changed anymore (unless an EDN request timeout occurs when running in EDN mode).\nFurther writes to this field will change the value received upon reading the register, but they will be ignored by the internal hardware."]
         #[inline(always)]
         pub fn entropy_mode(
             self,
@@ -442,25 +661,28 @@ pub mod regs {
                     | (u32::from(f(super::enums::selector::EntropyModeSelector())) << 16),
             )
         }
+        pub const fn with_entropy_mode(self, val: super::enums::EntropyMode) -> Self {
+            Self((self.0 & !(3 << 16)) | ((val as u32) << 16))
+        }
         #[doc = "Entropy Fast process mode.\n\nIf 1, entropy logic uses garbage data while not processing the KMAC\nkey block. It will re-use previous entropy value and will not\nexpand the entropy when it is consumed. Only it refreshes the\nentropy while processing the secret key block. This process should\nnot be used if SCA resistance is required because it may cause side\nchannel leakage."]
         #[inline(always)]
-        pub fn entropy_fast_process(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 19)) | (u32::from(val) << 19))
+        pub const fn entropy_fast_process(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 19)) | (val as u32) << 19)
         }
         #[doc = "Message Masking with PRNG.\n\nIf 1, KMAC applies PRNG to the input messages to the Keccak module\nwhen KMAC mode is on."]
         #[inline(always)]
-        pub fn msg_mask(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 20)) | (u32::from(val) << 20))
+        pub const fn msg_mask(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 20)) | (val as u32) << 20)
         }
         #[doc = "Entropy Ready status.\n\nSoftware sets this field to allow the entropy generator in KMAC to\nfetch the entropy and run."]
         #[inline(always)]
-        pub fn entropy_ready(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 24)) | (u32::from(val) << 24))
+        pub const fn entropy_ready(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 24)) | (val as u32) << 24)
         }
         #[doc = "Enable Unsupported Mode and Strength configs.\n\nSW may set this field for KMAC to move forward with unsupported\nKeccak Mode and Strength configurations, such as cSHAKE512.\n\nIf not set, KMAC won't propagate the SW command (CmdStart) to the\nrest of the blocks (AppIntf, KMAC Core, SHA3)."]
         #[inline(always)]
-        pub fn en_unsupported_modestrength(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 26)) | (u32::from(val) << 26))
+        pub const fn en_unsupported_modestrength(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 26)) | (val as u32) << 26)
         }
     }
     impl From<u32> for CfgShadowedWriteVal {
@@ -476,26 +698,26 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct CmdReadVal(u32);
+    pub struct CmdReadVal(pub u32);
     impl CmdReadVal {
         #[doc = "Issue a command to the KMAC/SHA3 IP. The command is sparse\nencoded. To prevent sw from writing multiple commands at once,\nthe field is defined as enum."]
         #[inline(always)]
-        pub fn cmd(&self) -> super::enums::Cmd {
-            super::enums::Cmd::try_from((self.0 >> 0) & 0x3f).unwrap()
+        pub const fn cmd(&self) -> super::enums::Cmd {
+            super::enums::Cmd::from_raw((self.0 >> 0) & 0x3f).unwrap()
         }
-        #[doc = "SW triggered Entropy Request\n\nIf writes 1 to this field"]
+        #[doc = "Software can set this bit to 1 to manually trigger the reseeding of the internal PRNG when running in EDN mode.\nThis will also clear !!ENTROPY_REFRESH_HASH_CNT.\n\nNote that the hardware may miss the trigger pulse if the module is not idle, or if the module is currently performing a reseed operation."]
         #[inline(always)]
-        pub fn entropy_req(&self) -> bool {
+        pub const fn entropy_req(&self) -> bool {
             ((self.0 >> 8) & 1) != 0
         }
-        #[doc = "If writes 1, it clears the hash (KMAC) counter in the entropy module"]
+        #[doc = "Software can set this bit to 1 to manually clear !!ENTROPY_REFRESH_HASH_CNT."]
         #[inline(always)]
-        pub fn hash_cnt_clr(&self) -> bool {
+        pub const fn hash_cnt_clr(&self) -> bool {
             ((self.0 >> 9) & 1) != 0
         }
         #[doc = "When error occurs and one of the state machine stays at\n Error handling state, SW may process the error based on\n ERR_CODE, then let FSM back to the reset state"]
         #[inline(always)]
-        pub fn err_processed(&self) -> bool {
+        pub const fn err_processed(&self) -> bool {
             ((self.0 >> 10) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -517,21 +739,21 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct CmdWriteVal(u32);
+    pub struct CmdWriteVal(pub u32);
     impl CmdWriteVal {
-        #[doc = "SW triggered Entropy Request\n\nIf writes 1 to this field"]
+        #[doc = "Software can set this bit to 1 to manually trigger the reseeding of the internal PRNG when running in EDN mode.\nThis will also clear !!ENTROPY_REFRESH_HASH_CNT.\n\nNote that the hardware may miss the trigger pulse if the module is not idle, or if the module is currently performing a reseed operation."]
         #[inline(always)]
-        pub fn entropy_req_clear(self) -> Self {
+        pub const fn entropy_req_clear(self) -> Self {
             Self(self.0 | (1 << 8))
         }
-        #[doc = "If writes 1, it clears the hash (KMAC) counter in the entropy module"]
+        #[doc = "Software can set this bit to 1 to manually clear !!ENTROPY_REFRESH_HASH_CNT."]
         #[inline(always)]
-        pub fn hash_cnt_clr_clear(self) -> Self {
+        pub const fn hash_cnt_clr_clear(self) -> Self {
             Self(self.0 | (1 << 9))
         }
         #[doc = "When error occurs and one of the state machine stays at\n Error handling state, SW may process the error based on\n ERR_CODE, then let FSM back to the reset state"]
         #[inline(always)]
-        pub fn err_processed_clear(self) -> Self {
+        pub const fn err_processed_clear(self) -> Self {
             Self(self.0 | (1 << 10))
         }
     }
@@ -548,16 +770,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct EntropyPeriodReadVal(u32);
+    pub struct EntropyPeriodReadVal(pub u32);
     impl EntropyPeriodReadVal {
         #[doc = "EDN Wait timer prescaler.\n\nEDN Wait timer has 16 bit value. The timer value is increased when the timer pulse is generated. Timer pulse is raises when the number of the clock cycles hit this prescaler value.\n\nThe exact period of the timer pulse is unknown as the KMAC input clock may contain jitters."]
         #[inline(always)]
-        pub fn prescaler(&self) -> u32 {
+        pub const fn prescaler(&self) -> u32 {
             (self.0 >> 0) & 0x3ff
         }
         #[doc = "EDN request wait timer.\n\nThe entropy module in KMAC waits up to this field in the timer pulse\nafter it sends request to EDN module. If the timer expires, the\nentropy module moves to an error state and notifies to the system.\n\nIf there is a pending EDN request during wait timer update, then this update is delayed until the EDN request is complete.\n\nIf 0, the entropy module waits the EDN response always. If EDN does\nnot respond in this configuration, the software shall reset the IP."]
         #[inline(always)]
-        pub fn wait_timer(&self) -> u32 {
+        pub const fn wait_timer(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -579,16 +801,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct EntropyPeriodWriteVal(u32);
+    pub struct EntropyPeriodWriteVal(pub u32);
     impl EntropyPeriodWriteVal {
         #[doc = "EDN Wait timer prescaler.\n\nEDN Wait timer has 16 bit value. The timer value is increased when the timer pulse is generated. Timer pulse is raises when the number of the clock cycles hit this prescaler value.\n\nThe exact period of the timer pulse is unknown as the KMAC input clock may contain jitters."]
         #[inline(always)]
-        pub fn prescaler(self, val: u32) -> Self {
+        pub const fn prescaler(self, val: u32) -> Self {
             Self((self.0 & !(0x3ff << 0)) | ((val & 0x3ff) << 0))
         }
         #[doc = "EDN request wait timer.\n\nThe entropy module in KMAC waits up to this field in the timer pulse\nafter it sends request to EDN module. If the timer expires, the\nentropy module moves to an error state and notifies to the system.\n\nIf there is a pending EDN request during wait timer update, then this update is delayed until the EDN request is complete.\n\nIf 0, the entropy module waits the EDN response always. If EDN does\nnot respond in this configuration, the software shall reset the IP."]
         #[inline(always)]
-        pub fn wait_timer(self, val: u32) -> Self {
+        pub const fn wait_timer(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 16)) | ((val & 0xffff) << 16))
         }
     }
@@ -605,11 +827,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct EntropyRefreshHashCntReadVal(u32);
+    pub struct EntropyRefreshHashCntReadVal(pub u32);
     impl EntropyRefreshHashCntReadVal {
         #[doc = "Hash (KMAC) counter"]
         #[inline(always)]
-        pub fn hash_cnt(&self) -> u32 {
+        pub const fn hash_cnt(&self) -> u32 {
             (self.0 >> 0) & 0x3ff
         }
     }
@@ -626,11 +848,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct EntropyRefreshThresholdShadowedReadVal(u32);
+    pub struct EntropyRefreshThresholdShadowedReadVal(pub u32);
     impl EntropyRefreshThresholdShadowedReadVal {
         #[doc = "Hash Threshold"]
         #[inline(always)]
-        pub fn threshold(&self) -> u32 {
+        pub const fn threshold(&self) -> u32 {
             (self.0 >> 0) & 0x3ff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -652,11 +874,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct EntropyRefreshThresholdShadowedWriteVal(u32);
+    pub struct EntropyRefreshThresholdShadowedWriteVal(pub u32);
     impl EntropyRefreshThresholdShadowedWriteVal {
         #[doc = "Hash Threshold"]
         #[inline(always)]
-        pub fn threshold(self, val: u32) -> Self {
+        pub const fn threshold(self, val: u32) -> Self {
             Self((self.0 & !(0x3ff << 0)) | ((val & 0x3ff) << 0))
         }
     }
@@ -673,21 +895,21 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrEnableReadVal(u32);
+    pub struct IntrEnableReadVal(pub u32);
     impl IntrEnableReadVal {
         #[doc = "Enable interrupt when !!INTR_STATE.kmac_done is set."]
         #[inline(always)]
-        pub fn kmac_done(&self) -> bool {
+        pub const fn kmac_done(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Enable interrupt when !!INTR_STATE.fifo_empty is set."]
         #[inline(always)]
-        pub fn fifo_empty(&self) -> bool {
+        pub const fn fifo_empty(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "Enable interrupt when !!INTR_STATE.kmac_err is set."]
         #[inline(always)]
-        pub fn kmac_err(&self) -> bool {
+        pub const fn kmac_err(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -709,22 +931,22 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrEnableWriteVal(u32);
+    pub struct IntrEnableWriteVal(pub u32);
     impl IntrEnableWriteVal {
         #[doc = "Enable interrupt when !!INTR_STATE.kmac_done is set."]
         #[inline(always)]
-        pub fn kmac_done(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn kmac_done(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Enable interrupt when !!INTR_STATE.fifo_empty is set."]
         #[inline(always)]
-        pub fn fifo_empty(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn fifo_empty(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
         #[doc = "Enable interrupt when !!INTR_STATE.kmac_err is set."]
         #[inline(always)]
-        pub fn kmac_err(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 2)) | (u32::from(val) << 2))
+        pub const fn kmac_err(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 2)) | (val as u32) << 2)
         }
     }
     impl From<u32> for IntrEnableWriteVal {
@@ -740,21 +962,21 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrStateReadVal(u32);
+    pub struct IntrStateReadVal(pub u32);
     impl IntrStateReadVal {
         #[doc = "KMAC/SHA3 absorbing has been completed"]
         #[inline(always)]
-        pub fn kmac_done(&self) -> bool {
+        pub const fn kmac_done(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "The message FIFO is empty.\nThis interrupt is raised only if the message FIFO is actually writable by software, i.e., if all of the following conditions are met:\ni) The KMAC block is not exercised by a hardware application interface.\nii) The SHA3 block is in the Absorb state.\niii) Software has not yet written the Process command to finish the absorption process.\nFor the interrupt to be raised, the message FIFO must also have been full previously.\nOtherwise, the hardware empties the FIFO faster than software can fill it and there is no point in interrupting the software to inform it about the message FIFO being empty."]
         #[inline(always)]
-        pub fn fifo_empty(&self) -> bool {
+        pub const fn fifo_empty(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "KMAC/SHA3 error occurred. ERR_CODE register shows the details"]
         #[inline(always)]
-        pub fn kmac_err(&self) -> bool {
+        pub const fn kmac_err(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -776,16 +998,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrStateWriteVal(u32);
+    pub struct IntrStateWriteVal(pub u32);
     impl IntrStateWriteVal {
         #[doc = "KMAC/SHA3 absorbing has been completed"]
         #[inline(always)]
-        pub fn kmac_done_clear(self) -> Self {
+        pub const fn kmac_done_clear(self) -> Self {
             Self(self.0 | (1 << 0))
         }
         #[doc = "KMAC/SHA3 error occurred. ERR_CODE register shows the details"]
         #[inline(always)]
-        pub fn kmac_err_clear(self) -> Self {
+        pub const fn kmac_err_clear(self) -> Self {
             Self(self.0 | (1 << 2))
         }
     }
@@ -802,22 +1024,22 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrTestWriteVal(u32);
+    pub struct IntrTestWriteVal(pub u32);
     impl IntrTestWriteVal {
         #[doc = "Write 1 to force !!INTR_STATE.kmac_done to 1."]
         #[inline(always)]
-        pub fn kmac_done(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn kmac_done(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Write 1 to force !!INTR_STATE.fifo_empty to 1."]
         #[inline(always)]
-        pub fn fifo_empty(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn fifo_empty(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
         #[doc = "Write 1 to force !!INTR_STATE.kmac_err to 1."]
         #[inline(always)]
-        pub fn kmac_err(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 2)) | (u32::from(val) << 2))
+        pub const fn kmac_err(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 2)) | (val as u32) << 2)
         }
     }
     impl From<u32> for IntrTestWriteVal {
@@ -833,7 +1055,7 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct KeyLenWriteVal(u32);
+    pub struct KeyLenWriteVal(pub u32);
     impl KeyLenWriteVal {
         #[doc = "Key length choice"]
         #[inline(always)]
@@ -842,6 +1064,9 @@ pub mod regs {
             f: impl FnOnce(super::enums::selector::LenSelector) -> super::enums::Len,
         ) -> Self {
             Self((self.0 & !(7 << 0)) | (u32::from(f(super::enums::selector::LenSelector())) << 0))
+        }
+        pub const fn with_len(self, val: super::enums::Len) -> Self {
+            Self((self.0 & !(7 << 0)) | ((val as u32) << 0))
         }
     }
     impl From<u32> for KeyLenWriteVal {
@@ -857,46 +1082,46 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct StatusReadVal(u32);
+    pub struct StatusReadVal(pub u32);
     impl StatusReadVal {
         #[doc = "If 1, SHA3 hashing engine is in idle state."]
         #[inline(always)]
-        pub fn sha3_idle(&self) -> bool {
+        pub const fn sha3_idle(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "If 1, SHA3 is receiving message stream and processing it"]
         #[inline(always)]
-        pub fn sha3_absorb(&self) -> bool {
+        pub const fn sha3_absorb(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "If 1, SHA3 completes sponge absorbing stage.\nIn this stage, SW can manually run the hashing engine."]
         #[inline(always)]
-        pub fn sha3_squeeze(&self) -> bool {
+        pub const fn sha3_squeeze(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "Count of occupied entries in the message FIFO."]
         #[inline(always)]
-        pub fn fifo_depth(&self) -> u32 {
+        pub const fn fifo_depth(&self) -> u32 {
             (self.0 >> 8) & 0x1f
         }
         #[doc = "Message FIFO Empty indicator.\n\nThe FIFO's `Pass` parameter is set to `1'b 1`. So, by default, if\nthe SHA engine is ready, the write data to FIFO just passes\nthrough.\n\nIn this case, `fifo_depth` remains **0**. `fifo_empty`, however,\nlowers the value to **0** for a cycle, then goes back to the empty\nstate, **1**.\n\nSee the \"Message FIFO\" section in the spec for the reason."]
         #[inline(always)]
-        pub fn fifo_empty(&self) -> bool {
+        pub const fn fifo_empty(&self) -> bool {
             ((self.0 >> 14) & 1) != 0
         }
         #[doc = "Message FIFO Full indicator"]
         #[inline(always)]
-        pub fn fifo_full(&self) -> bool {
+        pub const fn fifo_full(&self) -> bool {
             ((self.0 >> 15) & 1) != 0
         }
         #[doc = "No fatal fault has occurred inside the KMAC unit (0).\nA fatal fault has occured and the KMAC unit needs to be reset (1),\nExamples for such faults include\ni) TL-UL bus integrity fault\nii) storage errors in the shadow registers\niii) errors in the message, round, or key counter\niv) any internal FSM entering an invalid state\nv) an error in the redundant lfsr"]
         #[inline(always)]
-        pub fn alert_fatal_fault(&self) -> bool {
+        pub const fn alert_fatal_fault(&self) -> bool {
             ((self.0 >> 16) & 1) != 0
         }
         #[doc = "An update error has not occurred (0) or has occured (1) in the shadowed Control Register.\nKMAC operation needs to be restarted by re-writing the Control Register."]
         #[inline(always)]
-        pub fn alert_recov_ctrl_update_err(&self) -> bool {
+        pub const fn alert_recov_ctrl_update_err(&self) -> bool {
             ((self.0 >> 17) & 1) != 0
         }
     }
@@ -1000,16 +1225,19 @@ pub mod enums {
         pub fn run(&self) -> bool {
             *self == Self::Run
         }
+        pub const fn from_raw(val: u32) -> Option<Cmd> {
+            if val < 0x40 {
+                Some(unsafe { core::mem::transmute::<u32, Cmd>(val) })
+            } else {
+                None
+            }
+        }
     }
     impl TryFrom<u32> for Cmd {
         type Error = ();
         #[inline(always)]
         fn try_from(val: u32) -> Result<Cmd, ()> {
-            if val < 0x40 {
-                Ok(unsafe { core::mem::transmute::<u32, Cmd>(val) })
-            } else {
-                Err(())
-            }
+            Cmd::from_raw(val).ok_or(())
         }
     }
     impl From<Cmd> for u32 {
@@ -1038,16 +1266,19 @@ pub mod enums {
         pub fn sw_mode(&self) -> bool {
             *self == Self::SwMode
         }
+        pub const fn from_raw(val: u32) -> Option<EntropyMode> {
+            if val < 4 {
+                Some(unsafe { core::mem::transmute::<u32, EntropyMode>(val) })
+            } else {
+                None
+            }
+        }
     }
     impl TryFrom<u32> for EntropyMode {
         type Error = ();
         #[inline(always)]
         fn try_from(val: u32) -> Result<EntropyMode, ()> {
-            if val < 4 {
-                Ok(unsafe { core::mem::transmute::<u32, EntropyMode>(val) })
-            } else {
-                Err(())
-            }
+            EntropyMode::from_raw(val).ok_or(())
         }
     }
     impl From<EntropyMode> for u32 {
@@ -1088,16 +1319,19 @@ pub mod enums {
         pub fn l512(&self) -> bool {
             *self == Self::L512
         }
+        pub const fn from_raw(val: u32) -> Option<Kstrength> {
+            if val < 8 {
+                Some(unsafe { core::mem::transmute::<u32, Kstrength>(val) })
+            } else {
+                None
+            }
+        }
     }
     impl TryFrom<u32> for Kstrength {
         type Error = ();
         #[inline(always)]
         fn try_from(val: u32) -> Result<Kstrength, ()> {
-            if val < 8 {
-                Ok(unsafe { core::mem::transmute::<u32, Kstrength>(val) })
-            } else {
-                Err(())
-            }
+            Kstrength::from_raw(val).ok_or(())
         }
     }
     impl From<Kstrength> for u32 {
@@ -1138,16 +1372,19 @@ pub mod enums {
         pub fn key512(&self) -> bool {
             *self == Self::Key512
         }
+        pub const fn from_raw(val: u32) -> Option<Len> {
+            if val < 8 {
+                Some(unsafe { core::mem::transmute::<u32, Len>(val) })
+            } else {
+                None
+            }
+        }
     }
     impl TryFrom<u32> for Len {
         type Error = ();
         #[inline(always)]
         fn try_from(val: u32) -> Result<Len, ()> {
-            if val < 8 {
-                Ok(unsafe { core::mem::transmute::<u32, Len>(val) })
-            } else {
-                Err(())
-            }
+            Len::from_raw(val).ok_or(())
         }
     }
     impl From<Len> for u32 {
@@ -1176,16 +1413,19 @@ pub mod enums {
         pub fn c_shake(&self) -> bool {
             *self == Self::Cshake
         }
+        pub const fn from_raw(val: u32) -> Option<Mode> {
+            if val < 4 {
+                Some(unsafe { core::mem::transmute::<u32, Mode>(val) })
+            } else {
+                None
+            }
+        }
     }
     impl TryFrom<u32> for Mode {
         type Error = ();
         #[inline(always)]
         fn try_from(val: u32) -> Result<Mode, ()> {
-            if val < 4 {
-                Ok(unsafe { core::mem::transmute::<u32, Mode>(val) })
-            } else {
-                Err(())
-            }
+            Mode::from_raw(val).ok_or(())
         }
     }
     impl From<Mode> for u32 {

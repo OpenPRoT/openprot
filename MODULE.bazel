@@ -28,7 +28,7 @@ git_override(
 
 git_override(
     module_name = "ureg",
-    commit = "412ca40146d5d2012417e493b4a01096b04edf4b",
+    commit = "4762ed5eef323a4267720a6b6da287c88738f901",
     remote = "https://github.com/chipsalliance/caliptra-ureg",
 )
 

@@ -18,7 +18,7 @@ impl FlashCtrl {
     #[doc = r" way. The simplest way to enforce this is to only call"]
     #[doc = r" this function once."]
     #[inline(always)]
-    pub unsafe fn new() -> Self {
+    pub const unsafe fn new() -> Self {
         Self { _priv: () }
     }
     #[doc = r" Returns a register block that can be used to read"]
@@ -79,6 +79,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Interrupt State Register\n\nRead value: [`regs::IntrStateReadVal`]; Write value: [`regs::IntrStateWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_intr_state(self) -> ureg::RegRef<crate::meta::IntrState, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Interrupt Enable Register\n\nRead value: [`regs::IntrEnableReadVal`]; Write value: [`regs::IntrEnableWriteVal`]"]
     #[inline(always)]
     pub fn intr_enable(&self) -> ureg::RegRef<crate::meta::IntrEnable, &TMmio> {
@@ -86,6 +97,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Interrupt Enable Register\n\nRead value: [`regs::IntrEnableReadVal`]; Write value: [`regs::IntrEnableWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_intr_enable(self) -> ureg::RegRef<crate::meta::IntrEnable, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -99,6 +121,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Interrupt Test Register\n\nRead value: [`regs::IntrTestReadVal`]; Write value: [`regs::IntrTestWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_intr_test(self) -> ureg::RegRef<crate::meta::IntrTest, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(8 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Alert Test Register\n\nRead value: [`regs::AlertTestReadVal`]; Write value: [`regs::AlertTestWriteVal`]"]
     #[inline(always)]
     pub fn alert_test(&self) -> ureg::RegRef<crate::meta::AlertTest, &TMmio> {
@@ -106,6 +139,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0xc / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Alert Test Register\n\nRead value: [`regs::AlertTestReadVal`]; Write value: [`regs::AlertTestWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_alert_test(self) -> ureg::RegRef<crate::meta::AlertTest, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xc / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -119,6 +163,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Disable flash functionality\n\nRead value: [`regs::DisReadVal`]; Write value: [`regs::DisWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_dis(self) -> ureg::RegRef<crate::meta::Dis, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x10 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Controls whether flash can be used for code execution fetches\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn exec(&self) -> ureg::RegRef<crate::meta::Exec, &TMmio> {
@@ -126,6 +181,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x14 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Controls whether flash can be used for code execution fetches\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_exec(self) -> ureg::RegRef<crate::meta::Exec, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x14 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -139,6 +205,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Controller init register\n\nRead value: [`regs::InitReadVal`]; Write value: [`regs::InitWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_init(self) -> ureg::RegRef<crate::meta::Init, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x18 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Controls the configurability of the !!CONTROL register.\n\nThis register ensures the contents of !!CONTROL cannot be changed by software once a flash\noperation has begun.\n\nIt unlocks whenever the existing flash operation completes, regardless of success or error.\n\nRead value: [`regs::CtrlRegwenReadVal`]; Write value: [`regs::CtrlRegwenWriteVal`]"]
     #[inline(always)]
     pub fn ctrl_regwen(&self) -> ureg::RegRef<crate::meta::CtrlRegwen, &TMmio> {
@@ -146,6 +223,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x1c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Controls the configurability of the !!CONTROL register.\n\nThis register ensures the contents of !!CONTROL cannot be changed by software once a flash\noperation has begun.\n\nIt unlocks whenever the existing flash operation completes, regardless of success or error.\n\nRead value: [`regs::CtrlRegwenReadVal`]; Write value: [`regs::CtrlRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_ctrl_regwen(self) -> ureg::RegRef<crate::meta::CtrlRegwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x1c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -159,6 +247,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Control register\n\nRead value: [`regs::ControlReadVal`]; Write value: [`regs::ControlWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_control(self) -> ureg::RegRef<crate::meta::Control, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x20 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Address for flash operation\n\nRead value: [`regs::AddrReadVal`]; Write value: [`regs::AddrWriteVal`]"]
     #[inline(always)]
     pub fn addr(&self) -> ureg::RegRef<crate::meta::Addr, &TMmio> {
@@ -166,6 +265,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x24 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Address for flash operation\n\nRead value: [`regs::AddrReadVal`]; Write value: [`regs::AddrWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_addr(self) -> ureg::RegRef<crate::meta::Addr, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x24 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -179,6 +289,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Enable different program types\n\nRead value: [`regs::ProgTypeEnReadVal`]; Write value: [`regs::ProgTypeEnWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_prog_type_en(self) -> ureg::RegRef<crate::meta::ProgTypeEn, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x28 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Suspend erase\n\nRead value: [`regs::EraseSuspendReadVal`]; Write value: [`regs::EraseSuspendWriteVal`]"]
     #[inline(always)]
     pub fn erase_suspend(&self) -> ureg::RegRef<crate::meta::EraseSuspend, &TMmio> {
@@ -186,6 +307,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x2c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Suspend erase\n\nRead value: [`regs::EraseSuspendReadVal`]; Write value: [`regs::EraseSuspendWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_erase_suspend(self) -> ureg::RegRef<crate::meta::EraseSuspend, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x2c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -201,6 +333,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Memory region registers configuration enable.\n\nRead value: [`regs::RegionCfgRegwenReadVal`]; Write value: [`regs::RegionCfgRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_region_cfg_regwen(
+        self,
+    ) -> ureg::Array<8, ureg::RegRef<crate::meta::RegionCfgRegwen, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x30 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Memory property configuration for data partition\n\nRead value: [`regs::MpRegionCfgReadVal`]; Write value: [`regs::MpRegionCfgWriteVal`]"]
     #[inline(always)]
     pub fn mp_region_cfg(&self) -> ureg::Array<8, ureg::RegRef<crate::meta::MpRegionCfg, &TMmio>> {
@@ -208,6 +353,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0x50 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Memory property configuration for data partition\n\nRead value: [`regs::MpRegionCfgReadVal`]; Write value: [`regs::MpRegionCfgWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_mp_region_cfg(
+        self,
+    ) -> ureg::Array<8, ureg::RegRef<crate::meta::MpRegionCfg, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x50 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -221,6 +379,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Memory base and size configuration for data partition\n\nRead value: [`regs::MpRegionReadVal`]; Write value: [`regs::MpRegionWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_mp_region(self) -> ureg::Array<8, ureg::RegRef<crate::meta::MpRegion, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x70 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Default region properties\n\nRead value: [`regs::DefaultRegionReadVal`]; Write value: [`regs::DefaultRegionWriteVal`]"]
     #[inline(always)]
     pub fn default_region(&self) -> ureg::RegRef<crate::meta::DefaultRegion, &TMmio> {
@@ -228,6 +397,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x90 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Default region properties\n\nRead value: [`regs::DefaultRegionReadVal`]; Write value: [`regs::DefaultRegionWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_default_region(self) -> ureg::RegRef<crate::meta::DefaultRegion, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x90 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -243,6 +423,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Memory region registers configuration enable.\n\nRead value: [`regs::BankxInfo0RegwenReadVal`]; Write value: [`regs::BankxInfo0RegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_bank0_info0_regwen(
+        self,
+    ) -> ureg::Array<10, ureg::RegRef<crate::meta::Bank0Info0Regwen, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x94 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "  Memory property configuration for info partition in bank0,\n  Unlike data partition, each page is individually configured.\n\nRead value: [`regs::BankxInfoxPageCfgReadVal`]; Write value: [`regs::BankxInfoxPageCfgWriteVal`]"]
     #[inline(always)]
     pub fn bank0_info0_page_cfg(
@@ -252,6 +445,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0xbc / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "  Memory property configuration for info partition in bank0,\n  Unlike data partition, each page is individually configured.\n\nRead value: [`regs::BankxInfoxPageCfgReadVal`]; Write value: [`regs::BankxInfoxPageCfgWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_bank0_info0_page_cfg(
+        self,
+    ) -> ureg::Array<10, ureg::RegRef<crate::meta::Bank0Info0PageCfg, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0xbc / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -265,6 +471,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Memory region registers configuration enable.\n\nRead value: [`regs::BankxInfo1RegwenReadVal`]; Write value: [`regs::BankxInfo1RegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_bank0_info1_regwen(self) -> ureg::RegRef<crate::meta::Bank0Info1Regwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xe4 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "  Memory property configuration for info partition in bank0,\n  Unlike data partition, each page is individually configured.\n\nRead value: [`regs::BankxInfoxPageCfgReadVal`]; Write value: [`regs::BankxInfoxPageCfgWriteVal`]"]
     #[inline(always)]
     pub fn bank0_info1_page_cfg(&self) -> ureg::RegRef<crate::meta::Bank0Info1PageCfg, &TMmio> {
@@ -272,6 +489,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0xe8 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "  Memory property configuration for info partition in bank0,\n  Unlike data partition, each page is individually configured.\n\nRead value: [`regs::BankxInfoxPageCfgReadVal`]; Write value: [`regs::BankxInfoxPageCfgWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_bank0_info1_page_cfg(self) -> ureg::RegRef<crate::meta::Bank0Info1PageCfg, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xe8 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -287,6 +515,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Memory region registers configuration enable.\n\nRead value: [`regs::BankxInfo2RegwenReadVal`]; Write value: [`regs::BankxInfo2RegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_bank0_info2_regwen(
+        self,
+    ) -> ureg::Array<2, ureg::RegRef<crate::meta::Bank0Info2Regwen, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0xec / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "  Memory property configuration for info partition in bank0,\n  Unlike data partition, each page is individually configured.\n\nRead value: [`regs::BankxInfoxPageCfgReadVal`]; Write value: [`regs::BankxInfoxPageCfgWriteVal`]"]
     #[inline(always)]
     pub fn bank0_info2_page_cfg(
@@ -296,6 +537,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0xf4 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "  Memory property configuration for info partition in bank0,\n  Unlike data partition, each page is individually configured.\n\nRead value: [`regs::BankxInfoxPageCfgReadVal`]; Write value: [`regs::BankxInfoxPageCfgWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_bank0_info2_page_cfg(
+        self,
+    ) -> ureg::Array<2, ureg::RegRef<crate::meta::Bank0Info2PageCfg, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0xf4 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -311,6 +565,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Memory region registers configuration enable.\n\nRead value: [`regs::BankxInfo0RegwenReadVal`]; Write value: [`regs::BankxInfo0RegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_bank1_info0_regwen(
+        self,
+    ) -> ureg::Array<10, ureg::RegRef<crate::meta::Bank1Info0Regwen, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0xfc / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "  Memory property configuration for info partition in bank1,\n  Unlike data partition, each page is individually configured.\n\nRead value: [`regs::BankxInfoxPageCfgReadVal`]; Write value: [`regs::BankxInfoxPageCfgWriteVal`]"]
     #[inline(always)]
     pub fn bank1_info0_page_cfg(
@@ -320,6 +587,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0x124 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "  Memory property configuration for info partition in bank1,\n  Unlike data partition, each page is individually configured.\n\nRead value: [`regs::BankxInfoxPageCfgReadVal`]; Write value: [`regs::BankxInfoxPageCfgWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_bank1_info0_page_cfg(
+        self,
+    ) -> ureg::Array<10, ureg::RegRef<crate::meta::Bank1Info0PageCfg, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x124 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -333,6 +613,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Memory region registers configuration enable.\n\nRead value: [`regs::BankxInfo1RegwenReadVal`]; Write value: [`regs::BankxInfo1RegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_bank1_info1_regwen(self) -> ureg::RegRef<crate::meta::Bank1Info1Regwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x14c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "  Memory property configuration for info partition in bank1,\n  Unlike data partition, each page is individually configured.\n\nRead value: [`regs::BankxInfoxPageCfgReadVal`]; Write value: [`regs::BankxInfoxPageCfgWriteVal`]"]
     #[inline(always)]
     pub fn bank1_info1_page_cfg(&self) -> ureg::RegRef<crate::meta::Bank1Info1PageCfg, &TMmio> {
@@ -340,6 +631,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x150 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "  Memory property configuration for info partition in bank1,\n  Unlike data partition, each page is individually configured.\n\nRead value: [`regs::BankxInfoxPageCfgReadVal`]; Write value: [`regs::BankxInfoxPageCfgWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_bank1_info1_page_cfg(self) -> ureg::RegRef<crate::meta::Bank1Info1PageCfg, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x150 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -355,6 +657,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Memory region registers configuration enable.\n\nRead value: [`regs::BankxInfo2RegwenReadVal`]; Write value: [`regs::BankxInfo2RegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_bank1_info2_regwen(
+        self,
+    ) -> ureg::Array<2, ureg::RegRef<crate::meta::Bank1Info2Regwen, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x154 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "  Memory property configuration for info partition in bank1,\n  Unlike data partition, each page is individually configured.\n\nRead value: [`regs::BankxInfoxPageCfgReadVal`]; Write value: [`regs::BankxInfoxPageCfgWriteVal`]"]
     #[inline(always)]
     pub fn bank1_info2_page_cfg(
@@ -364,6 +679,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0x15c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "  Memory property configuration for info partition in bank1,\n  Unlike data partition, each page is individually configured.\n\nRead value: [`regs::BankxInfoxPageCfgReadVal`]; Write value: [`regs::BankxInfoxPageCfgWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_bank1_info2_page_cfg(
+        self,
+    ) -> ureg::Array<2, ureg::RegRef<crate::meta::Bank1Info2PageCfg, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x15c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -377,6 +705,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "HW interface info configuration rule overrides\n\nRead value: [`regs::HwInfoCfgOverrideReadVal`]; Write value: [`regs::HwInfoCfgOverrideWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_hw_info_cfg_override(self) -> ureg::RegRef<crate::meta::HwInfoCfgOverride, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x164 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Bank configuration registers configuration enable.\n\nRead value: [`regs::BankCfgRegwenReadVal`]; Write value: [`regs::BankCfgRegwenWriteVal`]"]
     #[inline(always)]
     pub fn bank_cfg_regwen(&self) -> ureg::RegRef<crate::meta::BankCfgRegwen, &TMmio> {
@@ -384,6 +723,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x168 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Bank configuration registers configuration enable.\n\nRead value: [`regs::BankCfgRegwenReadVal`]; Write value: [`regs::BankCfgRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_bank_cfg_regwen(self) -> ureg::RegRef<crate::meta::BankCfgRegwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x168 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -397,6 +747,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Memory properties bank configuration\n\nRead value: [`regs::MpBankCfgShadowed0ReadVal`]; Write value: [`regs::MpBankCfgShadowed0WriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_mp_bank_cfg_shadowed0(
+        self,
+    ) -> ureg::RegRef<crate::meta::MpBankCfgShadowed0, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x16c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Flash Operation Status\n\nRead value: [`regs::OpStatusReadVal`]; Write value: [`regs::OpStatusWriteVal`]"]
     #[inline(always)]
     pub fn op_status(&self) -> ureg::RegRef<crate::meta::OpStatus, &TMmio> {
@@ -404,6 +767,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x170 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Flash Operation Status\n\nRead value: [`regs::OpStatusReadVal`]; Write value: [`regs::OpStatusWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_op_status(self) -> ureg::RegRef<crate::meta::OpStatus, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x170 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -417,6 +791,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Flash Controller Status\n\nRead value: [`regs::StatusReadVal`]; Write value: [`regs::StatusWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_status(self) -> ureg::RegRef<crate::meta::Status, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x174 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Current flash fsm state\n\nRead value: [`regs::DebugStateReadVal`]; Write value: [`regs::DebugStateWriteVal`]"]
     #[inline(always)]
     pub fn debug_state(&self) -> ureg::RegRef<crate::meta::DebugState, &TMmio> {
@@ -424,6 +809,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x178 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Current flash fsm state\n\nRead value: [`regs::DebugStateReadVal`]; Write value: [`regs::DebugStateWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_debug_state(self) -> ureg::RegRef<crate::meta::DebugState, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x178 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -437,6 +833,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Flash error code register.\nThis register tabulates detailed error status of the flash.\nThis is separate from !!OP_STATUS, which is used to indicate the current state of the software initiated\nflash operation.\n\nNote, all errors in this register are considered recoverable errors, ie, errors that could have been\ngenerated by software.\n\nRead value: [`regs::ErrCodeReadVal`]; Write value: [`regs::ErrCodeWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_err_code(self) -> ureg::RegRef<crate::meta::ErrCode, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x17c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "This register tabulates standard fault status of the flash.\n\nThese represent errors that occur in the standard structures of the design.\nFor example fsm integrity, counter integrity and tlul integrity.\n\nRead value: [`regs::StdFaultStatusReadVal`]; Write value: [`regs::StdFaultStatusWriteVal`]"]
     #[inline(always)]
     pub fn std_fault_status(&self) -> ureg::RegRef<crate::meta::StdFaultStatus, &TMmio> {
@@ -444,6 +851,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x180 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "This register tabulates standard fault status of the flash.\n\nThese represent errors that occur in the standard structures of the design.\nFor example fsm integrity, counter integrity and tlul integrity.\n\nRead value: [`regs::StdFaultStatusReadVal`]; Write value: [`regs::StdFaultStatusWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_std_fault_status(self) -> ureg::RegRef<crate::meta::StdFaultStatus, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x180 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -457,6 +875,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "This register tabulates customized fault status of the flash.\n\nThese are errors that are impossible to have been caused by software or unrecoverable in nature.\n\nAll errors except for multi-bit ECC errors (!!FAULT_STATUS.PHY_RELBL_ERR) and ICV (!!FAULT_STATUS.PHY_STORAGE_ERR) trigger a fatal alert.\nOnce set, they remain set until reset.\n\nRead value: [`regs::FaultStatusReadVal`]; Write value: [`regs::FaultStatusWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_fault_status(self) -> ureg::RegRef<crate::meta::FaultStatus, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x184 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Synchronous error address\n\nRead value: [`regs::ErrAddrReadVal`]; Write value: [`regs::ErrAddrWriteVal`]"]
     #[inline(always)]
     pub fn err_addr(&self) -> ureg::RegRef<crate::meta::ErrAddr, &TMmio> {
@@ -467,6 +896,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Synchronous error address\n\nRead value: [`regs::ErrAddrReadVal`]; Write value: [`regs::ErrAddrWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_err_addr(self) -> ureg::RegRef<crate::meta::ErrAddr, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x188 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Total number of single bit ECC error count\n\nRead value: [`regs::EccSingleErrCnt0ReadVal`]; Write value: [`regs::EccSingleErrCnt0WriteVal`]"]
     #[inline(always)]
     pub fn ecc_single_err_cnt0(&self) -> ureg::RegRef<crate::meta::EccSingleErrCnt0, &TMmio> {
@@ -474,6 +914,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x18c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Total number of single bit ECC error count\n\nRead value: [`regs::EccSingleErrCnt0ReadVal`]; Write value: [`regs::EccSingleErrCnt0WriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_ecc_single_err_cnt0(self) -> ureg::RegRef<crate::meta::EccSingleErrCnt0, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x18c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -489,6 +940,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Latest address of ECC single err\n\nRead value: [`regs::EccSingleErrAddrReadVal`]; Write value: [`regs::EccSingleErrAddrWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_ecc_single_err_addr(
+        self,
+    ) -> ureg::Array<2, ureg::RegRef<crate::meta::EccSingleErrAddr, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x190 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Phy alert configuration\n\nRead value: [`regs::PhyAlertCfgReadVal`]; Write value: [`regs::PhyAlertCfgWriteVal`]"]
     #[inline(always)]
     pub fn phy_alert_cfg(&self) -> ureg::RegRef<crate::meta::PhyAlertCfg, &TMmio> {
@@ -496,6 +960,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x198 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Phy alert configuration\n\nRead value: [`regs::PhyAlertCfgReadVal`]; Write value: [`regs::PhyAlertCfgWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_phy_alert_cfg(self) -> ureg::RegRef<crate::meta::PhyAlertCfg, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x198 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -509,6 +984,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Flash Phy Status\n\nRead value: [`regs::PhyStatusReadVal`]; Write value: [`regs::PhyStatusWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_phy_status(self) -> ureg::RegRef<crate::meta::PhyStatus, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x19c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Flash Controller Scratch\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn scratch(&self) -> ureg::RegRef<crate::meta::Scratch, &TMmio> {
@@ -516,6 +1002,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x1a0 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Flash Controller Scratch\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_scratch(self) -> ureg::RegRef<crate::meta::Scratch, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x1a0 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -529,6 +1026,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Programmable depth where FIFOs should generate interrupts\n\nRead value: [`regs::FifoLvlReadVal`]; Write value: [`regs::FifoLvlWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_fifo_lvl(self) -> ureg::RegRef<crate::meta::FifoLvl, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x1a4 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Reset for flash controller FIFOs\n\nRead value: [`regs::FifoRstReadVal`]; Write value: [`regs::FifoRstWriteVal`]"]
     #[inline(always)]
     pub fn fifo_rst(&self) -> ureg::RegRef<crate::meta::FifoRst, &TMmio> {
@@ -536,6 +1044,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x1a8 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Reset for flash controller FIFOs\n\nRead value: [`regs::FifoRstReadVal`]; Write value: [`regs::FifoRstWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_fifo_rst(self) -> ureg::RegRef<crate::meta::FifoRst, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x1a8 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -549,6 +1068,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Current program and read fifo depth\n\nRead value: [`regs::CurrFifoLvlReadVal`]; Write value: [`regs::CurrFifoLvlWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_curr_fifo_lvl(self) -> ureg::RegRef<crate::meta::CurrFifoLvl, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x1ac / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Flash program FIFO.\n\nThe FIFO is 16 entries of 4B flash words. This FIFO can only be programmed\nby software after a program operation has been initiated via the !!CONTROL register.\nThis ensures accidental programming of the program FIFO cannot lock up the system.\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn prog_fifo(&self) -> ureg::RegRef<crate::meta::ProgFifo, &TMmio> {
@@ -556,6 +1086,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x1b0 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Flash program FIFO.\n\nThe FIFO is 16 entries of 4B flash words. This FIFO can only be programmed\nby software after a program operation has been initiated via the !!CONTROL register.\nThis ensures accidental programming of the program FIFO cannot lock up the system.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_prog_fifo(self) -> ureg::RegRef<crate::meta::ProgFifo, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x1b0 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -569,15 +1110,26 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Flash read FIFO.\n\nThe FIFO is 16 entries of 4B flash words\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rd_fifo(self) -> ureg::RegRef<crate::meta::RdFifo, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x1b4 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
 }
 pub mod regs {
     #![doc = r" Types that represent the values held by registers."]
     #[derive(Clone, Copy)]
-    pub struct AddrReadVal(u32);
+    pub struct AddrReadVal(pub u32);
     impl AddrReadVal {
         #[doc = "Start address of a flash transaction.  This is a byte address relative to the flash\nonly.  Ie, an address of 0 will access address 0 of the requested partition.\n\nFor read operations, the flash controller will truncate to the closest, lower word\naligned address.  For example, if 0x13 is supplied, the controller will perform a\nread at address 0x10.\n\nProgram operations behave similarly, the controller does not have read modified write\nsupport.\n\nFor page erases, the controller will truncate to the closest lower page aligned\naddress.  Similarly for bank erases, the controller will truncate to the closest\nlower bank aligned address."]
         #[inline(always)]
-        pub fn start(&self) -> u32 {
+        pub const fn start(&self) -> u32 {
             (self.0 >> 0) & 0xfffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -599,11 +1151,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AddrWriteVal(u32);
+    pub struct AddrWriteVal(pub u32);
     impl AddrWriteVal {
         #[doc = "Start address of a flash transaction.  This is a byte address relative to the flash\nonly.  Ie, an address of 0 will access address 0 of the requested partition.\n\nFor read operations, the flash controller will truncate to the closest, lower word\naligned address.  For example, if 0x13 is supplied, the controller will perform a\nread at address 0x10.\n\nProgram operations behave similarly, the controller does not have read modified write\nsupport.\n\nFor page erases, the controller will truncate to the closest lower page aligned\naddress.  Similarly for bank erases, the controller will truncate to the closest\nlower bank aligned address."]
         #[inline(always)]
-        pub fn start(self, val: u32) -> Self {
+        pub const fn start(self, val: u32) -> Self {
             Self((self.0 & !(0xfffff << 0)) | ((val & 0xfffff) << 0))
         }
     }
@@ -620,32 +1172,32 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AlertTestWriteVal(u32);
+    pub struct AlertTestWriteVal(pub u32);
     impl AlertTestWriteVal {
         #[doc = "Write 1 to trigger one alert event of this kind."]
         #[inline(always)]
-        pub fn recov_err(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn recov_err(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Write 1 to trigger one alert event of this kind."]
         #[inline(always)]
-        pub fn fatal_std_err(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn fatal_std_err(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
         #[doc = "Write 1 to trigger one alert event of this kind."]
         #[inline(always)]
-        pub fn fatal_err(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 2)) | (u32::from(val) << 2))
+        pub const fn fatal_err(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 2)) | (val as u32) << 2)
         }
         #[doc = "Write 1 to trigger one alert event of this kind."]
         #[inline(always)]
-        pub fn fatal_prim_flash_alert(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 3)) | (u32::from(val) << 3))
+        pub const fn fatal_prim_flash_alert(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 3)) | (val as u32) << 3)
         }
         #[doc = "Write 1 to trigger one alert event of this kind."]
         #[inline(always)]
-        pub fn recov_prim_flash_alert(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 4)) | (u32::from(val) << 4))
+        pub const fn recov_prim_flash_alert(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 4)) | (val as u32) << 4)
         }
     }
     impl From<u32> for AlertTestWriteVal {
@@ -661,12 +1213,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct BankxInfo0RegwenReadVal(u32);
+    pub struct BankxInfo0RegwenReadVal(pub u32);
     impl BankxInfo0RegwenReadVal {
         #[doc = "Info0 page write enable.  Once set to 0, it can longer be configured to 1"]
         #[inline(always)]
-        pub fn region(&self) -> super::enums::Inforegionwen {
-            super::enums::Inforegionwen::try_from((self.0 >> 0) & 1).unwrap()
+        pub const fn region(&self) -> super::enums::Inforegionwen {
+            super::enums::Inforegionwen::from_raw((self.0 >> 0) & 1).unwrap()
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
         #[inline(always)]
@@ -687,11 +1239,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct BankxInfo0RegwenWriteVal(u32);
+    pub struct BankxInfo0RegwenWriteVal(pub u32);
     impl BankxInfo0RegwenWriteVal {
         #[doc = "Info0 page write enable.  Once set to 0, it can longer be configured to 1"]
         #[inline(always)]
-        pub fn region_clear(self) -> Self {
+        pub const fn region_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -708,12 +1260,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct BankxInfo1RegwenReadVal(u32);
+    pub struct BankxInfo1RegwenReadVal(pub u32);
     impl BankxInfo1RegwenReadVal {
         #[doc = "Info1 page write enable.  Once set to 0, it can longer be configured to 1"]
         #[inline(always)]
-        pub fn region(&self) -> super::enums::Inforegionwen {
-            super::enums::Inforegionwen::try_from((self.0 >> 0) & 1).unwrap()
+        pub const fn region(&self) -> super::enums::Inforegionwen {
+            super::enums::Inforegionwen::from_raw((self.0 >> 0) & 1).unwrap()
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
         #[inline(always)]
@@ -734,11 +1286,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct BankxInfo1RegwenWriteVal(u32);
+    pub struct BankxInfo1RegwenWriteVal(pub u32);
     impl BankxInfo1RegwenWriteVal {
         #[doc = "Info1 page write enable.  Once set to 0, it can longer be configured to 1"]
         #[inline(always)]
-        pub fn region_clear(self) -> Self {
+        pub const fn region_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -755,12 +1307,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct BankxInfo2RegwenReadVal(u32);
+    pub struct BankxInfo2RegwenReadVal(pub u32);
     impl BankxInfo2RegwenReadVal {
         #[doc = "Info2 page write enable.  Once set to 0, it can longer be configured to 1"]
         #[inline(always)]
-        pub fn region(&self) -> super::enums::Inforegionwen {
-            super::enums::Inforegionwen::try_from((self.0 >> 0) & 1).unwrap()
+        pub const fn region(&self) -> super::enums::Inforegionwen {
+            super::enums::Inforegionwen::from_raw((self.0 >> 0) & 1).unwrap()
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
         #[inline(always)]
@@ -781,11 +1333,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct BankxInfo2RegwenWriteVal(u32);
+    pub struct BankxInfo2RegwenWriteVal(pub u32);
     impl BankxInfo2RegwenWriteVal {
         #[doc = "Info2 page write enable.  Once set to 0, it can longer be configured to 1"]
         #[inline(always)]
-        pub fn region_clear(self) -> Self {
+        pub const fn region_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -802,41 +1354,41 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct BankxInfoxPageCfgReadVal(u32);
+    pub struct BankxInfoxPageCfgReadVal(pub u32);
     impl BankxInfoxPageCfgReadVal {
         #[doc = "Region enabled, following fields apply"]
         #[inline(always)]
-        pub fn en(&self) -> u32 {
+        pub const fn en(&self) -> u32 {
             (self.0 >> 0) & 0xf
         }
         #[doc = "Region can be read"]
         #[inline(always)]
-        pub fn rd_en(&self) -> u32 {
+        pub const fn rd_en(&self) -> u32 {
             (self.0 >> 4) & 0xf
         }
         #[doc = "Region can be programmed"]
         #[inline(always)]
-        pub fn prog_en(&self) -> u32 {
+        pub const fn prog_en(&self) -> u32 {
             (self.0 >> 8) & 0xf
         }
         #[doc = "Region can be erased"]
         #[inline(always)]
-        pub fn erase_en(&self) -> u32 {
+        pub const fn erase_en(&self) -> u32 {
             (self.0 >> 12) & 0xf
         }
         #[doc = "Region is scramble enabled."]
         #[inline(always)]
-        pub fn scramble_en(&self) -> u32 {
+        pub const fn scramble_en(&self) -> u32 {
             (self.0 >> 16) & 0xf
         }
         #[doc = "Region is ECC enabled (both integrity and reliability ECC)."]
         #[inline(always)]
-        pub fn ecc_en(&self) -> u32 {
+        pub const fn ecc_en(&self) -> u32 {
             (self.0 >> 20) & 0xf
         }
         #[doc = "Region is high endurance enabled."]
         #[inline(always)]
-        pub fn he_en(&self) -> u32 {
+        pub const fn he_en(&self) -> u32 {
             (self.0 >> 24) & 0xf
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -858,41 +1410,41 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct BankxInfoxPageCfgWriteVal(u32);
+    pub struct BankxInfoxPageCfgWriteVal(pub u32);
     impl BankxInfoxPageCfgWriteVal {
         #[doc = "Region enabled, following fields apply"]
         #[inline(always)]
-        pub fn en(self, val: u32) -> Self {
+        pub const fn en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 0)) | ((val & 0xf) << 0))
         }
         #[doc = "Region can be read"]
         #[inline(always)]
-        pub fn rd_en(self, val: u32) -> Self {
+        pub const fn rd_en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 4)) | ((val & 0xf) << 4))
         }
         #[doc = "Region can be programmed"]
         #[inline(always)]
-        pub fn prog_en(self, val: u32) -> Self {
+        pub const fn prog_en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 8)) | ((val & 0xf) << 8))
         }
         #[doc = "Region can be erased"]
         #[inline(always)]
-        pub fn erase_en(self, val: u32) -> Self {
+        pub const fn erase_en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 12)) | ((val & 0xf) << 12))
         }
         #[doc = "Region is scramble enabled."]
         #[inline(always)]
-        pub fn scramble_en(self, val: u32) -> Self {
+        pub const fn scramble_en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 16)) | ((val & 0xf) << 16))
         }
         #[doc = "Region is ECC enabled (both integrity and reliability ECC)."]
         #[inline(always)]
-        pub fn ecc_en(self, val: u32) -> Self {
+        pub const fn ecc_en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 20)) | ((val & 0xf) << 20))
         }
         #[doc = "Region is high endurance enabled."]
         #[inline(always)]
-        pub fn he_en(self, val: u32) -> Self {
+        pub const fn he_en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 24)) | ((val & 0xf) << 24))
         }
     }
@@ -909,12 +1461,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct BankCfgRegwenReadVal(u32);
+    pub struct BankCfgRegwenReadVal(pub u32);
     impl BankCfgRegwenReadVal {
         #[doc = "Bank register write enable.  Once set to 0, it can longer be configured to 1"]
         #[inline(always)]
-        pub fn bank(&self) -> super::enums::Bank {
-            super::enums::Bank::try_from((self.0 >> 0) & 1).unwrap()
+        pub const fn bank(&self) -> super::enums::Bank {
+            super::enums::Bank::from_raw((self.0 >> 0) & 1).unwrap()
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
         #[inline(always)]
@@ -935,11 +1487,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct BankCfgRegwenWriteVal(u32);
+    pub struct BankCfgRegwenWriteVal(pub u32);
     impl BankCfgRegwenWriteVal {
         #[doc = "Bank register write enable.  Once set to 0, it can longer be configured to 1"]
         #[inline(always)]
-        pub fn bank_clear(self) -> Self {
+        pub const fn bank_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -956,41 +1508,41 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ControlReadVal(u32);
+    pub struct ControlReadVal(pub u32);
     impl ControlReadVal {
         #[doc = "Start flash transaction.  This bit shall only be set at the same time or after the other\nfields of the !!CONTROL register and !!ADDR have been programmed."]
         #[inline(always)]
-        pub fn start(&self) -> bool {
+        pub const fn start(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Flash operation selection"]
         #[inline(always)]
-        pub fn op(&self) -> super::enums::Op {
-            super::enums::Op::try_from((self.0 >> 4) & 3).unwrap()
+        pub const fn op(&self) -> super::enums::Op {
+            super::enums::Op::from_raw((self.0 >> 4) & 3).unwrap()
         }
         #[doc = "Flash program operation type selection"]
         #[inline(always)]
-        pub fn prog_sel(&self) -> super::enums::ProgSel {
-            super::enums::ProgSel::try_from((self.0 >> 6) & 1).unwrap()
+        pub const fn prog_sel(&self) -> super::enums::ProgSel {
+            super::enums::ProgSel::from_raw((self.0 >> 6) & 1).unwrap()
         }
         #[doc = "Flash erase operation type selection"]
         #[inline(always)]
-        pub fn erase_sel(&self) -> super::enums::EraseSel {
-            super::enums::EraseSel::try_from((self.0 >> 7) & 1).unwrap()
+        pub const fn erase_sel(&self) -> super::enums::EraseSel {
+            super::enums::EraseSel::from_raw((self.0 >> 7) & 1).unwrap()
         }
         #[doc = "When doing a read, program or page erase operation, selects either info or data partition for operation.\nWhen 0, select data partition - this is the portion of flash that is accessible both by the host and by the controller.\nWhen 1, select info partition - this is the portion of flash that is only accessible by the controller.\n\nWhen doing a bank erase operation, selects info partition also for erase.\nWhen 0, bank erase only erases data partition.\nWhen 1, bank erase erases data partition and info partition."]
         #[inline(always)]
-        pub fn partition_sel(&self) -> bool {
+        pub const fn partition_sel(&self) -> bool {
             ((self.0 >> 8) & 1) != 0
         }
         #[doc = "Informational partions can have multiple types.\n\nThis field selects the info type to be accessed."]
         #[inline(always)]
-        pub fn info_sel(&self) -> u32 {
+        pub const fn info_sel(&self) -> u32 {
             (self.0 >> 9) & 3
         }
         #[doc = "One fewer than the number of bus words the flash operation should read or program.\nFor example, to read 10 words, software should program this field with the value 9."]
         #[inline(always)]
-        pub fn num(&self) -> u32 {
+        pub const fn num(&self) -> u32 {
             (self.0 >> 16) & 0xfff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1012,12 +1564,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ControlWriteVal(u32);
+    pub struct ControlWriteVal(pub u32);
     impl ControlWriteVal {
         #[doc = "Start flash transaction.  This bit shall only be set at the same time or after the other\nfields of the !!CONTROL register and !!ADDR have been programmed."]
         #[inline(always)]
-        pub fn start(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn start(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Flash operation selection"]
         #[inline(always)]
@@ -1026,6 +1578,9 @@ pub mod regs {
             f: impl FnOnce(super::enums::selector::OpSelector) -> super::enums::Op,
         ) -> Self {
             Self((self.0 & !(3 << 4)) | (u32::from(f(super::enums::selector::OpSelector())) << 4))
+        }
+        pub const fn with_op(self, val: super::enums::Op) -> Self {
+            Self((self.0 & !(3 << 4)) | ((val as u32) << 4))
         }
         #[doc = "Flash program operation type selection"]
         #[inline(always)]
@@ -1038,6 +1593,9 @@ pub mod regs {
                     | (u32::from(f(super::enums::selector::ProgSelSelector())) << 6),
             )
         }
+        pub const fn with_prog_sel(self, val: super::enums::ProgSel) -> Self {
+            Self((self.0 & !(1 << 6)) | ((val as u32) << 6))
+        }
         #[doc = "Flash erase operation type selection"]
         #[inline(always)]
         pub fn erase_sel(
@@ -1049,19 +1607,22 @@ pub mod regs {
                     | (u32::from(f(super::enums::selector::EraseSelSelector())) << 7),
             )
         }
+        pub const fn with_erase_sel(self, val: super::enums::EraseSel) -> Self {
+            Self((self.0 & !(1 << 7)) | ((val as u32) << 7))
+        }
         #[doc = "When doing a read, program or page erase operation, selects either info or data partition for operation.\nWhen 0, select data partition - this is the portion of flash that is accessible both by the host and by the controller.\nWhen 1, select info partition - this is the portion of flash that is only accessible by the controller.\n\nWhen doing a bank erase operation, selects info partition also for erase.\nWhen 0, bank erase only erases data partition.\nWhen 1, bank erase erases data partition and info partition."]
         #[inline(always)]
-        pub fn partition_sel(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 8)) | (u32::from(val) << 8))
+        pub const fn partition_sel(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 8)) | (val as u32) << 8)
         }
         #[doc = "Informational partions can have multiple types.\n\nThis field selects the info type to be accessed."]
         #[inline(always)]
-        pub fn info_sel(self, val: u32) -> Self {
+        pub const fn info_sel(self, val: u32) -> Self {
             Self((self.0 & !(3 << 9)) | ((val & 3) << 9))
         }
         #[doc = "One fewer than the number of bus words the flash operation should read or program.\nFor example, to read 10 words, software should program this field with the value 9."]
         #[inline(always)]
-        pub fn num(self, val: u32) -> Self {
+        pub const fn num(self, val: u32) -> Self {
             Self((self.0 & !(0xfff << 16)) | ((val & 0xfff) << 16))
         }
     }
@@ -1078,11 +1639,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct CtrlRegwenReadVal(u32);
+    pub struct CtrlRegwenReadVal(pub u32);
     impl CtrlRegwenReadVal {
         #[doc = "Configuration enable.\n\nThis bit defaults to 1 and is set to 0 by hardware when flash operation is initiated.\nWhen the controller completes the flash operation, this bit is set\nback to 1 to allow software configuration of !!CONTROL"]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
     }
@@ -1099,16 +1660,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct CurrFifoLvlReadVal(u32);
+    pub struct CurrFifoLvlReadVal(pub u32);
     impl CurrFifoLvlReadVal {
         #[doc = "Current program fifo depth"]
         #[inline(always)]
-        pub fn prog(&self) -> u32 {
+        pub const fn prog(&self) -> u32 {
             (self.0 >> 0) & 0x1f
         }
         #[doc = "Current read fifo depth"]
         #[inline(always)]
-        pub fn rd(&self) -> u32 {
+        pub const fn rd(&self) -> u32 {
             (self.0 >> 8) & 0x1f
         }
     }
@@ -1125,11 +1686,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct DebugStateReadVal(u32);
+    pub struct DebugStateReadVal(pub u32);
     impl DebugStateReadVal {
         #[doc = "Current lcmgr interface staet "]
         #[inline(always)]
-        pub fn lcmgr_state(&self) -> u32 {
+        pub const fn lcmgr_state(&self) -> u32 {
             (self.0 >> 0) & 0x7ff
         }
     }
@@ -1146,36 +1707,36 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct DefaultRegionReadVal(u32);
+    pub struct DefaultRegionReadVal(pub u32);
     impl DefaultRegionReadVal {
         #[doc = "Region can be read"]
         #[inline(always)]
-        pub fn rd_en(&self) -> u32 {
+        pub const fn rd_en(&self) -> u32 {
             (self.0 >> 0) & 0xf
         }
         #[doc = "Region can be programmed"]
         #[inline(always)]
-        pub fn prog_en(&self) -> u32 {
+        pub const fn prog_en(&self) -> u32 {
             (self.0 >> 4) & 0xf
         }
         #[doc = "Region can be erased"]
         #[inline(always)]
-        pub fn erase_en(&self) -> u32 {
+        pub const fn erase_en(&self) -> u32 {
             (self.0 >> 8) & 0xf
         }
         #[doc = "Region is scramble enabled."]
         #[inline(always)]
-        pub fn scramble_en(&self) -> u32 {
+        pub const fn scramble_en(&self) -> u32 {
             (self.0 >> 12) & 0xf
         }
         #[doc = "Region is ECC enabled (both integrity and reliability ECC)."]
         #[inline(always)]
-        pub fn ecc_en(&self) -> u32 {
+        pub const fn ecc_en(&self) -> u32 {
             (self.0 >> 16) & 0xf
         }
         #[doc = "Region is high endurance enabled."]
         #[inline(always)]
-        pub fn he_en(&self) -> u32 {
+        pub const fn he_en(&self) -> u32 {
             (self.0 >> 20) & 0xf
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1197,36 +1758,36 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct DefaultRegionWriteVal(u32);
+    pub struct DefaultRegionWriteVal(pub u32);
     impl DefaultRegionWriteVal {
         #[doc = "Region can be read"]
         #[inline(always)]
-        pub fn rd_en(self, val: u32) -> Self {
+        pub const fn rd_en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 0)) | ((val & 0xf) << 0))
         }
         #[doc = "Region can be programmed"]
         #[inline(always)]
-        pub fn prog_en(self, val: u32) -> Self {
+        pub const fn prog_en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 4)) | ((val & 0xf) << 4))
         }
         #[doc = "Region can be erased"]
         #[inline(always)]
-        pub fn erase_en(self, val: u32) -> Self {
+        pub const fn erase_en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 8)) | ((val & 0xf) << 8))
         }
         #[doc = "Region is scramble enabled."]
         #[inline(always)]
-        pub fn scramble_en(self, val: u32) -> Self {
+        pub const fn scramble_en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 12)) | ((val & 0xf) << 12))
         }
         #[doc = "Region is ECC enabled (both integrity and reliability ECC)."]
         #[inline(always)]
-        pub fn ecc_en(self, val: u32) -> Self {
+        pub const fn ecc_en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 16)) | ((val & 0xf) << 16))
         }
         #[doc = "Region is high endurance enabled."]
         #[inline(always)]
-        pub fn he_en(self, val: u32) -> Self {
+        pub const fn he_en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 20)) | ((val & 0xf) << 20))
         }
     }
@@ -1243,11 +1804,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct DisReadVal(u32);
+    pub struct DisReadVal(pub u32);
     impl DisReadVal {
         #[doc = "Disables flash functionality completely.\nThis is a shortcut mechanism used by the software to completely\nkill flash in case of emergency.\n\nSince this register is rw1s instead of rw, to disable, write the value kMuBi4True\nto the register to disable the flash."]
         #[inline(always)]
-        pub fn val(&self) -> u32 {
+        pub const fn val(&self) -> u32 {
             (self.0 >> 0) & 0xf
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1269,11 +1830,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct DisWriteVal(u32);
+    pub struct DisWriteVal(pub u32);
     impl DisWriteVal {
         #[doc = "Disables flash functionality completely.\nThis is a shortcut mechanism used by the software to completely\nkill flash in case of emergency.\n\nSince this register is rw1s instead of rw, to disable, write the value kMuBi4True\nto the register to disable the flash."]
         #[inline(always)]
-        pub fn val(self, val: u32) -> Self {
+        pub const fn val(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 0)) | ((val & 0xf) << 0))
         }
     }
@@ -1290,11 +1851,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct EccSingleErrAddrReadVal(u32);
+    pub struct EccSingleErrAddrReadVal(pub u32);
     impl EccSingleErrAddrReadVal {
         #[doc = "Latest single error address for this bank"]
         #[inline(always)]
-        pub fn ecc_single_err_addr(&self) -> u32 {
+        pub const fn ecc_single_err_addr(&self) -> u32 {
             (self.0 >> 0) & 0xfffff
         }
     }
@@ -1311,16 +1872,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct EccSingleErrCnt0ReadVal(u32);
+    pub struct EccSingleErrCnt0ReadVal(pub u32);
     impl EccSingleErrCnt0ReadVal {
         #[doc = "This count will not wrap when saturated"]
         #[inline(always)]
-        pub fn ecc_single_err_cnt0(&self) -> u32 {
+        pub const fn ecc_single_err_cnt0(&self) -> u32 {
             (self.0 >> 0) & 0xff
         }
         #[doc = "This count will not wrap when saturated"]
         #[inline(always)]
-        pub fn ecc_single_err_cnt1(&self) -> u32 {
+        pub const fn ecc_single_err_cnt1(&self) -> u32 {
             (self.0 >> 8) & 0xff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1342,16 +1903,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct EccSingleErrCnt0WriteVal(u32);
+    pub struct EccSingleErrCnt0WriteVal(pub u32);
     impl EccSingleErrCnt0WriteVal {
         #[doc = "This count will not wrap when saturated"]
         #[inline(always)]
-        pub fn ecc_single_err_cnt0(self, val: u32) -> Self {
+        pub const fn ecc_single_err_cnt0(self, val: u32) -> Self {
             Self((self.0 & !(0xff << 0)) | ((val & 0xff) << 0))
         }
         #[doc = "This count will not wrap when saturated"]
         #[inline(always)]
-        pub fn ecc_single_err_cnt1(self, val: u32) -> Self {
+        pub const fn ecc_single_err_cnt1(self, val: u32) -> Self {
             Self((self.0 & !(0xff << 8)) | ((val & 0xff) << 8))
         }
     }
@@ -1368,11 +1929,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct EraseSuspendReadVal(u32);
+    pub struct EraseSuspendReadVal(pub u32);
     impl EraseSuspendReadVal {
         #[doc = "When 1, request erase suspend.\nIf no erase ongoing, the request is immediately cleared by hardware\nIf erase ongoing, the request is fed to the flash_phy and cleared when the suspend is handled."]
         #[inline(always)]
-        pub fn req(&self) -> bool {
+        pub const fn req(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1394,12 +1955,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct EraseSuspendWriteVal(u32);
+    pub struct EraseSuspendWriteVal(pub u32);
     impl EraseSuspendWriteVal {
         #[doc = "When 1, request erase suspend.\nIf no erase ongoing, the request is immediately cleared by hardware\nIf erase ongoing, the request is fed to the flash_phy and cleared when the suspend is handled."]
         #[inline(always)]
-        pub fn req(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn req(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for EraseSuspendWriteVal {
@@ -1415,10 +1976,10 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ErrAddrReadVal(u32);
+    pub struct ErrAddrReadVal(pub u32);
     impl ErrAddrReadVal {
         #[inline(always)]
-        pub fn err_addr(&self) -> u32 {
+        pub const fn err_addr(&self) -> u32 {
             (self.0 >> 0) & 0xfffff
         }
     }
@@ -1435,46 +1996,46 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ErrCodeReadVal(u32);
+    pub struct ErrCodeReadVal(pub u32);
     impl ErrCodeReadVal {
         #[doc = "Software has supplied an undefined operation.\nSee !!CONTROL.OP for list of valid operations."]
         #[inline(always)]
-        pub fn op_err(&self) -> bool {
+        pub const fn op_err(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Flash access has encountered an access permission error.\nPlease see !!ERR_ADDR for exact address.\nThis is a synchronous error."]
         #[inline(always)]
-        pub fn mp_err(&self) -> bool {
+        pub const fn mp_err(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "Flash read has an error.\nThis could be a reliability ECC error or an storage integrity error\nencountered during a software issued controller read, see !!STD_FAULT_STATUS.\nSee !!ERR_ADDR for exact address.\nThis is a synchronous error."]
         #[inline(always)]
-        pub fn rd_err(&self) -> bool {
+        pub const fn rd_err(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "Flash program has an error.\nThis could be a program integrity error, see !!STD_FAULT_STATUS.\nThis is a synchronous error."]
         #[inline(always)]
-        pub fn prog_err(&self) -> bool {
+        pub const fn prog_err(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "Flash program has a window resolution error.  Ie, the start of program\nand end of program are in different windows.  Please check !!ERR_ADDR.\nThis is a synchronous error."]
         #[inline(always)]
-        pub fn prog_win_err(&self) -> bool {
+        pub const fn prog_win_err(&self) -> bool {
             ((self.0 >> 4) & 1) != 0
         }
         #[doc = "Flash program selected unavailable type, see !!PROG_TYPE_EN.\nThis is a synchronous error."]
         #[inline(always)]
-        pub fn prog_type_err(&self) -> bool {
+        pub const fn prog_type_err(&self) -> bool {
             ((self.0 >> 5) & 1) != 0
         }
         #[doc = "A shadow register encountered an update error.\nThis is an asynchronous error."]
         #[inline(always)]
-        pub fn update_err(&self) -> bool {
+        pub const fn update_err(&self) -> bool {
             ((self.0 >> 6) & 1) != 0
         }
         #[doc = "A recoverable error has been encountered in the flash macro.\nPlease read the flash macro status registers for more details."]
         #[inline(always)]
-        pub fn macro_err(&self) -> bool {
+        pub const fn macro_err(&self) -> bool {
             ((self.0 >> 7) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1496,46 +2057,46 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ErrCodeWriteVal(u32);
+    pub struct ErrCodeWriteVal(pub u32);
     impl ErrCodeWriteVal {
         #[doc = "Software has supplied an undefined operation.\nSee !!CONTROL.OP for list of valid operations."]
         #[inline(always)]
-        pub fn op_err_clear(self) -> Self {
+        pub const fn op_err_clear(self) -> Self {
             Self(self.0 | (1 << 0))
         }
         #[doc = "Flash access has encountered an access permission error.\nPlease see !!ERR_ADDR for exact address.\nThis is a synchronous error."]
         #[inline(always)]
-        pub fn mp_err_clear(self) -> Self {
+        pub const fn mp_err_clear(self) -> Self {
             Self(self.0 | (1 << 1))
         }
         #[doc = "Flash read has an error.\nThis could be a reliability ECC error or an storage integrity error\nencountered during a software issued controller read, see !!STD_FAULT_STATUS.\nSee !!ERR_ADDR for exact address.\nThis is a synchronous error."]
         #[inline(always)]
-        pub fn rd_err_clear(self) -> Self {
+        pub const fn rd_err_clear(self) -> Self {
             Self(self.0 | (1 << 2))
         }
         #[doc = "Flash program has an error.\nThis could be a program integrity error, see !!STD_FAULT_STATUS.\nThis is a synchronous error."]
         #[inline(always)]
-        pub fn prog_err_clear(self) -> Self {
+        pub const fn prog_err_clear(self) -> Self {
             Self(self.0 | (1 << 3))
         }
         #[doc = "Flash program has a window resolution error.  Ie, the start of program\nand end of program are in different windows.  Please check !!ERR_ADDR.\nThis is a synchronous error."]
         #[inline(always)]
-        pub fn prog_win_err_clear(self) -> Self {
+        pub const fn prog_win_err_clear(self) -> Self {
             Self(self.0 | (1 << 4))
         }
         #[doc = "Flash program selected unavailable type, see !!PROG_TYPE_EN.\nThis is a synchronous error."]
         #[inline(always)]
-        pub fn prog_type_err_clear(self) -> Self {
+        pub const fn prog_type_err_clear(self) -> Self {
             Self(self.0 | (1 << 5))
         }
         #[doc = "A shadow register encountered an update error.\nThis is an asynchronous error."]
         #[inline(always)]
-        pub fn update_err_clear(self) -> Self {
+        pub const fn update_err_clear(self) -> Self {
             Self(self.0 | (1 << 6))
         }
         #[doc = "A recoverable error has been encountered in the flash macro.\nPlease read the flash macro status registers for more details."]
         #[inline(always)]
-        pub fn macro_err_clear(self) -> Self {
+        pub const fn macro_err_clear(self) -> Self {
             Self(self.0 | (1 << 7))
         }
     }
@@ -1552,66 +2113,66 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct FaultStatusReadVal(u32);
+    pub struct FaultStatusReadVal(pub u32);
     impl FaultStatusReadVal {
         #[doc = "The flash life cycle management interface has supplied an undefined operation.\nSee !!CONTROL.OP for list of valid operations."]
         #[inline(always)]
-        pub fn op_err(&self) -> bool {
+        pub const fn op_err(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "The flash life cycle management interface encountered a memory permission error."]
         #[inline(always)]
-        pub fn mp_err(&self) -> bool {
+        pub const fn mp_err(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "The flash life cycle management interface encountered a read error.\nThis could be a reliability ECC error or an integrity ECC error\nencountered during a read, see !!STD_FAULT_STATUS for more details."]
         #[inline(always)]
-        pub fn rd_err(&self) -> bool {
+        pub const fn rd_err(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "The flash life cycle management interface encountered a program error.\nThis could be a program integirty eror, see !!STD_FAULT_STATUS for more details."]
         #[inline(always)]
-        pub fn prog_err(&self) -> bool {
+        pub const fn prog_err(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "The flash life cycle management interface encountered a program resolution error."]
         #[inline(always)]
-        pub fn prog_win_err(&self) -> bool {
+        pub const fn prog_win_err(&self) -> bool {
             ((self.0 >> 4) & 1) != 0
         }
         #[doc = "The flash life cycle management interface encountered a program type error.\nA program type not supported by the flash macro was issued."]
         #[inline(always)]
-        pub fn prog_type_err(&self) -> bool {
+        pub const fn prog_type_err(&self) -> bool {
             ((self.0 >> 5) & 1) != 0
         }
         #[doc = "The seed reading process encountered an unexpected error."]
         #[inline(always)]
-        pub fn seed_err(&self) -> bool {
+        pub const fn seed_err(&self) -> bool {
             ((self.0 >> 6) & 1) != 0
         }
         #[doc = "The flash macro encountered a storage reliability ECC error.\n\nNote that this error bit can be cleared to allow firmware dealing with multi-bit ECC errors during firmware selection and verification.\nAfter passing this stage, it is recommended that firmware classifies the corresponding alert as fatal on the receiver end, i.e, inside the alert handler."]
         #[inline(always)]
-        pub fn phy_relbl_err(&self) -> bool {
+        pub const fn phy_relbl_err(&self) -> bool {
             ((self.0 >> 7) & 1) != 0
         }
         #[doc = "The flash macro encountered a storage integrity ECC error.\n\nNote that this error bit can be cleared to allow firmware dealing with ICV errors during firmware selection and verification.\nAfter passing this stage, it is recommended that firmware classifies the corresponding alert as fatal on the receiver end, i.e, inside the alert handler."]
         #[inline(always)]
-        pub fn phy_storage_err(&self) -> bool {
+        pub const fn phy_storage_err(&self) -> bool {
             ((self.0 >> 8) & 1) != 0
         }
         #[doc = "The flash emitted an unexpected acknowledgement."]
         #[inline(always)]
-        pub fn spurious_ack(&self) -> bool {
+        pub const fn spurious_ack(&self) -> bool {
             ((self.0 >> 9) & 1) != 0
         }
         #[doc = "The phy arbiter encountered inconsistent results."]
         #[inline(always)]
-        pub fn arb_err(&self) -> bool {
+        pub const fn arb_err(&self) -> bool {
             ((self.0 >> 10) & 1) != 0
         }
         #[doc = "A host transaction was granted with illegal properties."]
         #[inline(always)]
-        pub fn host_gnt_err(&self) -> bool {
+        pub const fn host_gnt_err(&self) -> bool {
             ((self.0 >> 11) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1633,16 +2194,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct FaultStatusWriteVal(u32);
+    pub struct FaultStatusWriteVal(pub u32);
     impl FaultStatusWriteVal {
         #[doc = "The flash macro encountered a storage reliability ECC error.\n\nNote that this error bit can be cleared to allow firmware dealing with multi-bit ECC errors during firmware selection and verification.\nAfter passing this stage, it is recommended that firmware classifies the corresponding alert as fatal on the receiver end, i.e, inside the alert handler."]
         #[inline(always)]
-        pub fn phy_relbl_err_clear(self) -> Self {
+        pub const fn phy_relbl_err_clear(self) -> Self {
             Self(self.0 & !(1 << 7))
         }
         #[doc = "The flash macro encountered a storage integrity ECC error.\n\nNote that this error bit can be cleared to allow firmware dealing with ICV errors during firmware selection and verification.\nAfter passing this stage, it is recommended that firmware classifies the corresponding alert as fatal on the receiver end, i.e, inside the alert handler."]
         #[inline(always)]
-        pub fn phy_storage_err_clear(self) -> Self {
+        pub const fn phy_storage_err_clear(self) -> Self {
             Self(self.0 & !(1 << 8))
         }
     }
@@ -1659,16 +2220,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct FifoLvlReadVal(u32);
+    pub struct FifoLvlReadVal(pub u32);
     impl FifoLvlReadVal {
         #[doc = "When the program FIFO drains to this level, trigger an interrupt.\nDefault value is set such that interrupt does not trigger at reset."]
         #[inline(always)]
-        pub fn prog(&self) -> u32 {
+        pub const fn prog(&self) -> u32 {
             (self.0 >> 0) & 0x1f
         }
         #[doc = "When the read FIFO fills to this level, trigger an interrupt.\nDefault value is set such that interrupt does not trigger at reset."]
         #[inline(always)]
-        pub fn rd(&self) -> u32 {
+        pub const fn rd(&self) -> u32 {
             (self.0 >> 8) & 0x1f
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1690,16 +2251,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct FifoLvlWriteVal(u32);
+    pub struct FifoLvlWriteVal(pub u32);
     impl FifoLvlWriteVal {
         #[doc = "When the program FIFO drains to this level, trigger an interrupt.\nDefault value is set such that interrupt does not trigger at reset."]
         #[inline(always)]
-        pub fn prog(self, val: u32) -> Self {
+        pub const fn prog(self, val: u32) -> Self {
             Self((self.0 & !(0x1f << 0)) | ((val & 0x1f) << 0))
         }
         #[doc = "When the read FIFO fills to this level, trigger an interrupt.\nDefault value is set such that interrupt does not trigger at reset."]
         #[inline(always)]
-        pub fn rd(self, val: u32) -> Self {
+        pub const fn rd(self, val: u32) -> Self {
             Self((self.0 & !(0x1f << 8)) | ((val & 0x1f) << 8))
         }
     }
@@ -1716,11 +2277,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct FifoRstReadVal(u32);
+    pub struct FifoRstReadVal(pub u32);
     impl FifoRstReadVal {
         #[doc = "Active high resets for both program and read FIFOs.  This is especially useful after the controller\nencounters an error of some kind.\nThis bit will hold the FIFO in reset as long as it is set."]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1742,12 +2303,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct FifoRstWriteVal(u32);
+    pub struct FifoRstWriteVal(pub u32);
     impl FifoRstWriteVal {
         #[doc = "Active high resets for both program and read FIFOs.  This is especially useful after the controller\nencounters an error of some kind.\nThis bit will hold the FIFO in reset as long as it is set."]
         #[inline(always)]
-        pub fn en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for FifoRstWriteVal {
@@ -1763,16 +2324,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct HwInfoCfgOverrideReadVal(u32);
+    pub struct HwInfoCfgOverrideReadVal(pub u32);
     impl HwInfoCfgOverrideReadVal {
         #[doc = "The hardwired hardware info configuration rules for scramble enable are logically AND'd with\nthis field.\nIf the hardware rules hardwires scramble to enable, we can disable via software if needed.\n\nBy default this field is false."]
         #[inline(always)]
-        pub fn scramble_dis(&self) -> u32 {
+        pub const fn scramble_dis(&self) -> u32 {
             (self.0 >> 0) & 0xf
         }
         #[doc = "The hardwired hardware info configuration rules for ECC enable are logically AND'd with\nthis field.\nIf the hardware rules hardwires ECC to enable, we can disable via software if needed.\n\nBy default this field is false."]
         #[inline(always)]
-        pub fn ecc_dis(&self) -> u32 {
+        pub const fn ecc_dis(&self) -> u32 {
             (self.0 >> 4) & 0xf
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1794,16 +2355,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct HwInfoCfgOverrideWriteVal(u32);
+    pub struct HwInfoCfgOverrideWriteVal(pub u32);
     impl HwInfoCfgOverrideWriteVal {
         #[doc = "The hardwired hardware info configuration rules for scramble enable are logically AND'd with\nthis field.\nIf the hardware rules hardwires scramble to enable, we can disable via software if needed.\n\nBy default this field is false."]
         #[inline(always)]
-        pub fn scramble_dis(self, val: u32) -> Self {
+        pub const fn scramble_dis(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 0)) | ((val & 0xf) << 0))
         }
         #[doc = "The hardwired hardware info configuration rules for ECC enable are logically AND'd with\nthis field.\nIf the hardware rules hardwires ECC to enable, we can disable via software if needed.\n\nBy default this field is false."]
         #[inline(always)]
-        pub fn ecc_dis(self, val: u32) -> Self {
+        pub const fn ecc_dis(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 4)) | ((val & 0xf) << 4))
         }
     }
@@ -1820,11 +2381,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct InitReadVal(u32);
+    pub struct InitReadVal(pub u32);
     impl InitReadVal {
         #[doc = "Initializes the flash controller.\n\nDuring the initialization process, the flash controller requests the address and data\nscramble keys and reads out the root seeds stored in flash before allowing other usage\nof the flash controller.\n\nWhen the initialization sequence is complete, the flash read buffers are enabled\nand turned on."]
         #[inline(always)]
-        pub fn val(&self) -> bool {
+        pub const fn val(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1846,11 +2407,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct InitWriteVal(u32);
+    pub struct InitWriteVal(pub u32);
     impl InitWriteVal {
         #[doc = "Initializes the flash controller.\n\nDuring the initialization process, the flash controller requests the address and data\nscramble keys and reads out the root seeds stored in flash before allowing other usage\nof the flash controller.\n\nWhen the initialization sequence is complete, the flash read buffers are enabled\nand turned on."]
         #[inline(always)]
-        pub fn val_set(self) -> Self {
+        pub const fn val_set(self) -> Self {
             Self(self.0 | (1 << 0))
         }
     }
@@ -1867,36 +2428,36 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrEnableReadVal(u32);
+    pub struct IntrEnableReadVal(pub u32);
     impl IntrEnableReadVal {
         #[doc = "Enable interrupt when !!INTR_STATE.prog_empty is set."]
         #[inline(always)]
-        pub fn prog_empty(&self) -> bool {
+        pub const fn prog_empty(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Enable interrupt when !!INTR_STATE.prog_lvl is set."]
         #[inline(always)]
-        pub fn prog_lvl(&self) -> bool {
+        pub const fn prog_lvl(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "Enable interrupt when !!INTR_STATE.rd_full is set."]
         #[inline(always)]
-        pub fn rd_full(&self) -> bool {
+        pub const fn rd_full(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "Enable interrupt when !!INTR_STATE.rd_lvl is set."]
         #[inline(always)]
-        pub fn rd_lvl(&self) -> bool {
+        pub const fn rd_lvl(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "Enable interrupt when !!INTR_STATE.op_done is set."]
         #[inline(always)]
-        pub fn op_done(&self) -> bool {
+        pub const fn op_done(&self) -> bool {
             ((self.0 >> 4) & 1) != 0
         }
         #[doc = "Enable interrupt when !!INTR_STATE.corr_err is set."]
         #[inline(always)]
-        pub fn corr_err(&self) -> bool {
+        pub const fn corr_err(&self) -> bool {
             ((self.0 >> 5) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1918,37 +2479,37 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrEnableWriteVal(u32);
+    pub struct IntrEnableWriteVal(pub u32);
     impl IntrEnableWriteVal {
         #[doc = "Enable interrupt when !!INTR_STATE.prog_empty is set."]
         #[inline(always)]
-        pub fn prog_empty(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn prog_empty(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Enable interrupt when !!INTR_STATE.prog_lvl is set."]
         #[inline(always)]
-        pub fn prog_lvl(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn prog_lvl(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
         #[doc = "Enable interrupt when !!INTR_STATE.rd_full is set."]
         #[inline(always)]
-        pub fn rd_full(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 2)) | (u32::from(val) << 2))
+        pub const fn rd_full(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 2)) | (val as u32) << 2)
         }
         #[doc = "Enable interrupt when !!INTR_STATE.rd_lvl is set."]
         #[inline(always)]
-        pub fn rd_lvl(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 3)) | (u32::from(val) << 3))
+        pub const fn rd_lvl(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 3)) | (val as u32) << 3)
         }
         #[doc = "Enable interrupt when !!INTR_STATE.op_done is set."]
         #[inline(always)]
-        pub fn op_done(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 4)) | (u32::from(val) << 4))
+        pub const fn op_done(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 4)) | (val as u32) << 4)
         }
         #[doc = "Enable interrupt when !!INTR_STATE.corr_err is set."]
         #[inline(always)]
-        pub fn corr_err(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 5)) | (u32::from(val) << 5))
+        pub const fn corr_err(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 5)) | (val as u32) << 5)
         }
     }
     impl From<u32> for IntrEnableWriteVal {
@@ -1964,36 +2525,36 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrStateReadVal(u32);
+    pub struct IntrStateReadVal(pub u32);
     impl IntrStateReadVal {
         #[doc = "Program FIFO empty"]
         #[inline(always)]
-        pub fn prog_empty(&self) -> bool {
+        pub const fn prog_empty(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Program FIFO drained to level"]
         #[inline(always)]
-        pub fn prog_lvl(&self) -> bool {
+        pub const fn prog_lvl(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "Read FIFO full"]
         #[inline(always)]
-        pub fn rd_full(&self) -> bool {
+        pub const fn rd_full(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "Read FIFO filled to level"]
         #[inline(always)]
-        pub fn rd_lvl(&self) -> bool {
+        pub const fn rd_lvl(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "Operation complete"]
         #[inline(always)]
-        pub fn op_done(&self) -> bool {
+        pub const fn op_done(&self) -> bool {
             ((self.0 >> 4) & 1) != 0
         }
         #[doc = "Correctable error encountered"]
         #[inline(always)]
-        pub fn corr_err(&self) -> bool {
+        pub const fn corr_err(&self) -> bool {
             ((self.0 >> 5) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2015,16 +2576,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrStateWriteVal(u32);
+    pub struct IntrStateWriteVal(pub u32);
     impl IntrStateWriteVal {
         #[doc = "Operation complete"]
         #[inline(always)]
-        pub fn op_done_clear(self) -> Self {
+        pub const fn op_done_clear(self) -> Self {
             Self(self.0 | (1 << 4))
         }
         #[doc = "Correctable error encountered"]
         #[inline(always)]
-        pub fn corr_err_clear(self) -> Self {
+        pub const fn corr_err_clear(self) -> Self {
             Self(self.0 | (1 << 5))
         }
     }
@@ -2041,37 +2602,37 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrTestWriteVal(u32);
+    pub struct IntrTestWriteVal(pub u32);
     impl IntrTestWriteVal {
         #[doc = "Write 1 to force !!INTR_STATE.prog_empty to 1."]
         #[inline(always)]
-        pub fn prog_empty(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn prog_empty(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Write 1 to force !!INTR_STATE.prog_lvl to 1."]
         #[inline(always)]
-        pub fn prog_lvl(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn prog_lvl(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
         #[doc = "Write 1 to force !!INTR_STATE.rd_full to 1."]
         #[inline(always)]
-        pub fn rd_full(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 2)) | (u32::from(val) << 2))
+        pub const fn rd_full(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 2)) | (val as u32) << 2)
         }
         #[doc = "Write 1 to force !!INTR_STATE.rd_lvl to 1."]
         #[inline(always)]
-        pub fn rd_lvl(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 3)) | (u32::from(val) << 3))
+        pub const fn rd_lvl(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 3)) | (val as u32) << 3)
         }
         #[doc = "Write 1 to force !!INTR_STATE.op_done to 1."]
         #[inline(always)]
-        pub fn op_done(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 4)) | (u32::from(val) << 4))
+        pub const fn op_done(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 4)) | (val as u32) << 4)
         }
         #[doc = "Write 1 to force !!INTR_STATE.corr_err to 1."]
         #[inline(always)]
-        pub fn corr_err(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 5)) | (u32::from(val) << 5))
+        pub const fn corr_err(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 5)) | (val as u32) << 5)
         }
     }
     impl From<u32> for IntrTestWriteVal {
@@ -2087,16 +2648,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MpBankCfgShadowed0ReadVal(u32);
+    pub struct MpBankCfgShadowed0ReadVal(pub u32);
     impl MpBankCfgShadowed0ReadVal {
         #[doc = "Bank wide erase enable"]
         #[inline(always)]
-        pub fn erase_en0(&self) -> bool {
+        pub const fn erase_en0(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Bank wide erase enable"]
         #[inline(always)]
-        pub fn erase_en1(&self) -> bool {
+        pub const fn erase_en1(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2118,17 +2679,17 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MpBankCfgShadowed0WriteVal(u32);
+    pub struct MpBankCfgShadowed0WriteVal(pub u32);
     impl MpBankCfgShadowed0WriteVal {
         #[doc = "Bank wide erase enable"]
         #[inline(always)]
-        pub fn erase_en0(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn erase_en0(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Bank wide erase enable"]
         #[inline(always)]
-        pub fn erase_en1(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn erase_en1(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
     }
     impl From<u32> for MpBankCfgShadowed0WriteVal {
@@ -2144,16 +2705,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MpRegionReadVal(u32);
+    pub struct MpRegionReadVal(pub u32);
     impl MpRegionReadVal {
         #[doc = "Region base page. Note the granularity is page, not byte or word"]
         #[inline(always)]
-        pub fn base(&self) -> u32 {
+        pub const fn base(&self) -> u32 {
             (self.0 >> 0) & 0x1ff
         }
         #[doc = "Region size in number of pages.\nFor example, if base is 0 and size is 1, then the region is defined by page 0.\nIf base is 0 and size is 2, then the region is defined by pages 0 and 1."]
         #[inline(always)]
-        pub fn size(&self) -> u32 {
+        pub const fn size(&self) -> u32 {
             (self.0 >> 9) & 0x3ff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2175,16 +2736,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MpRegionWriteVal(u32);
+    pub struct MpRegionWriteVal(pub u32);
     impl MpRegionWriteVal {
         #[doc = "Region base page. Note the granularity is page, not byte or word"]
         #[inline(always)]
-        pub fn base(self, val: u32) -> Self {
+        pub const fn base(self, val: u32) -> Self {
             Self((self.0 & !(0x1ff << 0)) | ((val & 0x1ff) << 0))
         }
         #[doc = "Region size in number of pages.\nFor example, if base is 0 and size is 1, then the region is defined by page 0.\nIf base is 0 and size is 2, then the region is defined by pages 0 and 1."]
         #[inline(always)]
-        pub fn size(self, val: u32) -> Self {
+        pub const fn size(self, val: u32) -> Self {
             Self((self.0 & !(0x3ff << 9)) | ((val & 0x3ff) << 9))
         }
     }
@@ -2201,41 +2762,41 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MpRegionCfgReadVal(u32);
+    pub struct MpRegionCfgReadVal(pub u32);
     impl MpRegionCfgReadVal {
         #[doc = "Region enabled, following fields apply.\nIf region is disabled, it is not matched against any incoming transaction."]
         #[inline(always)]
-        pub fn en(&self) -> u32 {
+        pub const fn en(&self) -> u32 {
             (self.0 >> 0) & 0xf
         }
         #[doc = "Region can be read"]
         #[inline(always)]
-        pub fn rd_en(&self) -> u32 {
+        pub const fn rd_en(&self) -> u32 {
             (self.0 >> 4) & 0xf
         }
         #[doc = "Region can be programmed"]
         #[inline(always)]
-        pub fn prog_en(&self) -> u32 {
+        pub const fn prog_en(&self) -> u32 {
             (self.0 >> 8) & 0xf
         }
         #[doc = "Region can be erased"]
         #[inline(always)]
-        pub fn erase_en(&self) -> u32 {
+        pub const fn erase_en(&self) -> u32 {
             (self.0 >> 12) & 0xf
         }
         #[doc = "Region is scramble enabled."]
         #[inline(always)]
-        pub fn scramble_en(&self) -> u32 {
+        pub const fn scramble_en(&self) -> u32 {
             (self.0 >> 16) & 0xf
         }
         #[doc = "Region is integrity checked and reliability ECC enabled."]
         #[inline(always)]
-        pub fn ecc_en(&self) -> u32 {
+        pub const fn ecc_en(&self) -> u32 {
             (self.0 >> 20) & 0xf
         }
         #[doc = "Region is high endurance enabled."]
         #[inline(always)]
-        pub fn he_en(&self) -> u32 {
+        pub const fn he_en(&self) -> u32 {
             (self.0 >> 24) & 0xf
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2257,41 +2818,41 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MpRegionCfgWriteVal(u32);
+    pub struct MpRegionCfgWriteVal(pub u32);
     impl MpRegionCfgWriteVal {
         #[doc = "Region enabled, following fields apply.\nIf region is disabled, it is not matched against any incoming transaction."]
         #[inline(always)]
-        pub fn en(self, val: u32) -> Self {
+        pub const fn en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 0)) | ((val & 0xf) << 0))
         }
         #[doc = "Region can be read"]
         #[inline(always)]
-        pub fn rd_en(self, val: u32) -> Self {
+        pub const fn rd_en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 4)) | ((val & 0xf) << 4))
         }
         #[doc = "Region can be programmed"]
         #[inline(always)]
-        pub fn prog_en(self, val: u32) -> Self {
+        pub const fn prog_en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 8)) | ((val & 0xf) << 8))
         }
         #[doc = "Region can be erased"]
         #[inline(always)]
-        pub fn erase_en(self, val: u32) -> Self {
+        pub const fn erase_en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 12)) | ((val & 0xf) << 12))
         }
         #[doc = "Region is scramble enabled."]
         #[inline(always)]
-        pub fn scramble_en(self, val: u32) -> Self {
+        pub const fn scramble_en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 16)) | ((val & 0xf) << 16))
         }
         #[doc = "Region is integrity checked and reliability ECC enabled."]
         #[inline(always)]
-        pub fn ecc_en(self, val: u32) -> Self {
+        pub const fn ecc_en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 20)) | ((val & 0xf) << 20))
         }
         #[doc = "Region is high endurance enabled."]
         #[inline(always)]
-        pub fn he_en(self, val: u32) -> Self {
+        pub const fn he_en(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 24)) | ((val & 0xf) << 24))
         }
     }
@@ -2308,16 +2869,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct OpStatusReadVal(u32);
+    pub struct OpStatusReadVal(pub u32);
     impl OpStatusReadVal {
         #[doc = "Flash operation done. Set by HW, cleared by SW"]
         #[inline(always)]
-        pub fn done(&self) -> bool {
+        pub const fn done(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Flash operation error. Set by HW, cleared by SW. See !!ERR_CODE for more details."]
         #[inline(always)]
-        pub fn err(&self) -> bool {
+        pub const fn err(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2339,17 +2900,17 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct OpStatusWriteVal(u32);
+    pub struct OpStatusWriteVal(pub u32);
     impl OpStatusWriteVal {
         #[doc = "Flash operation done. Set by HW, cleared by SW"]
         #[inline(always)]
-        pub fn done(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn done(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Flash operation error. Set by HW, cleared by SW. See !!ERR_CODE for more details."]
         #[inline(always)]
-        pub fn err(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn err(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
     }
     impl From<u32> for OpStatusWriteVal {
@@ -2365,16 +2926,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct PhyAlertCfgReadVal(u32);
+    pub struct PhyAlertCfgReadVal(pub u32);
     impl PhyAlertCfgReadVal {
         #[doc = "Acknowledge flash phy alert"]
         #[inline(always)]
-        pub fn alert_ack(&self) -> bool {
+        pub const fn alert_ack(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Trigger flash phy alert"]
         #[inline(always)]
-        pub fn alert_trig(&self) -> bool {
+        pub const fn alert_trig(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2396,17 +2957,17 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct PhyAlertCfgWriteVal(u32);
+    pub struct PhyAlertCfgWriteVal(pub u32);
     impl PhyAlertCfgWriteVal {
         #[doc = "Acknowledge flash phy alert"]
         #[inline(always)]
-        pub fn alert_ack(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn alert_ack(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Trigger flash phy alert"]
         #[inline(always)]
-        pub fn alert_trig(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn alert_trig(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
     }
     impl From<u32> for PhyAlertCfgWriteVal {
@@ -2422,21 +2983,21 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct PhyStatusReadVal(u32);
+    pub struct PhyStatusReadVal(pub u32);
     impl PhyStatusReadVal {
         #[doc = "Flash phy controller initializing"]
         #[inline(always)]
-        pub fn init_wip(&self) -> bool {
+        pub const fn init_wip(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Normal program supported"]
         #[inline(always)]
-        pub fn prog_normal_avail(&self) -> bool {
+        pub const fn prog_normal_avail(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "Program repair supported"]
         #[inline(always)]
-        pub fn prog_repair_avail(&self) -> bool {
+        pub const fn prog_repair_avail(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
     }
@@ -2453,16 +3014,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ProgTypeEnReadVal(u32);
+    pub struct ProgTypeEnReadVal(pub u32);
     impl ProgTypeEnReadVal {
         #[doc = "Normal prog type available"]
         #[inline(always)]
-        pub fn normal(&self) -> bool {
+        pub const fn normal(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Repair prog type available"]
         #[inline(always)]
-        pub fn repair(&self) -> bool {
+        pub const fn repair(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2484,16 +3045,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ProgTypeEnWriteVal(u32);
+    pub struct ProgTypeEnWriteVal(pub u32);
     impl ProgTypeEnWriteVal {
         #[doc = "Normal prog type available"]
         #[inline(always)]
-        pub fn normal_clear(self) -> Self {
+        pub const fn normal_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
         #[doc = "Repair prog type available"]
         #[inline(always)]
-        pub fn repair_clear(self) -> Self {
+        pub const fn repair_clear(self) -> Self {
             Self(self.0 & !(1 << 1))
         }
     }
@@ -2510,12 +3071,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct RegionCfgRegwenReadVal(u32);
+    pub struct RegionCfgRegwenReadVal(pub u32);
     impl RegionCfgRegwenReadVal {
         #[doc = "Region register write enable.  Once set to 0, it can longer be configured to 1"]
         #[inline(always)]
-        pub fn region(&self) -> super::enums::Cfgregionwen {
-            super::enums::Cfgregionwen::try_from((self.0 >> 0) & 1).unwrap()
+        pub const fn region(&self) -> super::enums::Cfgregionwen {
+            super::enums::Cfgregionwen::from_raw((self.0 >> 0) & 1).unwrap()
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
         #[inline(always)]
@@ -2536,11 +3097,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct RegionCfgRegwenWriteVal(u32);
+    pub struct RegionCfgRegwenWriteVal(pub u32);
     impl RegionCfgRegwenWriteVal {
         #[doc = "Region register write enable.  Once set to 0, it can longer be configured to 1"]
         #[inline(always)]
-        pub fn region_clear(self) -> Self {
+        pub const fn region_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -2557,36 +3118,36 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct StatusReadVal(u32);
+    pub struct StatusReadVal(pub u32);
     impl StatusReadVal {
         #[doc = "Flash read FIFO full, software must consume data"]
         #[inline(always)]
-        pub fn rd_full(&self) -> bool {
+        pub const fn rd_full(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Flash read FIFO empty"]
         #[inline(always)]
-        pub fn rd_empty(&self) -> bool {
+        pub const fn rd_empty(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "Flash program FIFO full"]
         #[inline(always)]
-        pub fn prog_full(&self) -> bool {
+        pub const fn prog_full(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "Flash program FIFO empty, software must provide data"]
         #[inline(always)]
-        pub fn prog_empty(&self) -> bool {
+        pub const fn prog_empty(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "Flash controller undergoing init, inclusive of phy init"]
         #[inline(always)]
-        pub fn init_wip(&self) -> bool {
+        pub const fn init_wip(&self) -> bool {
             ((self.0 >> 4) & 1) != 0
         }
         #[doc = "Flash controller initialized"]
         #[inline(always)]
-        pub fn initialized(&self) -> bool {
+        pub const fn initialized(&self) -> bool {
             ((self.0 >> 5) & 1) != 0
         }
     }
@@ -2603,51 +3164,51 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct StdFaultStatusReadVal(u32);
+    pub struct StdFaultStatusReadVal(pub u32);
     impl StdFaultStatusReadVal {
         #[doc = "The flash controller encountered a register integrity error."]
         #[inline(always)]
-        pub fn reg_intg_err(&self) -> bool {
+        pub const fn reg_intg_err(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "The flash controller encountered a program data transmission integrity error."]
         #[inline(always)]
-        pub fn prog_intg_err(&self) -> bool {
+        pub const fn prog_intg_err(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "The life cycle management interface has encountered a fatal error.\nThe error is either an FSM sparse encoding error or a count error."]
         #[inline(always)]
-        pub fn lcmgr_err(&self) -> bool {
+        pub const fn lcmgr_err(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "The life cycle management interface has encountered a transmission\nintegrity error.  This is an integrity error on the generated integrity\nduring a life cycle management interface read."]
         #[inline(always)]
-        pub fn lcmgr_intg_err(&self) -> bool {
+        pub const fn lcmgr_intg_err(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "The arbiter fsm has encountered a sparse encoding error."]
         #[inline(always)]
-        pub fn arb_fsm_err(&self) -> bool {
+        pub const fn arb_fsm_err(&self) -> bool {
             ((self.0 >> 4) & 1) != 0
         }
         #[doc = "A shadow register encountered a storage error."]
         #[inline(always)]
-        pub fn storage_err(&self) -> bool {
+        pub const fn storage_err(&self) -> bool {
             ((self.0 >> 5) & 1) != 0
         }
         #[doc = "A flash phy fsm has encountered a sparse encoding error."]
         #[inline(always)]
-        pub fn phy_fsm_err(&self) -> bool {
+        pub const fn phy_fsm_err(&self) -> bool {
             ((self.0 >> 6) & 1) != 0
         }
         #[doc = "Flash ctrl read/prog has encountered a count error."]
         #[inline(always)]
-        pub fn ctrl_cnt_err(&self) -> bool {
+        pub const fn ctrl_cnt_err(&self) -> bool {
             ((self.0 >> 7) & 1) != 0
         }
         #[doc = "Flash primitive fifo's have encountered a count error."]
         #[inline(always)]
-        pub fn fifo_err(&self) -> bool {
+        pub const fn fifo_err(&self) -> bool {
             ((self.0 >> 8) & 1) != 0
         }
     }
@@ -2681,16 +3242,19 @@ pub mod enums {
         pub fn bank_enabled(&self) -> bool {
             *self == Self::BankEnabled
         }
+        pub const fn from_raw(val: u32) -> Option<Bank> {
+            if val < 2 {
+                Some(unsafe { core::mem::transmute::<u32, Bank>(val) })
+            } else {
+                None
+            }
+        }
     }
     impl TryFrom<u32> for Bank {
         type Error = ();
         #[inline(always)]
         fn try_from(val: u32) -> Result<Bank, ()> {
-            if val < 2 {
-                Ok(unsafe { core::mem::transmute::<u32, Bank>(val) })
-            } else {
-                Err(())
-            }
+            Bank::from_raw(val).ok_or(())
         }
     }
     impl From<Bank> for u32 {
@@ -2713,16 +3277,19 @@ pub mod enums {
         pub fn region_enabled(&self) -> bool {
             *self == Self::RegionEnabled
         }
+        pub const fn from_raw(val: u32) -> Option<Cfgregionwen> {
+            if val < 2 {
+                Some(unsafe { core::mem::transmute::<u32, Cfgregionwen>(val) })
+            } else {
+                None
+            }
+        }
     }
     impl TryFrom<u32> for Cfgregionwen {
         type Error = ();
         #[inline(always)]
         fn try_from(val: u32) -> Result<Cfgregionwen, ()> {
-            if val < 2 {
-                Ok(unsafe { core::mem::transmute::<u32, Cfgregionwen>(val) })
-            } else {
-                Err(())
-            }
+            Cfgregionwen::from_raw(val).ok_or(())
         }
     }
     impl From<Cfgregionwen> for u32 {
@@ -2745,16 +3312,19 @@ pub mod enums {
         pub fn bank_erase(&self) -> bool {
             *self == Self::BankErase
         }
+        pub const fn from_raw(val: u32) -> Option<EraseSel> {
+            if val < 2 {
+                Some(unsafe { core::mem::transmute::<u32, EraseSel>(val) })
+            } else {
+                None
+            }
+        }
     }
     impl TryFrom<u32> for EraseSel {
         type Error = ();
         #[inline(always)]
         fn try_from(val: u32) -> Result<EraseSel, ()> {
-            if val < 2 {
-                Ok(unsafe { core::mem::transmute::<u32, EraseSel>(val) })
-            } else {
-                Err(())
-            }
+            EraseSel::from_raw(val).ok_or(())
         }
     }
     impl From<EraseSel> for u32 {
@@ -2777,16 +3347,19 @@ pub mod enums {
         pub fn page_enabled(&self) -> bool {
             *self == Self::PageEnabled
         }
+        pub const fn from_raw(val: u32) -> Option<Inforegionwen> {
+            if val < 2 {
+                Some(unsafe { core::mem::transmute::<u32, Inforegionwen>(val) })
+            } else {
+                None
+            }
+        }
     }
     impl TryFrom<u32> for Inforegionwen {
         type Error = ();
         #[inline(always)]
         fn try_from(val: u32) -> Result<Inforegionwen, ()> {
-            if val < 2 {
-                Ok(unsafe { core::mem::transmute::<u32, Inforegionwen>(val) })
-            } else {
-                Err(())
-            }
+            Inforegionwen::from_raw(val).ok_or(())
         }
     }
     impl From<Inforegionwen> for u32 {
@@ -2815,16 +3388,19 @@ pub mod enums {
         pub fn erase(&self) -> bool {
             *self == Self::Erase
         }
+        pub const fn from_raw(val: u32) -> Option<Op> {
+            if val < 4 {
+                Some(unsafe { core::mem::transmute::<u32, Op>(val) })
+            } else {
+                None
+            }
+        }
     }
     impl TryFrom<u32> for Op {
         type Error = ();
         #[inline(always)]
         fn try_from(val: u32) -> Result<Op, ()> {
-            if val < 4 {
-                Ok(unsafe { core::mem::transmute::<u32, Op>(val) })
-            } else {
-                Err(())
-            }
+            Op::from_raw(val).ok_or(())
         }
     }
     impl From<Op> for u32 {
@@ -2847,16 +3423,19 @@ pub mod enums {
         pub fn program_repair(&self) -> bool {
             *self == Self::ProgramRepair
         }
+        pub const fn from_raw(val: u32) -> Option<ProgSel> {
+            if val < 2 {
+                Some(unsafe { core::mem::transmute::<u32, ProgSel>(val) })
+            } else {
+                None
+            }
+        }
     }
     impl TryFrom<u32> for ProgSel {
         type Error = ();
         #[inline(always)]
         fn try_from(val: u32) -> Result<ProgSel, ()> {
-            if val < 2 {
-                Ok(unsafe { core::mem::transmute::<u32, ProgSel>(val) })
-            } else {
-                Err(())
-            }
+            ProgSel::from_raw(val).ok_or(())
         }
     }
     impl From<ProgSel> for u32 {

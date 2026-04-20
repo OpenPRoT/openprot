@@ -18,7 +18,7 @@ impl Ast {
     #[doc = r" way. The simplest way to enforce this is to only call"]
     #[doc = r" this function once."]
     #[inline(always)]
-    pub unsafe fn new() -> Self {
+    pub const unsafe fn new() -> Self {
         Self { _priv: () }
     }
     #[doc = r" Returns a register block that can be used to read"]
@@ -79,6 +79,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "AST Register 0 for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega0(self) -> ureg::RegRef<crate::meta::Rega0, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "AST 1 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn rega1(&self) -> ureg::RegRef<crate::meta::Rega1, &TMmio> {
@@ -86,6 +97,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "AST 1 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega1(self) -> ureg::RegRef<crate::meta::Rega1, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -99,6 +121,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "AST 2 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega2(self) -> ureg::RegRef<crate::meta::Rega2, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(8 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "AST 3 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn rega3(&self) -> ureg::RegRef<crate::meta::Rega3, &TMmio> {
@@ -106,6 +139,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0xc / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "AST 3 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega3(self) -> ureg::RegRef<crate::meta::Rega3, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xc / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -119,6 +163,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "AST 4 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega4(self) -> ureg::RegRef<crate::meta::Rega4, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x10 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "AST 5 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn rega5(&self) -> ureg::RegRef<crate::meta::Rega5, &TMmio> {
@@ -126,6 +181,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x14 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "AST 5 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega5(self) -> ureg::RegRef<crate::meta::Rega5, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x14 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -139,6 +205,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "AST 6 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega6(self) -> ureg::RegRef<crate::meta::Rega6, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x18 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "AST 7 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn rega7(&self) -> ureg::RegRef<crate::meta::Rega7, &TMmio> {
@@ -146,6 +223,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x1c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "AST 7 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega7(self) -> ureg::RegRef<crate::meta::Rega7, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x1c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -159,6 +247,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "AST 8 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega8(self) -> ureg::RegRef<crate::meta::Rega8, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x20 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "AST 9 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn rega9(&self) -> ureg::RegRef<crate::meta::Rega9, &TMmio> {
@@ -166,6 +265,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x24 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "AST 9 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega9(self) -> ureg::RegRef<crate::meta::Rega9, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x24 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -179,6 +289,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "AST 10 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega10(self) -> ureg::RegRef<crate::meta::Rega10, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x28 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "AST 11 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn rega11(&self) -> ureg::RegRef<crate::meta::Rega11, &TMmio> {
@@ -186,6 +307,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x2c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "AST 11 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega11(self) -> ureg::RegRef<crate::meta::Rega11, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x2c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -200,12 +332,34 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
         }
     }
     #[doc = "AST 13 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega12(self) -> ureg::RegRef<crate::meta::Rega12, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x30 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
+    #[doc = "AST 13 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn rega13(&self) -> ureg::RegRef<crate::meta::Rega13, &TMmio> {
         unsafe {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x34 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "AST 13 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega13(self) -> ureg::RegRef<crate::meta::Rega13, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x34 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -219,6 +373,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "AST 14 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega14(self) -> ureg::RegRef<crate::meta::Rega14, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x38 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "AST 15 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn rega15(&self) -> ureg::RegRef<crate::meta::Rega15, &TMmio> {
@@ -226,6 +391,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x3c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "AST 15 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega15(self) -> ureg::RegRef<crate::meta::Rega15, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x3c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -239,6 +415,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "AST 16 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega16(self) -> ureg::RegRef<crate::meta::Rega16, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x40 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "AST 17 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn rega17(&self) -> ureg::RegRef<crate::meta::Rega17, &TMmio> {
@@ -246,6 +433,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x44 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "AST 17 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega17(self) -> ureg::RegRef<crate::meta::Rega17, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x44 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -259,6 +457,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "AST 18 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega18(self) -> ureg::RegRef<crate::meta::Rega18, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x48 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "AST 19 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn rega19(&self) -> ureg::RegRef<crate::meta::Rega19, &TMmio> {
@@ -266,6 +475,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x4c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "AST 19 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega19(self) -> ureg::RegRef<crate::meta::Rega19, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -279,6 +499,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "AST 20 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega20(self) -> ureg::RegRef<crate::meta::Rega20, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x50 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "AST 21 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn rega21(&self) -> ureg::RegRef<crate::meta::Rega21, &TMmio> {
@@ -286,6 +517,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x54 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "AST 21 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega21(self) -> ureg::RegRef<crate::meta::Rega21, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x54 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -299,6 +541,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "AST 22 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega22(self) -> ureg::RegRef<crate::meta::Rega22, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x58 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "AST 23 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn rega23(&self) -> ureg::RegRef<crate::meta::Rega23, &TMmio> {
@@ -306,6 +559,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x5c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "AST 23 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega23(self) -> ureg::RegRef<crate::meta::Rega23, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x5c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -319,6 +583,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "AST 24 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega24(self) -> ureg::RegRef<crate::meta::Rega24, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x60 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "AST 25 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn rega25(&self) -> ureg::RegRef<crate::meta::Rega25, &TMmio> {
@@ -326,6 +601,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x64 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "AST 25 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega25(self) -> ureg::RegRef<crate::meta::Rega25, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x64 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -339,6 +625,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "AST 26 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega26(self) -> ureg::RegRef<crate::meta::Rega26, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x68 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "AST 27 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn rega27(&self) -> ureg::RegRef<crate::meta::Rega27, &TMmio> {
@@ -346,6 +643,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x6c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "AST 27 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega27(self) -> ureg::RegRef<crate::meta::Rega27, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x6c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -359,6 +667,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "AST 28 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega28(self) -> ureg::RegRef<crate::meta::Rega28, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x70 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "AST 29 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn rega29(&self) -> ureg::RegRef<crate::meta::Rega29, &TMmio> {
@@ -366,6 +685,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x74 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "AST 29 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega29(self) -> ureg::RegRef<crate::meta::Rega29, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x74 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -379,6 +709,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "AST 30 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega30(self) -> ureg::RegRef<crate::meta::Rega30, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x78 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "AST 31 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn rega31(&self) -> ureg::RegRef<crate::meta::Rega31, &TMmio> {
@@ -386,6 +727,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x7c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "AST 31 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega31(self) -> ureg::RegRef<crate::meta::Rega31, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x7c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -399,6 +751,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "AST 32 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega32(self) -> ureg::RegRef<crate::meta::Rega32, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x80 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "AST 33 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn rega33(&self) -> ureg::RegRef<crate::meta::Rega33, &TMmio> {
@@ -406,6 +769,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x84 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "AST 33 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega33(self) -> ureg::RegRef<crate::meta::Rega33, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x84 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -419,6 +793,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "AST 34 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega34(self) -> ureg::RegRef<crate::meta::Rega34, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x88 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "AST 35 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn rega35(&self) -> ureg::RegRef<crate::meta::Rega35, &TMmio> {
@@ -426,6 +811,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x8c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "AST 35 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega35(self) -> ureg::RegRef<crate::meta::Rega35, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x8c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -439,6 +835,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "AST 36 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega36(self) -> ureg::RegRef<crate::meta::Rega36, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x90 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "AST 37 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn rega37(&self) -> ureg::RegRef<crate::meta::Rega37, &TMmio> {
@@ -446,6 +853,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x94 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "AST 37 Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rega37(self) -> ureg::RegRef<crate::meta::Rega37, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x94 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -459,6 +877,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "AST Last Register for OTP/ROM Write Testing\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_regal(self) -> ureg::RegRef<crate::meta::Regal, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x98 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "AST Registers Array-B to set address space size\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn regb(&self) -> ureg::Array<5, ureg::RegRef<crate::meta::Regb, &TMmio>> {
@@ -466,6 +895,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0x200 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "AST Registers Array-B to set address space size\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_regb(self) -> ureg::Array<5, ureg::RegRef<crate::meta::Regb, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x200 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }

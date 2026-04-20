@@ -18,7 +18,7 @@ impl AlertHandler {
     #[doc = r" way. The simplest way to enforce this is to only call"]
     #[doc = r" this function once."]
     #[inline(always)]
-    pub unsafe fn new() -> Self {
+    pub const unsafe fn new() -> Self {
         Self { _priv: () }
     }
     #[doc = r" Returns a register block that can be used to read"]
@@ -79,6 +79,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Interrupt State Register\n\nRead value: [`regs::IntrStateReadVal`]; Write value: [`regs::IntrStateWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_intr_state(self) -> ureg::RegRef<crate::meta::IntrState, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Interrupt Enable Register\n\nRead value: [`regs::IntrEnableReadVal`]; Write value: [`regs::IntrEnableWriteVal`]"]
     #[inline(always)]
     pub fn intr_enable(&self) -> ureg::RegRef<crate::meta::IntrEnable, &TMmio> {
@@ -86,6 +97,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Interrupt Enable Register\n\nRead value: [`regs::IntrEnableReadVal`]; Write value: [`regs::IntrEnableWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_intr_enable(self) -> ureg::RegRef<crate::meta::IntrEnable, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -99,6 +121,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Interrupt Test Register\n\nRead value: [`regs::IntrTestReadVal`]; Write value: [`regs::IntrTestWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_intr_test(self) -> ureg::RegRef<crate::meta::IntrTest, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(8 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Register write enable for !!PING_TIMEOUT_CYC_SHADOWED and !!PING_TIMER_EN_SHADOWED.\n\nRead value: [`regs::PingTimerRegwenReadVal`]; Write value: [`regs::PingTimerRegwenWriteVal`]"]
     #[inline(always)]
     pub fn ping_timer_regwen(&self) -> ureg::RegRef<crate::meta::PingTimerRegwen, &TMmio> {
@@ -106,6 +139,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0xc / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Register write enable for !!PING_TIMEOUT_CYC_SHADOWED and !!PING_TIMER_EN_SHADOWED.\n\nRead value: [`regs::PingTimerRegwenReadVal`]; Write value: [`regs::PingTimerRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_ping_timer_regwen(self) -> ureg::RegRef<crate::meta::PingTimerRegwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xc / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -121,6 +165,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Ping timeout cycle count.\n\nRead value: [`regs::PingTimeoutCycShadowedReadVal`]; Write value: [`regs::PingTimeoutCycShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_ping_timeout_cyc_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::PingTimeoutCycShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x10 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Ping timer enable.\n\nRead value: [`regs::PingTimerEnShadowedReadVal`]; Write value: [`regs::PingTimerEnShadowedWriteVal`]"]
     #[inline(always)]
     pub fn ping_timer_en_shadowed(&self) -> ureg::RegRef<crate::meta::PingTimerEnShadowed, &TMmio> {
@@ -131,6 +188,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Ping timer enable.\n\nRead value: [`regs::PingTimerEnShadowedReadVal`]; Write value: [`regs::PingTimerEnShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_ping_timer_en_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::PingTimerEnShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x14 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Register write enable for alert enable bits.\n\nRead value: [`regs::AlertRegwenReadVal`]; Write value: [`regs::AlertRegwenWriteVal`]"]
     #[inline(always)]
     pub fn alert_regwen(&self) -> ureg::Array<65, ureg::RegRef<crate::meta::AlertRegwen, &TMmio>> {
@@ -138,6 +208,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0x18 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Register write enable for alert enable bits.\n\nRead value: [`regs::AlertRegwenReadVal`]; Write value: [`regs::AlertRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_alert_regwen(
+        self,
+    ) -> ureg::Array<65, ureg::RegRef<crate::meta::AlertRegwen, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x18 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -153,6 +236,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Enable register for alerts.\n\nRead value: [`regs::AlertEnShadowedReadVal`]; Write value: [`regs::AlertEnShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_alert_en_shadowed(
+        self,
+    ) -> ureg::Array<65, ureg::RegRef<crate::meta::AlertEnShadowed, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x11c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Class assignment of alerts.\n\nRead value: [`regs::AlertClassShadowedReadVal`]; Write value: [`regs::AlertClassShadowedWriteVal`]"]
     #[inline(always)]
     pub fn alert_class_shadowed(
@@ -165,6 +261,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Class assignment of alerts.\n\nRead value: [`regs::AlertClassShadowedReadVal`]; Write value: [`regs::AlertClassShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_alert_class_shadowed(
+        self,
+    ) -> ureg::Array<65, ureg::RegRef<crate::meta::AlertClassShadowed, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x220 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Alert Cause Register\n\nRead value: [`regs::AlertCauseReadVal`]; Write value: [`regs::AlertCauseWriteVal`]"]
     #[inline(always)]
     pub fn alert_cause(&self) -> ureg::Array<65, ureg::RegRef<crate::meta::AlertCause, &TMmio>> {
@@ -172,6 +281,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0x324 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Alert Cause Register\n\nRead value: [`regs::AlertCauseReadVal`]; Write value: [`regs::AlertCauseWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_alert_cause(self) -> ureg::Array<65, ureg::RegRef<crate::meta::AlertCause, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x324 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -187,6 +307,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Register write enable for alert enable bits.\n\nRead value: [`regs::LocAlertRegwenReadVal`]; Write value: [`regs::LocAlertRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_loc_alert_regwen(
+        self,
+    ) -> ureg::Array<7, ureg::RegRef<crate::meta::LocAlertRegwen, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x428 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Enable register for the local alerts\n\"alert pingfail\" (0), \"escalation pingfail\" (1),\n\"alert integfail\" (2), \"escalation integfail\" (3),\n\"bus integrity failure\" (4), \"shadow reg update error\" (5)\nand \"shadow reg storage error\" (6).\n\nRead value: [`regs::LocAlertEnShadowedReadVal`]; Write value: [`regs::LocAlertEnShadowedWriteVal`]"]
     #[inline(always)]
     pub fn loc_alert_en_shadowed(
@@ -196,6 +329,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0x444 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Enable register for the local alerts\n\"alert pingfail\" (0), \"escalation pingfail\" (1),\n\"alert integfail\" (2), \"escalation integfail\" (3),\n\"bus integrity failure\" (4), \"shadow reg update error\" (5)\nand \"shadow reg storage error\" (6).\n\nRead value: [`regs::LocAlertEnShadowedReadVal`]; Write value: [`regs::LocAlertEnShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_loc_alert_en_shadowed(
+        self,
+    ) -> ureg::Array<7, ureg::RegRef<crate::meta::LocAlertEnShadowed, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x444 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -211,6 +357,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Class assignment of the local alerts\n\"alert pingfail\" (0), \"escalation pingfail\" (1),\n\"alert integfail\" (2), \"escalation integfail\" (3),\n\"bus integrity failure\" (4), \"shadow reg update error\" (5)\nand \"shadow reg storage error\" (6).\n\nRead value: [`regs::LocAlertClassShadowedReadVal`]; Write value: [`regs::LocAlertClassShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_loc_alert_class_shadowed(
+        self,
+    ) -> ureg::Array<7, ureg::RegRef<crate::meta::LocAlertClassShadowed, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x460 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Alert Cause Register for the local alerts\n\"alert pingfail\" (0), \"escalation pingfail\" (1),\n\"alert integfail\" (2), \"escalation integfail\" (3),\n\"bus integrity failure\" (4), \"shadow reg update error\" (5)\nand \"shadow reg storage error\" (6).\n\nRead value: [`regs::LocAlertCauseReadVal`]; Write value: [`regs::LocAlertCauseWriteVal`]"]
     #[inline(always)]
     pub fn loc_alert_cause(
@@ -220,6 +379,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0x47c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Alert Cause Register for the local alerts\n\"alert pingfail\" (0), \"escalation pingfail\" (1),\n\"alert integfail\" (2), \"escalation integfail\" (3),\n\"bus integrity failure\" (4), \"shadow reg update error\" (5)\nand \"shadow reg storage error\" (6).\n\nRead value: [`regs::LocAlertCauseReadVal`]; Write value: [`regs::LocAlertCauseWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_loc_alert_cause(
+        self,
+    ) -> ureg::Array<7, ureg::RegRef<crate::meta::LocAlertCause, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x47c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -233,6 +405,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Lock bit for Class A configuration.\n\nRead value: [`regs::ClassaRegwenReadVal`]; Write value: [`regs::ClassaRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classa_regwen(self) -> ureg::RegRef<crate::meta::ClassaRegwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x498 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Escalation control register for alert Class A. Can not be modified if !!CLASSA_REGWEN is false.\n\nRead value: [`regs::ClassaCtrlShadowedReadVal`]; Write value: [`regs::ClassaCtrlShadowedWriteVal`]"]
     #[inline(always)]
     pub fn classa_ctrl_shadowed(&self) -> ureg::RegRef<crate::meta::ClassaCtrlShadowed, &TMmio> {
@@ -240,6 +423,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x49c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Escalation control register for alert Class A. Can not be modified if !!CLASSA_REGWEN is false.\n\nRead value: [`regs::ClassaCtrlShadowedReadVal`]; Write value: [`regs::ClassaCtrlShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classa_ctrl_shadowed(self) -> ureg::RegRef<crate::meta::ClassaCtrlShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x49c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -253,6 +447,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Clear enable for escalation protocol of Class A alerts.\n\nRead value: [`regs::ClassaClrRegwenReadVal`]; Write value: [`regs::ClassaClrRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classa_clr_regwen(self) -> ureg::RegRef<crate::meta::ClassaClrRegwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4a0 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Clear for escalation protocol of Class A.\n\nRead value: [`regs::ClassaClrShadowedReadVal`]; Write value: [`regs::ClassaClrShadowedWriteVal`]"]
     #[inline(always)]
     pub fn classa_clr_shadowed(&self) -> ureg::RegRef<crate::meta::ClassaClrShadowed, &TMmio> {
@@ -263,6 +468,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Clear for escalation protocol of Class A.\n\nRead value: [`regs::ClassaClrShadowedReadVal`]; Write value: [`regs::ClassaClrShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classa_clr_shadowed(self) -> ureg::RegRef<crate::meta::ClassaClrShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4a4 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Current accumulation value for alert Class A. Software can clear this register\nwith a write to !!CLASSA_CLR_SHADOWED register unless !!CLASSA_CLR_REGWEN is false.\n\nRead value: [`regs::ClassaAccumCntReadVal`]; Write value: [`regs::ClassaAccumCntWriteVal`]"]
     #[inline(always)]
     pub fn classa_accum_cnt(&self) -> ureg::RegRef<crate::meta::ClassaAccumCnt, &TMmio> {
@@ -270,6 +486,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x4a8 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Current accumulation value for alert Class A. Software can clear this register\nwith a write to !!CLASSA_CLR_SHADOWED register unless !!CLASSA_CLR_REGWEN is false.\n\nRead value: [`regs::ClassaAccumCntReadVal`]; Write value: [`regs::ClassaAccumCntWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classa_accum_cnt(self) -> ureg::RegRef<crate::meta::ClassaAccumCnt, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4a8 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -285,6 +512,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Accumulation threshold value for alert Class A.\n\nRead value: [`regs::ClassaAccumThreshShadowedReadVal`]; Write value: [`regs::ClassaAccumThreshShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classa_accum_thresh_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClassaAccumThreshShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4ac / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Interrupt timeout in cycles.\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn classa_timeout_cyc_shadowed(
@@ -294,6 +534,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x4b0 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Interrupt timeout in cycles.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classa_timeout_cyc_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClassaTimeoutCycShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4b0 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -309,6 +562,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Crashdump trigger configuration for Class A.\n\nRead value: [`regs::ClassaCrashdumpTriggerShadowedReadVal`]; Write value: [`regs::ClassaCrashdumpTriggerShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classa_crashdump_trigger_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClassaCrashdumpTriggerShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4b4 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Duration of escalation phase 0 for Class A.\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn classa_phase0_cyc_shadowed(
@@ -318,6 +584,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x4b8 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Duration of escalation phase 0 for Class A.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classa_phase0_cyc_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClassaPhase0CycShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4b8 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -333,6 +612,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Duration of escalation phase 1 for Class A.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classa_phase1_cyc_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClassaPhase1CycShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4bc / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Duration of escalation phase 2 for Class A.\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn classa_phase2_cyc_shadowed(
@@ -342,6 +634,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x4c0 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Duration of escalation phase 2 for Class A.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classa_phase2_cyc_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClassaPhase2CycShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4c0 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -357,6 +662,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Duration of escalation phase 3 for Class A.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classa_phase3_cyc_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClassaPhase3CycShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4c4 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Escalation counter in cycles for Class A.\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn classa_esc_cnt(&self) -> ureg::RegRef<crate::meta::ClassaEscCnt, &TMmio> {
@@ -364,6 +682,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x4c8 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Escalation counter in cycles for Class A.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classa_esc_cnt(self) -> ureg::RegRef<crate::meta::ClassaEscCnt, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4c8 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -377,6 +706,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Current escalation state of Class A. See also !!CLASSA_ESC_CNT.\n\nRead value: [`regs::ClassaStateReadVal`]; Write value: [`regs::ClassaStateWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classa_state(self) -> ureg::RegRef<crate::meta::ClassaState, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4cc / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Lock bit for Class B configuration.\n\nRead value: [`regs::ClassbRegwenReadVal`]; Write value: [`regs::ClassbRegwenWriteVal`]"]
     #[inline(always)]
     pub fn classb_regwen(&self) -> ureg::RegRef<crate::meta::ClassbRegwen, &TMmio> {
@@ -384,6 +724,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x4d0 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Lock bit for Class B configuration.\n\nRead value: [`regs::ClassbRegwenReadVal`]; Write value: [`regs::ClassbRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classb_regwen(self) -> ureg::RegRef<crate::meta::ClassbRegwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4d0 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -397,6 +748,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Escalation control register for alert Class B. Can not be modified if !!CLASSB_REGWEN is false.\n\nRead value: [`regs::ClassbCtrlShadowedReadVal`]; Write value: [`regs::ClassbCtrlShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classb_ctrl_shadowed(self) -> ureg::RegRef<crate::meta::ClassbCtrlShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4d4 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Clear enable for escalation protocol of Class B alerts.\n\nRead value: [`regs::ClassbClrRegwenReadVal`]; Write value: [`regs::ClassbClrRegwenWriteVal`]"]
     #[inline(always)]
     pub fn classb_clr_regwen(&self) -> ureg::RegRef<crate::meta::ClassbClrRegwen, &TMmio> {
@@ -404,6 +766,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x4d8 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Clear enable for escalation protocol of Class B alerts.\n\nRead value: [`regs::ClassbClrRegwenReadVal`]; Write value: [`regs::ClassbClrRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classb_clr_regwen(self) -> ureg::RegRef<crate::meta::ClassbClrRegwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4d8 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -417,6 +790,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Clear for escalation protocol of Class B.\n\nRead value: [`regs::ClassbClrShadowedReadVal`]; Write value: [`regs::ClassbClrShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classb_clr_shadowed(self) -> ureg::RegRef<crate::meta::ClassbClrShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4dc / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Current accumulation value for alert Class B. Software can clear this register\nwith a write to !!CLASSB_CLR_SHADOWED register unless !!CLASSB_CLR_REGWEN is false.\n\nRead value: [`regs::ClassbAccumCntReadVal`]; Write value: [`regs::ClassbAccumCntWriteVal`]"]
     #[inline(always)]
     pub fn classb_accum_cnt(&self) -> ureg::RegRef<crate::meta::ClassbAccumCnt, &TMmio> {
@@ -424,6 +808,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x4e0 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Current accumulation value for alert Class B. Software can clear this register\nwith a write to !!CLASSB_CLR_SHADOWED register unless !!CLASSB_CLR_REGWEN is false.\n\nRead value: [`regs::ClassbAccumCntReadVal`]; Write value: [`regs::ClassbAccumCntWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classb_accum_cnt(self) -> ureg::RegRef<crate::meta::ClassbAccumCnt, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4e0 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -439,6 +834,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Accumulation threshold value for alert Class B.\n\nRead value: [`regs::ClassbAccumThreshShadowedReadVal`]; Write value: [`regs::ClassbAccumThreshShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classb_accum_thresh_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClassbAccumThreshShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4e4 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Interrupt timeout in cycles.\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn classb_timeout_cyc_shadowed(
@@ -448,6 +856,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x4e8 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Interrupt timeout in cycles.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classb_timeout_cyc_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClassbTimeoutCycShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4e8 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -463,6 +884,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Crashdump trigger configuration for Class B.\n\nRead value: [`regs::ClassbCrashdumpTriggerShadowedReadVal`]; Write value: [`regs::ClassbCrashdumpTriggerShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classb_crashdump_trigger_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClassbCrashdumpTriggerShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4ec / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Duration of escalation phase 0 for Class B.\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn classb_phase0_cyc_shadowed(
@@ -472,6 +906,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x4f0 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Duration of escalation phase 0 for Class B.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classb_phase0_cyc_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClassbPhase0CycShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4f0 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -487,6 +934,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Duration of escalation phase 1 for Class B.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classb_phase1_cyc_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClassbPhase1CycShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4f4 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Duration of escalation phase 2 for Class B.\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn classb_phase2_cyc_shadowed(
@@ -496,6 +956,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x4f8 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Duration of escalation phase 2 for Class B.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classb_phase2_cyc_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClassbPhase2CycShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4f8 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -511,6 +984,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Duration of escalation phase 3 for Class B.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classb_phase3_cyc_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClassbPhase3CycShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4fc / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Escalation counter in cycles for Class B.\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn classb_esc_cnt(&self) -> ureg::RegRef<crate::meta::ClassbEscCnt, &TMmio> {
@@ -518,6 +1004,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x500 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Escalation counter in cycles for Class B.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classb_esc_cnt(self) -> ureg::RegRef<crate::meta::ClassbEscCnt, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x500 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -531,6 +1028,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Current escalation state of Class B. See also !!CLASSB_ESC_CNT.\n\nRead value: [`regs::ClassbStateReadVal`]; Write value: [`regs::ClassbStateWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classb_state(self) -> ureg::RegRef<crate::meta::ClassbState, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x504 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Lock bit for Class C configuration.\n\nRead value: [`regs::ClasscRegwenReadVal`]; Write value: [`regs::ClasscRegwenWriteVal`]"]
     #[inline(always)]
     pub fn classc_regwen(&self) -> ureg::RegRef<crate::meta::ClasscRegwen, &TMmio> {
@@ -538,6 +1046,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x508 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Lock bit for Class C configuration.\n\nRead value: [`regs::ClasscRegwenReadVal`]; Write value: [`regs::ClasscRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classc_regwen(self) -> ureg::RegRef<crate::meta::ClasscRegwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x508 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -551,6 +1070,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Escalation control register for alert Class C. Can not be modified if !!CLASSC_REGWEN is false.\n\nRead value: [`regs::ClasscCtrlShadowedReadVal`]; Write value: [`regs::ClasscCtrlShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classc_ctrl_shadowed(self) -> ureg::RegRef<crate::meta::ClasscCtrlShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x50c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Clear enable for escalation protocol of Class C alerts.\n\nRead value: [`regs::ClasscClrRegwenReadVal`]; Write value: [`regs::ClasscClrRegwenWriteVal`]"]
     #[inline(always)]
     pub fn classc_clr_regwen(&self) -> ureg::RegRef<crate::meta::ClasscClrRegwen, &TMmio> {
@@ -558,6 +1088,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x510 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Clear enable for escalation protocol of Class C alerts.\n\nRead value: [`regs::ClasscClrRegwenReadVal`]; Write value: [`regs::ClasscClrRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classc_clr_regwen(self) -> ureg::RegRef<crate::meta::ClasscClrRegwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x510 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -571,6 +1112,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Clear for escalation protocol of Class C.\n\nRead value: [`regs::ClasscClrShadowedReadVal`]; Write value: [`regs::ClasscClrShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classc_clr_shadowed(self) -> ureg::RegRef<crate::meta::ClasscClrShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x514 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Current accumulation value for alert Class C. Software can clear this register\nwith a write to !!CLASSC_CLR_SHADOWED register unless !!CLASSC_CLR_REGWEN is false.\n\nRead value: [`regs::ClasscAccumCntReadVal`]; Write value: [`regs::ClasscAccumCntWriteVal`]"]
     #[inline(always)]
     pub fn classc_accum_cnt(&self) -> ureg::RegRef<crate::meta::ClasscAccumCnt, &TMmio> {
@@ -578,6 +1130,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x518 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Current accumulation value for alert Class C. Software can clear this register\nwith a write to !!CLASSC_CLR_SHADOWED register unless !!CLASSC_CLR_REGWEN is false.\n\nRead value: [`regs::ClasscAccumCntReadVal`]; Write value: [`regs::ClasscAccumCntWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classc_accum_cnt(self) -> ureg::RegRef<crate::meta::ClasscAccumCnt, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x518 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -593,6 +1156,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Accumulation threshold value for alert Class C.\n\nRead value: [`regs::ClasscAccumThreshShadowedReadVal`]; Write value: [`regs::ClasscAccumThreshShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classc_accum_thresh_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClasscAccumThreshShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x51c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Interrupt timeout in cycles.\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn classc_timeout_cyc_shadowed(
@@ -602,6 +1178,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x520 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Interrupt timeout in cycles.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classc_timeout_cyc_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClasscTimeoutCycShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x520 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -617,6 +1206,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Crashdump trigger configuration for Class C.\n\nRead value: [`regs::ClasscCrashdumpTriggerShadowedReadVal`]; Write value: [`regs::ClasscCrashdumpTriggerShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classc_crashdump_trigger_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClasscCrashdumpTriggerShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x524 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Duration of escalation phase 0 for Class C.\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn classc_phase0_cyc_shadowed(
@@ -626,6 +1228,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x528 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Duration of escalation phase 0 for Class C.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classc_phase0_cyc_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClasscPhase0CycShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x528 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -641,6 +1256,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Duration of escalation phase 1 for Class C.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classc_phase1_cyc_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClasscPhase1CycShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x52c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Duration of escalation phase 2 for Class C.\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn classc_phase2_cyc_shadowed(
@@ -650,6 +1278,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x530 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Duration of escalation phase 2 for Class C.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classc_phase2_cyc_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClasscPhase2CycShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x530 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -665,6 +1306,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Duration of escalation phase 3 for Class C.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classc_phase3_cyc_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClasscPhase3CycShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x534 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Escalation counter in cycles for Class C.\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn classc_esc_cnt(&self) -> ureg::RegRef<crate::meta::ClasscEscCnt, &TMmio> {
@@ -672,6 +1326,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x538 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Escalation counter in cycles for Class C.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classc_esc_cnt(self) -> ureg::RegRef<crate::meta::ClasscEscCnt, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x538 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -685,6 +1350,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Current escalation state of Class C. See also !!CLASSC_ESC_CNT.\n\nRead value: [`regs::ClasscStateReadVal`]; Write value: [`regs::ClasscStateWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classc_state(self) -> ureg::RegRef<crate::meta::ClasscState, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x53c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Lock bit for Class D configuration.\n\nRead value: [`regs::ClassdRegwenReadVal`]; Write value: [`regs::ClassdRegwenWriteVal`]"]
     #[inline(always)]
     pub fn classd_regwen(&self) -> ureg::RegRef<crate::meta::ClassdRegwen, &TMmio> {
@@ -692,6 +1368,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x540 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Lock bit for Class D configuration.\n\nRead value: [`regs::ClassdRegwenReadVal`]; Write value: [`regs::ClassdRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classd_regwen(self) -> ureg::RegRef<crate::meta::ClassdRegwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x540 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -705,6 +1392,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Escalation control register for alert Class D. Can not be modified if !!CLASSD_REGWEN is false.\n\nRead value: [`regs::ClassdCtrlShadowedReadVal`]; Write value: [`regs::ClassdCtrlShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classd_ctrl_shadowed(self) -> ureg::RegRef<crate::meta::ClassdCtrlShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x544 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Clear enable for escalation protocol of Class D alerts.\n\nRead value: [`regs::ClassdClrRegwenReadVal`]; Write value: [`regs::ClassdClrRegwenWriteVal`]"]
     #[inline(always)]
     pub fn classd_clr_regwen(&self) -> ureg::RegRef<crate::meta::ClassdClrRegwen, &TMmio> {
@@ -712,6 +1410,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x548 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Clear enable for escalation protocol of Class D alerts.\n\nRead value: [`regs::ClassdClrRegwenReadVal`]; Write value: [`regs::ClassdClrRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classd_clr_regwen(self) -> ureg::RegRef<crate::meta::ClassdClrRegwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x548 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -725,6 +1434,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Clear for escalation protocol of Class D.\n\nRead value: [`regs::ClassdClrShadowedReadVal`]; Write value: [`regs::ClassdClrShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classd_clr_shadowed(self) -> ureg::RegRef<crate::meta::ClassdClrShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x54c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Current accumulation value for alert Class D. Software can clear this register\nwith a write to !!CLASSD_CLR_SHADOWED register unless !!CLASSD_CLR_REGWEN is false.\n\nRead value: [`regs::ClassdAccumCntReadVal`]; Write value: [`regs::ClassdAccumCntWriteVal`]"]
     #[inline(always)]
     pub fn classd_accum_cnt(&self) -> ureg::RegRef<crate::meta::ClassdAccumCnt, &TMmio> {
@@ -732,6 +1452,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x550 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Current accumulation value for alert Class D. Software can clear this register\nwith a write to !!CLASSD_CLR_SHADOWED register unless !!CLASSD_CLR_REGWEN is false.\n\nRead value: [`regs::ClassdAccumCntReadVal`]; Write value: [`regs::ClassdAccumCntWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classd_accum_cnt(self) -> ureg::RegRef<crate::meta::ClassdAccumCnt, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x550 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -747,6 +1478,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Accumulation threshold value for alert Class D.\n\nRead value: [`regs::ClassdAccumThreshShadowedReadVal`]; Write value: [`regs::ClassdAccumThreshShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classd_accum_thresh_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClassdAccumThreshShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x554 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Interrupt timeout in cycles.\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn classd_timeout_cyc_shadowed(
@@ -756,6 +1500,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x558 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Interrupt timeout in cycles.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classd_timeout_cyc_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClassdTimeoutCycShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x558 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -771,6 +1528,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Crashdump trigger configuration for Class D.\n\nRead value: [`regs::ClassdCrashdumpTriggerShadowedReadVal`]; Write value: [`regs::ClassdCrashdumpTriggerShadowedWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classd_crashdump_trigger_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClassdCrashdumpTriggerShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x55c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Duration of escalation phase 0 for Class D.\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn classd_phase0_cyc_shadowed(
@@ -780,6 +1550,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x560 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Duration of escalation phase 0 for Class D.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classd_phase0_cyc_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClassdPhase0CycShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x560 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -795,6 +1578,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Duration of escalation phase 1 for Class D.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classd_phase1_cyc_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClassdPhase1CycShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x564 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Duration of escalation phase 2 for Class D.\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn classd_phase2_cyc_shadowed(
@@ -804,6 +1600,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x568 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Duration of escalation phase 2 for Class D.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classd_phase2_cyc_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClassdPhase2CycShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x568 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -819,6 +1628,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Duration of escalation phase 3 for Class D.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classd_phase3_cyc_shadowed(
+        self,
+    ) -> ureg::RegRef<crate::meta::ClassdPhase3CycShadowed, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x56c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Escalation counter in cycles for Class D.\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn classd_esc_cnt(&self) -> ureg::RegRef<crate::meta::ClassdEscCnt, &TMmio> {
@@ -826,6 +1648,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x570 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Escalation counter in cycles for Class D.\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classd_esc_cnt(self) -> ureg::RegRef<crate::meta::ClassdEscCnt, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x570 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -839,15 +1672,26 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Current escalation state of Class D. See also !!CLASSD_ESC_CNT.\n\nRead value: [`regs::ClassdStateReadVal`]; Write value: [`regs::ClassdStateWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_classd_state(self) -> ureg::RegRef<crate::meta::ClassdState, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x574 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
 }
 pub mod regs {
     #![doc = r" Types that represent the values held by registers."]
     #[derive(Clone, Copy)]
-    pub struct AlertCauseReadVal(u32);
+    pub struct AlertCauseReadVal(pub u32);
     impl AlertCauseReadVal {
         #[doc = "Cause bit "]
         #[inline(always)]
-        pub fn a(&self) -> bool {
+        pub const fn a(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -869,11 +1713,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AlertCauseWriteVal(u32);
+    pub struct AlertCauseWriteVal(pub u32);
     impl AlertCauseWriteVal {
         #[doc = "Cause bit "]
         #[inline(always)]
-        pub fn a_clear(self) -> Self {
+        pub const fn a_clear(self) -> Self {
             Self(self.0 | (1 << 0))
         }
     }
@@ -890,12 +1734,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AlertClassShadowedReadVal(u32);
+    pub struct AlertClassShadowedReadVal(pub u32);
     impl AlertClassShadowedReadVal {
         #[doc = "Classification "]
         #[inline(always)]
-        pub fn class_a(&self) -> super::enums::Class {
-            super::enums::Class::try_from((self.0 >> 0) & 3).unwrap()
+        pub const fn class_a(&self) -> super::enums::Class {
+            super::enums::Class::from_raw((self.0 >> 0) & 3).unwrap()
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
         #[inline(always)]
@@ -916,7 +1760,7 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AlertClassShadowedWriteVal(u32);
+    pub struct AlertClassShadowedWriteVal(pub u32);
     impl AlertClassShadowedWriteVal {
         #[doc = "Classification "]
         #[inline(always)]
@@ -927,6 +1771,9 @@ pub mod regs {
             Self(
                 (self.0 & !(3 << 0)) | (u32::from(f(super::enums::selector::ClassSelector())) << 0),
             )
+        }
+        pub const fn with_class_a(self, val: super::enums::Class) -> Self {
+            Self((self.0 & !(3 << 0)) | ((val as u32) << 0))
         }
     }
     impl From<u32> for AlertClassShadowedWriteVal {
@@ -942,11 +1789,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AlertEnShadowedReadVal(u32);
+    pub struct AlertEnShadowedReadVal(pub u32);
     impl AlertEnShadowedReadVal {
         #[doc = "Alert enable bit.\n\nNote that the alert pinging mechanism will only ping alerts that have been enabled and locked."]
         #[inline(always)]
-        pub fn en_a(&self) -> bool {
+        pub const fn en_a(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -968,12 +1815,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AlertEnShadowedWriteVal(u32);
+    pub struct AlertEnShadowedWriteVal(pub u32);
     impl AlertEnShadowedWriteVal {
         #[doc = "Alert enable bit.\n\nNote that the alert pinging mechanism will only ping alerts that have been enabled and locked."]
         #[inline(always)]
-        pub fn en_a(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn en_a(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for AlertEnShadowedWriteVal {
@@ -989,11 +1836,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AlertRegwenReadVal(u32);
+    pub struct AlertRegwenReadVal(pub u32);
     impl AlertRegwenReadVal {
         #[doc = "Alert configuration write enable bit.\nIf this is cleared to 0, the corresponding !!ALERT_EN_SHADOWED\nand !!ALERT_CLASS_SHADOWED bits are not writable anymore.\n\nNote that the alert pinging mechanism will only ping alerts that have been enabled and locked."]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1015,11 +1862,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AlertRegwenWriteVal(u32);
+    pub struct AlertRegwenWriteVal(pub u32);
     impl AlertRegwenWriteVal {
         #[doc = "Alert configuration write enable bit.\nIf this is cleared to 0, the corresponding !!ALERT_EN_SHADOWED\nand !!ALERT_CLASS_SHADOWED bits are not writable anymore.\n\nNote that the alert pinging mechanism will only ping alerts that have been enabled and locked."]
         #[inline(always)]
-        pub fn en_clear(self) -> Self {
+        pub const fn en_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -1036,10 +1883,10 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassaAccumCntReadVal(u32);
+    pub struct ClassaAccumCntReadVal(pub u32);
     impl ClassaAccumCntReadVal {
         #[inline(always)]
-        pub fn classa_accum_cnt(&self) -> u32 {
+        pub const fn classa_accum_cnt(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
     }
@@ -1056,11 +1903,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassaAccumThreshShadowedReadVal(u32);
+    pub struct ClassaAccumThreshShadowedReadVal(pub u32);
     impl ClassaAccumThreshShadowedReadVal {
         #[doc = "Once the accumulation value register is equal to the threshold escalation will\nbe triggered on the next alert occurrence within this class A begins. Note that this\nregister can not be modified if !!CLASSA_REGWEN is false."]
         #[inline(always)]
-        pub fn classa_accum_thresh_shadowed(&self) -> u32 {
+        pub const fn classa_accum_thresh_shadowed(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1082,11 +1929,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassaAccumThreshShadowedWriteVal(u32);
+    pub struct ClassaAccumThreshShadowedWriteVal(pub u32);
     impl ClassaAccumThreshShadowedWriteVal {
         #[doc = "Once the accumulation value register is equal to the threshold escalation will\nbe triggered on the next alert occurrence within this class A begins. Note that this\nregister can not be modified if !!CLASSA_REGWEN is false."]
         #[inline(always)]
-        pub fn classa_accum_thresh_shadowed(self, val: u32) -> Self {
+        pub const fn classa_accum_thresh_shadowed(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 0)) | ((val & 0xffff) << 0))
         }
     }
@@ -1103,11 +1950,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassaClrRegwenReadVal(u32);
+    pub struct ClassaClrRegwenReadVal(pub u32);
     impl ClassaClrRegwenReadVal {
         #[doc = "Register defaults to true, can only be cleared. This register is set\nto false by the hardware if the escalation protocol has been triggered and the bit\n!!CLASSA_CTRL_SHADOWED.LOCK is true."]
         #[inline(always)]
-        pub fn classa_clr_regwen(&self) -> bool {
+        pub const fn classa_clr_regwen(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1129,11 +1976,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassaClrRegwenWriteVal(u32);
+    pub struct ClassaClrRegwenWriteVal(pub u32);
     impl ClassaClrRegwenWriteVal {
         #[doc = "Register defaults to true, can only be cleared. This register is set\nto false by the hardware if the escalation protocol has been triggered and the bit\n!!CLASSA_CTRL_SHADOWED.LOCK is true."]
         #[inline(always)]
-        pub fn classa_clr_regwen_clear(self) -> Self {
+        pub const fn classa_clr_regwen_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -1150,11 +1997,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassaClrShadowedReadVal(u32);
+    pub struct ClassaClrShadowedReadVal(pub u32);
     impl ClassaClrShadowedReadVal {
         #[doc = "Writing 1 to this register clears the accumulator and aborts escalation\n(if it has been triggered). This clear is disabled if !!CLASSA_CLR_REGWEN is false."]
         #[inline(always)]
-        pub fn classa_clr_shadowed(&self) -> bool {
+        pub const fn classa_clr_shadowed(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1176,12 +2023,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassaClrShadowedWriteVal(u32);
+    pub struct ClassaClrShadowedWriteVal(pub u32);
     impl ClassaClrShadowedWriteVal {
         #[doc = "Writing 1 to this register clears the accumulator and aborts escalation\n(if it has been triggered). This clear is disabled if !!CLASSA_CLR_REGWEN is false."]
         #[inline(always)]
-        pub fn classa_clr_shadowed(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn classa_clr_shadowed(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for ClassaClrShadowedWriteVal {
@@ -1197,11 +2044,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassaCrashdumpTriggerShadowedReadVal(u32);
+    pub struct ClassaCrashdumpTriggerShadowedReadVal(pub u32);
     impl ClassaCrashdumpTriggerShadowedReadVal {
         #[doc = "Determine in which escalation phase to capture the crashdump containing all alert cause CSRs and escalation\ntimer states. It is recommended to capture the crashdump upon entering the first escalation phase\nthat activates a countermeasure with many side-effects (e.g. life cycle state scrapping) in order\nto prevent spurious alert events from masking the original alert causes.\nNote that this register can not be modified if !!CLASSA_REGWEN is false."]
         #[inline(always)]
-        pub fn classa_crashdump_trigger_shadowed(&self) -> u32 {
+        pub const fn classa_crashdump_trigger_shadowed(&self) -> u32 {
             (self.0 >> 0) & 3
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1223,11 +2070,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassaCrashdumpTriggerShadowedWriteVal(u32);
+    pub struct ClassaCrashdumpTriggerShadowedWriteVal(pub u32);
     impl ClassaCrashdumpTriggerShadowedWriteVal {
         #[doc = "Determine in which escalation phase to capture the crashdump containing all alert cause CSRs and escalation\ntimer states. It is recommended to capture the crashdump upon entering the first escalation phase\nthat activates a countermeasure with many side-effects (e.g. life cycle state scrapping) in order\nto prevent spurious alert events from masking the original alert causes.\nNote that this register can not be modified if !!CLASSA_REGWEN is false."]
         #[inline(always)]
-        pub fn classa_crashdump_trigger_shadowed(self, val: u32) -> Self {
+        pub const fn classa_crashdump_trigger_shadowed(self, val: u32) -> Self {
             Self((self.0 & !(3 << 0)) | ((val & 3) << 0))
         }
     }
@@ -1244,56 +2091,56 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassaCtrlShadowedReadVal(u32);
+    pub struct ClassaCtrlShadowedReadVal(pub u32);
     impl ClassaCtrlShadowedReadVal {
         #[doc = "Enable escalation mechanisms (accumulation and\ninterrupt timeout) for Class A. Note that interrupts can fire\nregardless of whether the escalation mechanisms are enabled for\nthis class or not."]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Enable automatic locking of escalation counter for class A.\nIf true, there is no way to stop the escalation protocol for class A\nonce it has been triggered."]
         #[inline(always)]
-        pub fn lock(&self) -> bool {
+        pub const fn lock(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "Enable escalation signal 0 for Class A"]
         #[inline(always)]
-        pub fn en_e0(&self) -> bool {
+        pub const fn en_e0(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "Enable escalation signal 1 for Class A"]
         #[inline(always)]
-        pub fn en_e1(&self) -> bool {
+        pub const fn en_e1(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "Enable escalation signal 2 for Class A"]
         #[inline(always)]
-        pub fn en_e2(&self) -> bool {
+        pub const fn en_e2(&self) -> bool {
             ((self.0 >> 4) & 1) != 0
         }
         #[doc = "Enable escalation signal 3 for Class A"]
         #[inline(always)]
-        pub fn en_e3(&self) -> bool {
+        pub const fn en_e3(&self) -> bool {
             ((self.0 >> 5) & 1) != 0
         }
         #[doc = "Determines in which escalation phase escalation signal 0 shall be asserted."]
         #[inline(always)]
-        pub fn map_e0(&self) -> u32 {
+        pub const fn map_e0(&self) -> u32 {
             (self.0 >> 6) & 3
         }
         #[doc = "Determines in which escalation phase escalation signal 1 shall be asserted."]
         #[inline(always)]
-        pub fn map_e1(&self) -> u32 {
+        pub const fn map_e1(&self) -> u32 {
             (self.0 >> 8) & 3
         }
         #[doc = "Determines in which escalation phase escalation signal 2 shall be asserted."]
         #[inline(always)]
-        pub fn map_e2(&self) -> u32 {
+        pub const fn map_e2(&self) -> u32 {
             (self.0 >> 10) & 3
         }
         #[doc = "Determines in which escalation phase escalation signal 3 shall be asserted."]
         #[inline(always)]
-        pub fn map_e3(&self) -> u32 {
+        pub const fn map_e3(&self) -> u32 {
             (self.0 >> 12) & 3
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1315,56 +2162,56 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassaCtrlShadowedWriteVal(u32);
+    pub struct ClassaCtrlShadowedWriteVal(pub u32);
     impl ClassaCtrlShadowedWriteVal {
         #[doc = "Enable escalation mechanisms (accumulation and\ninterrupt timeout) for Class A. Note that interrupts can fire\nregardless of whether the escalation mechanisms are enabled for\nthis class or not."]
         #[inline(always)]
-        pub fn en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Enable automatic locking of escalation counter for class A.\nIf true, there is no way to stop the escalation protocol for class A\nonce it has been triggered."]
         #[inline(always)]
-        pub fn lock(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn lock(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
         #[doc = "Enable escalation signal 0 for Class A"]
         #[inline(always)]
-        pub fn en_e0(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 2)) | (u32::from(val) << 2))
+        pub const fn en_e0(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 2)) | (val as u32) << 2)
         }
         #[doc = "Enable escalation signal 1 for Class A"]
         #[inline(always)]
-        pub fn en_e1(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 3)) | (u32::from(val) << 3))
+        pub const fn en_e1(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 3)) | (val as u32) << 3)
         }
         #[doc = "Enable escalation signal 2 for Class A"]
         #[inline(always)]
-        pub fn en_e2(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 4)) | (u32::from(val) << 4))
+        pub const fn en_e2(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 4)) | (val as u32) << 4)
         }
         #[doc = "Enable escalation signal 3 for Class A"]
         #[inline(always)]
-        pub fn en_e3(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 5)) | (u32::from(val) << 5))
+        pub const fn en_e3(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 5)) | (val as u32) << 5)
         }
         #[doc = "Determines in which escalation phase escalation signal 0 shall be asserted."]
         #[inline(always)]
-        pub fn map_e0(self, val: u32) -> Self {
+        pub const fn map_e0(self, val: u32) -> Self {
             Self((self.0 & !(3 << 6)) | ((val & 3) << 6))
         }
         #[doc = "Determines in which escalation phase escalation signal 1 shall be asserted."]
         #[inline(always)]
-        pub fn map_e1(self, val: u32) -> Self {
+        pub const fn map_e1(self, val: u32) -> Self {
             Self((self.0 & !(3 << 8)) | ((val & 3) << 8))
         }
         #[doc = "Determines in which escalation phase escalation signal 2 shall be asserted."]
         #[inline(always)]
-        pub fn map_e2(self, val: u32) -> Self {
+        pub const fn map_e2(self, val: u32) -> Self {
             Self((self.0 & !(3 << 10)) | ((val & 3) << 10))
         }
         #[doc = "Determines in which escalation phase escalation signal 3 shall be asserted."]
         #[inline(always)]
-        pub fn map_e3(self, val: u32) -> Self {
+        pub const fn map_e3(self, val: u32) -> Self {
             Self((self.0 & !(3 << 12)) | ((val & 3) << 12))
         }
     }
@@ -1381,11 +2228,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassaRegwenReadVal(u32);
+    pub struct ClassaRegwenReadVal(pub u32);
     impl ClassaRegwenReadVal {
         #[doc = "Class configuration enable bit.\nIf this is cleared to 0, the corresponding class configuration\nregisters cannot be written anymore."]
         #[inline(always)]
-        pub fn classa_regwen(&self) -> bool {
+        pub const fn classa_regwen(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1407,11 +2254,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassaRegwenWriteVal(u32);
+    pub struct ClassaRegwenWriteVal(pub u32);
     impl ClassaRegwenWriteVal {
         #[doc = "Class configuration enable bit.\nIf this is cleared to 0, the corresponding class configuration\nregisters cannot be written anymore."]
         #[inline(always)]
-        pub fn classa_regwen_clear(self) -> Self {
+        pub const fn classa_regwen_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -1428,11 +2275,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassaStateReadVal(u32);
+    pub struct ClassaStateReadVal(pub u32);
     impl ClassaStateReadVal {
         #[inline(always)]
-        pub fn classa_state(&self) -> super::enums::ClassxState {
-            super::enums::ClassxState::try_from((self.0 >> 0) & 7).unwrap()
+        pub const fn classa_state(&self) -> super::enums::ClassxState {
+            super::enums::ClassxState::from_raw((self.0 >> 0) & 7).unwrap()
         }
     }
     impl From<u32> for ClassaStateReadVal {
@@ -1448,10 +2295,10 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassbAccumCntReadVal(u32);
+    pub struct ClassbAccumCntReadVal(pub u32);
     impl ClassbAccumCntReadVal {
         #[inline(always)]
-        pub fn classb_accum_cnt(&self) -> u32 {
+        pub const fn classb_accum_cnt(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
     }
@@ -1468,11 +2315,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassbAccumThreshShadowedReadVal(u32);
+    pub struct ClassbAccumThreshShadowedReadVal(pub u32);
     impl ClassbAccumThreshShadowedReadVal {
         #[doc = "Once the accumulation value register is equal to the threshold escalation will\nbe triggered on the next alert occurrence within this class B begins. Note that this\nregister can not be modified if !!CLASSB_REGWEN is false."]
         #[inline(always)]
-        pub fn classb_accum_thresh_shadowed(&self) -> u32 {
+        pub const fn classb_accum_thresh_shadowed(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1494,11 +2341,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassbAccumThreshShadowedWriteVal(u32);
+    pub struct ClassbAccumThreshShadowedWriteVal(pub u32);
     impl ClassbAccumThreshShadowedWriteVal {
         #[doc = "Once the accumulation value register is equal to the threshold escalation will\nbe triggered on the next alert occurrence within this class B begins. Note that this\nregister can not be modified if !!CLASSB_REGWEN is false."]
         #[inline(always)]
-        pub fn classb_accum_thresh_shadowed(self, val: u32) -> Self {
+        pub const fn classb_accum_thresh_shadowed(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 0)) | ((val & 0xffff) << 0))
         }
     }
@@ -1515,11 +2362,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassbClrRegwenReadVal(u32);
+    pub struct ClassbClrRegwenReadVal(pub u32);
     impl ClassbClrRegwenReadVal {
         #[doc = "Register defaults to true, can only be cleared. This register is set\nto false by the hardware if the escalation protocol has been triggered and the bit\n!!CLASSB_CTRL_SHADOWED.LOCK is true."]
         #[inline(always)]
-        pub fn classb_clr_regwen(&self) -> bool {
+        pub const fn classb_clr_regwen(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1541,11 +2388,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassbClrRegwenWriteVal(u32);
+    pub struct ClassbClrRegwenWriteVal(pub u32);
     impl ClassbClrRegwenWriteVal {
         #[doc = "Register defaults to true, can only be cleared. This register is set\nto false by the hardware if the escalation protocol has been triggered and the bit\n!!CLASSB_CTRL_SHADOWED.LOCK is true."]
         #[inline(always)]
-        pub fn classb_clr_regwen_clear(self) -> Self {
+        pub const fn classb_clr_regwen_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -1562,11 +2409,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassbClrShadowedReadVal(u32);
+    pub struct ClassbClrShadowedReadVal(pub u32);
     impl ClassbClrShadowedReadVal {
         #[doc = "Writing 1 to this register clears the accumulator and aborts escalation\n(if it has been triggered). This clear is disabled if !!CLASSB_CLR_REGWEN is false."]
         #[inline(always)]
-        pub fn classb_clr_shadowed(&self) -> bool {
+        pub const fn classb_clr_shadowed(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1588,12 +2435,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassbClrShadowedWriteVal(u32);
+    pub struct ClassbClrShadowedWriteVal(pub u32);
     impl ClassbClrShadowedWriteVal {
         #[doc = "Writing 1 to this register clears the accumulator and aborts escalation\n(if it has been triggered). This clear is disabled if !!CLASSB_CLR_REGWEN is false."]
         #[inline(always)]
-        pub fn classb_clr_shadowed(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn classb_clr_shadowed(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for ClassbClrShadowedWriteVal {
@@ -1609,11 +2456,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassbCrashdumpTriggerShadowedReadVal(u32);
+    pub struct ClassbCrashdumpTriggerShadowedReadVal(pub u32);
     impl ClassbCrashdumpTriggerShadowedReadVal {
         #[doc = "Determine in which escalation phase to capture the crashdump containing all alert cause CSRs and escalation\ntimer states. It is recommended to capture the crashdump upon entering the first escalation phase\nthat activates a countermeasure with many side-effects (e.g. life cycle state scrapping) in order\nto prevent spurious alert events from masking the original alert causes.\nNote that this register can not be modified if !!CLASSB_REGWEN is false."]
         #[inline(always)]
-        pub fn classb_crashdump_trigger_shadowed(&self) -> u32 {
+        pub const fn classb_crashdump_trigger_shadowed(&self) -> u32 {
             (self.0 >> 0) & 3
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1635,11 +2482,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassbCrashdumpTriggerShadowedWriteVal(u32);
+    pub struct ClassbCrashdumpTriggerShadowedWriteVal(pub u32);
     impl ClassbCrashdumpTriggerShadowedWriteVal {
         #[doc = "Determine in which escalation phase to capture the crashdump containing all alert cause CSRs and escalation\ntimer states. It is recommended to capture the crashdump upon entering the first escalation phase\nthat activates a countermeasure with many side-effects (e.g. life cycle state scrapping) in order\nto prevent spurious alert events from masking the original alert causes.\nNote that this register can not be modified if !!CLASSB_REGWEN is false."]
         #[inline(always)]
-        pub fn classb_crashdump_trigger_shadowed(self, val: u32) -> Self {
+        pub const fn classb_crashdump_trigger_shadowed(self, val: u32) -> Self {
             Self((self.0 & !(3 << 0)) | ((val & 3) << 0))
         }
     }
@@ -1656,56 +2503,56 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassbCtrlShadowedReadVal(u32);
+    pub struct ClassbCtrlShadowedReadVal(pub u32);
     impl ClassbCtrlShadowedReadVal {
         #[doc = "Enable escalation mechanisms (accumulation and\ninterrupt timeout) for Class B. Note that interrupts can fire\nregardless of whether the escalation mechanisms are enabled for\nthis class or not."]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Enable automatic locking of escalation counter for class B.\nIf true, there is no way to stop the escalation protocol for class B\nonce it has been triggered."]
         #[inline(always)]
-        pub fn lock(&self) -> bool {
+        pub const fn lock(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "Enable escalation signal 0 for Class B"]
         #[inline(always)]
-        pub fn en_e0(&self) -> bool {
+        pub const fn en_e0(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "Enable escalation signal 1 for Class B"]
         #[inline(always)]
-        pub fn en_e1(&self) -> bool {
+        pub const fn en_e1(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "Enable escalation signal 2 for Class B"]
         #[inline(always)]
-        pub fn en_e2(&self) -> bool {
+        pub const fn en_e2(&self) -> bool {
             ((self.0 >> 4) & 1) != 0
         }
         #[doc = "Enable escalation signal 3 for Class B"]
         #[inline(always)]
-        pub fn en_e3(&self) -> bool {
+        pub const fn en_e3(&self) -> bool {
             ((self.0 >> 5) & 1) != 0
         }
         #[doc = "Determines in which escalation phase escalation signal 0 shall be asserted."]
         #[inline(always)]
-        pub fn map_e0(&self) -> u32 {
+        pub const fn map_e0(&self) -> u32 {
             (self.0 >> 6) & 3
         }
         #[doc = "Determines in which escalation phase escalation signal 1 shall be asserted."]
         #[inline(always)]
-        pub fn map_e1(&self) -> u32 {
+        pub const fn map_e1(&self) -> u32 {
             (self.0 >> 8) & 3
         }
         #[doc = "Determines in which escalation phase escalation signal 2 shall be asserted."]
         #[inline(always)]
-        pub fn map_e2(&self) -> u32 {
+        pub const fn map_e2(&self) -> u32 {
             (self.0 >> 10) & 3
         }
         #[doc = "Determines in which escalation phase escalation signal 3 shall be asserted."]
         #[inline(always)]
-        pub fn map_e3(&self) -> u32 {
+        pub const fn map_e3(&self) -> u32 {
             (self.0 >> 12) & 3
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1727,56 +2574,56 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassbCtrlShadowedWriteVal(u32);
+    pub struct ClassbCtrlShadowedWriteVal(pub u32);
     impl ClassbCtrlShadowedWriteVal {
         #[doc = "Enable escalation mechanisms (accumulation and\ninterrupt timeout) for Class B. Note that interrupts can fire\nregardless of whether the escalation mechanisms are enabled for\nthis class or not."]
         #[inline(always)]
-        pub fn en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Enable automatic locking of escalation counter for class B.\nIf true, there is no way to stop the escalation protocol for class B\nonce it has been triggered."]
         #[inline(always)]
-        pub fn lock(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn lock(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
         #[doc = "Enable escalation signal 0 for Class B"]
         #[inline(always)]
-        pub fn en_e0(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 2)) | (u32::from(val) << 2))
+        pub const fn en_e0(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 2)) | (val as u32) << 2)
         }
         #[doc = "Enable escalation signal 1 for Class B"]
         #[inline(always)]
-        pub fn en_e1(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 3)) | (u32::from(val) << 3))
+        pub const fn en_e1(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 3)) | (val as u32) << 3)
         }
         #[doc = "Enable escalation signal 2 for Class B"]
         #[inline(always)]
-        pub fn en_e2(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 4)) | (u32::from(val) << 4))
+        pub const fn en_e2(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 4)) | (val as u32) << 4)
         }
         #[doc = "Enable escalation signal 3 for Class B"]
         #[inline(always)]
-        pub fn en_e3(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 5)) | (u32::from(val) << 5))
+        pub const fn en_e3(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 5)) | (val as u32) << 5)
         }
         #[doc = "Determines in which escalation phase escalation signal 0 shall be asserted."]
         #[inline(always)]
-        pub fn map_e0(self, val: u32) -> Self {
+        pub const fn map_e0(self, val: u32) -> Self {
             Self((self.0 & !(3 << 6)) | ((val & 3) << 6))
         }
         #[doc = "Determines in which escalation phase escalation signal 1 shall be asserted."]
         #[inline(always)]
-        pub fn map_e1(self, val: u32) -> Self {
+        pub const fn map_e1(self, val: u32) -> Self {
             Self((self.0 & !(3 << 8)) | ((val & 3) << 8))
         }
         #[doc = "Determines in which escalation phase escalation signal 2 shall be asserted."]
         #[inline(always)]
-        pub fn map_e2(self, val: u32) -> Self {
+        pub const fn map_e2(self, val: u32) -> Self {
             Self((self.0 & !(3 << 10)) | ((val & 3) << 10))
         }
         #[doc = "Determines in which escalation phase escalation signal 3 shall be asserted."]
         #[inline(always)]
-        pub fn map_e3(self, val: u32) -> Self {
+        pub const fn map_e3(self, val: u32) -> Self {
             Self((self.0 & !(3 << 12)) | ((val & 3) << 12))
         }
     }
@@ -1793,11 +2640,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassbRegwenReadVal(u32);
+    pub struct ClassbRegwenReadVal(pub u32);
     impl ClassbRegwenReadVal {
         #[doc = "Class configuration enable bit.\nIf this is cleared to 0, the corresponding class configuration\nregisters cannot be written anymore."]
         #[inline(always)]
-        pub fn classb_regwen(&self) -> bool {
+        pub const fn classb_regwen(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1819,11 +2666,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassbRegwenWriteVal(u32);
+    pub struct ClassbRegwenWriteVal(pub u32);
     impl ClassbRegwenWriteVal {
         #[doc = "Class configuration enable bit.\nIf this is cleared to 0, the corresponding class configuration\nregisters cannot be written anymore."]
         #[inline(always)]
-        pub fn classb_regwen_clear(self) -> Self {
+        pub const fn classb_regwen_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -1840,11 +2687,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassbStateReadVal(u32);
+    pub struct ClassbStateReadVal(pub u32);
     impl ClassbStateReadVal {
         #[inline(always)]
-        pub fn classb_state(&self) -> super::enums::ClassxState {
-            super::enums::ClassxState::try_from((self.0 >> 0) & 7).unwrap()
+        pub const fn classb_state(&self) -> super::enums::ClassxState {
+            super::enums::ClassxState::from_raw((self.0 >> 0) & 7).unwrap()
         }
     }
     impl From<u32> for ClassbStateReadVal {
@@ -1860,10 +2707,10 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClasscAccumCntReadVal(u32);
+    pub struct ClasscAccumCntReadVal(pub u32);
     impl ClasscAccumCntReadVal {
         #[inline(always)]
-        pub fn classc_accum_cnt(&self) -> u32 {
+        pub const fn classc_accum_cnt(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
     }
@@ -1880,11 +2727,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClasscAccumThreshShadowedReadVal(u32);
+    pub struct ClasscAccumThreshShadowedReadVal(pub u32);
     impl ClasscAccumThreshShadowedReadVal {
         #[doc = "Once the accumulation value register is equal to the threshold escalation will\nbe triggered on the next alert occurrence within this class C begins. Note that this\nregister can not be modified if !!CLASSC_REGWEN is false."]
         #[inline(always)]
-        pub fn classc_accum_thresh_shadowed(&self) -> u32 {
+        pub const fn classc_accum_thresh_shadowed(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1906,11 +2753,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClasscAccumThreshShadowedWriteVal(u32);
+    pub struct ClasscAccumThreshShadowedWriteVal(pub u32);
     impl ClasscAccumThreshShadowedWriteVal {
         #[doc = "Once the accumulation value register is equal to the threshold escalation will\nbe triggered on the next alert occurrence within this class C begins. Note that this\nregister can not be modified if !!CLASSC_REGWEN is false."]
         #[inline(always)]
-        pub fn classc_accum_thresh_shadowed(self, val: u32) -> Self {
+        pub const fn classc_accum_thresh_shadowed(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 0)) | ((val & 0xffff) << 0))
         }
     }
@@ -1927,11 +2774,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClasscClrRegwenReadVal(u32);
+    pub struct ClasscClrRegwenReadVal(pub u32);
     impl ClasscClrRegwenReadVal {
         #[doc = "Register defaults to true, can only be cleared. This register is set\nto false by the hardware if the escalation protocol has been triggered and the bit\n!!CLASSC_CTRL_SHADOWED.LOCK is true."]
         #[inline(always)]
-        pub fn classc_clr_regwen(&self) -> bool {
+        pub const fn classc_clr_regwen(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1953,11 +2800,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClasscClrRegwenWriteVal(u32);
+    pub struct ClasscClrRegwenWriteVal(pub u32);
     impl ClasscClrRegwenWriteVal {
         #[doc = "Register defaults to true, can only be cleared. This register is set\nto false by the hardware if the escalation protocol has been triggered and the bit\n!!CLASSC_CTRL_SHADOWED.LOCK is true."]
         #[inline(always)]
-        pub fn classc_clr_regwen_clear(self) -> Self {
+        pub const fn classc_clr_regwen_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -1974,11 +2821,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClasscClrShadowedReadVal(u32);
+    pub struct ClasscClrShadowedReadVal(pub u32);
     impl ClasscClrShadowedReadVal {
         #[doc = "Writing 1 to this register clears the accumulator and aborts escalation\n(if it has been triggered). This clear is disabled if !!CLASSC_CLR_REGWEN is false."]
         #[inline(always)]
-        pub fn classc_clr_shadowed(&self) -> bool {
+        pub const fn classc_clr_shadowed(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2000,12 +2847,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClasscClrShadowedWriteVal(u32);
+    pub struct ClasscClrShadowedWriteVal(pub u32);
     impl ClasscClrShadowedWriteVal {
         #[doc = "Writing 1 to this register clears the accumulator and aborts escalation\n(if it has been triggered). This clear is disabled if !!CLASSC_CLR_REGWEN is false."]
         #[inline(always)]
-        pub fn classc_clr_shadowed(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn classc_clr_shadowed(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for ClasscClrShadowedWriteVal {
@@ -2021,11 +2868,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClasscCrashdumpTriggerShadowedReadVal(u32);
+    pub struct ClasscCrashdumpTriggerShadowedReadVal(pub u32);
     impl ClasscCrashdumpTriggerShadowedReadVal {
         #[doc = "Determine in which escalation phase to capture the crashdump containing all alert cause CSRs and escalation\ntimer states. It is recommended to capture the crashdump upon entering the first escalation phase\nthat activates a countermeasure with many side-effects (e.g. life cycle state scrapping) in order\nto prevent spurious alert events from masking the original alert causes.\nNote that this register can not be modified if !!CLASSC_REGWEN is false."]
         #[inline(always)]
-        pub fn classc_crashdump_trigger_shadowed(&self) -> u32 {
+        pub const fn classc_crashdump_trigger_shadowed(&self) -> u32 {
             (self.0 >> 0) & 3
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2047,11 +2894,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClasscCrashdumpTriggerShadowedWriteVal(u32);
+    pub struct ClasscCrashdumpTriggerShadowedWriteVal(pub u32);
     impl ClasscCrashdumpTriggerShadowedWriteVal {
         #[doc = "Determine in which escalation phase to capture the crashdump containing all alert cause CSRs and escalation\ntimer states. It is recommended to capture the crashdump upon entering the first escalation phase\nthat activates a countermeasure with many side-effects (e.g. life cycle state scrapping) in order\nto prevent spurious alert events from masking the original alert causes.\nNote that this register can not be modified if !!CLASSC_REGWEN is false."]
         #[inline(always)]
-        pub fn classc_crashdump_trigger_shadowed(self, val: u32) -> Self {
+        pub const fn classc_crashdump_trigger_shadowed(self, val: u32) -> Self {
             Self((self.0 & !(3 << 0)) | ((val & 3) << 0))
         }
     }
@@ -2068,56 +2915,56 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClasscCtrlShadowedReadVal(u32);
+    pub struct ClasscCtrlShadowedReadVal(pub u32);
     impl ClasscCtrlShadowedReadVal {
         #[doc = "Enable escalation mechanisms (accumulation and\ninterrupt timeout) for Class C. Note that interrupts can fire\nregardless of whether the escalation mechanisms are enabled for\nthis class or not."]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Enable automatic locking of escalation counter for class C.\nIf true, there is no way to stop the escalation protocol for class C\nonce it has been triggered."]
         #[inline(always)]
-        pub fn lock(&self) -> bool {
+        pub const fn lock(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "Enable escalation signal 0 for Class C"]
         #[inline(always)]
-        pub fn en_e0(&self) -> bool {
+        pub const fn en_e0(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "Enable escalation signal 1 for Class C"]
         #[inline(always)]
-        pub fn en_e1(&self) -> bool {
+        pub const fn en_e1(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "Enable escalation signal 2 for Class C"]
         #[inline(always)]
-        pub fn en_e2(&self) -> bool {
+        pub const fn en_e2(&self) -> bool {
             ((self.0 >> 4) & 1) != 0
         }
         #[doc = "Enable escalation signal 3 for Class C"]
         #[inline(always)]
-        pub fn en_e3(&self) -> bool {
+        pub const fn en_e3(&self) -> bool {
             ((self.0 >> 5) & 1) != 0
         }
         #[doc = "Determines in which escalation phase escalation signal 0 shall be asserted."]
         #[inline(always)]
-        pub fn map_e0(&self) -> u32 {
+        pub const fn map_e0(&self) -> u32 {
             (self.0 >> 6) & 3
         }
         #[doc = "Determines in which escalation phase escalation signal 1 shall be asserted."]
         #[inline(always)]
-        pub fn map_e1(&self) -> u32 {
+        pub const fn map_e1(&self) -> u32 {
             (self.0 >> 8) & 3
         }
         #[doc = "Determines in which escalation phase escalation signal 2 shall be asserted."]
         #[inline(always)]
-        pub fn map_e2(&self) -> u32 {
+        pub const fn map_e2(&self) -> u32 {
             (self.0 >> 10) & 3
         }
         #[doc = "Determines in which escalation phase escalation signal 3 shall be asserted."]
         #[inline(always)]
-        pub fn map_e3(&self) -> u32 {
+        pub const fn map_e3(&self) -> u32 {
             (self.0 >> 12) & 3
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2139,56 +2986,56 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClasscCtrlShadowedWriteVal(u32);
+    pub struct ClasscCtrlShadowedWriteVal(pub u32);
     impl ClasscCtrlShadowedWriteVal {
         #[doc = "Enable escalation mechanisms (accumulation and\ninterrupt timeout) for Class C. Note that interrupts can fire\nregardless of whether the escalation mechanisms are enabled for\nthis class or not."]
         #[inline(always)]
-        pub fn en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Enable automatic locking of escalation counter for class C.\nIf true, there is no way to stop the escalation protocol for class C\nonce it has been triggered."]
         #[inline(always)]
-        pub fn lock(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn lock(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
         #[doc = "Enable escalation signal 0 for Class C"]
         #[inline(always)]
-        pub fn en_e0(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 2)) | (u32::from(val) << 2))
+        pub const fn en_e0(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 2)) | (val as u32) << 2)
         }
         #[doc = "Enable escalation signal 1 for Class C"]
         #[inline(always)]
-        pub fn en_e1(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 3)) | (u32::from(val) << 3))
+        pub const fn en_e1(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 3)) | (val as u32) << 3)
         }
         #[doc = "Enable escalation signal 2 for Class C"]
         #[inline(always)]
-        pub fn en_e2(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 4)) | (u32::from(val) << 4))
+        pub const fn en_e2(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 4)) | (val as u32) << 4)
         }
         #[doc = "Enable escalation signal 3 for Class C"]
         #[inline(always)]
-        pub fn en_e3(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 5)) | (u32::from(val) << 5))
+        pub const fn en_e3(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 5)) | (val as u32) << 5)
         }
         #[doc = "Determines in which escalation phase escalation signal 0 shall be asserted."]
         #[inline(always)]
-        pub fn map_e0(self, val: u32) -> Self {
+        pub const fn map_e0(self, val: u32) -> Self {
             Self((self.0 & !(3 << 6)) | ((val & 3) << 6))
         }
         #[doc = "Determines in which escalation phase escalation signal 1 shall be asserted."]
         #[inline(always)]
-        pub fn map_e1(self, val: u32) -> Self {
+        pub const fn map_e1(self, val: u32) -> Self {
             Self((self.0 & !(3 << 8)) | ((val & 3) << 8))
         }
         #[doc = "Determines in which escalation phase escalation signal 2 shall be asserted."]
         #[inline(always)]
-        pub fn map_e2(self, val: u32) -> Self {
+        pub const fn map_e2(self, val: u32) -> Self {
             Self((self.0 & !(3 << 10)) | ((val & 3) << 10))
         }
         #[doc = "Determines in which escalation phase escalation signal 3 shall be asserted."]
         #[inline(always)]
-        pub fn map_e3(self, val: u32) -> Self {
+        pub const fn map_e3(self, val: u32) -> Self {
             Self((self.0 & !(3 << 12)) | ((val & 3) << 12))
         }
     }
@@ -2205,11 +3052,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClasscRegwenReadVal(u32);
+    pub struct ClasscRegwenReadVal(pub u32);
     impl ClasscRegwenReadVal {
         #[doc = "Class configuration enable bit.\nIf this is cleared to 0, the corresponding class configuration\nregisters cannot be written anymore."]
         #[inline(always)]
-        pub fn classc_regwen(&self) -> bool {
+        pub const fn classc_regwen(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2231,11 +3078,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClasscRegwenWriteVal(u32);
+    pub struct ClasscRegwenWriteVal(pub u32);
     impl ClasscRegwenWriteVal {
         #[doc = "Class configuration enable bit.\nIf this is cleared to 0, the corresponding class configuration\nregisters cannot be written anymore."]
         #[inline(always)]
-        pub fn classc_regwen_clear(self) -> Self {
+        pub const fn classc_regwen_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -2252,11 +3099,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClasscStateReadVal(u32);
+    pub struct ClasscStateReadVal(pub u32);
     impl ClasscStateReadVal {
         #[inline(always)]
-        pub fn classc_state(&self) -> super::enums::ClassxState {
-            super::enums::ClassxState::try_from((self.0 >> 0) & 7).unwrap()
+        pub const fn classc_state(&self) -> super::enums::ClassxState {
+            super::enums::ClassxState::from_raw((self.0 >> 0) & 7).unwrap()
         }
     }
     impl From<u32> for ClasscStateReadVal {
@@ -2272,10 +3119,10 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassdAccumCntReadVal(u32);
+    pub struct ClassdAccumCntReadVal(pub u32);
     impl ClassdAccumCntReadVal {
         #[inline(always)]
-        pub fn classd_accum_cnt(&self) -> u32 {
+        pub const fn classd_accum_cnt(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
     }
@@ -2292,11 +3139,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassdAccumThreshShadowedReadVal(u32);
+    pub struct ClassdAccumThreshShadowedReadVal(pub u32);
     impl ClassdAccumThreshShadowedReadVal {
         #[doc = "Once the accumulation value register is equal to the threshold escalation will\nbe triggered on the next alert occurrence within this class D begins. Note that this\nregister can not be modified if !!CLASSD_REGWEN is false."]
         #[inline(always)]
-        pub fn classd_accum_thresh_shadowed(&self) -> u32 {
+        pub const fn classd_accum_thresh_shadowed(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2318,11 +3165,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassdAccumThreshShadowedWriteVal(u32);
+    pub struct ClassdAccumThreshShadowedWriteVal(pub u32);
     impl ClassdAccumThreshShadowedWriteVal {
         #[doc = "Once the accumulation value register is equal to the threshold escalation will\nbe triggered on the next alert occurrence within this class D begins. Note that this\nregister can not be modified if !!CLASSD_REGWEN is false."]
         #[inline(always)]
-        pub fn classd_accum_thresh_shadowed(self, val: u32) -> Self {
+        pub const fn classd_accum_thresh_shadowed(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 0)) | ((val & 0xffff) << 0))
         }
     }
@@ -2339,11 +3186,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassdClrRegwenReadVal(u32);
+    pub struct ClassdClrRegwenReadVal(pub u32);
     impl ClassdClrRegwenReadVal {
         #[doc = "Register defaults to true, can only be cleared. This register is set\nto false by the hardware if the escalation protocol has been triggered and the bit\n!!CLASSD_CTRL_SHADOWED.LOCK is true."]
         #[inline(always)]
-        pub fn classd_clr_regwen(&self) -> bool {
+        pub const fn classd_clr_regwen(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2365,11 +3212,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassdClrRegwenWriteVal(u32);
+    pub struct ClassdClrRegwenWriteVal(pub u32);
     impl ClassdClrRegwenWriteVal {
         #[doc = "Register defaults to true, can only be cleared. This register is set\nto false by the hardware if the escalation protocol has been triggered and the bit\n!!CLASSD_CTRL_SHADOWED.LOCK is true."]
         #[inline(always)]
-        pub fn classd_clr_regwen_clear(self) -> Self {
+        pub const fn classd_clr_regwen_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -2386,11 +3233,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassdClrShadowedReadVal(u32);
+    pub struct ClassdClrShadowedReadVal(pub u32);
     impl ClassdClrShadowedReadVal {
         #[doc = "Writing 1 to this register clears the accumulator and aborts escalation\n(if it has been triggered). This clear is disabled if !!CLASSD_CLR_REGWEN is false."]
         #[inline(always)]
-        pub fn classd_clr_shadowed(&self) -> bool {
+        pub const fn classd_clr_shadowed(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2412,12 +3259,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassdClrShadowedWriteVal(u32);
+    pub struct ClassdClrShadowedWriteVal(pub u32);
     impl ClassdClrShadowedWriteVal {
         #[doc = "Writing 1 to this register clears the accumulator and aborts escalation\n(if it has been triggered). This clear is disabled if !!CLASSD_CLR_REGWEN is false."]
         #[inline(always)]
-        pub fn classd_clr_shadowed(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn classd_clr_shadowed(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for ClassdClrShadowedWriteVal {
@@ -2433,11 +3280,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassdCrashdumpTriggerShadowedReadVal(u32);
+    pub struct ClassdCrashdumpTriggerShadowedReadVal(pub u32);
     impl ClassdCrashdumpTriggerShadowedReadVal {
         #[doc = "Determine in which escalation phase to capture the crashdump containing all alert cause CSRs and escalation\ntimer states. It is recommended to capture the crashdump upon entering the first escalation phase\nthat activates a countermeasure with many side-effects (e.g. life cycle state scrapping) in order\nto prevent spurious alert events from masking the original alert causes.\nNote that this register can not be modified if !!CLASSD_REGWEN is false."]
         #[inline(always)]
-        pub fn classd_crashdump_trigger_shadowed(&self) -> u32 {
+        pub const fn classd_crashdump_trigger_shadowed(&self) -> u32 {
             (self.0 >> 0) & 3
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2459,11 +3306,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassdCrashdumpTriggerShadowedWriteVal(u32);
+    pub struct ClassdCrashdumpTriggerShadowedWriteVal(pub u32);
     impl ClassdCrashdumpTriggerShadowedWriteVal {
         #[doc = "Determine in which escalation phase to capture the crashdump containing all alert cause CSRs and escalation\ntimer states. It is recommended to capture the crashdump upon entering the first escalation phase\nthat activates a countermeasure with many side-effects (e.g. life cycle state scrapping) in order\nto prevent spurious alert events from masking the original alert causes.\nNote that this register can not be modified if !!CLASSD_REGWEN is false."]
         #[inline(always)]
-        pub fn classd_crashdump_trigger_shadowed(self, val: u32) -> Self {
+        pub const fn classd_crashdump_trigger_shadowed(self, val: u32) -> Self {
             Self((self.0 & !(3 << 0)) | ((val & 3) << 0))
         }
     }
@@ -2480,56 +3327,56 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassdCtrlShadowedReadVal(u32);
+    pub struct ClassdCtrlShadowedReadVal(pub u32);
     impl ClassdCtrlShadowedReadVal {
         #[doc = "Enable escalation mechanisms (accumulation and\ninterrupt timeout) for Class D. Note that interrupts can fire\nregardless of whether the escalation mechanisms are enabled for\nthis class or not."]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Enable automatic locking of escalation counter for class D.\nIf true, there is no way to stop the escalation protocol for class D\nonce it has been triggered."]
         #[inline(always)]
-        pub fn lock(&self) -> bool {
+        pub const fn lock(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "Enable escalation signal 0 for Class D"]
         #[inline(always)]
-        pub fn en_e0(&self) -> bool {
+        pub const fn en_e0(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "Enable escalation signal 1 for Class D"]
         #[inline(always)]
-        pub fn en_e1(&self) -> bool {
+        pub const fn en_e1(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "Enable escalation signal 2 for Class D"]
         #[inline(always)]
-        pub fn en_e2(&self) -> bool {
+        pub const fn en_e2(&self) -> bool {
             ((self.0 >> 4) & 1) != 0
         }
         #[doc = "Enable escalation signal 3 for Class D"]
         #[inline(always)]
-        pub fn en_e3(&self) -> bool {
+        pub const fn en_e3(&self) -> bool {
             ((self.0 >> 5) & 1) != 0
         }
         #[doc = "Determines in which escalation phase escalation signal 0 shall be asserted."]
         #[inline(always)]
-        pub fn map_e0(&self) -> u32 {
+        pub const fn map_e0(&self) -> u32 {
             (self.0 >> 6) & 3
         }
         #[doc = "Determines in which escalation phase escalation signal 1 shall be asserted."]
         #[inline(always)]
-        pub fn map_e1(&self) -> u32 {
+        pub const fn map_e1(&self) -> u32 {
             (self.0 >> 8) & 3
         }
         #[doc = "Determines in which escalation phase escalation signal 2 shall be asserted."]
         #[inline(always)]
-        pub fn map_e2(&self) -> u32 {
+        pub const fn map_e2(&self) -> u32 {
             (self.0 >> 10) & 3
         }
         #[doc = "Determines in which escalation phase escalation signal 3 shall be asserted."]
         #[inline(always)]
-        pub fn map_e3(&self) -> u32 {
+        pub const fn map_e3(&self) -> u32 {
             (self.0 >> 12) & 3
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2551,56 +3398,56 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassdCtrlShadowedWriteVal(u32);
+    pub struct ClassdCtrlShadowedWriteVal(pub u32);
     impl ClassdCtrlShadowedWriteVal {
         #[doc = "Enable escalation mechanisms (accumulation and\ninterrupt timeout) for Class D. Note that interrupts can fire\nregardless of whether the escalation mechanisms are enabled for\nthis class or not."]
         #[inline(always)]
-        pub fn en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Enable automatic locking of escalation counter for class D.\nIf true, there is no way to stop the escalation protocol for class D\nonce it has been triggered."]
         #[inline(always)]
-        pub fn lock(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn lock(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
         #[doc = "Enable escalation signal 0 for Class D"]
         #[inline(always)]
-        pub fn en_e0(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 2)) | (u32::from(val) << 2))
+        pub const fn en_e0(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 2)) | (val as u32) << 2)
         }
         #[doc = "Enable escalation signal 1 for Class D"]
         #[inline(always)]
-        pub fn en_e1(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 3)) | (u32::from(val) << 3))
+        pub const fn en_e1(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 3)) | (val as u32) << 3)
         }
         #[doc = "Enable escalation signal 2 for Class D"]
         #[inline(always)]
-        pub fn en_e2(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 4)) | (u32::from(val) << 4))
+        pub const fn en_e2(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 4)) | (val as u32) << 4)
         }
         #[doc = "Enable escalation signal 3 for Class D"]
         #[inline(always)]
-        pub fn en_e3(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 5)) | (u32::from(val) << 5))
+        pub const fn en_e3(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 5)) | (val as u32) << 5)
         }
         #[doc = "Determines in which escalation phase escalation signal 0 shall be asserted."]
         #[inline(always)]
-        pub fn map_e0(self, val: u32) -> Self {
+        pub const fn map_e0(self, val: u32) -> Self {
             Self((self.0 & !(3 << 6)) | ((val & 3) << 6))
         }
         #[doc = "Determines in which escalation phase escalation signal 1 shall be asserted."]
         #[inline(always)]
-        pub fn map_e1(self, val: u32) -> Self {
+        pub const fn map_e1(self, val: u32) -> Self {
             Self((self.0 & !(3 << 8)) | ((val & 3) << 8))
         }
         #[doc = "Determines in which escalation phase escalation signal 2 shall be asserted."]
         #[inline(always)]
-        pub fn map_e2(self, val: u32) -> Self {
+        pub const fn map_e2(self, val: u32) -> Self {
             Self((self.0 & !(3 << 10)) | ((val & 3) << 10))
         }
         #[doc = "Determines in which escalation phase escalation signal 3 shall be asserted."]
         #[inline(always)]
-        pub fn map_e3(self, val: u32) -> Self {
+        pub const fn map_e3(self, val: u32) -> Self {
             Self((self.0 & !(3 << 12)) | ((val & 3) << 12))
         }
     }
@@ -2617,11 +3464,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassdRegwenReadVal(u32);
+    pub struct ClassdRegwenReadVal(pub u32);
     impl ClassdRegwenReadVal {
         #[doc = "Class configuration enable bit.\nIf this is cleared to 0, the corresponding class configuration\nregisters cannot be written anymore."]
         #[inline(always)]
-        pub fn classd_regwen(&self) -> bool {
+        pub const fn classd_regwen(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2643,11 +3490,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassdRegwenWriteVal(u32);
+    pub struct ClassdRegwenWriteVal(pub u32);
     impl ClassdRegwenWriteVal {
         #[doc = "Class configuration enable bit.\nIf this is cleared to 0, the corresponding class configuration\nregisters cannot be written anymore."]
         #[inline(always)]
-        pub fn classd_regwen_clear(self) -> Self {
+        pub const fn classd_regwen_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -2664,11 +3511,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ClassdStateReadVal(u32);
+    pub struct ClassdStateReadVal(pub u32);
     impl ClassdStateReadVal {
         #[inline(always)]
-        pub fn classd_state(&self) -> super::enums::ClassxState {
-            super::enums::ClassxState::try_from((self.0 >> 0) & 7).unwrap()
+        pub const fn classd_state(&self) -> super::enums::ClassxState {
+            super::enums::ClassxState::from_raw((self.0 >> 0) & 7).unwrap()
         }
     }
     impl From<u32> for ClassdStateReadVal {
@@ -2684,26 +3531,26 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrEnableReadVal(u32);
+    pub struct IntrEnableReadVal(pub u32);
     impl IntrEnableReadVal {
         #[doc = "Enable interrupt when !!INTR_STATE.classa is set."]
         #[inline(always)]
-        pub fn classa(&self) -> bool {
+        pub const fn classa(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Enable interrupt when !!INTR_STATE.classb is set."]
         #[inline(always)]
-        pub fn classb(&self) -> bool {
+        pub const fn classb(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "Enable interrupt when !!INTR_STATE.classc is set."]
         #[inline(always)]
-        pub fn classc(&self) -> bool {
+        pub const fn classc(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "Enable interrupt when !!INTR_STATE.classd is set."]
         #[inline(always)]
-        pub fn classd(&self) -> bool {
+        pub const fn classd(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2725,27 +3572,27 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrEnableWriteVal(u32);
+    pub struct IntrEnableWriteVal(pub u32);
     impl IntrEnableWriteVal {
         #[doc = "Enable interrupt when !!INTR_STATE.classa is set."]
         #[inline(always)]
-        pub fn classa(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn classa(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Enable interrupt when !!INTR_STATE.classb is set."]
         #[inline(always)]
-        pub fn classb(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn classb(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
         #[doc = "Enable interrupt when !!INTR_STATE.classc is set."]
         #[inline(always)]
-        pub fn classc(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 2)) | (u32::from(val) << 2))
+        pub const fn classc(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 2)) | (val as u32) << 2)
         }
         #[doc = "Enable interrupt when !!INTR_STATE.classd is set."]
         #[inline(always)]
-        pub fn classd(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 3)) | (u32::from(val) << 3))
+        pub const fn classd(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 3)) | (val as u32) << 3)
         }
     }
     impl From<u32> for IntrEnableWriteVal {
@@ -2761,26 +3608,26 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrStateReadVal(u32);
+    pub struct IntrStateReadVal(pub u32);
     impl IntrStateReadVal {
         #[doc = "Interrupt state bit of Class A. Set by HW in case an alert within this class triggered. Defaults true, write one to clear."]
         #[inline(always)]
-        pub fn classa(&self) -> bool {
+        pub const fn classa(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Interrupt state bit of Class B. Set by HW in case an alert within this class triggered. Defaults true, write one to clear."]
         #[inline(always)]
-        pub fn classb(&self) -> bool {
+        pub const fn classb(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "Interrupt state bit of Class C. Set by HW in case an alert within this class triggered. Defaults true, write one to clear."]
         #[inline(always)]
-        pub fn classc(&self) -> bool {
+        pub const fn classc(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "Interrupt state bit of Class D. Set by HW in case an alert within this class triggered. Defaults true, write one to clear."]
         #[inline(always)]
-        pub fn classd(&self) -> bool {
+        pub const fn classd(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2802,26 +3649,26 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrStateWriteVal(u32);
+    pub struct IntrStateWriteVal(pub u32);
     impl IntrStateWriteVal {
         #[doc = "Interrupt state bit of Class A. Set by HW in case an alert within this class triggered. Defaults true, write one to clear."]
         #[inline(always)]
-        pub fn classa_clear(self) -> Self {
+        pub const fn classa_clear(self) -> Self {
             Self(self.0 | (1 << 0))
         }
         #[doc = "Interrupt state bit of Class B. Set by HW in case an alert within this class triggered. Defaults true, write one to clear."]
         #[inline(always)]
-        pub fn classb_clear(self) -> Self {
+        pub const fn classb_clear(self) -> Self {
             Self(self.0 | (1 << 1))
         }
         #[doc = "Interrupt state bit of Class C. Set by HW in case an alert within this class triggered. Defaults true, write one to clear."]
         #[inline(always)]
-        pub fn classc_clear(self) -> Self {
+        pub const fn classc_clear(self) -> Self {
             Self(self.0 | (1 << 2))
         }
         #[doc = "Interrupt state bit of Class D. Set by HW in case an alert within this class triggered. Defaults true, write one to clear."]
         #[inline(always)]
-        pub fn classd_clear(self) -> Self {
+        pub const fn classd_clear(self) -> Self {
             Self(self.0 | (1 << 3))
         }
     }
@@ -2838,27 +3685,27 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrTestWriteVal(u32);
+    pub struct IntrTestWriteVal(pub u32);
     impl IntrTestWriteVal {
         #[doc = "Write 1 to force !!INTR_STATE.classa to 1."]
         #[inline(always)]
-        pub fn classa(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn classa(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Write 1 to force !!INTR_STATE.classb to 1."]
         #[inline(always)]
-        pub fn classb(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn classb(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
         #[doc = "Write 1 to force !!INTR_STATE.classc to 1."]
         #[inline(always)]
-        pub fn classc(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 2)) | (u32::from(val) << 2))
+        pub const fn classc(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 2)) | (val as u32) << 2)
         }
         #[doc = "Write 1 to force !!INTR_STATE.classd to 1."]
         #[inline(always)]
-        pub fn classd(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 3)) | (u32::from(val) << 3))
+        pub const fn classd(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 3)) | (val as u32) << 3)
         }
     }
     impl From<u32> for IntrTestWriteVal {
@@ -2874,11 +3721,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct LocAlertCauseReadVal(u32);
+    pub struct LocAlertCauseReadVal(pub u32);
     impl LocAlertCauseReadVal {
         #[doc = "Cause bit "]
         #[inline(always)]
-        pub fn la(&self) -> bool {
+        pub const fn la(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2900,11 +3747,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct LocAlertCauseWriteVal(u32);
+    pub struct LocAlertCauseWriteVal(pub u32);
     impl LocAlertCauseWriteVal {
         #[doc = "Cause bit "]
         #[inline(always)]
-        pub fn la_clear(self) -> Self {
+        pub const fn la_clear(self) -> Self {
             Self(self.0 | (1 << 0))
         }
     }
@@ -2921,12 +3768,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct LocAlertClassShadowedReadVal(u32);
+    pub struct LocAlertClassShadowedReadVal(pub u32);
     impl LocAlertClassShadowedReadVal {
         #[doc = "Classification "]
         #[inline(always)]
-        pub fn class_la(&self) -> super::enums::Class {
-            super::enums::Class::try_from((self.0 >> 0) & 3).unwrap()
+        pub const fn class_la(&self) -> super::enums::Class {
+            super::enums::Class::from_raw((self.0 >> 0) & 3).unwrap()
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
         #[inline(always)]
@@ -2947,7 +3794,7 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct LocAlertClassShadowedWriteVal(u32);
+    pub struct LocAlertClassShadowedWriteVal(pub u32);
     impl LocAlertClassShadowedWriteVal {
         #[doc = "Classification "]
         #[inline(always)]
@@ -2958,6 +3805,9 @@ pub mod regs {
             Self(
                 (self.0 & !(3 << 0)) | (u32::from(f(super::enums::selector::ClassSelector())) << 0),
             )
+        }
+        pub const fn with_class_la(self, val: super::enums::Class) -> Self {
+            Self((self.0 & !(3 << 0)) | ((val as u32) << 0))
         }
     }
     impl From<u32> for LocAlertClassShadowedWriteVal {
@@ -2973,11 +3823,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct LocAlertEnShadowedReadVal(u32);
+    pub struct LocAlertEnShadowedReadVal(pub u32);
     impl LocAlertEnShadowedReadVal {
         #[doc = "Alert enable bit.\n\nNote that the alert pinging mechanism will only ping alerts that have been enabled and locked."]
         #[inline(always)]
-        pub fn en_la(&self) -> bool {
+        pub const fn en_la(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2999,12 +3849,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct LocAlertEnShadowedWriteVal(u32);
+    pub struct LocAlertEnShadowedWriteVal(pub u32);
     impl LocAlertEnShadowedWriteVal {
         #[doc = "Alert enable bit.\n\nNote that the alert pinging mechanism will only ping alerts that have been enabled and locked."]
         #[inline(always)]
-        pub fn en_la(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn en_la(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for LocAlertEnShadowedWriteVal {
@@ -3020,11 +3870,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct LocAlertRegwenReadVal(u32);
+    pub struct LocAlertRegwenReadVal(pub u32);
     impl LocAlertRegwenReadVal {
         #[doc = "Alert configuration write enable bit.\nIf this is cleared to 0, the corresponding !!LOC_ALERT_EN_SHADOWED\nand !!LOC_ALERT_CLASS_SHADOWED bits are not writable anymore.\n\nNote that the alert pinging mechanism will only ping alerts that have been enabled and locked."]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -3046,11 +3896,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct LocAlertRegwenWriteVal(u32);
+    pub struct LocAlertRegwenWriteVal(pub u32);
     impl LocAlertRegwenWriteVal {
         #[doc = "Alert configuration write enable bit.\nIf this is cleared to 0, the corresponding !!LOC_ALERT_EN_SHADOWED\nand !!LOC_ALERT_CLASS_SHADOWED bits are not writable anymore.\n\nNote that the alert pinging mechanism will only ping alerts that have been enabled and locked."]
         #[inline(always)]
-        pub fn en_clear(self) -> Self {
+        pub const fn en_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -3067,11 +3917,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct PingTimeoutCycShadowedReadVal(u32);
+    pub struct PingTimeoutCycShadowedReadVal(pub u32);
     impl PingTimeoutCycShadowedReadVal {
         #[doc = "Timeout value in cycles.\nIf an alert receiver or an escalation sender does not respond to a ping within this timeout window, a pingfail alert will be raised.\nIt is recommended to set this value to the equivalent of 256 cycles of the slowest alert sender clock domain in the system (or greater)."]
         #[inline(always)]
-        pub fn ping_timeout_cyc_shadowed(&self) -> u32 {
+        pub const fn ping_timeout_cyc_shadowed(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -3093,11 +3943,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct PingTimeoutCycShadowedWriteVal(u32);
+    pub struct PingTimeoutCycShadowedWriteVal(pub u32);
     impl PingTimeoutCycShadowedWriteVal {
         #[doc = "Timeout value in cycles.\nIf an alert receiver or an escalation sender does not respond to a ping within this timeout window, a pingfail alert will be raised.\nIt is recommended to set this value to the equivalent of 256 cycles of the slowest alert sender clock domain in the system (or greater)."]
         #[inline(always)]
-        pub fn ping_timeout_cyc_shadowed(self, val: u32) -> Self {
+        pub const fn ping_timeout_cyc_shadowed(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 0)) | ((val & 0xffff) << 0))
         }
     }
@@ -3114,11 +3964,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct PingTimerEnShadowedReadVal(u32);
+    pub struct PingTimerEnShadowedReadVal(pub u32);
     impl PingTimerEnShadowedReadVal {
         #[doc = "Setting this to 1 enables the ping timer mechanism.\nThis bit cannot be cleared to 0 once it has been set to 1.\n\nNote that the alert pinging mechanism will only ping alerts that have been enabled and locked."]
         #[inline(always)]
-        pub fn ping_timer_en_shadowed(&self) -> bool {
+        pub const fn ping_timer_en_shadowed(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -3140,11 +3990,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct PingTimerEnShadowedWriteVal(u32);
+    pub struct PingTimerEnShadowedWriteVal(pub u32);
     impl PingTimerEnShadowedWriteVal {
         #[doc = "Setting this to 1 enables the ping timer mechanism.\nThis bit cannot be cleared to 0 once it has been set to 1.\n\nNote that the alert pinging mechanism will only ping alerts that have been enabled and locked."]
         #[inline(always)]
-        pub fn ping_timer_en_shadowed_set(self) -> Self {
+        pub const fn ping_timer_en_shadowed_set(self) -> Self {
             Self(self.0 | (1 << 0))
         }
     }
@@ -3161,11 +4011,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct PingTimerRegwenReadVal(u32);
+    pub struct PingTimerRegwenReadVal(pub u32);
     impl PingTimerRegwenReadVal {
         #[doc = "When true, the !!PING_TIMEOUT_CYC_SHADOWED and !!PING_TIMER_EN_SHADOWED registers can be modified.\nWhen false, they become read-only. Defaults true, write one to clear.\nThis should be cleared once the alert handler has been configured and the ping\ntimer mechanism has been kicked off."]
         #[inline(always)]
-        pub fn ping_timer_regwen(&self) -> bool {
+        pub const fn ping_timer_regwen(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -3187,11 +4037,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct PingTimerRegwenWriteVal(u32);
+    pub struct PingTimerRegwenWriteVal(pub u32);
     impl PingTimerRegwenWriteVal {
         #[doc = "When true, the !!PING_TIMEOUT_CYC_SHADOWED and !!PING_TIMER_EN_SHADOWED registers can be modified.\nWhen false, they become read-only. Defaults true, write one to clear.\nThis should be cleared once the alert handler has been configured and the ping\ntimer mechanism has been kicked off."]
         #[inline(always)]
-        pub fn ping_timer_regwen_clear(self) -> Self {
+        pub const fn ping_timer_regwen_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -3255,16 +4105,19 @@ pub mod enums {
         pub fn phase3(&self) -> bool {
             *self == Self::Phase3
         }
+        pub const fn from_raw(val: u32) -> Option<ClassxState> {
+            if val < 8 {
+                Some(unsafe { core::mem::transmute::<u32, ClassxState>(val) })
+            } else {
+                None
+            }
+        }
     }
     impl TryFrom<u32> for ClassxState {
         type Error = ();
         #[inline(always)]
         fn try_from(val: u32) -> Result<ClassxState, ()> {
-            if val < 8 {
-                Ok(unsafe { core::mem::transmute::<u32, ClassxState>(val) })
-            } else {
-                Err(())
-            }
+            ClassxState::from_raw(val).ok_or(())
         }
     }
     impl From<ClassxState> for u32 {
@@ -3297,16 +4150,19 @@ pub mod enums {
         pub fn class_d(&self) -> bool {
             *self == Self::Classd
         }
+        pub const fn from_raw(val: u32) -> Option<Class> {
+            if val < 4 {
+                Some(unsafe { core::mem::transmute::<u32, Class>(val) })
+            } else {
+                None
+            }
+        }
     }
     impl TryFrom<u32> for Class {
         type Error = ();
         #[inline(always)]
         fn try_from(val: u32) -> Result<Class, ()> {
-            if val < 4 {
-                Ok(unsafe { core::mem::transmute::<u32, Class>(val) })
-            } else {
-                Err(())
-            }
+            Class::from_raw(val).ok_or(())
         }
     }
     impl From<Class> for u32 {

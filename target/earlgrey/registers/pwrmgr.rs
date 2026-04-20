@@ -18,7 +18,7 @@ impl PwrmgrAon {
     #[doc = r" way. The simplest way to enforce this is to only call"]
     #[doc = r" this function once."]
     #[inline(always)]
-    pub unsafe fn new() -> Self {
+    pub const unsafe fn new() -> Self {
         Self { _priv: () }
     }
     #[doc = r" Returns a register block that can be used to read"]
@@ -79,6 +79,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Interrupt State Register\n\nRead value: [`regs::IntrStateReadVal`]; Write value: [`regs::IntrStateWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_intr_state(self) -> ureg::RegRef<crate::meta::IntrState, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Interrupt Enable Register\n\nRead value: [`regs::IntrEnableReadVal`]; Write value: [`regs::IntrEnableWriteVal`]"]
     #[inline(always)]
     pub fn intr_enable(&self) -> ureg::RegRef<crate::meta::IntrEnable, &TMmio> {
@@ -86,6 +97,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Interrupt Enable Register\n\nRead value: [`regs::IntrEnableReadVal`]; Write value: [`regs::IntrEnableWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_intr_enable(self) -> ureg::RegRef<crate::meta::IntrEnable, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -99,6 +121,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Interrupt Test Register\n\nRead value: [`regs::IntrTestReadVal`]; Write value: [`regs::IntrTestWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_intr_test(self) -> ureg::RegRef<crate::meta::IntrTest, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(8 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Alert Test Register\n\nRead value: [`regs::AlertTestReadVal`]; Write value: [`regs::AlertTestWriteVal`]"]
     #[inline(always)]
     pub fn alert_test(&self) -> ureg::RegRef<crate::meta::AlertTest, &TMmio> {
@@ -106,6 +139,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0xc / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Alert Test Register\n\nRead value: [`regs::AlertTestReadVal`]; Write value: [`regs::AlertTestWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_alert_test(self) -> ureg::RegRef<crate::meta::AlertTest, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xc / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -119,6 +163,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Controls the configurability of the !!CONTROL register.\n\nThis register ensures the contents do not change once a low power hint and\nWFI has occurred.\n\nIt unlocks whenever a low power transition has completed (transition back to the\nACTIVE state) for any reason.\n\nRead value: [`regs::CtrlCfgRegwenReadVal`]; Write value: [`regs::CtrlCfgRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_ctrl_cfg_regwen(self) -> ureg::RegRef<crate::meta::CtrlCfgRegwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x10 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Control register\n\nRead value: [`regs::ControlReadVal`]; Write value: [`regs::ControlWriteVal`]"]
     #[inline(always)]
     pub fn control(&self) -> ureg::RegRef<crate::meta::Control, &TMmio> {
@@ -126,6 +181,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x14 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Control register\n\nRead value: [`regs::ControlReadVal`]; Write value: [`regs::ControlWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_control(self) -> ureg::RegRef<crate::meta::Control, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x14 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -139,6 +205,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "The configuration registers CONTROL, WAKEUP_EN, RESET_EN are all written in the\nfast clock domain but used in the slow clock domain.\n\nThe configuration are not propagated across the clock boundary until this\nregister is triggered and read.  See fields below for more details\n\nRead value: [`regs::CfgCdcSyncReadVal`]; Write value: [`regs::CfgCdcSyncWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_cfg_cdc_sync(self) -> ureg::RegRef<crate::meta::CfgCdcSync, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x18 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Configuration enable for wakeup_en register\n\nRead value: [`regs::WakeupEnRegwenReadVal`]; Write value: [`regs::WakeupEnRegwenWriteVal`]"]
     #[inline(always)]
     pub fn wakeup_en_regwen(&self) -> ureg::RegRef<crate::meta::WakeupEnRegwen, &TMmio> {
@@ -146,6 +223,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x1c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Configuration enable for wakeup_en register\n\nRead value: [`regs::WakeupEnRegwenReadVal`]; Write value: [`regs::WakeupEnRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wakeup_en_regwen(self) -> ureg::RegRef<crate::meta::WakeupEnRegwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x1c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -159,6 +247,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Bit mask for enabled wakeups\n\nRead value: [`regs::WakeupEn0ReadVal`]; Write value: [`regs::WakeupEn0WriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wakeup_en0(self) -> ureg::RegRef<crate::meta::WakeupEn0, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x20 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "A read only register of all current wake requests post enable mask\n\nRead value: [`regs::WakeStatus0ReadVal`]; Write value: [`regs::WakeStatus0WriteVal`]"]
     #[inline(always)]
     pub fn wake_status0(&self) -> ureg::RegRef<crate::meta::WakeStatus0, &TMmio> {
@@ -166,6 +265,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x24 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "A read only register of all current wake requests post enable mask\n\nRead value: [`regs::WakeStatus0ReadVal`]; Write value: [`regs::WakeStatus0WriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wake_status0(self) -> ureg::RegRef<crate::meta::WakeStatus0, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x24 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -179,6 +289,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Configuration enable for reset_en register\n\nRead value: [`regs::ResetEnRegwenReadVal`]; Write value: [`regs::ResetEnRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_reset_en_regwen(self) -> ureg::RegRef<crate::meta::ResetEnRegwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x28 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Bit mask for enabled reset requests\n\nRead value: [`regs::ResetEn0ReadVal`]; Write value: [`regs::ResetEn0WriteVal`]"]
     #[inline(always)]
     pub fn reset_en0(&self) -> ureg::RegRef<crate::meta::ResetEn0, &TMmio> {
@@ -186,6 +307,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x2c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Bit mask for enabled reset requests\n\nRead value: [`regs::ResetEn0ReadVal`]; Write value: [`regs::ResetEn0WriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_reset_en0(self) -> ureg::RegRef<crate::meta::ResetEn0, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x2c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -199,6 +331,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "A read only register of all current reset requests post enable mask\n\nRead value: [`regs::ResetStatus0ReadVal`]; Write value: [`regs::ResetStatus0WriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_reset_status0(self) -> ureg::RegRef<crate::meta::ResetStatus0, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x30 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "A read only register of escalation reset request\n\nRead value: [`regs::EscalateResetStatusReadVal`]; Write value: [`regs::EscalateResetStatusWriteVal`]"]
     #[inline(always)]
     pub fn escalate_reset_status(&self) -> ureg::RegRef<crate::meta::EscalateResetStatus, &TMmio> {
@@ -206,6 +349,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x34 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "A read only register of escalation reset request\n\nRead value: [`regs::EscalateResetStatusReadVal`]; Write value: [`regs::EscalateResetStatusWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_escalate_reset_status(
+        self,
+    ) -> ureg::RegRef<crate::meta::EscalateResetStatus, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x34 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -219,6 +375,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Indicates which functions caused the chip to wakeup\n\nRead value: [`regs::WakeInfoCaptureDisReadVal`]; Write value: [`regs::WakeInfoCaptureDisWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wake_info_capture_dis(
+        self,
+    ) -> ureg::RegRef<crate::meta::WakeInfoCaptureDis, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x38 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Indicates which functions caused the chip to wakeup.\nThe wake info recording begins whenever the device begins a valid low power entry.\n\nThis capture is continued until it is explicitly disabled through WAKE_INFO_CAPTURE_DIS.\nThis means it is possible to capture multiple wakeup reasons.\n\nRead value: [`regs::WakeInfoReadVal`]; Write value: [`regs::WakeInfoWriteVal`]"]
     #[inline(always)]
     pub fn wake_info(&self) -> ureg::RegRef<crate::meta::WakeInfo, &TMmio> {
@@ -226,6 +395,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x3c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Indicates which functions caused the chip to wakeup.\nThe wake info recording begins whenever the device begins a valid low power entry.\n\nThis capture is continued until it is explicitly disabled through WAKE_INFO_CAPTURE_DIS.\nThis means it is possible to capture multiple wakeup reasons.\n\nRead value: [`regs::WakeInfoReadVal`]; Write value: [`regs::WakeInfoWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wake_info(self) -> ureg::RegRef<crate::meta::WakeInfo, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x3c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -239,16 +419,27 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "A read only register that shows the existing faults\n\nRead value: [`regs::FaultStatusReadVal`]; Write value: [`regs::FaultStatusWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_fault_status(self) -> ureg::RegRef<crate::meta::FaultStatus, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x40 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
 }
 pub mod regs {
     #![doc = r" Types that represent the values held by registers."]
     #[derive(Clone, Copy)]
-    pub struct AlertTestWriteVal(u32);
+    pub struct AlertTestWriteVal(pub u32);
     impl AlertTestWriteVal {
         #[doc = "Write 1 to trigger one alert event of this kind."]
         #[inline(always)]
-        pub fn fatal_fault(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn fatal_fault(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for AlertTestWriteVal {
@@ -264,11 +455,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct CfgCdcSyncReadVal(u32);
+    pub struct CfgCdcSyncReadVal(pub u32);
     impl CfgCdcSyncReadVal {
         #[doc = "Configuration sync.  When this bit is written to 1, a sync pulse is generated.  When\nthe sync completes, this bit then self clears.\n\nSoftware should write this bit to 1, wait for it to clear, before assuming the slow clock\ndomain has accepted the programmed values."]
         #[inline(always)]
-        pub fn sync(&self) -> bool {
+        pub const fn sync(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -290,12 +481,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct CfgCdcSyncWriteVal(u32);
+    pub struct CfgCdcSyncWriteVal(pub u32);
     impl CfgCdcSyncWriteVal {
         #[doc = "Configuration sync.  When this bit is written to 1, a sync pulse is generated.  When\nthe sync completes, this bit then self clears.\n\nSoftware should write this bit to 1, wait for it to clear, before assuming the slow clock\ndomain has accepted the programmed values."]
         #[inline(always)]
-        pub fn sync(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn sync(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for CfgCdcSyncWriteVal {
@@ -311,37 +502,37 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ControlReadVal(u32);
+    pub struct ControlReadVal(pub u32);
     impl ControlReadVal {
         #[doc = "The low power hint to power manager.\nThe hint is an indication for how the manager should treat the next WFI.\nOnce the power manager begins a low power transition, or if a valid reset request is registered,\nthis bit is automatically cleared by HW."]
         #[inline(always)]
-        pub fn low_power_hint(&self) -> super::enums::LowPowerHint {
-            super::enums::LowPowerHint::try_from((self.0 >> 0) & 1).unwrap()
+        pub const fn low_power_hint(&self) -> super::enums::LowPowerHint {
+            super::enums::LowPowerHint::from_raw((self.0 >> 0) & 1).unwrap()
         }
         #[doc = "core clock enable during low power state"]
         #[inline(always)]
-        pub fn core_clk_en(&self) -> super::enums::Enum7305284c1ae92db5 {
-            super::enums::Enum7305284c1ae92db5::try_from((self.0 >> 4) & 1).unwrap()
+        pub const fn core_clk_en(&self) -> super::enums::Enum7305284c1ae92db5 {
+            super::enums::Enum7305284c1ae92db5::from_raw((self.0 >> 4) & 1).unwrap()
         }
         #[doc = "IO clock enable during low power state"]
         #[inline(always)]
-        pub fn io_clk_en(&self) -> super::enums::Enum7305284c1ae92db5 {
-            super::enums::Enum7305284c1ae92db5::try_from((self.0 >> 5) & 1).unwrap()
+        pub const fn io_clk_en(&self) -> super::enums::Enum7305284c1ae92db5 {
+            super::enums::Enum7305284c1ae92db5::from_raw((self.0 >> 5) & 1).unwrap()
         }
         #[doc = "USB clock enable during low power state"]
         #[inline(always)]
-        pub fn usb_clk_en_lp(&self) -> super::enums::Enum7305284c1ae92db5 {
-            super::enums::Enum7305284c1ae92db5::try_from((self.0 >> 6) & 1).unwrap()
+        pub const fn usb_clk_en_lp(&self) -> super::enums::Enum7305284c1ae92db5 {
+            super::enums::Enum7305284c1ae92db5::from_raw((self.0 >> 6) & 1).unwrap()
         }
         #[doc = "USB clock enable during active power state"]
         #[inline(always)]
-        pub fn usb_clk_en_active(&self) -> super::enums::Enum7305284c1ae92db5 {
-            super::enums::Enum7305284c1ae92db5::try_from((self.0 >> 7) & 1).unwrap()
+        pub const fn usb_clk_en_active(&self) -> super::enums::Enum7305284c1ae92db5 {
+            super::enums::Enum7305284c1ae92db5::from_raw((self.0 >> 7) & 1).unwrap()
         }
         #[doc = "Active low, main power domain power down"]
         #[inline(always)]
-        pub fn main_pd_n(&self) -> super::enums::MainPdN {
-            super::enums::MainPdN::try_from((self.0 >> 8) & 1).unwrap()
+        pub const fn main_pd_n(&self) -> super::enums::MainPdN {
+            super::enums::MainPdN::from_raw((self.0 >> 8) & 1).unwrap()
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
         #[inline(always)]
@@ -362,7 +553,7 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ControlWriteVal(u32);
+    pub struct ControlWriteVal(pub u32);
     impl ControlWriteVal {
         #[doc = "The low power hint to power manager.\nThe hint is an indication for how the manager should treat the next WFI.\nOnce the power manager begins a low power transition, or if a valid reset request is registered,\nthis bit is automatically cleared by HW."]
         #[inline(always)]
@@ -374,6 +565,9 @@ pub mod regs {
                 (self.0 & !(1 << 0))
                     | (u32::from(f(super::enums::selector::LowPowerHintSelector())) << 0),
             )
+        }
+        pub const fn with_low_power_hint(self, val: super::enums::LowPowerHint) -> Self {
+            Self((self.0 & !(1 << 0)) | ((val as u32) << 0))
         }
         #[doc = "core clock enable during low power state"]
         #[inline(always)]
@@ -388,6 +582,9 @@ pub mod regs {
                     | (u32::from(f(super::enums::selector::Enum7305284c1ae92db5Selector())) << 4),
             )
         }
+        pub const fn with_core_clk_en(self, val: super::enums::Enum7305284c1ae92db5) -> Self {
+            Self((self.0 & !(1 << 4)) | ((val as u32) << 4))
+        }
         #[doc = "IO clock enable during low power state"]
         #[inline(always)]
         pub fn io_clk_en(
@@ -400,6 +597,9 @@ pub mod regs {
                 (self.0 & !(1 << 5))
                     | (u32::from(f(super::enums::selector::Enum7305284c1ae92db5Selector())) << 5),
             )
+        }
+        pub const fn with_io_clk_en(self, val: super::enums::Enum7305284c1ae92db5) -> Self {
+            Self((self.0 & !(1 << 5)) | ((val as u32) << 5))
         }
         #[doc = "USB clock enable during low power state"]
         #[inline(always)]
@@ -414,6 +614,9 @@ pub mod regs {
                     | (u32::from(f(super::enums::selector::Enum7305284c1ae92db5Selector())) << 6),
             )
         }
+        pub const fn with_usb_clk_en_lp(self, val: super::enums::Enum7305284c1ae92db5) -> Self {
+            Self((self.0 & !(1 << 6)) | ((val as u32) << 6))
+        }
         #[doc = "USB clock enable during active power state"]
         #[inline(always)]
         pub fn usb_clk_en_active(
@@ -427,6 +630,9 @@ pub mod regs {
                     | (u32::from(f(super::enums::selector::Enum7305284c1ae92db5Selector())) << 7),
             )
         }
+        pub const fn with_usb_clk_en_active(self, val: super::enums::Enum7305284c1ae92db5) -> Self {
+            Self((self.0 & !(1 << 7)) | ((val as u32) << 7))
+        }
         #[doc = "Active low, main power domain power down"]
         #[inline(always)]
         pub fn main_pd_n(
@@ -437,6 +643,9 @@ pub mod regs {
                 (self.0 & !(1 << 8))
                     | (u32::from(f(super::enums::selector::MainPdNSelector())) << 8),
             )
+        }
+        pub const fn with_main_pd_n(self, val: super::enums::MainPdN) -> Self {
+            Self((self.0 & !(1 << 8)) | ((val as u32) << 8))
         }
     }
     impl From<u32> for ControlWriteVal {
@@ -452,11 +661,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct CtrlCfgRegwenReadVal(u32);
+    pub struct CtrlCfgRegwenReadVal(pub u32);
     impl CtrlCfgRegwenReadVal {
         #[doc = "Configuration enable.\n\nThis bit defaults to 1 and is set to 0 by hardware when low power entry is initiated.\nWhen the device transitions back from low power state to active state, this bit is set\nback to 1 to allow software configuration of !!CONTROL"]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
     }
@@ -473,11 +682,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct EscalateResetStatusReadVal(u32);
+    pub struct EscalateResetStatusReadVal(pub u32);
     impl EscalateResetStatusReadVal {
         #[doc = "When 1, an escalation reset has been seen.\nWhen 0, there is no escalation reset."]
         #[inline(always)]
-        pub fn val(&self) -> bool {
+        pub const fn val(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
     }
@@ -494,21 +703,21 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct FaultStatusReadVal(u32);
+    pub struct FaultStatusReadVal(pub u32);
     impl FaultStatusReadVal {
         #[doc = "When 1, an integrity error has occurred."]
         #[inline(always)]
-        pub fn reg_intg_err(&self) -> bool {
+        pub const fn reg_intg_err(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "When 1, an escalation clock / reset timeout has occurred."]
         #[inline(always)]
-        pub fn esc_timeout(&self) -> bool {
+        pub const fn esc_timeout(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "When 1, unexpected power glitch was observed on main PD."]
         #[inline(always)]
-        pub fn main_pd_glitch(&self) -> bool {
+        pub const fn main_pd_glitch(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
     }
@@ -525,11 +734,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrEnableReadVal(u32);
+    pub struct IntrEnableReadVal(pub u32);
     impl IntrEnableReadVal {
         #[doc = "Enable interrupt when !!INTR_STATE.wakeup is set."]
         #[inline(always)]
-        pub fn wakeup(&self) -> bool {
+        pub const fn wakeup(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -551,12 +760,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrEnableWriteVal(u32);
+    pub struct IntrEnableWriteVal(pub u32);
     impl IntrEnableWriteVal {
         #[doc = "Enable interrupt when !!INTR_STATE.wakeup is set."]
         #[inline(always)]
-        pub fn wakeup(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn wakeup(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for IntrEnableWriteVal {
@@ -572,11 +781,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrStateReadVal(u32);
+    pub struct IntrStateReadVal(pub u32);
     impl IntrStateReadVal {
         #[doc = "Wake from low power state. See wake info for more details"]
         #[inline(always)]
-        pub fn wakeup(&self) -> bool {
+        pub const fn wakeup(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -598,11 +807,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrStateWriteVal(u32);
+    pub struct IntrStateWriteVal(pub u32);
     impl IntrStateWriteVal {
         #[doc = "Wake from low power state. See wake info for more details"]
         #[inline(always)]
-        pub fn wakeup_clear(self) -> Self {
+        pub const fn wakeup_clear(self) -> Self {
             Self(self.0 | (1 << 0))
         }
     }
@@ -619,12 +828,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrTestWriteVal(u32);
+    pub struct IntrTestWriteVal(pub u32);
     impl IntrTestWriteVal {
         #[doc = "Write 1 to force !!INTR_STATE.wakeup to 1."]
         #[inline(always)]
-        pub fn wakeup(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn wakeup(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for IntrTestWriteVal {
@@ -640,16 +849,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ResetEn0ReadVal(u32);
+    pub struct ResetEn0ReadVal(pub u32);
     impl ResetEn0ReadVal {
         #[doc = "Whenever a particular bit is set to 1, that reset request is enabled.\nWhenever a particular bit is set to 0, that reset request cannot reset the device."]
         #[inline(always)]
-        pub fn en0(&self) -> bool {
+        pub const fn en0(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Whenever a particular bit is set to 1, that reset request is enabled.\nWhenever a particular bit is set to 0, that reset request cannot reset the device."]
         #[inline(always)]
-        pub fn en1(&self) -> bool {
+        pub const fn en1(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -671,17 +880,17 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ResetEn0WriteVal(u32);
+    pub struct ResetEn0WriteVal(pub u32);
     impl ResetEn0WriteVal {
         #[doc = "Whenever a particular bit is set to 1, that reset request is enabled.\nWhenever a particular bit is set to 0, that reset request cannot reset the device."]
         #[inline(always)]
-        pub fn en0(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn en0(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Whenever a particular bit is set to 1, that reset request is enabled.\nWhenever a particular bit is set to 0, that reset request cannot reset the device."]
         #[inline(always)]
-        pub fn en1(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn en1(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
     }
     impl From<u32> for ResetEn0WriteVal {
@@ -697,11 +906,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ResetEnRegwenReadVal(u32);
+    pub struct ResetEnRegwenReadVal(pub u32);
     impl ResetEnRegwenReadVal {
         #[doc = "When 1, RESET_EN register can be configured.\nWhen 0, RESET_EN register cannot be configured."]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -723,11 +932,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ResetEnRegwenWriteVal(u32);
+    pub struct ResetEnRegwenWriteVal(pub u32);
     impl ResetEnRegwenWriteVal {
         #[doc = "When 1, RESET_EN register can be configured.\nWhen 0, RESET_EN register cannot be configured."]
         #[inline(always)]
-        pub fn en_clear(self) -> Self {
+        pub const fn en_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -744,16 +953,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ResetStatus0ReadVal(u32);
+    pub struct ResetStatus0ReadVal(pub u32);
     impl ResetStatus0ReadVal {
         #[doc = "Current value of reset request"]
         #[inline(always)]
-        pub fn val0(&self) -> bool {
+        pub const fn val0(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Current value of reset request"]
         #[inline(always)]
-        pub fn val1(&self) -> bool {
+        pub const fn val1(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
     }
@@ -770,36 +979,36 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WakeupEn0ReadVal(u32);
+    pub struct WakeupEn0ReadVal(pub u32);
     impl WakeupEn0ReadVal {
         #[doc = "Whenever a particular bit is set to 1, that wakeup is also enabled.\nWhenever a particular bit is set to 0, that wakeup cannot wake the device from low power."]
         #[inline(always)]
-        pub fn en0(&self) -> bool {
+        pub const fn en0(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Whenever a particular bit is set to 1, that wakeup is also enabled.\nWhenever a particular bit is set to 0, that wakeup cannot wake the device from low power."]
         #[inline(always)]
-        pub fn en1(&self) -> bool {
+        pub const fn en1(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "Whenever a particular bit is set to 1, that wakeup is also enabled.\nWhenever a particular bit is set to 0, that wakeup cannot wake the device from low power."]
         #[inline(always)]
-        pub fn en2(&self) -> bool {
+        pub const fn en2(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "Whenever a particular bit is set to 1, that wakeup is also enabled.\nWhenever a particular bit is set to 0, that wakeup cannot wake the device from low power."]
         #[inline(always)]
-        pub fn en3(&self) -> bool {
+        pub const fn en3(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "Whenever a particular bit is set to 1, that wakeup is also enabled.\nWhenever a particular bit is set to 0, that wakeup cannot wake the device from low power."]
         #[inline(always)]
-        pub fn en4(&self) -> bool {
+        pub const fn en4(&self) -> bool {
             ((self.0 >> 4) & 1) != 0
         }
         #[doc = "Whenever a particular bit is set to 1, that wakeup is also enabled.\nWhenever a particular bit is set to 0, that wakeup cannot wake the device from low power."]
         #[inline(always)]
-        pub fn en5(&self) -> bool {
+        pub const fn en5(&self) -> bool {
             ((self.0 >> 5) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -821,37 +1030,37 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WakeupEn0WriteVal(u32);
+    pub struct WakeupEn0WriteVal(pub u32);
     impl WakeupEn0WriteVal {
         #[doc = "Whenever a particular bit is set to 1, that wakeup is also enabled.\nWhenever a particular bit is set to 0, that wakeup cannot wake the device from low power."]
         #[inline(always)]
-        pub fn en0(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn en0(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Whenever a particular bit is set to 1, that wakeup is also enabled.\nWhenever a particular bit is set to 0, that wakeup cannot wake the device from low power."]
         #[inline(always)]
-        pub fn en1(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn en1(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
         #[doc = "Whenever a particular bit is set to 1, that wakeup is also enabled.\nWhenever a particular bit is set to 0, that wakeup cannot wake the device from low power."]
         #[inline(always)]
-        pub fn en2(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 2)) | (u32::from(val) << 2))
+        pub const fn en2(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 2)) | (val as u32) << 2)
         }
         #[doc = "Whenever a particular bit is set to 1, that wakeup is also enabled.\nWhenever a particular bit is set to 0, that wakeup cannot wake the device from low power."]
         #[inline(always)]
-        pub fn en3(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 3)) | (u32::from(val) << 3))
+        pub const fn en3(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 3)) | (val as u32) << 3)
         }
         #[doc = "Whenever a particular bit is set to 1, that wakeup is also enabled.\nWhenever a particular bit is set to 0, that wakeup cannot wake the device from low power."]
         #[inline(always)]
-        pub fn en4(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 4)) | (u32::from(val) << 4))
+        pub const fn en4(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 4)) | (val as u32) << 4)
         }
         #[doc = "Whenever a particular bit is set to 1, that wakeup is also enabled.\nWhenever a particular bit is set to 0, that wakeup cannot wake the device from low power."]
         #[inline(always)]
-        pub fn en5(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 5)) | (u32::from(val) << 5))
+        pub const fn en5(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 5)) | (val as u32) << 5)
         }
     }
     impl From<u32> for WakeupEn0WriteVal {
@@ -867,11 +1076,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WakeupEnRegwenReadVal(u32);
+    pub struct WakeupEnRegwenReadVal(pub u32);
     impl WakeupEnRegwenReadVal {
         #[doc = "When 1, WAKEUP_EN register can be configured.\nWhen 0, WAKEUP_EN register cannot be configured."]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -893,11 +1102,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WakeupEnRegwenWriteVal(u32);
+    pub struct WakeupEnRegwenWriteVal(pub u32);
     impl WakeupEnRegwenWriteVal {
         #[doc = "When 1, WAKEUP_EN register can be configured.\nWhen 0, WAKEUP_EN register cannot be configured."]
         #[inline(always)]
-        pub fn en_clear(self) -> Self {
+        pub const fn en_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -914,21 +1123,21 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WakeInfoReadVal(u32);
+    pub struct WakeInfoReadVal(pub u32);
     impl WakeInfoReadVal {
         #[doc = "Various peripheral wake reasons"]
         #[inline(always)]
-        pub fn reasons(&self) -> u32 {
+        pub const fn reasons(&self) -> u32 {
             (self.0 >> 0) & 0x3f
         }
         #[doc = "The fall through wakeup reason indicates that despite setting a WFI and providing a low power\nhint, an interrupt arrived at just the right time to break the executing core out of WFI.\n\nThe power manager detects this condition, halts low power entry and reports as a wakeup reason"]
         #[inline(always)]
-        pub fn fall_through(&self) -> bool {
+        pub const fn fall_through(&self) -> bool {
             ((self.0 >> 6) & 1) != 0
         }
         #[doc = "The abort wakeup reason indicates that despite setting a WFI and providing a low power\nhint, an active flash / lifecycle / otp transaction was ongoing when the power controller\nattempted to initiate low power entry.\n\nThe power manager detects this condition, halts low power entry and reports as a wakeup reason"]
         #[inline(always)]
-        pub fn abort(&self) -> bool {
+        pub const fn abort(&self) -> bool {
             ((self.0 >> 7) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -950,16 +1159,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WakeInfoWriteVal(u32);
+    pub struct WakeInfoWriteVal(pub u32);
     impl WakeInfoWriteVal {
         #[doc = "The fall through wakeup reason indicates that despite setting a WFI and providing a low power\nhint, an interrupt arrived at just the right time to break the executing core out of WFI.\n\nThe power manager detects this condition, halts low power entry and reports as a wakeup reason"]
         #[inline(always)]
-        pub fn fall_through_clear(self) -> Self {
+        pub const fn fall_through_clear(self) -> Self {
             Self(self.0 | (1 << 6))
         }
         #[doc = "The abort wakeup reason indicates that despite setting a WFI and providing a low power\nhint, an active flash / lifecycle / otp transaction was ongoing when the power controller\nattempted to initiate low power entry.\n\nThe power manager detects this condition, halts low power entry and reports as a wakeup reason"]
         #[inline(always)]
-        pub fn abort_clear(self) -> Self {
+        pub const fn abort_clear(self) -> Self {
             Self(self.0 | (1 << 7))
         }
     }
@@ -976,11 +1185,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WakeInfoCaptureDisReadVal(u32);
+    pub struct WakeInfoCaptureDisReadVal(pub u32);
     impl WakeInfoCaptureDisReadVal {
         #[doc = "When written to 1, this actively suppresses the wakeup info capture.\nWhen written to 0, wakeup info capture timing is controlled by HW."]
         #[inline(always)]
-        pub fn val(&self) -> bool {
+        pub const fn val(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1002,12 +1211,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WakeInfoCaptureDisWriteVal(u32);
+    pub struct WakeInfoCaptureDisWriteVal(pub u32);
     impl WakeInfoCaptureDisWriteVal {
         #[doc = "When written to 1, this actively suppresses the wakeup info capture.\nWhen written to 0, wakeup info capture timing is controlled by HW."]
         #[inline(always)]
-        pub fn val(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn val(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for WakeInfoCaptureDisWriteVal {
@@ -1023,36 +1232,36 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WakeStatus0ReadVal(u32);
+    pub struct WakeStatus0ReadVal(pub u32);
     impl WakeStatus0ReadVal {
         #[doc = "Current value of wake requests"]
         #[inline(always)]
-        pub fn val0(&self) -> bool {
+        pub const fn val0(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Current value of wake requests"]
         #[inline(always)]
-        pub fn val1(&self) -> bool {
+        pub const fn val1(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "Current value of wake requests"]
         #[inline(always)]
-        pub fn val2(&self) -> bool {
+        pub const fn val2(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "Current value of wake requests"]
         #[inline(always)]
-        pub fn val3(&self) -> bool {
+        pub const fn val3(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "Current value of wake requests"]
         #[inline(always)]
-        pub fn val4(&self) -> bool {
+        pub const fn val4(&self) -> bool {
             ((self.0 >> 4) & 1) != 0
         }
         #[doc = "Current value of wake requests"]
         #[inline(always)]
-        pub fn val5(&self) -> bool {
+        pub const fn val5(&self) -> bool {
             ((self.0 >> 5) & 1) != 0
         }
     }
@@ -1086,16 +1295,19 @@ pub mod enums {
         pub fn enabled(&self) -> bool {
             *self == Self::Enabled
         }
+        pub const fn from_raw(val: u32) -> Option<Enum7305284c1ae92db5> {
+            if val < 2 {
+                Some(unsafe { core::mem::transmute::<u32, Enum7305284c1ae92db5>(val) })
+            } else {
+                None
+            }
+        }
     }
     impl TryFrom<u32> for Enum7305284c1ae92db5 {
         type Error = ();
         #[inline(always)]
         fn try_from(val: u32) -> Result<Enum7305284c1ae92db5, ()> {
-            if val < 2 {
-                Ok(unsafe { core::mem::transmute::<u32, Enum7305284c1ae92db5>(val) })
-            } else {
-                Err(())
-            }
+            Enum7305284c1ae92db5::from_raw(val).ok_or(())
         }
     }
     impl From<Enum7305284c1ae92db5> for u32 {
@@ -1118,16 +1330,19 @@ pub mod enums {
         pub fn low_power(&self) -> bool {
             *self == Self::LowPower
         }
+        pub const fn from_raw(val: u32) -> Option<LowPowerHint> {
+            if val < 2 {
+                Some(unsafe { core::mem::transmute::<u32, LowPowerHint>(val) })
+            } else {
+                None
+            }
+        }
     }
     impl TryFrom<u32> for LowPowerHint {
         type Error = ();
         #[inline(always)]
         fn try_from(val: u32) -> Result<LowPowerHint, ()> {
-            if val < 2 {
-                Ok(unsafe { core::mem::transmute::<u32, LowPowerHint>(val) })
-            } else {
-                Err(())
-            }
+            LowPowerHint::from_raw(val).ok_or(())
         }
     }
     impl From<LowPowerHint> for u32 {
@@ -1150,16 +1365,19 @@ pub mod enums {
         pub fn power_up(&self) -> bool {
             *self == Self::PowerUp
         }
+        pub const fn from_raw(val: u32) -> Option<MainPdN> {
+            if val < 2 {
+                Some(unsafe { core::mem::transmute::<u32, MainPdN>(val) })
+            } else {
+                None
+            }
+        }
     }
     impl TryFrom<u32> for MainPdN {
         type Error = ();
         #[inline(always)]
         fn try_from(val: u32) -> Result<MainPdN, ()> {
-            if val < 2 {
-                Ok(unsafe { core::mem::transmute::<u32, MainPdN>(val) })
-            } else {
-                Err(())
-            }
+            MainPdN::from_raw(val).ok_or(())
         }
     }
     impl From<MainPdN> for u32 {

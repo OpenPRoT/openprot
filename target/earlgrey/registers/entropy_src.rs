@@ -18,7 +18,7 @@ impl EntropySrc {
     #[doc = r" way. The simplest way to enforce this is to only call"]
     #[doc = r" this function once."]
     #[inline(always)]
-    pub unsafe fn new() -> Self {
+    pub const unsafe fn new() -> Self {
         Self { _priv: () }
     }
     #[doc = r" Returns a register block that can be used to read"]
@@ -79,6 +79,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Interrupt State Register\n\nRead value: [`regs::IntrStateReadVal`]; Write value: [`regs::IntrStateWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_intr_state(self) -> ureg::RegRef<crate::meta::IntrState, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Interrupt Enable Register\n\nRead value: [`regs::IntrEnableReadVal`]; Write value: [`regs::IntrEnableWriteVal`]"]
     #[inline(always)]
     pub fn intr_enable(&self) -> ureg::RegRef<crate::meta::IntrEnable, &TMmio> {
@@ -86,6 +97,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Interrupt Enable Register\n\nRead value: [`regs::IntrEnableReadVal`]; Write value: [`regs::IntrEnableWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_intr_enable(self) -> ureg::RegRef<crate::meta::IntrEnable, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -99,6 +121,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Interrupt Test Register\n\nRead value: [`regs::IntrTestReadVal`]; Write value: [`regs::IntrTestWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_intr_test(self) -> ureg::RegRef<crate::meta::IntrTest, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(8 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Alert Test Register\n\nRead value: [`regs::AlertTestReadVal`]; Write value: [`regs::AlertTestWriteVal`]"]
     #[inline(always)]
     pub fn alert_test(&self) -> ureg::RegRef<crate::meta::AlertTest, &TMmio> {
@@ -106,6 +139,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0xc / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Alert Test Register\n\nRead value: [`regs::AlertTestReadVal`]; Write value: [`regs::AlertTestWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_alert_test(self) -> ureg::RegRef<crate::meta::AlertTest, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xc / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -119,6 +163,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Register write enable for module enable register\n\nRead value: [`regs::MeRegwenReadVal`]; Write value: [`regs::MeRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_me_regwen(self) -> ureg::RegRef<crate::meta::MeRegwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x10 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Register write enable for control and threshold registers\n\nRead value: [`regs::SwRegupdReadVal`]; Write value: [`regs::SwRegupdWriteVal`]"]
     #[inline(always)]
     pub fn sw_regupd(&self) -> ureg::RegRef<crate::meta::SwRegupd, &TMmio> {
@@ -126,6 +181,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x14 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Register write enable for control and threshold registers\n\nRead value: [`regs::SwRegupdReadVal`]; Write value: [`regs::SwRegupdWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_sw_regupd(self) -> ureg::RegRef<crate::meta::SwRegupd, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x14 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -139,6 +205,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Register write enable for all control registers\n\nRead value: [`regs::RegwenReadVal`]; Write value: [`regs::RegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_regwen(self) -> ureg::RegRef<crate::meta::Regwen, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x18 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Revision register\n\nRead value: [`regs::RevReadVal`]; Write value: [`regs::RevWriteVal`]"]
     #[inline(always)]
     pub fn rev(&self) -> ureg::RegRef<crate::meta::Rev, &TMmio> {
@@ -146,6 +223,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x1c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Revision register\n\nRead value: [`regs::RevReadVal`]; Write value: [`regs::RevWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_rev(self) -> ureg::RegRef<crate::meta::Rev, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x1c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -159,6 +247,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Module enable register\n\nRead value: [`regs::ModuleEnableReadVal`]; Write value: [`regs::ModuleEnableWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_module_enable(self) -> ureg::RegRef<crate::meta::ModuleEnable, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x20 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Configuration register\n\nRead value: [`regs::ConfReadVal`]; Write value: [`regs::ConfWriteVal`]"]
     #[inline(always)]
     pub fn conf(&self) -> ureg::RegRef<crate::meta::Conf, &TMmio> {
@@ -166,6 +265,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x24 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Configuration register\n\nRead value: [`regs::ConfReadVal`]; Write value: [`regs::ConfWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_conf(self) -> ureg::RegRef<crate::meta::Conf, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x24 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -179,6 +289,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Entropy control register\n\nRead value: [`regs::EntropyControlReadVal`]; Write value: [`regs::EntropyControlWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_entropy_control(self) -> ureg::RegRef<crate::meta::EntropyControl, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x28 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Entropy data bits\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn entropy_data(&self) -> ureg::RegRef<crate::meta::EntropyData, &TMmio> {
@@ -186,6 +307,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x2c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Entropy data bits\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_entropy_data(self) -> ureg::RegRef<crate::meta::EntropyData, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x2c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -199,7 +331,18 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
-    #[doc = "Repetition count test thresholds register\n\nRead value: [`regs::RepcntThresholdsReadVal`]; Write value: [`regs::RepcntThresholdsWriteVal`]"]
+    #[doc = "Health test windows register\n\nRead value: [`regs::HealthTestWindowsReadVal`]; Write value: [`regs::HealthTestWindowsWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_health_test_windows(self) -> ureg::RegRef<crate::meta::HealthTestWindows, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x30 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
+    #[doc = "Repetition Count Test thresholds register\n\nRead value: [`regs::RepcntThresholdsReadVal`]; Write value: [`regs::RepcntThresholdsWriteVal`]"]
     #[inline(always)]
     pub fn repcnt_thresholds(&self) -> ureg::RegRef<crate::meta::RepcntThresholds, &TMmio> {
         unsafe {
@@ -209,13 +352,35 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
-    #[doc = "Repetition count symbol test thresholds register\n\nRead value: [`regs::RepcntsThresholdsReadVal`]; Write value: [`regs::RepcntsThresholdsWriteVal`]"]
+    #[doc = "Repetition Count Test thresholds register\n\nRead value: [`regs::RepcntThresholdsReadVal`]; Write value: [`regs::RepcntThresholdsWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_repcnt_thresholds(self) -> ureg::RegRef<crate::meta::RepcntThresholds, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x34 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
+    #[doc = "Repetition Count Symbol Test thresholds register\n\nRead value: [`regs::RepcntsThresholdsReadVal`]; Write value: [`regs::RepcntsThresholdsWriteVal`]"]
     #[inline(always)]
     pub fn repcnts_thresholds(&self) -> ureg::RegRef<crate::meta::RepcntsThresholds, &TMmio> {
         unsafe {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x38 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Repetition Count Symbol Test thresholds register\n\nRead value: [`regs::RepcntsThresholdsReadVal`]; Write value: [`regs::RepcntsThresholdsWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_repcnts_thresholds(self) -> ureg::RegRef<crate::meta::RepcntsThresholds, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x38 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -229,6 +394,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Adaptive proportion test high thresholds register\n\nRead value: [`regs::AdaptpHiThresholdsReadVal`]; Write value: [`regs::AdaptpHiThresholdsWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_adaptp_hi_thresholds(self) -> ureg::RegRef<crate::meta::AdaptpHiThresholds, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x3c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Adaptive proportion test low thresholds register\n\nRead value: [`regs::AdaptpLoThresholdsReadVal`]; Write value: [`regs::AdaptpLoThresholdsWriteVal`]"]
     #[inline(always)]
     pub fn adaptp_lo_thresholds(&self) -> ureg::RegRef<crate::meta::AdaptpLoThresholds, &TMmio> {
@@ -236,6 +412,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x40 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Adaptive proportion test low thresholds register\n\nRead value: [`regs::AdaptpLoThresholdsReadVal`]; Write value: [`regs::AdaptpLoThresholdsWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_adaptp_lo_thresholds(self) -> ureg::RegRef<crate::meta::AdaptpLoThresholds, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x40 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -249,6 +436,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Bucket test thresholds register\n\nRead value: [`regs::BucketThresholdsReadVal`]; Write value: [`regs::BucketThresholdsWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_bucket_thresholds(self) -> ureg::RegRef<crate::meta::BucketThresholds, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x44 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Markov test high thresholds register\n\nRead value: [`regs::MarkovHiThresholdsReadVal`]; Write value: [`regs::MarkovHiThresholdsWriteVal`]"]
     #[inline(always)]
     pub fn markov_hi_thresholds(&self) -> ureg::RegRef<crate::meta::MarkovHiThresholds, &TMmio> {
@@ -256,6 +454,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x48 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Markov test high thresholds register\n\nRead value: [`regs::MarkovHiThresholdsReadVal`]; Write value: [`regs::MarkovHiThresholdsWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_markov_hi_thresholds(self) -> ureg::RegRef<crate::meta::MarkovHiThresholds, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x48 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -269,6 +478,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Markov test low thresholds register\n\nRead value: [`regs::MarkovLoThresholdsReadVal`]; Write value: [`regs::MarkovLoThresholdsWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_markov_lo_thresholds(self) -> ureg::RegRef<crate::meta::MarkovLoThresholds, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x4c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "External health test high thresholds register\n\nRead value: [`regs::ExthtHiThresholdsReadVal`]; Write value: [`regs::ExthtHiThresholdsWriteVal`]"]
     #[inline(always)]
     pub fn extht_hi_thresholds(&self) -> ureg::RegRef<crate::meta::ExthtHiThresholds, &TMmio> {
@@ -276,6 +496,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x50 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "External health test high thresholds register\n\nRead value: [`regs::ExthtHiThresholdsReadVal`]; Write value: [`regs::ExthtHiThresholdsWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_extht_hi_thresholds(self) -> ureg::RegRef<crate::meta::ExthtHiThresholds, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x50 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -289,6 +520,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "External health test low thresholds register\n\nRead value: [`regs::ExthtLoThresholdsReadVal`]; Write value: [`regs::ExthtLoThresholdsWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_extht_lo_thresholds(self) -> ureg::RegRef<crate::meta::ExthtLoThresholds, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x54 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Repetition count test high watermarks register\n\nRead value: [`regs::RepcntHiWatermarksReadVal`]; Write value: [`regs::RepcntHiWatermarksWriteVal`]"]
     #[inline(always)]
     pub fn repcnt_hi_watermarks(&self) -> ureg::RegRef<crate::meta::RepcntHiWatermarks, &TMmio> {
@@ -296,6 +538,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x58 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Repetition count test high watermarks register\n\nRead value: [`regs::RepcntHiWatermarksReadVal`]; Write value: [`regs::RepcntHiWatermarksWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_repcnt_hi_watermarks(self) -> ureg::RegRef<crate::meta::RepcntHiWatermarks, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x58 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -309,6 +562,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Repetition count symbol test high watermarks register\n\nRead value: [`regs::RepcntsHiWatermarksReadVal`]; Write value: [`regs::RepcntsHiWatermarksWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_repcnts_hi_watermarks(
+        self,
+    ) -> ureg::RegRef<crate::meta::RepcntsHiWatermarks, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x5c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Adaptive proportion test high watermarks register\n\nRead value: [`regs::AdaptpHiWatermarksReadVal`]; Write value: [`regs::AdaptpHiWatermarksWriteVal`]"]
     #[inline(always)]
     pub fn adaptp_hi_watermarks(&self) -> ureg::RegRef<crate::meta::AdaptpHiWatermarks, &TMmio> {
@@ -316,6 +582,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x60 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Adaptive proportion test high watermarks register\n\nRead value: [`regs::AdaptpHiWatermarksReadVal`]; Write value: [`regs::AdaptpHiWatermarksWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_adaptp_hi_watermarks(self) -> ureg::RegRef<crate::meta::AdaptpHiWatermarks, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x60 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -329,6 +606,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Adaptive proportion test low watermarks register\n\nRead value: [`regs::AdaptpLoWatermarksReadVal`]; Write value: [`regs::AdaptpLoWatermarksWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_adaptp_lo_watermarks(self) -> ureg::RegRef<crate::meta::AdaptpLoWatermarks, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x64 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "External health test high watermarks register\n\nRead value: [`regs::ExthtHiWatermarksReadVal`]; Write value: [`regs::ExthtHiWatermarksWriteVal`]"]
     #[inline(always)]
     pub fn extht_hi_watermarks(&self) -> ureg::RegRef<crate::meta::ExthtHiWatermarks, &TMmio> {
@@ -336,6 +624,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x68 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "External health test high watermarks register\n\nRead value: [`regs::ExthtHiWatermarksReadVal`]; Write value: [`regs::ExthtHiWatermarksWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_extht_hi_watermarks(self) -> ureg::RegRef<crate::meta::ExthtHiWatermarks, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x68 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -349,6 +648,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "External health test low watermarks register\n\nRead value: [`regs::ExthtLoWatermarksReadVal`]; Write value: [`regs::ExthtLoWatermarksWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_extht_lo_watermarks(self) -> ureg::RegRef<crate::meta::ExthtLoWatermarks, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x6c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Bucket test high watermarks register\n\nRead value: [`regs::BucketHiWatermarksReadVal`]; Write value: [`regs::BucketHiWatermarksWriteVal`]"]
     #[inline(always)]
     pub fn bucket_hi_watermarks(&self) -> ureg::RegRef<crate::meta::BucketHiWatermarks, &TMmio> {
@@ -356,6 +666,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x70 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Bucket test high watermarks register\n\nRead value: [`regs::BucketHiWatermarksReadVal`]; Write value: [`regs::BucketHiWatermarksWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_bucket_hi_watermarks(self) -> ureg::RegRef<crate::meta::BucketHiWatermarks, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x70 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -369,6 +690,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Markov test high watermarks register\n\nRead value: [`regs::MarkovHiWatermarksReadVal`]; Write value: [`regs::MarkovHiWatermarksWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_markov_hi_watermarks(self) -> ureg::RegRef<crate::meta::MarkovHiWatermarks, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x74 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Markov test low watermarks register\n\nRead value: [`regs::MarkovLoWatermarksReadVal`]; Write value: [`regs::MarkovLoWatermarksWriteVal`]"]
     #[inline(always)]
     pub fn markov_lo_watermarks(&self) -> ureg::RegRef<crate::meta::MarkovLoWatermarks, &TMmio> {
@@ -379,7 +711,18 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
-    #[doc = "Repetition count test failure counter register\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "Markov test low watermarks register\n\nRead value: [`regs::MarkovLoWatermarksReadVal`]; Write value: [`regs::MarkovLoWatermarksWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_markov_lo_watermarks(self) -> ureg::RegRef<crate::meta::MarkovLoWatermarks, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x78 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
+    #[doc = "Repetition Count Test failure counter register\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn repcnt_total_fails(&self) -> ureg::RegRef<crate::meta::RepcntTotalFails, &TMmio> {
         unsafe {
@@ -389,13 +732,35 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
-    #[doc = "Repetition count symbol test failure counter register\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "Repetition Count Test failure counter register\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_repcnt_total_fails(self) -> ureg::RegRef<crate::meta::RepcntTotalFails, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x7c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
+    #[doc = "Repetition Count Symbol Test failure counter register\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn repcnts_total_fails(&self) -> ureg::RegRef<crate::meta::RepcntsTotalFails, &TMmio> {
         unsafe {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x80 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Repetition Count Symbol Test failure counter register\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_repcnts_total_fails(self) -> ureg::RegRef<crate::meta::RepcntsTotalFails, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x80 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -409,6 +774,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Adaptive proportion high test failure counter register\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_adaptp_hi_total_fails(
+        self,
+    ) -> ureg::RegRef<crate::meta::AdaptpHiTotalFails, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x84 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Adaptive proportion low test failure counter register\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn adaptp_lo_total_fails(&self) -> ureg::RegRef<crate::meta::AdaptpLoTotalFails, &TMmio> {
@@ -416,6 +794,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x88 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Adaptive proportion low test failure counter register\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_adaptp_lo_total_fails(
+        self,
+    ) -> ureg::RegRef<crate::meta::AdaptpLoTotalFails, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x88 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -429,6 +820,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Bucket test failure counter register\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_bucket_total_fails(self) -> ureg::RegRef<crate::meta::BucketTotalFails, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x8c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Markov high test failure counter register\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn markov_hi_total_fails(&self) -> ureg::RegRef<crate::meta::MarkovHiTotalFails, &TMmio> {
@@ -436,6 +838,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x90 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Markov high test failure counter register\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_markov_hi_total_fails(
+        self,
+    ) -> ureg::RegRef<crate::meta::MarkovHiTotalFails, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x90 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -449,6 +864,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Markov low test failure counter register\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_markov_lo_total_fails(
+        self,
+    ) -> ureg::RegRef<crate::meta::MarkovLoTotalFails, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x94 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "External health test high threshold failure counter register\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn extht_hi_total_fails(&self) -> ureg::RegRef<crate::meta::ExthtHiTotalFails, &TMmio> {
@@ -456,6 +884,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x98 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "External health test high threshold failure counter register\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_extht_hi_total_fails(self) -> ureg::RegRef<crate::meta::ExthtHiTotalFails, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x98 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -469,7 +908,18 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
-    #[doc = "Alert threshold register\n\nThis register determines during how many subsequent health test windows one or more health test failures can occur before a recoverable alert is raised and the ENTROPY_SRC block stops operating.\nIn case the configured threshold is reached, firmware needs to disable/re-enable the block to restart operation including the startup health testing.\n\nNote that when reaching the threshold while running in Firmware Override: Extract & Insert mode, the recoverable alert is not raised nor does the block stop operating.\nIn other modes, the generation of the recoverable alert can be disabled by configuring a value of zero.\nThe default value is set to two.\n\nRead value: [`regs::AlertThresholdReadVal`]; Write value: [`regs::AlertThresholdWriteVal`]"]
+    #[doc = "External health test low threshold failure counter register\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_extht_lo_total_fails(self) -> ureg::RegRef<crate::meta::ExthtLoTotalFails, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x9c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
+    #[doc = "Alert threshold register\n\nThis register determines during how many subsequent health test windows one or more health test failures can occur before a recoverable alert is raised and the ENTROPY_SRC block stops operating.\nNote that continuous health tests such as the Repetition Count Test or the Repetition Count Symbol Test can trigger multiple test failures within a single window.\nEach symbol for which at least one continuous health test fails counts separately towards the threshold.\nIn case the configured threshold is reached, firmware needs to disable/re-enable the block to restart operation including the startup health testing.\n\nNote that when reaching the threshold while running in Firmware Override: Extract & Insert mode, the recoverable alert is not raised nor does the block stop operating.\nIn other modes, the generation of the recoverable alert can be disabled by configuring a value of zero.\nThe default value is set to two.\n\nRead value: [`regs::AlertThresholdReadVal`]; Write value: [`regs::AlertThresholdWriteVal`]"]
     #[inline(always)]
     pub fn alert_threshold(&self) -> ureg::RegRef<crate::meta::AlertThreshold, &TMmio> {
         unsafe {
@@ -479,7 +929,18 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
-    #[doc = "Alert summary failure counts register\n\nThis register holds the total number of subsequent health test windows during which one or more health test failures occurred.\nFor information on which health tests failed specifically, refer to !!ALERT_FAIL_COUNTS and !!EXTHT_FAIL_COUNTS.\n\nIf the value of this register reaches the value configured in the !!ALERT_THRESHOLD register, a recoverable alert is raised and the ENTROPY_SRC block stops operating.\nIf an alert is signaled, the value persists until it is cleared by firmware.\n\nThe register is automatically cleared after every passing health test window unless the ENTROPY_SRC is configured in Firmware Override: Extract & Insert mode.\nThe register is also cleared after re-enabling the block.\n\nRead value: [`regs::AlertSummaryFailCountsReadVal`]; Write value: [`regs::AlertSummaryFailCountsWriteVal`]"]
+    #[doc = "Alert threshold register\n\nThis register determines during how many subsequent health test windows one or more health test failures can occur before a recoverable alert is raised and the ENTROPY_SRC block stops operating.\nNote that continuous health tests such as the Repetition Count Test or the Repetition Count Symbol Test can trigger multiple test failures within a single window.\nEach symbol for which at least one continuous health test fails counts separately towards the threshold.\nIn case the configured threshold is reached, firmware needs to disable/re-enable the block to restart operation including the startup health testing.\n\nNote that when reaching the threshold while running in Firmware Override: Extract & Insert mode, the recoverable alert is not raised nor does the block stop operating.\nIn other modes, the generation of the recoverable alert can be disabled by configuring a value of zero.\nThe default value is set to two.\n\nRead value: [`regs::AlertThresholdReadVal`]; Write value: [`regs::AlertThresholdWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_alert_threshold(self) -> ureg::RegRef<crate::meta::AlertThreshold, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xa0 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
+    #[doc = "Alert summary failure counts register\n\nThis register holds the total number of subsequent health test windows during which one or more health test failures occurred.\nFor information on which health tests failed specifically, refer to !!ALERT_FAIL_COUNTS and !!EXTHT_FAIL_COUNTS.\nNote that continuous health tests such as the Repetition Count Test or the Repetition Count Symbol Test can trigger multiple test failures within a single window.\nEach symbol for which at least one continuous health test fails is counted separately.\n\nIf the value of this register reaches the value configured in the !!ALERT_THRESHOLD register, a recoverable alert is raised and the ENTROPY_SRC block stops operating.\nIf an alert is signaled, the value persists until it is cleared by firmware.\n\nThe register is automatically cleared after every passing health test window unless the ENTROPY_SRC is configured in Firmware Override: Extract & Insert mode.\nThe register is also cleared after re-enabling the block.\n\nRead value: [`regs::AlertSummaryFailCountsReadVal`]; Write value: [`regs::AlertSummaryFailCountsWriteVal`]"]
     #[inline(always)]
     pub fn alert_summary_fail_counts(
         &self,
@@ -488,6 +949,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0xa4 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Alert summary failure counts register\n\nThis register holds the total number of subsequent health test windows during which one or more health test failures occurred.\nFor information on which health tests failed specifically, refer to !!ALERT_FAIL_COUNTS and !!EXTHT_FAIL_COUNTS.\nNote that continuous health tests such as the Repetition Count Test or the Repetition Count Symbol Test can trigger multiple test failures within a single window.\nEach symbol for which at least one continuous health test fails is counted separately.\n\nIf the value of this register reaches the value configured in the !!ALERT_THRESHOLD register, a recoverable alert is raised and the ENTROPY_SRC block stops operating.\nIf an alert is signaled, the value persists until it is cleared by firmware.\n\nThe register is automatically cleared after every passing health test window unless the ENTROPY_SRC is configured in Firmware Override: Extract & Insert mode.\nThe register is also cleared after re-enabling the block.\n\nRead value: [`regs::AlertSummaryFailCountsReadVal`]; Write value: [`regs::AlertSummaryFailCountsWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_alert_summary_fail_counts(
+        self,
+    ) -> ureg::RegRef<crate::meta::AlertSummaryFailCounts, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xa4 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -501,6 +975,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Alert failure counts register\n\nThis register holds the number of health test failures since the last passing health test window.\nThe values are reported on a per-test basis.\nNote that if multiple health tests fail for a certain window, the value in !!ALERT_SUMMARY_FAIL_COUNTS is incremented by just one whereas multiple fields in this register may get incremented.\n\nAll fields of this register are automatically cleared after every passing health test window unless the ENTROPY_SRC is configured in Firmware Override: Extract & Insert mode.\nThe fields are also cleared after re-enabling the block.\n\nRead value: [`regs::AlertFailCountsReadVal`]; Write value: [`regs::AlertFailCountsWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_alert_fail_counts(self) -> ureg::RegRef<crate::meta::AlertFailCounts, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xa8 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "External health test alert failure counts register\n\nThis register holds the number of external health test failures since the last passing health test window.\nThe values are reported on a per-test basis.\nNote that if multiple health tests fail for a certain window, the value in !!ALERT_SUMMARY_FAIL_COUNTS is incremented by just one whereas multiple fields in this register may get incremented.\n\nAll fields of this register are automatically cleared after every passing health test window unless the ENTROPY_SRC is configured in Firmware Override: Extract & Insert mode.\nThe fields are also cleared after re-enabling the block.\n\nRead value: [`regs::ExthtFailCountsReadVal`]; Write value: [`regs::ExthtFailCountsWriteVal`]"]
     #[inline(always)]
     pub fn extht_fail_counts(&self) -> ureg::RegRef<crate::meta::ExthtFailCounts, &TMmio> {
@@ -508,6 +993,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0xac / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "External health test alert failure counts register\n\nThis register holds the number of external health test failures since the last passing health test window.\nThe values are reported on a per-test basis.\nNote that if multiple health tests fail for a certain window, the value in !!ALERT_SUMMARY_FAIL_COUNTS is incremented by just one whereas multiple fields in this register may get incremented.\n\nAll fields of this register are automatically cleared after every passing health test window unless the ENTROPY_SRC is configured in Firmware Override: Extract & Insert mode.\nThe fields are also cleared after re-enabling the block.\n\nRead value: [`regs::ExthtFailCountsReadVal`]; Write value: [`regs::ExthtFailCountsWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_extht_fail_counts(self) -> ureg::RegRef<crate::meta::ExthtFailCounts, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xac / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -521,6 +1017,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Firmware override control register\n\nRead value: [`regs::FwOvControlReadVal`]; Write value: [`regs::FwOvControlWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_fw_ov_control(self) -> ureg::RegRef<crate::meta::FwOvControl, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xb0 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Firmware override sha3 block start control register\n\nRead value: [`regs::FwOvSha3StartReadVal`]; Write value: [`regs::FwOvSha3StartWriteVal`]"]
     #[inline(always)]
     pub fn fw_ov_sha3_start(&self) -> ureg::RegRef<crate::meta::FwOvSha3Start, &TMmio> {
@@ -528,6 +1035,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0xb4 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Firmware override sha3 block start control register\n\nRead value: [`regs::FwOvSha3StartReadVal`]; Write value: [`regs::FwOvSha3StartWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_fw_ov_sha3_start(self) -> ureg::RegRef<crate::meta::FwOvSha3Start, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xb4 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -541,6 +1059,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Firmware override FIFO write full status register\n\nRead value: [`regs::FwOvWrFifoFullReadVal`]; Write value: [`regs::FwOvWrFifoFullWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_fw_ov_wr_fifo_full(self) -> ureg::RegRef<crate::meta::FwOvWrFifoFull, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xb8 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Firmware override observe FIFO overflow status\n\nRead value: [`regs::FwOvRdFifoOverflowReadVal`]; Write value: [`regs::FwOvRdFifoOverflowWriteVal`]"]
     #[inline(always)]
     pub fn fw_ov_rd_fifo_overflow(&self) -> ureg::RegRef<crate::meta::FwOvRdFifoOverflow, &TMmio> {
@@ -548,6 +1077,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0xbc / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Firmware override observe FIFO overflow status\n\nRead value: [`regs::FwOvRdFifoOverflowReadVal`]; Write value: [`regs::FwOvRdFifoOverflowWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_fw_ov_rd_fifo_overflow(
+        self,
+    ) -> ureg::RegRef<crate::meta::FwOvRdFifoOverflow, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xbc / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -561,6 +1103,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Firmware override observe FIFO read register\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_fw_ov_rd_data(self) -> ureg::RegRef<crate::meta::FwOvRdData, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xc0 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Firmware override FIFO write register\n\nRead value: [`u32`]; Write value: [`u32`]"]
     #[inline(always)]
     pub fn fw_ov_wr_data(&self) -> ureg::RegRef<crate::meta::FwOvWrData, &TMmio> {
@@ -568,6 +1121,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0xc4 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Firmware override FIFO write register\n\nRead value: [`u32`]; Write value: [`u32`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_fw_ov_wr_data(self) -> ureg::RegRef<crate::meta::FwOvWrData, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xc4 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -581,6 +1145,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Observe FIFO threshold register\n\nRead value: [`regs::ObserveFifoThreshReadVal`]; Write value: [`regs::ObserveFifoThreshWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_observe_fifo_thresh(self) -> ureg::RegRef<crate::meta::ObserveFifoThresh, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xc8 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Observe FIFO depth register\n\nRead value: [`regs::ObserveFifoDepthReadVal`]; Write value: [`regs::ObserveFifoDepthWriteVal`]"]
     #[inline(always)]
     pub fn observe_fifo_depth(&self) -> ureg::RegRef<crate::meta::ObserveFifoDepth, &TMmio> {
@@ -588,6 +1163,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0xcc / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Observe FIFO depth register\n\nRead value: [`regs::ObserveFifoDepthReadVal`]; Write value: [`regs::ObserveFifoDepthWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_observe_fifo_depth(self) -> ureg::RegRef<crate::meta::ObserveFifoDepth, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xcc / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -601,6 +1187,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Debug status register\n\nRead value: [`regs::DebugStatusReadVal`]; Write value: [`regs::DebugStatusWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_debug_status(self) -> ureg::RegRef<crate::meta::DebugStatus, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xd0 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Recoverable alert status register\n\nRead value: [`regs::RecovAlertStsReadVal`]; Write value: [`regs::RecovAlertStsWriteVal`]"]
     #[inline(always)]
     pub fn recov_alert_sts(&self) -> ureg::RegRef<crate::meta::RecovAlertSts, &TMmio> {
@@ -608,6 +1205,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0xd4 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Recoverable alert status register\n\nRead value: [`regs::RecovAlertStsReadVal`]; Write value: [`regs::RecovAlertStsWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_recov_alert_sts(self) -> ureg::RegRef<crate::meta::RecovAlertSts, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xd4 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -621,6 +1229,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Hardware detection of error conditions status register\n\nRead value: [`regs::ErrCodeReadVal`]; Write value: [`regs::ErrCodeWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_err_code(self) -> ureg::RegRef<crate::meta::ErrCode, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xd8 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Test error conditions register\n\nRead value: [`regs::ErrCodeTestReadVal`]; Write value: [`regs::ErrCodeTestWriteVal`]"]
     #[inline(always)]
     pub fn err_code_test(&self) -> ureg::RegRef<crate::meta::ErrCodeTest, &TMmio> {
@@ -628,6 +1247,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0xdc / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Test error conditions register\n\nRead value: [`regs::ErrCodeTestReadVal`]; Write value: [`regs::ErrCodeTestWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_err_code_test(self) -> ureg::RegRef<crate::meta::ErrCodeTest, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xdc / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -641,20 +1271,31 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Main state machine state debug register\n\nRead value: [`regs::MainSmStateReadVal`]; Write value: [`regs::MainSmStateWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_main_sm_state(self) -> ureg::RegRef<crate::meta::MainSmState, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0xe0 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
 }
 pub mod regs {
     #![doc = r" Types that represent the values held by registers."]
     #[derive(Clone, Copy)]
-    pub struct AdaptpHiThresholdsReadVal(u32);
+    pub struct AdaptpHiThresholdsReadVal(pub u32);
     impl AdaptpHiThresholdsReadVal {
-        #[doc = "This is the threshold size for the adaptive proportion health test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
+        #[doc = "This is the threshold for the Adaptive Proportion Test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn fips_thresh(&self) -> u32 {
+        pub const fn fips_thresh(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
-        #[doc = "This is the threshold size for the adaptive proportion health test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
+        #[doc = "This is the threshold for the Adaptive Proportion Test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn bypass_thresh(&self) -> u32 {
+        pub const fn bypass_thresh(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -676,16 +1317,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdaptpHiThresholdsWriteVal(u32);
+    pub struct AdaptpHiThresholdsWriteVal(pub u32);
     impl AdaptpHiThresholdsWriteVal {
-        #[doc = "This is the threshold size for the adaptive proportion health test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
+        #[doc = "This is the threshold for the Adaptive Proportion Test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn fips_thresh(self, val: u32) -> Self {
+        pub const fn fips_thresh(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 0)) | ((val & 0xffff) << 0))
         }
-        #[doc = "This is the threshold size for the adaptive proportion health test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
+        #[doc = "This is the threshold for the Adaptive Proportion Test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn bypass_thresh(self, val: u32) -> Self {
+        pub const fn bypass_thresh(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 16)) | ((val & 0xffff) << 16))
         }
     }
@@ -702,16 +1343,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdaptpHiWatermarksReadVal(u32);
+    pub struct AdaptpHiWatermarksReadVal(pub u32);
     impl AdaptpHiWatermarksReadVal {
         #[doc = "High watermark value of the adaptive proportion test in FIPS mode."]
         #[inline(always)]
-        pub fn fips_watermark(&self) -> u32 {
+        pub const fn fips_watermark(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = "High watermark value of the adaptive proportion test in bypass mode."]
         #[inline(always)]
-        pub fn bypass_watermark(&self) -> u32 {
+        pub const fn bypass_watermark(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
     }
@@ -728,16 +1369,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdaptpLoThresholdsReadVal(u32);
+    pub struct AdaptpLoThresholdsReadVal(pub u32);
     impl AdaptpLoThresholdsReadVal {
-        #[doc = "This is the threshold size for the adaptive proportion health test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is greater than the current value of this register.\n   A read from this register always reflects the current value."]
+        #[doc = "This is the threshold for the Adaptive Proportion Test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is greater than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn fips_thresh(&self) -> u32 {
+        pub const fn fips_thresh(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
-        #[doc = "This is the threshold size for the adaptive proportion health test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is greater than the current value of this register.\n   A read from this register always reflects the current value."]
+        #[doc = "This is the threshold for the Adaptive Proportion Test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is greater than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn bypass_thresh(&self) -> u32 {
+        pub const fn bypass_thresh(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -759,16 +1400,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdaptpLoThresholdsWriteVal(u32);
+    pub struct AdaptpLoThresholdsWriteVal(pub u32);
     impl AdaptpLoThresholdsWriteVal {
-        #[doc = "This is the threshold size for the adaptive proportion health test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is greater than the current value of this register.\n   A read from this register always reflects the current value."]
+        #[doc = "This is the threshold for the Adaptive Proportion Test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is greater than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn fips_thresh(self, val: u32) -> Self {
+        pub const fn fips_thresh(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 0)) | ((val & 0xffff) << 0))
         }
-        #[doc = "This is the threshold size for the adaptive proportion health test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is greater than the current value of this register.\n   A read from this register always reflects the current value."]
+        #[doc = "This is the threshold for the Adaptive Proportion Test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is greater than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn bypass_thresh(self, val: u32) -> Self {
+        pub const fn bypass_thresh(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 16)) | ((val & 0xffff) << 16))
         }
     }
@@ -785,16 +1426,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AdaptpLoWatermarksReadVal(u32);
+    pub struct AdaptpLoWatermarksReadVal(pub u32);
     impl AdaptpLoWatermarksReadVal {
         #[doc = "Low watermark value of the adaptive proportion test in FIPS mode."]
         #[inline(always)]
-        pub fn fips_watermark(&self) -> u32 {
+        pub const fn fips_watermark(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = "Low watermark value of the adaptive proportion test in bypass mode."]
         #[inline(always)]
-        pub fn bypass_watermark(&self) -> u32 {
+        pub const fn bypass_watermark(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
     }
@@ -811,41 +1452,41 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AlertFailCountsReadVal(u32);
+    pub struct AlertFailCountsReadVal(pub u32);
     impl AlertFailCountsReadVal {
         #[doc = "The number of health test windows during which this test failed since the last passing health test window."]
         #[inline(always)]
-        pub fn repcnt_fail_count(&self) -> u32 {
+        pub const fn repcnt_fail_count(&self) -> u32 {
             (self.0 >> 4) & 0xf
         }
         #[doc = "The number of health test windows during which this test failed since the last passing health test window."]
         #[inline(always)]
-        pub fn adaptp_hi_fail_count(&self) -> u32 {
+        pub const fn adaptp_hi_fail_count(&self) -> u32 {
             (self.0 >> 8) & 0xf
         }
         #[doc = "The number of health test windows during which this test failed since the last passing health test window."]
         #[inline(always)]
-        pub fn adaptp_lo_fail_count(&self) -> u32 {
+        pub const fn adaptp_lo_fail_count(&self) -> u32 {
             (self.0 >> 12) & 0xf
         }
         #[doc = "The number of health test windows during which this test failed since the last passing health test window."]
         #[inline(always)]
-        pub fn bucket_fail_count(&self) -> u32 {
+        pub const fn bucket_fail_count(&self) -> u32 {
             (self.0 >> 16) & 0xf
         }
         #[doc = "The number of health test windows during which this test failed since the last passing health test window."]
         #[inline(always)]
-        pub fn markov_hi_fail_count(&self) -> u32 {
+        pub const fn markov_hi_fail_count(&self) -> u32 {
             (self.0 >> 20) & 0xf
         }
         #[doc = "The number of health test windows during which this test failed since the last passing health test window."]
         #[inline(always)]
-        pub fn markov_lo_fail_count(&self) -> u32 {
+        pub const fn markov_lo_fail_count(&self) -> u32 {
             (self.0 >> 24) & 0xf
         }
         #[doc = "The number of health test windows during which this test failed since the last passing health test window."]
         #[inline(always)]
-        pub fn repcnts_fail_count(&self) -> u32 {
+        pub const fn repcnts_fail_count(&self) -> u32 {
             (self.0 >> 28) & 0xf
         }
     }
@@ -862,11 +1503,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AlertSummaryFailCountsReadVal(u32);
+    pub struct AlertSummaryFailCountsReadVal(pub u32);
     impl AlertSummaryFailCountsReadVal {
         #[doc = "The number of subsequent health test windows during which one or more health tests failed."]
         #[inline(always)]
-        pub fn any_fail_count(&self) -> u32 {
+        pub const fn any_fail_count(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
     }
@@ -883,17 +1524,17 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AlertTestWriteVal(u32);
+    pub struct AlertTestWriteVal(pub u32);
     impl AlertTestWriteVal {
         #[doc = "Write 1 to trigger one alert event of this kind."]
         #[inline(always)]
-        pub fn recov_alert(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn recov_alert(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Write 1 to trigger one alert event of this kind."]
         #[inline(always)]
-        pub fn fatal_alert(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn fatal_alert(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
     }
     impl From<u32> for AlertTestWriteVal {
@@ -909,16 +1550,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AlertThresholdReadVal(u32);
+    pub struct AlertThresholdReadVal(pub u32);
     impl AlertThresholdReadVal {
         #[doc = "This is the threshold at which a recoverable alert is signaled and the blocks stops operating."]
         #[inline(always)]
-        pub fn alert_threshold(&self) -> u32 {
+        pub const fn alert_threshold(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = "This should be set to the value above, but inverted."]
         #[inline(always)]
-        pub fn alert_threshold_inv(&self) -> u32 {
+        pub const fn alert_threshold_inv(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -940,16 +1581,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct AlertThresholdWriteVal(u32);
+    pub struct AlertThresholdWriteVal(pub u32);
     impl AlertThresholdWriteVal {
         #[doc = "This is the threshold at which a recoverable alert is signaled and the blocks stops operating."]
         #[inline(always)]
-        pub fn alert_threshold(self, val: u32) -> Self {
+        pub const fn alert_threshold(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 0)) | ((val & 0xffff) << 0))
         }
         #[doc = "This should be set to the value above, but inverted."]
         #[inline(always)]
-        pub fn alert_threshold_inv(self, val: u32) -> Self {
+        pub const fn alert_threshold_inv(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 16)) | ((val & 0xffff) << 16))
         }
     }
@@ -966,16 +1607,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct BucketHiWatermarksReadVal(u32);
+    pub struct BucketHiWatermarksReadVal(pub u32);
     impl BucketHiWatermarksReadVal {
         #[doc = "High watermark value of the bucket test in FIPS mode."]
         #[inline(always)]
-        pub fn fips_watermark(&self) -> u32 {
+        pub const fn fips_watermark(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = "High watermark value of the bucket test in bypass mode."]
         #[inline(always)]
-        pub fn bypass_watermark(&self) -> u32 {
+        pub const fn bypass_watermark(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
     }
@@ -992,16 +1633,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct BucketThresholdsReadVal(u32);
+    pub struct BucketThresholdsReadVal(pub u32);
     impl BucketThresholdsReadVal {
         #[doc = "This is the threshold size for the bucket health test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn fips_thresh(&self) -> u32 {
+        pub const fn fips_thresh(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = "This is the threshold size for the bucket health test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn bypass_thresh(&self) -> u32 {
+        pub const fn bypass_thresh(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1023,16 +1664,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct BucketThresholdsWriteVal(u32);
+    pub struct BucketThresholdsWriteVal(pub u32);
     impl BucketThresholdsWriteVal {
         #[doc = "This is the threshold size for the bucket health test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn fips_thresh(self, val: u32) -> Self {
+        pub const fn fips_thresh(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 0)) | ((val & 0xffff) << 0))
         }
         #[doc = "This is the threshold size for the bucket health test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn bypass_thresh(self, val: u32) -> Self {
+        pub const fn bypass_thresh(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 16)) | ((val & 0xffff) << 16))
         }
     }
@@ -1049,41 +1690,41 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ConfReadVal(u32);
+    pub struct ConfReadVal(pub u32);
     impl ConfReadVal {
         #[doc = "Setting this field to `kMultiBitBool4True` selects the mode targeting FIPS/CC compliance (in short FIPS mode) with hardware conditioning enabled.\nThe ENTROPY_SRC block will use the FIPS_WINDOW, FIPS_THRESH and FIPS_WATERMARK values of the !!HEALTH_TEST_WINDOWS, health test thresholds and watermark register, respectively.\nWhether the ENTROPY_SRC block is indeed running with the configuration used for FIPS/CC validation is under the control of firmware.\nThus, firmware must explicitly mark the produced entropy as FIPS qualified using the !!CONF.FIPS_FLAG field.\nNote that the hardware conditioning can still be disabled in FIPS mode by setting both !!ENTROPY_CONTROL.ES_ROUTE and !!ENTROPY_CONTROL.ES_TYPE fields to `kMultiBitBool4True`.\nHowever, no entropy is being passed to the block hardware interface in this mode.\n\nSetting this field to `kMultiBitBool4False` selects the boot-time / bypass mode in which the hardware conditioning is bypassed."]
         #[inline(always)]
-        pub fn fips_enable(&self) -> u32 {
+        pub const fn fips_enable(&self) -> u32 {
             (self.0 >> 0) & 0xf
         }
         #[doc = "This flag indicates that the ENTROPY_SRC is setup with the configuration used for FIPS/CC validation.\nSetting this field to `kMultiBitBool4True` will set the FIPS flag for the ENTROPY_SRC block output to true."]
         #[inline(always)]
-        pub fn fips_flag(&self) -> u32 {
+        pub const fn fips_flag(&self) -> u32 {
             (self.0 >> 4) & 0xf
         }
         #[doc = "Setting this field to `kMultiBitBool4True` sets the analog RNG into a conservative operation mode that may reduce the bit rate.\nIn this mode, the RNG potentially outputs entropy with higher entropy per bit and with a simpler sampling mechanism."]
         #[inline(always)]
-        pub fn rng_fips(&self) -> u32 {
+        pub const fn rng_fips(&self) -> u32 {
             (self.0 >> 8) & 0xf
         }
         #[doc = "Setting this field to `kMultiBitBool4True` enables the single RNG bit mode, where only one bit is sampled per symbol."]
         #[inline(always)]
-        pub fn rng_bit_enable(&self) -> u32 {
+        pub const fn rng_bit_enable(&self) -> u32 {
             (self.0 >> 12) & 0xf
         }
         #[doc = "When !!CONF.RNG_BIT_ENABLE is set, this field selects which bit from the RNG bus will be processed.\nThis two bit field selects the RNG bit stream:\n0b00: RNG bit 0\n0b01: RNG bit 1\n0b10: RNG bit 2\n0b11: RNG bit 3"]
         #[inline(always)]
-        pub fn rng_bit_sel(&self) -> u32 {
+        pub const fn rng_bit_sel(&self) -> u32 {
             (self.0 >> 16) & 3
         }
-        #[doc = "This field controls the scope (either by-line or by-sum) of the health checks.\nIf set to `kMultiBitBool4True`, the Adaptive Proportion and Markov Tests will accumulate all RNG input lines into a single score, and thresholds will be applied to the sum all the entropy input lines.\nIf set to `kMultiBitBool4False`, the RNG input lines are all scored individually.\nA statistical deviation in any one input line, be it due to coincidence or failure, will force rejection of the sample, and count toward the total alert count."]
+        #[doc = "This field controls the scope (either by-line or by-sum) of the Adaptive Proportion and the Markov health tests.\nIt has no effect if !!CONF.RNG_BIT_ENABLE is set to `kMultiBitBool4True`, i.e., if the ENTROPY_SRC is operating in single-channel mode.\n\nIf set to `kMultiBitBool4False`, the minimum/maximum results of the individual, line-based tests are taken and compared against the configured thresholds.\nThis allows detecting failures of individual noise source channels in multi-channel mode.\nIf set to `kMultiBitBool4True`, the individual, line-based test results are summed up and then compared against the configured thresholds.\nThis allows lowering the likelihood for coincidental test failures (higher alpha).\n\nNote that the value of THRESHOLD_SCOPE needs to be considered when defining the health test thresholds."]
         #[inline(always)]
-        pub fn threshold_scope(&self) -> u32 {
+        pub const fn threshold_scope(&self) -> u32 {
             (self.0 >> 18) & 0xf
         }
         #[doc = "Setting this field to `kMultiBitBool4True` will enable reading entropy values from the !!ENTROPY_DATA register.\nThis function also requires that the otp_en_entropy_src_fw_read input is set to `kMultiBitBool8True`."]
         #[inline(always)]
-        pub fn entropy_data_reg_enable(&self) -> u32 {
+        pub const fn entropy_data_reg_enable(&self) -> u32 {
             (self.0 >> 22) & 0xf
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1105,41 +1746,41 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ConfWriteVal(u32);
+    pub struct ConfWriteVal(pub u32);
     impl ConfWriteVal {
         #[doc = "Setting this field to `kMultiBitBool4True` selects the mode targeting FIPS/CC compliance (in short FIPS mode) with hardware conditioning enabled.\nThe ENTROPY_SRC block will use the FIPS_WINDOW, FIPS_THRESH and FIPS_WATERMARK values of the !!HEALTH_TEST_WINDOWS, health test thresholds and watermark register, respectively.\nWhether the ENTROPY_SRC block is indeed running with the configuration used for FIPS/CC validation is under the control of firmware.\nThus, firmware must explicitly mark the produced entropy as FIPS qualified using the !!CONF.FIPS_FLAG field.\nNote that the hardware conditioning can still be disabled in FIPS mode by setting both !!ENTROPY_CONTROL.ES_ROUTE and !!ENTROPY_CONTROL.ES_TYPE fields to `kMultiBitBool4True`.\nHowever, no entropy is being passed to the block hardware interface in this mode.\n\nSetting this field to `kMultiBitBool4False` selects the boot-time / bypass mode in which the hardware conditioning is bypassed."]
         #[inline(always)]
-        pub fn fips_enable(self, val: u32) -> Self {
+        pub const fn fips_enable(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 0)) | ((val & 0xf) << 0))
         }
         #[doc = "This flag indicates that the ENTROPY_SRC is setup with the configuration used for FIPS/CC validation.\nSetting this field to `kMultiBitBool4True` will set the FIPS flag for the ENTROPY_SRC block output to true."]
         #[inline(always)]
-        pub fn fips_flag(self, val: u32) -> Self {
+        pub const fn fips_flag(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 4)) | ((val & 0xf) << 4))
         }
         #[doc = "Setting this field to `kMultiBitBool4True` sets the analog RNG into a conservative operation mode that may reduce the bit rate.\nIn this mode, the RNG potentially outputs entropy with higher entropy per bit and with a simpler sampling mechanism."]
         #[inline(always)]
-        pub fn rng_fips(self, val: u32) -> Self {
+        pub const fn rng_fips(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 8)) | ((val & 0xf) << 8))
         }
         #[doc = "Setting this field to `kMultiBitBool4True` enables the single RNG bit mode, where only one bit is sampled per symbol."]
         #[inline(always)]
-        pub fn rng_bit_enable(self, val: u32) -> Self {
+        pub const fn rng_bit_enable(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 12)) | ((val & 0xf) << 12))
         }
         #[doc = "When !!CONF.RNG_BIT_ENABLE is set, this field selects which bit from the RNG bus will be processed.\nThis two bit field selects the RNG bit stream:\n0b00: RNG bit 0\n0b01: RNG bit 1\n0b10: RNG bit 2\n0b11: RNG bit 3"]
         #[inline(always)]
-        pub fn rng_bit_sel(self, val: u32) -> Self {
+        pub const fn rng_bit_sel(self, val: u32) -> Self {
             Self((self.0 & !(3 << 16)) | ((val & 3) << 16))
         }
-        #[doc = "This field controls the scope (either by-line or by-sum) of the health checks.\nIf set to `kMultiBitBool4True`, the Adaptive Proportion and Markov Tests will accumulate all RNG input lines into a single score, and thresholds will be applied to the sum all the entropy input lines.\nIf set to `kMultiBitBool4False`, the RNG input lines are all scored individually.\nA statistical deviation in any one input line, be it due to coincidence or failure, will force rejection of the sample, and count toward the total alert count."]
+        #[doc = "This field controls the scope (either by-line or by-sum) of the Adaptive Proportion and the Markov health tests.\nIt has no effect if !!CONF.RNG_BIT_ENABLE is set to `kMultiBitBool4True`, i.e., if the ENTROPY_SRC is operating in single-channel mode.\n\nIf set to `kMultiBitBool4False`, the minimum/maximum results of the individual, line-based tests are taken and compared against the configured thresholds.\nThis allows detecting failures of individual noise source channels in multi-channel mode.\nIf set to `kMultiBitBool4True`, the individual, line-based test results are summed up and then compared against the configured thresholds.\nThis allows lowering the likelihood for coincidental test failures (higher alpha).\n\nNote that the value of THRESHOLD_SCOPE needs to be considered when defining the health test thresholds."]
         #[inline(always)]
-        pub fn threshold_scope(self, val: u32) -> Self {
+        pub const fn threshold_scope(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 18)) | ((val & 0xf) << 18))
         }
         #[doc = "Setting this field to `kMultiBitBool4True` will enable reading entropy values from the !!ENTROPY_DATA register.\nThis function also requires that the otp_en_entropy_src_fw_read input is set to `kMultiBitBool8True`."]
         #[inline(always)]
-        pub fn entropy_data_reg_enable(self, val: u32) -> Self {
+        pub const fn entropy_data_reg_enable(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 22)) | ((val & 0xf) << 22))
         }
     }
@@ -1156,46 +1797,46 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct DebugStatusReadVal(u32);
+    pub struct DebugStatusReadVal(pub u32);
     impl DebugStatusReadVal {
         #[doc = "This is the depth of the entropy source FIFO."]
         #[inline(always)]
-        pub fn entropy_fifo_depth(&self) -> u32 {
+        pub const fn entropy_fifo_depth(&self) -> u32 {
             (self.0 >> 0) & 3
         }
         #[doc = "This is the SHA3 finite state machine current state."]
         #[inline(always)]
-        pub fn sha3_fsm(&self) -> u32 {
+        pub const fn sha3_fsm(&self) -> u32 {
             (self.0 >> 3) & 7
         }
         #[doc = "This is the SHA3 block processed signal current state."]
         #[inline(always)]
-        pub fn sha3_block_pr(&self) -> bool {
+        pub const fn sha3_block_pr(&self) -> bool {
             ((self.0 >> 6) & 1) != 0
         }
         #[doc = "This is the SHA3 squeezing signal current state."]
         #[inline(always)]
-        pub fn sha3_squeezing(&self) -> bool {
+        pub const fn sha3_squeezing(&self) -> bool {
             ((self.0 >> 7) & 1) != 0
         }
         #[doc = "This is the SHA3 absorbed signal current state."]
         #[inline(always)]
-        pub fn sha3_absorbed(&self) -> bool {
+        pub const fn sha3_absorbed(&self) -> bool {
             ((self.0 >> 8) & 1) != 0
         }
         #[doc = "This is a logic-or of all of the SHA3 error signals."]
         #[inline(always)]
-        pub fn sha3_err(&self) -> bool {
+        pub const fn sha3_err(&self) -> bool {
             ((self.0 >> 9) & 1) != 0
         }
         #[doc = "The entropy_src main state machine is in the idle state."]
         #[inline(always)]
-        pub fn main_sm_idle(&self) -> bool {
+        pub const fn main_sm_idle(&self) -> bool {
             ((self.0 >> 16) & 1) != 0
         }
         #[doc = "The entropy_src main state machine is in the boot phase done state."]
         #[inline(always)]
-        pub fn main_sm_boot_done(&self) -> bool {
+        pub const fn main_sm_boot_done(&self) -> bool {
             ((self.0 >> 17) & 1) != 0
         }
     }
@@ -1212,16 +1853,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct EntropyControlReadVal(u32);
+    pub struct EntropyControlReadVal(pub u32);
     impl EntropyControlReadVal {
         #[doc = "When this field is `kMultiBitBool4False`, the generated entropy will be forwarded out of this module to the hardware interface.\nSetting this field to `kMultiBitBool4True` routes the generated entropy to the !!ENTROPY_DATA register to be read by firmware.\nNote that for !!ENTROPY_DATA to become readable, also !!CONF.ENTROPY_DATA_REG_ENABLE needs to be set to `kMultiBitBool4True`.\nIn addition, the otp_en_entropy_src_fw_read input needs to be set to `kMultiBitBool8True`."]
         #[inline(always)]
-        pub fn es_route(&self) -> u32 {
+        pub const fn es_route(&self) -> u32 {
             (self.0 >> 0) & 0xf
         }
         #[doc = "When this field is `kMultiBitBool4False`, the hardware conditioning inside the ENTROPY_SRC block is enabled.\nSetting this field to `kMultiBitBool4True` will bypass the hardware conditioning.\nFor this to work, also !!ENTROPY_CONTROL.ES_ROUTE needs to be set to `kMultiBitBool4True` to route the unconditioned, raw entropy to the !!ENTROPY_DATA register.\nAlternatively, the hardware conditioning can be bypassed by setting !!CONF.FIPS_ENABLE to `kMultiBitBool4False`.\nThis enables the bypass / boot-time mode."]
         #[inline(always)]
-        pub fn es_type(&self) -> u32 {
+        pub const fn es_type(&self) -> u32 {
             (self.0 >> 4) & 0xf
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1243,16 +1884,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct EntropyControlWriteVal(u32);
+    pub struct EntropyControlWriteVal(pub u32);
     impl EntropyControlWriteVal {
         #[doc = "When this field is `kMultiBitBool4False`, the generated entropy will be forwarded out of this module to the hardware interface.\nSetting this field to `kMultiBitBool4True` routes the generated entropy to the !!ENTROPY_DATA register to be read by firmware.\nNote that for !!ENTROPY_DATA to become readable, also !!CONF.ENTROPY_DATA_REG_ENABLE needs to be set to `kMultiBitBool4True`.\nIn addition, the otp_en_entropy_src_fw_read input needs to be set to `kMultiBitBool8True`."]
         #[inline(always)]
-        pub fn es_route(self, val: u32) -> Self {
+        pub const fn es_route(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 0)) | ((val & 0xf) << 0))
         }
         #[doc = "When this field is `kMultiBitBool4False`, the hardware conditioning inside the ENTROPY_SRC block is enabled.\nSetting this field to `kMultiBitBool4True` will bypass the hardware conditioning.\nFor this to work, also !!ENTROPY_CONTROL.ES_ROUTE needs to be set to `kMultiBitBool4True` to route the unconditioned, raw entropy to the !!ENTROPY_DATA register.\nAlternatively, the hardware conditioning can be bypassed by setting !!CONF.FIPS_ENABLE to `kMultiBitBool4False`.\nThis enables the bypass / boot-time mode."]
         #[inline(always)]
-        pub fn es_type(self, val: u32) -> Self {
+        pub const fn es_type(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 4)) | ((val & 0xf) << 4))
         }
     }
@@ -1269,66 +1910,66 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ErrCodeReadVal(u32);
+    pub struct ErrCodeReadVal(pub u32);
     impl ErrCodeReadVal {
         #[doc = "This bit will be set to one when an error has been detected for the\nesrng FIFO. The type of error is reflected in the type status\nbits (bits 28 through 30 of this register).\nThis bit will stay set until the next reset."]
         #[inline(always)]
-        pub fn sfifo_esrng_err(&self) -> bool {
+        pub const fn sfifo_esrng_err(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "This bit will be set to one when an error has been detected for the distribution FIFO.\nThe type of error is reflected in the type status bits (bits 28 through 30 of this register).\nThis bit will stay set until the next reset."]
         #[inline(always)]
-        pub fn sfifo_distr_err(&self) -> bool {
+        pub const fn sfifo_distr_err(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "This bit will be set to one when an error has been detected for the\nobserve FIFO. The type of error is reflected in the type status\nbits (bits 28 through 30 of this register).\nThis bit will stay set until the next reset."]
         #[inline(always)]
-        pub fn sfifo_observe_err(&self) -> bool {
+        pub const fn sfifo_observe_err(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "This bit will be set to one when an error has been detected for the\nesfinal FIFO. The type of error is reflected in the type status\nbits (bits 28 through 30 of this register).\nThis bit will stay set until the next reset."]
         #[inline(always)]
-        pub fn sfifo_esfinal_err(&self) -> bool {
+        pub const fn sfifo_esfinal_err(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "This bit will be set to one when an illegal state has been detected for the\nES ack stage state machine. This error will signal a fatal alert, and also\nan interrupt if enabled.\nThis bit will stay set until the next reset."]
         #[inline(always)]
-        pub fn es_ack_sm_err(&self) -> bool {
+        pub const fn es_ack_sm_err(&self) -> bool {
             ((self.0 >> 20) & 1) != 0
         }
         #[doc = "This bit will be set to one when an illegal state has been detected for the\nES main stage state machine. This error will signal a fatal alert, and also\nan interrupt if enabled.\nThis bit will stay set until the next reset."]
         #[inline(always)]
-        pub fn es_main_sm_err(&self) -> bool {
+        pub const fn es_main_sm_err(&self) -> bool {
             ((self.0 >> 21) & 1) != 0
         }
         #[doc = "This bit will be set to one when a hardened counter has detected an error\ncondition. This error will signal a fatal alert, and also\nan interrupt if enabled.\nThis bit will stay set until the next reset."]
         #[inline(always)]
-        pub fn es_cntr_err(&self) -> bool {
+        pub const fn es_cntr_err(&self) -> bool {
             ((self.0 >> 22) & 1) != 0
         }
         #[doc = "This bit will be set to one when a SHA3 state error has been detected.\nThis error will signal a fatal alert, and also an interrupt if enabled.\nThis bit will stay set until the next reset."]
         #[inline(always)]
-        pub fn sha3_state_err(&self) -> bool {
+        pub const fn sha3_state_err(&self) -> bool {
             ((self.0 >> 23) & 1) != 0
         }
         #[doc = "This bit will be set to one when a SHA3_RST_STORAGE_ERR signal being\nactive has been detected.\nThis error will signal a fatal alert, and also an interrupt if enabled.\nThis bit will stay set until the next reset."]
         #[inline(always)]
-        pub fn sha3_rst_storage_err(&self) -> bool {
+        pub const fn sha3_rst_storage_err(&self) -> bool {
             ((self.0 >> 24) & 1) != 0
         }
         #[doc = "This bit will be set to one when any of the source bits (bits 0 through 3 of this register) are asserted as a result of an error pulse generated from any full FIFO that has been received a write pulse.\nThis bit will stay set until the next reset."]
         #[inline(always)]
-        pub fn fifo_write_err(&self) -> bool {
+        pub const fn fifo_write_err(&self) -> bool {
             ((self.0 >> 28) & 1) != 0
         }
         #[doc = "This bit will be set to one when any of the source bits (bits 0 through 3 of this register) are asserted as a result of an error pulse generated from any empty FIFO that has received a read pulse.\nThis bit will stay set until the next reset."]
         #[inline(always)]
-        pub fn fifo_read_err(&self) -> bool {
+        pub const fn fifo_read_err(&self) -> bool {
             ((self.0 >> 29) & 1) != 0
         }
         #[doc = "This bit will be set to one when any of the source bits (bits 0 through 3 of this register) are asserted as a result of an error pulse generated from any FIFO where either both the empty and full status bits are set or in case of error conditions inside the hardened counters.\nThis bit will stay set until the next reset."]
         #[inline(always)]
-        pub fn fifo_state_err(&self) -> bool {
+        pub const fn fifo_state_err(&self) -> bool {
             ((self.0 >> 30) & 1) != 0
         }
     }
@@ -1345,11 +1986,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ErrCodeTestReadVal(u32);
+    pub struct ErrCodeTestReadVal(pub u32);
     impl ErrCodeTestReadVal {
         #[doc = "Setting this field will set the bit number for which an error\nwill be forced in the hardware. This bit number is that same one\nfound in the !!ERR_CODE register. The action of writing this\nregister will force an error pulse. The sole purpose of this\nregister is to test that any error properly propagates to either\nan interrupt or an alert."]
         #[inline(always)]
-        pub fn err_code_test(&self) -> u32 {
+        pub const fn err_code_test(&self) -> u32 {
             (self.0 >> 0) & 0x1f
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1371,11 +2012,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ErrCodeTestWriteVal(u32);
+    pub struct ErrCodeTestWriteVal(pub u32);
     impl ErrCodeTestWriteVal {
         #[doc = "Setting this field will set the bit number for which an error\nwill be forced in the hardware. This bit number is that same one\nfound in the !!ERR_CODE register. The action of writing this\nregister will force an error pulse. The sole purpose of this\nregister is to test that any error properly propagates to either\nan interrupt or an alert."]
         #[inline(always)]
-        pub fn err_code_test(self, val: u32) -> Self {
+        pub const fn err_code_test(self, val: u32) -> Self {
             Self((self.0 & !(0x1f << 0)) | ((val & 0x1f) << 0))
         }
     }
@@ -1392,16 +2033,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ExthtFailCountsReadVal(u32);
+    pub struct ExthtFailCountsReadVal(pub u32);
     impl ExthtFailCountsReadVal {
         #[doc = "The number of health test windows during which this test failed since the last passing health test window."]
         #[inline(always)]
-        pub fn extht_hi_fail_count(&self) -> u32 {
+        pub const fn extht_hi_fail_count(&self) -> u32 {
             (self.0 >> 0) & 0xf
         }
         #[doc = "The number of health test windows during which this test failed since the last passing health test window."]
         #[inline(always)]
-        pub fn extht_lo_fail_count(&self) -> u32 {
+        pub const fn extht_lo_fail_count(&self) -> u32 {
             (self.0 >> 4) & 0xf
         }
     }
@@ -1418,16 +2059,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ExthtHiThresholdsReadVal(u32);
+    pub struct ExthtHiThresholdsReadVal(pub u32);
     impl ExthtHiThresholdsReadVal {
         #[doc = "This is the threshold size for the external health test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn fips_thresh(&self) -> u32 {
+        pub const fn fips_thresh(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = "This is the threshold size for the external health test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn bypass_thresh(&self) -> u32 {
+        pub const fn bypass_thresh(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1449,16 +2090,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ExthtHiThresholdsWriteVal(u32);
+    pub struct ExthtHiThresholdsWriteVal(pub u32);
     impl ExthtHiThresholdsWriteVal {
         #[doc = "This is the threshold size for the external health test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn fips_thresh(self, val: u32) -> Self {
+        pub const fn fips_thresh(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 0)) | ((val & 0xffff) << 0))
         }
         #[doc = "This is the threshold size for the external health test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn bypass_thresh(self, val: u32) -> Self {
+        pub const fn bypass_thresh(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 16)) | ((val & 0xffff) << 16))
         }
     }
@@ -1475,16 +2116,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ExthtHiWatermarksReadVal(u32);
+    pub struct ExthtHiWatermarksReadVal(pub u32);
     impl ExthtHiWatermarksReadVal {
         #[doc = "High watermark value of the external health test in FIPS mode."]
         #[inline(always)]
-        pub fn fips_watermark(&self) -> u32 {
+        pub const fn fips_watermark(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = "High watermark value of the external health test in bypass mode."]
         #[inline(always)]
-        pub fn bypass_watermark(&self) -> u32 {
+        pub const fn bypass_watermark(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
     }
@@ -1501,16 +2142,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ExthtLoThresholdsReadVal(u32);
+    pub struct ExthtLoThresholdsReadVal(pub u32);
     impl ExthtLoThresholdsReadVal {
         #[doc = "This is the threshold size for the external health test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is greater than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn fips_thresh(&self) -> u32 {
+        pub const fn fips_thresh(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = "This is the threshold size for the external health test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is greater than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn bypass_thresh(&self) -> u32 {
+        pub const fn bypass_thresh(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1532,16 +2173,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ExthtLoThresholdsWriteVal(u32);
+    pub struct ExthtLoThresholdsWriteVal(pub u32);
     impl ExthtLoThresholdsWriteVal {
         #[doc = "This is the threshold size for the external health test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is greater than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn fips_thresh(self, val: u32) -> Self {
+        pub const fn fips_thresh(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 0)) | ((val & 0xffff) << 0))
         }
         #[doc = "This is the threshold size for the external health test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is greater than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn bypass_thresh(self, val: u32) -> Self {
+        pub const fn bypass_thresh(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 16)) | ((val & 0xffff) << 16))
         }
     }
@@ -1558,16 +2199,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ExthtLoWatermarksReadVal(u32);
+    pub struct ExthtLoWatermarksReadVal(pub u32);
     impl ExthtLoWatermarksReadVal {
         #[doc = "Low watermark value of the external health test in FIPS mode."]
         #[inline(always)]
-        pub fn fips_watermark(&self) -> u32 {
+        pub const fn fips_watermark(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = "Low watermark value of the external health test in bypass mode."]
         #[inline(always)]
-        pub fn bypass_watermark(&self) -> u32 {
+        pub const fn bypass_watermark(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
     }
@@ -1584,16 +2225,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct FwOvControlReadVal(u32);
+    pub struct FwOvControlReadVal(pub u32);
     impl FwOvControlReadVal {
         #[doc = "Setting this field to `kMultiBitBool4True` will put the entropy flow in firmware override mode.\nIn this mode, firmware can monitor the post-health test entropy by reading\nthe observe FIFO (see !!FW_OV_RD_DATA).\nThis includes the entropy bits used for the startup health testing.\nFor this to work, the otp_en_entropy_src_fw_over input needs to be set to `kMultiBitBool8True`.\n\nNote that the post-health test entropy bits collected in the observe FIFO continue to flow through the hardware pipeline and may eventually reach the block hardware interface."]
         #[inline(always)]
-        pub fn fw_ov_mode(&self) -> u32 {
+        pub const fn fw_ov_mode(&self) -> u32 {
             (self.0 >> 0) & 0xf
         }
         #[doc = "Setting this field to `kMultiBitBool4True` allows firmware to extract entropy bits by reading the observe FIFO (see !!FW_OV_RD_DATA) and insert entropy bits into the entropy flow by writing the !!FW_OV_WR_DATA register.\nThis is useful e.g. for performing additional health tests and/or firmware-based conditioning.\nFor this to work, !!FW_OV_CONTROL.FW_OV_MODE needs to be set to `kMultiBitBool4True`.\nIn addition, the otp_en_entropy_src_fw_over input needs to be set to `kMultiBitBool8True`.\n\nFirmware can use the hardware conditioning for the inserted entropy bits (see !!FW_OV_SHA3_START).\n\nNote that if the field is set to `kMultiBitBool4True`, post-health test entropy bits do NOT continue to flow through the hardware pipeline.\nAlso, the !!FW_OV_CONTROL.FW_OV_MODE bit must be set.\nThe observe FIFO will collect 2 kBit of contiguous entropy bits.\nAny entropy bits arriving after the observe FIFO is full are being discarded.\nFirmware has to read out the entire observe FIFO to restart entropy collection.\nOnly entropy bits inserted by firmware by writing !!FW_OV_WR_DATA may eventually reach the block hardware interface.\n\nAlso, the hardware startup health testing is skipped and firmware becomes responsible for performing any startup health testing."]
         #[inline(always)]
-        pub fn fw_ov_entropy_insert(&self) -> u32 {
+        pub const fn fw_ov_entropy_insert(&self) -> u32 {
             (self.0 >> 4) & 0xf
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1615,16 +2256,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct FwOvControlWriteVal(u32);
+    pub struct FwOvControlWriteVal(pub u32);
     impl FwOvControlWriteVal {
         #[doc = "Setting this field to `kMultiBitBool4True` will put the entropy flow in firmware override mode.\nIn this mode, firmware can monitor the post-health test entropy by reading\nthe observe FIFO (see !!FW_OV_RD_DATA).\nThis includes the entropy bits used for the startup health testing.\nFor this to work, the otp_en_entropy_src_fw_over input needs to be set to `kMultiBitBool8True`.\n\nNote that the post-health test entropy bits collected in the observe FIFO continue to flow through the hardware pipeline and may eventually reach the block hardware interface."]
         #[inline(always)]
-        pub fn fw_ov_mode(self, val: u32) -> Self {
+        pub const fn fw_ov_mode(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 0)) | ((val & 0xf) << 0))
         }
         #[doc = "Setting this field to `kMultiBitBool4True` allows firmware to extract entropy bits by reading the observe FIFO (see !!FW_OV_RD_DATA) and insert entropy bits into the entropy flow by writing the !!FW_OV_WR_DATA register.\nThis is useful e.g. for performing additional health tests and/or firmware-based conditioning.\nFor this to work, !!FW_OV_CONTROL.FW_OV_MODE needs to be set to `kMultiBitBool4True`.\nIn addition, the otp_en_entropy_src_fw_over input needs to be set to `kMultiBitBool8True`.\n\nFirmware can use the hardware conditioning for the inserted entropy bits (see !!FW_OV_SHA3_START).\n\nNote that if the field is set to `kMultiBitBool4True`, post-health test entropy bits do NOT continue to flow through the hardware pipeline.\nAlso, the !!FW_OV_CONTROL.FW_OV_MODE bit must be set.\nThe observe FIFO will collect 2 kBit of contiguous entropy bits.\nAny entropy bits arriving after the observe FIFO is full are being discarded.\nFirmware has to read out the entire observe FIFO to restart entropy collection.\nOnly entropy bits inserted by firmware by writing !!FW_OV_WR_DATA may eventually reach the block hardware interface.\n\nAlso, the hardware startup health testing is skipped and firmware becomes responsible for performing any startup health testing."]
         #[inline(always)]
-        pub fn fw_ov_entropy_insert(self, val: u32) -> Self {
+        pub const fn fw_ov_entropy_insert(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 4)) | ((val & 0xf) << 4))
         }
     }
@@ -1641,11 +2282,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct FwOvRdFifoOverflowReadVal(u32);
+    pub struct FwOvRdFifoOverflowReadVal(pub u32);
     impl FwOvRdFifoOverflowReadVal {
         #[doc = "This bit is set by hardware whenever RNG data is lost due to an overflow condition\nin the observe FIFO. The RNG data rate is slow enough that firmware should always\nbe able to keep up. This register meanwhile provides an additional check to confirm\nthat bytes read from the !!FW_OV_RD_DATA register represent contiguous RNG samples.\nIf an overflow event occurs, this bit is cleared by hardware as soon as the FIFO is emptied."]
         #[inline(always)]
-        pub fn fw_ov_rd_fifo_overflow(&self) -> bool {
+        pub const fn fw_ov_rd_fifo_overflow(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
     }
@@ -1662,11 +2303,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct FwOvSha3StartReadVal(u32);
+    pub struct FwOvSha3StartReadVal(pub u32);
     impl FwOvSha3StartReadVal {
         #[doc = "Setting this field to `kMultiBitBool4True` will instruct the ENTROPY_SRC main state machine to start the SHA3 process and be ready to accept entropy data.\nThis field should be set prior to writing the !!FW_OV_WR_DATA register.\nOnce all data has been written, this field should be set to `kMultiBitBool4False`.\nOnce that happened, the SHA3 block will finish processing and push the result into the esfinal FIFO.\n\nNote that clearing this bit to `kMultiBitBool4False` while there is still unprocessed entropy in !!FW_OV_WR_DATA will start the SHA3 engine before data can be added to the input message, and will also signal a recoverable alert in !!RECOV_ALERT_STS.ES_FW_OV_DISABLE_ALERT.\nTo avoid this, check that !!FW_OV_WR_FIFO_FULL is clear before setting this field to `kMultiBitBool4False`."]
         #[inline(always)]
-        pub fn fw_ov_insert_start(&self) -> u32 {
+        pub const fn fw_ov_insert_start(&self) -> u32 {
             (self.0 >> 0) & 0xf
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1688,11 +2329,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct FwOvSha3StartWriteVal(u32);
+    pub struct FwOvSha3StartWriteVal(pub u32);
     impl FwOvSha3StartWriteVal {
         #[doc = "Setting this field to `kMultiBitBool4True` will instruct the ENTROPY_SRC main state machine to start the SHA3 process and be ready to accept entropy data.\nThis field should be set prior to writing the !!FW_OV_WR_DATA register.\nOnce all data has been written, this field should be set to `kMultiBitBool4False`.\nOnce that happened, the SHA3 block will finish processing and push the result into the esfinal FIFO.\n\nNote that clearing this bit to `kMultiBitBool4False` while there is still unprocessed entropy in !!FW_OV_WR_DATA will start the SHA3 engine before data can be added to the input message, and will also signal a recoverable alert in !!RECOV_ALERT_STS.ES_FW_OV_DISABLE_ALERT.\nTo avoid this, check that !!FW_OV_WR_FIFO_FULL is clear before setting this field to `kMultiBitBool4False`."]
         #[inline(always)]
-        pub fn fw_ov_insert_start(self, val: u32) -> Self {
+        pub const fn fw_ov_insert_start(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 0)) | ((val & 0xf) << 0))
         }
     }
@@ -1709,11 +2350,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct FwOvWrFifoFullReadVal(u32);
+    pub struct FwOvWrFifoFullReadVal(pub u32);
     impl FwOvWrFifoFullReadVal {
         #[doc = "When this bit is clear, writes to the FW_OV_WR_DATA register are allowed.\nIf this bit is set, it is the equivalent to a FIFO full condition, and writes\nto the FW_OV_WR_DATA register must be delayed until this bit is reset."]
         #[inline(always)]
-        pub fn fw_ov_wr_fifo_full(&self) -> bool {
+        pub const fn fw_ov_wr_fifo_full(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
     }
@@ -1730,16 +2371,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct HealthTestWindowsReadVal(u32);
+    pub struct HealthTestWindowsReadVal(pub u32);
     impl HealthTestWindowsReadVal {
-        #[doc = "This is the window size for all health tests.\nThis value is used when entropy is being tested in FIPS/CC compliance mode (for simplicity referred to as FIPS mode).\nThe default value is (2048 bits * 1 clock/4 bits);\n\nNote that the number of tested bits taken by the conditioner to produce a seed is equal to the window size x 4.\nThe only exception is the startup seed which is produced using the bits of two subsequent windows, i.e., 2 x window size x 4 tested bits.\nThe factor of 4 relates to the number of noise source channels (i.e. symbol size) and applies both in single-channel and multi-channel mode (see !!ENTROPY_SRC.RNG_BIT_ENABLE).\n\nNote that NIST SP 800-90B (Table 2) requires the adaptive proportion test to be run on 1024 or 512 samples in single-channel or multi-channel mode, respectively (see !!ENTROPY_SRC.RNG_BIT_ENABLE).\nThe startup tests must be run on at least 1024 consecutive samples (see Section 4.3 Requirements for Health Tests of NIST SP 800-90B) and this block always uses two subsequent windows for startup health testing.\nThe use of window sizes below 512 samples is thus not recommended as this may not comply with NIST SP 800-90B."]
+        #[doc = "This is the window size for all health tests.\nThis value is used when entropy is being tested in FIPS/CC compliance mode (for simplicity referred to as FIPS mode).\nThe default value is (2048 bits * 1 clock/4 bits);\n\nNote that the number of tested bits taken by the conditioner to produce a seed is equal to the window size x 4.\nThe only exception is the startup seed which is produced using the bits of two subsequent windows, i.e., 2 x window size x 4 tested bits.\nThe factor of 4 relates to the number of noise source channels (i.e. symbol size) and applies both in single-channel and multi-channel mode (see !!ENTROPY_SRC.RNG_BIT_ENABLE).\n\nNote that NIST SP 800-90B (Table 2) requires the Adaptive Proportion Test to be run on 1024 or 512 samples in single-channel or multi-channel mode, respectively (see !!ENTROPY_SRC.RNG_BIT_ENABLE).\nThe startup tests must be run on at least 1024 consecutive samples (see Section 4.3 Requirements for Health Tests of NIST SP 800-90B) and this block always uses two subsequent windows for startup health testing.\nThe use of window sizes below 512 samples is thus not recommended as this may not comply with NIST SP 800-90B."]
         #[inline(always)]
-        pub fn fips_window(&self) -> u32 {
+        pub const fn fips_window(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = "This is the window size for all health tests when running in bypass mode.\nThis mode is active after reset for the first and only test run, or when this mode is programmed by firmware by setting !!CONF.FIPS_ENABLE to `kMultiBitBool4False`.\nThe default value is (384 bits * 1 clock/4 bits);\n\nNote that currently only a window size of 384 is supported and tested (this corresponds to the register default value 0x60).\nDo not use any other values, unless you know what you are doing."]
         #[inline(always)]
-        pub fn bypass_window(&self) -> u32 {
+        pub const fn bypass_window(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1761,16 +2402,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct HealthTestWindowsWriteVal(u32);
+    pub struct HealthTestWindowsWriteVal(pub u32);
     impl HealthTestWindowsWriteVal {
-        #[doc = "This is the window size for all health tests.\nThis value is used when entropy is being tested in FIPS/CC compliance mode (for simplicity referred to as FIPS mode).\nThe default value is (2048 bits * 1 clock/4 bits);\n\nNote that the number of tested bits taken by the conditioner to produce a seed is equal to the window size x 4.\nThe only exception is the startup seed which is produced using the bits of two subsequent windows, i.e., 2 x window size x 4 tested bits.\nThe factor of 4 relates to the number of noise source channels (i.e. symbol size) and applies both in single-channel and multi-channel mode (see !!ENTROPY_SRC.RNG_BIT_ENABLE).\n\nNote that NIST SP 800-90B (Table 2) requires the adaptive proportion test to be run on 1024 or 512 samples in single-channel or multi-channel mode, respectively (see !!ENTROPY_SRC.RNG_BIT_ENABLE).\nThe startup tests must be run on at least 1024 consecutive samples (see Section 4.3 Requirements for Health Tests of NIST SP 800-90B) and this block always uses two subsequent windows for startup health testing.\nThe use of window sizes below 512 samples is thus not recommended as this may not comply with NIST SP 800-90B."]
+        #[doc = "This is the window size for all health tests.\nThis value is used when entropy is being tested in FIPS/CC compliance mode (for simplicity referred to as FIPS mode).\nThe default value is (2048 bits * 1 clock/4 bits);\n\nNote that the number of tested bits taken by the conditioner to produce a seed is equal to the window size x 4.\nThe only exception is the startup seed which is produced using the bits of two subsequent windows, i.e., 2 x window size x 4 tested bits.\nThe factor of 4 relates to the number of noise source channels (i.e. symbol size) and applies both in single-channel and multi-channel mode (see !!ENTROPY_SRC.RNG_BIT_ENABLE).\n\nNote that NIST SP 800-90B (Table 2) requires the Adaptive Proportion Test to be run on 1024 or 512 samples in single-channel or multi-channel mode, respectively (see !!ENTROPY_SRC.RNG_BIT_ENABLE).\nThe startup tests must be run on at least 1024 consecutive samples (see Section 4.3 Requirements for Health Tests of NIST SP 800-90B) and this block always uses two subsequent windows for startup health testing.\nThe use of window sizes below 512 samples is thus not recommended as this may not comply with NIST SP 800-90B."]
         #[inline(always)]
-        pub fn fips_window(self, val: u32) -> Self {
+        pub const fn fips_window(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 0)) | ((val & 0xffff) << 0))
         }
         #[doc = "This is the window size for all health tests when running in bypass mode.\nThis mode is active after reset for the first and only test run, or when this mode is programmed by firmware by setting !!CONF.FIPS_ENABLE to `kMultiBitBool4False`.\nThe default value is (384 bits * 1 clock/4 bits);\n\nNote that currently only a window size of 384 is supported and tested (this corresponds to the register default value 0x60).\nDo not use any other values, unless you know what you are doing."]
         #[inline(always)]
-        pub fn bypass_window(self, val: u32) -> Self {
+        pub const fn bypass_window(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 16)) | ((val & 0xffff) << 16))
         }
     }
@@ -1787,26 +2428,26 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrEnableReadVal(u32);
+    pub struct IntrEnableReadVal(pub u32);
     impl IntrEnableReadVal {
         #[doc = "Enable interrupt when !!INTR_STATE.es_entropy_valid is set."]
         #[inline(always)]
-        pub fn es_entropy_valid(&self) -> bool {
+        pub const fn es_entropy_valid(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Enable interrupt when !!INTR_STATE.es_health_test_failed is set."]
         #[inline(always)]
-        pub fn es_health_test_failed(&self) -> bool {
+        pub const fn es_health_test_failed(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "Enable interrupt when !!INTR_STATE.es_observe_fifo_ready is set."]
         #[inline(always)]
-        pub fn es_observe_fifo_ready(&self) -> bool {
+        pub const fn es_observe_fifo_ready(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "Enable interrupt when !!INTR_STATE.es_fatal_err is set."]
         #[inline(always)]
-        pub fn es_fatal_err(&self) -> bool {
+        pub const fn es_fatal_err(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1828,27 +2469,27 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrEnableWriteVal(u32);
+    pub struct IntrEnableWriteVal(pub u32);
     impl IntrEnableWriteVal {
         #[doc = "Enable interrupt when !!INTR_STATE.es_entropy_valid is set."]
         #[inline(always)]
-        pub fn es_entropy_valid(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn es_entropy_valid(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Enable interrupt when !!INTR_STATE.es_health_test_failed is set."]
         #[inline(always)]
-        pub fn es_health_test_failed(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn es_health_test_failed(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
         #[doc = "Enable interrupt when !!INTR_STATE.es_observe_fifo_ready is set."]
         #[inline(always)]
-        pub fn es_observe_fifo_ready(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 2)) | (u32::from(val) << 2))
+        pub const fn es_observe_fifo_ready(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 2)) | (val as u32) << 2)
         }
         #[doc = "Enable interrupt when !!INTR_STATE.es_fatal_err is set."]
         #[inline(always)]
-        pub fn es_fatal_err(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 3)) | (u32::from(val) << 3))
+        pub const fn es_fatal_err(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 3)) | (val as u32) << 3)
         }
     }
     impl From<u32> for IntrEnableWriteVal {
@@ -1864,26 +2505,26 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrStateReadVal(u32);
+    pub struct IntrStateReadVal(pub u32);
     impl IntrStateReadVal {
         #[doc = "Asserted when entropy source bits are available for firmware for consumption via !!ENTROPY_DATA register."]
         #[inline(always)]
-        pub fn es_entropy_valid(&self) -> bool {
+        pub const fn es_entropy_valid(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Asserted whenever the main state machine is in the alert state, e.g., due to health tests failing and reaching the threshold value configured in !!ALERT_THRESHOLD."]
         #[inline(always)]
-        pub fn es_health_test_failed(&self) -> bool {
+        pub const fn es_health_test_failed(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "Asserted when the observe FIFO has filled to the configured threshold level (see !!OBSERVE_FIFO_THRESH)."]
         #[inline(always)]
-        pub fn es_observe_fifo_ready(&self) -> bool {
+        pub const fn es_observe_fifo_ready(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "Asserted when an fatal error condition is met, e.g., upon FIFO errors, or if an illegal state machine state is reached."]
         #[inline(always)]
-        pub fn es_fatal_err(&self) -> bool {
+        pub const fn es_fatal_err(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1905,26 +2546,26 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrStateWriteVal(u32);
+    pub struct IntrStateWriteVal(pub u32);
     impl IntrStateWriteVal {
         #[doc = "Asserted when entropy source bits are available for firmware for consumption via !!ENTROPY_DATA register."]
         #[inline(always)]
-        pub fn es_entropy_valid_clear(self) -> Self {
+        pub const fn es_entropy_valid_clear(self) -> Self {
             Self(self.0 | (1 << 0))
         }
         #[doc = "Asserted whenever the main state machine is in the alert state, e.g., due to health tests failing and reaching the threshold value configured in !!ALERT_THRESHOLD."]
         #[inline(always)]
-        pub fn es_health_test_failed_clear(self) -> Self {
+        pub const fn es_health_test_failed_clear(self) -> Self {
             Self(self.0 | (1 << 1))
         }
         #[doc = "Asserted when the observe FIFO has filled to the configured threshold level (see !!OBSERVE_FIFO_THRESH)."]
         #[inline(always)]
-        pub fn es_observe_fifo_ready_clear(self) -> Self {
+        pub const fn es_observe_fifo_ready_clear(self) -> Self {
             Self(self.0 | (1 << 2))
         }
         #[doc = "Asserted when an fatal error condition is met, e.g., upon FIFO errors, or if an illegal state machine state is reached."]
         #[inline(always)]
-        pub fn es_fatal_err_clear(self) -> Self {
+        pub const fn es_fatal_err_clear(self) -> Self {
             Self(self.0 | (1 << 3))
         }
     }
@@ -1941,27 +2582,27 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IntrTestWriteVal(u32);
+    pub struct IntrTestWriteVal(pub u32);
     impl IntrTestWriteVal {
         #[doc = "Write 1 to force !!INTR_STATE.es_entropy_valid to 1."]
         #[inline(always)]
-        pub fn es_entropy_valid(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn es_entropy_valid(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Write 1 to force !!INTR_STATE.es_health_test_failed to 1."]
         #[inline(always)]
-        pub fn es_health_test_failed(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn es_health_test_failed(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
         #[doc = "Write 1 to force !!INTR_STATE.es_observe_fifo_ready to 1."]
         #[inline(always)]
-        pub fn es_observe_fifo_ready(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 2)) | (u32::from(val) << 2))
+        pub const fn es_observe_fifo_ready(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 2)) | (val as u32) << 2)
         }
         #[doc = "Write 1 to force !!INTR_STATE.es_fatal_err to 1."]
         #[inline(always)]
-        pub fn es_fatal_err(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 3)) | (u32::from(val) << 3))
+        pub const fn es_fatal_err(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 3)) | (val as u32) << 3)
         }
     }
     impl From<u32> for IntrTestWriteVal {
@@ -1977,11 +2618,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MainSmStateReadVal(u32);
+    pub struct MainSmStateReadVal(pub u32);
     impl MainSmStateReadVal {
         #[doc = "This is the state of the ENTROPY_SRC main state machine.\nSee the RTL file `entropy_src_main_sm` for the meaning of the values."]
         #[inline(always)]
-        pub fn main_sm_state(&self) -> u32 {
+        pub const fn main_sm_state(&self) -> u32 {
             (self.0 >> 0) & 0x1ff
         }
     }
@@ -1998,16 +2639,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MarkovHiThresholdsReadVal(u32);
+    pub struct MarkovHiThresholdsReadVal(pub u32);
     impl MarkovHiThresholdsReadVal {
         #[doc = "This is the threshold size for the Markov health test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn fips_thresh(&self) -> u32 {
+        pub const fn fips_thresh(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = "This is the threshold size for the Markov health test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn bypass_thresh(&self) -> u32 {
+        pub const fn bypass_thresh(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2029,16 +2670,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MarkovHiThresholdsWriteVal(u32);
+    pub struct MarkovHiThresholdsWriteVal(pub u32);
     impl MarkovHiThresholdsWriteVal {
         #[doc = "This is the threshold size for the Markov health test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn fips_thresh(self, val: u32) -> Self {
+        pub const fn fips_thresh(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 0)) | ((val & 0xffff) << 0))
         }
         #[doc = "This is the threshold size for the Markov health test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn bypass_thresh(self, val: u32) -> Self {
+        pub const fn bypass_thresh(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 16)) | ((val & 0xffff) << 16))
         }
     }
@@ -2055,16 +2696,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MarkovHiWatermarksReadVal(u32);
+    pub struct MarkovHiWatermarksReadVal(pub u32);
     impl MarkovHiWatermarksReadVal {
         #[doc = "High watermark value of the Markov test in FIPS mode."]
         #[inline(always)]
-        pub fn fips_watermark(&self) -> u32 {
+        pub const fn fips_watermark(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = "High watermark value of the Markov test in bypass mode."]
         #[inline(always)]
-        pub fn bypass_watermark(&self) -> u32 {
+        pub const fn bypass_watermark(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
     }
@@ -2081,16 +2722,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MarkovLoThresholdsReadVal(u32);
+    pub struct MarkovLoThresholdsReadVal(pub u32);
     impl MarkovLoThresholdsReadVal {
         #[doc = "This is the threshold size for the Markov health test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is greater than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn fips_thresh(&self) -> u32 {
+        pub const fn fips_thresh(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = "This is the threshold size for the Markov health test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is greater than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn bypass_thresh(&self) -> u32 {
+        pub const fn bypass_thresh(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2112,16 +2753,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MarkovLoThresholdsWriteVal(u32);
+    pub struct MarkovLoThresholdsWriteVal(pub u32);
     impl MarkovLoThresholdsWriteVal {
         #[doc = "This is the threshold size for the Markov health test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is greater than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn fips_thresh(self, val: u32) -> Self {
+        pub const fn fips_thresh(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 0)) | ((val & 0xffff) << 0))
         }
         #[doc = "This is the threshold size for the Markov health test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is greater than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn bypass_thresh(self, val: u32) -> Self {
+        pub const fn bypass_thresh(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 16)) | ((val & 0xffff) << 16))
         }
     }
@@ -2138,16 +2779,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MarkovLoWatermarksReadVal(u32);
+    pub struct MarkovLoWatermarksReadVal(pub u32);
     impl MarkovLoWatermarksReadVal {
         #[doc = "Low watermark value of the Markov test in FIPS mode."]
         #[inline(always)]
-        pub fn fips_watermark(&self) -> u32 {
+        pub const fn fips_watermark(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = "Low watermark value of the Markov test in bypass mode."]
         #[inline(always)]
-        pub fn bypass_watermark(&self) -> u32 {
+        pub const fn bypass_watermark(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
     }
@@ -2164,11 +2805,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MeRegwenReadVal(u32);
+    pub struct MeRegwenReadVal(pub u32);
     impl MeRegwenReadVal {
         #[doc = "When true, the !!MODULE_ENABLE register can be modified.\nWhen false, it becomes read-only."]
         #[inline(always)]
-        pub fn me_regwen(&self) -> bool {
+        pub const fn me_regwen(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2190,11 +2831,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MeRegwenWriteVal(u32);
+    pub struct MeRegwenWriteVal(pub u32);
     impl MeRegwenWriteVal {
         #[doc = "When true, the !!MODULE_ENABLE register can be modified.\nWhen false, it becomes read-only."]
         #[inline(always)]
-        pub fn me_regwen_clear(self) -> Self {
+        pub const fn me_regwen_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -2211,11 +2852,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ModuleEnableReadVal(u32);
+    pub struct ModuleEnableReadVal(pub u32);
     impl ModuleEnableReadVal {
         #[doc = "Setting this field to `kMultiBitBool4True` will enable the ENTROPY_SRC module. Setting this field to `kMultiBitBool4False` will effectively reset the module.\nThe modules of the entropy complex may only be enabled and disabled in a specific order, see Programmers Guide for details."]
         #[inline(always)]
-        pub fn module_enable(&self) -> u32 {
+        pub const fn module_enable(&self) -> u32 {
             (self.0 >> 0) & 0xf
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2237,11 +2878,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ModuleEnableWriteVal(u32);
+    pub struct ModuleEnableWriteVal(pub u32);
     impl ModuleEnableWriteVal {
         #[doc = "Setting this field to `kMultiBitBool4True` will enable the ENTROPY_SRC module. Setting this field to `kMultiBitBool4False` will effectively reset the module.\nThe modules of the entropy complex may only be enabled and disabled in a specific order, see Programmers Guide for details."]
         #[inline(always)]
-        pub fn module_enable(self, val: u32) -> Self {
+        pub const fn module_enable(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 0)) | ((val & 0xf) << 0))
         }
     }
@@ -2258,11 +2899,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ObserveFifoDepthReadVal(u32);
+    pub struct ObserveFifoDepthReadVal(pub u32);
     impl ObserveFifoDepthReadVal {
         #[doc = "This field will hold the current depth of the observe FIFO."]
         #[inline(always)]
-        pub fn observe_fifo_depth(&self) -> u32 {
+        pub const fn observe_fifo_depth(&self) -> u32 {
             (self.0 >> 0) & 0x3f
         }
     }
@@ -2279,11 +2920,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ObserveFifoThreshReadVal(u32);
+    pub struct ObserveFifoThreshReadVal(pub u32);
     impl ObserveFifoThreshReadVal {
         #[doc = "This field will set the threshold that the depth of the observe FIFO\nwill be compared with when setting the interrupt status bit.\nNote: a value of zero is reserved and not to be used."]
         #[inline(always)]
-        pub fn observe_fifo_thresh(&self) -> u32 {
+        pub const fn observe_fifo_thresh(&self) -> u32 {
             (self.0 >> 0) & 0x3f
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2305,11 +2946,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct ObserveFifoThreshWriteVal(u32);
+    pub struct ObserveFifoThreshWriteVal(pub u32);
     impl ObserveFifoThreshWriteVal {
         #[doc = "This field will set the threshold that the depth of the observe FIFO\nwill be compared with when setting the interrupt status bit.\nNote: a value of zero is reserved and not to be used."]
         #[inline(always)]
-        pub fn observe_fifo_thresh(self, val: u32) -> Self {
+        pub const fn observe_fifo_thresh(self, val: u32) -> Self {
             Self((self.0 & !(0x3f << 0)) | ((val & 0x3f) << 0))
         }
     }
@@ -2326,96 +2967,96 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct RecovAlertStsReadVal(u32);
+    pub struct RecovAlertStsReadVal(pub u32);
     impl RecovAlertStsReadVal {
         #[doc = "This bit is set when the FIPS_ENABLE field in the !!CONF register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn fips_enable_field_alert(&self) -> bool {
+        pub const fn fips_enable_field_alert(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "This bit is set when the ENTROPY_DATA_REG_ENABLE field in the !!CONF register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn entropy_data_reg_en_field_alert(&self) -> bool {
+        pub const fn entropy_data_reg_en_field_alert(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "This bit is set when the MODULE_ENABLE field in the !!MODULE_ENABLE register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn module_enable_field_alert(&self) -> bool {
+        pub const fn module_enable_field_alert(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "This bit is set when the THRESHOLD_SCOPE field in the !!CONF register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn threshold_scope_field_alert(&self) -> bool {
+        pub const fn threshold_scope_field_alert(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "This bit is set when the RNG_BIT_ENABLE field in the !!CONF register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn rng_bit_enable_field_alert(&self) -> bool {
+        pub const fn rng_bit_enable_field_alert(&self) -> bool {
             ((self.0 >> 5) & 1) != 0
         }
         #[doc = "This bit is set when the FW_OV_SHA3_START field in the !!FW_OV_SHA3_START register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn fw_ov_sha3_start_field_alert(&self) -> bool {
+        pub const fn fw_ov_sha3_start_field_alert(&self) -> bool {
             ((self.0 >> 7) & 1) != 0
         }
         #[doc = "This bit is set when the FW_OV_MODE field in the !!FW_OV_CONTROL register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn fw_ov_mode_field_alert(&self) -> bool {
+        pub const fn fw_ov_mode_field_alert(&self) -> bool {
             ((self.0 >> 8) & 1) != 0
         }
         #[doc = "This bit is set when the FW_OV_ENTROPY_INSERT field in the !!FW_OV_CONTROL register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn fw_ov_entropy_insert_field_alert(&self) -> bool {
+        pub const fn fw_ov_entropy_insert_field_alert(&self) -> bool {
             ((self.0 >> 9) & 1) != 0
         }
         #[doc = "This bit is set when the ES_ROUTE field in the !!ENTROPY_CONTROL register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn es_route_field_alert(&self) -> bool {
+        pub const fn es_route_field_alert(&self) -> bool {
             ((self.0 >> 10) & 1) != 0
         }
         #[doc = "This bit is set when the ES_TYPE field in the !!ENTROPY_CONTROL register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn es_type_field_alert(&self) -> bool {
+        pub const fn es_type_field_alert(&self) -> bool {
             ((self.0 >> 11) & 1) != 0
         }
         #[doc = "This bit is set when the main state machine detects a threshhold failure state.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn es_main_sm_alert(&self) -> bool {
+        pub const fn es_main_sm_alert(&self) -> bool {
             ((self.0 >> 12) & 1) != 0
         }
         #[doc = "This bit is set when the interal entropy bus value is equal to the prior\nvalid value on the bus, indicating a possible attack.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn es_bus_cmp_alert(&self) -> bool {
+        pub const fn es_bus_cmp_alert(&self) -> bool {
             ((self.0 >> 13) & 1) != 0
         }
         #[doc = "This bit is set when the !!ALERT_THRESHOLD register is not configured properly.\nThe upper field must be the exact inverse of the lower field.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn es_thresh_cfg_alert(&self) -> bool {
+        pub const fn es_thresh_cfg_alert(&self) -> bool {
             ((self.0 >> 14) & 1) != 0
         }
         #[doc = "This bit is set when the packer FIFO has been written but was full at the time,\nand in both FW_OV_MODE and FW_OV_ENTROPY_INSERT modes.\nThis alert would normally be the result of not monitoring the !!FW_OV_WR_FIFO_FULL\nregister before each write to the !!FW_OV_WR_DATA register.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn es_fw_ov_wr_alert(&self) -> bool {
+        pub const fn es_fw_ov_wr_alert(&self) -> bool {
             ((self.0 >> 15) & 1) != 0
         }
         #[doc = "This bit is set when !!FW_OV_SHA3_START has been set to `kMultiBitBool4False`, without waiting for the bypass packer FIFO to clear.\nThe final entropy entry in the FIFO will not be included in the SHA3 digest.\n(Rather it will be added to the subsequent SHA3 digest.)\nTo avoid this alert, monitor !!FW_OV_WR_FIFO_FULL before clearing !!FW_OV_SHA3_START.\nThis alert only applies when both !!FW_OV_CONTROL.FW_OV_MODE and !!FW_OV_CONTROL.FW_OV_ENTROPY_INSERT are set to `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn es_fw_ov_disable_alert(&self) -> bool {
+        pub const fn es_fw_ov_disable_alert(&self) -> bool {
             ((self.0 >> 16) & 1) != 0
         }
         #[doc = "This bit is set when the FIPS_FLAG field in the !!CONF register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn fips_flag_field_alert(&self) -> bool {
+        pub const fn fips_flag_field_alert(&self) -> bool {
             ((self.0 >> 17) & 1) != 0
         }
         #[doc = "This bit is set when the RNG_FIPS field in the !!CONF register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn rng_fips_field_alert(&self) -> bool {
+        pub const fn rng_fips_field_alert(&self) -> bool {
             ((self.0 >> 18) & 1) != 0
         }
         #[doc = "This bit is set when post-health test entropy bits are being dropped from the hardware pipeline.\nThe pipeline can drop individual symbols at the input of the postht FIFO (esbit FIFO when running in single-channel mode, see !!ENTROPY_SRC.RNG_BIT_ENABLE).\nEntropy bits might get dropped in these locations e.g. due to backpressure from the conditioner.\n\nNote that the conditioner will still use the amount of bits configured in !!HEALTH_TEST_WINDOW.FIPS_WINDOW to produce the seed.\nThe resulting seed is still okay to use.\nBut as the dropped bits are still tested, the effective test window increases beyond the value configured in !!HEALTH_TEST_WINDOW.FIPS_WINDOW.\n\nSoftware should check this bit when running in Firmware Override: Observe mode as dropping post-health test entropy bits in this mode may cause the entropy bits observed from the Observe FIFO to be non-contiguous.\n\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn postht_entropy_drop_alert(&self) -> bool {
+        pub const fn postht_entropy_drop_alert(&self) -> bool {
             ((self.0 >> 31) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2437,96 +3078,96 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct RecovAlertStsWriteVal(u32);
+    pub struct RecovAlertStsWriteVal(pub u32);
     impl RecovAlertStsWriteVal {
         #[doc = "This bit is set when the FIPS_ENABLE field in the !!CONF register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn fips_enable_field_alert_clear(self) -> Self {
+        pub const fn fips_enable_field_alert_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
         #[doc = "This bit is set when the ENTROPY_DATA_REG_ENABLE field in the !!CONF register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn entropy_data_reg_en_field_alert_clear(self) -> Self {
+        pub const fn entropy_data_reg_en_field_alert_clear(self) -> Self {
             Self(self.0 & !(1 << 1))
         }
         #[doc = "This bit is set when the MODULE_ENABLE field in the !!MODULE_ENABLE register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn module_enable_field_alert_clear(self) -> Self {
+        pub const fn module_enable_field_alert_clear(self) -> Self {
             Self(self.0 & !(1 << 2))
         }
         #[doc = "This bit is set when the THRESHOLD_SCOPE field in the !!CONF register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn threshold_scope_field_alert_clear(self) -> Self {
+        pub const fn threshold_scope_field_alert_clear(self) -> Self {
             Self(self.0 & !(1 << 3))
         }
         #[doc = "This bit is set when the RNG_BIT_ENABLE field in the !!CONF register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn rng_bit_enable_field_alert_clear(self) -> Self {
+        pub const fn rng_bit_enable_field_alert_clear(self) -> Self {
             Self(self.0 & !(1 << 5))
         }
         #[doc = "This bit is set when the FW_OV_SHA3_START field in the !!FW_OV_SHA3_START register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn fw_ov_sha3_start_field_alert_clear(self) -> Self {
+        pub const fn fw_ov_sha3_start_field_alert_clear(self) -> Self {
             Self(self.0 & !(1 << 7))
         }
         #[doc = "This bit is set when the FW_OV_MODE field in the !!FW_OV_CONTROL register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn fw_ov_mode_field_alert_clear(self) -> Self {
+        pub const fn fw_ov_mode_field_alert_clear(self) -> Self {
             Self(self.0 & !(1 << 8))
         }
         #[doc = "This bit is set when the FW_OV_ENTROPY_INSERT field in the !!FW_OV_CONTROL register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn fw_ov_entropy_insert_field_alert_clear(self) -> Self {
+        pub const fn fw_ov_entropy_insert_field_alert_clear(self) -> Self {
             Self(self.0 & !(1 << 9))
         }
         #[doc = "This bit is set when the ES_ROUTE field in the !!ENTROPY_CONTROL register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn es_route_field_alert_clear(self) -> Self {
+        pub const fn es_route_field_alert_clear(self) -> Self {
             Self(self.0 & !(1 << 10))
         }
         #[doc = "This bit is set when the ES_TYPE field in the !!ENTROPY_CONTROL register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn es_type_field_alert_clear(self) -> Self {
+        pub const fn es_type_field_alert_clear(self) -> Self {
             Self(self.0 & !(1 << 11))
         }
         #[doc = "This bit is set when the main state machine detects a threshhold failure state.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn es_main_sm_alert_clear(self) -> Self {
+        pub const fn es_main_sm_alert_clear(self) -> Self {
             Self(self.0 & !(1 << 12))
         }
         #[doc = "This bit is set when the interal entropy bus value is equal to the prior\nvalid value on the bus, indicating a possible attack.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn es_bus_cmp_alert_clear(self) -> Self {
+        pub const fn es_bus_cmp_alert_clear(self) -> Self {
             Self(self.0 & !(1 << 13))
         }
         #[doc = "This bit is set when the !!ALERT_THRESHOLD register is not configured properly.\nThe upper field must be the exact inverse of the lower field.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn es_thresh_cfg_alert_clear(self) -> Self {
+        pub const fn es_thresh_cfg_alert_clear(self) -> Self {
             Self(self.0 & !(1 << 14))
         }
         #[doc = "This bit is set when the packer FIFO has been written but was full at the time,\nand in both FW_OV_MODE and FW_OV_ENTROPY_INSERT modes.\nThis alert would normally be the result of not monitoring the !!FW_OV_WR_FIFO_FULL\nregister before each write to the !!FW_OV_WR_DATA register.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn es_fw_ov_wr_alert_clear(self) -> Self {
+        pub const fn es_fw_ov_wr_alert_clear(self) -> Self {
             Self(self.0 & !(1 << 15))
         }
         #[doc = "This bit is set when !!FW_OV_SHA3_START has been set to `kMultiBitBool4False`, without waiting for the bypass packer FIFO to clear.\nThe final entropy entry in the FIFO will not be included in the SHA3 digest.\n(Rather it will be added to the subsequent SHA3 digest.)\nTo avoid this alert, monitor !!FW_OV_WR_FIFO_FULL before clearing !!FW_OV_SHA3_START.\nThis alert only applies when both !!FW_OV_CONTROL.FW_OV_MODE and !!FW_OV_CONTROL.FW_OV_ENTROPY_INSERT are set to `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn es_fw_ov_disable_alert_clear(self) -> Self {
+        pub const fn es_fw_ov_disable_alert_clear(self) -> Self {
             Self(self.0 & !(1 << 16))
         }
         #[doc = "This bit is set when the FIPS_FLAG field in the !!CONF register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn fips_flag_field_alert_clear(self) -> Self {
+        pub const fn fips_flag_field_alert_clear(self) -> Self {
             Self(self.0 & !(1 << 17))
         }
         #[doc = "This bit is set when the RNG_FIPS field in the !!CONF register is set to a value other than `kMultiBitBool4False` or `kMultiBitBool4True`.\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn rng_fips_field_alert_clear(self) -> Self {
+        pub const fn rng_fips_field_alert_clear(self) -> Self {
             Self(self.0 & !(1 << 18))
         }
         #[doc = "This bit is set when post-health test entropy bits are being dropped from the hardware pipeline.\nThe pipeline can drop individual symbols at the input of the postht FIFO (esbit FIFO when running in single-channel mode, see !!ENTROPY_SRC.RNG_BIT_ENABLE).\nEntropy bits might get dropped in these locations e.g. due to backpressure from the conditioner.\n\nNote that the conditioner will still use the amount of bits configured in !!HEALTH_TEST_WINDOW.FIPS_WINDOW to produce the seed.\nThe resulting seed is still okay to use.\nBut as the dropped bits are still tested, the effective test window increases beyond the value configured in !!HEALTH_TEST_WINDOW.FIPS_WINDOW.\n\nSoftware should check this bit when running in Firmware Override: Observe mode as dropping post-health test entropy bits in this mode may cause the entropy bits observed from the Observe FIFO to be non-contiguous.\n\nWriting a zero resets this status bit."]
         #[inline(always)]
-        pub fn postht_entropy_drop_alert_clear(self) -> Self {
+        pub const fn postht_entropy_drop_alert_clear(self) -> Self {
             Self(self.0 & !(1 << 31))
         }
     }
@@ -2543,11 +3184,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct RegwenReadVal(u32);
+    pub struct RegwenReadVal(pub u32);
     impl RegwenReadVal {
         #[doc = "This read-only write enable bit will allow write access to control and threshold registers that are associated with this bit, but only when the !!MODULE_ENABLE register is set to `kMultiBitBool4False` and the !!SW_REGUPD write enable bit is set to true.\nWhen read as false, these registers become read-only."]
         #[inline(always)]
-        pub fn regwen(&self) -> bool {
+        pub const fn regwen(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
     }
@@ -2564,16 +3205,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct RepcntsHiWatermarksReadVal(u32);
+    pub struct RepcntsHiWatermarksReadVal(pub u32);
     impl RepcntsHiWatermarksReadVal {
         #[doc = "High watermark value of the REPCNTS test in FIPS mode."]
         #[inline(always)]
-        pub fn fips_watermark(&self) -> u32 {
+        pub const fn fips_watermark(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = "High watermark value of the REPCNTS test in bypass mode."]
         #[inline(always)]
-        pub fn bypass_watermark(&self) -> u32 {
+        pub const fn bypass_watermark(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
     }
@@ -2590,16 +3231,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct RepcntsThresholdsReadVal(u32);
+    pub struct RepcntsThresholdsReadVal(pub u32);
     impl RepcntsThresholdsReadVal {
-        #[doc = "This is the threshold size for the repetition count symbol health test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
+        #[doc = "This is the threshold for the Repetition Count Symbol Test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn fips_thresh(&self) -> u32 {
+        pub const fn fips_thresh(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
-        #[doc = "This is the threshold size for the repetition count symbol health test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
+        #[doc = "This is the threshold for the Repetition Count Symbol Test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn bypass_thresh(&self) -> u32 {
+        pub const fn bypass_thresh(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2621,16 +3262,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct RepcntsThresholdsWriteVal(u32);
+    pub struct RepcntsThresholdsWriteVal(pub u32);
     impl RepcntsThresholdsWriteVal {
-        #[doc = "This is the threshold size for the repetition count symbol health test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
+        #[doc = "This is the threshold for the Repetition Count Symbol Test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn fips_thresh(self, val: u32) -> Self {
+        pub const fn fips_thresh(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 0)) | ((val & 0xffff) << 0))
         }
-        #[doc = "This is the threshold size for the repetition count symbol health test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
+        #[doc = "This is the threshold for the Repetition Count Symbol Test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn bypass_thresh(self, val: u32) -> Self {
+        pub const fn bypass_thresh(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 16)) | ((val & 0xffff) << 16))
         }
     }
@@ -2647,16 +3288,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct RepcntHiWatermarksReadVal(u32);
+    pub struct RepcntHiWatermarksReadVal(pub u32);
     impl RepcntHiWatermarksReadVal {
         #[doc = "High watermark value of the REPCNT test in FIPS mode."]
         #[inline(always)]
-        pub fn fips_watermark(&self) -> u32 {
+        pub const fn fips_watermark(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
         #[doc = "High watermark value of the REPCNT test in bypass mode."]
         #[inline(always)]
-        pub fn bypass_watermark(&self) -> u32 {
+        pub const fn bypass_watermark(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
     }
@@ -2673,16 +3314,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct RepcntThresholdsReadVal(u32);
+    pub struct RepcntThresholdsReadVal(pub u32);
     impl RepcntThresholdsReadVal {
-        #[doc = "This is the threshold size for the repetition count health test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
+        #[doc = "This is the threshold for the Repetition Count Test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn fips_thresh(&self) -> u32 {
+        pub const fn fips_thresh(&self) -> u32 {
             (self.0 >> 0) & 0xffff
         }
-        #[doc = "This is the threshold size for the repetition count health test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
+        #[doc = "This is the threshold for the Repetition Count Test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn bypass_thresh(&self) -> u32 {
+        pub const fn bypass_thresh(&self) -> u32 {
             (self.0 >> 16) & 0xffff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2704,16 +3345,16 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct RepcntThresholdsWriteVal(u32);
+    pub struct RepcntThresholdsWriteVal(pub u32);
     impl RepcntThresholdsWriteVal {
-        #[doc = "This is the threshold size for the repetition count health test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
+        #[doc = "This is the threshold for the Repetition Count Test.\n   This value is used in FIPS mode.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn fips_thresh(self, val: u32) -> Self {
+        pub const fn fips_thresh(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 0)) | ((val & 0xffff) << 0))
         }
-        #[doc = "This is the threshold size for the repetition count health test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
+        #[doc = "This is the threshold for the Repetition Count Test\n   running in bypass mode. This mode is active after reset for the\n   first and only test run, or when this mode is programmed by firmware.\n   This register must be written before the module is enabled.\n   Writing to this register will only update the register if the\n   written value is less than the current value of this register.\n   A read from this register always reflects the current value."]
         #[inline(always)]
-        pub fn bypass_thresh(self, val: u32) -> Self {
+        pub const fn bypass_thresh(self, val: u32) -> Self {
             Self((self.0 & !(0xffff << 16)) | ((val & 0xffff) << 16))
         }
     }
@@ -2730,21 +3371,21 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct RevReadVal(u32);
+    pub struct RevReadVal(pub u32);
     impl RevReadVal {
         #[doc = "Read of this register shows the ABI of this block."]
         #[inline(always)]
-        pub fn abi_revision(&self) -> u32 {
+        pub const fn abi_revision(&self) -> u32 {
             (self.0 >> 0) & 0xff
         }
         #[doc = "Read of this register shows the revision of this block."]
         #[inline(always)]
-        pub fn hw_revision(&self) -> u32 {
+        pub const fn hw_revision(&self) -> u32 {
             (self.0 >> 8) & 0xff
         }
         #[doc = "Read of this register shows the type of chip using this block."]
         #[inline(always)]
-        pub fn chip_type(&self) -> u32 {
+        pub const fn chip_type(&self) -> u32 {
             (self.0 >> 16) & 0xff
         }
     }
@@ -2761,11 +3402,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct SwRegupdReadVal(u32);
+    pub struct SwRegupdReadVal(pub u32);
     impl SwRegupdReadVal {
         #[doc = "When this bit true and the MODULE_ENABLE field is false,\nthe REGWEN write enable bit read as true, and is distributed to\nall associated control and threshold registers.\nWhen false, these registers become read-only."]
         #[inline(always)]
-        pub fn sw_regupd(&self) -> bool {
+        pub const fn sw_regupd(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2787,11 +3428,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct SwRegupdWriteVal(u32);
+    pub struct SwRegupdWriteVal(pub u32);
     impl SwRegupdWriteVal {
         #[doc = "When this bit true and the MODULE_ENABLE field is false,\nthe REGWEN write enable bit read as true, and is distributed to\nall associated control and threshold registers.\nWhen false, these registers become read-only."]
         #[inline(always)]
-        pub fn sw_regupd_clear(self) -> Self {
+        pub const fn sw_regupd_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }

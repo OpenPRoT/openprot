@@ -18,7 +18,7 @@ impl PinmuxAon {
     #[doc = r" way. The simplest way to enforce this is to only call"]
     #[doc = r" this function once."]
     #[inline(always)]
-    pub unsafe fn new() -> Self {
+    pub const unsafe fn new() -> Self {
         Self { _priv: () }
     }
     #[doc = r" Returns a register block that can be used to read"]
@@ -79,6 +79,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Alert Test Register\n\nRead value: [`regs::AlertTestReadVal`]; Write value: [`regs::AlertTestWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_alert_test(self) -> ureg::RegRef<crate::meta::AlertTest, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Register write enable for MIO peripheral input selects.\n\nRead value: [`regs::MioPeriphInselRegwenReadVal`]; Write value: [`regs::MioPeriphInselRegwenWriteVal`]"]
     #[inline(always)]
     pub fn mio_periph_insel_regwen(
@@ -88,6 +99,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Register write enable for MIO peripheral input selects.\n\nRead value: [`regs::MioPeriphInselRegwenReadVal`]; Write value: [`regs::MioPeriphInselRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_mio_periph_insel_regwen(
+        self,
+    ) -> ureg::Array<57, ureg::RegRef<crate::meta::MioPeriphInselRegwen, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(4 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -103,6 +127,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "For each peripheral input, this selects the muxable pad input.\n\nRead value: [`regs::MioPeriphInselReadVal`]; Write value: [`regs::MioPeriphInselWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_mio_periph_insel(
+        self,
+    ) -> ureg::Array<57, ureg::RegRef<crate::meta::MioPeriphInsel, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0xe8 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Register write enable for MIO output selects.\n\nRead value: [`regs::MioOutselRegwenReadVal`]; Write value: [`regs::MioOutselRegwenWriteVal`]"]
     #[inline(always)]
     pub fn mio_outsel_regwen(
@@ -115,6 +152,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Register write enable for MIO output selects.\n\nRead value: [`regs::MioOutselRegwenReadVal`]; Write value: [`regs::MioOutselRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_mio_outsel_regwen(
+        self,
+    ) -> ureg::Array<47, ureg::RegRef<crate::meta::MioOutselRegwen, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x1cc / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "For each muxable pad, this selects the peripheral output.\n\nRead value: [`regs::MioOutselReadVal`]; Write value: [`regs::MioOutselWriteVal`]"]
     #[inline(always)]
     pub fn mio_outsel(&self) -> ureg::Array<47, ureg::RegRef<crate::meta::MioOutsel, &TMmio>> {
@@ -122,6 +172,17 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0x288 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "For each muxable pad, this selects the peripheral output.\n\nRead value: [`regs::MioOutselReadVal`]; Write value: [`regs::MioOutselWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_mio_outsel(self) -> ureg::Array<47, ureg::RegRef<crate::meta::MioOutsel, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x288 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -137,6 +198,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Register write enable for MIO PAD attributes.\n\nRead value: [`regs::MioPadAttrRegwenReadVal`]; Write value: [`regs::MioPadAttrRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_mio_pad_attr_regwen(
+        self,
+    ) -> ureg::Array<47, ureg::RegRef<crate::meta::MioPadAttrRegwen, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x344 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Muxed pad attributes.\nThis register has WARL behavior since not each pad type may support\nall attributes.\nThe muxed pad that is used for TAP strap 0 has a different reset value, with `pull_en` set to 1.\n\nRead value: [`regs::IoPadAttrReadVal`]; Write value: [`regs::IoPadAttrWriteVal`]"]
     #[inline(always)]
     pub fn mio_pad_attr(&self) -> ureg::Array<47, ureg::RegRef<crate::meta::MioPadAttr, &TMmio>> {
@@ -144,6 +218,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0x400 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Muxed pad attributes.\nThis register has WARL behavior since not each pad type may support\nall attributes.\nThe muxed pad that is used for TAP strap 0 has a different reset value, with `pull_en` set to 1.\n\nRead value: [`regs::IoPadAttrReadVal`]; Write value: [`regs::IoPadAttrWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_mio_pad_attr(
+        self,
+    ) -> ureg::Array<47, ureg::RegRef<crate::meta::MioPadAttr, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x400 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -159,6 +246,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Register write enable for DIO PAD attributes.\n\nRead value: [`regs::DioPadAttrRegwenReadVal`]; Write value: [`regs::DioPadAttrRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_dio_pad_attr_regwen(
+        self,
+    ) -> ureg::Array<16, ureg::RegRef<crate::meta::DioPadAttrRegwen, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x4bc / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Dedicated pad attributes.\nThis register has WARL behavior since not each pad type may support\nall attributes.\n\nRead value: [`regs::IoPadAttrReadVal`]; Write value: [`regs::IoPadAttrWriteVal`]"]
     #[inline(always)]
     pub fn dio_pad_attr(&self) -> ureg::Array<16, ureg::RegRef<crate::meta::DioPadAttr, &TMmio>> {
@@ -166,6 +266,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0x4fc / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Dedicated pad attributes.\nThis register has WARL behavior since not each pad type may support\nall attributes.\n\nRead value: [`regs::IoPadAttrReadVal`]; Write value: [`regs::IoPadAttrWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_dio_pad_attr(
+        self,
+    ) -> ureg::Array<16, ureg::RegRef<crate::meta::DioPadAttr, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x4fc / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -179,6 +292,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Register indicating whether the corresponding pad is in sleep mode.\n\nRead value: [`regs::MioPadSleepStatus0ReadVal`]; Write value: [`regs::MioPadSleepStatus0WriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_mio_pad_sleep_status0(
+        self,
+    ) -> ureg::RegRef<crate::meta::MioPadSleepStatus0, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x53c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Register indicating whether the corresponding pad is in sleep mode.\n\nRead value: [`regs::MioPadSleepStatus1ReadVal`]; Write value: [`regs::MioPadSleepStatus1WriteVal`]"]
     #[inline(always)]
     pub fn mio_pad_sleep_status1(&self) -> ureg::RegRef<crate::meta::MioPadSleepStatus1, &TMmio> {
@@ -186,6 +312,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x540 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Register indicating whether the corresponding pad is in sleep mode.\n\nRead value: [`regs::MioPadSleepStatus1ReadVal`]; Write value: [`regs::MioPadSleepStatus1WriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_mio_pad_sleep_status1(
+        self,
+    ) -> ureg::RegRef<crate::meta::MioPadSleepStatus1, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x540 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -201,6 +340,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Register write enable for MIO sleep value configuration.\n\nRead value: [`regs::MioPadSleepRegwenReadVal`]; Write value: [`regs::MioPadSleepRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_mio_pad_sleep_regwen(
+        self,
+    ) -> ureg::Array<47, ureg::RegRef<crate::meta::MioPadSleepRegwen, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x544 / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Enables the sleep mode of the corresponding muxed pad.\n\nRead value: [`regs::MioPadSleepEnReadVal`]; Write value: [`regs::MioPadSleepEnWriteVal`]"]
     #[inline(always)]
     pub fn mio_pad_sleep_en(
@@ -210,6 +362,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0x600 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Enables the sleep mode of the corresponding muxed pad.\n\nRead value: [`regs::MioPadSleepEnReadVal`]; Write value: [`regs::MioPadSleepEnWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_mio_pad_sleep_en(
+        self,
+    ) -> ureg::Array<47, ureg::RegRef<crate::meta::MioPadSleepEn, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x600 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -225,6 +390,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Defines sleep behavior of the corresponding muxed pad.\n\nRead value: [`regs::IoPadSleepModeReadVal`]; Write value: [`regs::IoPadSleepModeWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_mio_pad_sleep_mode(
+        self,
+    ) -> ureg::Array<47, ureg::RegRef<crate::meta::MioPadSleepMode, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x6bc / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Register indicating whether the corresponding pad is in sleep mode.\n\nRead value: [`regs::DioPadSleepStatus0ReadVal`]; Write value: [`regs::DioPadSleepStatus0WriteVal`]"]
     #[inline(always)]
     pub fn dio_pad_sleep_status0(&self) -> ureg::RegRef<crate::meta::DioPadSleepStatus0, &TMmio> {
@@ -232,6 +410,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::RegRef::new_with_mmio(
                 self.ptr.wrapping_add(0x778 / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Register indicating whether the corresponding pad is in sleep mode.\n\nRead value: [`regs::DioPadSleepStatus0ReadVal`]; Write value: [`regs::DioPadSleepStatus0WriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_dio_pad_sleep_status0(
+        self,
+    ) -> ureg::RegRef<crate::meta::DioPadSleepStatus0, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x778 / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -247,6 +438,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Register write enable for DIO sleep value configuration.\n\nRead value: [`regs::DioPadSleepRegwenReadVal`]; Write value: [`regs::DioPadSleepRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_dio_pad_sleep_regwen(
+        self,
+    ) -> ureg::Array<16, ureg::RegRef<crate::meta::DioPadSleepRegwen, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x77c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Enables the sleep mode of the corresponding dedicated pad.\n\nRead value: [`regs::DioPadSleepEnReadVal`]; Write value: [`regs::DioPadSleepEnWriteVal`]"]
     #[inline(always)]
     pub fn dio_pad_sleep_en(
@@ -256,6 +460,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0x7bc / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Enables the sleep mode of the corresponding dedicated pad.\n\nRead value: [`regs::DioPadSleepEnReadVal`]; Write value: [`regs::DioPadSleepEnWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_dio_pad_sleep_en(
+        self,
+    ) -> ureg::Array<16, ureg::RegRef<crate::meta::DioPadSleepEn, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x7bc / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -271,6 +488,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Defines sleep behavior of the corresponding dedicated pad.\n\nRead value: [`regs::IoPadSleepModeReadVal`]; Write value: [`regs::IoPadSleepModeWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_dio_pad_sleep_mode(
+        self,
+    ) -> ureg::Array<16, ureg::RegRef<crate::meta::DioPadSleepMode, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x7fc / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Register write enable for wakeup detectors.\n\nRead value: [`regs::WkupDetectorRegwenReadVal`]; Write value: [`regs::WkupDetectorRegwenWriteVal`]"]
     #[inline(always)]
     pub fn wkup_detector_regwen(
@@ -280,6 +510,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0x83c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Register write enable for wakeup detectors.\n\nRead value: [`regs::WkupDetectorRegwenReadVal`]; Write value: [`regs::WkupDetectorRegwenWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wkup_detector_regwen(
+        self,
+    ) -> ureg::Array<8, ureg::RegRef<crate::meta::WkupDetectorRegwen, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x83c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -295,6 +538,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Enables for the wakeup detectors.\nNote that these registers are synced to the always-on clock.\nThe first write access always completes immediately.\nHowever, read/write accesses following a write will block until that write has completed.\n\nRead value: [`regs::WkupDetectorEnReadVal`]; Write value: [`regs::WkupDetectorEnWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wkup_detector_en(
+        self,
+    ) -> ureg::Array<8, ureg::RegRef<crate::meta::WkupDetectorEn, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x85c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Configuration of wakeup condition detectors.\nNote that these registers are synced to the always-on clock.\nThe first write access always completes immediately.\nHowever, read/write accesses following a write will block until that write has completed.\n\nNote that the wkup detector should be disabled by setting !!WKUP_DETECTOR_EN_0 before changing the detection mode.\nThe reason for that is that the pulse width counter is NOT cleared upon a mode change while the detector is enabled.\n\nRead value: [`regs::WkupDetectorReadVal`]; Write value: [`regs::WkupDetectorWriteVal`]"]
     #[inline(always)]
     pub fn wkup_detector(&self) -> ureg::Array<8, ureg::RegRef<crate::meta::WkupDetector, &TMmio>> {
@@ -302,6 +558,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0x87c / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Configuration of wakeup condition detectors.\nNote that these registers are synced to the always-on clock.\nThe first write access always completes immediately.\nHowever, read/write accesses following a write will block until that write has completed.\n\nNote that the wkup detector should be disabled by setting !!WKUP_DETECTOR_EN_0 before changing the detection mode.\nThe reason for that is that the pulse width counter is NOT cleared upon a mode change while the detector is enabled.\n\nRead value: [`regs::WkupDetectorReadVal`]; Write value: [`regs::WkupDetectorWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wkup_detector(
+        self,
+    ) -> ureg::Array<8, ureg::RegRef<crate::meta::WkupDetector, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x87c / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -317,6 +586,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Counter thresholds for wakeup condition detectors.\nNote that these registers are synced to the always-on clock.\nThe first write access always completes immediately.\nHowever, read/write accesses following a write will block until that write has completed.\n\nRead value: [`regs::WkupDetectorCntThReadVal`]; Write value: [`regs::WkupDetectorCntThWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wkup_detector_cnt_th(
+        self,
+    ) -> ureg::Array<8, ureg::RegRef<crate::meta::WkupDetectorCntTh, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x89c / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
     #[doc = "Pad selects for pad wakeup condition detectors.\nThis register is NOT synced to the AON domain since the muxing mechanism is implemented in the same way as the pinmux muxing matrix.\n\nRead value: [`regs::WkupDetectorPadselReadVal`]; Write value: [`regs::WkupDetectorPadselWriteVal`]"]
     #[inline(always)]
     pub fn wkup_detector_padsel(
@@ -326,6 +608,19 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             ureg::Array::new_with_mmio(
                 self.ptr.wrapping_add(0x8bc / core::mem::size_of::<u32>()),
                 core::borrow::Borrow::borrow(&self.mmio),
+            )
+        }
+    }
+    #[doc = "Pad selects for pad wakeup condition detectors.\nThis register is NOT synced to the AON domain since the muxing mechanism is implemented in the same way as the pinmux muxing matrix.\n\nRead value: [`regs::WkupDetectorPadselReadVal`]; Write value: [`regs::WkupDetectorPadselWriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wkup_detector_padsel(
+        self,
+    ) -> ureg::Array<8, ureg::RegRef<crate::meta::WkupDetectorPadsel, TMmio>> {
+        unsafe {
+            ureg::Array::new_with_mmio(
+                self.ptr.wrapping_add(0x8bc / core::mem::size_of::<u32>()),
+                self.mmio,
             )
         }
     }
@@ -339,16 +634,27 @@ impl<TMmio: ureg::Mmio> RegisterBlock<TMmio> {
             )
         }
     }
+    #[doc = "Cause registers for wakeup detectors.\nNote that these registers are synced to the always-on clock.\nThe first write access always completes immediately.\nHowever, read/write accesses following a write will block until that write has completed.\n\nRead value: [`regs::WkupCause0ReadVal`]; Write value: [`regs::WkupCause0WriteVal`]"]
+    #[doc = "This function consumes the entire register block, which is useful when transferring ownership."]
+    #[inline(always)]
+    pub fn into_wkup_cause0(self) -> ureg::RegRef<crate::meta::WkupCause0, TMmio> {
+        unsafe {
+            ureg::RegRef::new_with_mmio(
+                self.ptr.wrapping_add(0x8dc / core::mem::size_of::<u32>()),
+                self.mmio,
+            )
+        }
+    }
 }
 pub mod regs {
     #![doc = r" Types that represent the values held by registers."]
     #[derive(Clone, Copy)]
-    pub struct AlertTestWriteVal(u32);
+    pub struct AlertTestWriteVal(pub u32);
     impl AlertTestWriteVal {
         #[doc = "Write 1 to trigger one alert event of this kind."]
         #[inline(always)]
-        pub fn fatal_fault(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn fatal_fault(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for AlertTestWriteVal {
@@ -364,11 +670,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct DioPadAttrRegwenReadVal(u32);
+    pub struct DioPadAttrRegwenReadVal(pub u32);
     impl DioPadAttrRegwenReadVal {
         #[doc = "Register write enable bit.\nIf this is cleared to 0, the corresponding !!DIO_PAD_ATTR\nis not writable anymore."]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -390,11 +696,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct DioPadAttrRegwenWriteVal(u32);
+    pub struct DioPadAttrRegwenWriteVal(pub u32);
     impl DioPadAttrRegwenWriteVal {
         #[doc = "Register write enable bit.\nIf this is cleared to 0, the corresponding !!DIO_PAD_ATTR\nis not writable anymore."]
         #[inline(always)]
-        pub fn en_clear(self) -> Self {
+        pub const fn en_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -411,11 +717,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct DioPadSleepEnReadVal(u32);
+    pub struct DioPadSleepEnReadVal(pub u32);
     impl DioPadSleepEnReadVal {
         #[doc = "Deep sleep mode enable.\nIf this bit is set to 1 the corresponding pad will enable the sleep behavior\nspecified in !!DIO_PAD_SLEEP_MODE upon deep sleep entry, and the corresponding bit\nin !!DIO_PAD_SLEEP_STATUS will be set to 1.\nThe pad remains in deep sleep mode until the corresponding bit in\n!!DIO_PAD_SLEEP_STATUS is cleared by SW.\nNote that if an always on peripheral is connected to a specific DIO pad,\nthe corresponding !!DIO_PAD_SLEEP_EN bit should be set to 0."]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -437,12 +743,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct DioPadSleepEnWriteVal(u32);
+    pub struct DioPadSleepEnWriteVal(pub u32);
     impl DioPadSleepEnWriteVal {
         #[doc = "Deep sleep mode enable.\nIf this bit is set to 1 the corresponding pad will enable the sleep behavior\nspecified in !!DIO_PAD_SLEEP_MODE upon deep sleep entry, and the corresponding bit\nin !!DIO_PAD_SLEEP_STATUS will be set to 1.\nThe pad remains in deep sleep mode until the corresponding bit in\n!!DIO_PAD_SLEEP_STATUS is cleared by SW.\nNote that if an always on peripheral is connected to a specific DIO pad,\nthe corresponding !!DIO_PAD_SLEEP_EN bit should be set to 0."]
         #[inline(always)]
-        pub fn en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for DioPadSleepEnWriteVal {
@@ -458,11 +764,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct DioPadSleepRegwenReadVal(u32);
+    pub struct DioPadSleepRegwenReadVal(pub u32);
     impl DioPadSleepRegwenReadVal {
         #[doc = "Register write enable bit.\nIf this is cleared to 0, the corresponding !!DIO_PAD_SLEEP_MODE\nis not writable anymore."]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -484,11 +790,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct DioPadSleepRegwenWriteVal(u32);
+    pub struct DioPadSleepRegwenWriteVal(pub u32);
     impl DioPadSleepRegwenWriteVal {
         #[doc = "Register write enable bit.\nIf this is cleared to 0, the corresponding !!DIO_PAD_SLEEP_MODE\nis not writable anymore."]
         #[inline(always)]
-        pub fn en_clear(self) -> Self {
+        pub const fn en_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -505,86 +811,86 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct DioPadSleepStatus0ReadVal(u32);
+    pub struct DioPadSleepStatus0ReadVal(pub u32);
     impl DioPadSleepStatus0ReadVal {
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en0(&self) -> bool {
+        pub const fn en0(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en1(&self) -> bool {
+        pub const fn en1(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en2(&self) -> bool {
+        pub const fn en2(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en3(&self) -> bool {
+        pub const fn en3(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en4(&self) -> bool {
+        pub const fn en4(&self) -> bool {
             ((self.0 >> 4) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en5(&self) -> bool {
+        pub const fn en5(&self) -> bool {
             ((self.0 >> 5) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en6(&self) -> bool {
+        pub const fn en6(&self) -> bool {
             ((self.0 >> 6) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en7(&self) -> bool {
+        pub const fn en7(&self) -> bool {
             ((self.0 >> 7) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en8(&self) -> bool {
+        pub const fn en8(&self) -> bool {
             ((self.0 >> 8) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en9(&self) -> bool {
+        pub const fn en9(&self) -> bool {
             ((self.0 >> 9) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en10(&self) -> bool {
+        pub const fn en10(&self) -> bool {
             ((self.0 >> 10) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en11(&self) -> bool {
+        pub const fn en11(&self) -> bool {
             ((self.0 >> 11) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en12(&self) -> bool {
+        pub const fn en12(&self) -> bool {
             ((self.0 >> 12) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en13(&self) -> bool {
+        pub const fn en13(&self) -> bool {
             ((self.0 >> 13) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en14(&self) -> bool {
+        pub const fn en14(&self) -> bool {
             ((self.0 >> 14) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en15(&self) -> bool {
+        pub const fn en15(&self) -> bool {
             ((self.0 >> 15) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -606,86 +912,86 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct DioPadSleepStatus0WriteVal(u32);
+    pub struct DioPadSleepStatus0WriteVal(pub u32);
     impl DioPadSleepStatus0WriteVal {
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en0_clear(self) -> Self {
+        pub const fn en0_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en1_clear(self) -> Self {
+        pub const fn en1_clear(self) -> Self {
             Self(self.0 & !(1 << 1))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en2_clear(self) -> Self {
+        pub const fn en2_clear(self) -> Self {
             Self(self.0 & !(1 << 2))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en3_clear(self) -> Self {
+        pub const fn en3_clear(self) -> Self {
             Self(self.0 & !(1 << 3))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en4_clear(self) -> Self {
+        pub const fn en4_clear(self) -> Self {
             Self(self.0 & !(1 << 4))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en5_clear(self) -> Self {
+        pub const fn en5_clear(self) -> Self {
             Self(self.0 & !(1 << 5))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en6_clear(self) -> Self {
+        pub const fn en6_clear(self) -> Self {
             Self(self.0 & !(1 << 6))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en7_clear(self) -> Self {
+        pub const fn en7_clear(self) -> Self {
             Self(self.0 & !(1 << 7))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en8_clear(self) -> Self {
+        pub const fn en8_clear(self) -> Self {
             Self(self.0 & !(1 << 8))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en9_clear(self) -> Self {
+        pub const fn en9_clear(self) -> Self {
             Self(self.0 & !(1 << 9))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en10_clear(self) -> Self {
+        pub const fn en10_clear(self) -> Self {
             Self(self.0 & !(1 << 10))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en11_clear(self) -> Self {
+        pub const fn en11_clear(self) -> Self {
             Self(self.0 & !(1 << 11))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en12_clear(self) -> Self {
+        pub const fn en12_clear(self) -> Self {
             Self(self.0 & !(1 << 12))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en13_clear(self) -> Self {
+        pub const fn en13_clear(self) -> Self {
             Self(self.0 & !(1 << 13))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en14_clear(self) -> Self {
+        pub const fn en14_clear(self) -> Self {
             Self(self.0 & !(1 << 14))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!DIO_PAD_SLEEP_MODE) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en15_clear(self) -> Self {
+        pub const fn en15_clear(self) -> Self {
             Self(self.0 & !(1 << 15))
         }
     }
@@ -702,56 +1008,56 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IoPadAttrReadVal(u32);
+    pub struct IoPadAttrReadVal(pub u32);
     impl IoPadAttrReadVal {
         #[doc = "Invert input and output levels."]
         #[inline(always)]
-        pub fn invert(&self) -> bool {
+        pub const fn invert(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Enable virtual open drain."]
         #[inline(always)]
-        pub fn virtual_od_en(&self) -> bool {
+        pub const fn virtual_od_en(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "Enable pull-up or pull-down resistor."]
         #[inline(always)]
-        pub fn pull_en(&self) -> bool {
+        pub const fn pull_en(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "Pull select (0: pull-down, 1: pull-up)."]
         #[inline(always)]
-        pub fn pull_select(&self) -> super::enums::PullSelect {
-            super::enums::PullSelect::try_from((self.0 >> 3) & 1).unwrap()
+        pub const fn pull_select(&self) -> super::enums::PullSelect {
+            super::enums::PullSelect::from_raw((self.0 >> 3) & 1).unwrap()
         }
         #[doc = "Enable keeper termination. This weakly drives the previous pad output value when output is disabled, similar to a verilog `trireg`."]
         #[inline(always)]
-        pub fn keeper_en(&self) -> bool {
+        pub const fn keeper_en(&self) -> bool {
             ((self.0 >> 4) & 1) != 0
         }
         #[doc = "Enable the schmitt trigger."]
         #[inline(always)]
-        pub fn schmitt_en(&self) -> bool {
+        pub const fn schmitt_en(&self) -> bool {
             ((self.0 >> 5) & 1) != 0
         }
         #[doc = "Enable open drain."]
         #[inline(always)]
-        pub fn od_en(&self) -> bool {
+        pub const fn od_en(&self) -> bool {
             ((self.0 >> 6) & 1) != 0
         }
         #[doc = "Disable input drivers.\nSetting this to 1 for pads that are not used as input can reduce their leakage current."]
         #[inline(always)]
-        pub fn input_disable(&self) -> bool {
+        pub const fn input_disable(&self) -> bool {
             ((self.0 >> 7) & 1) != 0
         }
         #[doc = "Slew rate (0x0: slowest, 0x3: fastest)."]
         #[inline(always)]
-        pub fn slew_rate(&self) -> u32 {
+        pub const fn slew_rate(&self) -> u32 {
             (self.0 >> 16) & 3
         }
         #[doc = "Drive strength (0x0: weakest, 0xf: strongest)"]
         #[inline(always)]
-        pub fn drive_strength(&self) -> u32 {
+        pub const fn drive_strength(&self) -> u32 {
             (self.0 >> 20) & 0xf
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -773,22 +1079,22 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IoPadAttrWriteVal(u32);
+    pub struct IoPadAttrWriteVal(pub u32);
     impl IoPadAttrWriteVal {
         #[doc = "Invert input and output levels."]
         #[inline(always)]
-        pub fn invert(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn invert(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
         #[doc = "Enable virtual open drain."]
         #[inline(always)]
-        pub fn virtual_od_en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 1)) | (u32::from(val) << 1))
+        pub const fn virtual_od_en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 1)) | (val as u32) << 1)
         }
         #[doc = "Enable pull-up or pull-down resistor."]
         #[inline(always)]
-        pub fn pull_en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 2)) | (u32::from(val) << 2))
+        pub const fn pull_en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 2)) | (val as u32) << 2)
         }
         #[doc = "Pull select (0: pull-down, 1: pull-up)."]
         #[inline(always)]
@@ -801,34 +1107,37 @@ pub mod regs {
                     | (u32::from(f(super::enums::selector::PullSelectSelector())) << 3),
             )
         }
+        pub const fn with_pull_select(self, val: super::enums::PullSelect) -> Self {
+            Self((self.0 & !(1 << 3)) | ((val as u32) << 3))
+        }
         #[doc = "Enable keeper termination. This weakly drives the previous pad output value when output is disabled, similar to a verilog `trireg`."]
         #[inline(always)]
-        pub fn keeper_en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 4)) | (u32::from(val) << 4))
+        pub const fn keeper_en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 4)) | (val as u32) << 4)
         }
         #[doc = "Enable the schmitt trigger."]
         #[inline(always)]
-        pub fn schmitt_en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 5)) | (u32::from(val) << 5))
+        pub const fn schmitt_en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 5)) | (val as u32) << 5)
         }
         #[doc = "Enable open drain."]
         #[inline(always)]
-        pub fn od_en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 6)) | (u32::from(val) << 6))
+        pub const fn od_en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 6)) | (val as u32) << 6)
         }
         #[doc = "Disable input drivers.\nSetting this to 1 for pads that are not used as input can reduce their leakage current."]
         #[inline(always)]
-        pub fn input_disable(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 7)) | (u32::from(val) << 7))
+        pub const fn input_disable(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 7)) | (val as u32) << 7)
         }
         #[doc = "Slew rate (0x0: slowest, 0x3: fastest)."]
         #[inline(always)]
-        pub fn slew_rate(self, val: u32) -> Self {
+        pub const fn slew_rate(self, val: u32) -> Self {
             Self((self.0 & !(3 << 16)) | ((val & 3) << 16))
         }
         #[doc = "Drive strength (0x0: weakest, 0xf: strongest)"]
         #[inline(always)]
-        pub fn drive_strength(self, val: u32) -> Self {
+        pub const fn drive_strength(self, val: u32) -> Self {
             Self((self.0 & !(0xf << 20)) | ((val & 0xf) << 20))
         }
     }
@@ -845,12 +1154,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IoPadSleepModeReadVal(u32);
+    pub struct IoPadSleepModeReadVal(pub u32);
     impl IoPadSleepModeReadVal {
         #[doc = "Value to drive in deep sleep."]
         #[inline(always)]
-        pub fn out(&self) -> super::enums::Out {
-            super::enums::Out::try_from((self.0 >> 0) & 3).unwrap()
+        pub const fn out(&self) -> super::enums::Out {
+            super::enums::Out::from_raw((self.0 >> 0) & 3).unwrap()
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
         #[inline(always)]
@@ -871,7 +1180,7 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct IoPadSleepModeWriteVal(u32);
+    pub struct IoPadSleepModeWriteVal(pub u32);
     impl IoPadSleepModeWriteVal {
         #[doc = "Value to drive in deep sleep."]
         #[inline(always)]
@@ -880,6 +1189,9 @@ pub mod regs {
             f: impl FnOnce(super::enums::selector::OutSelector) -> super::enums::Out,
         ) -> Self {
             Self((self.0 & !(3 << 0)) | (u32::from(f(super::enums::selector::OutSelector())) << 0))
+        }
+        pub const fn with_out(self, val: super::enums::Out) -> Self {
+            Self((self.0 & !(3 << 0)) | ((val as u32) << 0))
         }
     }
     impl From<u32> for IoPadSleepModeWriteVal {
@@ -895,11 +1207,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MioOutselReadVal(u32);
+    pub struct MioOutselReadVal(pub u32);
     impl MioOutselReadVal {
         #[doc = "0: tie constantly to zero, 1: tie constantly to 1, 2: high-Z,\n>=3: peripheral outputs (i.e., add 3 to the native peripheral pad index)."]
         #[inline(always)]
-        pub fn out(&self) -> u32 {
+        pub const fn out(&self) -> u32 {
             (self.0 >> 0) & 0x7f
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -921,11 +1233,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MioOutselWriteVal(u32);
+    pub struct MioOutselWriteVal(pub u32);
     impl MioOutselWriteVal {
         #[doc = "0: tie constantly to zero, 1: tie constantly to 1, 2: high-Z,\n>=3: peripheral outputs (i.e., add 3 to the native peripheral pad index)."]
         #[inline(always)]
-        pub fn out(self, val: u32) -> Self {
+        pub const fn out(self, val: u32) -> Self {
             Self((self.0 & !(0x7f << 0)) | ((val & 0x7f) << 0))
         }
     }
@@ -942,11 +1254,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MioOutselRegwenReadVal(u32);
+    pub struct MioOutselRegwenReadVal(pub u32);
     impl MioOutselRegwenReadVal {
         #[doc = "Register write enable bit.\nIf this is cleared to 0, the corresponding MIO_OUTSEL\nis not writable anymore."]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -968,11 +1280,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MioOutselRegwenWriteVal(u32);
+    pub struct MioOutselRegwenWriteVal(pub u32);
     impl MioOutselRegwenWriteVal {
         #[doc = "Register write enable bit.\nIf this is cleared to 0, the corresponding MIO_OUTSEL\nis not writable anymore."]
         #[inline(always)]
-        pub fn en_clear(self) -> Self {
+        pub const fn en_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -989,11 +1301,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MioPadAttrRegwenReadVal(u32);
+    pub struct MioPadAttrRegwenReadVal(pub u32);
     impl MioPadAttrRegwenReadVal {
         #[doc = "Register write enable bit.\nIf this is cleared to 0, the corresponding !!MIO_PAD_ATTR\nis not writable anymore."]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1015,11 +1327,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MioPadAttrRegwenWriteVal(u32);
+    pub struct MioPadAttrRegwenWriteVal(pub u32);
     impl MioPadAttrRegwenWriteVal {
         #[doc = "Register write enable bit.\nIf this is cleared to 0, the corresponding !!MIO_PAD_ATTR\nis not writable anymore."]
         #[inline(always)]
-        pub fn en_clear(self) -> Self {
+        pub const fn en_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -1036,11 +1348,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MioPadSleepEnReadVal(u32);
+    pub struct MioPadSleepEnReadVal(pub u32);
     impl MioPadSleepEnReadVal {
         #[doc = "Deep sleep mode enable.\nIf this bit is set to 1 the corresponding pad will enable the sleep behavior\nspecified in !!MIO_PAD_SLEEP_MODE upon deep sleep entry, and the corresponding bit\nin !!MIO_PAD_SLEEP_STATUS will be set to 1.\nThe pad remains in deep sleep mode until the corresponding bit in\n!!MIO_PAD_SLEEP_STATUS is cleared by SW.\nNote that if an always on peripheral is connected to a specific MIO pad,\nthe corresponding !!MIO_PAD_SLEEP_EN bit should be set to 0."]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1062,12 +1374,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MioPadSleepEnWriteVal(u32);
+    pub struct MioPadSleepEnWriteVal(pub u32);
     impl MioPadSleepEnWriteVal {
         #[doc = "Deep sleep mode enable.\nIf this bit is set to 1 the corresponding pad will enable the sleep behavior\nspecified in !!MIO_PAD_SLEEP_MODE upon deep sleep entry, and the corresponding bit\nin !!MIO_PAD_SLEEP_STATUS will be set to 1.\nThe pad remains in deep sleep mode until the corresponding bit in\n!!MIO_PAD_SLEEP_STATUS is cleared by SW.\nNote that if an always on peripheral is connected to a specific MIO pad,\nthe corresponding !!MIO_PAD_SLEEP_EN bit should be set to 0."]
         #[inline(always)]
-        pub fn en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for MioPadSleepEnWriteVal {
@@ -1083,11 +1395,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MioPadSleepRegwenReadVal(u32);
+    pub struct MioPadSleepRegwenReadVal(pub u32);
     impl MioPadSleepRegwenReadVal {
         #[doc = "Register write enable bit.\nIf this is cleared to 0, the corresponding !!MIO_PAD_SLEEP_MODE\nis not writable anymore."]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1109,11 +1421,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MioPadSleepRegwenWriteVal(u32);
+    pub struct MioPadSleepRegwenWriteVal(pub u32);
     impl MioPadSleepRegwenWriteVal {
         #[doc = "Register write enable bit.\nIf this is cleared to 0, the corresponding !!MIO_PAD_SLEEP_MODE\nis not writable anymore."]
         #[inline(always)]
-        pub fn en_clear(self) -> Self {
+        pub const fn en_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -1130,166 +1442,166 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MioPadSleepStatus0ReadVal(u32);
+    pub struct MioPadSleepStatus0ReadVal(pub u32);
     impl MioPadSleepStatus0ReadVal {
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en0(&self) -> bool {
+        pub const fn en0(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en1(&self) -> bool {
+        pub const fn en1(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en2(&self) -> bool {
+        pub const fn en2(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en3(&self) -> bool {
+        pub const fn en3(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en4(&self) -> bool {
+        pub const fn en4(&self) -> bool {
             ((self.0 >> 4) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en5(&self) -> bool {
+        pub const fn en5(&self) -> bool {
             ((self.0 >> 5) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en6(&self) -> bool {
+        pub const fn en6(&self) -> bool {
             ((self.0 >> 6) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en7(&self) -> bool {
+        pub const fn en7(&self) -> bool {
             ((self.0 >> 7) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en8(&self) -> bool {
+        pub const fn en8(&self) -> bool {
             ((self.0 >> 8) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en9(&self) -> bool {
+        pub const fn en9(&self) -> bool {
             ((self.0 >> 9) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en10(&self) -> bool {
+        pub const fn en10(&self) -> bool {
             ((self.0 >> 10) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en11(&self) -> bool {
+        pub const fn en11(&self) -> bool {
             ((self.0 >> 11) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en12(&self) -> bool {
+        pub const fn en12(&self) -> bool {
             ((self.0 >> 12) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en13(&self) -> bool {
+        pub const fn en13(&self) -> bool {
             ((self.0 >> 13) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en14(&self) -> bool {
+        pub const fn en14(&self) -> bool {
             ((self.0 >> 14) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en15(&self) -> bool {
+        pub const fn en15(&self) -> bool {
             ((self.0 >> 15) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en16(&self) -> bool {
+        pub const fn en16(&self) -> bool {
             ((self.0 >> 16) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en17(&self) -> bool {
+        pub const fn en17(&self) -> bool {
             ((self.0 >> 17) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en18(&self) -> bool {
+        pub const fn en18(&self) -> bool {
             ((self.0 >> 18) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en19(&self) -> bool {
+        pub const fn en19(&self) -> bool {
             ((self.0 >> 19) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en20(&self) -> bool {
+        pub const fn en20(&self) -> bool {
             ((self.0 >> 20) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en21(&self) -> bool {
+        pub const fn en21(&self) -> bool {
             ((self.0 >> 21) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en22(&self) -> bool {
+        pub const fn en22(&self) -> bool {
             ((self.0 >> 22) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en23(&self) -> bool {
+        pub const fn en23(&self) -> bool {
             ((self.0 >> 23) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en24(&self) -> bool {
+        pub const fn en24(&self) -> bool {
             ((self.0 >> 24) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en25(&self) -> bool {
+        pub const fn en25(&self) -> bool {
             ((self.0 >> 25) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en26(&self) -> bool {
+        pub const fn en26(&self) -> bool {
             ((self.0 >> 26) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en27(&self) -> bool {
+        pub const fn en27(&self) -> bool {
             ((self.0 >> 27) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en28(&self) -> bool {
+        pub const fn en28(&self) -> bool {
             ((self.0 >> 28) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en29(&self) -> bool {
+        pub const fn en29(&self) -> bool {
             ((self.0 >> 29) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en30(&self) -> bool {
+        pub const fn en30(&self) -> bool {
             ((self.0 >> 30) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en31(&self) -> bool {
+        pub const fn en31(&self) -> bool {
             ((self.0 >> 31) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1311,166 +1623,166 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MioPadSleepStatus0WriteVal(u32);
+    pub struct MioPadSleepStatus0WriteVal(pub u32);
     impl MioPadSleepStatus0WriteVal {
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en0_clear(self) -> Self {
+        pub const fn en0_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en1_clear(self) -> Self {
+        pub const fn en1_clear(self) -> Self {
             Self(self.0 & !(1 << 1))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en2_clear(self) -> Self {
+        pub const fn en2_clear(self) -> Self {
             Self(self.0 & !(1 << 2))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en3_clear(self) -> Self {
+        pub const fn en3_clear(self) -> Self {
             Self(self.0 & !(1 << 3))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en4_clear(self) -> Self {
+        pub const fn en4_clear(self) -> Self {
             Self(self.0 & !(1 << 4))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en5_clear(self) -> Self {
+        pub const fn en5_clear(self) -> Self {
             Self(self.0 & !(1 << 5))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en6_clear(self) -> Self {
+        pub const fn en6_clear(self) -> Self {
             Self(self.0 & !(1 << 6))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en7_clear(self) -> Self {
+        pub const fn en7_clear(self) -> Self {
             Self(self.0 & !(1 << 7))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en8_clear(self) -> Self {
+        pub const fn en8_clear(self) -> Self {
             Self(self.0 & !(1 << 8))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en9_clear(self) -> Self {
+        pub const fn en9_clear(self) -> Self {
             Self(self.0 & !(1 << 9))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en10_clear(self) -> Self {
+        pub const fn en10_clear(self) -> Self {
             Self(self.0 & !(1 << 10))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en11_clear(self) -> Self {
+        pub const fn en11_clear(self) -> Self {
             Self(self.0 & !(1 << 11))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en12_clear(self) -> Self {
+        pub const fn en12_clear(self) -> Self {
             Self(self.0 & !(1 << 12))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en13_clear(self) -> Self {
+        pub const fn en13_clear(self) -> Self {
             Self(self.0 & !(1 << 13))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en14_clear(self) -> Self {
+        pub const fn en14_clear(self) -> Self {
             Self(self.0 & !(1 << 14))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en15_clear(self) -> Self {
+        pub const fn en15_clear(self) -> Self {
             Self(self.0 & !(1 << 15))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en16_clear(self) -> Self {
+        pub const fn en16_clear(self) -> Self {
             Self(self.0 & !(1 << 16))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en17_clear(self) -> Self {
+        pub const fn en17_clear(self) -> Self {
             Self(self.0 & !(1 << 17))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en18_clear(self) -> Self {
+        pub const fn en18_clear(self) -> Self {
             Self(self.0 & !(1 << 18))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en19_clear(self) -> Self {
+        pub const fn en19_clear(self) -> Self {
             Self(self.0 & !(1 << 19))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en20_clear(self) -> Self {
+        pub const fn en20_clear(self) -> Self {
             Self(self.0 & !(1 << 20))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en21_clear(self) -> Self {
+        pub const fn en21_clear(self) -> Self {
             Self(self.0 & !(1 << 21))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en22_clear(self) -> Self {
+        pub const fn en22_clear(self) -> Self {
             Self(self.0 & !(1 << 22))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en23_clear(self) -> Self {
+        pub const fn en23_clear(self) -> Self {
             Self(self.0 & !(1 << 23))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en24_clear(self) -> Self {
+        pub const fn en24_clear(self) -> Self {
             Self(self.0 & !(1 << 24))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en25_clear(self) -> Self {
+        pub const fn en25_clear(self) -> Self {
             Self(self.0 & !(1 << 25))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en26_clear(self) -> Self {
+        pub const fn en26_clear(self) -> Self {
             Self(self.0 & !(1 << 26))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en27_clear(self) -> Self {
+        pub const fn en27_clear(self) -> Self {
             Self(self.0 & !(1 << 27))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en28_clear(self) -> Self {
+        pub const fn en28_clear(self) -> Self {
             Self(self.0 & !(1 << 28))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en29_clear(self) -> Self {
+        pub const fn en29_clear(self) -> Self {
             Self(self.0 & !(1 << 29))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en30_clear(self) -> Self {
+        pub const fn en30_clear(self) -> Self {
             Self(self.0 & !(1 << 30))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en31_clear(self) -> Self {
+        pub const fn en31_clear(self) -> Self {
             Self(self.0 & !(1 << 31))
         }
     }
@@ -1487,81 +1799,81 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MioPadSleepStatus1ReadVal(u32);
+    pub struct MioPadSleepStatus1ReadVal(pub u32);
     impl MioPadSleepStatus1ReadVal {
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en32(&self) -> bool {
+        pub const fn en32(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en33(&self) -> bool {
+        pub const fn en33(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en34(&self) -> bool {
+        pub const fn en34(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en35(&self) -> bool {
+        pub const fn en35(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en36(&self) -> bool {
+        pub const fn en36(&self) -> bool {
             ((self.0 >> 4) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en37(&self) -> bool {
+        pub const fn en37(&self) -> bool {
             ((self.0 >> 5) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en38(&self) -> bool {
+        pub const fn en38(&self) -> bool {
             ((self.0 >> 6) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en39(&self) -> bool {
+        pub const fn en39(&self) -> bool {
             ((self.0 >> 7) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en40(&self) -> bool {
+        pub const fn en40(&self) -> bool {
             ((self.0 >> 8) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en41(&self) -> bool {
+        pub const fn en41(&self) -> bool {
             ((self.0 >> 9) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en42(&self) -> bool {
+        pub const fn en42(&self) -> bool {
             ((self.0 >> 10) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en43(&self) -> bool {
+        pub const fn en43(&self) -> bool {
             ((self.0 >> 11) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en44(&self) -> bool {
+        pub const fn en44(&self) -> bool {
             ((self.0 >> 12) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en45(&self) -> bool {
+        pub const fn en45(&self) -> bool {
             ((self.0 >> 13) & 1) != 0
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en46(&self) -> bool {
+        pub const fn en46(&self) -> bool {
             ((self.0 >> 14) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1583,81 +1895,81 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MioPadSleepStatus1WriteVal(u32);
+    pub struct MioPadSleepStatus1WriteVal(pub u32);
     impl MioPadSleepStatus1WriteVal {
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en32_clear(self) -> Self {
+        pub const fn en32_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en33_clear(self) -> Self {
+        pub const fn en33_clear(self) -> Self {
             Self(self.0 & !(1 << 1))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en34_clear(self) -> Self {
+        pub const fn en34_clear(self) -> Self {
             Self(self.0 & !(1 << 2))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en35_clear(self) -> Self {
+        pub const fn en35_clear(self) -> Self {
             Self(self.0 & !(1 << 3))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en36_clear(self) -> Self {
+        pub const fn en36_clear(self) -> Self {
             Self(self.0 & !(1 << 4))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en37_clear(self) -> Self {
+        pub const fn en37_clear(self) -> Self {
             Self(self.0 & !(1 << 5))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en38_clear(self) -> Self {
+        pub const fn en38_clear(self) -> Self {
             Self(self.0 & !(1 << 6))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en39_clear(self) -> Self {
+        pub const fn en39_clear(self) -> Self {
             Self(self.0 & !(1 << 7))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en40_clear(self) -> Self {
+        pub const fn en40_clear(self) -> Self {
             Self(self.0 & !(1 << 8))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en41_clear(self) -> Self {
+        pub const fn en41_clear(self) -> Self {
             Self(self.0 & !(1 << 9))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en42_clear(self) -> Self {
+        pub const fn en42_clear(self) -> Self {
             Self(self.0 & !(1 << 10))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en43_clear(self) -> Self {
+        pub const fn en43_clear(self) -> Self {
             Self(self.0 & !(1 << 11))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en44_clear(self) -> Self {
+        pub const fn en44_clear(self) -> Self {
             Self(self.0 & !(1 << 12))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en45_clear(self) -> Self {
+        pub const fn en45_clear(self) -> Self {
             Self(self.0 & !(1 << 13))
         }
         #[doc = "This register is set to 1 if the deep sleep mode of the corresponding\npad has been enabled (!!MIO_PAD_SLEEP_EN) upon deep sleep entry.\nThe sleep mode of the corresponding pad will remain active until SW\nclears this bit."]
         #[inline(always)]
-        pub fn en46_clear(self) -> Self {
+        pub const fn en46_clear(self) -> Self {
             Self(self.0 & !(1 << 14))
         }
     }
@@ -1674,11 +1986,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MioPeriphInselReadVal(u32);
+    pub struct MioPeriphInselReadVal(pub u32);
     impl MioPeriphInselReadVal {
         #[doc = "0: tie constantly to zero, 1: tie constantly to 1,\n>=2: MIO pads (i.e., add 2 to the native MIO pad index)."]
         #[inline(always)]
-        pub fn in_(&self) -> u32 {
+        pub const fn in_(&self) -> u32 {
             (self.0 >> 0) & 0x3f
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1700,11 +2012,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MioPeriphInselWriteVal(u32);
+    pub struct MioPeriphInselWriteVal(pub u32);
     impl MioPeriphInselWriteVal {
         #[doc = "0: tie constantly to zero, 1: tie constantly to 1,\n>=2: MIO pads (i.e., add 2 to the native MIO pad index)."]
         #[inline(always)]
-        pub fn in_(self, val: u32) -> Self {
+        pub const fn in_(self, val: u32) -> Self {
             Self((self.0 & !(0x3f << 0)) | ((val & 0x3f) << 0))
         }
     }
@@ -1721,11 +2033,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MioPeriphInselRegwenReadVal(u32);
+    pub struct MioPeriphInselRegwenReadVal(pub u32);
     impl MioPeriphInselRegwenReadVal {
         #[doc = "Register write enable bit.\nIf this is cleared to 0, the corresponding MIO_PERIPH_INSEL\nis not writable anymore."]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1747,11 +2059,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct MioPeriphInselRegwenWriteVal(u32);
+    pub struct MioPeriphInselRegwenWriteVal(pub u32);
     impl MioPeriphInselRegwenWriteVal {
         #[doc = "Register write enable bit.\nIf this is cleared to 0, the corresponding MIO_PERIPH_INSEL\nis not writable anymore."]
         #[inline(always)]
-        pub fn en_clear(self) -> Self {
+        pub const fn en_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -1768,46 +2080,46 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WkupCause0ReadVal(u32);
+    pub struct WkupCause0ReadVal(pub u32);
     impl WkupCause0ReadVal {
         #[doc = "Set to 1 if the corresponding detector has detected a wakeup pattern. Write 0 to clear."]
         #[inline(always)]
-        pub fn cause0(&self) -> bool {
+        pub const fn cause0(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = "Set to 1 if the corresponding detector has detected a wakeup pattern. Write 0 to clear."]
         #[inline(always)]
-        pub fn cause1(&self) -> bool {
+        pub const fn cause1(&self) -> bool {
             ((self.0 >> 1) & 1) != 0
         }
         #[doc = "Set to 1 if the corresponding detector has detected a wakeup pattern. Write 0 to clear."]
         #[inline(always)]
-        pub fn cause2(&self) -> bool {
+        pub const fn cause2(&self) -> bool {
             ((self.0 >> 2) & 1) != 0
         }
         #[doc = "Set to 1 if the corresponding detector has detected a wakeup pattern. Write 0 to clear."]
         #[inline(always)]
-        pub fn cause3(&self) -> bool {
+        pub const fn cause3(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "Set to 1 if the corresponding detector has detected a wakeup pattern. Write 0 to clear."]
         #[inline(always)]
-        pub fn cause4(&self) -> bool {
+        pub const fn cause4(&self) -> bool {
             ((self.0 >> 4) & 1) != 0
         }
         #[doc = "Set to 1 if the corresponding detector has detected a wakeup pattern. Write 0 to clear."]
         #[inline(always)]
-        pub fn cause5(&self) -> bool {
+        pub const fn cause5(&self) -> bool {
             ((self.0 >> 5) & 1) != 0
         }
         #[doc = "Set to 1 if the corresponding detector has detected a wakeup pattern. Write 0 to clear."]
         #[inline(always)]
-        pub fn cause6(&self) -> bool {
+        pub const fn cause6(&self) -> bool {
             ((self.0 >> 6) & 1) != 0
         }
         #[doc = "Set to 1 if the corresponding detector has detected a wakeup pattern. Write 0 to clear."]
         #[inline(always)]
-        pub fn cause7(&self) -> bool {
+        pub const fn cause7(&self) -> bool {
             ((self.0 >> 7) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1829,46 +2141,46 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WkupCause0WriteVal(u32);
+    pub struct WkupCause0WriteVal(pub u32);
     impl WkupCause0WriteVal {
         #[doc = "Set to 1 if the corresponding detector has detected a wakeup pattern. Write 0 to clear."]
         #[inline(always)]
-        pub fn cause0_clear(self) -> Self {
+        pub const fn cause0_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
         #[doc = "Set to 1 if the corresponding detector has detected a wakeup pattern. Write 0 to clear."]
         #[inline(always)]
-        pub fn cause1_clear(self) -> Self {
+        pub const fn cause1_clear(self) -> Self {
             Self(self.0 & !(1 << 1))
         }
         #[doc = "Set to 1 if the corresponding detector has detected a wakeup pattern. Write 0 to clear."]
         #[inline(always)]
-        pub fn cause2_clear(self) -> Self {
+        pub const fn cause2_clear(self) -> Self {
             Self(self.0 & !(1 << 2))
         }
         #[doc = "Set to 1 if the corresponding detector has detected a wakeup pattern. Write 0 to clear."]
         #[inline(always)]
-        pub fn cause3_clear(self) -> Self {
+        pub const fn cause3_clear(self) -> Self {
             Self(self.0 & !(1 << 3))
         }
         #[doc = "Set to 1 if the corresponding detector has detected a wakeup pattern. Write 0 to clear."]
         #[inline(always)]
-        pub fn cause4_clear(self) -> Self {
+        pub const fn cause4_clear(self) -> Self {
             Self(self.0 & !(1 << 4))
         }
         #[doc = "Set to 1 if the corresponding detector has detected a wakeup pattern. Write 0 to clear."]
         #[inline(always)]
-        pub fn cause5_clear(self) -> Self {
+        pub const fn cause5_clear(self) -> Self {
             Self(self.0 & !(1 << 5))
         }
         #[doc = "Set to 1 if the corresponding detector has detected a wakeup pattern. Write 0 to clear."]
         #[inline(always)]
-        pub fn cause6_clear(self) -> Self {
+        pub const fn cause6_clear(self) -> Self {
             Self(self.0 & !(1 << 6))
         }
         #[doc = "Set to 1 if the corresponding detector has detected a wakeup pattern. Write 0 to clear."]
         #[inline(always)]
-        pub fn cause7_clear(self) -> Self {
+        pub const fn cause7_clear(self) -> Self {
             Self(self.0 & !(1 << 7))
         }
     }
@@ -1885,21 +2197,21 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WkupDetectorReadVal(u32);
+    pub struct WkupDetectorReadVal(pub u32);
     impl WkupDetectorReadVal {
         #[doc = "Wakeup detection mode. Out of range values default to Posedge."]
         #[inline(always)]
-        pub fn mode(&self) -> super::enums::Mode {
-            super::enums::Mode::try_from((self.0 >> 0) & 7).unwrap()
+        pub const fn mode(&self) -> super::enums::Mode {
+            super::enums::Mode::from_raw((self.0 >> 0) & 7).unwrap()
         }
         #[doc = "0: signal filter disabled, 1: signal filter enabled. the signal must\nbe stable for 4 always-on clock cycles before the value is being forwarded.\ncan be used for debouncing."]
         #[inline(always)]
-        pub fn filter(&self) -> bool {
+        pub const fn filter(&self) -> bool {
             ((self.0 >> 3) & 1) != 0
         }
         #[doc = "0: select index !!WKUP_DETECTOR_PADSEL from MIO pads,\n1: select index !!WKUP_DETECTOR_PADSEL from DIO pads."]
         #[inline(always)]
-        pub fn miodio(&self) -> bool {
+        pub const fn miodio(&self) -> bool {
             ((self.0 >> 4) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1921,7 +2233,7 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WkupDetectorWriteVal(u32);
+    pub struct WkupDetectorWriteVal(pub u32);
     impl WkupDetectorWriteVal {
         #[doc = "Wakeup detection mode. Out of range values default to Posedge."]
         #[inline(always)]
@@ -1931,15 +2243,18 @@ pub mod regs {
         ) -> Self {
             Self((self.0 & !(7 << 0)) | (u32::from(f(super::enums::selector::ModeSelector())) << 0))
         }
+        pub const fn with_mode(self, val: super::enums::Mode) -> Self {
+            Self((self.0 & !(7 << 0)) | ((val as u32) << 0))
+        }
         #[doc = "0: signal filter disabled, 1: signal filter enabled. the signal must\nbe stable for 4 always-on clock cycles before the value is being forwarded.\ncan be used for debouncing."]
         #[inline(always)]
-        pub fn filter(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 3)) | (u32::from(val) << 3))
+        pub const fn filter(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 3)) | (val as u32) << 3)
         }
         #[doc = "0: select index !!WKUP_DETECTOR_PADSEL from MIO pads,\n1: select index !!WKUP_DETECTOR_PADSEL from DIO pads."]
         #[inline(always)]
-        pub fn miodio(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 4)) | (u32::from(val) << 4))
+        pub const fn miodio(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 4)) | (val as u32) << 4)
         }
     }
     impl From<u32> for WkupDetectorWriteVal {
@@ -1955,11 +2270,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WkupDetectorCntThReadVal(u32);
+    pub struct WkupDetectorCntThReadVal(pub u32);
     impl WkupDetectorCntThReadVal {
         #[doc = "Counter threshold for TimedLow and TimedHigh wakeup detector modes (see !!WKUP_DETECTOR).\nThe threshold is in terms of always-on clock cycles."]
         #[inline(always)]
-        pub fn th(&self) -> u32 {
+        pub const fn th(&self) -> u32 {
             (self.0 >> 0) & 0xff
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -1981,11 +2296,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WkupDetectorCntThWriteVal(u32);
+    pub struct WkupDetectorCntThWriteVal(pub u32);
     impl WkupDetectorCntThWriteVal {
         #[doc = "Counter threshold for TimedLow and TimedHigh wakeup detector modes (see !!WKUP_DETECTOR).\nThe threshold is in terms of always-on clock cycles."]
         #[inline(always)]
-        pub fn th(self, val: u32) -> Self {
+        pub const fn th(self, val: u32) -> Self {
             Self((self.0 & !(0xff << 0)) | ((val & 0xff) << 0))
         }
     }
@@ -2002,11 +2317,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WkupDetectorEnReadVal(u32);
+    pub struct WkupDetectorEnReadVal(pub u32);
     impl WkupDetectorEnReadVal {
         #[doc = "Setting this bit activates the corresponding wakeup detector.\nThe behavior is as specified in !!WKUP_DETECTOR,\n!!WKUP_DETECTOR_CNT_TH and !!WKUP_DETECTOR_PADSEL."]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2028,12 +2343,12 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WkupDetectorEnWriteVal(u32);
+    pub struct WkupDetectorEnWriteVal(pub u32);
     impl WkupDetectorEnWriteVal {
         #[doc = "Setting this bit activates the corresponding wakeup detector.\nThe behavior is as specified in !!WKUP_DETECTOR,\n!!WKUP_DETECTOR_CNT_TH and !!WKUP_DETECTOR_PADSEL."]
         #[inline(always)]
-        pub fn en(self, val: bool) -> Self {
-            Self((self.0 & !(1 << 0)) | (u32::from(val) << 0))
+        pub const fn en(self, val: bool) -> Self {
+            Self((self.0 & !(1 << 0)) | (val as u32) << 0)
         }
     }
     impl From<u32> for WkupDetectorEnWriteVal {
@@ -2049,11 +2364,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WkupDetectorPadselReadVal(u32);
+    pub struct WkupDetectorPadselReadVal(pub u32);
     impl WkupDetectorPadselReadVal {
         #[doc = "Selects a specific MIO or DIO pad (depending on !!WKUP_DETECTOR configuration).\nIn case of MIO, the pad select index is the same as used for !!MIO_PERIPH_INSEL, meaning that index\n0 and 1 just select constants 0 and 1, and the MIO pads live at indices >= 2. In case of DIO pads,\nthe pad select index corresponds 1:1 to the DIO pad to be selected."]
         #[inline(always)]
-        pub fn sel(&self) -> u32 {
+        pub const fn sel(&self) -> u32 {
             (self.0 >> 0) & 0x3f
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2075,11 +2390,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WkupDetectorPadselWriteVal(u32);
+    pub struct WkupDetectorPadselWriteVal(pub u32);
     impl WkupDetectorPadselWriteVal {
         #[doc = "Selects a specific MIO or DIO pad (depending on !!WKUP_DETECTOR configuration).\nIn case of MIO, the pad select index is the same as used for !!MIO_PERIPH_INSEL, meaning that index\n0 and 1 just select constants 0 and 1, and the MIO pads live at indices >= 2. In case of DIO pads,\nthe pad select index corresponds 1:1 to the DIO pad to be selected."]
         #[inline(always)]
-        pub fn sel(self, val: u32) -> Self {
+        pub const fn sel(self, val: u32) -> Self {
             Self((self.0 & !(0x3f << 0)) | ((val & 0x3f) << 0))
         }
     }
@@ -2096,11 +2411,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WkupDetectorRegwenReadVal(u32);
+    pub struct WkupDetectorRegwenReadVal(pub u32);
     impl WkupDetectorRegwenReadVal {
         #[doc = "Register write enable bit.\nIf this is cleared to 0, the corresponding WKUP_DETECTOR\nconfiguration is not writable anymore."]
         #[inline(always)]
-        pub fn en(&self) -> bool {
+        pub const fn en(&self) -> bool {
             ((self.0 >> 0) & 1) != 0
         }
         #[doc = r" Construct a WriteVal that can be used to modify the contents of this register value."]
@@ -2122,11 +2437,11 @@ pub mod regs {
         }
     }
     #[derive(Clone, Copy)]
-    pub struct WkupDetectorRegwenWriteVal(u32);
+    pub struct WkupDetectorRegwenWriteVal(pub u32);
     impl WkupDetectorRegwenWriteVal {
         #[doc = "Register write enable bit.\nIf this is cleared to 0, the corresponding WKUP_DETECTOR\nconfiguration is not writable anymore."]
         #[inline(always)]
-        pub fn en_clear(self) -> Self {
+        pub const fn en_clear(self) -> Self {
             Self(self.0 & !(1 << 0))
         }
     }
@@ -2178,16 +2493,19 @@ pub mod enums {
         pub fn timed_low(&self) -> bool {
             *self == Self::Timedlow
         }
+        pub const fn from_raw(val: u32) -> Option<Mode> {
+            if val < 8 {
+                Some(unsafe { core::mem::transmute::<u32, Mode>(val) })
+            } else {
+                None
+            }
+        }
     }
     impl TryFrom<u32> for Mode {
         type Error = ();
         #[inline(always)]
         fn try_from(val: u32) -> Result<Mode, ()> {
-            if val < 8 {
-                Ok(unsafe { core::mem::transmute::<u32, Mode>(val) })
-            } else {
-                Err(())
-            }
+            Mode::from_raw(val).ok_or(())
         }
     }
     impl From<Mode> for u32 {
@@ -2220,16 +2538,19 @@ pub mod enums {
         pub fn keep(&self) -> bool {
             *self == Self::Keep
         }
+        pub const fn from_raw(val: u32) -> Option<Out> {
+            if val < 4 {
+                Some(unsafe { core::mem::transmute::<u32, Out>(val) })
+            } else {
+                None
+            }
+        }
     }
     impl TryFrom<u32> for Out {
         type Error = ();
         #[inline(always)]
         fn try_from(val: u32) -> Result<Out, ()> {
-            if val < 4 {
-                Ok(unsafe { core::mem::transmute::<u32, Out>(val) })
-            } else {
-                Err(())
-            }
+            Out::from_raw(val).ok_or(())
         }
     }
     impl From<Out> for u32 {
@@ -2252,16 +2573,19 @@ pub mod enums {
         pub fn pull_up(&self) -> bool {
             *self == Self::PullUp
         }
+        pub const fn from_raw(val: u32) -> Option<PullSelect> {
+            if val < 2 {
+                Some(unsafe { core::mem::transmute::<u32, PullSelect>(val) })
+            } else {
+                None
+            }
+        }
     }
     impl TryFrom<u32> for PullSelect {
         type Error = ();
         #[inline(always)]
         fn try_from(val: u32) -> Result<PullSelect, ()> {
-            if val < 2 {
-                Ok(unsafe { core::mem::transmute::<u32, PullSelect>(val) })
-            } else {
-                Err(())
-            }
+            PullSelect::from_raw(val).ok_or(())
         }
     }
     impl From<PullSelect> for u32 {
