@@ -15,8 +15,17 @@ variety of platforms.
 At its core, OpenPRoT provides a Hardware Abstraction Layer (HAL) that enables
 platform-agnostic application development. On top of this HAL, it offers a suite
 of services and protocols for platform security, including device attestation,
-secure firmware updates, and more. The project is designed with a strong
-emphasis on modern security protocols and standards, such as:
+secure firmware updates, and more.
+
+OpenPRoT is built on [Pigweed](https://pigweed.dev): `pw_kernel` is the
+microkernel running OpenPRoT targets, `pw_log` and `pw_status` are shared
+across userspace and firmware code, and the Bazel build plus the `./pw`
+workflow launcher are Pigweed-managed. See
+[Pigweed Integration Overview](./design/pigweed-overview.md) for the full
+list of pieces OpenPRoT consumes.
+
+The project is designed with a strong emphasis on modern security protocols
+and standards, such as:
 
 -   **SPDM (Security Protocol and Data Model):** For secure communication and
     attestation.

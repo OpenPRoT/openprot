@@ -7,6 +7,9 @@ of the project.
 
 ## Documents
 
+-   [**Pigweed Integration Overview**](./pigweed-overview.md): What openprot
+    consumes from Pigweed (`pw_kernel`, `pw_log`, `pw_status`, toolchains,
+    crate universe, the `./pw` launcher) and where each piece is pinned.
 -   [**pw_kernel IPC**](./pw-kernel-ipc.md): How to declare and use channel
     objects to communicate between two `pw_kernel` userspace processes.
     Worked example lives at `target/veer/ipc/`.
