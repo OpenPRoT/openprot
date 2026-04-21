@@ -18,14 +18,21 @@ heapless = { workspace = true }
 [features]
 # Polling mode + in-process SPDM responder is the default build.
 # Disable with --no-default-features to get the notification (WaitGroup + IRQ) mode.
-default = ["i2c-polling", "direct-client"]
+default = ["i2c-polling", "in-process-responder"]
 # Build mctp_server with a blocking I2C poll loop instead of the WaitGroup +
 # IRQ-driven notification loop.  No WG or I2C2_IRQ capability is required.
 # Enable via crate_features = ["i2c-polling"] in the Bazel rust_app target.
 i2c-polling = []
 # Expose DirectMctpClient for in-process use (no IPC channel required).
-# Required when running an SPDM responder inside the MCTP server process.
+# Required by in-process-responder and in-process-requester; on its own it
+# only exposes the type from the library without instantiating any SPDM role.
 direct-client = []
+# Run an SPDM responder inside the MCTP server process (polling-loop Phase 2).
+# Mutually exclusive with in-process-requester.
+in-process-responder = ["direct-client"]
+# Run an SPDM requester inside the MCTP server process (polling-loop Phase 2).
+# Mutually exclusive with in-process-responder.
+in-process-requester = ["direct-client"]
 
 [dev-dependencies]
 mctp-lib = { git = "https://github.com/9elements/mctp-lib.git", branch = "buildup", package = "mctp-lib" }

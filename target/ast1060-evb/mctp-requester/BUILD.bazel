@@ -1,0 +1,85 @@
+# Licensed under the Apache-2.0 license
+
+load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image", "system_image_test")
+load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//target/ast1060-evb:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//target:uart_boot_image.bzl", "uart_boot_image")
+
+# ---------------------------------------------------------------------------
+# System image: I2C server + MCTP server (in-process SPDM requester variant)
+# Mirrors //target/ast1060-evb/mctp:mctp but substitutes mctp_server_requester
+# for mctp_server.  The two images are mutually exclusive — flash one or the
+# other, not both.
+# ---------------------------------------------------------------------------
+
+system_image(
+    name = "mctp_requester",
+    apps = [
+        "//services/i2c/server:i2c_server",
+        "//services/mctp/server:mctp_server_requester",
+    ],
+    kernel = ":target",
+    platform = "//target/ast1060-evb",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+)
+
+system_image_test(
+    name = "mctp_requester_test",
+    image = ":mctp_requester",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+# Generate UART bootable image
+uart_boot_image(
+    name = "mctp_requester_uart",
+    src = ":mctp_requester",
+    out = "mctp_requester_uart.bin",
+)
+
+filegroup(
+    name = "system_config",
+    srcs = ["system.json5"],
+    visibility = ["//visibility:public"],
+)
+
+target_codegen(
+    name = "codegen",
+    arch = "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+    system_config = ":system_config",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    template = "//target/ast1060-evb:linker_script_template",
+)
+
+rust_binary(
+    name = "target",
+    srcs = [
+        "target.rs",
+    ],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":codegen",
+        ":linker_script",
+        "//target/ast1060-evb:entry",
+        "//target/ast1060-evb:console_backend_uart",
+        "@rust_crates//:cortex-m-semihosting",
+        "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)

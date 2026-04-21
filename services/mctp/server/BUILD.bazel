@@ -104,9 +104,44 @@ rust_app(
     crate_features = [
         "i2c-polling",
         "direct-client",
+        "in-process-responder",
     ],
     edition = "2024",
     system_config = "//target/ast1060-evb/mctp:system_config",
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":mctp_server_lib",
+        "//services/i2c/api:i2c_api",
+        "//services/i2c/client:i2c_client",
+        "//services/mctp/api:mctp_api",
+        "//services/mctp/transport-i2c:mctp_transport_i2c",
+        "//services/spdm/transport-mctp:spdm_transport_mctp",
+        "//target/ast1060-evb/spdm-req-resp-test:mock_platform",
+        "@rust_crates//:mctp",
+        "@rust_crates//:mctp-lib",
+        "@pigweed//pw_kernel/syscall:syscall_user",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+        "@oot_crates_no_std//:spdm-lib",
+    ],
+)
+
+# In-process SPDM requester variant.  Same src/main.rs, different feature
+# set.  No separate system_image target yet — use the mctp:mctp image once
+# it is re-wired, or build this target alone to verify compilation.
+rust_app(
+    name = "mctp_server_requester",
+    codegen_crate_name = "app_mctp_server_requester",
+    srcs = ["src/main.rs"],
+    crate_features = [
+        "i2c-polling",
+        "direct-client",
+        "in-process-requester",
+    ],
+    edition = "2024",
+    system_config = "//target/ast1060-evb/mctp-requester:system_config",
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [

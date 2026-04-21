@@ -1,0 +1,125 @@
+// Licensed under the Apache-2.0 license
+
+// AST1060-EVB MCTP Echo Server + Client Configuration
+// ARM Cortex-M4 @ 200 MHz
+// 768KB SRAM (640KB usable), executes from RAM
+//
+// Memory Layout (PMSAv7-friendly, power-of-2 aligned regions):
+// FIXED: Kernel RAM now comes BEFORE application RAM to avoid boot crashes
+//   0x00000000 - 0x00000800: Vector table + kernel annotations (2048 bytes)
+//   0x00000800 - 0x00020000: Kernel flash (~126KB)
+//   0x00020000 - 0x00040000: i2c_server flash (128KB)
+//   0x00040000 - 0x00060000: mctp_server flash (128KB)
+//   0x00060000 - 0x00080000: Kernel RAM (128KB)
+//   0x00080000 - 0x00090000: i2c_server RAM (64KB)
+//   0x00090000 - 0x000A0000: mctp_server RAM (64KB)
+//
+// Total: 0xA0000 = 640KB (fits within the 640KB usable window of the AST1060's 768KB SRAM).
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 2048,  // 0x800 (vector table + process annotations for all 3 apps)
+    },
+    kernel: {
+        flash_start_address: 0x00000800,  // After vector table + annotations
+        flash_size_bytes: 129024,         // 0x1F800: ends at exactly 0x20000 (128KB boundary)
+        ram_start_address: 0x00060000,    // Kernel RAM comes FIRST, before all app RAM
+        ram_size_bytes: 131072,           // 128KB
+    },
+    apps: [
+        // ──── I2C Server ────
+        // Owns the AST1060 I2C controllers.
+        // The MCTP server uses I2C as its transport.
+        {
+            name: "i2c_server",
+            flash_size_bytes: 131072,     // 128KB for server code
+            ram_size_bytes: 65536,        // 64KB RAM (register maps + buffers)
+            processes: [
+                {
+                    name: "i2c server process",
+                objects: [
+                    {
+                        name: "I2C",
+                        type: "channel_handler",  // Server side of client→server channel
+                    },
+                    //{
+                    //    // AST1060 I2C2 combined master+slave interrupt (IRQ 112).
+                    //    name: "I2C2_IRQ",
+                    //    type: "interrupt",
+                    //    irqs: [
+                    //        {
+                    //            name: "i2c2",
+                    //            number: 112,
+                    //        },
+                    //    ],
+                    //},
+                    {
+                        name: "WG",
+                        type: "wait_group",
+                    },
+                ],
+                threads: [
+                    {
+                        name: "i2c server thread",
+                        stack_size_bytes: 4096,   // 4KB stack
+                    },
+                ],                
+                memory_mappings: [
+                    {
+                        // AST1060 I2C peripheral block: I2cglobal through I2cFilter
+                        // Base: 0x7e7b0000, covers all 14 controllers + buffers + filter
+                        name: "i2c_regs",
+                        type: "device",
+                        start_address: 0x7e7b0000,
+                        size_bytes: 0x4000,
+                    },
+                    {
+                        // SCU register block — scu310 at +0x310 is read by
+                        // ClockConfig::from_hardware() to derive APB clock frequency.
+                        name: "scu",
+                        type: "device",
+                        start_address: 0x7e6e2000,
+                        size_bytes: 0x1000,
+                    },
+                ],
+                },
+            ],
+        },
+        // ──── MCTP Server ────
+        // Runs the MCTP stack + in-process SPDM requester. Same footprint
+        // as the responder variant; only the app name differs.
+        {
+            name: "mctp_server_requester",
+            flash_size_bytes: 65536,      // 64KB for MCTP server code
+            ram_size_bytes: 65536,        // 64KB RAM (Router state + SPDM context + buffers)
+            processes: [
+                {
+                    name: "mctp server process",
+                    objects: [
+                        {
+                            name: "MCTP",
+                            type: "channel_handler",  // Server side: echo client → MCTP server
+                        },
+                        {
+                            name: "I2C",
+                            type: "channel_initiator",  // Client side: MCTP server → I2C server
+                            handler_process: "i2c server process",
+                            handler_object_name: "I2C",
+                        },
+                        {
+                            name: "WG",
+                            type: "wait_group",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "mctp server thread",
+                            stack_size_bytes: 32768,   // 8KB stack (Router + fragmentation buffers)
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}
