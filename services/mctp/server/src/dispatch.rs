@@ -60,7 +60,7 @@ pub fn dispatch_mctp_op<S: Sender, const N: usize>(
                         .unwrap_or_else(|_| encode_error(response, ResponseCode::InternalError))
                 }
                 Err(e) => {
-                    pw_log::error!("dispatch: Req(eid={}) failed: ResponseCode={}", header.eid as u32, e.code as u8);
+                    pw_log::error!("dispatch: Req(eid={}) failed: ResponseCode={}", header.eid as u32, e.code as u32);
                     encode_error(response, e.code)
                 }
             }

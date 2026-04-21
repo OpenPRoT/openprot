@@ -40,6 +40,7 @@ pub struct BufferSender<'a> {
 impl Sender for BufferSender<'_> {
     fn send_vectored(
         &mut self,
+        _eid: Eid,
         mut fragmenter: Fragmenter,
         payload: &[&[u8]],
     ) -> mctp::Result<Tag> {
@@ -73,6 +74,7 @@ pub struct SmallMtuBufferSender<'a> {
 impl Sender for SmallMtuBufferSender<'_> {
     fn send_vectored(
         &mut self,
+        _eid: Eid,
         mut fragmenter: Fragmenter,
         payload: &[&[u8]],
     ) -> mctp::Result<Tag> {
@@ -106,6 +108,7 @@ pub struct DroppingBufferSender;
 impl Sender for DroppingBufferSender {
     fn send_vectored(
         &mut self,
+        _eid: Eid,
         mut fragmenter: Fragmenter,
         payload: &[&[u8]],
     ) -> mctp::Result<Tag> {
@@ -139,7 +142,7 @@ pub fn transfer<S: Sender, const N: usize>(
 ) {
     let pkts = packets.borrow();
     for pkt in pkts.iter() {
-        dest.inbound(pkt).unwrap();
+        let _ = dest.inbound(pkt).unwrap();
     }
 }
 

@@ -82,8 +82,16 @@ fn transfer_and_clear<S: openprot_mctp_server::Sender, const N: usize>(
     let pkts = packets.borrow();
     pw_log::debug!("transfer_and_clear: {} packet(s)", pkts.len() as u32);
     for pkt in pkts.iter() {
-        if let Err(e) = dest.inbound(pkt) {
-            pw_log::error!("transfer_and_clear: inbound failed: {}", e.code as u32);
+        match dest.inbound(pkt) {
+            Ok(Some(cookie)) => {
+                pw_log::debug!("transfer_and_clear: pkt delivered to cookie {}", cookie.0 as u32);
+            }
+            Ok(None) => {
+                pw_log::debug!("transfer_and_clear: pkt discarded (no handler)");
+            }
+            Err(e) => {
+                pw_log::error!("transfer_and_clear: inbound failed: {}", e.code as u32);
+            }
         }
     }
     drop(pkts);

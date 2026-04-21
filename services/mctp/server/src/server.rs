@@ -73,7 +73,7 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
     pub fn req(&mut self, eid: u8) -> Result<Handle, MctpError> {
         self.stack.req(Eid(eid)).map(|cookie| Handle(cookie.0 as u32)).map_err(|e| {
             let err = mctp_error_to_server_error(e);
-            pw_log::error!("server: req(eid={}) ResponseCode={}", eid as u32, err.code as u8);
+            pw_log::error!("server: req(eid={}) ResponseCode={}", eid as u32, err.code as u32);
             err
         })
     }
@@ -82,7 +82,7 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
     pub fn listener(&mut self, typ: u8) -> Result<Handle, MctpError> {
         self.stack.listener(MsgType(typ)).map(|cookie| Handle(cookie.0 as u32)).map_err(|e| {
             let err = mctp_error_to_server_error(e);
-            pw_log::error!("server: listener(typ={}) ResponseCode={}", typ as u32, err.code as u8);
+            pw_log::error!("server: listener(typ={}) ResponseCode={}", typ as u32, err.code as u32);
             err
         })
     }
@@ -264,7 +264,10 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
     /// The platform layer calls this when data arrives from a transport
     /// binding. The packet should be a raw MCTP packet without transport
     /// headers (the transport binding strips those).
-    pub fn inbound(&mut self, pkt: &[u8]) -> Result<(), MctpError> {
+    ///
+    /// Returns `Ok(Some(AppCookie))` if the message was associated with a
+    /// listener or request handle, or `Ok(None)` if it was discarded.
+    pub fn inbound(&mut self, pkt: &[u8]) -> Result<Option<AppCookie>, MctpError> {
         self.stack
             .inbound(pkt)
             .map_err(mctp_error_to_server_error)

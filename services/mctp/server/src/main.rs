@@ -326,27 +326,54 @@ fn mctp_loop() -> Result<()> {
         match i2c.wait_for_messages(BusIndex::BUS_2, &mut msgs, None) {
             Ok(n) => {
                 for msg in msgs.get(..n).unwrap_or(&[]) {
-                    // Log the raw I2C frame before decode so we can confirm
-                    // the hardware actually delivered a well-formed SMBus frame.
-                    // Format: dest_addr cmd byte_count src_addr | MCTP hdr[0..3]
                     let raw = msg.data();
-                    if raw.len() >= 8 {
+
+                    // WORKAROUND: Manually prepend destination address to I2C frame.
+                    // The I2C hardware currently does NOT prepend the destination address,
+                    // but mctp-lib's I2C decoder expects it. This will be fixed when the
+                    // I2C driver is updated to prepend the destination address automatically.
+                    // TODO: Remove this workaround once I2C driver change is in place.
+                    let mut frame_with_dest = [0u8; 256];
+                    if raw.len() + 1 > frame_with_dest.len() {
+                        pw_log::warn!(
+                            "I2C frame too large ({} bytes), skipping",
+                            raw.len() as u32,
+                        );
+                        continue;
+                    }
+
+                    // Prepend destination address (OWN_I2C_ADDR << 1 | 0 for write)
+                    frame_with_dest[0] = OWN_I2C_ADDR << 1;
+                    frame_with_dest[1..raw.len() + 1].copy_from_slice(raw);
+                    let frame_len = raw.len() + 1;
+
+                    // Log the frame AFTER prepending destination
+                    // Format: dest_addr cmd byte_count src_addr | MCTP hdr[0..3]
+                    if frame_len >= 9 {
                         pw_log::info!(
-                            "I2C frame raw: dest=0x{:02x} cmd=0x{:02x} bc={} src=0x{:02x} \
+                            "I2C frame (with prepended dest): dest=0x{:02x} cmd=0x{:02x} bc={} src=0x{:02x} \
                             | mctp: ver=0x{:02x} deid=0x{:02x} seid=0x{:02x} flags=0x{:02x} \
                             len={}",
-                            raw[0] as u32, raw[1] as u32, raw[2] as u32, raw[3] as u32,
-                            raw[4] as u32, raw[5] as u32, raw[6] as u32, raw[7] as u32,
-                            raw.len() as u32,
+                            frame_with_dest[0] as u32, frame_with_dest[1] as u32,
+                            frame_with_dest[2] as u32, frame_with_dest[3] as u32,
+                            frame_with_dest[4] as u32, frame_with_dest[5] as u32,
+                            frame_with_dest[6] as u32, frame_with_dest[7] as u32,
+                            frame_len as u32,
                         );
                     } else {
                         pw_log::warn!(
                             "I2C frame too short ({} bytes) to contain MCTP header",
-                            raw.len() as u32,
+                            frame_len as u32,
                         );
                     }
 
-                    match receiver.decode(msg) {
+                    // Create temporary TargetMessage with prepended destination
+                    let msg_with_dest = i2c_api::TargetMessage::from_data(
+                        msg.source_address,
+                        &frame_with_dest[..frame_len]
+                    );
+
+                    match receiver.decode(&msg_with_dest) {
                         Ok((pkt, src_addr)) => {
                             i2c_pkt = i2c_pkt.wrapping_add(1);
                             // Log MCTP packet fields: SOM/EOM from flags byte (pkt[3])
@@ -355,22 +382,36 @@ fn mctp_loop() -> Result<()> {
                             let seq = pkt.get(3).map_or(0u8, |b| (b >> 4) & 0x3);
                             let msg_type = pkt.get(4).map_or(0u8, |b| b & 0x7f);
                             pw_log::info!(
-                                "MCTP pkt #{}: src_i2c=0x{:02x} len={} \
+                                "MCTP pkt #{}: src_i2c=0x{:02x} dest_i2c=0x{:02x} bc={} len={} \
                                 SOM={} EOM={} seq={} msg_type=0x{:02x}",
                                 i2c_pkt as u32,
-                                src_addr as u32,
+                                src_addr.source as u32,
+                                src_addr.dest as u32,
+                                src_addr.byte_count as u32,
                                 pkt.len() as u32,
                                 som as u32, eom as u32, seq as u32, msg_type as u32,
                             );
-                            if let Err(e) = server.borrow_mut().inbound(pkt) {
-                                inbound_err = inbound_err.wrapping_add(1);
-                                if inbound_err == 1 || inbound_err & 0xf == 0 {
-                                    pw_log::error!(
-                                        "MCTP server: inbound() error code={} \
-                                        total_inbound_errors={}",
-                                        e.code as u32,
-                                        inbound_err as u32,
+                            match server.borrow_mut().inbound(pkt) {
+                                Ok(Some(cookie)) => {
+                                    pw_log::debug!(
+                                        "MCTP pkt #{} associated with cookie {}",
+                                        i2c_pkt as u32,
+                                        cookie.0 as u32,
                                     );
+                                }
+                                Ok(None) => {
+                                    pw_log::debug!("MCTP pkt #{} discarded (no matching handler)", i2c_pkt as u32);
+                                }
+                                Err(e) => {
+                                    inbound_err = inbound_err.wrapping_add(1);
+                                    if inbound_err == 1 || inbound_err & 0xf == 0 {
+                                        pw_log::error!(
+                                            "MCTP server: inbound() error code={} \
+                                            total_inbound_errors={}",
+                                            e.code as u32,
+                                            inbound_err as u32,
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -506,6 +547,7 @@ fn mctp_loop() -> Result<()> {
             if let Ok(n) = i2c_notify.get_pending_messages(BusIndex::BUS_2, &mut msgs) {
                 for msg in &msgs[..n] {
                     if let Ok((pkt, _src_addr)) = receiver.decode(msg) {
+                        // Feed packet to server; ignore result (no detailed logging in this path)
                         let _ = server.inbound(pkt);
                     }
                 }
