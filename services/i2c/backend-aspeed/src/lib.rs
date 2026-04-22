@@ -262,9 +262,43 @@ impl AspeedI2cBackend {
     /// Returns `ResponseCode::ServerError` if the bus was not initialized
     /// via [`init_bus()`].
     pub fn write(&mut self, bus: u8, addr: u8, data: &[u8]) -> Result<(), ResponseCode> {
+        pw_log::debug!("AspeedI2cBackend::write bus=0x{:02x} addr=0x{:02x} len=0x{:04x}",
+                      bus as u32, addr as u32, data.len() as u32);
         if !self.is_bus_initialized(bus) {
+            pw_log::error!("Bus 0x{:02x} not initialized (bitmask=0x{:04x})",
+                          bus as u32, self.initialized as u32);
             return Err(ResponseCode::ServerError);
         }
+
+        // If slave mode is enabled, temporarily disable it for master operation
+        let slave_was_enabled = (self.slave_configured & (1 << bus)) != 0;
+        if slave_was_enabled {
+            pw_log::debug!("Temporarily disabling slave mode for master write");
+            let (regs, buffs) = self.controller_regs(bus)?;
+            let ctrl = aspeed_ddk::i2c_core::I2cController {
+                controller: DdkController(bus),
+                registers: regs,
+                buff_registers: buffs,
+            };
+            let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+            i2c.disable_slave();
+
+            // Explicitly ensure master mode is enabled after disabling slave
+            // (slave mode might have cleared the master enable bit)
+            pw_log::debug!("Ensuring master mode is enabled");
+            regs.i2cc00().modify(|_, w| {
+                w.enbl_master_fn().set_bit()
+                    .enbl_bus_autorelease_when_scllow_sdalow_or_slave_mode_inactive_timeout()
+                    .set_bit()
+            });
+
+            // Try to recover bus - log error but don't fail, as bus might just be idle
+            pw_log::debug!("Attempting bus recovery after slave disable");
+            if let Err(e) = i2c.recover_bus().map_err(map_i2c_error) {
+                pw_log::warn!("Bus recovery returned error 0x{:02x}, continuing anyway", e as u32);
+            }
+        }
+
         let (regs, buffs) = self.controller_regs(bus)?;
         let ctrl = aspeed_ddk::i2c_core::I2cController {
             controller: DdkController(bus),
@@ -272,7 +306,33 @@ impl AspeedI2cBackend {
             buff_registers: buffs,
         };
         let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
-        i2c.write(addr, data).map_err(map_i2c_error)
+
+        // TODO: Add bus turnaround delay for MCTP-over-I2C
+        // Remote device needs time to switch from master to slave mode
+
+        pw_log::debug!("Calling Ast1060I2c::write...");
+        let result = i2c.write(addr, data).map_err(map_i2c_error);
+
+        // Re-enable slave mode if it was enabled before
+        if slave_was_enabled {
+            pw_log::debug!("Re-enabling slave mode after master write");
+            let (regs, buffs) = self.controller_regs(bus)?;
+            let ctrl = aspeed_ddk::i2c_core::I2cController {
+                controller: DdkController(bus),
+                registers: regs,
+                buff_registers: buffs,
+            };
+            let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+            i2c.enable_slave();
+        }
+
+        if let Err(e) = result {
+            pw_log::error!("Ast1060I2c::write failed: 0x{:02x}", e as u32);
+            Err(e)
+        } else {
+            pw_log::debug!("Ast1060I2c::write succeeded");
+            Ok(())
+        }
     }
 
     /// Read data from an I2C device.

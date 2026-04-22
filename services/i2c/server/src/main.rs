@@ -69,7 +69,12 @@ fn i2c_server_loop() -> Result<()> {
     // Per-controller hardware init (I2CC00, timing, interrupts).
     // Platform init (entry.rs) already ran init_i2c_global() + pinmux.
     // TODO: Initialize all buses this server owns. For now, just bus 2 (I2C1 in hardware).
-    backend.init_bus(2).map_err(|_| pw_status::Error::Internal)?;
+    pw_log::info!("I2C server: initializing bus 2");
+    backend.init_bus(2).map_err(|e| {
+        pw_log::error!("I2C server: init_bus(2) failed: 0x{:02x}", e as u32);
+        pw_status::Error::Internal
+    })?;
+    pw_log::info!("I2C server: bus 2 initialized successfully");
 
     // Per-bus notification state (set/cleared via EnableSlaveNotification IPC).
     let mut notification_enabled = [false; 14];
@@ -176,8 +181,14 @@ fn dispatch_i2c_op(
                 return encode_error(response, ResponseCode::BufferTooSmall);
             }
             match backend.write(header.bus, header.address, &payload[..wlen]) {
-                Ok(()) => encode_success(response, 0),
-                Err(code) => encode_error(response, code),
+                Ok(()) => {
+                    pw_log::debug!("I2C write success");
+                    encode_success(response, 0)
+                },
+                Err(code) => {
+                    pw_log::error!("I2C backend write failed: code=0x{:02x}", code as u32);
+                    encode_error(response, code)
+                },
             }
         }
 
@@ -280,7 +291,7 @@ fn dispatch_i2c_op(
         }
 
         I2cOp::SlaveReceive => {
-            pw_log::info!("I2C dispatch slave receive");
+            //pw_log::info!("I2C dispatch slave receive");
             let rlen = header.read_len as usize;
             let avail = response.len().saturating_sub(I2cResponseHeader::SIZE);
             if rlen > avail {
