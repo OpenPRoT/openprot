@@ -20,8 +20,12 @@ pub trait DescriptorSource {
     const DEVICE_DESC_BYTES: &'static Aligned<A4, [u8]>;
     const CONFIG_DESC_BYTES: &'static Aligned<A4, [u8]>;
     const STRING_DESC_0_BYTES: &'static Aligned<A4, [u8]>;
+    const DEVICE_STATUS: Aligned<A4, [u8; 2]>;
 
     fn get_string(&self, handle: StringHandle, lang: u16) -> Option<StringDescriptorRef<'_>>;
+    fn get_device_status(&self) -> &Aligned<A4, [u8]> {
+        &Self::DEVICE_STATUS
+    }
 }
 
 pub const EMPTY: &Aligned<A4, [u8]> = &Aligned([]);
@@ -52,8 +56,18 @@ pub enum UsbAction<'a> {
     SetAddress {
         new_address: u8,
     },
+    GetEndpointStatus {
+        endpoint: u8,
+    },
+    SetEndpointStatus {
+        endpoint: u8,
+        stall: bool,
+    },
 }
 impl<'a> UsbAction<'a> {
+    const EP_CLEAR: Aligned<A4, [u8; 2]> = Aligned([0u8, 0]);
+    const EP_HALTED: Aligned<A4, [u8; 2]> = Aligned([1u8, 0]);
+
     #[inline(always)]
     #[track_caller]
     pub fn control_transfer_in_or_stall(
@@ -100,8 +114,20 @@ impl<'a> UsbAction<'a> {
             }
             Self::SetAddress { new_address } => driver.set_address(*new_address),
             Self::StallInAndOut { endpoint } => {
-                driver.stall_in(*endpoint, true);
-                driver.stall_out(*endpoint, true);
+                driver.stall((*endpoint) & 0x7f, true);
+                driver.stall((*endpoint) | 0x80, true);
+            }
+            Self::GetEndpointStatus { endpoint } => {
+                let data = if driver.is_stalled(*endpoint) {
+                    &Self::EP_HALTED
+                } else {
+                    &Self::EP_CLEAR
+                };
+                let _ = driver.transfer_in(0, data, true);
+            }
+            Self::SetEndpointStatus { endpoint, stall } => {
+                driver.stall(*endpoint, *stall);
+                let _ = driver.transfer_in(0, EMPTY, true);
             }
         }
         *self = UsbAction::None;
@@ -175,6 +201,22 @@ impl SimpleEp0 {
                     UsbAction::StallInAndOut { endpoint: 0 }
                 }
             }
+            Request::DEVICE_GET_STATUS => UsbAction::TransferIn {
+                endpoint: 0,
+                data: descriptor_source.get_device_status(),
+                zlp: true,
+            },
+            Request::ENDPOINT_GET_STATUS => UsbAction::GetEndpointStatus {
+                endpoint: setup_pkt.index() as u8,
+            },
+            Request::ENDPOINT_SET_FEATURE => UsbAction::SetEndpointStatus {
+                endpoint: setup_pkt.index() as u8,
+                stall: true,
+            },
+            Request::ENDPOINT_CLEAR_FEATURE => UsbAction::SetEndpointStatus {
+                endpoint: setup_pkt.index() as u8,
+                stall: false,
+            },
             Request::DEVICE_SET_ADDRESS => {
                 self.new_address = Some(setup_pkt.value() as u8);
                 UsbAction::TransferIn {
@@ -295,11 +337,11 @@ pub mod testing {
             self.data.len()
         }
 
-        fn copy_to_uninit(self, _dest: &mut [core::mem::MaybeUninit<u32>]) -> &Aligned<A4, [u8]> {
+        fn copy_to_uninit(self, _dest: &mut [core::mem::MaybeUninit<u32>]) -> &[u8] {
             unimplemented!()
         }
 
-        fn copy_to(self, dest: &mut [u32]) -> &Aligned<A4, [u8]> {
+        fn copy_to(self, dest: &mut [u32]) -> &[u8] {
             let dest_bytes = dest.as_mut_bytes();
             let copy_len = self.data.len().min(dest_bytes.len());
             dest_bytes[..copy_len].copy_from_slice(&self.data[..copy_len]);

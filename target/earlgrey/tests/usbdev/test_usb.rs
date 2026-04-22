@@ -91,6 +91,8 @@ impl DescriptorSource for MyDescriptors<'_> {
         &Aligned(CONFIG_DESC.serialize::<{ CONFIG_DESC.total_size() }>());
     const STRING_DESC_0_BYTES: &'static Aligned<A4, [u8]> =
         &Aligned(STRING_DESC_0.serialize::<{ STRING_DESC_0.total_size() }>());
+    // We advertise that we are self-powered and do not support remote wakeup.
+    const DEVICE_STATUS: Aligned<A4, [u8;2]> = Aligned([1u8, 0]);
 
     fn get_string(
         &self,

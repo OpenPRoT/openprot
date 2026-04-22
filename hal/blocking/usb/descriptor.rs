@@ -595,15 +595,42 @@ impl DfuFunctionalDescriptor {
     }
 }
 
+pub struct RawFunctionalDescriptor {
+    pub descriptor_type: u8,
+    pub content: &'static [u8],
+}
+impl RawFunctionalDescriptor {
+    pub const fn total_size(&self) -> usize {
+        self.content.len() + 2
+    }
+    pub const fn serialize(&self, dest: &mut [u8], offset: usize) {
+        dest[offset] = self.total_size() as u8;
+        dest[offset + 1] = self.descriptor_type;
+        let mut i = 0;
+        while i < self.content.len() {
+            dest[offset + 2 + i] = self.content[i];
+            i += 1;
+        }
+    }
+}
+
 // This should be a trait, but traits can't be used from const functions :(
 pub enum FunctionalDescriptor {
     Dfu(DfuFunctionalDescriptor),
+    Raw(RawFunctionalDescriptor),
 }
 
 impl FunctionalDescriptor {
+    pub const fn raw(descriptor_type: u8, content: &'static [u8]) -> Self {
+        Self::Raw(RawFunctionalDescriptor {
+            descriptor_type,
+            content,
+        })
+    }
     pub const fn total_size(&self) -> usize {
         match self {
             Self::Dfu(dfu) => dfu.total_size(),
+            Self::Raw(raw) => raw.total_size(),
         }
     }
     #[allow(clippy::identity_op)]
@@ -611,6 +638,7 @@ impl FunctionalDescriptor {
         assert!(offset + self.total_size() <= dest.len());
         match self {
             Self::Dfu(dfu) => dfu.serialize(dest, offset),
+            Self::Raw(raw) => raw.serialize(dest, offset),
         }
     }
 }

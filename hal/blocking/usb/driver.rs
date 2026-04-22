@@ -23,10 +23,10 @@ pub trait UsbDriver {
     fn transfer_in(&mut self, endpoint_idx: u8, data: &Aligned<A4, [u8]>, zlp: bool) -> usize;
 
     /// Stalls an input endpoint. Note: the driver will automatically unstall all endpoints upon a USB reset or a new SETUP packet.
-    fn stall_in(&mut self, endpoint_idx: u8, stalled: bool);
+    fn stall(&mut self, endpoint_num: u8, stalled: bool);
 
-    /// Stalls an output endpoint. Note: the driver will automatically unstall all endpoints upon a USB reset or a new SETUP packet.
-    fn stall_out(&mut self, endpoint_idx: u8, stalled: bool);
+    /// Returns whether the endpoint is stalled.
+    fn is_stalled(&mut self, endpoint_num: u8) -> bool;
 
     /// Sets the address the peripheral responds to. The USB stack must call
     /// this function in response to a SET_ADDRESS control request on endpoint 0.
@@ -47,10 +47,10 @@ pub trait UsbPacket {
 
     /// Copy the packet data from the peripheral buffer into SRAM. Will fault if
     /// `self.len()` > `dest.len()`.
-    fn copy_to_uninit(self, dest: &mut [MaybeUninit<u32>]) -> &Aligned<A4, [u8]>;
+    fn copy_to_uninit(self, dest: &mut [MaybeUninit<u32>]) -> &[u8];
 
     /// Copy the packet data from the peripheral buffer into SRAM.
-    fn copy_to(self, dest: &mut [u32]) -> &Aligned<A4, [u8]>;
+    fn copy_to(self, dest: &mut [u32]) -> &[u8];
 
     fn is_empty(&self) -> bool {
         self.len() == 0

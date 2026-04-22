@@ -41,7 +41,7 @@ impl<TMmio: ureg::Mmio + Copy> UsbPacket for PacketHandle<TMmio> {
         self.packet_len.into()
     }
 
-    fn copy_to_uninit(self, dest: &mut [core::mem::MaybeUninit<u32>]) -> &Aligned<A4, [u8]> {
+    fn copy_to_uninit(self, dest: &mut [core::mem::MaybeUninit<u32>]) -> &[u8] {
         #![allow(clippy::needless_range_loop)]
 
         // TODO: Are we sure we want to silently truncate if dest isn't big enough?
@@ -55,15 +55,10 @@ impl<TMmio: ureg::Mmio + Copy> UsbPacket for PacketHandle<TMmio> {
         let result = &dest[..word_len];
         let result = unsafe { &*(result as *const [core::mem::MaybeUninit<u32>] as *const [u32]) };
 
-        // TODO: add a Aligned::try_from() function to the aligned crate and use it here with unwrap.
-        unsafe {
-            core::mem::transmute::<&[u8], &Aligned<A4, [u8]>>(
-                &result.as_bytes()[..min(self.len(), word_len * 4)],
-            )
-        }
+        &result.as_bytes()[..min(self.len(), word_len * 4)]
     }
 
-    fn copy_to(self, dest: &mut [u32]) -> &Aligned<A4, [u8]> {
+    fn copy_to(self, dest: &mut [u32]) -> &[u8] {
         #![allow(clippy::needless_range_loop)]
 
         // TODO: Are we sure we want to silently truncate if dest isn't big enough?
@@ -71,12 +66,7 @@ impl<TMmio: ureg::Mmio + Copy> UsbPacket for PacketHandle<TMmio> {
         for i in 0..word_len {
             dest[i] = self.data.at(i).read();
         }
-        // TODO: add a Aligned::try_from() function to the aligned crate and use it here with unwrap.
-        unsafe {
-            core::mem::transmute::<&[u8], &Aligned<A4, [u8]>>(
-                &dest.as_bytes()[..min(self.len(), dest.as_bytes().len())],
-            )
-        }
+        &dest.as_bytes()[..min(self.len(), dest.as_bytes().len())]
     }
 }
 
@@ -342,18 +332,34 @@ impl UsbDriver for Usb {
     type Packet<'a> = PacketHandle<RealMmio<'a>>;
 
     #[inline(always)]
-    fn stall_in(&mut self, endpoint_idx: u8, stalled: bool) {
+    fn stall(&mut self, endpoint_num: u8, stalled: bool) {
+        if endpoint_num & 0x80 != 0 {
         self.mmio
             .regs_mut()
             .in_stall0()
-            .modify(|w| bit_setval(u32::from(w), endpoint_idx.into(), stalled).into());
-    }
-    #[inline(always)]
-    fn stall_out(&mut self, endpoint_idx: u8, stalled: bool) {
+            .modify(|w| bit_setval(u32::from(w), (endpoint_num & 0x0f).into(), stalled).into());
+        } else {
         self.mmio
             .regs_mut()
             .out_stall0()
-            .modify(|w| bit_setval(u32::from(w), endpoint_idx.into(), stalled).into());
+            .modify(|w| bit_setval(u32::from(w), (endpoint_num & 0x0f).into(), stalled).into());
+        }
+    }
+
+    #[inline(always)]
+    fn is_stalled(&mut self, endpoint_num: u8) -> bool {
+        if endpoint_num & 0x80 != 0 {
+        u32::from(self.mmio
+            .regs()
+            .in_stall0()
+            .read()) & (1 << (endpoint_num & 0x0f)) != 0
+
+        } else {
+        u32::from(self.mmio
+            .regs()
+            .out_stall0()
+            .read()) & (1 << (endpoint_num & 0x0f)) != 0
+        }
     }
 
     /// Store data in peripheral buffer that will be transferred when the host requests it.
