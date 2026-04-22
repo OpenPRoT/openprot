@@ -1,0 +1,145 @@
+# Licensed under the Apache-2.0 license
+
+load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image", "system_image_test")
+load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@pigweed//pw_kernel/tooling:app_linker_script.bzl", "app_linker_script")
+load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app_codegen")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//target/virt-ast1060-evb:defs.bzl", "TARGET_COMPATIBLE_WITH")
+
+# ---------------------------------------------------------------------------
+# System image: I2C server + MCTP server (in-process SPDM requester, QEMU)
+#
+# Requires QEMU patched with ASPEED I2C device emulation.  Mirrors the
+# hardware image at //target/ast1060-evb/mctp-requester:mctp_requester but
+# targets the virt-ast1060-evb platform for automated QEMU testing.
+#
+# The mctp_server_requester app binary is expanded inline here (rather than
+# as a rust_app in //services/mctp/server/BUILD.bazel) because two rust_app
+# rules in the same Bazel package cannot share codegen_crate_name — expansion
+# in the target package places the generated rules in a different namespace.
+# ---------------------------------------------------------------------------
+
+system_image(
+    name = "mctp_requester",
+    apps = [
+        "//services/i2c/server:i2c_server",
+        ":mctp_server_requester_app",
+    ],
+    kernel = ":target",
+    platform = "//target/virt-ast1060-evb",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+)
+
+system_image_test(
+    name = "mctp_requester_test",
+    image = ":mctp_requester",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+filegroup(
+    name = "system_config",
+    srcs = ["system.json5"],
+    visibility = ["//visibility:public"],
+)
+
+# ---------------------------------------------------------------------------
+# Kernel target
+# ---------------------------------------------------------------------------
+
+target_codegen(
+    name = "codegen",
+    arch = "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+    system_config = ":system_config",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    template = "//target/virt-ast1060-evb:linker_script_template",
+)
+
+rust_binary(
+    name = "target",
+    srcs = [
+        "target.rs",
+    ],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":codegen",
+        ":linker_script",
+        "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/subsys/console:console_backend",
+        "@pigweed//pw_kernel/target:target_common",
+        "//target/virt-ast1060-evb:entry",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@rust_crates//:cortex-m-semihosting",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# App: MCTP Server (in-process SPDM requester)
+#
+# Expanded from rust_app macro inline so the codegen_crate_name
+# "app_mctp_server_requester" lives in this package, not in
+# //services/mctp/server, avoiding a rule-name collision.
+# ---------------------------------------------------------------------------
+
+rust_app_codegen(
+    name = "app_mctp_server_requester",
+    app_name = "mctp_server_requester",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+app_linker_script(
+    name = "mctp_server_requester_app.linker_script",
+    app_name = "mctp_server_requester",
+    system_config = ":system_config",
+    tags = ["kernel"],
+)
+
+rust_binary(
+    name = "mctp_server_requester_app",
+    srcs = [
+        "//services/mctp/server:src/main.rs",
+    ],
+    crate_features = [
+        "i2c-polling",
+        "direct-client",
+        "in-process-requester",
+    ],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":app_mctp_server_requester",
+        ":mctp_server_requester_app.linker_script",
+        "//services/i2c/api:i2c_api",
+        "//services/i2c/client:i2c_client",
+        "//services/mctp/api:mctp_api",
+        "//services/mctp/server:mctp_server_lib",
+        "//services/mctp/transport-i2c:mctp_transport_i2c",
+        "//services/spdm/transport-mctp:spdm_transport_mctp",
+        "//target/ast1060-evb/spdm-req-resp-test:mock_platform",
+        "@pigweed//pw_kernel/syscall:syscall_user",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:mctp",
+        "@rust_crates//:mctp-lib",
+        "@oot_crates_no_std//:spdm-lib",
+    ],
+)

@@ -1,0 +1,119 @@
+// Licensed under the Apache-2.0 license
+
+// Virtual AST1060-EVB MCTP Requester Configuration (QEMU)
+// ARM Cortex-M4 with semihosting console.
+//
+// Requires QEMU patched with ASPEED I2C device emulation so that the i2c_server
+// can drive bus 2 and the mctp_server_requester can exchange MCTP frames with a
+// peer via the emulated I2C controller.
+//
+// Memory Layout (PMSAv7-friendly, power-of-2 aligned regions):
+//   0x00000000 - 0x00000500: Vector table + kernel annotations (1280 bytes)
+//   0x00000500 - 0x00020000: Kernel flash (~127KB)
+//   0x00020000 - 0x00040000: i2c_server flash (128KB)
+//   0x00040000 - 0x00060000: mctp_server_requester flash (128KB)
+//   0x00060000 - 0x00080000: Kernel RAM (128KB)
+//   0x00080000 - 0x00090000: i2c_server RAM (64KB)
+//   0x00090000 - 0x000A0000: mctp_server_requester RAM (64KB)
+//
+// Total: 640KB (fits within the virtual AST1060's 640KB SRAM window).
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,
+    },
+    kernel: {
+        flash_start_address: 0x00000500,
+        flash_size_bytes: 129792,         // ~127KB, ends at 0x20000
+        ram_start_address: 0x00060000,
+        ram_size_bytes: 131072,           // 128KB
+    },
+    apps: [
+        // ──── I2C Server ────
+        // Drives the QEMU-emulated ASPEED I2C controller on bus 2.
+        // Object layout intentionally mirrors //target/ast1060-evb/i2c:system_config
+        // so the //services/i2c/server:i2c_server rust_app's handle constants are
+        // consistent across both system images.
+        {
+            name: "i2c_server",
+            flash_size_bytes: 131072,     // 128KB
+            ram_size_bytes: 65536,        // 64KB
+            processes: [
+                {
+                    name: "i2c server process",
+                    objects: [
+                        {
+                            name: "I2C",
+                            type: "channel_handler",
+                        },
+                        {
+                            name: "WG",
+                            type: "wait_group",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "i2c server thread",
+                            stack_size_bytes: 4096,
+                        },
+                    ],
+                    memory_mappings: [
+                        {
+                            // ASPEED I2C peripheral block emulated by patched QEMU.
+                            // Covers I2Cglobal through I2cFilter (all 14 controllers + buffers).
+                            name: "i2c_regs",
+                            type: "device",
+                            start_address: 0x7e7b0000,
+                            size_bytes: 0x4000,
+                        },
+                        {
+                            // SCU block — scu310 at +0x310 read by ClockConfig::from_hardware()
+                            // to derive APB clock frequency.
+                            name: "scu",
+                            type: "device",
+                            start_address: 0x7e6e2000,
+                            size_bytes: 0x1000,
+                        },
+                    ],
+                },
+            ],
+        },
+        // ──── MCTP Server (in-process SPDM requester) ────
+        // Object layout mirrors //target/ast1060-evb/mctp-requester:system_config
+        // so the //services/mctp/server:mctp_server_requester_virt rust_app's
+        // handle constants are consistent with the hardware image.
+        {
+            name: "mctp_server_requester",
+            flash_size_bytes: 131072,     // 128KB
+            ram_size_bytes: 65536,        // 64KB (Router state + SPDM context + buffers)
+            processes: [
+                {
+                    name: "mctp server process",
+                    objects: [
+                        {
+                            name: "MCTP",
+                            type: "channel_handler",
+                        },
+                        {
+                            name: "I2C",
+                            type: "channel_initiator",
+                            handler_process: "i2c server process",
+                            handler_object_name: "I2C",
+                        },
+                        {
+                            name: "WG",
+                            type: "wait_group",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "mctp server thread",
+                            stack_size_bytes: 32768,
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}

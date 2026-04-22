@@ -15,13 +15,16 @@ testable so nothing goes dark on `main` between merges.
 | 4 — safety net + counters | ✅ done | `AWAIT_STEP_BUDGET = 10_000`, `await_try!` macro, counters `req_send_ok` / `req_recv_ok` / `req_recv_pending`. |
 | 5 — Bazel target + system image | ✅ done (merged into Phase 2) | See Phase 2 note above. |
 | 6 — two-board integration test | ⏸ blocked | No on-target hardware available in this environment. See IMPLEMENTATION_PLAN.md §A for measurements to collect when hardware is accessible. |
+| 6a — QEMU integration test (virt-ast1060-evb) | ✅ done | QEMU patched with ASPEED I2C emulation; `//target/virt-ast1060-evb/mctp-requester:mctp_requester_test` added. No two-board setup needed. |
 | 7 — docs + follow-up TODOs | ✅ done | [INITIALIZATION.md](INITIALIZATION.md) updated with requester glossary + setup steps; follow-up design refs annotated at the FSM in `main.rs`. |
 
 Build verification at end of Phase 7:
 
 ```
-bazel build --config=k_ast1060_evb //target/ast1060-evb/mctp:mctp                      # responder — clean
-bazel build --config=k_ast1060_evb //target/ast1060-evb/mctp-requester:mctp_requester  # requester — clean
+bazel build --config=k_ast1060_evb //target/ast1060-evb/mctp:mctp                                          # responder (hw) — clean
+bazel build --config=k_ast1060_evb //target/ast1060-evb/mctp-requester:mctp_requester                      # requester (hw) — clean
+bazel build --config=k_virt_ast1060_evb //target/virt-ast1060-evb/mctp-requester:mctp_requester             # requester (QEMU) — clean
+bazel test  --config=k_virt_ast1060_evb //target/virt-ast1060-evb/mctp-requester:mctp_requester_test        # requester QEMU test
 ```
 
 Legend:
@@ -44,11 +47,15 @@ build in isolation — `pw_kernel/userspace` requires a `target_codegen` →
 **Developer commands:**
 
 ```bash
-# Responder image (default)
+# Responder image (default, hardware)
 bazel build --config=k_ast1060_evb //target/ast1060-evb/mctp:mctp
 
-# Requester image
+# Requester image (hardware)
 bazel build --config=k_ast1060_evb //target/ast1060-evb/mctp-requester:mctp_requester
+
+# Requester image (QEMU — requires patched QEMU with ASPEED I2C emulation)
+bazel build --config=k_virt_ast1060_evb //target/virt-ast1060-evb/mctp-requester:mctp_requester
+bazel test  --config=k_virt_ast1060_evb //target/virt-ast1060-evb/mctp-requester:mctp_requester_test
 ```
 
 Running any test or integration probe uses the same prefix
@@ -437,10 +444,13 @@ without touching the responder's target.
 
 ---
 
-## Phase 6 — Integration Test
+## Phase 6 — Integration Test (two-board, on-target hardware)
 
 **Goal**: a repeatable test that exercises the in-process requester
 against the in-process responder on the bench.
+
+**Status**: ⏸ blocked — no on-target hardware available. See §A for
+measurements to collect when hardware is accessible.
 
 **Deliverables**:
 - Two-board test config: board A flashed with
@@ -468,6 +478,73 @@ against the in-process responder on the bench.
   prescribes explicit named constants for both ends; document the
   pairing in the test recipe.
 - *Rollback*: none needed — docs only.
+
+---
+
+## Phase 6a — QEMU Integration Test (virt-ast1060-evb)
+
+**Goal**: automated QEMU test that exercises the full I2C + MCTP + SPDM
+requester stack without physical hardware, using QEMU's ASPEED I2C
+device emulation.
+
+**Prerequisite**: QEMU patched with ASPEED i2c device model (user confirmed
+April 2026).
+
+**Deliverables**:
+- `target/virt-ast1060-evb/mctp-requester/system.json5` — two-process
+  (i2c_server + mctp_server_requester) virt image with ASPEED I2C MMIO
+  mappings at the real hardware addresses (emulated by QEMU).
+- `target/virt-ast1060-evb/mctp-requester/target.rs` — semihosting
+  kernel shim; `shutdown()` calls `exit(EXIT_SUCCESS/FAILURE)` so QEMU
+  terminates and the test harness can read the exit code.
+- `target/virt-ast1060-evb/mctp-requester/BUILD.bazel` — `system_image`,
+  `system_image_test`, `target_codegen`, `target_linker_script`,
+  `rust_binary(name="target")` wired to `//target/virt-ast1060-evb`
+  platform and linker template.
+- `services/mctp/server/BUILD.bazel` — `mctp_server_requester_virt`
+  rust_app, same feature set as `mctp_server_requester` but with
+  `system_config = "//target/virt-ast1060-evb/mctp-requester:system_config"`
+  so codegen (handle constants + linker script) is correct for QEMU.
+
+**Files**:
+- `target/virt-ast1060-evb/mctp-requester/system.json5` (new)
+- `target/virt-ast1060-evb/mctp-requester/target.rs` (new)
+- `target/virt-ast1060-evb/mctp-requester/BUILD.bazel` (new)
+- `services/mctp/server/BUILD.bazel` (add `mctp_server_requester_virt`)
+
+**Build / test commands**:
+
+```bash
+bazel build --config=k_virt_ast1060_evb //target/virt-ast1060-evb/mctp-requester:mctp_requester
+bazel test  --config=k_virt_ast1060_evb //target/virt-ast1060-evb/mctp-requester:mctp_requester_test
+```
+
+**Exit criteria**:
+- `bazel test` passes: QEMU starts, the FSM reaches `Done`, semihosting
+  `exit(EXIT_SUCCESS)` fires, QEMU terminates with code 0, Bazel marks
+  the test green.
+- Responder hardware image (`//target/ast1060-evb/mctp:mctp`) and
+  hardware requester image (`//target/ast1060-evb/mctp-requester:mctp_requester`)
+  still build clean.
+
+**Key design notes**:
+- `mctp_server_requester_virt` shares `codegen_crate_name =
+  "app_mctp_server_requester"` with the hardware target — the handle
+  layout is identical (I2C object is second in the process objects list
+  in both system configs), so no source changes are needed.
+- Memory layout (640KB) mirrors `virt-ast1060-evb/spdm-req-resp-test`;
+  vector_table_size_bytes = 1280 (matches multi-process virt convention).
+- ASPEED I2C MMIO mappings (`0x7e7b0000` / `0x7e6e2000`) are kept so
+  the i2c_server binary can run unmodified against the QEMU device model.
+
+**Risks / rollback**:
+- *Risk*: QEMU's ASPEED I2C model doesn't emulate bus-2 slave-mode
+  loopback precisely enough for the polling loop. *Mitigation*: QEMU
+  patch is user-supplied and already tested; fall back to the two-board
+  (Phase 6) path if emulation fidelity is insufficient.
+- *Rollback*: delete the new `target/virt-ast1060-evb/mctp-requester/`
+  package and remove `mctp_server_requester_virt` from services BUILD.bazel;
+  hardware targets are unaffected.
 
 ---
 

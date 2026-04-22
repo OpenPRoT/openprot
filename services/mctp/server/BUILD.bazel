@@ -1,5 +1,7 @@
 # Licensed under the Apache-2.0 license
 
+exports_files(["src/main.rs"])
+
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app")
 
@@ -128,9 +130,12 @@ rust_app(
     ],
 )
 
-# In-process SPDM requester variant.  Same src/main.rs, different feature
-# set.  No separate system_image target yet — use the mctp:mctp image once
-# it is re-wired, or build this target alone to verify compilation.
+# In-process SPDM requester variant (AST1060-EVB hardware target).
+# Same src/main.rs as mctp_server, different feature set.
+# The virt-ast1060-evb variant is expanded inline in
+# //target/virt-ast1060-evb/mctp-requester/BUILD.bazel to avoid a
+# codegen_crate_name collision (two rust_app rules in the same Bazel package
+# cannot share codegen_crate_name).
 rust_app(
     name = "mctp_server_requester",
     codegen_crate_name = "app_mctp_server_requester",
