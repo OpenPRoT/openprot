@@ -17,7 +17,7 @@ def guard_name(path: Path) -> str:
     # The presubmit tool runs in the root of the project.
     # Compute the path relative to the project root.
     path = path.relative_to(os.getcwd())
-    guard = f"{PROJECT}_{path}".replace("/", "_").replace(".", "_")
+    guard = f"{PROJECT}_{path}_".replace("/", "_").replace(".", "_")
     return guard.upper()
 
 
