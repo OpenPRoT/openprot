@@ -10,7 +10,7 @@ rust_library(
         "//hal/blocking/usb:hal_usb",
         "//protocol/usb/stack",
         "//target/earlgrey/drivers:usb_driver",
-        "//util/queue",
+        "//util/ringbuffer",
         "@rust_crates//:aligned",
     ],
 )

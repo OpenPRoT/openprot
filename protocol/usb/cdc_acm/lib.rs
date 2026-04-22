@@ -9,7 +9,7 @@ pub use hal_usb::{
 };
 pub use usb_driver::{EpIn, EpOut};
 use usb_stack::{UsbAction, UsbClass, EMPTY};
-use util_queue::RingBuffer;
+use util_ringbuffer::RingBuffer;
 
 /// CDC-ACM specific constants.
 pub const USB_CLASS_CDC: u8 = 0x02;
@@ -291,8 +291,8 @@ impl<const RX_SIZE: usize, const TX_SIZE: usize> CdcAcm<RX_SIZE, TX_SIZE> {
             line_coding: LineCoding::default(),
             expecting_control_out: false,
             control_buf: [0u8; 8],
-            rx_queue: RingBuffer::new(),
-            tx_queue: RingBuffer::new(),
+            rx_queue: RingBuffer::default(),
+            tx_queue: RingBuffer::default(),
         }
     }
 

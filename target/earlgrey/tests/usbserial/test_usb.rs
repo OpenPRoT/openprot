@@ -5,10 +5,10 @@
 #![no_main]
 #![allow(dead_code)]
 
-use app_test_usb::{handle, signals};
-use util_error::{ErrorCode, KERNEL_ERROR_UNKNOWN};
+use test_usb_serial_codegen::{handle, signals};
 use userspace::time::Instant;
 use userspace::{entry, syscall};
+use pw_status::Error;
 
 use aligned::{Aligned, A4};
 use hal_usb::{
@@ -40,8 +40,8 @@ const DEVICE_DESC: DeviceDescriptor = DeviceDescriptor {
     device_sub_class: 0x00,
     device_protocol: 0x00,
     max_packet_size: 64,
-    vendor_id: 0x18d1,
-    product_id: 0x023b,
+    vendor_id: 0x18d1,  // Google, Inc.
+    product_id: 0x503a, // STWG USB Fullspeed IP.
     device_release_num: 0x0100,
     manufacturer: USB_VENDOR_HANDLE,
     product: USB_PRODUCT_HANDLE,
@@ -107,7 +107,7 @@ impl DescriptorSource for MyDescriptors<'_> {
     }
 }
 
-fn handle_usb() -> Result<(), ErrorCode> {
+fn handle_usb() -> Result<(), Error> {
     let mut serial_num_buffer = Aligned::<A4, _>([0_u8; 130]);
     let descriptors = MyDescriptors {
         serial_desc_bytes: hal_usb::hex_utf16_descriptor_aligned(&mut serial_num_buffer, b"12345")
@@ -144,7 +144,7 @@ fn handle_usb() -> Result<(), ErrorCode> {
 
         if wait_return.user_data != 0 {
             pw_log::error!("Incorrect WaitReturn values");
-            return Err(KERNEL_ERROR_UNKNOWN);
+            return Err(Error::Unknown);
         }
 
         while let Some(event) = usb.poll() {
@@ -179,13 +179,7 @@ fn usb_setup_pinmux() {
 #[entry]
 fn entry() -> ! {
     usb_setup_pinmux();
-    let ret = match handle_usb() {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            pw_log::error!("Error {:x}", e.0.get());
-            Err(pw_status::Error::Unknown)
-        }
-    };
+    let ret = handle_usb();
     let _ = syscall::debug_shutdown(ret);
     loop {}
 }

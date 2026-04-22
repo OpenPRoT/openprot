@@ -15,11 +15,11 @@
   },
   apps: [
     {
-      name: "test_usb",
+      name: "test_usb_serial",
       flash_size_bytes: 16384,
-      ram_size_bytes: 4096,
-      process: {
-        name: "test_uart_listener process",
+      processes: [{
+        name: "test_usb_serial_process",
+        ram_size_bytes: 4096,
         objects: [
           {
             name: "usbdev_interrupts",
@@ -67,11 +67,11 @@
         ],
         threads: [
           {
-            name: "usb thread",
-            stack_size_bytes: 2048,
+            name: "usb_thread",
+            kernel_stack_size_bytes: 2048,
           },
         ],
-      },
+      }],
     },
   ],
 }
