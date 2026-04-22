@@ -1,3 +1,6 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
 #![no_std]
 
 use aligned::A4;
@@ -376,7 +379,7 @@ impl Usb {
             if aligned {
                 // SAFETY: The caller of transfer_in_internal has guaranteed that 'data'
                 // is 4-byte aligned when the 'aligned' flag is set.
-                copy_to_reg_array(&buffer, unsafe { core::mem::transmute(pkt) });
+                copy_to_reg_array(&buffer, unsafe { core::mem::transmute::<&[u8], &aligned::Aligned<aligned::A4, [u8]>>(pkt) });
             } else {
                 copy_to_reg_array_unaligned(&buffer, pkt);
             }
