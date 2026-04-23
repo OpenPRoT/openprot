@@ -1,0 +1,20 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "console",
+    srcs = [
+        "hexdump.rs",
+        "lib.rs",
+    ],
+    crate_name = "util_console",
+    edition = "2024",
+    deps = [
+        "@pigweed//pw_log/rust:pw_log",
+        "@rust_crates//:zerocopy",
+    ],
+)
