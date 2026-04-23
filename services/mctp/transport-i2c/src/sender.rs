@@ -78,8 +78,13 @@ impl<C: I2cClientBlocking> mctp_lib::Sender for I2cSender<C> {
                     let packet = encoder.encode(addr, p, &mut out, true)?;
                     pw_log::debug!("Encoded packet length: 0x{:04x}", packet.len() as u32);
 
-                    let packet_len = packet.len();
-                    if let Err(i2c_err) = self.i2c.write(self.bus, dest_address, packet) {
+                    // Skip the first byte (destination address) since the I2C driver
+                    // automatically prepends it. mctp-estack's encode() includes the
+                    // full I2C frame [dest][cmd][bc][src][...], but embedded-hal I2C
+                    // write() expects [cmd][bc][src][...] and adds [dest] itself.
+                    let packet_without_dest = &packet[1..];
+                    let packet_len = packet_without_dest.len();
+                    if let Err(i2c_err) = self.i2c.write(self.bus, dest_address, packet_without_dest) {
                         use embedded_hal::i2c::Error as _;
                         let kind = i2c_err.kind();
                         let kind_code = match kind {
