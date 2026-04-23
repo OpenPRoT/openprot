@@ -1,0 +1,29 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "regcpy",
+    srcs = [
+        "regcpy.rs",
+    ],
+    crate_name = "util_regcpy",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@rust_crates//:aligned",
+        "@rust_crates//:zerocopy",
+        "@ureg",
+    ],
+)
+
+rust_test(
+    name = "regcpy_test",
+    crate = ":regcpy",
+    edition = "2024",
+    rustc_flags = [
+        "-C",
+        "debug-assertions",
+    ],
+)
