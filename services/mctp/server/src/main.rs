@@ -690,19 +690,22 @@ fn mctp_loop() -> Result<()> {
                         Ok((pkt, hdr)) => {
                             i2c_pkt = i2c_pkt.wrapping_add(1);
                             // Log MCTP packet fields: SOM/EOM from flags byte (pkt[3])
-                            let som = pkt.get(3).map_or(0u8, |b| (b >> 7) & 1);
-                            let eom = pkt.get(3).map_or(0u8, |b| (b >> 6) & 1);
-                            let seq = pkt.get(3).map_or(0u8, |b| (b >> 4) & 0x3);
+                            let flags = pkt.get(3).map_or(0u8, |b| *b);
+                            let som = (flags >> 7) & 1;
+                            let eom = (flags >> 6) & 1;
+                            let seq = (flags >> 4) & 0x3;
+                            let to = (flags >> 3) & 1;
+                            let tag = flags & 0x7;
                             let msg_type = pkt.get(4).map_or(0u8, |b| b & 0x7f);
                             pw_log::info!(
                                 "MCTP pkt #{}: src_i2c=0x{:02x} dest_i2c=0x{:02x} bc={} len={} \
-                                SOM={} EOM={} seq={} msg_type=0x{:02x}",
+                                SOM={} EOM={} seq={} TO={} tag={} msg_type=0x{:02x}",
                                 i2c_pkt as u32,
                                 hdr.source as u32,
                                 hdr.dest as u32,
                                 hdr.byte_count as u32,
                                 pkt.len() as u32,
-                                som as u32, eom as u32, seq as u32, msg_type as u32,
+                                som as u32, eom as u32, seq as u32, to as u32, tag as u32, msg_type as u32,
                             );
                             match server.borrow_mut().inbound(pkt) {
                                 Ok(Some(cookie)) => {
@@ -825,6 +828,7 @@ fn mctp_loop() -> Result<()> {
                     msg_buf.reset();
                     match spdm_ctx.requester_process_message(&mut msg_buf) {
                         Ok(_) => {
+                            pw_log::info!("message process ok");
                             req_recv_ok = req_recv_ok.wrapping_add(1);
                             await_steps = 0;
                             req_state = $next;

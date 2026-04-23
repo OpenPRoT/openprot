@@ -304,19 +304,30 @@ Default canned response (MCTP SPDM VERSION response):
     args = parser.parse_args()
 
     # Default canned response (MCTP SPDM VERSION response)
-    # Captured from actual Rust responder on I2C bus:
-    # <0x13:W> 0x26 0x0F 0x0A 0x21 0x01 0x42 0x08 0xD9 0x05 0x10 0x84 0x00 0x00 0x51
+    # When using aa_i2c_write(), the Aardvark handles the I2C destination address automatically.
+    # Format: [CMD][ByteCount][SrcI2C][MCTP_packet...][PEC]
     #
-    # Format: [SrcI2C][CMD][ByteCount][DestI2C][MCTP_Ver][DestEID][SrcEID][Flags][MsgType][SPDM][PEC]
     # Responder (us): EID=0x42, I2C=0x13
     # Requester (peer): EID=0x08, I2C=0x10
-    # Src I2C: 0x26 = 0x13 << 1 (no read bit in this position)
-    # Dest I2C: 0x21 = 0x10 << 1 | 1 (read bit set)
-    # MCTP: Dest EID=0x42, Source EID=0x08 (note: different from expected!)
-    # PEC=0x51 verified from actual capture
+    #
+    # Full frame on wire (with I2C dest prepended by hardware):
+    # [0x20][0x0F][0x10][0x27][0x01][0x08][0x42][0xD1][0x05][0x10][0x04][0x00][0x00][0x02][0x00][0x12][0x00][0x13][0x00][PEC]
+    #  Dest  Cmd   BC    Src   Ver  DstEID SrcEID Flags Msg  SPDM VERSION response (15-byte MCTP packet)
+    #
+    # ByteCount=0x10 (16): includes source I2C byte (0x27) + 15-byte MCTP packet
+    # Flags=0xD1: SOM=1, EOM=1, Seq=1, TO=0 (requester owns tag), Tag=1
+    # SPDM VERSION response payload:
+    #   0x10 = SPDM version 1.0 (in MCTP header)
+    #   0x04 = VERSION response code
+    #   0x00, 0x00 = Reserved
+    #   0x02, 0x00 = Version count (2 versions)
+    #   0x12, 0x00 = SPDM version 1.2
+    #   0x13, 0x00 = SPDM version 1.3
+    # PEC=0x6F calculated over full frame including I2C dest
     canned_response = [
-        0x26, 0x0F, 0x0A, 0x21, 0x01, 0x42, 0x08, 0xD9,
-        0x05, 0x10, 0x84, 0x00, 0x00, 0x51,
+        0x0F, 0x10, 0x27, 0x01, 0x08, 0x42, 0xD1, 0x05,
+        0x10, 0x04, 0x00, 0x00, 0x02, 0x00, 0x12, 0x00,
+        0x13, 0x00, 0x6F,
     ]
 
     # Parse custom response if provided

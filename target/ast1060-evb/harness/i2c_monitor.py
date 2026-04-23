@@ -480,14 +480,20 @@ def monitor_i2c(beagle, args, max_packet_len=256):
         print("Mode: SPDM (with MCTP and SMBus)")
         if args.mctp_hide:
             print("      MCTP layer hidden")
+        if args.smbus_hide:
+            print("      Non-MCTP SMBus traffic hidden")
     elif args.mctp:
         print("Mode: MCTP (with SMBus)")
         if args.mctp_no_partial:
             print("      Hiding partial MCTP fragments")
+        if args.smbus_hide:
+            print("      Non-MCTP SMBus traffic hidden")
     elif args.smbus:
         print("Mode: SMBus")
         if args.with_pec:
             print("      PEC validation enabled")
+        if args.smbus_hide:
+            print("      Non-MCTP SMBus traffic hidden")
     else:
         print("Mode: Raw I2C")
 
@@ -580,12 +586,14 @@ def monitor_i2c(beagle, args, max_packet_len=256):
                         print(f"[{time_sop_ns:12d} ns] MCTP Parse Error: {e}")
 
                 elif smbus_result:
-                    # SMBus mode only
-                    print_smbus_message(time_sop_ns, i2c_addr, i2c_rw, smbus_result, raw_data)
+                    # SMBus mode only - skip if smbus_hide is enabled
+                    if not args.smbus_hide:
+                        print_smbus_message(time_sop_ns, i2c_addr, i2c_rw, smbus_result, raw_data)
 
                 else:
-                    # Not valid SMBus MCTP - print raw
-                    print_raw_i2c(time_sop_ns, i2c_addr, i2c_rw, raw_data, status)
+                    # Not valid SMBus MCTP - skip if smbus_hide is enabled, otherwise print raw
+                    if not args.smbus_hide:
+                        print_raw_i2c(time_sop_ns, i2c_addr, i2c_rw, raw_data, status)
 
             else:
                 # Raw I2C mode
@@ -706,8 +714,10 @@ Examples:
   %(prog)s                                    # Raw I2C monitoring
   %(prog)s --smbus --with-pec                 # SMBus with PEC validation
   %(prog)s --mctp                             # MCTP packet monitoring
+  %(prog)s --mctp --smbus-hide                # MCTP only (hide non-MCTP SMBus)
   %(prog)s --spdm                             # SPDM message monitoring
   %(prog)s --spdm --mctp-hide                 # SPDM only (hide MCTP layer)
+  %(prog)s --spdm --smbus-hide --mctp-hide    # SPDM only (minimal output)
   %(prog)s --samplerate 5000 --timeout 1000   # Custom sample rate and timeout
         '''
     )
@@ -715,6 +725,8 @@ Examples:
     # Protocol mode arguments
     parser.add_argument('--smbus', action='store_true',
                         help='Treat all packets as having SMBus header')
+    parser.add_argument('--smbus-hide', action='store_true',
+                        help='Hide non-MCTP SMBus traffic (requires --smbus or higher)')
     parser.add_argument('--with-pec', action='store_true',
                         help='Assume PEC is present (requires --smbus)')
     parser.add_argument('--mctp', action='store_true',
@@ -754,6 +766,9 @@ Examples:
 
     if args.mctp_hide and not args.spdm:
         parser.error("--mctp-hide requires --spdm")
+
+    if args.smbus_hide and not args.smbus:
+        parser.error("--smbus-hide requires --smbus (or --mctp/--spdm which imply --smbus)")
 
     # Validate configuration arguments
     if args.samplerate <= 0:
