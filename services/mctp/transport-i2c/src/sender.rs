@@ -23,9 +23,10 @@ pub struct I2cSender<C: I2cClientBlocking> {
     i2c: C,
     bus: BusIndex,
     own_addr: u8,
-    // TODO: neighbor table mapping EID → I2C address
-    //       see https://github.com/OpenPRoT/mctp-lib/issues/4
-    //       For now, destination address is hardcoded (same as Hubris).
+    // Simple static remote address. Full neighbor table (EID → I2C address mapping)
+    // will be implemented later per https://github.com/OpenPRoT/mctp-lib/issues/4.
+    // For now, this supports single-peer communication (requester ↔ responder).
+    remote_addr: u8,
 }
 
 impl<C: I2cClientBlocking> I2cSender<C> {
@@ -34,11 +35,13 @@ impl<C: I2cClientBlocking> I2cSender<C> {
     /// * `i2c` - I2C client for bus writes
     /// * `bus` - I2C bus index to use
     /// * `own_addr` - Own I2C address (7-bit, used in MCTP-I2C header)
-    pub fn new(i2c: C, bus: BusIndex, own_addr: u8) -> Self {
+    /// * `remote_addr` - Remote peer's I2C address (7-bit, destination for outbound packets)
+    pub fn new(i2c: C, bus: BusIndex, own_addr: u8, remote_addr: u8) -> Self {
         Self {
             i2c,
             bus,
             own_addr,
+            remote_addr,
         }
     }
 }
@@ -50,12 +53,13 @@ impl<C: I2cClientBlocking> mctp_lib::Sender for I2cSender<C> {
         mut fragmenter: mctp_lib::fragment::Fragmenter,
         payload: &[&[u8]],
     ) -> Result<mctp::Tag> {
-        // TODO The stack needs to provide the destination EID to the sender
-        // let addr = self
-        //     .neighbor_table
-        //     .get(eid)
-        //     .ok_or(mctp::Error::Unreachable)?;
-        let addr = 0x42;
+        // Use the configured remote address. In a full implementation, this would
+        // look up the destination EID in a neighbor table to find the corresponding
+        // I2C address. For now, we support single-peer communication with a static
+        // remote address configured at construction time.
+        // TODO: Implement full EID → I2C address neighbor table
+        //       (see https://github.com/OpenPRoT/mctp-lib/issues/4)
+        let addr = self.remote_addr;
         let dest_address = I2cAddress::new_unchecked(addr);
         let encoder = MctpI2cEncap::new(self.own_addr);
         let mtu = self.get_mtu();

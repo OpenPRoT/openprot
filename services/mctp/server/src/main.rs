@@ -161,14 +161,29 @@ use userspace::syscall::Signals;
 #[cfg(not(feature = "i2c-polling"))]
 use userspace::time::Instant;
 
-const OWN_EID: u8 = 8;
-const OWN_I2C_ADDR: u8 = 0x10;
+// Address configuration — mirrored between requester and responder builds.
+// Requester's OWN values match Responder's REMOTE values, and vice versa.
+//
+// in-process-requester:  OWN_EID=0x08, OWN_I2C_ADDR=0x10, REMOTE_EID=0x42, REMOTE_I2C_ADDR=0x13
+// in-process-responder:  OWN_EID=0x42, OWN_I2C_ADDR=0x13, REMOTE_EID=0x08, REMOTE_I2C_ADDR=0x10
 
-/// Remote EID of the SPDM responder targeted by the in-process requester.
-/// Matches `spdm_requester.rs` so the two requester implementations are
-/// interchangeable against the same responder image.
-#[allow(dead_code)]
-const REMOTE_RESPONDER_EID: u8 = 42;
+#[cfg(feature = "in-process-requester")]
+const OWN_EID: u8 = 0x08;
+#[cfg(feature = "in-process-requester")]
+const OWN_I2C_ADDR: u8 = 0x10;
+#[cfg(feature = "in-process-requester")]
+const REMOTE_EID: u8 = 0x42;
+#[cfg(feature = "in-process-requester")]
+const REMOTE_I2C_ADDR: u8 = 0x13;
+
+#[cfg(feature = "in-process-responder")]
+const OWN_EID: u8 = 0x42;
+#[cfg(feature = "in-process-responder")]
+const OWN_I2C_ADDR: u8 = 0x13;
+#[cfg(feature = "in-process-responder")]
+const REMOTE_EID: u8 = 0x08;
+#[cfg(feature = "in-process-responder")]
+const REMOTE_I2C_ADDR: u8 = 0x10;
 
 /// Max number of Phase-2 steps spent in a single `Await*` state before the
 /// requester gives up and transitions to `Failed`.  Generous default — see
@@ -206,8 +221,13 @@ enum ReqState {
 
 #[cfg(feature = "i2c-polling")]
 fn mctp_loop() -> Result<()> {
-    pw_log::info!("MCTP server starting (I2C polling mode, eid=0x{:02x} addr=0x{:02x})",
-        OWN_EID as u32, OWN_I2C_ADDR as u32);
+    #[cfg(feature = "in-process-requester")]
+    pw_log::info!("MCTP server starting (I2C polling mode, REQUESTER, own: eid=0x{:02x} i2c=0x{:02x}, remote: eid=0x{:02x} i2c=0x{:02x})",
+        OWN_EID as u32, OWN_I2C_ADDR as u32, REMOTE_EID as u32, REMOTE_I2C_ADDR as u32);
+
+    #[cfg(feature = "in-process-responder")]
+    pw_log::info!("MCTP server starting (I2C polling mode, RESPONDER, own: eid=0x{:02x} i2c=0x{:02x}, remote: eid=0x{:02x} i2c=0x{:02x})",
+        OWN_EID as u32, OWN_I2C_ADDR as u32, REMOTE_EID as u32, REMOTE_I2C_ADDR as u32);
 
     let mut i2c = IpcI2cClient::new(handle::I2C);
 
@@ -227,7 +247,12 @@ fn mctp_loop() -> Result<()> {
         pw_status::Error::Internal
     })?;
 
-    let sender = I2cSender::new(IpcI2cClient::new(handle::I2C), BusIndex::BUS_2, OWN_I2C_ADDR);
+    let sender = I2cSender::new(
+        IpcI2cClient::new(handle::I2C),
+        BusIndex::BUS_2,
+        OWN_I2C_ADDR,
+        REMOTE_I2C_ADDR,
+    );
     let receiver = MctpI2cReceiver::new(OWN_I2C_ADDR);
 
     // RefCell lets DirectMctpClient borrow `server` alongside the I2C path in
@@ -250,13 +275,16 @@ fn mctp_loop() -> Result<()> {
 
     #[cfg(feature = "in-process-responder")]
     {
-        pw_log::info!("MCTP server: registering SPDM listener (msg_type=0x05)");
+        pw_log::info!(
+            "MCTP server: registering SPDM responder listener (msg_type=0x05, expecting from eid=0x{:02x}, i2c_addr=0x{:02x})",
+            REMOTE_EID as u32, REMOTE_I2C_ADDR as u32
+        );
         if transport.init_sequence().is_err() {
-            pw_log::error!("MCTP server: S  PDM transport init_sequence failed — \
+            pw_log::error!("MCTP server: SPDM transport init_sequence failed — \
                 listener(0x05) rejected; router listener table may be full");
             return Err(pw_status::Error::Internal);
         }
-        pw_log::info!("MCTP server: SPDM listener registered");
+        pw_log::info!("MCTP server: SPDM responder listener registered");
     }
 
     #[cfg(feature = "in-process-responder")]
@@ -364,26 +392,26 @@ fn mctp_loop() -> Result<()> {
     // ---------------------------------------------------------------------------
     // SPDM requester setup (only when in-process-requester feature is enabled).
     // Mirrors the responder block above; role-specific differences:
-    //   • transport created with new_requester(client, REMOTE_RESPONDER_EID)
+    //   • transport created with new_requester(client, REMOTE_EID)
     //   • capabilities: meas_cap=0, no meas_fresh_cap, include_supported_algorithms=false
     //   • peer_cert_store: Some(&mut DemoPeerCertStore) (required by VCA+)
     // ---------------------------------------------------------------------------
     #[cfg(feature = "in-process-requester")]
     let mut transport = {
         let client = DirectMctpClient::new(&server);
-        MctpSpdmTransport::new_requester(client, REMOTE_RESPONDER_EID)
+        MctpSpdmTransport::new_requester(client, REMOTE_EID)
     };
 
     #[cfg(feature = "in-process-requester")]
     {
         pw_log::info!(
-            "MCTP server: initializing SPDM requester transport (target eid={})",
-            REMOTE_RESPONDER_EID as u32
+            "MCTP server: initializing SPDM requester transport (target eid=0x{:02x}, i2c_addr=0x{:02x})",
+            REMOTE_EID as u32, REMOTE_I2C_ADDR as u32
         );
         if transport.init_sequence().is_err() {
             pw_log::error!("MCTP server: SPDM transport init_sequence failed — \
-                req({}) rejected; router request table may be full",
-                REMOTE_RESPONDER_EID as u32);
+                req(eid=0x{:02x}) rejected; router request table may be full",
+                REMOTE_EID as u32);
             return Err(pw_status::Error::Internal);
         }
         pw_log::info!("MCTP server: SPDM requester transport ready");
@@ -761,7 +789,7 @@ fn mctp_loop() -> Result<()> {
                     )
                     .is_ok()
                         && spdm_ctx
-                            .requester_send_request(&mut msg_buf, REMOTE_RESPONDER_EID)
+                            .requester_send_request(&mut msg_buf, REMOTE_EID)
                             .is_ok();
                     if ok {
                         req_send_ok = req_send_ok.wrapping_add(1);
@@ -784,7 +812,7 @@ fn mctp_loop() -> Result<()> {
                     let ok = generate_capabilities_request_local(&mut spdm_ctx, &mut msg_buf)
                         .is_ok()
                         && spdm_ctx
-                            .requester_send_request(&mut msg_buf, REMOTE_RESPONDER_EID)
+                            .requester_send_request(&mut msg_buf, REMOTE_EID)
                             .is_ok();
                     if ok {
                         req_send_ok = req_send_ok.wrapping_add(1);
@@ -816,7 +844,7 @@ fn mctp_loop() -> Result<()> {
                     )
                     .is_ok()
                         && spdm_ctx
-                            .requester_send_request(&mut msg_buf, REMOTE_RESPONDER_EID)
+                            .requester_send_request(&mut msg_buf, REMOTE_EID)
                             .is_ok();
                     if ok {
                         req_send_ok = req_send_ok.wrapping_add(1);
@@ -883,7 +911,12 @@ fn mctp_loop() -> Result<()> {
         .map_err(|_| pw_status::Error::Internal)?;
 
     // Separate handle for the sender — I2cSender takes ownership.
-    let sender = I2cSender::new(IpcI2cClient::new(handle::I2C), BusIndex::BUS_2, OWN_I2C_ADDR);
+    let sender = I2cSender::new(
+        IpcI2cClient::new(handle::I2C),
+        BusIndex::BUS_2,
+        OWN_I2C_ADDR,
+        REMOTE_I2C_ADDR,
+    );
     let receiver = MctpI2cReceiver::new(OWN_I2C_ADDR);
     let mut server = openprot_mctp_server::Server::<_, 16>::new(
         mctp::Eid(OWN_EID),
