@@ -1,0 +1,67 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_library", "rust_static_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "console",
+    srcs = [
+        "hexdump.rs",
+        "lib.rs",
+    ],
+    crate_name = "util_console",
+    edition = "2024",
+    deps = [
+        ":dbg_print",
+        "@rust_crates//:ufmt",
+        "@rust_crates//:zerocopy",
+    ] + select({
+        "@platforms//os:none": [
+            ":pigweed",
+        ],
+        "//conditions:default": [":stdout"],
+    }),
+)
+
+rust_doc(
+    name = "console_doc",
+    crate = ":console",
+)
+
+rust_static_library(
+    name = "stdout",
+    srcs = [
+        "stdout.rs",
+    ],
+    crate_name = "console_stdout",
+    edition = "2024",
+)
+
+rust_static_library(
+    name = "pigweed",
+    srcs = select({
+        "@platforms//cpu:armv8-m": ["pigweed_arm.rs"],
+        "@platforms//cpu:riscv32": ["pigweed_riscv.rs"],
+        "//conditions:default": ["pigweed_other.rs"],
+    }),
+    crate_name = "console_pigweed",
+    edition = "2024",
+    rustc_flags = [
+        "-C",
+        "panic=abort",
+    ],
+)
+
+cc_library(
+    name = "dbg_print",
+    srcs = ["dbg_print.c"],
+    hdrs = ["dbg_print.h"],
+    alwayslink = 1,
+)
+
+rust_test(
+    name = "console_test",
+    crate = ":console",
+)
