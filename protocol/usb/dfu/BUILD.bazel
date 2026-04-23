@@ -1,0 +1,20 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "dfu",
+    srcs = ["lib.rs"],
+    crate_name = "protocol_usb_dfu",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking/usb:hal_usb",
+        "//protocol/usb/stack",
+        "@rust_crates//:aligned",
+    ],
+)
+
+rust_test(
+    name = "dfu_test",
+    crate = ":dfu",
+    edition = "2024",
+)
