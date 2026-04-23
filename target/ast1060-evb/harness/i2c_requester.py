@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Aardvark I2C Multi-Master Transceiver
-Sends pre-fabricated I2C payloads as master and receives responses as slave.
-Operates in multi-master mode.
+Aardvark I2C Multi-Controller Transceiver
+Sends pre-fabricated I2C payloads as controller and receives responses as target.
+Operates in multi-controller mode.
 """
 
 import sys
@@ -64,13 +64,13 @@ def find_and_connect():
     return handle
 
 
-def configure_device(handle, slave_addr=0x42, bitrate_khz=100, bus_timeout_ms=150):
+def configure_device(handle, own_addr=0x42, bitrate_khz=100, bus_timeout_ms=150):
     """
-    Configure the Aardvark for I2C multi-master operation.
+    Configure the Aardvark for I2C multi-controller operation.
 
     Args:
         handle: Aardvark device handle
-        slave_addr: Our slave address (default: 0x42)
+        own_addr: Our I2C address (default: 0x42)
         bitrate_khz: I2C bus speed in kHz (default: 100)
         bus_timeout_ms: Bus lock timeout in ms (default: 150)
     """
@@ -96,32 +96,32 @@ def configure_device(handle, slave_addr=0x42, bitrate_khz=100, bus_timeout_ms=15
     actual_timeout = aa_i2c_bus_timeout(handle, bus_timeout_ms)
     print(f"  Bus Timeout: {actual_timeout} ms")
 
-    # Enable slave mode with our address
-    # Parameters: handle, slave_addr, maxTxBytes, maxRxBytes
+    # Enable target mode with our address
+    # Parameters: handle, own_addr, maxTxBytes, maxRxBytes
     # Use 0 for unlimited buffer sizes
-    result = aa_i2c_slave_enable(handle, slave_addr, 0, 0)
+    result = aa_i2c_slave_enable(handle, own_addr, 0, 0)
     if result < 0:
-        print(f"  Error enabling slave mode: {aa_status_string(result)}")
+        print(f"  Error enabling target mode: {aa_status_string(result)}")
         sys.exit(1)
-    print(f"  Slave Address: 0x{slave_addr:02X}")
-    print("  Slave Mode: Enabled")
+    print(f"  Our I2C Address: 0x{own_addr:02X}")
+    print("  Target Mode: Enabled")
 
-    print("\nConfiguration complete. Device ready for multi-master operation.")
-    print("  Master: Can send to other devices")
-    print("  Slave:  Can receive from other masters\n")
+    print("\nConfiguration complete. Device ready for multi-controller operation.")
+    print("  Controller: Can send to other devices")
+    print("  Target:     Can receive from other controllers\n")
 
 
 #==========================================================================
 # I2C OPERATIONS
 #==========================================================================
 
-def send_payload(handle, target_addr, payload: List[int], description=""):
+def send_payload(handle, remote_addr, payload: List[int], description=""):
     """
-    Send a payload as I2C master.
+    Send a payload as I2C controller.
 
     Args:
         handle: Aardvark device handle
-        target_addr: Target device address (7-bit)
+        remote_addr: Remote device address (7-bit)
         payload: List of bytes to send
         description: Optional description of the payload
 
@@ -131,15 +131,15 @@ def send_payload(handle, target_addr, payload: List[int], description=""):
     if description:
         print(f">>> Sending: {description}")
 
-    print(f"    Target: 0x{target_addr:02X}")
+    print(f"    Remote: 0x{remote_addr:02X}")
     print(f"    Length: {len(payload)} bytes")
     print(f"    Data:   {' '.join(f'{b:02X}' for b in payload)}")
 
     # Convert to array
     data_out = array('B', payload)
 
-    # Write to target device
-    num_written = aa_i2c_write(handle, target_addr, AA_I2C_NO_FLAGS, data_out)
+    # Write to remote device
+    num_written = aa_i2c_write(handle, remote_addr, AA_I2C_NO_FLAGS, data_out)
 
     if num_written < 0:
         print(f"    Status: ERROR - {aa_status_string(num_written)}")
@@ -154,7 +154,7 @@ def send_payload(handle, target_addr, payload: List[int], description=""):
 
 def poll_for_response(handle, timeout_ms=1000, max_buffer=256):
     """
-    Poll for incoming I2C slave data (response from another master).
+    Poll for incoming I2C target data (response from another controller).
 
     Args:
         handle: Aardvark device handle
@@ -171,11 +171,11 @@ def poll_for_response(handle, timeout_ms=1000, max_buffer=256):
         return False, None, []
 
     if result == AA_ASYNC_I2C_READ:
-        # Data was written to us (we're the slave)
+        # Data was written to us (we're the target)
         (num_bytes, addr, data_in) = aa_i2c_slave_read(handle, max_buffer)
 
         if num_bytes < 0:
-            print(f"    Error reading slave data: {aa_status_string(num_bytes)}")
+            print(f"    Error reading data: {aa_status_string(num_bytes)}")
             return False, None, []
 
         # Convert to list
@@ -183,9 +183,9 @@ def poll_for_response(handle, timeout_ms=1000, max_buffer=256):
         return True, addr, data_list
 
     elif result == AA_ASYNC_I2C_WRITE:
-        # Data was read from us (master read from our slave)
+        # Data was read from us (controller read from our target)
         num_bytes = aa_i2c_slave_write_stats(handle)
-        print(f"<<< Master read {num_bytes} bytes from us")
+        print(f"<<< Controller read {num_bytes} bytes from us")
         return False, None, []
 
     else:
@@ -195,7 +195,7 @@ def poll_for_response(handle, timeout_ms=1000, max_buffer=256):
 
 def wait_for_response(handle, timeout_ms=1000, description=""):
     """
-    Wait for and display a response from another master.
+    Wait for and display a response from another controller.
 
     Args:
         handle: Aardvark device handle
@@ -226,9 +226,9 @@ def wait_for_response(handle, timeout_ms=1000, description=""):
     return True, data
 
 
-def set_slave_response(handle, response_data: List[int]):
+def set_response(handle, response_data: List[int]):
     """
-    Set the data to send when a master reads from us.
+    Set the data to send when a controller reads from us.
 
     Args:
         handle: Aardvark device handle
@@ -237,23 +237,23 @@ def set_slave_response(handle, response_data: List[int]):
     data_array = array('B', response_data)
     result = aa_i2c_slave_set_response(handle, data_array)
     if result < 0:
-        print(f"Error setting slave response: {aa_status_string(result)}")
+        print(f"Error setting response: {aa_status_string(result)}")
     else:
-        print(f"Slave response buffer set ({len(response_data)} bytes)")
+        print(f"Response buffer set ({len(response_data)} bytes)")
 
 
 #==========================================================================
 # TRANSACTION SEQUENCES
 #==========================================================================
 
-def execute_transaction(handle, target_addr, payload, wait_response=True,
+def execute_transaction(handle, remote_addr, payload, wait_response=True,
                         response_timeout=1000, description=""):
     """
     Execute a complete transaction: send payload and optionally wait for response.
 
     Args:
         handle: Aardvark device handle
-        target_addr: Target device address
+        remote_addr: Remote device address
         payload: Payload to send
         wait_response: Whether to wait for a response
         response_timeout: Response timeout in ms
@@ -268,7 +268,7 @@ def execute_transaction(handle, target_addr, payload, wait_response=True,
     print("=" * 80)
 
     # Send the payload
-    success, _ = send_payload(handle, target_addr, payload, "Request")
+    success, _ = send_payload(handle, remote_addr, payload, "Request")
 
     response_data = []
     if success and wait_response:
@@ -292,28 +292,33 @@ def execute_transaction(handle, target_addr, payload, wait_response=True,
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description='Aardvark I2C Multi-Master Transceiver',
+        description='Aardvark I2C Multi-Controller Transceiver',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
-This tool operates in multi-master mode:
-  - Sends payloads as I2C master to target devices
-  - Receives responses as I2C slave from other masters
+This tool operates in multi-controller mode:
+  - Sends payloads as I2C controller to remote devices
+  - Receives responses as I2C target from other controllers
 
 Default configuration:
-  - Slave address: 0x42
+  - Our I2C address: 0x10
+  - Remote I2C address: 0x13
   - Bus speed: 100 kHz
   - Bus timeout: 150 ms
         '''
     )
 
-    parser.add_argument('--slave-addr', type=lambda x: int(x, 0), default=0x42,
-                        metavar='ADDR', help='Our slave address (default: 0x42)')
+    parser.add_argument('--own-addr', type=lambda x: int(x, 0), default=0x10,
+                        metavar='ADDR', help='Our I2C address (default: 0x10)')
+    parser.add_argument('--own-eid', type=lambda x: int(x, 0), default=0x08,
+                        metavar='EID', help='Our MCTP endpoint ID (default: 0x08)')
+    parser.add_argument('--remote-addr', type=lambda x: int(x, 0), default=0x13,
+                        metavar='ADDR', help='Remote device address (default: 0x13)')
+    parser.add_argument('--remote-eid', type=lambda x: int(x, 0), default=0x42,
+                        metavar='EID', help='Remote MCTP endpoint ID (default: 0x42)')
     parser.add_argument('--bitrate', type=int, default=100, metavar='KHZ',
                         help='I2C bus speed in kHz (default: 100)')
     parser.add_argument('--bus-timeout', type=int, default=150, metavar='MS',
                         help='Bus lock timeout in ms (default: 150)')
-    parser.add_argument('--target', type=lambda x: int(x, 0), default=0x10,
-                        metavar='ADDR', help='Target device address (default: 0x10)')
     parser.add_argument('--response-timeout', type=int, default=1000, metavar='MS',
                         help='Response timeout in ms (default: 1000)')
     parser.add_argument('--no-wait-response', action='store_true',
@@ -328,13 +333,68 @@ Default configuration:
 
     try:
         # Configure device
-        configure_device(handle, args.slave_addr, args.bitrate, args.bus_timeout)
+        configure_device(handle, args.own_addr, args.bitrate, args.bus_timeout)
+
+        # Display configuration
+        print()
+        print("MCTP Requester Configuration:")
+        print(f"  Our I2C Address:    0x{args.own_addr:02X}")
+        print(f"  Our EID:            0x{args.own_eid:02X}")
+        print(f"  Remote I2C Address: 0x{args.remote_addr:02X}")
+        print(f"  Remote EID:         0x{args.remote_eid:02X}")
+        print()
+
+        # Build MCTP SPDM GET_VERSION payload using configured addresses
+        # Format: [CMD][ByteCount][SrcI2C][MCTP_Ver][DestEID][SrcEID][Flags][MsgType][SPDM][PEC]
+        src_i2c_with_read = (args.own_addr << 1) | 1  # Source I2C with read bit
+
+        # Build the frame (without I2C destination address prefix)
+        frame = [
+            0x0F,                    # Command code (MCTP)
+            0x0A,                    # Byte count (10 bytes)
+            src_i2c_with_read,       # Source I2C address with read bit
+            0x01,                    # MCTP version
+            args.remote_eid,         # Destination EID (responder)
+            args.own_eid,            # Source EID (us)
+            0xC8,                    # Flags (SOM=1, EOM=1, Seq=0, TO=1, Tag=0)
+            0x05,                    # Message type (SPDM)
+            0x10,                    # SPDM GET_VERSION
+            0x84,                    # SPDM request code
+            0x00,                    # Param1
+            0x00,                    # Param2
+        ]
+
+        # Calculate PEC (includes destination I2C address)
+        # For PEC calculation, prepend the destination I2C write address
+        dest_i2c_write = args.remote_addr << 1  # Destination I2C write address
+        frame_with_dest = [dest_i2c_write] + frame
+
+        # Calculate CRC-8 PEC
+        crc = 0
+        for byte in frame_with_dest:
+            crc ^= byte
+            for _ in range(8):
+                if crc & 0x80:
+                    crc = (crc << 1) ^ 0x07
+                else:
+                    crc <<= 1
+                crc &= 0xFF
+
+        frame.append(crc)  # Append PEC to payload
+
+        print(f"Generated GET_VERSION payload:")
+        print(f"  Source I2C:    0x{args.own_addr:02X} (frame: 0x{src_i2c_with_read:02X})")
+        print(f"  Source EID:    0x{args.own_eid:02X}")
+        print(f"  Dest I2C:      0x{args.remote_addr:02X}")
+        print(f"  Dest EID:      0x{args.remote_eid:02X}")
+        print(f"  PEC:           0x{crc:02X}")
+        print()
 
         # Define pre-fabricated payloads
         payloads = [
             {
                 'name': 'MCTP SPDM GET_VERSION',
-                'data': [0x0F, 0x0A, 0x85, 0x01, 0x08, 0x30, 0xC8, 0x05, 0x10, 0x84, 0x00, 0x00, 0x65],
+                'data': frame,
                 'description': 'MCTP over SMBus: SPDM GET_VERSION request'
             },
             # Add more payloads here as needed
@@ -347,7 +407,7 @@ Default configuration:
 
             execute_transaction(
                 handle,
-                args.target,
+                args.remote_addr,
                 payload_info['data'],
                 wait_response=not args.no_wait_response,
                 response_timeout=args.response_timeout,
@@ -360,7 +420,7 @@ Default configuration:
         print("\n\nInterrupted by user")
 
     finally:
-        # Disable slave mode and close device
+        # Disable target mode and close device
         aa_i2c_slave_disable(handle)
         aa_close(handle)
         print("Aardvark device closed")

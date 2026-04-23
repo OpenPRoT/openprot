@@ -221,13 +221,56 @@ enum ReqState {
 
 #[cfg(feature = "i2c-polling")]
 fn mctp_loop() -> Result<()> {
+    // Print startup banner with configuration
     #[cfg(feature = "in-process-requester")]
-    pw_log::info!("MCTP server starting (I2C polling mode, REQUESTER, own: eid=0x{:02x} i2c=0x{:02x}, remote: eid=0x{:02x} i2c=0x{:02x})",
-        OWN_EID as u32, OWN_I2C_ADDR as u32, REMOTE_EID as u32, REMOTE_I2C_ADDR as u32);
+    pw_log::info!("+----------------------------+");
+    #[cfg(feature = "in-process-requester")]
+    pw_log::info!("|   MCTP Server Starting     |");
+    #[cfg(feature = "in-process-requester")]
+    pw_log::info!("|   Mode: REQUESTER          |");
+    #[cfg(feature = "in-process-requester")]
+    pw_log::info!("|                            |");
+    #[cfg(feature = "in-process-requester")]
+    pw_log::info!("| Own:                       |");
+    #[cfg(feature = "in-process-requester")]
+    pw_log::info!("|   EID:  0x{:02X}               |", OWN_EID as u32);
+    #[cfg(feature = "in-process-requester")]
+    pw_log::info!("|   I2C:  0x{:02X}               |", OWN_I2C_ADDR as u32);
+    #[cfg(feature = "in-process-requester")]
+    pw_log::info!("|                            |");
+    #[cfg(feature = "in-process-requester")]
+    pw_log::info!("| Remote:                    |");
+    #[cfg(feature = "in-process-requester")]
+    pw_log::info!("|   EID:  0x{:02X}               |", REMOTE_EID as u32);
+    #[cfg(feature = "in-process-requester")]
+    pw_log::info!("|   I2C:  0x{:02X}               |", REMOTE_I2C_ADDR as u32);
+    #[cfg(feature = "in-process-requester")]
+    pw_log::info!("+----------------------------+");
 
     #[cfg(feature = "in-process-responder")]
-    pw_log::info!("MCTP server starting (I2C polling mode, RESPONDER, own: eid=0x{:02x} i2c=0x{:02x}, remote: eid=0x{:02x} i2c=0x{:02x})",
-        OWN_EID as u32, OWN_I2C_ADDR as u32, REMOTE_EID as u32, REMOTE_I2C_ADDR as u32);
+    pw_log::info!("+----------------------------+");
+    #[cfg(feature = "in-process-responder")]
+    pw_log::info!("|   MCTP Server Starting     |");
+    #[cfg(feature = "in-process-responder")]
+    pw_log::info!("|   Mode: RESPONDER          |");
+    #[cfg(feature = "in-process-responder")]
+    pw_log::info!("|                            |");
+    #[cfg(feature = "in-process-responder")]
+    pw_log::info!("| Own:                       |");
+    #[cfg(feature = "in-process-responder")]
+    pw_log::info!("|   EID:  0x{:02X}               |", OWN_EID as u32);
+    #[cfg(feature = "in-process-responder")]
+    pw_log::info!("|   I2C:  0x{:02X}               |", OWN_I2C_ADDR as u32);
+    #[cfg(feature = "in-process-responder")]
+    pw_log::info!("|                            |");
+    #[cfg(feature = "in-process-responder")]
+    pw_log::info!("| Remote:                    |");
+    #[cfg(feature = "in-process-responder")]
+    pw_log::info!("|   EID:  0x{:02X}               |", REMOTE_EID as u32);
+    #[cfg(feature = "in-process-responder")]
+    pw_log::info!("|   I2C:  0x{:02X}               |", REMOTE_I2C_ADDR as u32);
+    #[cfg(feature = "in-process-responder")]
+    pw_log::info!("+----------------------------+");
 
     let mut i2c = IpcI2cClient::new(handle::I2C);
 
@@ -617,6 +660,31 @@ fn mctp_loop() -> Result<()> {
                         msg.source_address,
                         &frame_with_dest[..frame_len]
                     );
+
+                    // Debug: log full frame being decoded
+                    if frame_len >= 14 {
+                        pw_log::info!(
+                            "Frame[0-7]:  {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
+                            frame_with_dest[0] as u32, frame_with_dest[1] as u32,
+                            frame_with_dest[2] as u32, frame_with_dest[3] as u32,
+                            frame_with_dest[4] as u32, frame_with_dest[5] as u32,
+                            frame_with_dest[6] as u32, frame_with_dest[7] as u32
+                        );
+                        pw_log::info!(
+                            "Frame[8-13]: {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
+                            frame_with_dest[8] as u32, frame_with_dest[9] as u32,
+                            frame_with_dest[10] as u32, frame_with_dest[11] as u32,
+                            frame_with_dest[12] as u32, frame_with_dest[13] as u32
+                        );
+                    } else if frame_len >= 8 {
+                        pw_log::info!(
+                            "Frame bytes: {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
+                            frame_with_dest[0] as u32, frame_with_dest[1] as u32,
+                            frame_with_dest[2] as u32, frame_with_dest[3] as u32,
+                            frame_with_dest[4] as u32, frame_with_dest[5] as u32,
+                            frame_with_dest[6] as u32, frame_with_dest[7] as u32
+                        );
+                    }
 
                     match receiver.decode(&msg_with_dest) {
                         Ok((pkt, hdr)) => {

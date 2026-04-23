@@ -61,7 +61,9 @@ use app_i2c_server::{handle};//, _signals};
 // ---------------------------------------------------------------------------
 
 fn i2c_server_loop() -> Result<()> {
-    pw_log::info!("I2C server starting");
+    pw_log::info!("+------------------------+");
+    pw_log::info!("|   I2C Server Starting  |");
+    pw_log::info!("+------------------------+");
 
     // SAFETY: Called once at server startup, exclusive peripheral access.
     let mut backend = unsafe { AspeedI2cBackend::new() };
@@ -261,7 +263,11 @@ fn dispatch_i2c_op(
         // ConfigureSlave: set slave address on a bus
         // ------------------------------------------------------------------
         I2cOp::ConfigureSlave => {
-            pw_log::info!("I2C dispatch configure slave");
+            pw_log::info!("+------------------------+");
+            pw_log::info!("| I2C Target Configured  |");
+            pw_log::info!("| Bus:  {}                |", header.bus as u32);
+            pw_log::info!("| Addr: 0x{:02X}             |", header.address as u32);
+            pw_log::info!("+------------------------+");
             match backend.configure_slave(header.bus, header.address) {
                 Ok(()) => encode_success(response, 0),
                 Err(code) => encode_error(response, code),
