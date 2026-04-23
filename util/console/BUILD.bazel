@@ -1,19 +1,22 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
-load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_library", "rust_static_library")
+load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_library", "rust_static_library", "rust_test")
 
 package(default_visibility = ["//visibility:public"])
 
 rust_library(
     name = "console",
     srcs = [
+        "hexdump.rs",
         "lib.rs",
     ],
+    crate_name = "util_console",
     edition = "2024",
     deps = [
         ":dbg_print",
         "@rust_crates//:ufmt",
+        "@rust_crates//:zerocopy",
     ] + select({
         "@platforms//os:none": [
             ":pigweed",
@@ -54,4 +57,9 @@ cc_library(
     srcs = ["dbg_print.c"],
     hdrs = ["dbg_print.h"],
     alwayslink = 1,
+)
+
+rust_test(
+    name = "console_test",
+    crate = ":console",
 )

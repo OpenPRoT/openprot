@@ -13,6 +13,8 @@ pub use ufmt;
 use ufmt::uWrite;
 pub use ufmt::{uwrite, uwriteln};
 
+pub mod hexdump;
+
 pub struct Console;
 
 unsafe extern "C" {
