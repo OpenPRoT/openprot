@@ -56,7 +56,7 @@ The following modules are defined in this crate:
 
 | Module | ID (Hex) | ASCII | Description |
 | :--- | :--- | :--- | :--- |
-| `KERNEL_ERROR` | `0x4b45` | `KE` | Kernel-specific error codes (see [kernel.rs](file:///usr/local/google/home/cfrantz/src/openprot/errors/util/error/kernel.rs)). |
-| `FLASH_GENERIC` | `0x464c` | `FL` | Generic flash and SFDP errors (see [flash.rs](file:///usr/local/google/home/cfrantz/src/openprot/errors/util/error/flash.rs)). |
-| `FLASH_OPENTITAN`| `0x464f` | `FO` | OpenTitan-specific flash errors (see [flash.rs](file:///usr/local/google/home/cfrantz/src/openprot/errors/util/error/flash.rs)). |
-| `IPC_ERROR` | `0x4943` | `IC` | IPC-specific error codes (see [ipc.rs](file:///usr/local/google/home/cfrantz/src/openprot/errors/util/error/ipc.rs)). |
+| `KERNEL_ERROR` | `0x4b45` | `KE` | Kernel-specific error codes (see [kernel.rs](kernel.rs)). |
+| `FLASH_GENERIC` | `0x464c` | `FL` | Generic flash and SFDP errors (see [flash.rs](flash.rs)). |
+| `FLASH_OPENTITAN`| `0x464f` | `FO` | OpenTitan-specific flash errors (see [flash.rs](flash.rs)). |
+| `IPC_ERROR` | `0x4943` | `IC` | IPC-specific error codes (see [ipc.rs](ipc.rs)). |
