@@ -1,0 +1,20 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "io",
+    srcs = [
+        "io.rs",
+    ],
+    crate_name = "util_io",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util/error",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
+rust_test(
+    name = "io_test",
+    crate = ":io",
+)
