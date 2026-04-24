@@ -22,7 +22,9 @@ local_path_override(
 
 git_override(
     module_name = "pigweed",
-    commit = "cf8b16a4fbf7bc6cb76b804acd510c7cb3adf995",
+    commit = "67563b40f2c19aec4f899afd13c00e48baf790b2",
+    patch_args = ["-p1"],
+    patches = ["//third_party/pigweed:veer_pic_generic_type.patch"],
     remote = "https://pigweed.googlesource.com/pigweed/pigweed",
 )
 

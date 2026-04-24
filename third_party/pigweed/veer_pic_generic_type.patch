@@ -1,0 +1,11 @@
+--- a/pw_kernel/arch/riscv/veer_pic.rs
++++ b/pw_kernel/arch/riscv/veer_pic.rs
+@@ -207,7 +207,7 @@
+ struct MeiGwClrValue(pub u32);
+ 
+ unsafe extern "Rust" {
+-    static PW_KERNEL_INTERRUPT_TABLE: &'static [InterruptTableEntry];
++    static PW_KERNEL_INTERRUPT_TABLE: &'static [InterruptTableEntry<VeerPic>];
+ }
+ 
+ pub fn interrupt(from_userspace: bool) {

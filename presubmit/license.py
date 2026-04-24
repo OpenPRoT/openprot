@@ -8,8 +8,7 @@ from pathlib import Path
 from typing import Iterable, Sequence, TextIO
 
 from pw_cli.plural import plural
-from pw_presubmit.presubmit_context import PresubmitContext, PresubmitFailure
-from pw_presubmit.presubmit import filter_paths
+from pw_presubmit.presubmit import PresubmitContext, PresubmitFailure, filter_paths
 
 _LOG = logging.getLogger("license")
 
