@@ -40,8 +40,8 @@ git_override(
     module_name = "pigweed",
     # CL 376072 patchset 8: pw_kernel: Add raise_peer_user_signal syscall
     # https://pigweed-review.googlesource.com/c/pigweed/pigweed/+/376072
-    commit = "2549ab82f99418d52393bce703d7630318dfb775",
-    remote = "https://pigweed.googlesource.com/pigweed/pigweed",
+    commit = "439fdd6d2bd1ec123b7613d51f0aa3b850908bfc",
+    remote = "https://github.com/OpenPRoT/pigweed",
 )
 
 git_override(
