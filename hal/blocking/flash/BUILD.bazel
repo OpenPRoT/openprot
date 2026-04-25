@@ -1,0 +1,43 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "driver",
+    srcs = [
+        "driver.rs",
+    ],
+    crate_name = "hal_flash_driver",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util/error",
+        "@rust_crates//:zerocopy",
+    ],
+)
+
+rust_library(
+    name = "flash",
+    srcs = [
+        "flash.rs",
+    ],
+    crate_name = "hal_flash",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":driver",
+        "//util/error",
+        "//util/io",
+        "//util/types",
+    ],
+)
+
+rust_test(
+    name = "flash_test",
+    crate = ":hal_flash",
+    rustc_flags = [
+        "-C",
+        "debug-assertions",
+    ],
+)
