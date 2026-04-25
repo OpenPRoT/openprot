@@ -8,6 +8,7 @@ load(
     "caliptra_firmware_bundle",
     "caliptra_rom_package",
 )
+load("//third_party/caliptra:cc_preprocess.bzl", "cc_preprocess")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -491,11 +492,11 @@ rust_library(
 # lands in this package's bin dir so OUT_DIR (set on caliptra_rom below) can
 # point at it — letting upstream main.rs compile with its verbatim
 # `include_str!(concat!(env!("OUT_DIR"), "/start_preprocessed.S"))`.
-genrule(
+cc_preprocess(
     name = "rom_start_preprocessed",
-    srcs = ["@caliptra_sw//:rom/dev/src/start.S"],
-    outs = ["start_preprocessed.S"],
-    cmd = "cpp -E $(location @caliptra_sw//:rom/dev/src/start.S) -o $@",
+    src = "@caliptra_sw//:rom/dev/src/start.S",
+    out = "start_preprocessed.S",
+    target_compatible_with = ["//third_party/caliptra/platforms:target_caliptra"],
 )
 
 # Linker scripts: source files must go through copy genrules so Bazel properly
