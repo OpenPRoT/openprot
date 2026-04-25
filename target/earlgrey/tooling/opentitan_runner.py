@@ -142,6 +142,7 @@ def transport_init(interface: str):
     subprocess.run(
         [
             _OTTO,
+            "--rcfile=",
             f"--interface={interface}",
             "transport",
             "init",
@@ -162,6 +163,7 @@ def load_bitstream(interface: str):
     subprocess.run(
         [
             _OTTO,
+            "--rcfile=",
             f"--interface={interface}",
             "fpga",
             "load-bitstream",
@@ -221,6 +223,7 @@ def load_and_run(
     return (
         [
             _OTTO,
+            "--rcfile=",
             f"--interface={interface}",
         ]
         + load_command
