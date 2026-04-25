@@ -1,0 +1,24 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "ipc",
+    srcs = [
+        "lib.rs",
+    ],
+    crate_name = "util_ipc",
+    edition = "2024",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//util/error",
+        "@pigweed//pw_kernel/syscall:syscall_user",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
