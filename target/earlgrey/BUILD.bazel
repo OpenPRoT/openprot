@@ -29,7 +29,7 @@ platform(
             "@pigweed//pw_log/rust:pw_log_backend": "@pigweed//pw_kernel:log_backend_basic",
         },
     ),
-    visibility = [":__subpackages__"],
+    visibility = ["//visibility:public"],
 )
 
 string_flag(
@@ -60,7 +60,7 @@ config_setting(
 constraint_value(
     name = "target_earlgrey",
     constraint_setting = "@pigweed//pw_kernel/target:target",
-    visibility = [":__subpackages__"],
+    visibility = ["//visibility:public"],
 )
 
 rust_library(
