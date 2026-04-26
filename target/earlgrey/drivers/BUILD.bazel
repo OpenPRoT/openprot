@@ -4,6 +4,22 @@
 load("@rules_rust//rust:defs.bzl", "rust_library")
 
 rust_library(
+    name = "eflash_driver",
+    srcs = ["eflash_driver.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking/flash:driver",
+        "//target/earlgrey/registers:flash_ctrl_core",
+        "//target/earlgrey/util",
+        "//util/error",
+        "//util/regcpy",
+        "@rust_crates//:zerocopy",
+        "@ureg",
+    ],
+)
+
+rust_library(
     name = "usb_driver",
     srcs = ["usb_driver.rs"],
     edition = "2024",
