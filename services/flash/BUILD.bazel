@@ -1,0 +1,57 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "opcode",
+    srcs = [
+        "opcode.rs",
+    ],
+    crate_name = "services_flash_opcode",
+    edition = "2024",
+    deps = [
+        "//util/types",
+        "@rust_crates//:zerocopy",
+    ],
+)
+
+rust_library(
+    name = "client",
+    srcs = [
+        "client.rs",
+    ],
+    crate_name = "services_flash_client",
+    edition = "2024",
+    deps = [
+        ":opcode",
+        "//hal/blocking/flash",
+        "//util/error",
+        "//util/ipc",
+        "//util/types",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@rust_crates//:zerocopy",
+    ],
+)
+
+rust_library(
+    name = "server",
+    srcs = [
+        "server.rs",
+    ],
+    crate_name = "services_flash_server",
+    edition = "2024",
+    deps = [
+        ":opcode",
+        "//hal/blocking/flash",
+        "//util/error",
+        "//util/ipc",
+        "//util/types",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@rust_crates//:zerocopy",
+    ],
+)
