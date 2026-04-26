@@ -1,0 +1,86 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+{
+  arch: {
+    type: "riscv",
+  },
+  kernel: {
+    flash_start_address: 0xA0010000,
+    flash_size_bytes: 65536,
+    ram_start_address: 0x10000000,
+    ram_size_bytes: 32768,
+    interrupt_table: {
+      table: {}
+    },
+  },
+  apps: [
+    {
+      name: "flash_server",
+      flash_size_bytes: 16384,
+      processes: [
+        {
+          name: "flash_server",
+          ram_size_bytes: 4096,
+          objects: [
+            {
+              name: "flash_service",
+              type: "channel_handler",
+            },
+            {
+              name: "flash_interrupts",
+              type: "interrupt",
+              irqs: [
+                //{ name: "flash_ctrl_prog_empty", number: 160 },
+                //{ name: "flash_ctrl_prog_lvl", number: 161 },
+                //{ name: "flash_ctrl_rd_full", number: 162 },
+                //{ name: "flash_ctrl_rd_lvl", number: 163 },
+                { name: "flash_ctrl_op_done", number: 164 },
+                //{ name: "flash_ctrl_corr_err", number: 165 },
+              ],
+            }
+          ],
+          memory_mappings: [
+            {
+              name: "flash_ctrl_core",
+              type: "device",
+              start_address: 0x41000000,
+              size_bytes: 0x200,
+            }
+          ],
+          threads: [
+            {
+              name: "flash_server_thread",
+              kernel_stack_size_bytes: 2048,
+            },
+          ],
+        },
+      ],
+    },
+
+    {
+      name: "flash_test",
+      flash_size_bytes: 16384,
+      processes: [
+        {
+          name: "flash_test",
+          ram_size_bytes: 6144,
+          objects: [
+            {
+              name: "flash_service",
+              type: "channel_initiator",
+              handler_process: "flash_server",
+              handler_object_name: "flash_service",
+            },
+          ],
+          threads: [
+            {
+              name: "flash_test_thread",
+              kernel_stack_size_bytes: 2048,
+            },
+          ],
+        },
+      ],
+    },
+
+  ],
+}
