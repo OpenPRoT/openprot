@@ -1,0 +1,78 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 User IPC Test Configuration
+// ARM Cortex-M4 @ 200 MHz with 768KB SRAM (0x00000000 - 0x000BFFFF)
+// NOTE: AST10x0 does not support XIP - firmware executes from RAM.
+//
+// PMSAv7-Friendly Memory Layout:
+//   0x00000000 - 0x00000500: Vector table (1280 bytes)
+//   0x00000500 - 0x00020000: Kernel code (~126KB, ends at 128KB boundary)
+//   0x00020000 - 0x00040000: Initiator app code (128KB, power-of-2 aligned)
+//   0x00040000 - 0x00060000: Handler app code (128KB, power-of-2 aligned)
+//   0x00060000 - 0x00080000: Kernel RAM (128KB)
+//   0x00080000 - 0x00090000: App RAM (64KB total)
+//
+// Total: 576KB, fits within 768KB SRAM.
+// TODO(ast10x0): Verify addresses against production AST10x0 hardware datasheet.
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,  // 0x500
+    },
+    kernel: {
+        flash_start_address: 0x00000500,  // After vector table
+        flash_size_bytes: 129792,         // ~126KB (ends at 0x00020000)
+        ram_start_address: 0x00060000,    // After all flash regions
+        ram_size_bytes: 131072,           // 128KB
+    },
+    apps: [
+        {
+            name: "initiator",
+            flash_size_bytes: 131072,     // 128KB (power-of-2 aligned)
+            processes: [
+                {
+                    name: "initiator_process",
+                    ram_size_bytes: 32768,        // 32KB
+                    objects: [
+                        {
+                            name: "IPC",
+                            type: "channel_initiator",
+                            handler_process: "handler_process",
+                            handler_object_name: "IPC",
+                        }
+                    ],
+                    threads: [
+                        {
+                            name: "initiator_thread",
+                            kernel_stack_size_bytes: 2048,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            name: "handler",
+            flash_size_bytes: 131072,     // 128KB (power-of-2 aligned)
+            processes: [
+                {
+                    name: "handler_process",
+                    ram_size_bytes: 32768,        // 32KB
+                    objects: [
+                        {
+                            name: "IPC",
+                            type: "channel_handler",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "handler_thread",
+                            kernel_stack_size_bytes: 2048,
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}

@@ -41,6 +41,7 @@ use_repo(pw_rust, "pw_rust_toolchains")
 register_toolchains(
     "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_linux",
     "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_macos",
+    "@pigweed//pw_toolchain/arm_clang:arm_clang_cc_toolchain_cortex-m4",
     "@pigweed//pw_toolchain/riscv_clang:riscv_clang_cc_toolchain_rv32imc",
     "@pw_rust_toolchains//:all",
 )
@@ -61,6 +62,7 @@ crate.from_cargo(
 
         # Target platforms
         "riscv32imc-unknown-none-elf",
+        "thumbv7em-none-eabi",
     ],
 )
 use_repo(crate, "rust_caliptra_crates", "rust_caliptra_crates_host", "rust_crates")

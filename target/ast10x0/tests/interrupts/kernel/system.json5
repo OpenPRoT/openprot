@@ -1,0 +1,25 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 Kernel Interrupts Test Configuration
+// Uses the same memory layout as the unittest_runner (kernel-only, no apps).
+// IRQ 42 is registered in the interrupt table for the test handler.
+// TODO(ast10x0): Verify addresses against production AST10x0 hardware datasheet.
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,  // 0x500 (320 vectors)
+    },
+    kernel: {
+        flash_start_address: 0x00000500,  // After vector table
+        flash_size_bytes: 262144,         // 256KB for kernel code (in RAM)
+        ram_start_address: 0x00040500,    // RAM starts after code
+        ram_size_bytes: 393216,           // 384KB for data
+        interrupt_table: {
+            table: {
+                "42": "test_interrupts::test_interrupt_handler",
+            }
+        },
+    },
+}

@@ -1,0 +1,95 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 User Interrupts Test Configuration
+// Two apps: test_interrupts (handler) and test_interrupt_listener (initiator).
+// IRQ 42 is used as the test interrupt.
+// PMSAv7-friendly: power-of-2 aligned regions throughout.
+//
+// Memory layout:
+//   0x00000000 - 0x00000800: Vector table (2048 bytes, 512 vectors)
+//   0x00000800 - 0x00020000: Kernel code (~126KB, ends at 128KB boundary)
+//   0x00020000 - 0x00040000: test_interrupts app code (128KB)
+//   0x00040000 - 0x00060000: test_interrupt_listener app code (128KB)
+//   0x00060000 - 0x00080000: Kernel RAM (128KB)
+//   0x00080000 - 0x00090000: App RAM (2 x 32KB)
+//
+// TODO(ast10x0): Verify addresses against production AST10x0 hardware datasheet.
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 2048,  // 0x800 (512 vectors)
+    },
+    kernel: {
+        flash_start_address: 0x00000800,
+        flash_size_bytes: 129024,         // 0x1F800 — ends at 0x20000 (128KB boundary)
+        ram_start_address: 0x00060000,
+        ram_size_bytes: 131072,           // 128KB
+    },
+    apps: [
+        {
+            name: "test_interrupts",
+            flash_size_bytes: 131072,     // 128KB
+            processes: [
+                {
+                    name: "interrupt_process",
+                    ram_size_bytes: 32768,        // 32KB
+                    objects: [
+                        {
+                            name: "ipc",
+                            type: "channel_handler",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "interrupt_thread",
+                            kernel_stack_size_bytes: 2048,
+                        },
+                    ],
+                },
+            ],
+            constants: [
+                {
+                    name: "test_irq",
+                    type: "u32",
+                    value: 42
+                },
+            ],
+        },
+        {
+            name: "test_interrupt_listener",
+            flash_size_bytes: 131072,     // 128KB
+            processes: [
+                {
+                    name: "interrupt_listener",
+                    ram_size_bytes: 32768,        // 32KB
+                    objects: [
+                        {
+                            name: "test_interrupts",
+                            type: "interrupt",
+                            irqs: [
+                                {
+                                    name: "test_irq",
+                                    number: 42,
+                                },
+                            ]
+                        },
+                        {
+                            name: "ipc",
+                            type: "channel_initiator",
+                            handler_process: "interrupt_process",
+                            handler_object_name: "ipc",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "interrupt_thread",
+                            kernel_stack_size_bytes: 2048,
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}

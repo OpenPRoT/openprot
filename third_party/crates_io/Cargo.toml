@@ -38,6 +38,8 @@ zerocopy = { version = "0.8.48", default-features = false, features = ["derive"]
 zeroize = { version = "1.8", default-features = false, features = ["derive"] }
 
 cortex-m = "0.7.7"
+cortex-m-rt = "0.7.5"
+cortex-m-semihosting = "0.5.0"
 embedded-hal = "1.0"
 embedded-hal-async = "1.0"
 embedded-hal-nb = "1.0"
