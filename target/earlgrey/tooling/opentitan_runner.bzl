@@ -54,7 +54,7 @@ def _opentitan_runner_impl(ctx):
         output = run_script,
         is_executable = True,
         content = """#!/bin/bash
-{runner} --interface {interface} {load_bitstream} {mechanism} --elf {elf} --bin {bin} {optional_args}
+{runner} --interface {interface} {load_bitstream} {mechanism} --elf {elf} --bin {bin} {optional_args} "$@"
 """.format(
             runner = runner.short_path,
             interface = ctx.attr.interface,

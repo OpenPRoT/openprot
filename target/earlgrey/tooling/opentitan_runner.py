@@ -64,6 +64,7 @@ def _parse_args():
         action=argparse.BooleanOptionalAction,
         help="load a bitstream into the FPGA board",
     )
+
     parser.add_argument(
         "--mechanism",
         type=str,
@@ -80,6 +81,13 @@ def _parse_args():
         "--bin",
         type=pathlib.Path,
         help="bin file",
+    )
+    parser.add_argument(
+        "--timestamp",
+        type=bool,
+        default=True,
+        action=argparse.BooleanOptionalAction,
+        help="Display a timestamp per line of console output",
     )
     parser.add_argument(
         "--exit-success",
@@ -172,7 +180,12 @@ def load_bitstream(interface: str):
 
 
 def load_and_run(
-    image: Path, interface: str, mechanism: str, exit_success: str, exit_failure: str
+    image: Path,
+    interface: str,
+    mechanism: str,
+    exit_success: str,
+    exit_failure: str,
+    timestamp: bool,
 ) -> list[str]:
     """Prepare opentitantool arguments to load an image into a board and spawn a console."""
     if interface == "verilator":
@@ -209,7 +222,9 @@ def load_and_run(
     else:
         raise Exception("unknown mechanism", mechanism)
 
-    console_command = ["console", "--timestamp"]
+    console_command = ["console"]
+    if timestamp:
+        console_command.append("--timestamp")
     if exit_success:
         console_command.append(f"--exit-success={exit_success}")
     if exit_failure:
@@ -280,7 +295,12 @@ def _main(args) -> int:
             load_bitstream(args.interface)
 
     cmd = load_and_run(
-        args.bin, args.interface, args.mechanism, args.exit_success, args.exit_failure
+        args.bin,
+        args.interface,
+        args.mechanism,
+        args.exit_success,
+        args.exit_failure,
+        args.timestamp,
     )
     # TODO(cfrantz): add support for the tokenized console.
     return_code = simple_console(cmd)
