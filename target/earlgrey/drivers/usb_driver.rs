@@ -7,7 +7,7 @@ use aligned::A4;
 use aligned::Aligned;
 use core::cmp::min;
 use util_regcpy::{copy_to_reg_array, copy_to_reg_array_unaligned, copy_from_reg_array_unaligned};
-use console::traceln;
+use util_console::traceln;
 use hal_usb::SetupPacket;
 use hal_usb::driver::UsbDriver;
 use hal_usb::driver::UsbEvent;
