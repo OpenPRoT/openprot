@@ -28,6 +28,22 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         "//target/earlgrey/registers",
+    ],
+)
+
+rust_library(
+    name = "eflash_driver",
+    srcs = ["eflash_driver.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking/flash:driver",
+        "//target/earlgrey/registers:flash_ctrl_core",
+        "//target/earlgrey/util",
+        "//util/error",
+        "//util/regcpy",
+        "//util/types",
+        "@rust_crates//:zerocopy",
         "@ureg",
     ],
 )
