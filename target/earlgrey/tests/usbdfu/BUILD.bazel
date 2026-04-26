@@ -21,14 +21,19 @@ rust_app(
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
+        "//hal/blocking/flash",
         "//hal/blocking/usb:hal_usb",
         "//protocol/usb/dfu",
         "//protocol/usb/stack",
+        "//services/flash:client",
         "//target/earlgrey/drivers:usb_driver",
         "//target/earlgrey/registers:pinmux",
         "//target/earlgrey/registers:top_earlgrey",
         "//target/earlgrey/registers:usbdev",
+        "//target/earlgrey/util",
         "//util/console",
+        "//util/error",
+        "//util/ipc",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
@@ -36,10 +41,35 @@ rust_app(
     ],
 )
 
+rust_app(
+    name = "flash_server",
+    srcs = [
+        "flash_server.rs",
+    ],
+    codegen_crate_name = "flash_server_codegen",
+    edition = "2024",
+    system_config = "@pigweed//pw_kernel/target:system_config_file",
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking/flash",
+        "//services/flash:server",
+        "//target/earlgrey/drivers:eflash_driver",
+        "//target/earlgrey/registers:flash_ctrl_core",
+        "//util/error",
+        "//util/ipc",
+        "//util/types",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
 system_image(
     name = "usb",
     apps = [
         ":test_usb_dfu",
+        ":flash_server",
     ],
     kernel = ":target",
     platform = "//target/earlgrey",

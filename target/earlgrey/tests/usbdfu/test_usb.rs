@@ -17,12 +17,21 @@ use hal_usb::driver::UsbDriver;
 use usb_driver::UsbConfig;
 use usb_stack::{DescriptorSource, UsbAction, UsbClass};
 
+use earlgrey_util::PersoCertificate;
+use hal_flash::{Flash, FlashAddress};
+use services_flash_client::FlashIpcClient;
+use util_error::{self as error, ErrorCode};
+use util_ipc::IpcChannel;
+
 use protocol_usb_dfu::{DfuBuilder, DfuClass, DfuHandler, DfuResult, DfuStatus};
 
 const USB_VENDOR_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(1);
 const USB_PRODUCT_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(2);
 const USB_SERIAL_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(3);
-const USB_DFU_INTERFACE_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(4);
+const DFU_FIRMWARE_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(4);
+const DFU_UDS_CERT_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(5);
+const DFU_CDI0_CERT_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(6);
+const DFU_CDI1_CERT_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(7);
 
 const DFU_BUILDER: DfuBuilder = DfuBuilder::new(
     0,    // interface_num
@@ -48,11 +57,13 @@ const CONFIG_DESC: ConfigDescriptor = ConfigDescriptor {
     max_power: 250,
     self_powered: false,
     remote_wakeup: false,
-    interfaces: &[DFU_BUILDER.interface(
-        0,
-        USB_DFU_INTERFACE_HANDLE,
-        &[DFU_BUILDER.functional_descriptor()],
-    )],
+    interfaces: &[
+        DFU_BUILDER.interface( 0, DFU_FIRMWARE_HANDLE, &[]),
+        DFU_BUILDER.interface( 1, DFU_UDS_CERT_HANDLE, &[]),
+        DFU_BUILDER.interface( 2, DFU_CDI0_CERT_HANDLE, &[]),
+        DFU_BUILDER.interface( 3, DFU_CDI1_CERT_HANDLE,
+            &[DFU_BUILDER.functional_descriptor()]),
+    ],
 };
 
 const STRING_DESC_0: hal_usb::StringDescriptor0 = hal_usb::StringDescriptor0 {
@@ -65,7 +76,10 @@ const STRING_DESC_0: hal_usb::StringDescriptor0 = hal_usb::StringDescriptor0 {
 const VENDOR_ID: hal_usb::StringDescriptorRef = hal_usb::string_descriptor!("Google Inc.").as_ref();
 const PRODUCT_ID_DEFAULT: hal_usb::StringDescriptorRef =
     hal_usb::string_descriptor!("Earlgrey DFU").as_ref();
-const USB_DFU: hal_usb::StringDescriptorRef = hal_usb::string_descriptor!("DFU Interface").as_ref();
+const DFU_FIRMWARE: hal_usb::StringDescriptorRef = hal_usb::string_descriptor!("Firmware").as_ref();
+const DFU_UDS_CERT: hal_usb::StringDescriptorRef = hal_usb::string_descriptor!("UDS Certificate").as_ref();
+const DFU_CDI0_CERT: hal_usb::StringDescriptorRef = hal_usb::string_descriptor!("CDI0 Certificate").as_ref();
+const DFU_CDI1_CERT: hal_usb::StringDescriptorRef = hal_usb::string_descriptor!("CDI1 Certificate").as_ref();
 
 struct MyDescriptors<'a> {
     serial_desc_bytes: StringDescriptorRef<'a>,
@@ -89,13 +103,49 @@ impl DescriptorSource for MyDescriptors<'_> {
             USB_VENDOR_HANDLE => Some(VENDOR_ID),
             USB_PRODUCT_HANDLE => Some(self.product_desc_bytes),
             USB_SERIAL_HANDLE => Some(self.serial_desc_bytes),
-            USB_DFU_INTERFACE_HANDLE => Some(USB_DFU),
+            DFU_FIRMWARE_HANDLE => Some(DFU_FIRMWARE),
+            DFU_UDS_CERT_HANDLE => Some(DFU_UDS_CERT),
+            DFU_CDI0_CERT_HANDLE => Some(DFU_CDI0_CERT),
+            DFU_CDI1_CERT_HANDLE => Some(DFU_CDI1_CERT),
             _ => None,
         }
     }
 }
 
-struct MyDfuHandler;
+fn get_certificate(flash: &mut FlashIpcClient, n: u8, data: &mut [u8]) -> Result<usize, DfuStatus> {
+    pw_log::info!("Reading certificate {}", n as usize);
+    let (partition, mut n) = match n {
+        0 => (0, 0), // The UDS (dice) cert is located in bank=0, page=9.
+        1 => (1, 0), // The CDI (dice) certs are located in bank=1, page=9.
+        2 => (1, 1),
+        _ => return Err(DfuStatus::ErrFile),
+    };
+    let mut offset = 0usize;
+    let mut buf = [0u8; 1024];
+    loop {
+        let sz = core::cmp::min(2048 - offset, buf.len());
+        flash.read(FlashAddress::info(partition, 9, offset as u32), &mut buf[..sz]).map_err(|_| DfuStatus::ErrUnknown)?;
+        match PersoCertificate::from_bytes(&buf) {
+            Ok((cert, _)) => {
+                if n == 0 {
+                    let len = cert.certificate.len();
+                    pw_log::info!("Found cert: {} bytes", len as usize);
+                    data[..len].copy_from_slice(cert.certificate);
+                    return Ok(len);
+                }
+                offset += (cert.obj_size + 7) & !7;
+                n -= 1;
+            }
+            Err(_) => break,
+        }
+    }
+    Err(DfuStatus::ErrUnknown)
+}
+
+
+struct MyDfuHandler {
+    flash: FlashIpcClient,
+}
 
 impl DfuHandler for MyDfuHandler {
     fn dnload(&mut self, alt: u8, block_num: u16, data: &[u8]) -> DfuResult {
@@ -115,11 +165,10 @@ impl DfuHandler for MyDfuHandler {
             block_num,
             data.len()
         );
-        // Send a 2K block with a fixed pattern
-        for (i, byte) in data.iter_mut().enumerate() {
-            *byte = (i & 0xFF) as u8;
+        match alt {
+            1|2|3 => get_certificate(&mut self.flash, alt-1, data),
+            _ => Err(DfuStatus::ErrFile),
         }
-        Ok(data.len())
     }
 
     fn manifest(&mut self) -> DfuResult {
@@ -132,7 +181,7 @@ impl DfuHandler for MyDfuHandler {
     }
 }
 
-fn handle_usb() -> Result<(), Error> {
+fn handle_usb() -> Result<(), ErrorCode> {
     let mut serial_num_buffer = Aligned::<A4, _>([0_u8; 130]);
     let descriptors = MyDescriptors {
         serial_desc_bytes: hal_usb::hex_utf16_descriptor_aligned(
@@ -147,7 +196,9 @@ fn handle_usb() -> Result<(), Error> {
 
     let mut usb = usb_driver::Usb::new(unsafe { usbdev::Usbdev::new() }, USB_CONFIG);
     let mut ep0 = usb_stack::SimpleEp0::new();
-    let mut dfu = DfuClass::<_, 2048>::new(DFU_BUILDER, MyDfuHandler);
+    let mut dfu = DfuClass::<_, 2048>::new(DFU_BUILDER, MyDfuHandler {
+        flash: FlashIpcClient::new(IpcChannel::new(handle::FLASH_SERVICE))?,
+    });
 
     loop {
         let wait_return = syscall::object_wait(
@@ -168,11 +219,11 @@ fn handle_usb() -> Result<(), Error> {
                 | signals::USBDEV_FRAME
                 | signals::USBDEV_AV_SETUP_EMPTY,
             Instant::MAX,
-        )?;
+        ).map_err(ErrorCode::kernel_error)?;
 
         if wait_return.user_data != 0 {
             pw_log::error!("Incorrect WaitReturn values");
-            return Err(Error::Unknown);
+            return Err(error::KERNEL_ERROR_UNKNOWN);
         }
 
         while let Some(event) = usb.poll() {
@@ -201,8 +252,23 @@ fn usb_setup_pinmux() {
 
 #[entry]
 fn entry() -> ! {
+    pw_log::info!("🔄 RUNNING");
     usb_setup_pinmux();
     let ret = handle_usb();
+
+    // Log that an error occurred so that the app that caused the shutdown is logged.
+    let ret = match ret {
+        Ok(()) => {
+            pw_log::info!("✅ PASSED");
+            Ok(())
+        }
+        Err(e) => {
+            pw_log::error!("❌ FAILED: {:08x}", u32::from(e) as u32);
+            Err(Error::Unknown)
+        }
+    };
+
+    // Since this is written as a test, shut down with the return status from `main()`.
     let _ = syscall::debug_shutdown(ret);
     loop {}
 }
