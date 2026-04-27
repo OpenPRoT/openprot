@@ -9,3 +9,5 @@ use util_error::{ErrorCode, ErrorModule};
 pub const EG_ERROR: ErrorModule = ErrorModule::new(0x464c); //ascii `FL`.
 pub const EG_ERROR_CERT_NOT_FOUND: ErrorCode = EG_ERROR.from_pw(1, Error::NotFound);
 pub const EG_ERROR_CERT_BAD_NAME: ErrorCode = EG_ERROR.from_pw(2, Error::InvalidArgument);
+pub const EG_ERROR_BAD_BOOT_LOG: ErrorCode = EG_ERROR.from_pw(3, Error::Unknown);
+pub const EG_ERROR_BOOT_SLOT_UNKNOWN: ErrorCode = EG_ERROR.from_pw(4, Error::Unknown);

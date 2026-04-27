@@ -5,16 +5,25 @@ package(default_visibility = ["//visibility:public"])
 rust_library(
     name = "util",
     srcs = [
+        "boot_log.rs",
+        "boot_svc.rs",
         "error.rs",
         "lib.rs",
+        "misc.rs",
         "mubi.rs",
         "perso_tlv.rs",
+        "ret_ram.rs",
+        "rom_error.rs",
+        "tags.rs",
     ],
     crate_name = "earlgrey_util",
     edition = "2024",
     deps = [
         "//util/error",
+        "//util/types",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:ufmt",
+        "@rust_crates//:zerocopy",
     ],
 )
