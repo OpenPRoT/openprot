@@ -34,6 +34,7 @@ smlang = { version = "0.8.0", default-features = false }
 syn = { version = "2.0.104", features = ["full", "extra-traits"] }
 syn1 = { package = "syn", version = "1.0.109", features = ["full", "extra-traits"] }
 tock-registers = "0.9.0"
+ufmt = "0.2.0"
 zerocopy = { version = "0.8.48", default-features = false, features = ["derive"] }
 zeroize = { version = "1.8", default-features = false, features = ["derive"] }
 
