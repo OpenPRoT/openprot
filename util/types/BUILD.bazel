@@ -3,6 +3,7 @@ load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 rust_library(
     name = "types",
     srcs = [
+        "fourcc.rs",
         "lib.rs",
         "opcode.rs",
         "power_of_2.rs",
@@ -11,6 +12,7 @@ rust_library(
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
+        "@rust_crates//:ufmt",
         "@rust_crates//:zerocopy",
     ],
 )

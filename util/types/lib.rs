@@ -3,6 +3,7 @@
 
 #![no_std]
 
+pub mod fourcc;
 mod opcode;
 mod power_of_2;
 
