@@ -83,5 +83,4 @@ pub fn init() {
     unsafe {
         MemoryConfig::KERNEL_THREAD_MEMORY_CONFIG.write();
     }
-    MemoryConfig::KERNEL_THREAD_MEMORY_CONFIG.dump_current();
 }
