@@ -104,7 +104,6 @@ opentitan_test(
     timeout = "eternal",
     interface = "verilator",
     tags = [
-        "nightly_test",
         "verilator",
     ],
     target = ":uart",

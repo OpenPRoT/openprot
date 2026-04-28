@@ -86,8 +86,8 @@
         "build_type": "bazel",
         "args": [
           "--keep_going",
-          "--build_tag_filters=+verilator",
-          "--test_tag_filters=+verilator",
+          "--build_tag_filters=+verilator,-nightly_test",
+          "--test_tag_filters=+verilator,-nightly_test",
           "--test_output=streamed"
         ],
         "driver_options": {
