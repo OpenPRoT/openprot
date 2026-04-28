@@ -28,7 +28,7 @@ impl PendingRead {
     ///
     /// Returns `false` if a read is already parked — UART RX is a single serial
     /// stream and cannot be multiplexed between concurrent consumers.  The
-    /// caller should respond with `UsartError::Busy` in that case.
+    /// caller should respond with a timeout-style error in that case.
     pub fn park(&mut self, channel: u32, requested_size: usize) -> bool {
         if self.channel.is_some() {
             return false;
@@ -86,7 +86,11 @@ pub fn run<B: UsartBackend>(backend: &mut B, wg: u32, irq: u32, irq_signals: Sig
             && wait_return.pending_signals.contains(irq_signals)
         {
             let acked = wait_return.pending_signals & irq_signals;
-            let _ = syscall::interrupt_ack(irq, acked);
+            if let Err(e) = syscall::interrupt_ack(irq, acked) {
+                pw_log::warn!("USART runtime: interrupt_ack failed: {}", e as u32);
+                // If we cannot ack, skip this iteration and wait for a clean IRQ event.
+                continue;
+            }
 
             // If a TryRead is parked, complete it now that data may be ready.
             if let Some((client_channel, req_size)) = pending.take() {
@@ -96,7 +100,10 @@ pub fn run<B: UsartBackend>(backend: &mut B, wg: u32, irq: u32, irq_signals: Sig
 
                 // Disable the RX interrupt; it will be re-armed if the next
                 // try_read also finds no data (unlikely at this point).
-                let _ = backend.disable_interrupts(IrqMask::RX_DATA_AVAILABLE);
+                if let Err(_e) = backend.disable_interrupts(IrqMask::RX_DATA_AVAILABLE) {
+                    pw_log::warn!("USART runtime: failed to disable RX interrupt");
+                    // Keep servicing requests; worst case RX interrupt remains enabled.
+                }
 
                 let resp_len = match backend.try_read(
                     &mut response_buf[payload_offset..payload_offset + read_buf_len],
@@ -107,17 +114,28 @@ pub fn run<B: UsartBackend>(backend: &mut B, wg: u32, irq: u32, irq_signals: Sig
                             .copy_from_slice(zerocopy::IntoBytes::as_bytes(&hdr));
                         UsartResponseHeader::SIZE + n
                     }
-                    Err(e) => {
+                    Err(_e) => {
                         // Still not ready (shouldn't happen after IRQ, but handle gracefully).
                         // Re-arm and re-park with the original size.
-                        let _ = backend.enable_interrupts(IrqMask::RX_DATA_AVAILABLE);
-                        pending.park(client_channel, req_size);
-                        let _ = e; // suppress
+                        if let Err(_enable_err) = backend.enable_interrupts(IrqMask::RX_DATA_AVAILABLE) {
+                            pw_log::warn!("USART runtime: failed to re-enable RX interrupt");
+                            continue;
+                        }
+                        if !pending.park(client_channel, req_size) {
+                            pw_log::warn!("USART runtime: failed to re-park pending TryRead");
+                            continue;
+                        }
                         continue;
                     }
                 };
 
-                let _ = syscall::channel_respond(client_channel, &response_buf[..resp_len]);
+                if let Err(e) = syscall::channel_respond(client_channel, &response_buf[..resp_len]) {
+                    pw_log::warn!(
+                        "USART runtime: channel_respond failed for pending read: {}",
+                        e as u32
+                    );
+                    continue;
+                }
             }
             continue;
         }
@@ -139,7 +157,10 @@ pub fn run<B: UsartBackend>(backend: &mut B, wg: u32, irq: u32, irq_signals: Sig
             &mut response_buf,
         ) {
             DispatchOutcome::Respond(resp_len) => {
-                let _ = syscall::channel_respond(channel, &response_buf[..resp_len]);
+                if let Err(e) = syscall::channel_respond(channel, &response_buf[..resp_len]) {
+                    pw_log::warn!("USART runtime: channel_respond failed: {}", e as u32);
+                    continue;
+                }
             }
             DispatchOutcome::Queued => {
                 // Response will be sent from the IRQ completion path above.
