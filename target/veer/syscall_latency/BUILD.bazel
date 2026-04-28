@@ -107,6 +107,9 @@ caliptra_test(
     interface = "emulator",
     # caliptra_runner.py hardcodes --i3c-port=65534, so caliptra emulator
     # tests cannot run in parallel without an EADDRINUSE collision.
-    tags = ["exclusive"],
+    tags = [
+        "emulator",
+        "exclusive",
+    ],
     target = ":measure_syscall_latency",
 )

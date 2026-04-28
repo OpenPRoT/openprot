@@ -76,5 +76,6 @@ caliptra_test(
     name = "ipc_runner_emulator_test",
     timeout = "long",
     interface = "emulator",
+    tags = ["emulator"],
     target = ":ipc",
 )

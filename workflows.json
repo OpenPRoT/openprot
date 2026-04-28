@@ -63,8 +63,8 @@
         "build_type": "bazel",
         "args": [
           "--keep_going",
-          "--build_tag_filters=-hardware,-disabled,-verilator",
-          "--test_tag_filters=-hardware,-disabled,-verilator",
+          "--build_tag_filters=-hardware,-disabled,-verilator,-emulator",
+          "--test_tag_filters=-hardware,-disabled,-verilator,-emulator",
           "--test_output=streamed",
           "--"
         ],
@@ -97,6 +97,27 @@
       },
       "targets": [
         "//target/earlgrey/..."
+      ]
+    },
+    {
+      "name": "caliptra_emulator_tests",
+      "build_config": {
+        "name": "caliptra_emulator_tests_config",
+        "description": "Run caliptra emulator-based tests",
+        "build_type": "bazel",
+        "args": [
+          "--keep_going",
+          "--build_tag_filters=+emulator",
+          "--test_tag_filters=+emulator",
+          "--test_output=streamed"
+        ],
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "no_test": false
+        }
+      },
+      "targets": [
+        "//target/veer/..."
       ]
     },
     {
@@ -171,6 +192,7 @@
       "builds": [
         "ci_tests",
         "ast10x0_qemu_tests",
+        "caliptra_emulator_tests",
         "earlgrey_verilator_tests"
       ]
     }

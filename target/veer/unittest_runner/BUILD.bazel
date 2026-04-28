@@ -24,6 +24,7 @@ target_linker_script(
 caliptra_test(
     name = "emulator_test",
     interface = "emulator",
+    tags = ["emulator"],
     target = ":unittest_runner",
 )
 

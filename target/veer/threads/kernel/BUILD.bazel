@@ -68,6 +68,9 @@ caliptra_runner(
 caliptra_test(
     name = "threads_runner_emulator_test",
     interface = "emulator",
-    tags = ["manual"],
+    tags = [
+        "emulator",
+        "manual",
+    ],
     target = ":threads",
 )
