@@ -18,10 +18,10 @@ impl Ast10x0UsartBackend {
     /// This function is safe because it uses the well-known UART5 base address
     /// and will only be called once per process by the server loop.
     pub fn new() -> Self {
-        // SAFETY: 0x7e78_3000 is UART5 MMIO base, and this process is the sole owner
-        // of the mapping as described by target/ast10x0/usart/system.json5.
-        // Only this server process owns the UART, and it's instantiated once.
-        let uart = unsafe { Usart::new(0x7e78_3000 as *const _) };
+        // SAFETY: 0x7e78_4000 is UART5 MMIO base on AST10x0 (IRQ 8); this
+        // process is the sole owner of the mapping per
+        // target/ast10x0/usart/system.json5.
+        let uart = unsafe { Usart::new(0x7e78_4000 as *const _) };
 
         Self { uart }
     }

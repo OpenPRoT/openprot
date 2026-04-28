@@ -59,7 +59,7 @@
                             // AST1060 UART5 (debug UART, 16550-compatible)
                             name: "uart5",
                             type: "device",
-                            start_address: 0x7e783000,
+                            start_address: 0x7e784000,
                             size_bytes: 0x1000,
                         },
                     ],

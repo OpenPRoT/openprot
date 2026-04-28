@@ -44,6 +44,7 @@ rust_binary(
         "@pigweed//pw_kernel/target:target_common",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
+        "@rust_crates//:cortex-m-semihosting",
     ],
 )
 

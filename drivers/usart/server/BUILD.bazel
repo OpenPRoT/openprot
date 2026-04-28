@@ -33,6 +33,7 @@ rust_app(
     visibility = ["//visibility:public"],
     deps = [
         ":backend",
+        "//drivers/usart/api:usart_api",
         "//drivers/usart/server:usart_server",
         "@pigweed//pw_kernel/userspace",
     ],
