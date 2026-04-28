@@ -1,0 +1,17 @@
+# Licensed under the Apache-2.0 license
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
+
+rust_library(
+    name = "mctp_serial_backend_ast10x0",
+    srcs = ["src/lib.rs"],
+    crate_name = "mctp_serial_backend",
+    edition = "2024",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/mctp/transport-serial:mctp_transport_serial",
+        "//target/ast10x0/peripherals:peripherals",
+    ],
+)

@@ -1,0 +1,8 @@
+[package]
+name = "mctp-serial-backend-ast10x0"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+openprot-mctp-transport-serial = { path = "../../../../services/mctp/transport-serial" }
+ast10x0_peripherals = { path = "../../peripherals" }

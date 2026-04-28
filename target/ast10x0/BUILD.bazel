@@ -81,3 +81,9 @@ filegroup(
     name = "linker_script_template",
     srcs = ["target.ld.tmpl"],
 )
+
+# Concrete AST10x0 serial binding for MCTP transport backends.
+alias(
+    name = "mctp_serial_backend",
+    actual = "//target/ast10x0/backend/mctp_serial:mctp_serial_backend_ast10x0",
+)

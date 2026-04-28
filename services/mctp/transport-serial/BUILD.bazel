@@ -1,0 +1,23 @@
+# Licensed under the Apache-2.0 license
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+alias(
+    name = "selected_serial_backend",
+    actual = "//target/ast10x0:mctp_serial_backend",
+)
+
+rust_library(
+    name = "mctp_transport_serial",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "openprot_mctp_transport_serial",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/mctp/api:mctp_api",
+        "@rust_crates//:embedded-io",
+        "@rust_crates//:heapless",
+        "@rust_crates//:mctp",
+        "@rust_crates//:mctp-lib",
+    ],
+)

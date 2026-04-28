@@ -73,6 +73,18 @@ impl UsartBackend for Ast10x0UsartBackend {
         }
     }
 
+    fn try_read(&mut self, out: &mut [u8]) -> Result<usize, BackendError> {
+        if out.is_empty() {
+            return Ok(0);
+        }
+        let count = self.uart.try_read_available(out);
+        if count == 0 {
+            Err(BackendError::WouldBlock)
+        } else {
+            Ok(count)
+        }
+    }
+
     fn line_status(&self) -> Result<LineStatus, BackendError> {
         let status = self.uart.read_line_status();
         Ok(LineStatus(status.bits()))

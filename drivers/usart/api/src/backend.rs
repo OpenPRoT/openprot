@@ -24,6 +24,8 @@ pub enum BackendError {
     BufferTooSmall,
     Busy,
     Timeout,
+    /// No data in the RX FIFO right now; retry after RX interrupt.
+    WouldBlock,
     InternalError,
 }
 
@@ -35,6 +37,7 @@ impl From<BackendError> for UsartError {
             BackendError::BufferTooSmall => UsartError::BufferTooSmall,
             BackendError::Busy => UsartError::Busy,
             BackendError::Timeout => UsartError::Timeout,
+            BackendError::WouldBlock => UsartError::WouldBlock,
             BackendError::InternalError => UsartError::InternalError,
         }
     }
@@ -61,6 +64,11 @@ pub trait UsartBackend {
     fn configure(&mut self, config: UsartConfig) -> Result<(), BackendError>;
     fn write(&mut self, data: &[u8]) -> Result<usize, BackendError>;
     fn read(&mut self, out: &mut [u8]) -> Result<usize, BackendError>;
+    /// Non-blocking read.  Drains whatever bytes are available in the RX FIFO
+    /// right now and returns them.  Returns `Err(BackendError::WouldBlock)` if
+    /// the FIFO is empty; the caller is responsible for enabling the
+    /// `RX_DATA_AVAILABLE` interrupt and retrying when it fires.
+    fn try_read(&mut self, out: &mut [u8]) -> Result<usize, BackendError>;
     fn line_status(&self) -> Result<LineStatus, BackendError>;
     fn enable_interrupts(&mut self, mask: IrqMask) -> Result<(), BackendError>;
     fn disable_interrupts(&mut self, mask: IrqMask) -> Result<(), BackendError>;

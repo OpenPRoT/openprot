@@ -21,6 +21,12 @@ fn entry() -> ! {
     );
     let _ = syscall::wait_group_add(
         handle::WG,
+        handle::USART2,
+        Signals::READABLE,
+        handle::USART2 as usize,
+    );
+    let _ = syscall::wait_group_add(
+        handle::WG,
         handle::UART5_IRQ,
         signals::UART,
         handle::UART5_IRQ as usize,

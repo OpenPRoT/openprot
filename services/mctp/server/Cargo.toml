@@ -1,0 +1,20 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "openprot-mctp-server"
+version = "0.1.0"
+edition = "2021"
+description = "MCTP server implementation for OpenPRoT"
+license = "Apache-2.0"
+autobins = false
+
+[dependencies]
+openprot-mctp-api = { path = "../api" }
+mctp-lib = { git = "https://github.com/9elements/mctp-lib.git", branch = "buildup", package = "mctp-lib" }
+mctp = { git = "https://github.com/OpenPRoT/mctp-rs.git", branch = "sync-features", default-features = false }
+heapless = { workspace = true }
+
+[dev-dependencies]
+mctp-lib = { git = "https://github.com/9elements/mctp-lib.git", branch = "buildup", package = "mctp-lib" }
+mctp = { git = "https://github.com/OpenPRoT/mctp-rs.git", branch = "sync-features" }

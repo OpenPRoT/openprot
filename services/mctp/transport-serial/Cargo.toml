@@ -1,0 +1,16 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "openprot-mctp-transport-serial"
+version = "0.1.0"
+edition = "2021"
+description = "MCTP over serial transport binding for OpenPRoT"
+license = "Apache-2.0"
+
+[dependencies]
+openprot-mctp-api = { path = "../api" }
+mctp-lib = { git = "https://github.com/9elements/mctp-lib.git", branch = "buildup", package = "mctp-lib" }
+mctp = { git = "https://github.com/OpenPRoT/mctp-rs.git", branch = "sync-features", default-features = false }
+heapless = { workspace = true }
+embedded-io = { workspace = true }

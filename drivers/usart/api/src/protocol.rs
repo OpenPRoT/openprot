@@ -13,6 +13,10 @@ pub enum UsartOp {
     GetLineStatus = 0x04,
     EnableInterrupts = 0x05,
     DisableInterrupts = 0x06,
+    /// Non-blocking read attempt.  Returns data immediately if available;
+    /// the server queues the request and completes it when the RX IRQ fires
+    /// if no data is ready yet.
+    TryRead = 0x07,
 }
 
 impl TryFrom<u8> for UsartOp {
@@ -26,6 +30,7 @@ impl TryFrom<u8> for UsartOp {
             0x04 => Ok(Self::GetLineStatus),
             0x05 => Ok(Self::EnableInterrupts),
             0x06 => Ok(Self::DisableInterrupts),
+            0x07 => Ok(Self::TryRead),
             _ => Err(UsartError::InvalidOperation),
         }
     }
@@ -40,6 +45,9 @@ pub enum UsartError {
     BufferTooSmall = 0x03,
     Busy = 0x04,
     Timeout = 0x05,
+    /// No data available right now; the server has queued the request and will
+    /// complete it when data arrives via RX interrupt.
+    WouldBlock = 0x06,
     InternalError = 0xFF,
 }
 
@@ -52,6 +60,7 @@ impl From<u8> for UsartError {
             0x03 => Self::BufferTooSmall,
             0x04 => Self::Busy,
             0x05 => Self::Timeout,
+            0x06 => Self::WouldBlock,
             _ => Self::InternalError,
         }
     }

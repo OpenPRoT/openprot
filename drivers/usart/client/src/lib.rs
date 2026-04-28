@@ -63,6 +63,14 @@ impl UsartClient {
     }
 
     pub fn read(&self, out: &mut [u8]) -> Result<usize, ClientError> {
+        self.read_with_timeout(out, Instant::MAX)
+    }
+
+    pub fn read_with_timeout(
+        &self,
+        out: &mut [u8],
+        deadline: Instant,
+    ) -> Result<usize, ClientError> {
         if out.len() > MAX_PAYLOAD_SIZE {
             return Err(ClientError::BufferTooSmall);
         }
@@ -77,7 +85,48 @@ impl UsartClient {
             self.handle,
             &req[..UsartRequestHeader::SIZE],
             &mut resp,
-            Instant::MAX,
+            deadline,
+        )?;
+
+        parse_payload_response(&resp[..resp_len], out)
+    }
+
+    /// Non-blocking read.
+    ///
+    /// Sends a `TryRead` request to the server.  If bytes are available in the
+    /// hardware FIFO right now the server responds immediately and this call
+    /// returns `Ok(n)`.  If the FIFO is empty the server arms the RX interrupt
+    /// and blocks the IPC transaction on the server side; this call returns
+    /// once the interrupt fires and data has been copied into `out`.
+    ///
+    /// From the caller's perspective this function always returns with data
+    /// (or an error); the "non-blocking" nature means the **server** is freed
+    /// to handle other events while waiting rather than spinning in a hardware
+    /// read loop.
+    pub fn try_read(&self, out: &mut [u8]) -> Result<usize, ClientError> {
+        self.try_read_with_timeout(out, Instant::MAX)
+    }
+
+    pub fn try_read_with_timeout(
+        &self,
+        out: &mut [u8],
+        deadline: Instant,
+    ) -> Result<usize, ClientError> {
+        if out.len() > MAX_PAYLOAD_SIZE {
+            return Err(ClientError::BufferTooSmall);
+        }
+
+        let mut req = [0u8; MAX_BUF_SIZE];
+        let mut resp = [0u8; MAX_BUF_SIZE];
+
+        let hdr = UsartRequestHeader::new(UsartOp::TryRead, out.len() as u16, 0, 0);
+        req[..UsartRequestHeader::SIZE].copy_from_slice(zerocopy::IntoBytes::as_bytes(&hdr));
+
+        let resp_len = syscall::channel_transact(
+            self.handle,
+            &req[..UsartRequestHeader::SIZE],
+            &mut resp,
+            deadline,
         )?;
 
         parse_payload_response(&resp[..resp_len], out)

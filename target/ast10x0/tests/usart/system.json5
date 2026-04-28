@@ -42,6 +42,10 @@
                             type: "channel_handler",  // Server side of client→server channel
                         },
                         {
+                            name: "usart2",
+                            type: "channel_handler",  // Server side of client2→server channel
+                        },
+                        {
                             // AST1060 UART interrupt line (covers UART instances including UART5).
                             // Source: ast1060_pac::Interrupt::uart = 8
                             name: "uart5_irq",
@@ -90,6 +94,30 @@
                     threads: [
                         {
                             name: "usart_client_thread",
+                            kernel_stack_size_bytes: 2048,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            name: "usart_client2_app",
+            flash_size_bytes: 65536,      // 64KB for second client code
+            processes: [
+                {
+                    name: "usart_client2_process",
+                    ram_size_bytes: 32768,        // 32KB RAM
+                    objects: [
+                        {
+                            name: "usart",
+                            type: "channel_initiator",
+                            handler_process: "usart_server_process",
+                            handler_object_name: "usart2",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "usart_client2_thread",
                             kernel_stack_size_bytes: 2048,
                         },
                     ],

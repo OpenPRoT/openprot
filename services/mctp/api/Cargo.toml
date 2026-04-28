@@ -1,0 +1,13 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "openprot-mctp-api"
+version = "0.1.0"
+edition = "2021"
+description = "MCTP service API types and traits for OpenPRoT"
+license = "Apache-2.0"
+
+[dependencies]
+zerocopy = { workspace = true }
+heapless = { workspace = true }

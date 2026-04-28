@@ -78,11 +78,26 @@ rust_app(
     ],
 )
 
+rust_app(
+    name = "usart_client2_app",
+    srcs = ["client2_main.rs"],
+    codegen_crate_name = "app_usart_client2",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    deps = [
+        "//drivers/usart/client:usart_client",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)
+
 system_image(
     name = "usart",
     apps = [
         ":usart_server_bin",
         ":usart_client_app",
+        ":usart_client2_app",
     ],
     kernel = ":target",
     platform = "//target/ast10x0",

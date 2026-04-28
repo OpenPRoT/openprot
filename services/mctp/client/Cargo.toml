@@ -1,0 +1,17 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "openprot-mctp-client"
+version = "0.1.0"
+edition = "2021"
+description = "MCTP IPC client for OpenPRoT (Pigweed userspace)"
+license = "Apache-2.0"
+
+[features]
+default = []
+# Enable Pigweed IPC transport (Bazel builds only; requires `userspace` crate).
+pigweed = []
+
+[dependencies]
+openprot-mctp-api = { path = "../api" }

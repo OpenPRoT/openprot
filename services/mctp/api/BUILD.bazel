@@ -1,0 +1,20 @@
+# Licensed under the Apache-2.0 license
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "mctp_api",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "openprot_mctp_api",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@rust_crates//:heapless",
+        "@rust_crates//:zerocopy",
+    ],
+)
+
+rust_test(
+    name = "mctp_api_test",
+    crate = ":mctp_api",
+)

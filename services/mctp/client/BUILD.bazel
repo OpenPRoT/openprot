@@ -1,0 +1,15 @@
+# Licensed under the Apache-2.0 license
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "mctp_client",
+    srcs = ["src/lib.rs"],
+    crate_name = "openprot_mctp_client",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/mctp/api:mctp_api",
+        "@pigweed//pw_kernel/userspace",
+    ],
+)

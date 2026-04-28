@@ -379,6 +379,26 @@ impl Usart {
 		LineStatus::from_bits_truncate(status)
 	}
 
+	/// Non-blocking drain of the RX FIFO into `out`.
+	///
+	/// Copies as many bytes as are immediately available (up to `out.len()`)
+	/// and returns the count.  Returns `0` if the FIFO is empty; the caller
+	/// should arm the `RX_DATA_AVAILABLE` interrupt and retry.
+	pub fn try_read_available(&self, out: &mut [u8]) -> usize {
+		let mut count = 0;
+		while count < out.len() {
+			match self.try_read_byte() {
+				Ok(byte) => {
+					out[count] = byte;
+					count += 1;
+				}
+				Err(nb::Error::WouldBlock) => break,
+				Err(nb::Error::Other(_)) => break,
+			}
+		}
+		count
+	}
+
 	pub fn read_modem_status(&self) -> u8 {
 		self.regs().uartmsr().read().bits() as u8
 	}
