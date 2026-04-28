@@ -1,7 +1,8 @@
 # USART Driver Model
 
 This document describes the architecture of the layered USART userspace driver
-under `drivers/usart/` and how it integrates with the AST10x0 platform codebase.
+under `drivers/usart/` and how it integrates with platform bindings in a
+target-agnostic way.
 
 ## 1. Layer Overview
 
@@ -15,7 +16,7 @@ under `drivers/usart/` and how it integrates with the AST10x0 platform codebase.
                          ▼
 ┌──────────────────────────────────────────────────────────┐
 │  Server Binary                                           │
-│    (target/ast10x0/tests/usart:usart_server_bin)         │
+│    (target/<plat>/tests/usart:usart_server_bin)          │
 │  rust_app — wires codegen handles + backend + runtime    │
 │  wait_group_add ×N  →  runtime::run                      │
 └────────────────────────┬─────────────────────────────────┘
@@ -30,15 +31,15 @@ under `drivers/usart/` and how it integrates with the AST10x0 platform codebase.
                          │  UsartBackend trait
                          ▼
 ┌──────────────────────────────────────────────────────────┐
-│  Platform Backend  (target/ast10x0/backend/usart)        │
-│  Ast10x0UsartBackend : UsartBackend                      │
-│  pub type Backend = Ast10x0UsartBackend                  │
+│  Platform Backend  (target/<plat>/backend/usart)         │
+│  PlatformUsartBackend : UsartBackend                     │
+│  pub type Backend = PlatformUsartBackend                 │
 └────────────────────────┬─────────────────────────────────┘
                          │  embedded-io / embedded-hal-nb
                          ▼
 ┌──────────────────────────────────────────────────────────┐
-│  PAC-level UART driver  (target/ast10x0/peripherals)     │
-│  Usart — raw MMIO handle over ast1060_pac::RegisterBlock │
+│  PAC-level UART driver  (platform peripherals crate)     │
+│  Usart — raw MMIO handle over vendor PAC RegisterBlock   │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -47,12 +48,12 @@ under `drivers/usart/` and how it integrates with the AST10x0 platform codebase.
 | Bazel target | Crate | Role |
 |---|---|---|
 | `//drivers/usart/api` | `usart_api` | Wire protocol + backend trait contract |
-| `//drivers/usart/server:usart_server` | `usart_server` | Dispatch + runtime loop library (target-agnostic) |
-| `//drivers/usart/client:usart_client` | `usart_client` | Client facade library (target-agnostic) |
-| `//target/ast10x0/tests/usart:usart_server_bin` | binary | AST10x0 smoke-test server binding |
-| `//target/ast10x0/tests/usart:usart_client_app` | binary | AST10x0 smoke-test client binding |
-| `//target/ast10x0/backend/usart` | `usart_backend` | AST10x0 backend implementation |
-| `//target/ast10x0/peripherals` | `ast10x0_peripherals` | Raw MMIO UART driver |
+| `//drivers/usart/server:usart_server` | `usart_server` | Dispatch + runtime loop library (platform-binding-agnostic within Pigweed kernel targets) |
+| `//drivers/usart/client:usart_client` | `usart_client` | Client facade library (platform-binding-agnostic within Pigweed kernel targets) |
+| `//target/ast10x0/tests/usart:usart_server_bin` | binary | Reference platform smoke-test server binding |
+| `//target/ast10x0/tests/usart:usart_client_app` | binary | Reference platform smoke-test client binding |
+| `//target/ast10x0/backend/usart` | `usart_backend` | Reference platform backend implementation |
+| `//target/ast10x0/peripherals` | `<plat>_peripherals` | Reference platform raw MMIO UART driver |
 
 ## 3. Wire Protocol  (`usart_api::protocol`)
 
@@ -89,9 +90,9 @@ pub trait UsartBackend {
 
 `drivers/usart/` ships only platform-agnostic libraries (`usart_api`,
 `usart_server`, `usart_client`). Every binary that names a specific
-`system.json5` lives next to that config under the platform's tree —
-for AST10x0 that is `target/ast10x0/tests/usart/`, which packages a
-self-contained smoke-test image.
+`system.json5` lives next to that config under the platform's tree. In this
+repository, the concrete example binding is `target/ast10x0/tests/usart/`,
+which packages a self-contained smoke-test image.
 
 ```python
 # target/ast10x0/tests/usart/BUILD.bazel  (excerpt)
@@ -131,7 +132,7 @@ let mut backend = Backend::new();
 
 ## 6. Server Library (`usart_server`)
 
-Two pieces, both target-agnostic:
+Two pieces, both platform-binding-agnostic within Pigweed kernel targets:
 
 - `dispatch_request<B: UsartBackend>(backend, request, response) -> usize` —
   pure protocol→backend translator. No IPC, no OS dependency.
