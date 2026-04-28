@@ -616,77 +616,51 @@ fn mctp_loop() -> Result<()> {
                 for msg in msgs.get(..n).unwrap_or(&[]) {
                     let raw = msg.data();
 
-                    // WORKAROUND: Manually prepend destination address to I2C frame.
-                    // The I2C hardware currently does NOT prepend the destination address,
-                    // but mctp-lib's I2C decoder expects it. This will be fixed when the
-                    // I2C driver is updated to prepend the destination address automatically.
-                    // TODO: Remove this workaround once I2C driver change is in place.
-                    let mut frame_with_dest = [0u8; 256];
-                    if raw.len() + 1 > frame_with_dest.len() {
-                        pw_log::warn!(
-                            "I2C frame too large ({} bytes), skipping",
-                            raw.len() as u32,
-                        );
-                        continue;
-                    }
-
-                    // Prepend destination address (OWN_I2C_ADDR << 1 | 0 for write)
-                    frame_with_dest[0] = OWN_I2C_ADDR << 1;
-                    frame_with_dest[1..raw.len() + 1].copy_from_slice(raw);
-                    let frame_len = raw.len() + 1;
-
-                    // Log the frame AFTER prepending destination
-                    // Format: dest_addr cmd byte_count src_addr | MCTP hdr[0..3]
-                    if frame_len >= 9 {
+                    // Log the received I2C frame
+                    // Format: cmd byte_count src_addr | MCTP hdr[0..3]
+                    if raw.len() >= 8 {
                         pw_log::info!(
-                            "I2C frame (with prepended dest): dest=0x{:02x} cmd=0x{:02x} bc={} src=0x{:02x} \
+                            "I2C frame: cmd=0x{:02x} bc={} src=0x{:02x} \
                             | mctp: ver=0x{:02x} deid=0x{:02x} seid=0x{:02x} flags=0x{:02x} \
                             len={}",
-                            frame_with_dest[0] as u32, frame_with_dest[1] as u32,
-                            frame_with_dest[2] as u32, frame_with_dest[3] as u32,
-                            frame_with_dest[4] as u32, frame_with_dest[5] as u32,
-                            frame_with_dest[6] as u32, frame_with_dest[7] as u32,
-                            frame_len as u32,
+                            raw[0] as u32, raw[1] as u32,
+                            raw[2] as u32, raw[3] as u32,
+                            raw[4] as u32, raw[5] as u32,
+                            raw[6] as u32, raw.len() as u32,
                         );
                     } else {
                         pw_log::warn!(
                             "I2C frame too short ({} bytes) to contain MCTP header",
-                            frame_len as u32,
+                            raw.len() as u32,
                         );
                     }
-
-                    // Create temporary TargetMessage with prepended destination
-                    let msg_with_dest = i2c_api::TargetMessage::from_data(
-                        msg.source_address,
-                        &frame_with_dest[..frame_len]
-                    );
 
                     // Debug: log full frame being decoded
-                    if frame_len >= 14 {
+                    if raw.len() >= 13 {
                         pw_log::info!(
                             "Frame[0-7]:  {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
-                            frame_with_dest[0] as u32, frame_with_dest[1] as u32,
-                            frame_with_dest[2] as u32, frame_with_dest[3] as u32,
-                            frame_with_dest[4] as u32, frame_with_dest[5] as u32,
-                            frame_with_dest[6] as u32, frame_with_dest[7] as u32
+                            raw[0] as u32, raw[1] as u32,
+                            raw[2] as u32, raw[3] as u32,
+                            raw[4] as u32, raw[5] as u32,
+                            raw[6] as u32, raw[7] as u32
                         );
                         pw_log::info!(
-                            "Frame[8-13]: {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
-                            frame_with_dest[8] as u32, frame_with_dest[9] as u32,
-                            frame_with_dest[10] as u32, frame_with_dest[11] as u32,
-                            frame_with_dest[12] as u32, frame_with_dest[13] as u32
+                            "Frame[8-12]: {:02x} {:02x} {:02x} {:02x} {:02x}",
+                            raw[8] as u32, raw[9] as u32,
+                            raw[10] as u32, raw[11] as u32,
+                            raw[12] as u32
                         );
-                    } else if frame_len >= 8 {
+                    } else if raw.len() >= 8 {
                         pw_log::info!(
                             "Frame bytes: {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
-                            frame_with_dest[0] as u32, frame_with_dest[1] as u32,
-                            frame_with_dest[2] as u32, frame_with_dest[3] as u32,
-                            frame_with_dest[4] as u32, frame_with_dest[5] as u32,
-                            frame_with_dest[6] as u32, frame_with_dest[7] as u32
+                            raw[0] as u32, raw[1] as u32,
+                            raw[2] as u32, raw[3] as u32,
+                            raw[4] as u32, raw[5] as u32,
+                            raw[6] as u32, raw[7] as u32
                         );
                     }
 
-                    match receiver.decode(&msg_with_dest) {
+                    match receiver.decode(msg) {
                         Ok((pkt, hdr)) => {
                             i2c_pkt = i2c_pkt.wrapping_add(1);
                             // Log MCTP packet fields: SOM/EOM from flags byte (pkt[3])

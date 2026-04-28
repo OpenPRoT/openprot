@@ -44,6 +44,10 @@ MEMORY
   /* Internal SRAM */
   RAM(rwx) : ORIGIN = {{kernel.ram_start_address | hex}},
              LENGTH = {{kernel.ram_size_bytes}}
+  /* Non-cached RAM for DMA buffers (cache granularity = 24KB)
+   * Bit 26 of SCUA50 covers 0x9C000-0xA1FFF; we leave it clear for DMA.
+   * Total uncached: 144KB (0x9C000-0xBFFFF) */
+  RAM_NC(rwx) : ORIGIN = 0x0009C000, LENGTH = 144K
 
   /* Each memory region above has an associated .*.unused_space section that
    * overlays the unused space at the end of the memory segment. These segments
@@ -221,6 +225,24 @@ SECTIONS
   {
     . = ABSOLUTE(ORIGIN(RAM) + LENGTH(RAM));
   } >RAM
+
+  /* Non-cached RAM section for DMA buffers.
+   * This section is excluded from cache via SCUA50 configuration in pre_init().
+   * Cache granularity is 24KB per bit; bit 26 (0x9C000-0xA1FFF) and above
+   * are left clear, making this entire region uncached for DMA coherency.
+   */
+  .ram_nc (NOLOAD) : ALIGN(32)
+  {
+    __ram_nc_start = .;
+    KEEP(*(.ram_nc));
+    __ram_nc_end = .;
+  } >RAM_NC
+
+  /* Represents unused space in the RAM_NC segment. */
+  .RAM_NC.unused_space (NOLOAD) : ALIGN(4)
+  {
+    . = ABSOLUTE(ORIGIN(RAM_NC) + LENGTH(RAM_NC));
+  } >RAM_NC
 
   /* Discard unwind info. */
   .ARM.extab 0x0 (INFO) :

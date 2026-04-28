@@ -8,7 +8,7 @@ def _aspeed_ddk_impl(module_ctx):
     git_repository(
         name = "aspeed_ddk",
         remote = "https://github.com/OpenPRoT/aspeed-rust.git",
-        branch = "i2c-core",
+        branch = "main",
         build_file = "@@//third_party:aspeed_ddk.BUILD.bazel",
     )
     return module_ctx.extension_metadata(

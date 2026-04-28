@@ -40,12 +40,12 @@ dependencies = [
 [[package]]
 name = "aspeed-ddk"
 version = "0.1.0"
-source = "git+https://github.com/OpenPRoT/aspeed-rust.git?branch=i2c-core#e93e85b0fff8a448a86c6a81bbbf1818ea6094e6"
+source = "git+https://github.com/OpenPRoT/aspeed-rust.git?branch=main#ce3b5677b95bc98a61ebf8783d00d93a910c4495"
 dependencies = [
  "ast1060-pac 0.1.0 (git+https://github.com/OpenPRoT/ast1060-pac.git?branch=main)",
  "bitflags",
  "cortex-m",
- "cortex-m-rt",
+ "critical-section",
  "embedded-hal 1.0.0",
  "embedded-hal 1.0.0-alpha.1",
  "embedded-io",
@@ -54,9 +54,9 @@ dependencies = [
  "hex-literal",
  "nb 1.1.0",
  "openprot-hal-blocking",
- "panic-halt",
  "paste",
  "proposed-traits",
+ "static_cell",
  "zerocopy",
 ]
 
@@ -168,6 +168,7 @@ checksum = "8ec610d8f49840a5b376c69663b6369e71f4b34484b9b2eb29fb918d92516cb9"
 dependencies = [
  "bare-metal",
  "bitfield 0.13.2",
+ "critical-section",
  "embedded-hal 0.2.7",
  "volatile-register",
 ]
@@ -259,6 +260,12 @@ name = "crc-catalog"
 version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19d374276b40fb8bbdee95aef7c7fa6b5316ec764510eb64b8dd0e2ed0d7e7f5"
+
+[[package]]
+name = "critical-section"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "790eea4361631c5e7d22598ecd5723ff611904e3344ce8720784c93e3d83d40b"
 
 [[package]]
 name = "crypto-bigint"
@@ -605,12 +612,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "panic-halt"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a513e167849a384b7f9b746e517604398518590a9142f4846a32e3c2a4de7b11"
-
-[[package]]
 name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -627,6 +628,12 @@ dependencies = [
  "opaque-debug",
  "universal-hash",
 ]
+
+[[package]]
+name = "portable-atomic"
+version = "1.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c33a9471896f1c69cecef8d20cbe2f7accd12527ce60845ff44c153bb2a21b49"
 
 [[package]]
 name = "ppv-lite86"
@@ -789,6 +796,15 @@ name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
+
+[[package]]
+name = "static_cell"
+version = "2.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0530892bb4fa575ee0da4b86f86c667132a94b74bb72160f58ee5a4afec74c23"
+dependencies = [
+ "portable-atomic",
+]
 
 [[package]]
 name = "subtle"

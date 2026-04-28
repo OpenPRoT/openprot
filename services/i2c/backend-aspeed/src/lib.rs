@@ -39,24 +39,45 @@
 
 #![no_std]
 
-use aspeed_ddk::i2c_core::{Ast1060I2c, Controller as DdkController, I2cConfig, I2cError, SlaveConfig, SlaveEvent};
+use aspeed_ddk::common::DmaBuffer;
+use aspeed_ddk::i2c_core;
+use aspeed_ddk::i2c_core::{Ast1060I2c, Controller as DdkController, I2cConfig, I2cError, I2cSpeed, I2cXferMode, ClockConfig, SlaveConfig, SlaveEvent};
 use i2c_api::{ResponseCode, SlaveEventKind};
 
 use pw_log;
 
 // ---------------------------------------------------------------------------
-// I2C Slave Command Register Constants
+// DMA Buffer
 // ---------------------------------------------------------------------------
-// These are copied from aspeed_ddk::i2c_core::constants which is private.
 
-/// Enable slave packet mode
-const AST_I2CS_PKT_MODE_EN: u32 = 1 << 16;
-/// Slave active for all addresses
-const AST_I2CS_ACTIVE_ALL: u32 = 0x3 << 17;
-/// Enable slave RX buffer
-const AST_I2CS_RX_BUFF_EN: u32 = 1 << 7;
-/// Enable slave TX buffer
-const AST_I2CS_TX_BUFF_EN: u32 = 1 << 6;
+/// DMA buffers in non-cached RAM section (0xA0000+).
+///
+/// One buffer per bus. Each buffer is shared between RX and TX operations
+/// on that bus, but cannot be shared across buses. Must be in `.ram_nc`
+/// section with cache exclusion configured by the kernel's `pre_init()`.
+///
+/// Currently allocated for 1 bus. Expand array size when adding more buses.
+#[unsafe(link_section = ".ram_nc")]
+static mut DMA_BUFS: [DmaBuffer<256>; 1] = [DmaBuffer::new()];
+
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+
+/// I2C configuration for DMA mode.
+///
+/// All buses use the same configuration: Standard speed (100kHz), DMA mode,
+/// multi-master support, SMBus timeout enabled.
+fn dma_config() -> I2cConfig {
+    I2cConfig {
+        speed: I2cSpeed::Standard,
+        xfer_mode: I2cXferMode::DmaMode,
+        multi_master: true,
+        smbus_timeout: true,
+        smbus_alert: false,
+        clock_config: ClockConfig::ast1060_default(),
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Error mapping
@@ -147,6 +168,8 @@ pub struct AspeedI2cBackend {
     initialized: u16,
     /// Tracks which buses have slave mode configured via `configure_slave()`.
     slave_configured: u16,
+    /// Slave addresses for each bus (7-bit), used to restore config after master operations.
+    slave_addrs: [u8; 14],
     /// Pre-loaded TX data to send when master reads from us (one buffer per bus).
     slave_tx_bufs: [[u8; SLAVE_TX_BUF_SIZE]; 14],
     /// Valid byte count in each `slave_tx_bufs` slot.
@@ -169,6 +192,7 @@ impl AspeedI2cBackend {
             peripherals: unsafe { ast1060_pac::Peripherals::steal() },
             initialized: 0,
             slave_configured: 0,
+            slave_addrs: [0u8; 14],
             slave_tx_bufs: [[0u8; SLAVE_TX_BUF_SIZE]; 14],
             slave_tx_lens: [0usize; 14],
             slave_notification: [EMPTY_NOTIF_STATE; 14],
@@ -198,14 +222,26 @@ impl AspeedI2cBackend {
             registers: regs,
             buff_registers: buffs,
         };
-        // Ast1060I2c::new() calls init_hardware() which configures:
-        //   - I2CC00: reset, master enable, bus auto-release
+
+        // Map bus to DMA buffer index
+        // Currently only bus 2 is supported (index 0 in DMA_BUFS array)
+        let dma_idx = match bus {
+            2 => 0,
+            _ => return Err(ResponseCode::InvalidBus),
+        };
+
+        // Get DMA buffer reference for this bus
+        let dma_buf = unsafe { &mut *core::ptr::addr_of_mut!(DMA_BUFS[dma_idx].buf) };
+
+        // Initialize with DMA - this calls init_hardware() which configures:
+        //   - I2CC00: reset, master enable, bus auto-release, DMA mode
         //   - Timing registers per I2cConfig
         //   - I2CM10/I2CM14: interrupt enable/clear
-        let _i2c = Ast1060I2c::new(&ctrl, I2cConfig::default())
+        //   - DMA buffer address registers
+        let _i2c = Ast1060I2c::new_with_dma(&ctrl, dma_config(), dma_buf)
             .map_err(map_i2c_error)?;
         self.initialized |= 1 << bus;
-        pw_log::info!("I2C bus {} controller initialized", bus as u32);
+        pw_log::info!("I2C bus {} controller initialized in DMA mode", bus as u32);
         Ok(())
     }
 
@@ -270,6 +306,13 @@ impl AspeedI2cBackend {
             return Err(ResponseCode::ServerError);
         }
 
+        // Get DMA buffer for this bus
+        let dma_idx = match bus {
+            2 => 0,
+            _ => return Err(ResponseCode::InvalidBus),
+        };
+        let dma_buf = unsafe { &mut *core::ptr::addr_of_mut!(DMA_BUFS[dma_idx].buf) };
+
         // If slave mode is enabled, temporarily disable it for master operation
         let slave_was_enabled = (self.slave_configured & (1 << bus)) != 0;
         if slave_was_enabled {
@@ -280,7 +323,7 @@ impl AspeedI2cBackend {
                 registers: regs,
                 buff_registers: buffs,
             };
-            let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+            let mut i2c = Ast1060I2c::from_initialized_with_dma(&ctrl, dma_config(), dma_buf);
             i2c.disable_slave();
 
             // Explicitly ensure master mode is enabled after disabling slave
@@ -305,7 +348,7 @@ impl AspeedI2cBackend {
             registers: regs,
             buff_registers: buffs,
         };
-        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+        let mut i2c = Ast1060I2c::from_initialized_with_dma(&ctrl, dma_config(), dma_buf);
 
         // TODO: Add bus turnaround delay for MCTP-over-I2C
         // Remote device needs time to switch from master to slave mode
@@ -315,15 +358,24 @@ impl AspeedI2cBackend {
 
         // Re-enable slave mode if it was enabled before
         if slave_was_enabled {
-            pw_log::debug!("Re-enabling slave mode after master write");
+            pw_log::debug!("Re-configuring slave mode after master write");
             let (regs, buffs) = self.controller_regs(bus)?;
             let ctrl = aspeed_ddk::i2c_core::I2cController {
                 controller: DdkController(bus),
                 registers: regs,
                 buff_registers: buffs,
             };
-            let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
-            i2c.enable_slave();
+            let mut i2c = Ast1060I2c::from_initialized_with_dma(&ctrl, dma_config(), dma_buf);
+
+            // Reconfigure slave completely (not just enable) to restore:
+            // - AST_I2CC_SLAVE_EN
+            // - AST_I2CC_SLAVE_PKT_SAVE_ADDR (critical for MCTP PEC)
+            // - DMA buffer arming
+            let addr = self.slave_addrs[bus as usize];
+            let config = SlaveConfig::new(addr).map_err(map_i2c_error)?;
+            i2c.configure_slave(&config).map_err(map_i2c_error)?;
+
+            pw_log::debug!("Slave mode reconfigured at address 0x{:02x}", addr as u32);
         }
 
         if let Err(e) = result {
@@ -340,13 +392,20 @@ impl AspeedI2cBackend {
         if !self.is_bus_initialized(bus) {
             return Err(ResponseCode::ServerError);
         }
+        // Get DMA buffer for this bus
+        let dma_idx = match bus {
+            2 => 0,
+            _ => return Err(ResponseCode::InvalidBus),
+        };
+        let dma_buf = unsafe { &mut *core::ptr::addr_of_mut!(DMA_BUFS[dma_idx].buf) };
+
         let (regs, buffs) = self.controller_regs(bus)?;
         let ctrl = aspeed_ddk::i2c_core::I2cController {
             controller: DdkController(bus),
             registers: regs,
             buff_registers: buffs,
         };
-        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+        let mut i2c = Ast1060I2c::from_initialized_with_dma(&ctrl, dma_config(), dma_buf);
         i2c.read(addr, buf).map_err(map_i2c_error)
     }
 
@@ -361,13 +420,20 @@ impl AspeedI2cBackend {
         if !self.is_bus_initialized(bus) {
             return Err(ResponseCode::ServerError);
         }
+        // Get DMA buffer for this bus
+        let dma_idx = match bus {
+            2 => 0,
+            _ => return Err(ResponseCode::InvalidBus),
+        };
+        let dma_buf = unsafe { &mut *core::ptr::addr_of_mut!(DMA_BUFS[dma_idx].buf) };
+
         let (regs, buffs) = self.controller_regs(bus)?;
         let ctrl = aspeed_ddk::i2c_core::I2cController {
             controller: DdkController(bus),
             registers: regs,
             buff_registers: buffs,
         };
-        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+        let mut i2c = Ast1060I2c::from_initialized_with_dma(&ctrl, dma_config(), dma_buf);
         i2c.write_read(addr, wr, rd).map_err(map_i2c_error)
     }
 
@@ -376,13 +442,20 @@ impl AspeedI2cBackend {
         if !self.is_bus_initialized(bus) {
             return Err(ResponseCode::ServerError);
         }
+        // Get DMA buffer for this bus
+        let dma_idx = match bus {
+            2 => 0,
+            _ => return Err(ResponseCode::InvalidBus),
+        };
+        let dma_buf = unsafe { &mut *core::ptr::addr_of_mut!(DMA_BUFS[dma_idx].buf) };
+
         let (regs, buffs) = self.controller_regs(bus)?;
         let ctrl = aspeed_ddk::i2c_core::I2cController {
             controller: DdkController(bus),
             registers: regs,
             buff_registers: buffs,
         };
-        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+        let mut i2c = Ast1060I2c::from_initialized_with_dma(&ctrl, dma_config(), dma_buf);
         i2c.recover_bus().map_err(map_i2c_error)
     }
 
@@ -398,16 +471,24 @@ impl AspeedI2cBackend {
         if !self.is_bus_initialized(bus) {
             return Err(ResponseCode::ServerError);
         }
+        // Get DMA buffer for this bus
+        let dma_idx = match bus {
+            2 => 0,
+            _ => return Err(ResponseCode::InvalidBus),
+        };
+        let dma_buf = unsafe { &mut *core::ptr::addr_of_mut!(DMA_BUFS[dma_idx].buf) };
+
         let (regs, buffs) = self.controller_regs(bus)?;
         let ctrl = aspeed_ddk::i2c_core::I2cController {
             controller: DdkController(bus),
             registers: regs,
             buff_registers: buffs,
         };
-        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+        let mut i2c = Ast1060I2c::from_initialized_with_dma(&ctrl, dma_config(), dma_buf);
         let config = SlaveConfig::new(addr).map_err(map_i2c_error)?;
         i2c.configure_slave(&config).map_err(map_i2c_error)?;
         self.slave_configured |= 1 << bus;
+        self.slave_addrs[bus as usize] = addr;  // Save for reconfiguration after master operations
         pw_log::info!("I2C bus {} slave configured at address 0x{:02x}", bus as u32, addr as u32);
         Ok(())
     }
@@ -420,13 +501,20 @@ impl AspeedI2cBackend {
         if (self.slave_configured & (1 << bus)) == 0 {
             return Err(ResponseCode::NotInitialized);
         }
+        // Get DMA buffer for this bus
+        let dma_idx = match bus {
+            2 => 0,
+            _ => return Err(ResponseCode::InvalidBus),
+        };
+        let dma_buf = unsafe { &mut *core::ptr::addr_of_mut!(DMA_BUFS[dma_idx].buf) };
+
         let (regs, buffs) = self.controller_regs(bus)?;
         let ctrl = aspeed_ddk::i2c_core::I2cController {
             controller: DdkController(bus),
             registers: regs,
             buff_registers: buffs,
         };
-        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+        let mut i2c = Ast1060I2c::from_initialized_with_dma(&ctrl, dma_config(), dma_buf);
         i2c.enable_slave();
         pw_log::info!("I2C bus {} slave enabled", bus as u32);
         Ok(())
@@ -437,13 +525,20 @@ impl AspeedI2cBackend {
         if !self.is_bus_initialized(bus) {
             return Err(ResponseCode::ServerError);
         }
+        // Get DMA buffer for this bus
+        let dma_idx = match bus {
+            2 => 0,
+            _ => return Err(ResponseCode::InvalidBus),
+        };
+        let dma_buf = unsafe { &mut *core::ptr::addr_of_mut!(DMA_BUFS[dma_idx].buf) };
+
         let (regs, buffs) = self.controller_regs(bus)?;
         let ctrl = aspeed_ddk::i2c_core::I2cController {
             controller: DdkController(bus),
             registers: regs,
             buff_registers: buffs,
         };
-        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+        let mut i2c = Ast1060I2c::from_initialized_with_dma(&ctrl, dma_config(), dma_buf);
         i2c.disable_slave();
         pw_log::info!("I2C bus {} slave disabled", bus as u32);
         Ok(())
@@ -491,9 +586,9 @@ impl AspeedI2cBackend {
                 // ARM TX BUFFER: Set both RX_BUFF_EN and TX_BUFF_EN to enable simultaneous
                 // receive (for writes) and transmit (for reads). This is required for the
                 // slave to respond to reads without delay.
-                let mut cmd = AST_I2CS_ACTIVE_ALL | AST_I2CS_PKT_MODE_EN;
-                cmd |= AST_I2CS_RX_BUFF_EN;  // Keep RX enabled for writes
-                cmd |= AST_I2CS_TX_BUFF_EN;  // Arm TX for immediate read response
+                let mut cmd = i2c_core::AST_I2CS_ACTIVE_ALL | i2c_core::AST_I2CS_PKT_MODE_EN;
+                cmd |= i2c_core::AST_I2CS_RX_BUFF_EN;  // Keep RX enabled for writes
+                cmd |= i2c_core::AST_I2CS_TX_BUFF_EN;  // Arm TX for immediate read response
                 regs.i2cs28().write(|w| w.bits(cmd));
             }
         }
@@ -508,8 +603,8 @@ impl AspeedI2cBackend {
         let (regs, _) = self.controller_regs(bus)?;
 
         unsafe {
-            let mut cmd = AST_I2CS_ACTIVE_ALL | AST_I2CS_PKT_MODE_EN;
-            cmd |= AST_I2CS_RX_BUFF_EN;
+            let mut cmd = i2c_core::AST_I2CS_ACTIVE_ALL | i2c_core::AST_I2CS_PKT_MODE_EN;
+            cmd |= i2c_core::AST_I2CS_RX_BUFF_EN;
             regs.i2cs28().write(|w| w.bits(cmd));
         }
 
@@ -537,6 +632,13 @@ impl AspeedI2cBackend {
             return Err(ResponseCode::NotInitialized);
         }
 
+        // Get DMA buffer for this bus
+        let dma_idx = match bus {
+            2 => 0,
+            _ => return Err(ResponseCode::InvalidBus),
+        };
+        let dma_buf = unsafe { &mut *core::ptr::addr_of_mut!(DMA_BUFS[dma_idx].buf) };
+
         // Copy TX buffer to local stack before borrowing peripherals.
         let tx_len = self.slave_tx_lens[bus as usize];
         let mut tx_local = [0u8; SLAVE_TX_BUF_SIZE];
@@ -548,7 +650,7 @@ impl AspeedI2cBackend {
             registers: regs,
             buff_registers: buffs,
         };
-        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+        let mut i2c = Ast1060I2c::from_initialized_with_dma(&ctrl, dma_config(), dma_buf);
 
         const POLL_BUDGET: usize = 10_000;
         for _ in 0..POLL_BUDGET {
@@ -570,6 +672,11 @@ impl AspeedI2cBackend {
                     continue;
                 }
                 Some(SlaveEvent::DataReceived { len: _ }) => {
+                    let n = i2c.slave_read(rx_buf).map_err(map_i2c_error)?;
+                    return Ok((SlaveEventKind::DataReceived, n));
+                }
+                Some(SlaveEvent::DataReceivedAndSent { rx_len: _, tx_len: _ }) => {
+                    // Both RX and TX occurred. Read the received data and return it.
                     let n = i2c.slave_read(rx_buf).map_err(map_i2c_error)?;
                     return Ok((SlaveEventKind::DataReceived, n));
                 }
@@ -597,13 +704,20 @@ impl AspeedI2cBackend {
         if (self.slave_configured & (1 << bus)) == 0 {
             return Err(ResponseCode::NotInitialized);
         }
+        // Get DMA buffer for this bus
+        let dma_idx = match bus {
+            2 => 0,
+            _ => return Err(ResponseCode::InvalidBus),
+        };
+        let dma_buf = unsafe { &mut *core::ptr::addr_of_mut!(DMA_BUFS[dma_idx].buf) };
+
         let (regs, buffs) = self.controller_regs(bus)?;
         let ctrl = aspeed_ddk::i2c_core::I2cController {
             controller: DdkController(bus),
             registers: regs,
             buff_registers: buffs,
         };
-        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+        let mut i2c = Ast1060I2c::from_initialized_with_dma(&ctrl, dma_config(), dma_buf);
 
         // Polling loop — spins until a relevant event or budget exhausted.
         // At 200 MHz, ~10_000 iterations ≈ a few hundred microseconds.
@@ -613,6 +727,11 @@ impl AspeedI2cBackend {
         for _ in 0..POLL_BUDGET {
             match i2c.handle_slave_interrupt() {
                 Some(SlaveEvent::DataReceived { len: _ }) => {
+                    let n = i2c.slave_read(buf).map_err(map_i2c_error)?;
+                    return Ok(n);
+                }
+                Some(SlaveEvent::DataReceivedAndSent { rx_len: _, tx_len: _ }) => {
+                    // Both RX and TX occurred. Read the received data.
                     let n = i2c.slave_read(buf).map_err(map_i2c_error)?;
                     return Ok(n);
                 }
@@ -700,13 +819,20 @@ impl AspeedI2cBackend {
             return Err(ResponseCode::NotInitialized);
         }
 
+        // Get DMA buffer for this bus
+        let dma_idx = match bus {
+            2 => 0,
+            _ => return Err(ResponseCode::InvalidBus),
+        };
+        let dma_buf = unsafe { &mut *core::ptr::addr_of_mut!(DMA_BUFS[dma_idx].buf) };
+
         let (regs, buffs) = self.controller_regs(bus)?;
         let ctrl = aspeed_ddk::i2c_core::I2cController {
             controller: DdkController(bus),
             registers: regs,
             buff_registers: buffs,
         };
-        let mut i2c = Ast1060I2c::from_initialized(&ctrl, I2cConfig::default());
+        let mut i2c = Ast1060I2c::from_initialized_with_dma(&ctrl, dma_config(), dma_buf);
 
         // Use a local stack buffer so we can release the peripheral borrow
         // before writing into self.slave_notification.

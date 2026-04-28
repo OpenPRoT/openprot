@@ -320,11 +320,20 @@ fn dispatch_i2c_op(
                         encode_success(response, 0)
                     }
                     Ok(n) => {
-                        pw_log::info!(
-                            "slave_receive bus={}: received {} bytes",
-                            header.bus as u32,
-                            n as u32,
-                        );
+                        if n > 0 {
+                            pw_log::info!(
+                                "slave_receive bus={}: received {} bytes, first_byte=0x{:02x}",
+                                header.bus as u32,
+                                n as u32,
+                                buf[0] as u32,
+                            );
+                        } else {
+                            pw_log::info!(
+                                "slave_receive bus={}: received {} bytes",
+                                header.bus as u32,
+                                n as u32,
+                            );
+                        }
                         encode_success(response, n)
                     }
                     Err(ResponseCode::Timeout) => encode_success(response, 0),

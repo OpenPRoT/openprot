@@ -7,39 +7,80 @@
 
 use arch_arm_cortex_m::Arch;
 
-#[cfg(feature = "jtag-halt")]
-use core::ptr::{self, addr_of};
+use core::ptr::{self, addr_of, write_volatile};
+
+/// Configure cache to exclude non-cached RAM region for DMA buffers.
+///
+/// The AST1060 cache controller (SCUA50) uses 24KB granularity per bit.
+/// Setting bits 0-25 caches 0x00000-0x9BFFF (624KB), leaving 0x9C000+
+/// uncached for DMA buffers. This minimizes waste compared to the
+/// aspeed-ddk reference (which uses bits 0-19, wasting 160KB).
+///
+/// # Safety
+///
+/// Must be called from pre_init before RAM is initialized.
+unsafe fn configure_cache() {
+    // Cache controller registers (SCU base = 0x7e6e_2000)
+    const CACHE_CTRL: u32 = 0x7e6e_2a58;  // SCUA58: Function Control
+    const CACHE_AREA: u32 = 0x7e6e_2a50;  // SCUA50: Cacheable Area (24KB/bit)
+    const CACHE_INVAL: u32 = 0x7e6e_2a54; // SCUA54: Invalidation Control
+
+    // SAFETY: Called from pre_init before RAM initialization.
+    // These registers control the cache controller and must be configured
+    // before DMA operations to prevent cache coherency issues.
+    unsafe {
+        // Disable cache
+        write_volatile(CACHE_CTRL as *mut u32, 0);
+
+        // Configure cache area: bits 0-25 set = 26 × 24KB = 624KB cached
+        // Covers 0x00000 - 0x9BFFF (cached), leaves 0x9C000+ uncached
+        // This wastes only 16KB vs aspeed-ddk's 160KB waste
+        write_volatile(CACHE_AREA as *mut u32, 0x03ff_ffff);
+
+        // Invalidate cache
+        write_volatile(CACHE_INVAL as *mut u32, 0x81e0_0000);
+
+        // Re-enable cache
+        write_volatile(CACHE_CTRL as *mut u32, 1);
+    }
+}
 
 /// Pre-kernel hardware initialization
 /// Runs before RAM is initialized, before main()
-#[cfg(feature = "jtag-halt")]
 #[cortex_m_rt::pre_init]
 unsafe fn pre_kernel_init() {
-    // Enable JTAG pins via SCU pinmux - must happen very early
-    // Scu::steal() is safe here: it's a zero-sized type with no RAM allocation
-    let scu = unsafe { ast1060_pac::Scu::steal() };
+    // SAFETY: Called once at boot before RAM initialization.
+    // Configure cache to exclude RAM_NC region (0xA0000+) for DMA buffers
+    unsafe { configure_cache(); }
 
-    // SCU41C: Multi-function Pin Control - enable ARM JTAG pins
-    scu.scu41c().modify(|_, w| {
-        w.enbl_armtmsfn_pin()
-            .bit(true)
-            .enbl_armtckfn_pin()
-            .bit(true)
-            .enbl_armtrstfn_pin()
-            .bit(true)
-            .enbl_armtdifn_pin()
-            .bit(true)
-            .enbl_armtdofn_pin()
-            .bit(true)
-    });
+    #[cfg(feature = "jtag-halt")]
+    {
+        // Enable JTAG pins via SCU pinmux - must happen very early
+        // Scu::steal() is safe here: it's a zero-sized type with no RAM allocation
+        let scu = unsafe { ast1060_pac::Scu::steal() };
 
-    // Halt here waiting for JTAG debugger
-    // Break with JTAG and set HALT to 0 to continue
-    static mut HALT: u32 = 1;
-    loop {
-        let val = unsafe { ptr::read_volatile(addr_of!(HALT)) };
-        if val == 0 {
-            break;
+        // SCU41C: Multi-function Pin Control - enable ARM JTAG pins
+        scu.scu41c().modify(|_, w| {
+            w.enbl_armtmsfn_pin()
+                .bit(true)
+                .enbl_armtckfn_pin()
+                .bit(true)
+                .enbl_armtrstfn_pin()
+                .bit(true)
+                .enbl_armtdifn_pin()
+                .bit(true)
+                .enbl_armtdofn_pin()
+                .bit(true)
+        });
+
+        // Halt here waiting for JTAG debugger
+        // Break with JTAG and set HALT to 0 to continue
+        static mut HALT: u32 = 1;
+        loop {
+            let val = unsafe { ptr::read_volatile(addr_of!(HALT)) };
+            if val == 0 {
+                break;
+            }
         }
     }
 }
@@ -74,7 +115,7 @@ default_handler!(
     i3c, i3c1, i3c2, i3c3,
     scu, sgpiom,
     spi, spi1, spipf1, spipf2, spipf3,
-    timer1, timer2, timer3, timer4, timer5, timer6, timer7,
+    timer, timer1, timer2, timer3, timer4, timer5, timer6, timer7,
     uart, uartdma, wdt
 );
 
