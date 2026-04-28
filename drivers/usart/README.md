@@ -48,7 +48,6 @@ under `drivers/usart/` and how it integrates with the AST10x0 platform codebase.
 | `//drivers/usart/client` | `usart_client` | Client facade for callers |
 | `//target/ast10x0/backend/usart` | `usart_backend` | AST10x0 backend implementation |
 | `//target/ast10x0/peripherals` | `ast10x0_peripherals` | Raw MMIO UART driver |
-| `//drivers/usart/tests` | — | Dispatch smoke tests with mock backend |
 
 ## 3. Wire Protocol  (`usart_api::protocol`)
 
@@ -60,8 +59,8 @@ Operations are identified by a 1-byte opcode in `UsartRequestHeader` (8 bytes, `
 | `Write` | 0x02 | payload bytes |
 | `Read` | 0x03 | `arg0` = max bytes to read |
 | `GetLineStatus` | 0x04 | — |
-| `EnableInterrupts` | 0x05 | `arg0` = mask |
-| `DisableInterrupts` | 0x06 | `arg0` = mask |
+| `EnableInterrupts` | 0x05 | `arg0` = `IrqMask` bits |
+| `DisableInterrupts` | 0x06 | `arg0` = `IrqMask` bits |
 
 `UsartResponseHeader` (4 bytes) carries a `UsartError` status code plus a payload length.
 All structures implement `zerocopy` traits for zero-copy serialization.
@@ -74,8 +73,8 @@ pub trait UsartBackend {
     fn write(&mut self, data: &[u8]) -> Result<usize, BackendError>;
     fn read(&mut self, out: &mut [u8]) -> Result<usize, BackendError>;
     fn line_status(&self) -> Result<LineStatus, BackendError>;
-    fn enable_interrupts(&mut self, mask: u16) -> Result<(), BackendError>;
-    fn disable_interrupts(&mut self, mask: u16) -> Result<(), BackendError>;
+    fn enable_interrupts(&mut self, mask: IrqMask) -> Result<(), BackendError>;
+    fn disable_interrupts(&mut self, mask: IrqMask) -> Result<(), BackendError>;
 }
 ```
 

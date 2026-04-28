@@ -1,9 +1,10 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
-load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
+load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image", "system_image_test")
 load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
 
@@ -60,4 +61,16 @@ system_image(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],
+)
+
+system_image_test(
+    name = "usart_test",
+    image = ":usart",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+rust_binary_no_panics_test(
+    name = "no_panics_test",
+    binary = ":usart",
+    tags = ["kernel"],
 )

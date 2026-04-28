@@ -2,7 +2,7 @@
 
 #![no_std]
 
-use usart_api::backend::UsartBackend;
+use usart_api::backend::{IrqMask, UsartBackend};
 use usart_api::{UsartError, UsartOp, UsartRequestHeader, UsartResponseHeader};
 
 pub const MAX_REQUEST_SIZE: usize = 512;
@@ -70,14 +70,20 @@ pub fn dispatch_request<B: UsartBackend>(
             Ok(lsr) => encode_success(response, &[lsr.0]),
             Err(e) => encode_error(response, e.into()),
         },
-        UsartOp::EnableInterrupts => match backend.enable_interrupts(hdr.arg0_value()) {
-            Ok(()) => encode_success(response, &[]),
-            Err(e) => encode_error(response, e.into()),
-        },
-        UsartOp::DisableInterrupts => match backend.disable_interrupts(hdr.arg0_value()) {
-            Ok(()) => encode_success(response, &[]),
-            Err(e) => encode_error(response, e.into()),
-        },
+        UsartOp::EnableInterrupts => {
+            let mask = IrqMask::from_bits_truncate(hdr.arg0_value());
+            match backend.enable_interrupts(mask) {
+                Ok(()) => encode_success(response, &[]),
+                Err(e) => encode_error(response, e.into()),
+            }
+        }
+        UsartOp::DisableInterrupts => {
+            let mask = IrqMask::from_bits_truncate(hdr.arg0_value());
+            match backend.disable_interrupts(mask) {
+                Ok(()) => encode_success(response, &[]),
+                Err(e) => encode_error(response, e.into()),
+            }
+        }
     }
 }
 

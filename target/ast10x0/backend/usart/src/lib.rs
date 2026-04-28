@@ -4,7 +4,7 @@
 
 use ast10x0_peripherals::uart::Usart;
 use embedded_io::{Read, Write};
-use usart_api::backend::{BackendError, LineStatus, Parity, UsartBackend, UsartConfig};
+use usart_api::backend::{BackendError, IrqMask, LineStatus, Parity, UsartBackend, UsartConfig};
 
 pub struct Ast10x0UsartBackend {
     uart: Usart,
@@ -22,6 +22,12 @@ impl Ast10x0UsartBackend {
         // process is the sole owner of the mapping per
         // target/ast10x0/usart/system.json5.
         let uart = unsafe { Usart::new(0x7e78_4000 as *const _) };
+
+        // The peripheral driver's `Usart::new` enables every IER source.
+        // Mask the ones the trait exposes so the server inherits a quiet
+        // device and only the interrupts a client explicitly enables fire.
+        uart.clear_rx_data_available_interrupt();
+        uart.clear_tx_idle_interrupt();
 
         Self { uart }
     }
@@ -72,23 +78,21 @@ impl UsartBackend for Ast10x0UsartBackend {
         Ok(LineStatus(status.bits()))
     }
 
-    fn enable_interrupts(&mut self, mask: u16) -> Result<(), BackendError> {
-        // Map generic mask bits to UART-specific interrupt enables
-        if mask & 0x01 != 0 {
+    fn enable_interrupts(&mut self, mask: IrqMask) -> Result<(), BackendError> {
+        if mask.contains(IrqMask::RX_DATA_AVAILABLE) {
             self.uart.set_rx_data_available_interrupt();
         }
-        if mask & 0x02 != 0 {
+        if mask.contains(IrqMask::TX_IDLE) {
             self.uart.set_tx_idle_interrupt();
         }
         Ok(())
     }
 
-    fn disable_interrupts(&mut self, mask: u16) -> Result<(), BackendError> {
-        // Map generic mask bits to UART-specific interrupt disables
-        if mask & 0x01 != 0 {
+    fn disable_interrupts(&mut self, mask: IrqMask) -> Result<(), BackendError> {
+        if mask.contains(IrqMask::RX_DATA_AVAILABLE) {
             self.uart.clear_rx_data_available_interrupt();
         }
-        if mask & 0x02 != 0 {
+        if mask.contains(IrqMask::TX_IDLE) {
             self.uart.clear_tx_idle_interrupt();
         }
         Ok(())

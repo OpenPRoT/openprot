@@ -1,6 +1,21 @@
 // Licensed under the Apache-2.0 license
 
+use bitflags::bitflags;
+
 use crate::protocol::UsartError;
+
+bitflags! {
+    /// Hardware-agnostic interrupt sources exposed by the USART backend.
+    ///
+    /// The bit layout is the contract between the wire protocol
+    /// (`UsartOp::EnableInterrupts` / `DisableInterrupts` carry these in
+    /// `arg0`), the dispatcher, and every backend implementation.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct IrqMask: u16 {
+        const RX_DATA_AVAILABLE = 0x0001;
+        const TX_IDLE           = 0x0002;
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BackendError {
@@ -47,6 +62,6 @@ pub trait UsartBackend {
     fn write(&mut self, data: &[u8]) -> Result<usize, BackendError>;
     fn read(&mut self, out: &mut [u8]) -> Result<usize, BackendError>;
     fn line_status(&self) -> Result<LineStatus, BackendError>;
-    fn enable_interrupts(&mut self, mask: u16) -> Result<(), BackendError>;
-    fn disable_interrupts(&mut self, mask: u16) -> Result<(), BackendError>;
+    fn enable_interrupts(&mut self, mask: IrqMask) -> Result<(), BackendError>;
+    fn disable_interrupts(&mut self, mask: IrqMask) -> Result<(), BackendError>;
 }
