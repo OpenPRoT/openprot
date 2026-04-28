@@ -3,48 +3,50 @@
 
 #![no_std]
 #![no_main]
-//use test_retram_codegen::{handle, signals};
-//use userspace::time::Instant;
+use test_retram_codegen::{handle};
 use userspace::{entry, syscall };
-use pw_status::{ Result};
-use earlgrey_util::ret_ram::RetRam;
-use earlgrey_util::{CheckDigest, GetData};
+use pw_status::{ Error};
+use earlgrey_sysmgr_client::SysmgrClient;
 use earlgrey_util::tags::BootSlot;
-use earlgrey_util::boot_svc::NextBl0SlotRequest;
+use util_error::ErrorCode;
+use util_ipc::IpcChannel;
 use util_console::println;
 
-use sha2::{Sha256, Digest};
-use rstmgr::RstmgrAon;
 
+fn test_retram() -> Result<(),ErrorCode> {
+    let sysmgr = SysmgrClient::new(IpcChannel::new(handle::SYSMGR_SERVICE));
 
-fn test_retram() -> Result<()> {
-    let mut rstmgr = unsafe { RstmgrAon::new() };
-    let retram = unsafe { RetRam::mut_ref() };
-    println!("Reset Reasons = {:08x}", retram.reset_reasons);
-    println!("BootLog = {:#?}", retram.boot_log);
-    let ok = retram.boot_log.check_digest(|data| Sha256::digest(data).into());
-    println!("ok = {}", ok as bool);
+    let boot_info = sysmgr.get_boot_info()?;
+    println!("BootInfo = {:#?}", boot_info);
 
-
-    if retram.reset_reasons == 1 {
+    if boot_info.reset.reason == 1 {
         // If power on reset, reset once more.
         println!("Preparing to boot slot B");
-        let next: &mut NextBl0SlotRequest = retram.boot_svc.get_mut();
-        next.next_bl0_slot = BootSlot::Unspecified;
-        next.primary_bl0_slot = BootSlot::SlotB;
-        println!("Set digest on boot_svc");
-        retram.boot_svc.set_digest(|data| Sha256::digest(data).into());
+        sysmgr.set_boot_policy(BootSlot::SlotB, BootSlot::Unspecified)?;
 
         println!("Reboot");
-        rstmgr.regs_mut().reset_req().write(|_| 6u32.into());
+        sysmgr.request_reboot()?;
     }
     Ok(())
 }
 
 #[entry]
 fn entry() -> ! {
+    pw_log::info!("🔄 RUNNING");
+
+    // Log that an error occurred so that the app that caused the shutdown is logged.
+    let ret = match test_retram() {
+        Ok(()) => {
+            pw_log::info!("✅ PASSED");
+            Ok(())
+        }
+        Err(e) => {
+            pw_log::error!("❌ FAILED: {:08x}", u32::from(e) as u32);
+            Err(Error::Unknown)
+        }
+    };
+
     // Since this is written as a test, shut down with the return status from `main()`.
-    let ret = test_retram();
     let _ = syscall::debug_shutdown(ret);
     loop {}
 }

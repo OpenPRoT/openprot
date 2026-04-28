@@ -21,13 +21,35 @@ rust_app(
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
+        "//target/earlgrey/services/sysmgr:client",
         "//target/earlgrey/util",
-        "//target/earlgrey/registers:rstmgr",
         "//util/console",
+        "//util/error",
+        "//util/ipc",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
-        "@rust_crates//:sha2",
+    ],
+)
+
+rust_app(
+    name = "sysmgr",
+    srcs = [
+        "sysmgr.rs",
+    ],
+    codegen_crate_name = "sysmgr_codegen",
+    edition = "2024",
+    system_config = "@pigweed//pw_kernel/target:system_config_file",
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//target/earlgrey/services/sysmgr:server",
+        "//target/earlgrey/util",
+        "//util/error",
+        "//util/ipc",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
     ],
 )
 
@@ -35,6 +57,7 @@ system_image(
     name = "retram",
     apps = [
         ":test_retram",
+        ":sysmgr",
     ],
     kernel = ":target",
     platform = "//target/earlgrey",

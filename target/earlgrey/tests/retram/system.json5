@@ -15,12 +15,16 @@
   },
   apps: [
     {
-      name: "test_retram",
+      name: "sysmgr",
       flash_size_bytes: 16384,
       processes: [{
-        name: "test_retram_process",
+        name: "sysmgr_process",
         ram_size_bytes: 4096,
         objects: [
+            {
+              name: "sysmgr_service",
+              type: "channel_handler",
+            },
         ],
         memory_mappings: [
           {
@@ -35,7 +39,37 @@
             start_address: 0x40410000,
             size_bytes: 0x80,
           },
+          {
+            name: "lc_ctrl",
+            type: "device",
+            start_address: 0x40140000,
+            size_bytes: 0x100,
+          },
 
+        ],
+        threads: [
+          {
+            name: "sysmgr_thread",
+            kernel_stack_size_bytes: 2048,
+          },
+        ],
+      }],
+    },
+    {
+      name: "test_retram",
+      flash_size_bytes: 16384,
+      processes: [{
+        name: "test_retram_process",
+        ram_size_bytes: 4096,
+        objects: [
+            {
+              name: "sysmgr_service",
+              type: "channel_initiator",
+              handler_process: "sysmgr_process",
+              handler_object_name: "sysmgr_service",
+            },
+        ],
+        memory_mappings: [
         ],
         threads: [
           {
