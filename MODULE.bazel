@@ -116,6 +116,12 @@ caliptra_repos_ext = use_extension(
 )
 use_repo(caliptra_repos_ext, "caliptra_mcu_sw", "caliptra_sw")
 
+ast1060_pac_repos_ext = use_extension(
+    "//third_party/ast1060-pac:extensions.bzl",
+    "ast1060_pac_repos",
+)
+use_repo(ast1060_pac_repos_ext, "ast1060_pac")
+
 nonhermetic_repo = use_repo_rule("//target/earlgrey/tooling/signing:nonhermetic.bzl", "nonhermetic_repo")
 
 nonhermetic_repo(name = "nonhermetic")

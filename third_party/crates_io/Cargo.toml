@@ -34,6 +34,7 @@ smlang = { version = "0.8.0", default-features = false }
 syn = { version = "2.0.104", features = ["full", "extra-traits"] }
 syn1 = { package = "syn", version = "1.0.109", features = ["full", "extra-traits"] }
 tock-registers = "0.9.0"
+vcell = "0.1.2"
 zerocopy = { version = "0.8.48", default-features = false, features = ["derive"] }
 zeroize = { version = "1.8", default-features = false, features = ["derive"] }
 
@@ -44,6 +45,8 @@ embedded-hal = "1.0"
 embedded-hal-async = "1.0"
 embedded-hal-nb = "1.0"
 heapless = { version = "0.9", default-features = false }
+mctp = { git = "https://github.com/OpenPRoT/mctp-rs.git", branch = "sync-features", default-features = false }
+mctp-lib = { git = "https://github.com/9elements/mctp-lib.git", branch = "buildup" }
 nb = "1.0"
 # Pin to match Hubris ecosystem
 rand_core = { version = "0.9", default-features = false }

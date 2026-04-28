@@ -1,0 +1,18 @@
+# Licensed under the Apache-2.0 license
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "usart_api",
+    srcs = [
+        "src/backend.rs",
+        "src/lib.rs",
+        "src/protocol.rs",
+    ],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@rust_crates//:bitflags",
+        "@rust_crates//:zerocopy",
+    ],
+)

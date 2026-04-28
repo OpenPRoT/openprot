@@ -1,0 +1,23 @@
+# Licensed under the Apache-2.0 license
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "usart_server",
+    srcs = [
+        "src/lib.rs",
+        "src/runtime.rs",
+    ],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = select({
+        "@pigweed//pw_kernel/userspace:userspace_build_enabled": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//drivers/usart/api:usart_api",
+        "@pigweed//pw_kernel/userspace",
+        "@rust_crates//:zerocopy",
+    ],
+)

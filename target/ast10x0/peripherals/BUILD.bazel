@@ -1,0 +1,26 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "peripherals",
+    srcs = [
+        "lib.rs",
+        "uart/mod.rs",
+    ],
+    crate_name = "ast10x0_peripherals",
+    crate_root = "lib.rs",
+    edition = "2024",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "@ast1060_pac",
+        "@rust_crates//:bitflags",
+        "@rust_crates//:embedded-hal-nb",
+        "@rust_crates//:embedded-io",
+        "@rust_crates//:nb",
+    ],
+)
