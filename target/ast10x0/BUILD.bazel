@@ -39,8 +39,6 @@ platform(
             "@pigweed//pw_kernel/config:kernel_config": ":config",
             # TODO(console): replace with a real UART backend for silicon.
             "@pigweed//pw_kernel/subsys/console:console_backend": "@pigweed//pw_kernel/subsys/console:console_backend_semihosting",
-            # USART driver backend for this platform.
-            "//drivers/usart/server:backend": "//target/ast10x0/backend/usart:usart_backend_ast10x0",
         },
     ),
     visibility = [":__subpackages__"],

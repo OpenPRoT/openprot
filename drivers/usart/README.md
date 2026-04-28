@@ -14,13 +14,18 @@ under `drivers/usart/` and how it integrates with the AST10x0 platform codebase.
                          │  Pigweed IPC channel
                          ▼
 ┌──────────────────────────────────────────────────────────┐
-│  Server Binary  (drivers/usart/server:usart_server_bin)  │
-│  rust_app — dispatch loop                                │
-│  object_wait → channel_read → dispatch_request           │
-│               → channel_respond                          │
-│                                                          │
-│  Backend resolved at compile-time via label_flag:        │
-│  usart_backend::Backend (crate_name = "usart_backend")   │
+│  Server Binary                                           │
+│    (target/ast10x0/tests/usart:usart_server_bin)         │
+│  rust_app — wires codegen handles + backend + runtime    │
+│  wait_group_add ×N  →  runtime::run                      │
+└────────────────────────┬─────────────────────────────────┘
+                         │
+                         ▼
+┌──────────────────────────────────────────────────────────┐
+│  Server Library  (drivers/usart/server:usart_server)     │
+│  runtime::run — object_wait → channel_read               │
+│               → dispatch_request → channel_respond       │
+│  dispatch_request — pure protocol→backend translator     │
 └────────────────────────┬─────────────────────────────────┘
                          │  UsartBackend trait
                          ▼
@@ -28,7 +33,6 @@ under `drivers/usart/` and how it integrates with the AST10x0 platform codebase.
 │  Platform Backend  (target/ast10x0/backend/usart)        │
 │  Ast10x0UsartBackend : UsartBackend                      │
 │  pub type Backend = Ast10x0UsartBackend                  │
-│  [TODO: wire to ast10x0_peripherals::uart::Usart]        │
 └────────────────────────┬─────────────────────────────────┘
                          │  embedded-io / embedded-hal-nb
                          ▼
@@ -43,9 +47,10 @@ under `drivers/usart/` and how it integrates with the AST10x0 platform codebase.
 | Bazel target | Crate | Role |
 |---|---|---|
 | `//drivers/usart/api` | `usart_api` | Wire protocol + backend trait contract |
-| `//drivers/usart/server:usart_server` | `usart_server` | Pure dispatch library (host-testable) |
-| `//drivers/usart/server:usart_server_bin` | binary | IPC entry point (`rust_app`) |
-| `//drivers/usart/client` | `usart_client` | Client facade for callers |
+| `//drivers/usart/server:usart_server` | `usart_server` | Dispatch + runtime loop library (target-agnostic) |
+| `//drivers/usart/client:usart_client` | `usart_client` | Client facade library (target-agnostic) |
+| `//target/ast10x0/tests/usart:usart_server_bin` | binary | AST10x0 smoke-test server binding |
+| `//target/ast10x0/tests/usart:usart_client_app` | binary | AST10x0 smoke-test client binding |
 | `//target/ast10x0/backend/usart` | `usart_backend` | AST10x0 backend implementation |
 | `//target/ast10x0/peripherals` | `ast10x0_peripherals` | Raw MMIO UART driver |
 
@@ -80,73 +85,95 @@ pub trait UsartBackend {
 
 `BackendError` maps 1-to-1 onto `UsartError` via `From<BackendError> for UsartError`.
 
-## 5. Compile-Time Backend Selection
+## 5. Per-Target Binding
 
-The server binary's backend is selected through a Bazel `label_flag`:
+`drivers/usart/` ships only platform-agnostic libraries (`usart_api`,
+`usart_server`, `usart_client`). Every binary that names a specific
+`system.json5` lives next to that config under the platform's tree —
+for AST10x0 that is `target/ast10x0/tests/usart/`, which packages a
+self-contained smoke-test image.
 
 ```python
-# drivers/usart/server/BUILD.bazel
-label_flag(
-    name = "backend",
-    build_setting_default = "//target/ast10x0/backend/usart:usart_backend_ast10x0",
+# target/ast10x0/tests/usart/BUILD.bazel  (excerpt)
+rust_app(
+    name = "usart_server_bin",
+    srcs = ["server_main.rs"],
+    codegen_crate_name = "app_usart_server",
+    system_config = ":system_config",
+    deps = [
+        "//drivers/usart/server:usart_server",
+        "//target/ast10x0/backend/usart:usart_backend_ast10x0",
+        "@pigweed//pw_kernel/userspace",
+    ],
+)
+
+rust_app(
+    name = "usart_client_app",
+    srcs = ["client_main.rs"],
+    codegen_crate_name = "app_usart_client",
+    system_config = ":system_config",
+    deps = [
+        "//drivers/usart/client:usart_client",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
 )
 ```
 
-Every backend target must:
-- Use `crate_name = "usart_backend"`
-- Export `pub type Backend = <concrete type implementing UsartBackend>`
-
-`main.rs` is backend-agnostic:
+Each backend target uses `crate_name = "usart_backend"` and exports
+`pub type Backend: UsartBackend`, so `server_main.rs` can stay generic across
+backends:
 
 ```rust
 use usart_backend::Backend;
 let mut backend = Backend::new();
 ```
 
-### Platform-Driven Selection
+## 6. Server Library (`usart_server`)
 
-The preferred integration path sets the flag inside the platform definition so
-`--platforms=//target/ast10x0:ast10x0` alone resolves the backend — no extra
-command-line flags needed:
+Two pieces, both target-agnostic:
 
-```python
-# target/ast10x0/BUILD.bazel
-flags = flags_from_dict(
-    KERNEL_DEVICE_COMMON_FLAGS | {
-        ...
-        "//drivers/usart/server:backend":
-            "//target/ast10x0/backend/usart:usart_backend_ast10x0",
-    },
-)
-```
+- `dispatch_request<B: UsartBackend>(backend, request, response) -> usize` —
+  pure protocol→backend translator. No IPC, no OS dependency.
+- `runtime::run<B>(backend, wg, irq, irq_signals) -> !` — the dispatch loop.
+  Topology-agnostic: the binary registers each channel with its handle as
+  `user_data`, and the loop derives the channel handle from
+  `wait_return.user_data` directly.
 
-A new platform adds only its own entry here with a different backend target.
-
-## 6. Dispatch Library (`usart_server`)
-
-`dispatch_request<B: UsartBackend>(backend, request, response) -> usize` is a
-pure function with no IPC or OS dependency — it can be built and tested on the
-host. The IPC loop lives exclusively in `main.rs`.
+The binary owns every `wait_group_add` call because only the codegen-aware
+binding knows which handles exist.
 
 ## 7. System Image
 
-The server binary is packaged as a kernel system image via:
+The smoke-test image bundles server + client + kernel:
 
 ```
-//target/ast10x0/usart:usart  (system_image)
+//target/ast10x0/tests/usart:usart  (system_image)
   kernel = :target
-  apps   = [//drivers/usart/server:usart_server_bin]
-  system_config = :system_config   (target/ast10x0/usart/system.json5)
+  apps   = [:usart_server_bin, :usart_client_app]
+  system_config = :system_config   (target/ast10x0/tests/usart/system.json5)
 ```
 
-`system.json5` defines the app's memory layout, the `usart` IPC channel handle,
-the UART5 MMIO mapping (`0x7e784000`), and the server thread stack size.
-The handle constant `handle::USART` is generated by `rust_app`/`app_usart_server`
-codegen from the object named `usart` in the config.
+Companion test rules:
+
+- `:usart_test` — boots the image under QEMU and reports the semihosting
+  exit code (run with `bazel test --config=virt_ast10x0`).
+- `:no_panics_test` — host-side panic-path detector over the linked binary.
+
+`system.json5` defines each app's memory layout, the `usart` IPC channel
+handle, the UART5 MMIO mapping (`0x7e784000`), and the server thread stack
+size. The handle constant `handle::USART` is generated by
+`rust_app`/`app_usart_server` codegen from the object named `usart`.
 
 ## 8. Extension Points
 
-- **New platform**: add `"//drivers/usart/server:backend": "//target/<plat>/backend/usart:..."` to the platform's `flags_from_dict`.
-- **New operation**: add opcode to `UsartOp`, extend `UsartBackend`, add arm to `dispatch_request`, update protocol doc.
-- **Real hardware wiring**: implement `UsartBackend` for `ast10x0_peripherals::uart::Usart` inside `target/ast10x0/backend/usart/src/lib.rs`.
+- **New platform**: create `target/<plat>/tests/usart/` (or a non-test
+  binding directory if it's a real deployment) with a `system.json5`,
+  `server_main.rs`, and a `rust_app` that depends on
+  `//drivers/usart/server:usart_server` plus the platform's backend.
+  Nothing under `drivers/usart/` changes.
+- **New operation**: add opcode to `UsartOp`, extend `UsartBackend`, add arm
+  to `dispatch_request`, update protocol doc.
+- **New backend**: implement `UsartBackend` in a `rust_library` with
+  `crate_name = "usart_backend"` exporting `pub type Backend`.
 

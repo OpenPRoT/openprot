@@ -1,39 +1,19 @@
 # Licensed under the Apache-2.0 license
 
-load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app")
 load("@rules_rust//rust:defs.bzl", "rust_library")
 
-# Selects which UsartBackend implementation to link into the server binary.
-# Override at build time with --//drivers/usart/server:backend=<label>.
-# The target must be a rust_library with crate_name = "usart_backend" that
-# exports `pub type Backend: UsartBackend`.
-label_flag(
-    name = "backend",
-    build_setting_default = "//target/ast10x0/backend/usart:usart_backend_ast10x0",
-)
 rust_library(
     name = "usart_server",
-    srcs = ["src/lib.rs"],
+    srcs = [
+        "src/lib.rs",
+        "src/runtime.rs",
+    ],
     edition = "2024",
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
         "//drivers/usart/api:usart_api",
-        "@rust_crates//:zerocopy",
-    ],
-)
-
-rust_app(
-    name = "usart_server_bin",
-    srcs = ["src/main.rs"],
-    codegen_crate_name = "app_usart_server",
-    edition = "2024",
-    system_config = "//target/ast10x0/usart:system_config",
-    tags = ["kernel"],
-    visibility = ["//visibility:public"],
-    deps = [
-        ":backend",
-        "//drivers/usart/server:usart_server",
         "@pigweed//pw_kernel/userspace",
+        "@rust_crates//:zerocopy",
     ],
 )

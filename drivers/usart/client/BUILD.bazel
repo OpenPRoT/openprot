@@ -1,6 +1,5 @@
 # Licensed under the Apache-2.0 license
 
-load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app")
 load("@rules_rust//rust:defs.bzl", "rust_library")
 
 rust_library(
@@ -14,20 +13,5 @@ rust_library(
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_status/rust:pw_status",
         "@rust_crates//:zerocopy",
-    ],
-)
-
-rust_app(
-    name = "usart_client_app",
-    srcs = ["src/main.rs"],
-    codegen_crate_name = "app_usart_client",
-    edition = "2024",
-    system_config = "//target/ast10x0/usart:system_config",
-    tags = ["kernel"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//drivers/usart/client:usart_client",
-        "@pigweed//pw_kernel/userspace",
-        "@pigweed//pw_log/rust:pw_log",
     ],
 )

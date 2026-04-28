@@ -2,6 +2,8 @@
 
 #![no_std]
 
+pub mod runtime;
+
 use usart_api::backend::{IrqMask, UsartBackend};
 use usart_api::{UsartError, UsartOp, UsartRequestHeader, UsartResponseHeader};
 

@@ -1,6 +1,7 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
+load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app")
 load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image", "system_image_test")
 load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
@@ -49,11 +50,39 @@ rust_binary(
     ],
 )
 
+rust_app(
+    name = "usart_server_bin",
+    srcs = ["server_main.rs"],
+    codegen_crate_name = "app_usart_server",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    deps = [
+        "//drivers/usart/server:usart_server",
+        "//target/ast10x0/backend/usart:usart_backend_ast10x0",
+        "@pigweed//pw_kernel/userspace",
+    ],
+)
+
+rust_app(
+    name = "usart_client_app",
+    srcs = ["client_main.rs"],
+    codegen_crate_name = "app_usart_client",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    deps = [
+        "//drivers/usart/client:usart_client",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)
+
 system_image(
     name = "usart",
     apps = [
-        "//drivers/usart/server:usart_server_bin",
-        "//drivers/usart/client:usart_client_app",
+        ":usart_server_bin",
+        ":usart_client_app",
     ],
     kernel = ":target",
     platform = "//target/ast10x0",
