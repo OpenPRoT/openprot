@@ -1,4 +1,5 @@
 // Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
 
 use usart_api::backend::{IrqMask, UsartBackend};
 use usart_api::{UsartResponseHeader};

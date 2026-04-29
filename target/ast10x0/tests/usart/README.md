@@ -55,8 +55,8 @@ The test instantiates two processes:
 # Run with virt_ast10x0 platform config
 bazelisk test //target/ast10x0/tests/usart:usart_test --config=virt_ast10x0
 
-# With verbose output
-bazelisk test //target/ast10x0/tests/usart:usart_test --config=virt_ast10x0 -s
+# With verbose/streamed output
+bazelisk test //target/ast10x0/tests/usart:usart_test --config=virt_ast10x0 --test_output=streamed
 
 # Show all test output
 bazelisk test //target/ast10x0/tests/usart:usart_test --config=virt_ast10x0 --test_output=all
