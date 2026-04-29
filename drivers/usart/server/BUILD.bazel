@@ -1,6 +1,7 @@
 # Licensed under the Apache-2.0 license
 
 load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
 
 rust_library(
     name = "usart_server",
@@ -10,10 +11,7 @@ rust_library(
     ],
     edition = "2024",
     tags = ["kernel"],
-    target_compatible_with = select({
-        "@pigweed//pw_kernel/userspace:userspace_build_enabled": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],
     deps = [
         "//drivers/usart/api:usart_api",
