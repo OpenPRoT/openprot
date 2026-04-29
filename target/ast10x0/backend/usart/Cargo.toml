@@ -1,7 +1,0 @@
-[package]
-name = "usart-backend-ast10x0"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-usart-api = { path = "../../../../drivers/usart/api" }
