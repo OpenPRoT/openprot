@@ -47,7 +47,10 @@ platform(
 constraint_value(
     name = "target_ast10x0",
     constraint_setting = "@pigweed//pw_kernel/target:target",
-    visibility = [":__subpackages__"],
+    visibility = [
+        ":__subpackages__",
+        "//drivers/...",
+    ],
 )
 
 rust_library(
