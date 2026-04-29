@@ -49,7 +49,7 @@ constraint_value(
     constraint_setting = "@pigweed//pw_kernel/target:target",
     visibility = [
         ":__subpackages__",
-        "//drivers/...",
+        "//drivers:__subpackages__",
     ],
 )
 
