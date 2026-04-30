@@ -14,6 +14,8 @@ impl IpcChannel {
         IpcChannel(channel)
     }
 
+    pub fn handle(&self) -> u32 { self.0 }
+
     pub fn check_status(code: u32) -> Result<(), ErrorCode> {
         if code == 0 {
             Ok(())
