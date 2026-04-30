@@ -4,6 +4,10 @@
 #![no_std]
 use zerocopy::{FromBytes, IntoBytes};
 
+use userspace::syscall::Signals;
+use userspace::time::Instant;
+use userspace::{syscall};
+
 use earlgrey_sysmgr_client::*;
 use earlgrey_util::boot_svc::NextBl0SlotRequest;
 use earlgrey_util::error as eg_error;
@@ -141,7 +145,7 @@ impl SysmgrServer {
     }
 
     fn handle_one(&mut self, ipc: &IpcChannel, data: &mut [u8]) -> Result<(), ErrorCode> {
-        ipc.wait_readable()?;
+        //ipc.wait_readable()?;
         let len = ipc.read(0, data)?;
         if len < 4 {
             return Err(error::IPC_ERROR_BAD_REQ_LEN);
@@ -162,9 +166,15 @@ impl SysmgrServer {
         Ok(())
     }
 
-    pub fn run(&mut self, ipc: &IpcChannel, data: &mut [u8]) -> Result<(), ErrorCode> {
+    pub fn run(&mut self, wg: u32, ipc: &[&IpcChannel], data: &mut [u8]) -> Result<(), ErrorCode> {
+        for (i, chan) in ipc.iter().enumerate() {
+            syscall::wait_group_add(wg, chan.handle(), Signals::READABLE, i).map_err(ErrorCode::kernel_error)?;
+        }
         loop {
-            self.handle_one(ipc, data)?;
+            let w = syscall::object_wait(wg, Signals::READABLE, Instant::MAX).map_err(ErrorCode::kernel_error)?;
+            if w.pending_signals.contains(Signals::READABLE) {
+                self.handle_one(ipc[w.user_data], data)?;
+            }
         }
     }
 }
