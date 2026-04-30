@@ -14,8 +14,10 @@ use util_ipc::IpcChannel;
 fn sysmgr_server() -> Result<(), ErrorCode> {
     let mut sysmgr = SysmgrServer::new()?;
     let mut buf = [0u8; 512];
-    let ipc = IpcChannel::new(handle::SYSMGR_SERVICE);
-    sysmgr.run(&ipc, &mut buf)
+    sysmgr.run(handle::SYSMGR_WAIT_GROUP, &[
+        &IpcChannel::new(handle::SYSMGR_USB),
+        &IpcChannel::new(handle::SYSMGR_PLATFORM),
+    ], &mut buf)
 }
 
 #[entry]

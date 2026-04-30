@@ -320,7 +320,7 @@ fn handle_usb() -> Result<(), ErrorCode> {
 
     let mut usb = usb_driver::Usb::new(unsafe { usbdev::Usbdev::new() }, USB_CONFIG);
     let mut ep0 = usb_stack::SimpleEp0::new();
-    let sysmgr = SysmgrClient::new(IpcChannel::new(handle::SYSMGR_SERVICE));
+    let sysmgr = SysmgrClient::new(IpcChannel::new(handle::SYSMGR_USB));
     let info = sysmgr.get_boot_info()?;
     let mut dfu = DfuClass::<_, 2048>::new(DFU_BUILDER, MyDfuHandler {
         flash: FlashIpcClient::new(IpcChannel::new(handle::FLASH_SERVICE))?,

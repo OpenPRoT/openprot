@@ -22,7 +22,15 @@
         ram_size_bytes: 4096,
         objects: [
             {
-              name: "sysmgr_service",
+              name: "sysmgr_wait_group",
+              type: "wait_group",
+            },
+            {
+              name: "sysmgr_platform",
+              type: "channel_handler",
+            },
+            {
+              name: "sysmgr_usb",
               type: "channel_handler",
             },
         ],
@@ -55,6 +63,62 @@
         ],
       }],
     },
+
+    {
+      name: "platform",
+      flash_size_bytes: 16384,
+      processes: [
+        {
+          name: "platform_server",
+          ram_size_bytes: 4096,
+          objects: [
+            {
+              name: "sysmgr_platform",
+              type: "channel_initiator",
+              handler_process: "sysmgr_process",
+              handler_object_name: "sysmgr_platform",
+            },
+            {
+              name: "uart_interrupts",
+              type: "interrupt",
+              irqs: [
+                //{ name: "uart0_tx_watermark", number: 1 },
+                { name: "uart0_rx_watermark", number: 2 },
+                //{ name: "uart0_tx_done", number: 3 },
+                //{ name: "uart0_rx_overflow", number: 4 },
+                //{ name: "uart0_rx_frame_err", number: 5 },
+                //{ name: "uart0_rx_break_err", number: 6 },
+                //{ name: "uart0_rx_timeout", number: 7 },
+                //{ name: "uart0_rx_parity_err", number: 8 },
+                //{ name: "uart0_tx_empty", number: 9 },
+              ],
+            },
+          ],
+          memory_mappings: [
+            {
+              name: "uart0",
+              type: "device",
+              start_address: 0x40000000,
+              size_bytes: 0x40,
+            },
+          {
+            name: "pinmux",
+            type: "device",
+            start_address: 0x40460000,
+            size_bytes: 0x1000,
+          }
+
+          ],
+          threads: [
+            {
+              name: "platform_server_thread",
+              kernel_stack_size_bytes: 2048,
+            },
+          ],
+        },
+      ],
+    },
+
     {
       name: "flash_server",
       flash_size_bytes: 16384,
@@ -111,10 +175,10 @@
               handler_object_name: "flash_service",
             },
             {
-              name: "sysmgr_service",
+              name: "sysmgr_usb",
               type: "channel_initiator",
               handler_process: "sysmgr_process",
-              handler_object_name: "sysmgr_service",
+              handler_object_name: "sysmgr_usb",
             },
           {
             name: "usbdev_interrupts",

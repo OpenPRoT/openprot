@@ -21,7 +21,6 @@ rust_app(
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
-        "//target/earlgrey/services/sysmgr:client",
         "//hal/blocking/flash",
         "//hal/blocking/usb:hal_usb",
         "//protocol/usb/dfu",
@@ -31,6 +30,7 @@ rust_app(
         "//target/earlgrey/registers:pinmux",
         "//target/earlgrey/registers:top_earlgrey",
         "//target/earlgrey/registers:usbdev",
+        "//target/earlgrey/services/sysmgr:client",
         "//target/earlgrey/util",
         "//util/console",
         "//util/error",
@@ -88,10 +88,37 @@ rust_app(
     ],
 )
 
+rust_app(
+    name = "platform",
+    srcs = [
+        "platform.rs",
+    ],
+    codegen_crate_name = "platform_codegen",
+    edition = "2024",
+    system_config = "@pigweed//pw_kernel/target:system_config_file",
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//target/earlgrey/drivers:uart_receiver",
+        "//target/earlgrey/registers:pinmux",
+        "//target/earlgrey/registers:top_earlgrey",
+        "//target/earlgrey/registers:uart",
+        "//target/earlgrey/services/sysmgr:client",
+        "//target/earlgrey/util",
+        "//util/console",
+        "//util/error",
+        "//util/ipc",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
 system_image(
     name = "hwe",
     apps = [
         ":sysmgr",
+        ":platform",
         ":flash_server",
         ":usbdfu",
     ],
