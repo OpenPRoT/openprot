@@ -35,3 +35,14 @@ rust_library(
         "@ureg",
     ],
 )
+
+rust_library(
+    name = "uart_receiver",
+    srcs = ["uart_receiver.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//target/earlgrey/registers:uart",
+        "@ureg",
+    ],
+)
