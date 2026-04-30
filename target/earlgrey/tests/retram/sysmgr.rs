@@ -3,8 +3,8 @@
 
 #![no_std]
 #![no_main]
-use sysmgr_codegen::{handle};
 use pw_status::Error;
+use sysmgr_codegen::handle;
 use userspace::{entry, syscall};
 
 use earlgrey_sysmgr_server::SysmgrServer;
@@ -14,8 +14,11 @@ use util_ipc::IpcChannel;
 fn sysmgr_server() -> Result<(), ErrorCode> {
     let mut sysmgr = SysmgrServer::new()?;
     let mut buf = [0u8; 512];
-    let ipc = IpcChannel::new(handle::SYSMGR_SERVICE);
-    sysmgr.run(&ipc, &mut buf)
+    sysmgr.run(
+        handle::SYSMGR_WAIT_GROUP,
+        &[&IpcChannel::new(handle::SYSMGR_SERVICE)],
+        &mut buf,
+    )
 }
 
 #[entry]

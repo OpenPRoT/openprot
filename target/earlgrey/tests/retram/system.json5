@@ -22,6 +22,10 @@
         ram_size_bytes: 4096,
         objects: [
             {
+              name: "sysmgr_wait_group",
+              type: "wait_group",
+            },
+            {
               name: "sysmgr_service",
               type: "channel_handler",
             },
