@@ -45,8 +45,8 @@ embedded-hal = "1.0"
 embedded-hal-async = "1.0"
 embedded-hal-nb = "1.0"
 heapless = { version = "0.9", default-features = false }
-mctp = { git = "https://github.com/OpenPRoT/mctp-rs.git", branch = "sync-features", default-features = false }
-mctp-lib = { git = "https://github.com/9elements/mctp-lib.git", branch = "buildup" }
+mctp = { git = "https://github.com/CodeConstruct/mctp-rs.git" }
+mctp-lib = { git = "https://github.com/OpenPRoT/mctp-lib.git", branch = "9e-buildup" }
 nb = "1.0"
 # Pin to match Hubris ecosystem
 rand_core = { version = "0.9", default-features = false }
