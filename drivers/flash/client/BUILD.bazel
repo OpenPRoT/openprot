@@ -1,0 +1,20 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
+
+rust_library(
+    name = "flash_client",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+    deps = [
+        "//drivers/flash/api:flash_api",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:zerocopy",
+    ],
+)

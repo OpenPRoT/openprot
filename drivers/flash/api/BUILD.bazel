@@ -1,0 +1,24 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "flash_api",
+    srcs = [
+        "src/backend.rs",
+        "src/lib.rs",
+        "src/protocol.rs",
+    ],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@rust_crates//:bitflags",
+        "@rust_crates//:zerocopy",
+    ],
+)
+
+rust_test(
+    name = "flash_api_test",
+    crate = ":flash_api",
+)
