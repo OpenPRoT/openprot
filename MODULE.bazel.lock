@@ -2698,7 +2698,7 @@
         "bzlTransitiveDigest": "3kVt1CoIJVJiOv5hhXwKcnZWdFwwoEOhc/OeC2GrMQU=",
         "usagesDigest": "/Nz9QH+EBlDXoVXWiAEH8owsAo1cu+GkXjlRdolG7Sk=",
         "recordedFileInputs": {
-          "@@//third_party/crates_io/Cargo.lock": "bbc7b14d634194e289a36caa99b437e0c1b88162219fa5aa719a915fbe86c261",
+          "@@//third_party/crates_io/Cargo.lock": "3e43f044148e1cf344654ede226b070849ed6b56be5b1a013ee0a63c56718d85",
           "@@//third_party/crates_io/Cargo.toml": "e8006d3d6342dc0bf39342da3c6359fafa48e5660e085347f89a01cba529dbd0",
           "@@caliptra_deps+//crates_io/embedded/Cargo.lock": "d6c0101f48da22f2bc2d339f358de79bad3dd03218c6db29a14099b9f7757691",
           "@@caliptra_deps+//crates_io/embedded/Cargo.toml": "8f9f4ed2721db13476b12fdac045dac2142b38f189a8abb5f4c446dc0c6ac3dd",

@@ -165,6 +165,11 @@ pub enum ClientError {
 | `NotPermitted` | Write-protected or restricted region |
 | `InternalError` | Unclassified server fault |
 
+### `Busy` vs `WouldBlock`
+
+- **`Busy`**: The backend is actively performing another operation and cannot accept new requests. Retry the entire call after waiting.
+- **`WouldBlock`**: This specific operation could not be completed immediately due to resource constraints or contention, but is not blocked by global device activity. Callers can implement smarter retry logic or adjust request parameters.
+
 ## Constraints
 
 - `no_std` — targets Pigweed kernel userspace tasks only.
