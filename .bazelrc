@@ -55,6 +55,10 @@ common --@rules_rust//:extra_exec_rustc_flags=-Cembed-bitcode=yes
 build:k_common --build_tag_filters=-do_not_build,-kernel_doc_test
 test:k_common  --test_tag_filters=-integration,-do_not_build,-do_not_run_test,-kernel_doc_test
 
+# AST1060-EVB physical board (no QEMU, flash directly)
+common:k_ast1060_evb --config=k_common
+common:k_ast1060_evb --platforms=//target/ast10x0
+
 # `bazel {build,test,run} --config=virt_ast10x0 //target/ast10x0/...`
 # launches the AST10x0 system images under QEMU's ast1030-evb machine
 # with semihosting. The :qemu flag retunes SysTick to QEMU's 12 MHz clock.

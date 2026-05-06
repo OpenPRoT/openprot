@@ -60,8 +60,10 @@ rust_library(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
+        "@aspeed_ddk//:aspeed_ddk",
         "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
         "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_status/rust:pw_status",
         "@rust_crates//:cortex-m-rt",
     ],
 )

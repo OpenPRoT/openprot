@@ -118,6 +118,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-trait"
+version = "0.1.89"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9035ad2d096bed7955a320ee7e2230574d28fd3c3a0f186cbea1ff3c7eed5dbb"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -490,6 +501,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "embedded-storage"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a21dea9854beb860f3062d10228ce9b976da520a73474aed3171ec276bc0c032"
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -530,6 +547,15 @@ name = "foldhash"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
+
+[[package]]
+name = "fugit"
+version = "0.3.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e639847d312d9a82d2e75b0edcc1e934efcc64e6cb7aa94f0b1fbec0bc231d6"
+dependencies = [
+ "gcd",
+]
 
 [[package]]
 name = "futures"
@@ -620,6 +646,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "gcd"
+version = "2.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d758ba1b47b00caf47f24925c0074ecb20d6dfcffe7f6d53395c0465674841a"
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -706,6 +738,12 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
+name = "hex-literal"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 
 [[package]]
 name = "hmac"
@@ -942,6 +980,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
+name = "openprot-hal-blocking"
+version = "0.1.0"
+source = "git+https://github.com/rusty1968/openprot.git?rev=c6cd23a#c6cd23a56f3cc7945b062ea1bcdabf3af0dba82d"
+dependencies = [
+ "embedded-hal 1.0.0",
+ "rand_core 0.9.5",
+ "subtle",
+ "zerocopy",
+ "zeroize",
+]
+
+[[package]]
 name = "p256"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -964,6 +1014,12 @@ dependencies = [
  "primeorder",
  "sha2",
 ]
+
+[[package]]
+name = "panic-halt"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a513e167849a384b7f9b746e517604398518590a9142f4846a32e3c2a4de7b11"
 
 [[package]]
 name = "parking_lot"
@@ -1071,6 +1127,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "proposed-traits"
+version = "0.1.0"
+source = "git+https://github.com/rusty1968/proposed_traits.git?rev=85641310df5a5276c67f81621b104322cff0286c#85641310df5a5276c67f81621b104322cff0286c"
+dependencies = [
+ "async-trait",
+ "embedded-hal 1.0.0",
+ "embedded-io",
+ "embedded-storage",
+ "rand_core 0.6.4",
 ]
 
 [[package]]
@@ -1256,9 +1324,11 @@ dependencies = [
  "embedded-hal-async",
  "embedded-hal-nb",
  "embedded-io",
+ "fugit",
  "futures",
  "heapless 0.9.2",
  "hex",
+ "hex-literal",
  "hmac",
  "k256",
  "log",
@@ -1269,10 +1339,13 @@ dependencies = [
  "nb 1.1.0",
  "nom",
  "object",
+ "openprot-hal-blocking",
  "p256",
  "p384",
+ "panic-halt",
  "paste",
  "proc-macro2",
+ "proposed-traits",
  "prost",
  "quote",
  "rand_core 0.9.5",
