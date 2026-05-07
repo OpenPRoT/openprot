@@ -37,8 +37,7 @@ platform(
     flags = flags_from_dict(
         KERNEL_DEVICE_COMMON_FLAGS | {
             "@pigweed//pw_kernel/config:kernel_config": ":config",
-            # TODO(console): replace with a real UART backend for silicon.
-            "@pigweed//pw_kernel/subsys/console:console_backend": "@pigweed//pw_kernel/subsys/console:console_backend_semihosting",
+            "@pigweed//pw_kernel/subsys/console:console_backend": ":console",
         },
     ),
     visibility = [":__subpackages__"],
@@ -54,13 +53,29 @@ constraint_value(
 )
 
 rust_library(
+    name = "console",
+    srcs = ["console_backend.rs"],
+    crate_name = "console_backend",
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//target/ast10x0/peripherals",
+        "@ast1060_pac",
+        "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:embedded-io",
+    ],
+)
+
+rust_library(
     name = "entry",
     srcs = ["entry.rs"],
     edition = "2024",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "@aspeed_ddk//:aspeed_ddk",
         "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
         "@pigweed//pw_kernel/kernel",
         "@pigweed//pw_status/rust:pw_status",

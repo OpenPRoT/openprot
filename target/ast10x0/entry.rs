@@ -80,25 +80,8 @@ default_handler!(
 
 mod console_backend {
     unsafe extern "Rust" {
-        pub fn console_backend_init();
         pub fn console_backend_write_all(buf: &[u8]) -> pw_status::Result<()>;
     }
-}
-
-/// Initialize I2C subsystem
-///
-/// This must be called once before any I2C controller is used.
-/// Sets up global I2C registers and pin muxing for I2C1 and I2C2.
-fn i2c_init() {
-    // 1. Initialize I2C global registers (reset, clock dividers)
-    //    - Asserts/de-asserts I2C reset via SCU050/SCU054
-    //    - Configures I2CG0C global control register
-    //    - Sets I2CG10 base clock dividers for all speed modes
-    aspeed_ddk::i2c_core::init_i2c_global();
-
-    // 2. Configure I2C pin muxing
-    aspeed_ddk::pinctrl::Pinctrl::apply_pinctrl_group(aspeed_ddk::pinctrl::PINCTRL_I2C1);
-    aspeed_ddk::pinctrl::Pinctrl::apply_pinctrl_group(aspeed_ddk::pinctrl::PINCTRL_I2C2);
 }
 
 #[cortex_m_rt::entry]
@@ -107,13 +90,8 @@ fn main() -> ! {
     #[allow(static_mut_refs)]
     unsafe {
         // Initialize UART console
-        console_backend::console_backend_init();
         let _ = console_backend::console_backend_write_all(b"\r\nHello World!\r\n");
         let _ = console_backend::console_backend_write_all(b"ast1060 pigweed fw is running!\r\n");
-
-        // Initialize I2C1 for master mode operations
-        i2c_init();
-        let _ = console_backend::console_backend_write_all(b"I2C1 initialized\r\n");
 
         kernel::main(Arch, &mut INIT_STATE)
     };
