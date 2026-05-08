@@ -3,8 +3,6 @@
 
 use ast1060_pac as device;
 use bitflags::bitflags;
-use core::cell::UnsafeCell;
-use core::marker::PhantomData;
 use embedded_hal_nb::serial as serial_nb;
 use embedded_io::{Read, Write};
 
@@ -102,7 +100,6 @@ bitflags! {
 }
 pub struct Usart {
 	usart: *const device::uart::RegisterBlock,
-	_not_sync: PhantomData<UnsafeCell<()>>, // makes Usart !Sync
 }
 
 impl embedded_io::ErrorType for Usart {
@@ -245,6 +242,20 @@ impl Usart {
 		}
 	}
 
+	/// Create an uninitialized USART instance without writing to registers.
+	///
+	/// This const function creates a Usart struct pointing to the register block
+	/// but does not perform any hardware initialization. Use this for static
+	/// initializers and call `new()` or follow with hardware initialization.
+	///
+	/// # Safety
+	///
+	/// - `usart` must be a valid, non-null pointer to the AST1060 UART register block.
+	/// - The pointed register block must remain valid for the lifetime of this `Usart`.
+	pub const unsafe fn new_uninit(usart: *const device::uart::RegisterBlock) -> Self {
+		Self { usart }
+	}
+
 	/// Create a new USART instance from a raw register-block pointer.
 	///
 	/// Configures RX/TX FIFO, 8 byte RX trigger level, 1.5MBaud, 8n1, and
@@ -259,7 +270,6 @@ impl Usart {
 	pub unsafe fn new(usart: *const device::uart::RegisterBlock) -> Self {
 		let this = Self {
 			usart,
-			_not_sync: PhantomData,
 		};
 
 		unsafe {

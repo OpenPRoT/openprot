@@ -6,6 +6,7 @@ load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_scri
 load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//target/ast10x0/harness:uart_upload_test.bzl", "uart_boot_image", "uart_upload_test")
 
 system_image(
     name = "threads",
@@ -20,6 +21,17 @@ system_image_test(
     name = "threads_test",
     image = ":threads",
     target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+uart_boot_image(
+    name = "threads_uart_image",
+    image = ":threads",
+)
+
+uart_upload_test(
+    name = "threads_uart_upload_test",
+    image = ":threads_uart_image",
+    test_timeout = 300,
 )
 
 rust_binary_no_panics_test(

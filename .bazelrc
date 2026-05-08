@@ -58,6 +58,7 @@ test:k_common  --test_tag_filters=-integration,-do_not_build,-do_not_run_test,-k
 # AST1060-EVB physical board (no QEMU, flash directly)
 common:k_ast1060_evb --config=k_common
 common:k_ast1060_evb --platforms=//target/ast10x0
+common:k_ast1060_evb --//target/ast10x0:uart_boot_header=true
 
 # `bazel {build,test,run} --config=virt_ast10x0 //target/ast10x0/...`
 # launches the AST10x0 system images under QEMU's ast1030-evb machine

@@ -8,6 +8,7 @@ load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_scri
 load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//target/ast10x0/harness:uart_upload_test.bzl", "uart_boot_image", "uart_upload_test")
 
 filegroup(
     name = "system_config",
@@ -108,6 +109,17 @@ system_image(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],
+)
+
+uart_boot_image(
+    name = "usart_uart_image",
+    image = ":usart",
+)
+
+uart_upload_test(
+    name = "usart_uart_upload_test",
+    image = ":usart_uart_image",
+    test_timeout = 300,
 )
 
 system_image_test(

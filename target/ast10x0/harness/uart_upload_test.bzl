@@ -6,18 +6,82 @@ Provides test rules that upload firmware via UART and monitor test execution.
 """
 
 load(
+    "@bazel_skylib//rules:common_settings.bzl",
+    "BuildSettingInfo",
+)
+
+load(
     "@pigweed//pw_kernel/tooling:system_image.bzl",
     "SystemImageInfo",
+)
+
+def _firmware_bin(ctx):
+    if SystemImageInfo in ctx.attr.image:
+        return ctx.attr.image[SystemImageInfo].bin
+    return ctx.file.image
+
+def _declare_uart_boot_image(ctx, firmware_bin, name):
+    output = ctx.actions.declare_file(name + ".bin")
+    ctx.actions.run_shell(
+        inputs = [firmware_bin],
+        outputs = [output],
+        arguments = [firmware_bin.path, output.path],
+        mnemonic = "Ast10x0UartBootImage",
+        command = """set -eu
+input=\"$1\"
+output=\"$2\"
+size=$(wc -c < \"$input\")
+aligned=$(( (size + 3) & ~3 ))
+
+emit_byte() {
+    printf '%b' "$(printf '\\%03o' \"$1\")"
+}
+
+{
+    emit_byte $((aligned & 255))
+    emit_byte $(((aligned >> 8) & 255))
+    emit_byte $(((aligned >> 16) & 255))
+    emit_byte $(((aligned >> 24) & 255))
+    cat \"$input\"
+    padding=$((aligned - size))
+    if [ \"$padding\" -gt 0 ]; then
+        dd if=/dev/zero bs=1 count=\"$padding\" status=none
+    fi
+} > \"$output\"
+""",
+    )
+    return output
+
+def _uart_boot_image_impl(ctx):
+    firmware_bin = _firmware_bin(ctx)
+    if ctx.attr._uart_boot_header[BuildSettingInfo].value:
+        output = _declare_uart_boot_image(ctx, firmware_bin, ctx.label.name)
+    else:
+        output = firmware_bin
+    return [
+        DefaultInfo(files = depset([output])),
+    ]
+
+uart_boot_image = rule(
+    implementation = _uart_boot_image_impl,
+    attrs = {
+        "image": attr.label(
+            mandatory = True,
+            doc = "system_image or binary target to wrap with the AST10x0 UART boot header",
+        ),
+        "_uart_boot_header": attr.label(
+            default = "//target/ast10x0:uart_boot_header",
+            providers = [BuildSettingInfo],
+        ),
+    },
+    doc = "Generate an AST10x0 UART boot image by prepending the 4-byte size header when enabled by config.",
 )
 
 def _uart_upload_test_impl(ctx):
     """Implementation of uart_upload_test rule."""
 
     # Get the firmware binary
-    if SystemImageInfo in ctx.attr.image:
-        firmware_bin = ctx.attr.image[SystemImageInfo].bin
-    else:
-        firmware_bin = ctx.file.image
+    firmware_bin = _firmware_bin(ctx)
 
     # Create test script
     test_script = ctx.actions.declare_file(ctx.label.name + "_test.sh")
@@ -147,7 +211,7 @@ uart_upload_test = rule(
             doc = "Upload firmware only, skip test monitoring",
         ),
         "_uart_test_exec": attr.label(
-            default = "//target/ast1060-evb/harness:uart_test_exec.py",
+            default = "//target/ast10x0/harness:uart_test_exec.py",
             allow_single_file = [".py"],
         ),
     },
@@ -163,11 +227,21 @@ Environment variables:
 - SKIP_DEVICE_CHECK: Skip device existence check (for CI)
 
 Usage:
-    load("//target/ast1060-evb/harness:uart_upload_test.bzl", "uart_upload_test")
+    load(
+        "//target/ast10x0/harness:uart_upload_test.bzl",
+        "uart_boot_image",
+        "uart_upload_test",
+    )
+
+    # AST1030-EVB UART boot expects the 4-byte size header.
+    uart_boot_image(
+        name = "threads_uart",
+        image = ":threads",
+    )
 
     uart_upload_test(
         name = "threads_uart_test",
-        image = ":threads_uart",  # uart_boot_image target
+        image = ":threads_uart",
         test_timeout = 300,
     )
 
@@ -181,10 +255,7 @@ def _uart_upload_impl(ctx):
     """Implementation of uart_upload rule (non-test, just upload)."""
 
     # Get the firmware binary
-    if SystemImageInfo in ctx.attr.image:
-        firmware_bin = ctx.attr.image[SystemImageInfo].bin
-    else:
-        firmware_bin = ctx.file.image
+    firmware_bin = _firmware_bin(ctx)
 
     # Create upload script
     upload_script = ctx.actions.declare_file(ctx.label.name + "_upload.sh")
@@ -282,11 +353,11 @@ uart_upload = rule(
             doc = "Skip GPIO operations",
         ),
         "_uart_test_exec": attr.label(
-            default = "//target/ast1060-evb/harness:uart_test_exec.py",
+            default = "//target/ast10x0/harness:uart_test_exec.py",
             allow_single_file = [".py"],
         ),
     },
-    doc = """Upload firmware to AST1060 hardware via UART.
+    doc = """Upload firmware to AST10x0 hardware via UART.
 
 This is a non-test rule that just uploads firmware without monitoring.
 
