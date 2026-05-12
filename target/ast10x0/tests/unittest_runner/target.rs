@@ -4,10 +4,10 @@
 #![no_std]
 #![no_main]
 
-use cortex_m_semihosting::debug::{EXIT_FAILURE, EXIT_SUCCESS, exit};
+use console_backend::console_backend_write_all;
 use target_common::{TargetInterface, declare_target};
 use unittest_core::TestsResult;
-use {console_backend as _, entry as _, integration_tests as _};
+use {entry as _, integration_tests as _};
 
 pub struct Target {}
 
@@ -20,11 +20,11 @@ impl TargetInterface for Target {
         // calling `run_all_tests` below.
         unsafe { target_common::run_ctors() };
 
-        let exit_status = match unittest_core::run_all_tests!() {
-            TestsResult::AllPassed => EXIT_SUCCESS,
-            TestsResult::SomeFailed => EXIT_FAILURE,
+        let sentinel: &[u8] = match unittest_core::run_all_tests!() {
+            TestsResult::AllPassed => b"TEST_RESULT:PASS\n",
+            TestsResult::SomeFailed => b"TEST_RESULT:FAIL\n",
         };
-        exit(exit_status);
+        let _ = console_backend_write_all(sentinel);
         loop {}
     }
 }

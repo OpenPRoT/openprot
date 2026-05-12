@@ -17,10 +17,10 @@ bool_flag(
     build_setting_default = False,
 )
 
-bool_flag(
-    name = "uart_boot_header",
-    build_setting_default = False,
-)
+# bool_flag(
+#     name = "uart_boot_header",
+#     build_setting_default = False,
+# )
 
 config_setting(
     name = "qemu_enabled",

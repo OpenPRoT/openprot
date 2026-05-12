@@ -6,8 +6,7 @@
 
 use arch_arm_cortex_m::Arch;
 use codegen as _;
-use console_backend as _;
-use cortex_m_semihosting::debug::{EXIT_FAILURE, EXIT_SUCCESS, exit};
+use console_backend::console_backend_write_all;
 use entry as _;
 use target_common::{TargetInterface, declare_target};
 
@@ -20,11 +19,11 @@ impl TargetInterface for Target {
     const NAME: &'static str = "AST10x0 Kernel Interrupts";
 
     fn main() -> ! {
-        let exit_status = match test_interrupts::main::<Arch>(TEST_IRQ) {
-            Ok(()) => EXIT_SUCCESS,
-            Err(_e) => EXIT_FAILURE,
+        let sentinel: &[u8] = match test_interrupts::main::<Arch>(TEST_IRQ) {
+            Ok(()) => b"TEST_RESULT:PASS\n",
+            Err(_e) => b"TEST_RESULT:FAIL\n",
         };
-        exit(exit_status);
+        let _ = console_backend_write_all(sentinel);
         #[expect(clippy::empty_loop)]
         loop {}
     }

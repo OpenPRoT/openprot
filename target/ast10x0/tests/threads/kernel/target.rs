@@ -7,9 +7,9 @@
 #![no_main]
 
 use arch_arm_cortex_m::Arch;
-use cortex_m_semihosting::debug::{EXIT_FAILURE, EXIT_SUCCESS, exit};
+use console_backend::console_backend_write_all;
 use target_common::{TargetInterface, declare_target};
-use {console_backend as _, entry as _};
+use entry as _;
 
 pub struct Target {}
 
@@ -21,11 +21,11 @@ impl TargetInterface for Target {
         // SAFETY: `main` is only executed once, so we never generate more
         // than one `&mut` reference to `APP_STATE`.
         #[expect(static_mut_refs)]
-        let exit_status = match threads::main(Arch, unsafe { &mut APP_STATE }) {
-            Ok(()) => EXIT_SUCCESS,
-            Err(_e) => EXIT_FAILURE,
+        let sentinel: &[u8] = match threads::main(Arch, unsafe { &mut APP_STATE }) {
+            Ok(()) => b"TEST_RESULT:PASS\n",
+            Err(_e) => b"TEST_RESULT:FAIL\n",
         };
-        exit(exit_status);
+        let _ = console_backend_write_all(sentinel);
         #[expect(clippy::empty_loop)]
         loop {}
     }

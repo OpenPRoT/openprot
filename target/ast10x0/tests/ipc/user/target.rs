@@ -4,9 +4,9 @@
 #![no_std]
 #![no_main]
 
-use cortex_m_semihosting::debug::{EXIT_FAILURE, EXIT_SUCCESS, exit};
+use console_backend::console_backend_write_all;
 use target_common::{TargetInterface, declare_target};
-use {console_backend as _, entry as _};
+use entry as _;
 
 pub struct Target {}
 
@@ -21,11 +21,8 @@ impl TargetInterface for Target {
 
     fn shutdown(code: u32) -> ! {
         pw_log::info!("Shutting down with code {}", code as u32);
-        let status = match code {
-            0 => EXIT_SUCCESS,
-            _ => EXIT_FAILURE,
-        };
-        exit(status);
+        let sentinel: &[u8] = if code == 0 { b"TEST_RESULT:PASS\n" } else { b"TEST_RESULT:FAIL\n" };
+        let _ = console_backend_write_all(sentinel);
         #[expect(clippy::empty_loop)]
         loop {}
     }

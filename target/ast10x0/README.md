@@ -27,8 +27,10 @@ Run the full AST10x0 test suite under QEMU with:
 bazel test --config=virt_ast10x0 //target/ast10x0/...
 ```
 
-The `virt_ast10x0` config launches images with Pigweed's QEMU runner using the
-`ast1030-evb` machine and semihosting.
+The `virt_ast10x0` config launches images under QEMU (`ast1030-evb` machine)
+using a local sentinel-based runner. Pass/fail is signalled by the firmware
+writing `TEST_RESULT:PASS` or `TEST_RESULT:FAIL` to UART. See
+`target/ast10x0/tests/README.md` for details.
 
 For more detailed failures:
 
