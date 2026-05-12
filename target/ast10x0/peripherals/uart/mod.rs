@@ -133,23 +133,48 @@ impl Write for Usart {
 		Ok(())
 	}
 
+	#[inline(always)]
 	fn write(&mut self, buf: &[u8]) -> Result<usize, Error> {
-		for (n, byte) in buf.iter().enumerate() {
+		let mut written = 0;
+		for byte in buf.iter() {
 			if !self.is_tx_full() {
 				// This is unsafe because we can transmit 7, 8 or 9 bits but the
 				// interface can't know what it's been configured for.
 				self.regs()
 					.uartthr()
 					.write(|w| unsafe { w.bits(*byte as u32) });
+				written += 1;
 			} else {
-				if n == 0 {
-					// spec demands to block until atleast one byte has been written
-					continue;
+				if written == 0 {
+					// spec demands to block until at least one byte has been written.
+					// `continue` would skip to the next byte rather than retrying
+					// this one, so we busy-wait inline instead.
+					while self.is_tx_full() {}
+					self.regs()
+						.uartthr()
+						.write(|w| unsafe { w.bits(*byte as u32) });
+					written += 1;
+				} else {
+					break;
 				}
-				return Ok(n);
 			}
 		}
-		Ok(buf.len())
+		// Two invariants hold that LLVM cannot prove through value range analysis
+		// due to the busy-wait inner loop and early break:
+		//
+		// 1. n <= buf.len(): `written` is incremented at most once per element of
+		//    `buf.iter()`. Without this, `write_all`'s `buf = &buf[n..]` retains
+		//    a bounds-check panic. The `min` makes the assert mathematically sound.
+		//
+		// 2. n > 0 when buf is non-empty: the busy-wait guarantees at least one
+		//    byte is written before returning. Without this, `write_all`'s
+		//    `Ok(0) => panic!` branch is retained even though it is unreachable.
+		let n = written.min(buf.len());
+		unsafe {
+			core::hint::assert_unchecked(n <= buf.len());
+			core::hint::assert_unchecked(n > 0 || buf.is_empty());
+		}
+		Ok(n)
 	}
 }
 

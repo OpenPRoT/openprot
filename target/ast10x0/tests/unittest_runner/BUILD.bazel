@@ -21,6 +21,7 @@ rust_test(
         "kernel",
         # Clippy lints do not work with `use_libtest_harness = False`
         "no_clippy",
+        "qemu_only",
     ],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     use_libtest_harness = False,
@@ -33,6 +34,5 @@ rust_test(
         "@pigweed//pw_kernel/subsys/console:console_backend",
         "@pigweed//pw_kernel/target:target_common",
         "@pigweed//pw_log/rust:pw_log",
-        "@rust_crates//:cortex-m-semihosting",
     ],
 )

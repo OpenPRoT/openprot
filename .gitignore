@@ -3,6 +3,7 @@ rust-project.json
 user.bazelrc
 /bazel-*
 /out
+target/rust-analyzer/
 
 # Editors
 .pw_ide/

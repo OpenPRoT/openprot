@@ -55,18 +55,32 @@ common --@rules_rust//:extra_exec_rustc_flags=-Cembed-bitcode=yes
 build:k_common --build_tag_filters=-do_not_build,-kernel_doc_test
 test:k_common  --test_tag_filters=-integration,-do_not_build,-do_not_run_test,-kernel_doc_test
 
-# AST1060-EVB physical board (no QEMU, flash directly)
-common:k_ast1060_evb --config=k_common
+# AST1060-EVB physical board via Raspberry Pi SSH fixture.
+# Requires key-based SSH auth: ssh-copy-id <user>@<pi-host>
+# Usage: AST1060_EVB_PI_HOST=<pi-hostname> bazel test --config=k_ast1060_evb //...
 common:k_ast1060_evb --platforms=//target/ast10x0
-common:k_ast1060_evb --//target/ast10x0:uart_boot_header=true
+build:k_ast1060_evb --build_tag_filters=-do_not_build,-kernel_doc_test
+# Board tests share one physical board; run them one at a time.
+test:k_ast1060_evb --local_test_jobs=1
+test:k_ast1060_evb --run_under="//target/ast10x0/harness:test_runner "
+# Forward AST1060_EVB_PI_HOST from the user's shell into the test sandbox.
+test:k_ast1060_evb --test_env=AST1060_EVB_PI_HOST
+# Excludes semihosting tests (qemu_only) which HardFault on hardware without a debugger.
+test:k_ast1060_evb --test_tag_filters=-integration,-do_not_build,-do_not_run_test,-kernel_doc_test,-qemu_only
 
 # `bazel {build,test,run} --config=virt_ast10x0 //target/ast10x0/...`
-# launches the AST10x0 system images under QEMU's ast1030-evb machine
-# with semihosting. The :qemu flag retunes SysTick to QEMU's 12 MHz clock.
-common:virt_ast10x0 --config=k_common
+# launches the AST10x0 system images under QEMU's ast1030-evb machine.
+# The :qemu flag retunes SysTick to QEMU's 12 MHz clock.
+# Pass/fail is signalled via UART sentinel (TEST_RESULT:PASS/FAIL) rather
+# than semihosting, so the same firmware binary runs on physical hardware.
 common:virt_ast10x0 --platforms=//target/ast10x0
+build:virt_ast10x0 --build_tag_filters=-do_not_build,-kernel_doc_test
 common:virt_ast10x0 --//target/ast10x0:qemu=true
-run:virt_ast10x0  --run_under="@pigweed//pw_kernel/tooling:qemu \
-  --cpu cortex-m4 --machine ast1030-evb --semihosting --image "
-test:virt_ast10x0 --run_under="@pigweed//pw_kernel/tooling:qemu \
-  --cpu cortex-m4 --machine ast1030-evb --semihosting --image "
+run:virt_ast10x0  --run_under="//target/ast10x0/harness:qemu_runner \
+  --cpu cortex-m4 --machine ast1030-evb --image "
+test:virt_ast10x0 --run_under="//target/ast10x0/harness:qemu_runner \
+  --cpu cortex-m4 --machine ast1030-evb --image "
+# Mirrors k_common's test_tag_filters and adds -hardware (physical-board-only tests).
+# Combined into one flag to avoid the Bazel 'expanded from multiple configs' warning
+# that fires when --test_tag_filters is set by both k_common and this config.
+test:virt_ast10x0 --test_tag_filters=-integration,-do_not_build,-do_not_run_test,-kernel_doc_test,-hardware
