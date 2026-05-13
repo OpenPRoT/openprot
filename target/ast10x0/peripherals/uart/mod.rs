@@ -461,4 +461,15 @@ impl Usart {
 	pub fn clear_rx_data_available_interrupt(&self) {
 		self.regs().uartier().modify(|_, w| w.erbfi().clear_bit());
 	}
+
+	/// Disables all four IER interrupt sources at once.
+	pub fn disable_all_interrupts(&self) {
+		self.regs().uartier().write(|w| w);
+	}
+
+	/// Reads and discards MSR to clear the delta bits (DCTS/DDSR/TERI/DDCD)
+	/// that would otherwise keep retriggering EDSSI after enable.
+	pub fn drain_modem_status(&self) {
+		let _ = self.regs().uartmsr().read().bits();
+	}
 }
