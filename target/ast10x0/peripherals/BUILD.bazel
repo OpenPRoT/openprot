@@ -10,6 +10,13 @@ rust_library(
     name = "peripherals",
     srcs = [
         "lib.rs",
+        "scu/mod.rs",
+        "scu/registers.rs",
+        "scu/types.rs",
+        "scu/reset.rs",
+        "scu/clock.rs",
+        "scu/status.rs",
+        "scu/pinctrl.rs",
         "uart/mod.rs",
     ],
     crate_name = "ast10x0_peripherals",
@@ -22,5 +29,8 @@ rust_library(
         "@rust_crates//:embedded-hal-nb",
         "@rust_crates//:embedded-io",
         "@rust_crates//:nb",
+    ],
+    proc_macro_deps = [
+        "@rust_crates//:paste",
     ],
 )

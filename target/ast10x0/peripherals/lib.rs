@@ -3,4 +3,5 @@
 
 #![no_std]
 
+pub mod scu;
 pub mod uart;
