@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
 """
 Aardvark I2C Responder
 Listens for I2C requests and returns a canned response.
@@ -12,14 +14,17 @@ from typing import List
 # Add the Aardvark API to the path
 # Assumes script runs at the same level as aardvark-api-linux-x86_64-v6.00 directory
 script_dir = os.path.dirname(os.path.abspath(__file__))
-aardvark_lib_path = os.path.join(script_dir, 'aardvark-api-linux-x86_64-v6.00', 'python')
+aardvark_lib_path = os.path.join(
+    script_dir, "aardvark-api-linux-x86_64-v6.00", "python"
+)
 sys.path.insert(0, aardvark_lib_path)
 from aardvark_py import *
 
 
-#==========================================================================
+# ==========================================================================
 # DEVICE MANAGEMENT
-#==========================================================================
+# ==========================================================================
+
 
 def find_and_connect():
     """Find and connect to the first available Aardvark device."""
@@ -42,7 +47,9 @@ def find_and_connect():
 
         if not (port & AA_PORT_NOT_FREE):
             device_port = port
-            print(f"Connecting to device on port {port} (S/N: {unique_id:04d}-{unique_id % 1000000:06d})")
+            print(
+                f"Connecting to device on port {port} (S/N: {unique_id:04d}-{unique_id % 1000000:06d})"
+            )
             break
         else:
             print(f"Port {port & ~AA_PORT_NOT_FREE} is in use")
@@ -116,7 +123,7 @@ def set_response(handle, response_data: List[int]):
         handle: Aardvark device handle
         response_data: List of bytes to respond with
     """
-    data_array = array('B', response_data)
+    data_array = array("B", response_data)
     result = aa_i2c_slave_set_response(handle, data_array)
     if result < 0:
         print(f"Error setting response: {aa_status_string(result)}")
@@ -126,11 +133,20 @@ def set_response(handle, response_data: List[int]):
     print(f"  Data: {' '.join(f'{b:02X}' for b in response_data)}")
 
 
-#==========================================================================
+# ==========================================================================
 # I2C OPERATIONS
-#==========================================================================
+# ==========================================================================
 
-def listen_for_requests(handle, own_addr, remote_addr, response_data, timeout_ms=500, max_buffer=256, transaction_count=0):
+
+def listen_for_requests(
+    handle,
+    own_addr,
+    remote_addr,
+    response_data,
+    timeout_ms=500,
+    max_buffer=256,
+    transaction_count=0,
+):
     """
     Listen for incoming I2C requests and handle them.
     Uses MCTP multi-controller behavior: receive, then respond.
@@ -189,6 +205,7 @@ def listen_for_requests(handle, own_addr, remote_addr, response_data, timeout_ms
 
                 # Delay before responding
                 import time
+
                 print(f"    Waiting 1 second before responding...")
                 time.sleep(1.0)
                 print()
@@ -201,31 +218,44 @@ def listen_for_requests(handle, own_addr, remote_addr, response_data, timeout_ms
                 result = aa_i2c_slave_disable(handle)
                 print(f"    aa_i2c_slave_disable returned: {result}")
                 if result < 0:
-                    print(f"    ERROR disabling target mode: {aa_status_string(result)}")
+                    print(
+                        f"    ERROR disabling target mode: {aa_status_string(result)}"
+                    )
                     continue
                 print(f"    Target mode disabled successfully")
 
                 # Add delay to allow remote to switch to target mode
                 # and bus to settle after the request transaction
                 import time
-                print(f"    Waiting for bus to settle and remote to switch to target mode...")
+
+                print(
+                    f"    Waiting for bus to settle and remote to switch to target mode..."
+                )
                 time.sleep(0.05)  # 50ms delay
 
                 # Write response as controller to the remote address
-                response_array = array('B', response_data)
-                print(f"    Preparing to write {len(response_data)} bytes to 0x{remote_addr:02X}")
+                response_array = array("B", response_data)
+                print(
+                    f"    Preparing to write {len(response_data)} bytes to 0x{remote_addr:02X}"
+                )
                 print(f"    Data: {' '.join(f'{b:02X}' for b in response_data)}")
 
-                num_written = aa_i2c_write(handle, remote_addr, AA_I2C_NO_FLAGS, response_array)
+                num_written = aa_i2c_write(
+                    handle, remote_addr, AA_I2C_NO_FLAGS, response_array
+                )
 
                 print(f"    aa_i2c_write returned: {num_written}")
                 if num_written < 0:
-                    print(f"    ERROR writing response: {aa_status_string(num_written)}")
+                    print(
+                        f"    ERROR writing response: {aa_status_string(num_written)}"
+                    )
                     print(f"    Error code: {num_written}")
                 elif num_written == 0:
                     print(f"    WARNING: 0 bytes written!")
                 else:
-                    print(f"    SUCCESS: Wrote {num_written} bytes to 0x{remote_addr:02X}")
+                    print(
+                        f"    SUCCESS: Wrote {num_written} bytes to 0x{remote_addr:02X}"
+                    )
                 print()
 
                 # Re-enable target mode
@@ -233,10 +263,14 @@ def listen_for_requests(handle, own_addr, remote_addr, response_data, timeout_ms
                 result = aa_i2c_slave_enable(handle, own_addr, 0, 0)
                 print(f"    aa_i2c_slave_enable returned: {result}")
                 if result < 0:
-                    print(f"    ERROR re-enabling target mode: {aa_status_string(result)}")
+                    print(
+                        f"    ERROR re-enabling target mode: {aa_status_string(result)}"
+                    )
                     break
 
-                print(f">>> Switched back to target mode (listening on 0x{own_addr:02X})")
+                print(
+                    f">>> Switched back to target mode (listening on 0x{own_addr:02X})"
+                )
                 print()
 
                 trans_num += 1
@@ -256,16 +290,17 @@ def listen_for_requests(handle, own_addr, remote_addr, response_data, timeout_ms
     return trans_num
 
 
-#==========================================================================
+# ==========================================================================
 # MAIN
-#==========================================================================
+# ==========================================================================
+
 
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description='Aardvark I2C Responder',
+        description="Aardvark I2C Responder",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog='''
+        epilog="""
 This tool operates with MCTP multi-controller behavior:
   - Listens as I2C target for incoming write requests
   - Switches to I2C controller to actively send response back to requester
@@ -279,27 +314,72 @@ Default configuration (for in-process-requester mode):
 
 Default canned response (MCTP SPDM VERSION response):
   26 0F 0A 21 01 42 08 D9 05 10 84 00 00 51
-        '''
+        """,
     )
 
-    parser.add_argument('--own-addr', type=lambda x: int(x, 0), default=0x13,
-                        metavar='ADDR', help='Our I2C address (default: 0x13)')
-    parser.add_argument('--remote-addr', type=lambda x: int(x, 0), default=0x10,
-                        metavar='ADDR', help='Remote I2C address to respond to (default: 0x10)')
-    parser.add_argument('--own-eid', type=lambda x: int(x, 0), default=0x42,
-                        metavar='EID', help='Our MCTP endpoint ID (default: 0x42)')
-    parser.add_argument('--remote-eid', type=lambda x: int(x, 0), default=0x08,
-                        metavar='EID', help='Remote MCTP endpoint ID (default: 0x08)')
-    parser.add_argument('--bitrate', type=int, default=100, metavar='KHZ',
-                        help='I2C bus speed in kHz (default: 100)')
-    parser.add_argument('--bus-timeout', type=int, default=150, metavar='MS',
-                        help='Bus lock timeout in ms (default: 150)')
-    parser.add_argument('--poll-timeout', type=int, default=500, metavar='MS',
-                        help='Poll timeout in ms (default: 500)')
-    parser.add_argument('--count', type=int, default=0, metavar='N',
-                        help='Number of transactions to handle (0=infinite, default: 0)')
-    parser.add_argument('--response', type=str, default=None, metavar='HEX',
-                        help='Custom response as hex string (e.g., "01 02 03")')
+    parser.add_argument(
+        "--own-addr",
+        type=lambda x: int(x, 0),
+        default=0x13,
+        metavar="ADDR",
+        help="Our I2C address (default: 0x13)",
+    )
+    parser.add_argument(
+        "--remote-addr",
+        type=lambda x: int(x, 0),
+        default=0x10,
+        metavar="ADDR",
+        help="Remote I2C address to respond to (default: 0x10)",
+    )
+    parser.add_argument(
+        "--own-eid",
+        type=lambda x: int(x, 0),
+        default=0x42,
+        metavar="EID",
+        help="Our MCTP endpoint ID (default: 0x42)",
+    )
+    parser.add_argument(
+        "--remote-eid",
+        type=lambda x: int(x, 0),
+        default=0x08,
+        metavar="EID",
+        help="Remote MCTP endpoint ID (default: 0x08)",
+    )
+    parser.add_argument(
+        "--bitrate",
+        type=int,
+        default=100,
+        metavar="KHZ",
+        help="I2C bus speed in kHz (default: 100)",
+    )
+    parser.add_argument(
+        "--bus-timeout",
+        type=int,
+        default=150,
+        metavar="MS",
+        help="Bus lock timeout in ms (default: 150)",
+    )
+    parser.add_argument(
+        "--poll-timeout",
+        type=int,
+        default=500,
+        metavar="MS",
+        help="Poll timeout in ms (default: 500)",
+    )
+    parser.add_argument(
+        "--count",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Number of transactions to handle (0=infinite, default: 0)",
+    )
+    parser.add_argument(
+        "--response",
+        type=str,
+        default=None,
+        metavar="HEX",
+        help='Custom response as hex string (e.g., "01 02 03")',
+    )
 
     args = parser.parse_args()
 
@@ -325,15 +405,31 @@ Default canned response (MCTP SPDM VERSION response):
     #   0x13, 0x00 = SPDM version 1.3
     # PEC=0x6F calculated over full frame including I2C dest
     canned_response = [
-        0x0F, 0x10, 0x27, 0x01, 0x08, 0x42, 0xD1, 0x05,
-        0x10, 0x04, 0x00, 0x00, 0x02, 0x00, 0x12, 0x00,
-        0x13, 0x00, 0x6F,
+        0x0F,
+        0x10,
+        0x27,
+        0x01,
+        0x08,
+        0x42,
+        0xD1,
+        0x05,
+        0x10,
+        0x04,
+        0x00,
+        0x00,
+        0x02,
+        0x00,
+        0x12,
+        0x00,
+        0x13,
+        0x00,
+        0x6F,
     ]
 
     # Parse custom response if provided
     if args.response:
         try:
-            hex_bytes = args.response.replace(',', ' ').split()
+            hex_bytes = args.response.replace(",", " ").split()
             canned_response = [int(b, 16) for b in hex_bytes if b.strip()]
             print(f"Using custom response ({len(canned_response)} bytes)")
         except ValueError as e:
@@ -367,7 +463,7 @@ Default canned response (MCTP SPDM VERSION response):
             args.remote_addr,
             canned_response,
             args.poll_timeout,
-            transaction_count=args.count
+            transaction_count=args.count,
         )
 
         print(f"\nTotal transactions handled: {num_transactions}")

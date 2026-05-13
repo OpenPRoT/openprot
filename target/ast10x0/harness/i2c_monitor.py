@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
 """
 I2C/SMBus Monitor for Beagle Bus Analyzer with MCTP/SPDM Support
 Automatically connects to the first available device and listens for I2C transactions.
@@ -14,14 +16,15 @@ from collections import defaultdict
 # Add the Beagle API to the path
 # Assumes script runs at the same level as beagle-api-linux-x86_64-v6.00 directory
 script_dir = os.path.dirname(os.path.abspath(__file__))
-beagle_lib_path = os.path.join(script_dir, 'beagle-api-linux-x86_64-v6.00', 'python')
+beagle_lib_path = os.path.join(script_dir, "beagle-api-linux-x86_64-v6.00", "python")
 sys.path.insert(0, beagle_lib_path)
 from beagle_py import *
 
 
-#==========================================================================
+# ==========================================================================
 # MCTP/SPDM PARSING CODE (from mctp-parse)
-#==========================================================================
+# ==========================================================================
+
 
 class SPDMParser:
     """Parser for SPDM messages (DSP0274)"""
@@ -102,40 +105,40 @@ class SPDMParser:
 
         # Byte 0: SPDM version (major [7:4], minor [3:0])
         version_byte = payload[0]
-        result['version_major'] = (version_byte >> 4) & 0x0F
-        result['version_minor'] = version_byte & 0x0F
-        result['version'] = f"{result['version_major']}.{result['version_minor']}"
+        result["version_major"] = (version_byte >> 4) & 0x0F
+        result["version_minor"] = version_byte & 0x0F
+        result["version"] = f"{result['version_major']}.{result['version_minor']}"
 
         # Byte 1: Request/Response code
         code = payload[1]
-        result['code'] = code
+        result["code"] = code
 
         # Determine if request or response
         if code in SPDMParser.REQUEST_CODES:
-            result['msg_direction'] = "Request"
-            result['msg_name'] = SPDMParser.REQUEST_CODES[code]
+            result["msg_direction"] = "Request"
+            result["msg_name"] = SPDMParser.REQUEST_CODES[code]
         elif code in SPDMParser.RESPONSE_CODES:
-            result['msg_direction'] = "Response"
-            result['msg_name'] = SPDMParser.RESPONSE_CODES[code]
+            result["msg_direction"] = "Response"
+            result["msg_name"] = SPDMParser.RESPONSE_CODES[code]
         else:
-            result['msg_direction'] = "Unknown"
-            result['msg_name'] = f"Unknown (0x{code:02X})"
+            result["msg_direction"] = "Unknown"
+            result["msg_name"] = f"Unknown (0x{code:02X})"
 
         # Byte 2: Param1 (if present)
         if len(payload) > 2:
-            result['param1'] = payload[2]
+            result["param1"] = payload[2]
 
         # Byte 3: Param2 (if present)
         if len(payload) > 3:
-            result['param2'] = payload[3]
+            result["param2"] = payload[3]
 
         # Remaining data
         if len(payload) > 4:
-            result['data'] = payload[4:]
-            result['data_len'] = len(result['data'])
+            result["data"] = payload[4:]
+            result["data_len"] = len(result["data"])
         else:
-            result['data'] = []
-            result['data_len'] = 0
+            result["data"] = []
+            result["data_len"] = 0
 
         return result
 
@@ -160,52 +163,57 @@ class MCTPParser:
     def parse(data: List[int]) -> dict:
         """Parse MCTP packet and return structured data"""
         if len(data) < 4:
-            raise ValueError("Packet too short - minimum 4 bytes required for MCTP header")
+            raise ValueError(
+                "Packet too short - minimum 4 bytes required for MCTP header"
+            )
 
         result = {}
 
         # Byte 0: Destination EID
-        result['dest_eid'] = data[0]
+        result["dest_eid"] = data[0]
 
         # Byte 1: Header Version [7:4], Reserved [3:0]
         byte1 = data[1]
-        result['header_version'] = (byte1 >> 4) & 0x0F
-        result['rsvd'] = byte1 & 0x0F
+        result["header_version"] = (byte1 >> 4) & 0x0F
+        result["rsvd"] = byte1 & 0x0F
 
         # Byte 2: Source EID
-        result['src_eid'] = data[2]
+        result["src_eid"] = data[2]
 
         # Byte 3: SOM, EOM, Pkt_Seq, TO, Msg_Tag
         byte3 = data[3]
-        result['som'] = bool(byte3 & 0x80)  # Start of Message
-        result['eom'] = bool(byte3 & 0x40)  # End of Message
-        result['pkt_seq'] = (byte3 >> 4) & 0x03  # Packet sequence number
-        result['to'] = bool(byte3 & 0x08)  # Tag Owner
-        result['msg_tag'] = byte3 & 0x07  # Message Tag
+        result["som"] = bool(byte3 & 0x80)  # Start of Message
+        result["eom"] = bool(byte3 & 0x40)  # End of Message
+        result["pkt_seq"] = (byte3 >> 4) & 0x03  # Packet sequence number
+        result["to"] = bool(byte3 & 0x08)  # Tag Owner
+        result["msg_tag"] = byte3 & 0x07  # Message Tag
 
         # Message body starts at byte 4
         if len(data) > 4:
             # Byte 4: IC [7], Message Type [6:0]
             byte4 = data[4]
-            result['ic'] = bool(byte4 & 0x80)  # Integrity Check
-            result['msg_type'] = byte4 & 0x7F
-            result['msg_type_name'] = MCTPParser.MESSAGE_TYPES.get(
-                result['msg_type'],
-                f"Vendor Defined (0x{result['msg_type']:02X})" if result['msg_type'] >= 0x7E
-                else f"Reserved (0x{result['msg_type']:02X})"
+            result["ic"] = bool(byte4 & 0x80)  # Integrity Check
+            result["msg_type"] = byte4 & 0x7F
+            result["msg_type_name"] = MCTPParser.MESSAGE_TYPES.get(
+                result["msg_type"],
+                (
+                    f"Vendor Defined (0x{result['msg_type']:02X})"
+                    if result["msg_type"] >= 0x7E
+                    else f"Reserved (0x{result['msg_type']:02X})"
+                ),
             )
 
             # Payload starts at byte 5
             if len(data) > 5:
-                result['payload'] = data[5:]
-                result['payload_len'] = len(result['payload'])
+                result["payload"] = data[5:]
+                result["payload_len"] = len(result["payload"])
 
                 # Parse SPDM if message type is 0x05
-                if result['msg_type'] == 0x05 and result['payload_len'] > 0:
-                    result['spdm'] = SPDMParser.parse(result['payload'])
+                if result["msg_type"] == 0x05 and result["payload_len"] > 0:
+                    result["spdm"] = SPDMParser.parse(result["payload"])
             else:
-                result['payload'] = []
-                result['payload_len'] = 0
+                result["payload"] = []
+                result["payload_len"] = 0
 
         return result
 
@@ -245,10 +253,10 @@ def parse_smbus_header(data: List[int], expect_pec: bool = False) -> Optional[Di
         return None
 
     result = {}
-    result['cmd_code'] = data[0]
-    result['byte_count'] = data[1]
+    result["cmd_code"] = data[0]
+    result["byte_count"] = data[1]
 
-    expected_total = 2 + result['byte_count']
+    expected_total = 2 + result["byte_count"]
     if expect_pec:
         expected_total += 1
 
@@ -256,48 +264,49 @@ def parse_smbus_header(data: List[int], expect_pec: bool = False) -> Optional[Di
         return None
 
     if expect_pec and len(data) >= expected_total:
-        result['pec_received'] = data[expected_total - 1]
+        result["pec_received"] = data[expected_total - 1]
         # Calculate expected PEC
-        pec_data = data[:expected_total - 1]
-        result['pec_calculated'] = calculate_pec(pec_data)
-        result['pec_valid'] = (result['pec_received'] == result['pec_calculated'])
+        pec_data = data[: expected_total - 1]
+        result["pec_calculated"] = calculate_pec(pec_data)
+        result["pec_valid"] = result["pec_received"] == result["pec_calculated"]
         data_end = expected_total - 1
     else:
-        result['pec_received'] = None
-        result['pec_calculated'] = None
-        result['pec_valid'] = None
+        result["pec_received"] = None
+        result["pec_calculated"] = None
+        result["pec_valid"] = None
         data_end = min(len(data), expected_total)
 
     # SMBus-specific headers start at byte 2
-    if result['byte_count'] < 5:
+    if result["byte_count"] < 5:
         return None
 
     offset = 2
-    result['source_slave_addr'] = data[offset]
+    result["source_slave_addr"] = data[offset]
     offset += 1
 
     # MCTP reserved + header version
     byte_hdr = data[offset]
-    result['mctp_reserved'] = (byte_hdr >> 4) & 0x0F
-    result['mctp_hdr_version'] = byte_hdr & 0x0F
+    result["mctp_reserved"] = (byte_hdr >> 4) & 0x0F
+    result["mctp_hdr_version"] = byte_hdr & 0x0F
     offset += 1
 
     # Destination and Source EIDs
-    result['dest_eid'] = data[offset]
+    result["dest_eid"] = data[offset]
     offset += 1
-    result['src_eid'] = data[offset]
+    result["src_eid"] = data[offset]
     offset += 1
 
     # MCTP packet starts here (SOM/EOM byte)
-    result['mctp_offset'] = offset
-    result['mctp_data'] = data[offset:data_end]
+    result["mctp_offset"] = offset
+    result["mctp_data"] = data[offset:data_end]
 
     return result
 
 
-#==========================================================================
+# ==========================================================================
 # MCTP MESSAGE ASSEMBLER
-#==========================================================================
+# ==========================================================================
+
 
 class MCTPAssembler:
     """Assembles fragmented MCTP messages"""
@@ -312,22 +321,22 @@ class MCTPAssembler:
         Add a fragment and return complete message if EOM is reached.
         Returns None if message is incomplete.
         """
-        key = (mctp_data['src_eid'], mctp_data['dest_eid'], mctp_data['msg_tag'])
+        key = (mctp_data["src_eid"], mctp_data["dest_eid"], mctp_data["msg_tag"])
 
         # SOM - start new session
-        if mctp_data['som']:
+        if mctp_data["som"]:
             self.sessions[key] = {
-                'fragments': [mctp_data],
-                'expected_seq': (mctp_data['pkt_seq'] + 1) % 4,
-                'src_eid': mctp_data['src_eid'],
-                'dest_eid': mctp_data['dest_eid'],
-                'msg_tag': mctp_data['msg_tag'],
-                'msg_type': mctp_data.get('msg_type'),
-                'msg_type_name': mctp_data.get('msg_type_name'),
+                "fragments": [mctp_data],
+                "expected_seq": (mctp_data["pkt_seq"] + 1) % 4,
+                "src_eid": mctp_data["src_eid"],
+                "dest_eid": mctp_data["dest_eid"],
+                "msg_tag": mctp_data["msg_tag"],
+                "msg_type": mctp_data.get("msg_type"),
+                "msg_type_name": mctp_data.get("msg_type_name"),
             }
 
             # Single packet message (SOM+EOM)
-            if mctp_data['eom']:
+            if mctp_data["eom"]:
                 session = self.sessions.pop(key)
                 return self._assemble_session(session)
 
@@ -341,16 +350,16 @@ class MCTPAssembler:
         session = self.sessions[key]
 
         # Check sequence number
-        if mctp_data['pkt_seq'] != session['expected_seq']:
+        if mctp_data["pkt_seq"] != session["expected_seq"]:
             # Sequence error - drop session
             del self.sessions[key]
             return None
 
-        session['fragments'].append(mctp_data)
-        session['expected_seq'] = (mctp_data['pkt_seq'] + 1) % 4
+        session["fragments"].append(mctp_data)
+        session["expected_seq"] = (mctp_data["pkt_seq"] + 1) % 4
 
         # EOM - assemble complete message
-        if mctp_data['eom']:
+        if mctp_data["eom"]:
             complete_session = self.sessions.pop(key)
             return self._assemble_session(complete_session)
 
@@ -360,31 +369,32 @@ class MCTPAssembler:
         """Assemble fragments into complete message"""
         # Combine all payloads
         complete_payload = []
-        for frag in session['fragments']:
-            if 'payload' in frag and frag['payload']:
-                complete_payload.extend(frag['payload'])
+        for frag in session["fragments"]:
+            if "payload" in frag and frag["payload"]:
+                complete_payload.extend(frag["payload"])
 
         result = {
-            'src_eid': session['src_eid'],
-            'dest_eid': session['dest_eid'],
-            'msg_tag': session['msg_tag'],
-            'msg_type': session['msg_type'],
-            'msg_type_name': session['msg_type_name'],
-            'payload': complete_payload,
-            'payload_len': len(complete_payload),
-            'fragment_count': len(session['fragments']),
+            "src_eid": session["src_eid"],
+            "dest_eid": session["dest_eid"],
+            "msg_tag": session["msg_tag"],
+            "msg_type": session["msg_type"],
+            "msg_type_name": session["msg_type_name"],
+            "payload": complete_payload,
+            "payload_len": len(complete_payload),
+            "fragment_count": len(session["fragments"]),
         }
 
         # Parse SPDM if applicable
-        if session['msg_type'] == 0x05 and complete_payload:
-            result['spdm'] = SPDMParser.parse(complete_payload)
+        if session["msg_type"] == 0x05 and complete_payload:
+            result["spdm"] = SPDMParser.parse(complete_payload)
 
         return result
 
 
-#==========================================================================
+# ==========================================================================
 # BEAGLE DEVICE FUNCTIONS
-#==========================================================================
+# ==========================================================================
+
 
 def find_and_connect():
     """Find and connect to the first available Beagle device."""
@@ -407,7 +417,9 @@ def find_and_connect():
 
         if not (port & BG_PORT_NOT_FREE):
             device_port = port
-            print(f"Connecting to device on port {port} (S/N: {unique_id:04d}-{unique_id % 1000000:06d})")
+            print(
+                f"Connecting to device on port {port} (S/N: {unique_id:04d}-{unique_id % 1000000:06d})"
+            )
             break
         else:
             print(f"Port {port & ~BG_PORT_NOT_FREE} is in use")
@@ -455,9 +467,10 @@ def configure_device(beagle, samplerate_khz=10000, timeout_ms=500, latency_ms=20
         print("Host interface: full speed")
 
 
-#==========================================================================
+# ==========================================================================
 # MONITORING FUNCTIONS
-#==========================================================================
+# ==========================================================================
+
 
 def monitor_i2c(beagle, args, max_packet_len=256):
     """Monitor and print I2C transactions with optional MCTP/SPDM parsing."""
@@ -472,9 +485,9 @@ def monitor_i2c(beagle, args, max_packet_len=256):
         print("Error: Could not enable I2C capture!")
         sys.exit(1)
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("I2C Monitoring Started - Press Ctrl+C to stop")
-    print("="*80)
+    print("=" * 80)
 
     if args.spdm:
         print("Mode: SPDM (with MCTP and SMBus)")
@@ -497,7 +510,7 @@ def monitor_i2c(beagle, args, max_packet_len=256):
     else:
         print("Mode: Raw I2C")
 
-    print("="*80 + "\n")
+    print("=" * 80 + "\n")
 
     # Allocate buffers
     data_in = array_u16(max_packet_len)
@@ -509,9 +522,15 @@ def monitor_i2c(beagle, args, max_packet_len=256):
     try:
         while True:
             # Read I2C transaction
-            (count, status, time_sop, time_duration,
-             time_dataoffset, data_in, timing) = \
-                bg_i2c_read_bit_timing(beagle, data_in, timing)
+            (
+                count,
+                status,
+                time_sop,
+                time_duration,
+                time_dataoffset,
+                data_in,
+                timing,
+            ) = bg_i2c_read_bit_timing(beagle, data_in, timing)
 
             # Convert timestamp to nanoseconds
             time_sop_ns = (time_sop * 1000) // (samplerate_khz // 1000)
@@ -533,19 +552,19 @@ def monitor_i2c(beagle, args, max_packet_len=256):
             # Get address if present
             if not (status & BG_READ_ERR_MIDDLE_OF_PACKET) and count >= 1:
                 nack = data_in[0] & BG_I2C_MONITOR_NACK
-                if count == 1 or (data_in[0] & 0xf9) != 0xf0 or nack:
+                if count == 1 or (data_in[0] & 0xF9) != 0xF0 or nack:
                     # 7-bit address
-                    i2c_addr = (int(data_in[0] & 0xff) >> 1)
+                    i2c_addr = int(data_in[0] & 0xFF) >> 1
                     i2c_rw = "R" if (data_in[0] & 0x01) else "W"
                     offset = 1
                 else:
                     # 10-bit address
-                    i2c_addr = ((data_in[0] << 7) & 0x300) | (data_in[1] & 0xff)
+                    i2c_addr = ((data_in[0] << 7) & 0x300) | (data_in[1] & 0xFF)
                     i2c_rw = "R" if (data_in[0] & 0x01) else "W"
                     offset = 2
 
             # Extract payload bytes
-            raw_data = [int(data_in[i] & 0xff) for i in range(offset, count)]
+            raw_data = [int(data_in[i] & 0xFF) for i in range(offset, count)]
 
             # Process based on mode
             if args.smbus and raw_data:
@@ -556,10 +575,11 @@ def monitor_i2c(beagle, args, max_packet_len=256):
                     try:
                         # Create synthetic MCTP packet
                         synthetic_mctp = [
-                            smbus_result['dest_eid'],
-                            (smbus_result['mctp_hdr_version'] << 4) | smbus_result['mctp_reserved'],
-                            smbus_result['src_eid']
-                        ] + smbus_result['mctp_data']
+                            smbus_result["dest_eid"],
+                            (smbus_result["mctp_hdr_version"] << 4)
+                            | smbus_result["mctp_reserved"],
+                            smbus_result["src_eid"],
+                        ] + smbus_result["mctp_data"]
 
                         mctp_parsed = MCTPParser.parse(synthetic_mctp)
 
@@ -570,17 +590,27 @@ def monitor_i2c(beagle, args, max_packet_len=256):
                             if complete_msg is None:
                                 # Incomplete fragment - skip or show minimal info
                                 if not args.mctp_no_partial:
-                                    print(f"[{time_sop_ns:12d} ns] MCTP Fragment: SOM={mctp_parsed['som']} EOM={mctp_parsed['eom']} Seq={mctp_parsed['pkt_seq']}")
+                                    print(
+                                        f"[{time_sop_ns:12d} ns] MCTP Fragment: SOM={mctp_parsed['som']} EOM={mctp_parsed['eom']} Seq={mctp_parsed['pkt_seq']}"
+                                    )
                                 continue
 
                             # Complete message assembled
                             mctp_parsed = complete_msg
 
                         # Display based on mode
-                        if args.spdm and 'spdm' in mctp_parsed:
-                            print_spdm_message(time_sop_ns, i2c_addr, i2c_rw, mctp_parsed, args.mctp_hide)
+                        if args.spdm and "spdm" in mctp_parsed:
+                            print_spdm_message(
+                                time_sop_ns,
+                                i2c_addr,
+                                i2c_rw,
+                                mctp_parsed,
+                                args.mctp_hide,
+                            )
                         elif not args.spdm:
-                            print_mctp_message(time_sop_ns, i2c_addr, i2c_rw, smbus_result, mctp_parsed)
+                            print_mctp_message(
+                                time_sop_ns, i2c_addr, i2c_rw, smbus_result, mctp_parsed
+                            )
 
                     except Exception as e:
                         print(f"[{time_sop_ns:12d} ns] MCTP Parse Error: {e}")
@@ -588,7 +618,9 @@ def monitor_i2c(beagle, args, max_packet_len=256):
                 elif smbus_result:
                     # SMBus mode only - skip if smbus_hide is enabled
                     if not args.smbus_hide:
-                        print_smbus_message(time_sop_ns, i2c_addr, i2c_rw, smbus_result, raw_data)
+                        print_smbus_message(
+                            time_sop_ns, i2c_addr, i2c_rw, smbus_result, raw_data
+                        )
 
                 else:
                     # Not valid SMBus MCTP - skip if smbus_hide is enabled, otherwise print raw
@@ -612,34 +644,34 @@ def monitor_i2c(beagle, args, max_packet_len=256):
 
 def print_raw_i2c(timestamp, addr, rw, data, status):
     """Print raw I2C transaction"""
-    print(f"[{timestamp:12d} ns] ", end='')
+    print(f"[{timestamp:12d} ns] ", end="")
 
     if addr is not None:
-        print(f"[S] <0x{addr:02X}:{rw}> ", end='')
+        print(f"[S] <0x{addr:02X}:{rw}> ", end="")
 
     if data:
-        hex_str = ' '.join(f'0x{b:02X}' for b in data)
-        print(hex_str, end=' ')
+        hex_str = " ".join(f"0x{b:02X}" for b in data)
+        print(hex_str, end=" ")
 
     if not (status & BG_READ_I2C_NO_STOP):
-        print("[P]", end=' ')
+        print("[P]", end=" ")
 
     print()
 
 
 def print_smbus_message(timestamp, addr, rw, smbus_info, raw_data):
     """Print SMBus message with PEC info"""
-    print(f"[{timestamp:12d} ns] SMBus: ", end='')
-    print(f"Cmd=0x{smbus_info['cmd_code']:02X} Len={smbus_info['byte_count']} ", end='')
+    print(f"[{timestamp:12d} ns] SMBus: ", end="")
+    print(f"Cmd=0x{smbus_info['cmd_code']:02X} Len={smbus_info['byte_count']} ", end="")
 
-    if smbus_info['pec_valid'] is not None:
-        if smbus_info['pec_valid']:
-            print(f"PEC=✓", end=' ')
+    if smbus_info["pec_valid"] is not None:
+        if smbus_info["pec_valid"]:
+            print(f"PEC=✓", end=" ")
         else:
-            print(f"PEC=✗", end=' ')
+            print(f"PEC=✗", end=" ")
 
     # Show data
-    hex_str = ' '.join(f'{b:02X}' for b in raw_data[:16])
+    hex_str = " ".join(f"{b:02X}" for b in raw_data[:16])
     if len(raw_data) > 16:
         hex_str += "..."
     print(f"[{hex_str}]")
@@ -647,69 +679,78 @@ def print_smbus_message(timestamp, addr, rw, smbus_info, raw_data):
 
 def print_mctp_message(timestamp, addr, rw, smbus_info, mctp_parsed):
     """Print MCTP message with highlighting"""
-    som_marker = "🟢 SOM" if mctp_parsed.get('som') else ""
-    eom_marker = "🔴 EOM" if mctp_parsed.get('eom') else ""
+    som_marker = "🟢 SOM" if mctp_parsed.get("som") else ""
+    eom_marker = "🔴 EOM" if mctp_parsed.get("eom") else ""
     markers = f"{som_marker} {eom_marker}".strip()
 
-    print(f"[{timestamp:12d} ns] MCTP: ", end='')
+    print(f"[{timestamp:12d} ns] MCTP: ", end="")
     if markers:
-        print(f"{markers} ", end='')
+        print(f"{markers} ", end="")
 
-    print(f"EID {mctp_parsed['src_eid']:02X}→{mctp_parsed['dest_eid']:02X} ", end='')
-    print(f"Seq={mctp_parsed.get('pkt_seq', '?')} Tag={mctp_parsed.get('msg_tag', '?')} ", end='')
-    print(f"Type=0x{mctp_parsed.get('msg_type', 0):02X} ({mctp_parsed.get('msg_type_name', 'Unknown')})", end='')
+    print(f"EID {mctp_parsed['src_eid']:02X}→{mctp_parsed['dest_eid']:02X} ", end="")
+    print(
+        f"Seq={mctp_parsed.get('pkt_seq', '?')} Tag={mctp_parsed.get('msg_tag', '?')} ",
+        end="",
+    )
+    print(
+        f"Type=0x{mctp_parsed.get('msg_type', 0):02X} ({mctp_parsed.get('msg_type_name', 'Unknown')})",
+        end="",
+    )
 
     # Show fragment count if assembled
-    if 'fragment_count' in mctp_parsed and mctp_parsed['fragment_count'] > 1:
-        print(f" [{mctp_parsed['fragment_count']} fragments]", end='')
+    if "fragment_count" in mctp_parsed and mctp_parsed["fragment_count"] > 1:
+        print(f" [{mctp_parsed['fragment_count']} fragments]", end="")
 
     print()
 
 
 def print_spdm_message(timestamp, addr, rw, mctp_parsed, hide_mctp):
     """Print SPDM message with request/response highlighting"""
-    spdm = mctp_parsed.get('spdm')
+    spdm = mctp_parsed.get("spdm")
     if not spdm:
         return
 
     # Highlight request vs response
-    if spdm['msg_direction'] == 'Request':
+    if spdm["msg_direction"] == "Request":
         direction_marker = "📤 REQ"
-    elif spdm['msg_direction'] == 'Response':
+    elif spdm["msg_direction"] == "Response":
         direction_marker = "📥 RSP"
     else:
         direction_marker = "❓"
 
-    print(f"[{timestamp:12d} ns] SPDM: {direction_marker} ", end='')
+    print(f"[{timestamp:12d} ns] SPDM: {direction_marker} ", end="")
 
     if not hide_mctp:
-        print(f"EID {mctp_parsed['src_eid']:02X}→{mctp_parsed['dest_eid']:02X} ", end='')
-        if 'fragment_count' in mctp_parsed and mctp_parsed['fragment_count'] > 1:
-            print(f"[{mctp_parsed['fragment_count']} frags] ", end='')
+        print(
+            f"EID {mctp_parsed['src_eid']:02X}→{mctp_parsed['dest_eid']:02X} ", end=""
+        )
+        if "fragment_count" in mctp_parsed and mctp_parsed["fragment_count"] > 1:
+            print(f"[{mctp_parsed['fragment_count']} frags] ", end="")
 
-    print(f"v{spdm['version']} {spdm['msg_name']} ", end='')
+    print(f"v{spdm['version']} {spdm['msg_name']} ", end="")
 
-    if 'param1' in spdm:
-        print(f"P1=0x{spdm['param1']:02X} ", end='')
-    if 'param2' in spdm:
-        print(f"P2=0x{spdm['param2']:02X} ", end='')
+    if "param1" in spdm:
+        print(f"P1=0x{spdm['param1']:02X} ", end="")
+    if "param2" in spdm:
+        print(f"P2=0x{spdm['param2']:02X} ", end="")
 
-    if spdm.get('data_len', 0) > 0:
-        print(f"+{spdm['data_len']}B", end='')
+    if spdm.get("data_len", 0) > 0:
+        print(f"+{spdm['data_len']}B", end="")
 
     print()
 
 
-#==========================================================================
+# ==========================================================================
 # MAIN
-#==========================================================================
+# ==========================================================================
+
 
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description='I2C/SMBus Monitor with MCTP/SPDM Support',
+        description="I2C/SMBus Monitor with MCTP/SPDM Support",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog='''
+        epilog="""
 Examples:
   %(prog)s                                    # Raw I2C monitoring
   %(prog)s --smbus --with-pec                 # SMBus with PEC validation
@@ -719,32 +760,62 @@ Examples:
   %(prog)s --spdm --mctp-hide                 # SPDM only (hide MCTP layer)
   %(prog)s --spdm --smbus-hide --mctp-hide    # SPDM only (minimal output)
   %(prog)s --samplerate 5000 --timeout 1000   # Custom sample rate and timeout
-        '''
+        """,
     )
 
     # Protocol mode arguments
-    parser.add_argument('--smbus', action='store_true',
-                        help='Treat all packets as having SMBus header')
-    parser.add_argument('--smbus-hide', action='store_true',
-                        help='Hide non-MCTP SMBus traffic (requires --smbus or higher)')
-    parser.add_argument('--with-pec', action='store_true',
-                        help='Assume PEC is present (requires --smbus)')
-    parser.add_argument('--mctp', action='store_true',
-                        help='MCTP mode (implies --smbus --with-pec)')
-    parser.add_argument('--mctp-no-partial', action='store_true',
-                        help='Hide MCTP fragments until EOM (requires --mctp or --spdm)')
-    parser.add_argument('--spdm', action='store_true',
-                        help='SPDM mode (implies --mctp)')
-    parser.add_argument('--mctp-hide', action='store_true',
-                        help='Hide MCTP layer details (requires --spdm)')
+    parser.add_argument(
+        "--smbus", action="store_true", help="Treat all packets as having SMBus header"
+    )
+    parser.add_argument(
+        "--smbus-hide",
+        action="store_true",
+        help="Hide non-MCTP SMBus traffic (requires --smbus or higher)",
+    )
+    parser.add_argument(
+        "--with-pec",
+        action="store_true",
+        help="Assume PEC is present (requires --smbus)",
+    )
+    parser.add_argument(
+        "--mctp", action="store_true", help="MCTP mode (implies --smbus --with-pec)"
+    )
+    parser.add_argument(
+        "--mctp-no-partial",
+        action="store_true",
+        help="Hide MCTP fragments until EOM (requires --mctp or --spdm)",
+    )
+    parser.add_argument(
+        "--spdm", action="store_true", help="SPDM mode (implies --mctp)"
+    )
+    parser.add_argument(
+        "--mctp-hide",
+        action="store_true",
+        help="Hide MCTP layer details (requires --spdm)",
+    )
 
     # Device configuration arguments
-    parser.add_argument('--samplerate', type=int, default=10000, metavar='KHZ',
-                        help='Sample rate in kHz (default: 10000)')
-    parser.add_argument('--timeout', type=int, default=500, metavar='MS',
-                        help='Idle timeout in milliseconds (default: 500)')
-    parser.add_argument('--latency', type=int, default=200, metavar='MS',
-                        help='Latency in milliseconds (default: 200)')
+    parser.add_argument(
+        "--samplerate",
+        type=int,
+        default=10000,
+        metavar="KHZ",
+        help="Sample rate in kHz (default: 10000)",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=500,
+        metavar="MS",
+        help="Idle timeout in milliseconds (default: 500)",
+    )
+    parser.add_argument(
+        "--latency",
+        type=int,
+        default=200,
+        metavar="MS",
+        help="Latency in milliseconds (default: 200)",
+    )
 
     args = parser.parse_args()
 
@@ -768,7 +839,9 @@ Examples:
         parser.error("--mctp-hide requires --spdm")
 
     if args.smbus_hide and not args.smbus:
-        parser.error("--smbus-hide requires --smbus (or --mctp/--spdm which imply --smbus)")
+        parser.error(
+            "--smbus-hide requires --smbus (or --mctp/--spdm which imply --smbus)"
+        )
 
     # Validate configuration arguments
     if args.samplerate <= 0:

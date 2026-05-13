@@ -49,10 +49,12 @@ def _parse_args():
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument('--machine', type=str, help='qemu machine type')
-    parser.add_argument('--cpu', type=str, help='qemu cpu type')
-    parser.add_argument('--image', type=str, help='image file to run')
-    parser.add_argument('--qemu-args', nargs='*', help='Extra arguments to pass to qemu')
+    parser.add_argument("--machine", type=str, help="qemu machine type")
+    parser.add_argument("--cpu", type=str, help="qemu cpu type")
+    parser.add_argument("--image", type=str, help="image file to run")
+    parser.add_argument(
+        "--qemu-args", nargs="*", help="Extra arguments to pass to qemu"
+    )
     return parser.parse_args()
 
 
@@ -60,14 +62,14 @@ def _detokenizer(image: Path, tokenized_file: Path, qemu_finished: threading.Eve
     try:
         detokenizer = detokenize.Detokenizer(image)
         line_buffer = ""
-        with open(tokenized_file, 'r', buffering=1) as f:
+        with open(tokenized_file, "r", buffering=1) as f:
             while not qemu_finished.is_set():
                 try:
                     chunk = f.readline()
                     if chunk:
                         line_buffer += chunk
-                        while '\n' in line_buffer:
-                            newline_pos = line_buffer.find('\n') + 1
+                        while "\n" in line_buffer:
+                            newline_pos = line_buffer.find("\n") + 1
                             complete_line = line_buffer[:newline_pos]
                             detokenizer.detokenize_text_to_file(
                                 complete_line, sys.stdout.buffer
@@ -91,7 +93,7 @@ def _sentinel_watcher(
 ):
     buf = b""
     try:
-        with open(tokenized_file, 'rb') as f:
+        with open(tokenized_file, "rb") as f:
             while not qemu_finished.is_set():
                 chunk = f.read(256)
                 if chunk:
@@ -113,13 +115,19 @@ def _sentinel_watcher(
 def _main(args) -> None:
     qemu_args = [
         _QEMU_ARM,
-        "-machine", args.machine,
-        "-cpu", args.cpu,
-        "-bios", "none",
+        "-machine",
+        args.machine,
+        "-cpu",
+        args.cpu,
+        "-bios",
+        "none",
         "-nographic",
-        "-serial", "mon:stdio",
-        "-semihosting-config", "enable=on,target=native",
-        "-kernel", args.image,
+        "-serial",
+        "mon:stdio",
+        "-semihosting-config",
+        "enable=on,target=native",
+        "-kernel",
+        args.image,
     ]
 
     if args.qemu_args:
@@ -170,5 +178,5 @@ def _main(args) -> None:
     sys.exit(result[0])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     _main(_parse_args())

@@ -129,12 +129,5 @@ ast1060_pac_ext = use_extension(
 )
 use_repo(ast1060_pac_ext, "ast1060_pac", "vcell")
 
-# ── Aspeed DDK (bare-metal I2C / GPIO / crypto drivers) ──
-aspeed_ddk_ext = use_extension(
-    "//third_party:aspeed_ddk.bzl",
-    "aspeed_ddk_ext",
-)
-use_repo(aspeed_ddk_ext, "aspeed_ddk")
-
 hsm = use_extension("//third_party/hsm:extensions.bzl", "hsm")
 use_repo(hsm, "cloud_kms_hsm")

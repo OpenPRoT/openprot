@@ -19,7 +19,10 @@ from pathlib import Path
 try:
     import serial
 except ImportError:
-    print("Error: pyserial not installed. Install with: pip install pyserial", file=sys.stderr)
+    print(
+        "Error: pyserial not installed. Install with: pip install pyserial",
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 
@@ -27,7 +30,9 @@ def _gpio_set(pin: int, state: str) -> None:
     subprocess.run(["pinctrl", "set", str(pin), "op"] + state.split(), check=True)
 
 
-def _sequence_to_fwspick_mode(srst_pin: int, fwspick_pin: int, port: serial.Serial) -> None:
+def _sequence_to_fwspick_mode(
+    srst_pin: int, fwspick_pin: int, port: serial.Serial
+) -> None:
     _gpio_set(srst_pin, "dl")
     time.sleep(0.1)
     port.timeout = 0.1

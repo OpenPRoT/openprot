@@ -1,4 +1,5 @@
 # Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
 
 load("@rules_platform//platform_data:defs.bzl", "platform_data")
 load("@rules_python//python:py_binary.bzl", "py_binary")
@@ -12,8 +13,8 @@ py_binary(
     # visible as @qemu from our module). If this breaks after a pigweed
     # upgrade, run: ls $(bazel info output_base)/external/ | grep qemu
     deps = [
-        "@pigweed//pw_tokenizer/py:detokenize",
         "@@pigweed++_repo_rules5+qemu//:qemu-system-arm-runfiles",
+        "@pigweed//pw_tokenizer/py:detokenize",
         "@rules_python//python/runfiles",
     ],
 )
@@ -28,8 +29,8 @@ platform_data(
 py_binary(
     name = "test_runner_bin",
     srcs = [
-        "test_runner.py",
         "pi_test_runner.py",
+        "test_runner.py",
     ],
     data = ["evb_config.toml"],
     main = "test_runner.py",

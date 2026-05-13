@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
 """
 AST1060 UART Test Execution Script
 
@@ -17,6 +18,7 @@ import time
 from pathlib import Path
 from typing import Optional, Tuple
 
+
 def _find_pw_tokenizer() -> bool:
     """Attempt to locate and add pw_tokenizer to sys.path.
 
@@ -32,7 +34,9 @@ def _find_pw_tokenizer() -> bool:
         output_base = subprocess.check_output(
             ["bazel", "info", "output_base"], text=True, stderr=subprocess.DEVNULL
         ).strip()
-        candidate = os.path.join(output_base, "external", "pigweed+", "pw_tokenizer", "py")
+        candidate = os.path.join(
+            output_base, "external", "pigweed+", "pw_tokenizer", "py"
+        )
         if os.path.isdir(candidate):
             sys.path.insert(0, candidate)
             return True
@@ -40,6 +44,7 @@ def _find_pw_tokenizer() -> bool:
         pass
 
     return False
+
 
 _PW_TOKENIZER_AVAILABLE = _find_pw_tokenizer()
 
@@ -63,10 +68,14 @@ class UartTestExecutor:
     def __init__(self, args):
         self.args = args
         self.serial_port: Optional[serial.Serial] = None
-        self.log_file = getattr(args, "log_file", None) or f"uart-test-{os.getpid()}.log"
+        self.log_file = (
+            getattr(args, "log_file", None) or f"uart-test-{os.getpid()}.log"
+        )
         self.log_file_handle = None
         elf = getattr(args, "elf", None)
-        self.detokenizer = Detokenizer(elf) if (elf and _PW_TOKENIZER_AVAILABLE) else None
+        self.detokenizer = (
+            Detokenizer(elf) if (elf and _PW_TOKENIZER_AVAILABLE) else None
+        )
 
     def log(self, message: str):
         """Print message unless in quiet mode."""
@@ -460,7 +469,11 @@ Examples:
 
     # UART settings
     parser.add_argument(
-        "-b", "--baudrate", type=int, default=115200, help="UART baud rate (default: 115200)"
+        "-b",
+        "--baudrate",
+        type=int,
+        default=115200,
+        help="UART baud rate (default: 115200)",
     )
     parser.add_argument(
         "--test-timeout",
@@ -480,7 +493,9 @@ Examples:
         "-q", "--quiet", action="store_true", help="Run silently (no output)"
     )
     parser.add_argument(
-        "--dry-run", action="store_true", help="Show what would be done without executing"
+        "--dry-run",
+        action="store_true",
+        help="Show what would be done without executing",
     )
     parser.add_argument(
         "--upload-only",

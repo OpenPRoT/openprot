@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
 """
 Aardvark I2C Multi-Controller Transceiver
 Sends pre-fabricated I2C payloads as controller and receives responses as target.
@@ -14,14 +16,17 @@ from typing import List, Tuple
 # Add the Aardvark API to the path
 # Assumes script runs at the same level as aardvark-api-linux-x86_64-v6.00 directory
 script_dir = os.path.dirname(os.path.abspath(__file__))
-aardvark_lib_path = os.path.join(script_dir, 'aardvark-api-linux-x86_64-v6.00', 'python')
+aardvark_lib_path = os.path.join(
+    script_dir, "aardvark-api-linux-x86_64-v6.00", "python"
+)
 sys.path.insert(0, aardvark_lib_path)
 from aardvark_py import *
 
 
-#==========================================================================
+# ==========================================================================
 # DEVICE MANAGEMENT
-#==========================================================================
+# ==========================================================================
+
 
 def find_and_connect():
     """Find and connect to the first available Aardvark device."""
@@ -44,7 +49,9 @@ def find_and_connect():
 
         if not (port & AA_PORT_NOT_FREE):
             device_port = port
-            print(f"Connecting to device on port {port} (S/N: {unique_id:04d}-{unique_id % 1000000:06d})")
+            print(
+                f"Connecting to device on port {port} (S/N: {unique_id:04d}-{unique_id % 1000000:06d})"
+            )
             break
         else:
             print(f"Port {port & ~AA_PORT_NOT_FREE} is in use")
@@ -111,9 +118,10 @@ def configure_device(handle, own_addr=0x42, bitrate_khz=100, bus_timeout_ms=150)
     print("  Target:     Can receive from other controllers\n")
 
 
-#==========================================================================
+# ==========================================================================
 # I2C OPERATIONS
-#==========================================================================
+# ==========================================================================
+
 
 def send_payload(handle, remote_addr, payload: List[int], description=""):
     """
@@ -136,7 +144,7 @@ def send_payload(handle, remote_addr, payload: List[int], description=""):
     print(f"    Data:   {' '.join(f'{b:02X}' for b in payload)}")
 
     # Convert to array
-    data_out = array('B', payload)
+    data_out = array("B", payload)
 
     # Write to remote device
     num_written = aa_i2c_write(handle, remote_addr, AA_I2C_NO_FLAGS, data_out)
@@ -234,7 +242,7 @@ def set_response(handle, response_data: List[int]):
         handle: Aardvark device handle
         response_data: List of bytes to respond with
     """
-    data_array = array('B', response_data)
+    data_array = array("B", response_data)
     result = aa_i2c_slave_set_response(handle, data_array)
     if result < 0:
         print(f"Error setting response: {aa_status_string(result)}")
@@ -242,12 +250,19 @@ def set_response(handle, response_data: List[int]):
         print(f"Response buffer set ({len(response_data)} bytes)")
 
 
-#==========================================================================
+# ==========================================================================
 # TRANSACTION SEQUENCES
-#==========================================================================
+# ==========================================================================
 
-def execute_transaction(handle, remote_addr, payload, wait_response=True,
-                        response_timeout=1000, description=""):
+
+def execute_transaction(
+    handle,
+    remote_addr,
+    payload,
+    wait_response=True,
+    response_timeout=1000,
+    description="",
+):
     """
     Execute a complete transaction: send payload and optionally wait for response.
 
@@ -285,16 +300,17 @@ def execute_transaction(handle, remote_addr, payload, wait_response=True,
     return success, response_data
 
 
-#==========================================================================
+# ==========================================================================
 # MAIN
-#==========================================================================
+# ==========================================================================
+
 
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description='Aardvark I2C Multi-Controller Transceiver',
+        description="Aardvark I2C Multi-Controller Transceiver",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog='''
+        epilog="""
 This tool operates in multi-controller mode:
   - Sends payloads as I2C controller to remote devices
   - Receives responses as I2C target from other controllers
@@ -304,27 +320,68 @@ Default configuration:
   - Remote I2C address: 0x13
   - Bus speed: 100 kHz
   - Bus timeout: 150 ms
-        '''
+        """,
     )
 
-    parser.add_argument('--own-addr', type=lambda x: int(x, 0), default=0x10,
-                        metavar='ADDR', help='Our I2C address (default: 0x10)')
-    parser.add_argument('--own-eid', type=lambda x: int(x, 0), default=0x08,
-                        metavar='EID', help='Our MCTP endpoint ID (default: 0x08)')
-    parser.add_argument('--remote-addr', type=lambda x: int(x, 0), default=0x13,
-                        metavar='ADDR', help='Remote device address (default: 0x13)')
-    parser.add_argument('--remote-eid', type=lambda x: int(x, 0), default=0x42,
-                        metavar='EID', help='Remote MCTP endpoint ID (default: 0x42)')
-    parser.add_argument('--bitrate', type=int, default=100, metavar='KHZ',
-                        help='I2C bus speed in kHz (default: 100)')
-    parser.add_argument('--bus-timeout', type=int, default=150, metavar='MS',
-                        help='Bus lock timeout in ms (default: 150)')
-    parser.add_argument('--response-timeout', type=int, default=1000, metavar='MS',
-                        help='Response timeout in ms (default: 1000)')
-    parser.add_argument('--no-wait-response', action='store_true',
-                        help='Do not wait for response after sending')
-    parser.add_argument('--interactive', action='store_true',
-                        help='Interactive mode - prompt between transactions')
+    parser.add_argument(
+        "--own-addr",
+        type=lambda x: int(x, 0),
+        default=0x10,
+        metavar="ADDR",
+        help="Our I2C address (default: 0x10)",
+    )
+    parser.add_argument(
+        "--own-eid",
+        type=lambda x: int(x, 0),
+        default=0x08,
+        metavar="EID",
+        help="Our MCTP endpoint ID (default: 0x08)",
+    )
+    parser.add_argument(
+        "--remote-addr",
+        type=lambda x: int(x, 0),
+        default=0x13,
+        metavar="ADDR",
+        help="Remote device address (default: 0x13)",
+    )
+    parser.add_argument(
+        "--remote-eid",
+        type=lambda x: int(x, 0),
+        default=0x42,
+        metavar="EID",
+        help="Remote MCTP endpoint ID (default: 0x42)",
+    )
+    parser.add_argument(
+        "--bitrate",
+        type=int,
+        default=100,
+        metavar="KHZ",
+        help="I2C bus speed in kHz (default: 100)",
+    )
+    parser.add_argument(
+        "--bus-timeout",
+        type=int,
+        default=150,
+        metavar="MS",
+        help="Bus lock timeout in ms (default: 150)",
+    )
+    parser.add_argument(
+        "--response-timeout",
+        type=int,
+        default=1000,
+        metavar="MS",
+        help="Response timeout in ms (default: 1000)",
+    )
+    parser.add_argument(
+        "--no-wait-response",
+        action="store_true",
+        help="Do not wait for response after sending",
+    )
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Interactive mode - prompt between transactions",
+    )
 
     args = parser.parse_args()
 
@@ -350,18 +407,18 @@ Default configuration:
 
         # Build the frame (without I2C destination address prefix)
         frame = [
-            0x0F,                    # Command code (MCTP)
-            0x0A,                    # Byte count (10 bytes)
-            src_i2c_with_read,       # Source I2C address with read bit
-            0x01,                    # MCTP version
-            args.remote_eid,         # Destination EID (responder)
-            args.own_eid,            # Source EID (us)
-            0xC8,                    # Flags (SOM=1, EOM=1, Seq=0, TO=1, Tag=0)
-            0x05,                    # Message type (SPDM)
-            0x10,                    # SPDM GET_VERSION
-            0x84,                    # SPDM request code
-            0x00,                    # Param1
-            0x00,                    # Param2
+            0x0F,  # Command code (MCTP)
+            0x0A,  # Byte count (10 bytes)
+            src_i2c_with_read,  # Source I2C address with read bit
+            0x01,  # MCTP version
+            args.remote_eid,  # Destination EID (responder)
+            args.own_eid,  # Source EID (us)
+            0xC8,  # Flags (SOM=1, EOM=1, Seq=0, TO=1, Tag=0)
+            0x05,  # Message type (SPDM)
+            0x10,  # SPDM GET_VERSION
+            0x84,  # SPDM request code
+            0x00,  # Param1
+            0x00,  # Param2
         ]
 
         # Calculate PEC (includes destination I2C address)
@@ -383,7 +440,9 @@ Default configuration:
         frame.append(crc)  # Append PEC to payload
 
         print(f"Generated GET_VERSION payload:")
-        print(f"  Source I2C:    0x{args.own_addr:02X} (frame: 0x{src_i2c_with_read:02X})")
+        print(
+            f"  Source I2C:    0x{args.own_addr:02X} (frame: 0x{src_i2c_with_read:02X})"
+        )
         print(f"  Source EID:    0x{args.own_eid:02X}")
         print(f"  Dest I2C:      0x{args.remote_addr:02X}")
         print(f"  Dest EID:      0x{args.remote_eid:02X}")
@@ -393,9 +452,9 @@ Default configuration:
         # Define pre-fabricated payloads
         payloads = [
             {
-                'name': 'MCTP SPDM GET_VERSION',
-                'data': frame,
-                'description': 'MCTP over SMBus: SPDM GET_VERSION request'
+                "name": "MCTP SPDM GET_VERSION",
+                "data": frame,
+                "description": "MCTP over SMBus: SPDM GET_VERSION request",
             },
             # Add more payloads here as needed
         ]
@@ -408,10 +467,10 @@ Default configuration:
             execute_transaction(
                 handle,
                 args.remote_addr,
-                payload_info['data'],
+                payload_info["data"],
                 wait_response=not args.no_wait_response,
                 response_timeout=args.response_timeout,
-                description=payload_info['name']
+                description=payload_info["name"],
             )
 
         print("All transactions complete.")

@@ -1,4 +1,5 @@
 # Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
 
 """Module extension to fetch the AST1060 PAC and its dependency vcell."""
 

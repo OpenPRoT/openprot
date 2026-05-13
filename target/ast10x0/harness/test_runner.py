@@ -30,6 +30,7 @@ AST1060_EVB_PI_HOST = "AST1060_EVB_PI_HOST"
 # When run as a Bazel py_binary, pw_tokenizer is already on sys.path via deps.
 # When run outside Bazel, try PW_TOK_ROOT or the Bazel output base as fallbacks.
 
+
 def _extend_path_for_pw_tokenizer() -> None:
     pw_tok_root = os.environ.get("PW_TOK_ROOT")
     if pw_tok_root:
@@ -39,7 +40,9 @@ def _extend_path_for_pw_tokenizer() -> None:
         output_base = subprocess.check_output(
             ["bazel", "info", "output_base"], text=True, stderr=subprocess.DEVNULL
         ).strip()
-        candidate = os.path.join(output_base, "external", "pigweed+", "pw_tokenizer", "py")
+        candidate = os.path.join(
+            output_base, "external", "pigweed+", "pw_tokenizer", "py"
+        )
         if os.path.isdir(candidate):
             sys.path.insert(0, candidate)
     except (subprocess.CalledProcessError, FileNotFoundError):
@@ -51,6 +54,7 @@ _extend_path_for_pw_tokenizer()
 try:
     from pw_tokenizer import Detokenizer
     from pw_tokenizer.detokenize import NestedMessageParser
+
     _PW_TOKENIZER_AVAILABLE = True
 except ImportError:
     _PW_TOKENIZER_AVAILABLE = False
@@ -62,12 +66,13 @@ except ImportError:
 # thread so the stale-lock detector knows we're still alive.
 
 _LOCK_PATH = "/tmp/ast1060_evb.lock"
-_LOCK_TOUCH_INTERVAL = 10       # seconds between lock touches
-_LOCK_STALE_THRESHOLD = 60      # seconds since last touch → lock is stale
-_LOCK_ACQUIRE_TIMEOUT = 120     # seconds to wait before giving up
+_LOCK_TOUCH_INTERVAL = 10  # seconds between lock touches
+_LOCK_STALE_THRESHOLD = 60  # seconds since last touch → lock is stale
+_LOCK_ACQUIRE_TIMEOUT = 120  # seconds to wait before giving up
 
 
 # ── SSH helpers ───────────────────────────────────────────────────────────────
+
 
 def _ssh(host: str, cmd: str, **kwargs) -> subprocess.CompletedProcess:
     """Run a single SSH command synchronously."""
@@ -191,6 +196,7 @@ class UartMonitor:
 
 # ── Local execution ───────────────────────────────────────────────────────────
 
+
 def _run_local(
     args: argparse.Namespace,
     config: dict,
@@ -208,6 +214,7 @@ def _run_local(
 
 
 # ── Remote execution ──────────────────────────────────────────────────────────
+
 
 def _run_remote(
     args: argparse.Namespace,
@@ -282,6 +289,7 @@ def _run_remote(
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
+
 def main() -> int:
     with (Path(__file__).parent / "evb_config.toml").open("rb") as f:
         config = tomllib.load(f)
@@ -319,7 +327,8 @@ def main() -> int:
         help="Write detokenized UART output to this file",
     )
     parser.add_argument(
-        "-q", "--quiet",
+        "-q",
+        "--quiet",
         action="store_true",
         help="Suppress diagnostic messages to stderr",
     )

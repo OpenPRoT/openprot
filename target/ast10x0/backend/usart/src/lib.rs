@@ -24,11 +24,6 @@ impl Ast10x0UsartBackend {
         // target/ast10x0/usart/system.json5.
         let uart = unsafe { Usart::new(0x7e78_4000 as *const _) };
 
-        // The peripheral driver's `Usart::new` enables every IER source.
-        // Mask the ones the trait exposes so the server inherits a quiet
-        // device and only the interrupts a client explicitly enables fire.
-        // uart.clear_rx_data_available_interrupt();
-        // uart.clear_tx_idle_interrupt();
         // ELSI and EDSSI were also left enabled. EDSSI fires immediately if
         // the MSR delta bits (DCTS/DDSR/TERI/DDCD) are set at init — QEMU
         // sets them — causing a continuous IRQ that the server acks and
