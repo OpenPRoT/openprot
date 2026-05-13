@@ -27,8 +27,15 @@ impl Ast10x0UsartBackend {
         // The peripheral driver's `Usart::new` enables every IER source.
         // Mask the ones the trait exposes so the server inherits a quiet
         // device and only the interrupts a client explicitly enables fire.
-        uart.clear_rx_data_available_interrupt();
-        uart.clear_tx_idle_interrupt();
+        // uart.clear_rx_data_available_interrupt();
+        // uart.clear_tx_idle_interrupt();
+        // ELSI and EDSSI were also left enabled. EDSSI fires immediately if
+        // the MSR delta bits (DCTS/DDSR/TERI/DDCD) are set at init — QEMU
+        // sets them — causing a continuous IRQ that the server acks and
+        // unmasks in a tight loop, starving the IPC dispatch path.
+        // Read MSR to clear the delta bits, then disable all four IER sources.
+        uart.drain_modem_status();
+        uart.disable_all_interrupts();
 
         Self { uart }
     }
