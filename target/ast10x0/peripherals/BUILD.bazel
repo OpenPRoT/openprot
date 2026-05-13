@@ -9,7 +9,6 @@ package(default_visibility = ["//visibility:public"])
 rust_library(
     name = "peripherals",
     srcs = [
-        "lib.rs",
         "i2c/constants.rs",
         "i2c/controller.rs",
         "i2c/error.rs",
@@ -23,18 +22,22 @@ rust_library(
         "i2c/timing.rs",
         "i2c/transfer.rs",
         "i2c/types.rs",
-        "scu/mod.rs",
-        "scu/registers.rs",
-        "scu/types.rs",
-        "scu/reset.rs",
+        "lib.rs",
         "scu/clock.rs",
-        "scu/status.rs",
+        "scu/mod.rs",
         "scu/pinctrl.rs",
+        "scu/registers.rs",
+        "scu/reset.rs",
+        "scu/status.rs",
+        "scu/types.rs",
         "uart/mod.rs",
     ],
     crate_name = "ast10x0_peripherals",
     crate_root = "lib.rs",
     edition = "2024",
+    proc_macro_deps = [
+        "@rust_crates//:paste",
+    ],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
         "@ast1060_pac",
@@ -43,8 +46,5 @@ rust_library(
         "@rust_crates//:embedded-hal-nb",
         "@rust_crates//:embedded-io",
         "@rust_crates//:nb",
-    ],
-    proc_macro_deps = [
-        "@rust_crates//:paste",
     ],
 )

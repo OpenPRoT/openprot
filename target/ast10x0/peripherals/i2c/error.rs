@@ -1,4 +1,5 @@
 // Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
 
 //! Core error types without OS dependencies
 

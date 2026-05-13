@@ -1,4 +1,5 @@
 // Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
 
 //! embedded-hal trait implementations for AST1060 I2C driver
 //!

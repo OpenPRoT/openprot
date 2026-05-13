@@ -1,4 +1,5 @@
 // Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
 
 //! Hardware constants for AST1060 I2C controller
 //!
