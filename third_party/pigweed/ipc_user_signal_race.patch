@@ -1,0 +1,14 @@
+--- a/pw_kernel/tests/ipc/user/handler.rs
++++ b/pw_kernel/tests/ipc/user/handler.rs
+@@ -31,8 +31,9 @@
+         // USER signal means the initiator is pinging us; echo it back and lower it
+         // (level-triggered: the sender owns both raise and lower).
+         if wait_return.pending_signals.contains(Signals::USER) {
+             syscall::object_set_peer_user_signal(handle::IPC, true).map_err(|_| Error::Internal)?;
+-            syscall::object_set_peer_user_signal(handle::IPC, false)
+-                .map_err(|_| Error::Internal)?;
++            // Do not lower: initiator may not have reached object_wait yet.
++            // syscall::object_set_peer_user_signal(handle::IPC, false)
++            //     .map_err(|_| Error::Internal)?;
+             return Ok(());
+         }
