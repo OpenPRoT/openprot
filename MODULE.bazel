@@ -28,8 +28,6 @@ git_override(
         # Allow integration_tests to build for armv7-m / armv7e-m so the
         # AST10x0 unittest_runner can use it.
         "//third_party/pigweed:integration_tests_armv7m.patch",
-        # Fix lost-wakeup race in ipc/user test USER signal round-trip.
-        "//third_party/pigweed:ipc_user_signal_race.patch",
     ],
     remote = "https://pigweed.googlesource.com/pigweed/pigweed",
 )
