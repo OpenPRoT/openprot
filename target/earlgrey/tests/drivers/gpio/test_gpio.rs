@@ -8,7 +8,7 @@ use earlgrey_gpio::{EarlGreyGpio, EarlGreyPinConfig, GpioMask, GpioPin};
 use earlgrey_pinmux::{Pad, Pull};
 use openprot_hal_blocking::gpio_port::{GpioPort, PinMask};
 use pw_status::Result;
-use userspace::{entry, syscall};
+use userspace::entry;
 
 fn test_gpio_basic() -> Result<()> {
     let mut gpio = unsafe { EarlGreyGpio::new() };
@@ -71,7 +71,7 @@ fn test_gpio_basic() -> Result<()> {
 }
 
 #[entry]
-fn entry() -> ! {
+fn entry() -> Result<()> {
     pw_log::info!("🔄 RUNNING GPIO SMOKE TEST");
     let ret = test_gpio_basic();
 
@@ -81,8 +81,7 @@ fn entry() -> ! {
         pw_log::info!("✅ PASS");
     }
 
-    let _ = syscall::debug_shutdown(ret);
-    loop {}
+    ret
 }
 
 #[panic_handler]

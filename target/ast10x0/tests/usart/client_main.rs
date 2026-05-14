@@ -10,7 +10,7 @@ use userspace::entry;
 use userspace::time::Instant;
 
 #[entry]
-fn entry() -> ! {
+fn entry() {
     let client = UsartClient::new(handle::USART);
 
     match client.configure(1_500_000) {

@@ -50,11 +50,9 @@ fn measure_nop_syscall(rv_timer: &RvTimer, n: usize) -> Result<()> {
 }
 
 #[entry]
-fn entry() -> ! {
+fn entry() -> Result<()> {
     let rv_timer = unsafe { RvTimer::new() };
-    let result = measure_nop_syscall(&rv_timer, 100);
-    syscall::debug_shutdown(result).unwrap();
-    loop {}
+    measure_nop_syscall(&rv_timer, 100)
 }
 
 #[panic_handler]

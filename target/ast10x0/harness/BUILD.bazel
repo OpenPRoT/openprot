@@ -8,12 +8,11 @@ py_binary(
     name = "qemu_runner_bin",
     srcs = ["qemu_runner.py"],
     main = "qemu_runner.py",
-    # @@pigweed++_repo_rules5+qemu is the canonical label for the qemu repo
-    # created by pigweed's cipd_repository use_repo_rule (not directly
-    # visible as @qemu from our module). If this breaks after a pigweed
-    # upgrade, run: ls $(bazel info output_base)/external/ | grep qemu
+    # @@pigweed++cipd+pigweed.qemu is the canonical label for the qemu repo
+    # created by pigweed's cipd module extension. If this breaks after a
+    # pigweed upgrade, run: bazel mod dump_repo_mapping "pigweed+" | grep qemu
     deps = [
-        "@@pigweed++_repo_rules5+qemu//:qemu-system-arm-runfiles",
+        "@@pigweed++cipd+pigweed.qemu//:qemu-system-arm-runfiles",
         "@pigweed//pw_tokenizer/py:detokenize",
         "@rules_python//python/runfiles",
     ],

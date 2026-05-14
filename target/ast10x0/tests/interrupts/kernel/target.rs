@@ -19,7 +19,7 @@ impl TargetInterface for Target {
     const NAME: &'static str = "AST10x0 Kernel Interrupts";
 
     fn main() -> ! {
-        let sentinel: &[u8] = match test_interrupts::main::<Arch>(TEST_IRQ) {
+        let sentinel: &[u8] = match test_interrupts::main::<Arch>(Arch, TEST_IRQ) {
             Ok(()) => b"TEST_RESULT:PASS\n",
             Err(_e) => b"TEST_RESULT:FAIL\n",
         };

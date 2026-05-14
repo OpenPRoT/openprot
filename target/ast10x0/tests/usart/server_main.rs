@@ -11,7 +11,7 @@ use userspace::entry;
 use userspace::syscall::{self, Signals};
 
 #[entry]
-fn entry() -> ! {
+fn entry() {
     let mut backend = Backend::new();
 
     let _ = syscall::wait_group_add(

@@ -10,7 +10,7 @@ use userspace::entry;
 use userspace::syscall;
 
 #[entry]
-fn entry() -> ! {
+fn entry() {
     let client = UsartClient::new(handle::USART);
 
     match client.configure(1_500_000) {
@@ -23,8 +23,6 @@ fn entry() -> ! {
         Err(_) => pw_log::error!("USART client2 write failed"),
     }
 
-    // End the test only after client2 has executed, proving multi-client app
-    // startup and request handling against the same server endpoint.
     let _ = syscall::debug_shutdown(Ok(()));
     loop {}
 }

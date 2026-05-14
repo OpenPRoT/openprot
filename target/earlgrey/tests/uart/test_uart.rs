@@ -60,20 +60,17 @@ fn test_uart_interrupts() -> Result<()> {
 }
 
 #[entry]
-fn entry() -> ! {
+fn entry() -> Result<()> {
     pw_log::info!("🔄 RUNNING");
     let ret = test_uart_interrupts();
 
-    // Log that an error occurred so that the app that caused the shutdown is logged.
     if ret.is_err() {
         pw_log::error!("❌ FAILED: {}", ret.status_code() as u32);
     } else {
         pw_log::info!("✅ PASSED");
     }
 
-    // Since this is written as a test, shut down with the return status from `main()`.
-    let _ = syscall::debug_shutdown(ret);
-    loop {}
+    ret
 }
 
 #[panic_handler]

@@ -77,11 +77,8 @@ fn wait_for_interrupts() -> Result<()> {
 }
 
 #[entry]
-fn entry() -> ! {
-    // Since this is written as a test, shut down with the return status from `main()`.
-    let ret = wait_for_interrupts();
-    let _ = syscall::debug_shutdown(ret);
-    loop {}
+fn entry() -> Result<()> {
+    wait_for_interrupts()
 }
 
 #[panic_handler]

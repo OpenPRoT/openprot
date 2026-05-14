@@ -43,10 +43,8 @@ fn measure_nop_syscall(n: usize) -> Result<()> {
 }
 
 #[entry]
-fn entry() -> ! {
-    let result = measure_nop_syscall(100);
-    syscall::debug_shutdown(result).unwrap();
-    loop {}
+fn entry() -> Result<()> {
+    measure_nop_syscall(100)
 }
 
 #[panic_handler]

@@ -9,8 +9,8 @@ module(
 bazel_dep(name = "bazel_skylib", version = "1.8.2")
 bazel_dep(name = "pigweed")
 bazel_dep(name = "platforms", version = "1.0.0")
-bazel_dep(name = "rules_rust", version = "0.68.1")
-bazel_dep(name = "rules_rust_mdbook", version = "0.68.1")
+bazel_dep(name = "rules_rust", version = "0.70.0")
+bazel_dep(name = "rules_rust_mdbook", version = "0.70.0")
 bazel_dep(name = "rules_platform", version = "0.1.0")
 bazel_dep(name = "rules_python", version = "1.8.3")
 bazel_dep(name = "ureg")
@@ -22,10 +22,9 @@ local_path_override(
 
 git_override(
     module_name = "pigweed",
-    commit = "67563b40f2c19aec4f899afd13c00e48baf790b2",
+    commit = "7882c537d21171b0e9641a132842a373382a78c3",
     patch_args = ["-p1"],
     patches = [
-        "//third_party/pigweed:veer_pic_generic_type.patch",
         # Allow integration_tests to build for armv7-m / armv7e-m so the
         # AST10x0 unittest_runner can use it.
         "//third_party/pigweed:integration_tests_armv7m.patch",
