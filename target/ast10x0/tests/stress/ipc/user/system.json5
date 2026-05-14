@@ -1,0 +1,75 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 IPC Stress Test Configuration
+// Two separate apps: initiator sends characters over IPC, handler uppercases
+// and echoes them back. Both loop indefinitely.
+//
+// Memory layout:
+//   0x00000000 - 0x00000500: Vector table (1280 bytes)
+//   0x00000500 - 0x00020000: Kernel code (~126KB, ends at 128KB boundary)
+//   0x00020000 - 0x00040000: initiator app flash (128KB)
+//   0x00040000 - 0x00060000: handler app flash (128KB)
+//   0x00060000 - 0x00080000: Kernel RAM (128KB)
+//   0x00080000 - 0x000A0000: App RAM (2 x 64KB)
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,  // 0x500
+    },
+    kernel: {
+        flash_start_address: 0x00000500,
+        flash_size_bytes: 129792,         // ~126KB (ends at 0x00020000)
+        ram_start_address: 0x00060000,
+        ram_size_bytes: 131072,           // 128KB
+    },
+    apps: [
+        {
+            name: "initiator",
+            flash_size_bytes: 131072,     // 128KB
+            processes: [
+                {
+                    name: "initiator_process",
+                    ram_size_bytes: 65536,        // 64KB
+                    objects: [
+                        {
+                            name: "ipc",
+                            type: "channel_initiator",
+                            handler_process: "handler_process",
+                            handler_object_name: "ipc",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "initiator_thread",
+                            kernel_stack_size_bytes: 2048,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            name: "handler",
+            flash_size_bytes: 131072,     // 128KB
+            processes: [
+                {
+                    name: "handler_process",
+                    ram_size_bytes: 65536,        // 64KB
+                    objects: [
+                        {
+                            name: "ipc",
+                            type: "channel_handler",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "handler_thread",
+                            kernel_stack_size_bytes: 2048,
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}

@@ -1,0 +1,73 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 Process Termination Stress Test Configuration
+// Two apps: main repeatedly terminates and restarts forced_exit indefinitely.
+// main holds a process handle to forced_exit's "extra" process, which is
+// named to match the #[process_entry("extra")] in forced_exit.rs.
+//
+// Memory layout:
+//   0x00000000 - 0x00000500: Vector table (1280 bytes)
+//   0x00000500 - 0x00020000: Kernel code (~126KB, ends at 128KB boundary)
+//   0x00020000 - 0x00040000: main app flash (128KB)
+//   0x00040000 - 0x00060000: forced_exit app flash (128KB)
+//   0x00060000 - 0x00080000: Kernel RAM (128KB)
+//   0x00080000 - 0x000A0000: App RAM (main 64KB, forced_exit 64KB)
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,  // 0x500
+    },
+    kernel: {
+        flash_start_address: 0x00000500,
+        flash_size_bytes: 129792,         // ~126KB (ends at 0x00020000)
+        ram_start_address: 0x00060000,
+        ram_size_bytes: 131072,           // 128KB
+    },
+    apps: [
+        {
+            name: "main",
+            flash_size_bytes: 131072,     // 128KB
+            processes: [
+                {
+                    name: "main_process",
+                    ram_size_bytes: 65536,        // 64KB
+                    objects: [
+                        {
+                            // Generates handle::FORCED_EXIT_PROCESS in main_codegen.
+                            // linked_process must match the process name in the
+                            // forced_exit app ("extra" from #[process_entry("extra")]).
+                            name: "forced_exit_process",
+                            type: "process",
+                            linked_process: "extra",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "main_thread",
+                            kernel_stack_size_bytes: 2048,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            name: "forced_exit",
+            flash_size_bytes: 131072,     // 128KB
+            processes: [
+                {
+                    // Name must match #[process_entry("extra")] in forced_exit.rs.
+                    name: "extra",
+                    ram_size_bytes: 65536,        // 64KB
+                    threads: [
+                        {
+                            name: "extra_thread",
+                            kernel_stack_size_bytes: 2048,
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}
