@@ -41,7 +41,6 @@ assert _QEMU_ARM is not None
 
 PASS_SENTINEL = b"TEST_RESULT:PASS"
 FAIL_SENTINEL = b"TEST_RESULT:FAIL"
-TIMEOUT_SECONDS = 30
 
 
 def _parse_args():
@@ -56,9 +55,10 @@ def _parse_args():
         "--qemu-args", nargs="*", help="Extra arguments to pass to qemu"
     )
     parser.add_argument(
-        "--no-timeout",
-        action="store_true",
-        help="Run indefinitely; for stress tests that never emit PASS",
+        "--timeout",
+        type=int,
+        default=30,
+        help="Seconds to wait for a test result sentinel (0 = no timeout, default: 30)",
     )
     return parser.parse_args()
 
@@ -159,17 +159,14 @@ def _main(args) -> None:
             stdout_thread.start()
 
             try:
-                if args.no_timeout:
-                    proc.wait()
-                else:
-                    proc.wait(timeout=TIMEOUT_SECONDS)
+                proc.wait(timeout=args.timeout if args.timeout > 0 else None)
             except KeyboardInterrupt:
                 proc.kill()
                 proc.wait()
             except subprocess.TimeoutExpired:
                 _LOG.error(
                     "Test timed out after %ds — no sentinel detected",
-                    TIMEOUT_SECONDS,
+                    args.timeout,
                 )
                 proc.kill()
                 proc.wait()
