@@ -143,7 +143,9 @@ def _main(args) -> None:
     result = [None]  # 0 = pass, 1 = fail, None = no sentinel found
 
     with tempfile.NamedTemporaryFile() as f:
-        with subprocess.Popen(args=qemu_args, stdout=f, stdin=subprocess.DEVNULL) as proc:
+        with subprocess.Popen(
+            args=qemu_args, stdout=f, stdin=subprocess.DEVNULL
+        ) as proc:
             qemu_finished = threading.Event()
             sentinel_thread = threading.Thread(
                 target=_sentinel_watcher,

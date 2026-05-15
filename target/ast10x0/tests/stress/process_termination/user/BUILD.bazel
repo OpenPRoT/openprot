@@ -30,13 +30,13 @@ rust_binary_no_panics_test(
 
 stress_image_test(
     name = "process_termination_stress_test",
+    timeout = "eternal",
     image = ":process_termination",
     tags = [
-        "kernel",
         "do_not_run_test",
+        "kernel",
     ],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
-    timeout = "eternal",
 )
 
 filegroup(
