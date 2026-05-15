@@ -6,6 +6,7 @@ load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_scri
 load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//target/ast10x0/harness:stress_image_test.bzl", "stress_image_test")
 
 system_image(
     name = "mutex",
@@ -21,6 +22,17 @@ rust_binary_no_panics_test(
     name = "no_panics_test",
     binary = ":mutex",
     tags = ["kernel"],
+)
+
+stress_image_test(
+    name = "mutex_stress_test",
+    image = ":mutex",
+    tags = [
+        "kernel",
+        "do_not_run_test",
+    ],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    timeout = "eternal",
 )
 
 filegroup(

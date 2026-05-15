@@ -84,3 +84,19 @@ test:virt_ast10x0 --run_under="//target/ast10x0/harness:qemu_runner \
 # Combined into one flag to avoid the Bazel 'expanded from multiple configs' warning
 # that fires when --test_tag_filters is set by both k_common and this config.
 test:virt_ast10x0 --test_tag_filters=-integration,-do_not_build,-do_not_run_test,-kernel_doc_test,-hardware
+
+# Stress test configs — identical to the base configs but with --no-timeout in
+# --run_under and +stress in test_tag_filters so only stress targets are run.
+common:stress_virt_ast10x0 --platforms=//target/ast10x0
+common:stress_virt_ast10x0 --//target/ast10x0:qemu=true
+build:stress_virt_ast10x0  --build_tag_filters=-do_not_build,-kernel_doc_test
+run:stress_virt_ast10x0    --run_under="//target/ast10x0/harness:qemu_runner \
+  --no-timeout --cpu cortex-m4 --machine ast1030-evb --image "
+test:stress_virt_ast10x0   --run_under="//target/ast10x0/harness:qemu_runner \
+  --no-timeout --cpu cortex-m4 --machine ast1030-evb --image "
+common:stress_k_ast1060_evb --platforms=//target/ast10x0
+build:stress_k_ast1060_evb  --build_tag_filters=-do_not_build,-kernel_doc_test
+test:stress_k_ast1060_evb   --local_test_jobs=1
+test:stress_k_ast1060_evb   --run_under="//target/ast10x0/harness:test_runner \
+  --timeout 0 "
+test:stress_k_ast1060_evb   --test_env=AST1060_EVB_PI_HOST

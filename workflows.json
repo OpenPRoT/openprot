@@ -129,7 +129,7 @@
         "args": [
           "--keep_going",
           "--config=virt_ast10x0",
-          "--test_tag_filters=-hardware",
+          "--test_tag_filters=-hardware,-do_not_run_test",
           "--test_output=streamed"
         ],
         "driver_options": {

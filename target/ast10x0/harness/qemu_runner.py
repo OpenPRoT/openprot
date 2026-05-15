@@ -55,6 +55,11 @@ def _parse_args():
     parser.add_argument(
         "--qemu-args", nargs="*", help="Extra arguments to pass to qemu"
     )
+    parser.add_argument(
+        "--no-timeout",
+        action="store_true",
+        help="Run indefinitely; for stress tests that never emit PASS",
+    )
     return parser.parse_args()
 
 
@@ -138,7 +143,7 @@ def _main(args) -> None:
     result = [None]  # 0 = pass, 1 = fail, None = no sentinel found
 
     with tempfile.NamedTemporaryFile() as f:
-        with subprocess.Popen(args=qemu_args, stdout=f) as proc:
+        with subprocess.Popen(args=qemu_args, stdout=f, stdin=subprocess.DEVNULL) as proc:
             qemu_finished = threading.Event()
             sentinel_thread = threading.Thread(
                 target=_sentinel_watcher,
@@ -154,7 +159,13 @@ def _main(args) -> None:
             stdout_thread.start()
 
             try:
-                proc.wait(timeout=TIMEOUT_SECONDS)
+                if args.no_timeout:
+                    proc.wait()
+                else:
+                    proc.wait(timeout=TIMEOUT_SECONDS)
+            except KeyboardInterrupt:
+                proc.kill()
+                proc.wait()
             except subprocess.TimeoutExpired:
                 _LOG.error(
                     "Test timed out after %ds — no sentinel detected",
