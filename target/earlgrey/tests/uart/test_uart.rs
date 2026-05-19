@@ -65,9 +65,9 @@ fn entry() -> Result<()> {
     let ret = test_uart_interrupts();
 
     if ret.is_err() {
-        pw_log::error!("❌ FAILED: {}", ret.status_code() as u32);
+        pw_log::error!("❌ FAIL: {}", ret.status_code() as u32);
     } else {
-        pw_log::info!("✅ PASSED");
+        pw_log::info!("✅ PASS");
     }
 
     ret
