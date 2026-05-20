@@ -90,6 +90,11 @@ fn run_slave() -> Result<(), &'static str> {
                 pw_log::error!("test 1: DataReceived len={} expected={}", len as u32, EXPECTED_WRITE.len() as u32);
                 return Err("test 1: DataReceived len mismatch");
             }
+            let mut buf = [0u8; EXPECTED_WRITE.len()];
+            slave.slave_read(&mut buf).map_err(|_| "test 1: slave_read failed")?;
+            if buf != *EXPECTED_WRITE {
+                return Err("test 1: DataReceived payload mismatch");
+            }
             pw_log::info!("Test 1 passed: DataReceived len={}", len as u32);
         }
         Some(_) => return Err("test 1: unexpected slave event"),
