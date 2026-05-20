@@ -137,9 +137,8 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
             // Pack bytes into DWORD (little-endian)
             let mut dword: u32 = 0;
             for byte_pos in 0..4 {
-                if idx + byte_pos < data.len() {
-                    // SAFETY: idx + byte_pos < data.len() checked above.
-                    dword |= u32::from(unsafe { *data.get_unchecked(idx + byte_pos) }) << (byte_pos * 8);
+                if let Some(&byte) = data.get(idx + byte_pos) {
+                    dword |= u32::from(byte) << (byte_pos * 8);
                 }
             }
 
@@ -179,10 +178,8 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
 
             // Extract bytes from DWORD (little-endian)
             for byte_pos in 0..4 {
-                if idx + byte_pos < data.len() {
-                    // SAFETY: idx + byte_pos < data.len() checked above.
-                    *unsafe { data.get_unchecked_mut(idx + byte_pos) } =
-                        ((dword >> (byte_pos * 8)) & 0xFF) as u8;
+                if let Some(slot) = data.get_mut(idx + byte_pos) {
+                    *slot = ((dword >> (byte_pos * 8)) & 0xFF) as u8;
                 }
             }
 

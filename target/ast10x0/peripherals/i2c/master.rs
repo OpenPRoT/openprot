@@ -211,9 +211,7 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
 
         while offset < total_len {
             let chunk_len = core::cmp::min(constants::BUFFER_MODE_SIZE, total_len - offset);
-            // SAFETY: chunk_len = min(BUFFER_MODE_SIZE, total_len - offset), so
-            // offset + chunk_len <= total_len == bytes.len().
-            let chunk = unsafe { bytes.get_unchecked(offset..offset + chunk_len) };
+            let chunk = bytes.get(offset..offset + chunk_len).ok_or(I2cError::Invalid)?;
             let is_first = offset == 0;
             let is_last = offset + chunk_len >= total_len;
 
@@ -338,9 +336,7 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
             }
 
             // Copy from hardware buffer AFTER successful transfer
-            // SAFETY: chunk_len = min(BUFFER_MODE_SIZE, total_len - offset), so
-            // offset + chunk_len <= total_len == buffer.len().
-            let chunk = unsafe { buffer.get_unchecked_mut(offset..offset + chunk_len) };
+            let chunk = buffer.get_mut(offset..offset + chunk_len).ok_or(I2cError::Invalid)?;
             self.copy_from_buffer(chunk)?;
 
             #[allow(clippy::cast_possible_truncation)]
@@ -446,9 +442,7 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
 
         while offset < total_len {
             let chunk_len = core::cmp::min(constants::DMA_MODE_MAX_SIZE, total_len - offset);
-            // SAFETY: chunk_len = min(DMA_MODE_MAX_SIZE, total_len - offset), so
-            // offset + chunk_len <= total_len == bytes.len().
-            let chunk = unsafe { bytes.get_unchecked(offset..offset + chunk_len) };
+            let chunk = bytes.get(offset..offset + chunk_len).ok_or(I2cError::Invalid)?;
             let is_first = offset == 0;
             let is_last = offset + chunk_len >= total_len;
 
@@ -590,14 +584,7 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
             // Copy from DMA buffer into caller's buffer
             {
                 let dma_buf = self.dma_buf.as_deref().ok_or(I2cError::Invalid)?;
-                // SAFETY: chunk_len = min(DMA_MODE_MAX_SIZE, total_len - offset), so
-                // offset + chunk_len <= total_len == buffer.len(). dma_buf.len() >= chunk_len
-                // is checked above before the DMA transfer starts.
-                unsafe {
-                    buffer
-                        .get_unchecked_mut(offset..offset + chunk_len)
-                        .copy_from_slice(dma_buf.get_unchecked(..chunk_len));
-                }
+                buffer.get_mut(offset..offset + chunk_len).ok_or(I2cError::Invalid)?.copy_from_slice(dma_buf.get(..chunk_len).ok_or(I2cError::Invalid)?);
             }
 
             #[allow(clippy::cast_possible_truncation)]
