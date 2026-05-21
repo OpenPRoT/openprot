@@ -1,0 +1,19 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "pldm_firmware_device_ipc",
+    srcs = ["src/lib.rs"],
+    crate_name = "openprot_pldm_firmware_device_ipc",
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = ["@platforms//os:none"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/pldm:pldm_service",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)

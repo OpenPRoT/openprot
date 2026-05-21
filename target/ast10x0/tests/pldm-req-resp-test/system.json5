@@ -1,0 +1,120 @@
+// Licensed under the Apache-2.0 license
+
+// Virtual AST1060-EVB PLDM Requester-Responder Test Configuration (QEMU)
+// ARM Cortex-M4 with semihosting console
+// PMSAv7 power-of-2 alignment constraint.`
+//
+// Four-process system for testing PLDM requester/responder communication:
+//   1. mctp_loopback_server  - Routes MCTP messages between requester and responder
+//   2. pldm_requester        - PLDM requester using spdm-lib requester API
+//   3. pldm_responder        - PLDM responder using spdm-lib responder API
+//
+// Memory Layout (PMSAv7-friendly, power-of-2 aligned regions):
+//   0x00000000 - 0x00000500: Vector table + kernel annotations (1280 bytes)
+//   0x00000500 - 0x00010000: Kernel flash (~62KB)
+//   0x00010000 - 0x00018000: mctp_loopback_server flash (32KB)
+//   0x00018000 - 0x00020000: pldm_requester flash (32KB)
+//   0x00020000 - 0x00028000: pldm_responder flash (32KB)
+//   0x00058000 - 0x00070000: Kernel RAM (96KB)
+//   0x00070000 - 0x00078000: mctp_loopback_server RAM (32KB)
+//   0x00078000 - 0x00080000: pldm_requester RAM (32KB)
+//   0x00080000 - 0x00090000: pldm_responder RAM (64KB)
+//   0x00090000 - 0x000A0000: crypto_server RAM (64KB)
+//
+// Total: 0xA0000 = 640KB (fits within the 640KB usable window of the AST1060's 640KB SRAM).
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,
+    },
+    kernel: {
+        flash_start_address: 0x00000500,
+        flash_size_bytes: 64256,          // ~62KB, ends at 0x10000
+        ram_start_address: 0x00058000,
+        ram_size_bytes: 98304,            // 96KB
+    },
+    apps: [
+        // ──── MCTP Loopback Server ────
+        {
+            name: "mctp_loopback_server",
+            flash_size_bytes: 32768,
+            processes: [
+                {
+                    name: "mctp_loopback_server_process",
+                    ram_size_bytes: 32768,
+                    objects: [
+                        {
+                            name: "mctp_req",
+                            type: "channel_handler",
+                        },
+                        {
+                            name: "mctp_resp",
+                            type: "channel_handler",
+                        },
+                        {
+                            name: "wg",
+                            type: "wait_group",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "mctp_loopback_server_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },
+                    ],
+                },
+            ],
+        },
+        // ──── PLDM Requester ────
+        {
+            name: "pldm_requester",
+            flash_size_bytes: 32768,          // 32KB (actual ~16KB)
+            processes: [
+                {
+                    name: "pldm_requester_process",
+                    ram_size_bytes: 32768,    // 32KB (stack 16KB + buffers)
+                    objects: [
+                        {
+                            name: "mctp",
+                            type: "channel_initiator",
+                            handler_process: "mctp_loopback_server_process",
+                            handler_object_name: "mctp_req",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "pldm_requester_thread",
+                            kernel_stack_size_bytes: 16384,
+                        },
+                    ],
+                },
+            ],
+        },
+        // ──── PLDM Responder ────
+        {
+            name: "pldm_responder",
+            flash_size_bytes: 32768,          // 32KB (actual ~23KB)
+            processes: [
+                {
+                    name: "pldm_responder_process",
+                    ram_size_bytes: 65536,
+                    objects: [
+                        {
+                            name: "mctp",
+                            type: "channel_initiator",
+                            handler_process: "mctp_loopback_server_process",
+                            handler_object_name: "mctp_resp",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "pldm_responder_thread",
+                            kernel_stack_size_bytes: 16384,
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}
