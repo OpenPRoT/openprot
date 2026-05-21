@@ -78,6 +78,14 @@ opentitan_test(
     target = ":threads",
 )
 
+opentitan_test(
+    name = "threads_runner_qemu_test",
+    timeout = "moderate",
+    interface = "qemu",
+    tags = ["qemu"],
+    target = ":threads",
+)
+
 filegroup(
     name = "system_config",
     srcs = ["system.json5"],

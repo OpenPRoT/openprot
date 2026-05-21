@@ -141,3 +141,7 @@ opentitan_test(
     ],
     target = ":uart",
 )
+
+# TODO: QEMU ot-earlgrey machine doesn't fire UART1 RX-watermark interrupts —
+# the loopback test hangs waiting for an interrupt that never arrives.
+# Re-enable when lowRISC QEMU validates interrupt-driven UART under ot-earlgrey.

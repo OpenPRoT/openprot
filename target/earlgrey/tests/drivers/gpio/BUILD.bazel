@@ -90,3 +90,6 @@ opentitan_test(
     ],
     target = ":gpio",
 )
+
+# TODO: QEMU ot-earlgrey machine has no ot_gpio device model — DIRECT_OUT reads
+# return 0. Re-enable when upstream lowRISC QEMU lands ot_gpio emulation.

@@ -1,0 +1,9 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+package(default_visibility = ["//target/earlgrey/tooling:__pkg__"])
+
+filegroup(
+    name = "qemu_constants",
+    srcs = ["qemu_constants.json"],
+)
