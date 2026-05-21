@@ -111,3 +111,11 @@ opentitan_test(
     ],
     target = ":ipc",
 )
+
+opentitan_test(
+    name = "ipc_runner_qemu_test",
+    timeout = "moderate",
+    interface = "qemu",
+    tags = ["qemu"],
+    target = ":ipc",
+)

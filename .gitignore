@@ -127,3 +127,7 @@ criterion/
 
 # Build scripts
 build.rs.bk
+
+# Python bytecode
+__pycache__/
+*.pyc

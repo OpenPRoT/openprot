@@ -14,6 +14,8 @@ const IO_CLOCK_HZ: u64 = 24_000_000;
 const IO_CLOCK_HZ: u64 = 6_000_000;
 #[cfg(feature = "verilator")]
 const IO_CLOCK_HZ: u64 = 125_000;
+#[cfg(feature = "qemu")]
+const IO_CLOCK_HZ: u64 = 24_000_000;
 
 #[inline(always)]
 fn rv_timer_value(rv_timer: &RvTimer) -> u64 {

@@ -63,8 +63,8 @@
         "build_type": "bazel",
         "args": [
           "--keep_going",
-          "--build_tag_filters=-hardware,-disabled,-verilator,-emulator",
-          "--test_tag_filters=-hardware,-disabled,-verilator,-emulator",
+          "--build_tag_filters=-hardware,-disabled,-verilator,-emulator,-qemu",
+          "--test_tag_filters=-hardware,-disabled,-verilator,-emulator,-qemu",
           "--test_output=streamed",
           "--"
         ],
@@ -118,6 +118,27 @@
       },
       "targets": [
         "//target/veer/..."
+      ]
+    },
+    {
+      "name": "earlgrey_qemu_tests",
+      "build_config": {
+        "name": "earlgrey_qemu_tests_config",
+        "description": "Run Earlgrey QEMU-based tests",
+        "build_type": "bazel",
+        "args": [
+          "--keep_going",
+          "--build_tag_filters=+qemu",
+          "--test_tag_filters=+qemu",
+          "--test_output=streamed"
+        ],
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "no_test": false
+        }
+      },
+      "targets": [
+        "//target/earlgrey/..."
       ]
     },
     {
@@ -181,10 +202,11 @@
     },
     {
       "name": "ci",
-      "description": "Execute CI tests plus dedicated AST10x0 QEMU coverage",
+      "description": "Execute CI tests plus dedicated AST10x0 and Earlgrey QEMU coverage",
       "builds": [
         "ci_tests",
-        "ast10x0_qemu_tests"
+        "ast10x0_qemu_tests",
+        "earlgrey_qemu_tests"
       ]
     },
     {

@@ -1,0 +1,4 @@
+# Python dependencies for QEMU tooling scripts (cfggen, flashgen, otptool).
+# cfggen.py requires hjson; flashgen.py requires pyelftools; otptool.py has no deps.
+hjson
+pyelftools==0.29

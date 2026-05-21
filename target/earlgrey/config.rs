@@ -33,6 +33,8 @@ impl KernelConfigInterface for KernelConfig {
     const SYSTEM_CLOCK_HZ: u64 = 6_000_000;
     #[cfg(feature = "verilator")]
     const SYSTEM_CLOCK_HZ: u64 = 125_000;
+    #[cfg(feature = "qemu")]
+    const SYSTEM_CLOCK_HZ: u64 = 24_000_000;
 }
 
 impl RiscVKernelConfigInterface for KernelConfig {

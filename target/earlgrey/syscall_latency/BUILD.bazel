@@ -18,6 +18,7 @@ rust_app(
     codegen_crate_name = "syscall_latency_codegen",
     crate_features = select({
         "//target/earlgrey:fpga": ["fpga"],
+        "//target/earlgrey:qemu": ["qemu"],
         "//target/earlgrey:silicon": ["silicon"],
         "//target/earlgrey:verilator": ["verilator"],
         "//conditions:default": [],

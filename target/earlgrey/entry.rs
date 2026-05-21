@@ -73,20 +73,25 @@ _mtvec_table:
     "
 );
 
-#[cfg(feature = "verilator")]
+// SECURITY: This fake ROM_EXT trampoline bypasses ROM_EXT signature validation.
+// It must never run on silicon. It is gated behind the non-default "verilator"
+// and "qemu" features, which are only active for simulation targets.
+#[cfg(any(feature = "verilator", feature = "qemu"))]
 global_asm!(
     r#"
     /*
+     * Fake ROM_EXT trampoline shared by verilator and QEMU simulation targets.
+     *
      * We don't want to have separate build targets or linker script templating
-     * to run under verilator (e.g. to set the origin to 0x2000_0000 instead of
-     * the normal value of 0x2001_0000).
+     * to run under verilator or QEMU (e.g. to set the origin to 0x2000_0000
+     * instead of the normal value of 0x2001_0000).
      *
-     * Instead, when building for verilator, we add a ".fake_rom_ext" section that
-     * the linker script locates at 0x2000_0000.  In this section, we construct
-     * the most trivial of ROM_EXT manifests and set the entrypoint to the start
-     * offset of the kernel.
+     * Instead, when building for verilator or QEMU, we add a ".fake_rom_ext"
+     * section that the linker script locates at 0x2000_0000.  In this section,
+     * we construct the most trivial of ROM_EXT manifests and set the entrypoint
+     * to the start offset of the kernel.
      *
-     * The verilator test ROM doesn't do any validation of the manifest header.
+     * The test ROM doesn't do any validation of the manifest header.
      * We don't _need_ to set any version numbers or magic identifier words.
      *
      * We set the following:
