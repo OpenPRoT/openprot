@@ -9,32 +9,51 @@
 use openprot_mctp_api::wire::{
     self, flags, MctpOp, MctpRequestHeader,
 };
-use openprot_mctp_api::ResponseCode;
+use openprot_mctp_api::{Handle, ResponseCode};
 
-use crate::{Sender, Server};
+use crate::{RecvResult, Sender, Server};
+
+/// Outcome of [`dispatch_mctp_op`].
+pub enum DispatchOutcome {
+    /// Response is ready; `response[..n]` bytes are filled.
+    Reply(usize),
+    /// No message was available for `Recv`; the call has been registered
+    /// as pending. The platform must store its reply token keyed on
+    /// `handle` and call [`drive_pending`] when new data arrives or on
+    /// each timer tick.
+    Pending {
+        /// The handle whose recv was deferred.
+        handle: Handle,
+    },
+}
 
 /// Dispatch an IPC request to the MCTP server.
 ///
 /// Decodes the request header, calls the appropriate `Server` method,
-/// and encodes the response into `response`. Returns the response length.
+/// and encodes the response into `response`.
 ///
-/// This is the MCTP equivalent of `dispatch_i2c_op` in the I2C server.
+/// `now_millis` is the current monotonic time used to set recv deadlines.
+///
+/// Returns `DispatchOutcome::Reply(n)` when a response is immediately
+/// available, or `DispatchOutcome::Pending { handle }` when a `Recv`
+/// has been registered and will be fulfilled later by [`drive_pending`].
 pub fn dispatch_mctp_op<S: Sender, const N: usize>(
     request: &[u8],
     response: &mut [u8],
     server: &mut Server<S, N>,
     recv_buf: &mut [u8],
-) -> usize {
+    now_millis: u64,
+) -> DispatchOutcome {
     let header = match MctpRequestHeader::from_bytes(request) {
         Some(h) => h,
-        None => return encode_error(response, ResponseCode::BadArgument),
+        None => return DispatchOutcome::Reply(encode_error(response, ResponseCode::BadArgument)),
     };
 
     let Some(op) = header.operation() else {
-        return encode_error(response, ResponseCode::BadArgument);
+        return DispatchOutcome::Reply(encode_error(response, ResponseCode::BadArgument));
     };
 
-    match op {
+    let n = match op {
         MctpOp::SetEid => match server.set_eid(header.eid) {
             Ok(()) => encode_success(response),
             Err(e) => encode_error(response, e.code),
@@ -59,7 +78,7 @@ pub fn dispatch_mctp_op<S: Sender, const N: usize>(
         },
 
         MctpOp::Recv => {
-            let handle = openprot_mctp_api::Handle(header.handle);
+            let handle = Handle(header.handle);
 
             match server.try_recv(handle, recv_buf) {
                 Some(meta) => {
@@ -75,17 +94,16 @@ pub fn dispatch_mctp_op<S: Sender, const N: usize>(
                     .unwrap_or_else(|_| encode_error(response, ResponseCode::InternalError))
                 }
                 None => {
-                    // No message available yet.
-                    // In a real Pigweed server, we'd register a pending recv
-                    // and respond later. For now, return TimedOut.
-                    encode_error(response, ResponseCode::TimedOut)
+                    let timeout = wire::get_recv_timeout(request);
+                    let _ = server.register_recv(handle, timeout, now_millis);
+                    return DispatchOutcome::Pending { handle };
                 }
             }
         }
 
         MctpOp::Send => {
             let handle = if header.flags & flags::HAS_HANDLE != 0 {
-                Some(openprot_mctp_api::Handle(header.handle))
+                Some(Handle(header.handle))
             } else {
                 None
             };
@@ -110,12 +128,49 @@ pub fn dispatch_mctp_op<S: Sender, const N: usize>(
         }
 
         MctpOp::Unbind => {
-            let handle = openprot_mctp_api::Handle(header.handle);
+            let handle = Handle(header.handle);
             match server.unbind(handle) {
                 Ok(()) => encode_success(response),
                 Err(e) => encode_error(response, e.code),
             }
         }
+    };
+
+    DispatchOutcome::Reply(n)
+}
+
+/// Drive pending receive calls to completion.
+///
+/// Call this on timer ticks and after feeding inbound packets to the server.
+/// For each handle that is now ready (message arrived or timed out),
+/// `on_ready(handle, response_len)` is called with `response` filled.
+/// The platform must look up its stored reply token for `handle` and send
+/// the response through it.
+pub fn drive_pending<S: Sender, const N: usize>(
+    server: &mut Server<S, N>,
+    now_millis: u64,
+    recv_buf: &mut [u8],
+    response: &mut [u8],
+    mut on_ready: impl FnMut(Handle, usize),
+) {
+    let (_, ready) = server.update(now_millis, recv_buf);
+    for (handle, result) in ready {
+        let len = match result {
+            RecvResult::Message(meta) => {
+                let payload = &recv_buf[..meta.payload_size];
+                wire::encode_recv_response(
+                    response,
+                    meta.msg_type,
+                    meta.msg_ic,
+                    meta.remote_eid,
+                    meta.msg_tag,
+                    payload,
+                )
+                .unwrap_or_else(|_| encode_error(response, ResponseCode::InternalError))
+            }
+            RecvResult::TimedOut => encode_error(response, ResponseCode::TimedOut),
+        };
+        on_ready(handle, len);
     }
 }
 
