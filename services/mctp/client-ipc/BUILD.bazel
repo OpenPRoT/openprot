@@ -9,6 +9,7 @@ rust_library(
     crate_name = "openprot_mctp_client_ipc",
     edition = "2024",
     tags = ["kernel"],
+    target_compatible_with = ["@platforms//os:none"],
     visibility = ["//visibility:public"],
     deps = [
         "//services/mctp/api:mctp_api",
