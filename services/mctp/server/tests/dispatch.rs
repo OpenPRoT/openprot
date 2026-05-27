@@ -27,7 +27,7 @@ fn dispatch_reply<S: openprot_mctp_server::Sender, const N: usize>(
     match dispatch_mctp_op(request, response, server, recv_buf, 0) {
         DispatchOutcome::Reply(n) => n,
         DispatchOutcome::Pending { handle } => {
-            panic!("unexpected Pending for handle {:?}", handle)
+            panic!("unexpected Pending for handle {handle:?}")
         }
     }
 }
