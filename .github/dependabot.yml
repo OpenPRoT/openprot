@@ -1,5 +1,27 @@
 version: 2
 updates:
+  - package-ecosystem: "bazel"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    ignore:
+      # Dependabot doesn't have an allowlist, but it does have an ignore list.
+      # We ignore everything and then add exceptions for the deps that we want
+      # dependabot to monitor.
+      - dependency-name: "*"
+        versions:
+          - "!= pigweed"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "@me"
+    assignees:
+      - "@me"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
@@ -14,7 +36,7 @@ updates:
     commit-message:
       prefix: "deps"
       include: "scope"
-  
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
