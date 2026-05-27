@@ -3,16 +3,11 @@ updates:
   - package-ecosystem: "bazel"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "daily"
       time: "09:00"
-    ignore:
-      # Dependabot doesn't have an allowlist, but it does have an ignore list.
-      # We ignore everything and then add exceptions for the deps that we want
-      # dependabot to monitor.
-      - dependency-name: "*"
-        versions:
-          - "!= pigweed"
+      timezone: "America/Los_Angeles"
+    allow:
+      - dependency-name: "pigweed"
     open-pull-requests-limit: 10
     reviewers:
       - "@me"
