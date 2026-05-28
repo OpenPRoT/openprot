@@ -9,6 +9,16 @@ package(default_visibility = ["//visibility:public"])
 rust_library(
     name = "peripherals",
     srcs = [
+        "hace/aes.rs",
+        "hace/constants.rs",
+        "hace/context.rs",
+        "hace/device.rs",
+        "hace/digest.rs",
+        "hace/error.rs",
+        "hace/helpers.rs",
+        "hace/hmac.rs",
+        "hace/mod.rs",
+        "hace/registers.rs",
         "i2c/constants.rs",
         "i2c/controller.rs",
         "i2c/error.rs",
@@ -40,11 +50,13 @@ rust_library(
     ],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
+        "//hal/blocking",
         "@ast1060_pac",
         "@rust_crates//:bitflags",
         "@rust_crates//:embedded-hal",
         "@rust_crates//:embedded-hal-nb",
         "@rust_crates//:embedded-io",
         "@rust_crates//:nb",
+        "@rust_crates//:zerocopy",
     ],
 )
