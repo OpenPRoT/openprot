@@ -544,6 +544,9 @@ paste! {
 /// 1-based naming where "2" means "second bus", matching PAC I2c1.
 pub const PINCTRL_I2C1: &[PinctrlPin] = &[PIN_SCU414_30, PIN_SCU414_31];
 
+/// FMC quad-SPI pin group: mux selection on SCU430[10:11].
+pub const PINCTRL_FMC_QUAD: &[PinctrlPin] = &[PIN_SCU430_10, PIN_SCU430_11];
+
 /// I2C2 pin group: SCL3/SDA3 mux selection on SCU418[0:1].
 ///
 /// The SVD names these EnblSCL3FnPin/EnblSDA3FnPin, corresponding to
