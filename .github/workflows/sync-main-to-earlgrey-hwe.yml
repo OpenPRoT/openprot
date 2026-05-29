@@ -1,0 +1,38 @@
+name: Scheduled Sync Main to Earlgrey HWE
+
+on:
+  schedule:
+    # Runs every day at 15:00 UTC (8:00 AM PDT / 7:00 AM PST)
+    - cron: '0 15 * * *'
+  workflow_dispatch: # Allows you to trigger it manually from the Actions tab
+
+jobs:
+  create-pull-request:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetches all history so branches can be compared
+
+      - name: Generate GitHub App Token
+        id: generate-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.SYNCHRONIZE_BOT_APP_ID }}
+          private-key: ${{ secrets.SYNCHRONIZE_BOT_PRIVATE_KEY }}
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ steps.generate-token.outputs.token }}
+          branch: automation/sync-main-to-earlgrey-hwe
+          base: earlgrey-hwe
+          title: 'chore: sync main into earlgrey hwe'
+          reviewers: cfrantz, moidx
+          body: |
+            This is an automated PR to sync the latest commits from `main` into `earlgrey-hwe`.
+            Please review and resolve any merge conflicts if they arise.
+          labels: |
+            automated-pr
+            sync
