@@ -1,0 +1,30 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+exports_files(
+    ["target_debug.rs"],
+    visibility = [
+        "//target/ast10x0/tests/smc/read:__pkg__",
+        "//target/ast10x0/tests/smc/dma_irq:__pkg__",
+    ],
+)
+
+alias(
+    name = "smc_read_test",
+    actual = "//target/ast10x0/tests/smc/read:smc_read_test",
+)
+
+alias(
+    name = "smc_read_evb_test",
+    actual = "//target/ast10x0/tests/smc/read:smc_read_evb_test",
+)
+
+alias(
+    name = "smc_irq_test",
+    actual = "//target/ast10x0/tests/smc/dma_irq:smc_irq_test",
+)
+
+alias(
+    name = "smc_irq_evb_test",
+    actual = "//target/ast10x0/tests/smc/dma_irq:smc_irq_evb_test",
+)
