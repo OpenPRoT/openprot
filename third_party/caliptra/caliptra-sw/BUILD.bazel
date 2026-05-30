@@ -226,6 +226,7 @@ rust_library(
         "@rust_caliptra_crates//:caliptra-cfi-derive",
     ],
     rustc_flags = ["--cap-lints=allow"],
+    target_compatible_with = ["//third_party/caliptra/platforms:target_caliptra"],
     deps = [
         ":caliptra_cfi_lib",
         "//third_party/caliptra:crate_bitfield",
