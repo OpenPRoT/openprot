@@ -105,13 +105,9 @@ caliptra_test(
     name = "measure_syscall_latency_emulator_test",
     timeout = "long",
     interface = "emulator",
-    # DISABLED: this test hits a pw_kernel terminal exception in kernel mode
-    # (mcause=1, epc=0) on process exit.
-    #
     # caliptra_runner.py hardcodes --i3c-port=65534, so caliptra emulator
     # tests cannot run in parallel without an EADDRINUSE collision.
     tags = [
-        "disabled",
         "emulator",
         "exclusive",
     ],

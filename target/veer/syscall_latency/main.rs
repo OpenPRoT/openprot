@@ -44,7 +44,11 @@ fn measure_nop_syscall(n: usize) -> Result<()> {
 
 #[entry]
 fn entry() -> Result<()> {
-    measure_nop_syscall(100)
+    let ret = measure_nop_syscall(100);
+
+    // Signal completion by shutting down the whole system with the test status.
+    let _ = syscall::debug_shutdown(ret);
+    ret
 }
 
 #[panic_handler]

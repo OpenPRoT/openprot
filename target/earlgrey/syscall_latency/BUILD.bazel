@@ -8,7 +8,7 @@ load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_scri
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
 load("//target/earlgrey/signing/keys:defs.bzl", "FPGA_ECDSA_KEY", "SILICON_ECDSA_KEY")
-load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_runner")
+load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_runner", "opentitan_test")
 
 rust_app(
     name = "syscall_latency",
@@ -114,5 +114,13 @@ opentitan_runner(
     ecdsa_key = SILICON_ECDSA_KEY,
     interface = "teacup",
     tags = ["manual"],
+    target = ":measure_syscall_latency",
+)
+
+opentitan_test(
+    name = "measure_syscall_latency_qemu_test",
+    timeout = "moderate",
+    interface = "qemu",
+    tags = ["qemu"],
     target = ":measure_syscall_latency",
 )
