@@ -3,28 +3,37 @@
 
 #![no_std]
 #![no_main]
-use pw_status::{Error, Result, StatusCode};
+#![allow(dead_code)]
 
+use pw_status::{Error, Result, StatusCode};
 use test_usb_codegen::{handle, signals};
 use userspace::time::Instant;
 use userspace::{entry, syscall};
 
 use aligned::{Aligned, A4};
-use hal_usb::driver::{UsbDriver, UsbEvent, UsbPacket};
-use hal_usb::{Direction, StringDescriptorRef, USB_CLASS_VENDOR};
-use usb_driver::{EpIn, EpOut, UsbConfig};
-use usb_stack::{
-    //UsbActionRun,
-    DescriptorSource,
-    UsbAction,
-};
+use hal_usb::{ConfigDescriptor, DeviceDescriptor, StringDescriptorRef};
+
+use hal_usb::driver::UsbDriver;
+use usb_driver::UsbConfig;
+use usb_stack::{DescriptorSource, UsbAction, UsbClass};
+
+use protocol_usb_cdc_acm::{CdcAcm, CdcAcmBuilder};
 
 const USB_VENDOR_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(1);
 const USB_PRODUCT_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(2);
 const USB_SERIAL_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(3);
-const USB_TEST_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(4);
+const USB_CDC_COMM_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(4);
+const USB_CDC_DATA_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(5);
 
-static DEVICE_DESC: hal_usb::DeviceDescriptor = hal_usb::DeviceDescriptor {
+const CDC_BUILDER: CdcAcmBuilder = CdcAcmBuilder::new(
+    0, // comm_if: Communication Interface index
+    1, // data_if: Data Interface index
+    1, // comm_ep: Communication IN endpoint (Interrupt)
+    2, // data_out_ep: Data OUT endpoint (Bulk)
+    3, // data_in_ep: Data IN endpoint (Bulk)
+);
+
+const DEVICE_DESC: DeviceDescriptor = DeviceDescriptor {
     device_class: hal_usb::DeviceClass::SPECIFIED_BY_INTERFACE,
     device_sub_class: 0x00,
     device_protocol: 0x00,
@@ -36,36 +45,20 @@ static DEVICE_DESC: hal_usb::DeviceDescriptor = hal_usb::DeviceDescriptor {
     product: USB_PRODUCT_HANDLE,
     serial_num: USB_SERIAL_HANDLE,
 };
-const CONFIG_DESC: hal_usb::ConfigDescriptor = hal_usb::ConfigDescriptor {
+
+const CONFIG_DESC: ConfigDescriptor = ConfigDescriptor {
     configuration_value: 1,
     max_power: 250,
     self_powered: false,
     remote_wakeup: false,
-    interfaces: &[hal_usb::InterfaceDescriptor {
-        name: USB_TEST_HANDLE,
-        interface_number: 1,
-        alternate_setting: 0,
-        interface_class: USB_CLASS_VENDOR,
-        interface_sub_class: 0xFF,
-        interface_protocol: 1,
-        func_descs: &[],
-        endpoints: &[
-            hal_usb::EndpointDescriptor {
-                direction: Direction::DeviceToHost,
-                endpoint_num: 1,
-                interval: 0,
-                max_packet_size: 64,
-                transfer_type: hal_usb::TransferType::Bulk,
-            },
-            hal_usb::EndpointDescriptor {
-                direction: Direction::HostToDevice,
-                endpoint_num: 2,
-                interval: 0,
-                max_packet_size: 64,
-                transfer_type: hal_usb::TransferType::Bulk,
-            },
-        ],
-    }],
+    interfaces: &[
+        CDC_BUILDER.comm_interface(
+            USB_CDC_COMM_HANDLE,
+            &CDC_BUILDER.comm_func_descs(),
+            &CDC_BUILDER.comm_endpoints(),
+        ),
+        CDC_BUILDER.data_interface(USB_CDC_DATA_HANDLE, &CDC_BUILDER.data_endpoints()),
+    ],
 };
 
 const STRING_DESC_0: hal_usb::StringDescriptor0 = hal_usb::StringDescriptor0 {
@@ -78,8 +71,10 @@ const STRING_DESC_0: hal_usb::StringDescriptor0 = hal_usb::StringDescriptor0 {
 const VENDOR_ID: hal_usb::StringDescriptorRef = hal_usb::string_descriptor!("Google Inc.").as_ref();
 const PRODUCT_ID_DEFAULT: hal_usb::StringDescriptorRef =
     hal_usb::string_descriptor!("OpenPRoT Earlgrey").as_ref();
-const USB_TEST: hal_usb::StringDescriptorRef =
-    hal_usb::string_descriptor!("USB Test Interface").as_ref();
+const USB_COMM: hal_usb::StringDescriptorRef =
+    hal_usb::string_descriptor!("CDC Comm Interface").as_ref();
+const USB_DATA: hal_usb::StringDescriptorRef =
+    hal_usb::string_descriptor!("CDC Data Interface").as_ref();
 
 struct MyDescriptors<'a> {
     serial_desc_bytes: StringDescriptorRef<'a>,
@@ -92,7 +87,6 @@ impl DescriptorSource for MyDescriptors<'_> {
         &Aligned(CONFIG_DESC.serialize::<{ CONFIG_DESC.total_size() }>());
     const STRING_DESC_0_BYTES: &'static Aligned<A4, [u8]> =
         &Aligned(STRING_DESC_0.serialize::<{ STRING_DESC_0.total_size() }>());
-    // We advertise that we are self-powered and do not support remote wakeup.
     const DEVICE_STATUS: Aligned<A4, [u8; 2]> = Aligned([1u8, 0]);
 
     fn get_string(
@@ -104,36 +98,29 @@ impl DescriptorSource for MyDescriptors<'_> {
             USB_VENDOR_HANDLE => Some(VENDOR_ID),
             USB_PRODUCT_HANDLE => Some(self.product_desc_bytes),
             USB_SERIAL_HANDLE => Some(self.serial_desc_bytes),
-            USB_TEST_HANDLE => Some(USB_TEST),
+            USB_CDC_COMM_HANDLE => Some(USB_COMM),
+            USB_CDC_DATA_HANDLE => Some(USB_DATA),
             _ => None,
         }
     }
 }
 
-const CONTROL_EP_OUT_NUM: u8 = 0;
-
 fn handle_usb() -> Result<()> {
     let mut serial_num_buffer = Aligned::<A4, _>([0_u8; 130]);
-    // TODO: build proper descriptors.
-    //let mut product_desc_buffer = Aligned::<A4, _>([0_u8; 100]);
     let descriptors = MyDescriptors {
-        serial_desc_bytes: hal_usb::hex_utf16_descriptor_aligned(&mut serial_num_buffer, b"12345")
-            .unwrap(),
+        serial_desc_bytes: hal_usb::hex_utf16_descriptor_aligned(
+            &mut serial_num_buffer,
+            b"12345678",
+        )
+        .unwrap(),
         product_desc_bytes: PRODUCT_ID_DEFAULT,
     };
-    const USB_EP_IN: EpIn = EpIn {
-        num: 1,
-        buf_pool_size: 8,
-    };
-    const USB_EP_OUT: EpOut = EpOut {
-        num: 2,
-        set_nak: true,
-    };
 
-    const USB_CONFIG: UsbConfig = UsbConfig::new(&[USB_EP_IN], &[USB_EP_OUT]);
+    const USB_CONFIG: UsbConfig = UsbConfig::new(&CDC_BUILDER.eps().0, &CDC_BUILDER.eps().1);
+
     let mut usb = usb_driver::Usb::new(unsafe { usbdev::Usbdev::new() }, USB_CONFIG);
     let mut ep0 = usb_stack::SimpleEp0::new();
-    let mut ep0_action: UsbAction<'_> = UsbAction::None;
+    let mut cdc_acm = CdcAcm::<256, 256>::new(CDC_BUILDER);
 
     loop {
         let wait_return = syscall::object_wait(
@@ -148,13 +135,10 @@ fn handle_usb() -> Result<()> {
                 | signals::USBDEV_AV_OUT_EMPTY
                 | signals::USBDEV_RX_FULL
                 | signals::USBDEV_AV_OVERFLOW
-                //| signals::USBDEV_LINK_IN_ERR
                 | signals::USBDEV_RX_CRC_ERR
                 | signals::USBDEV_RX_PID_ERR
                 | signals::USBDEV_RX_BITSTUFF_ERR
                 | signals::USBDEV_FRAME
-                //| signals::USBDEV_POWERED
-                //| signals::USBDEV_LINK_OUT_ERR
                 | signals::USBDEV_AV_SETUP_EMPTY,
             Instant::MAX,
         )?;
@@ -163,57 +147,24 @@ fn handle_usb() -> Result<()> {
             pw_log::error!("Incorrect WaitReturn values");
             return Err(Error::Unknown);
         }
+
         let _ = syscall::interrupt_ack(handle::USBDEV_INTERRUPTS, wait_return.pending_signals);
         while let Some(event) = usb.poll() {
-            match event {
-                UsbEvent::SetupPacket { pkt, endpoint } => {
-                    if endpoint == 0 {
-                        let dir = pkt.request().direction() as u32;
-                        let ty = pkt.request().request_type() as u32;
-                        let recip = pkt.request().recipient() as u32;
-                        let bmreq = (dir << 7) | (ty << 5) | (recip);
-                        let request = pkt.request().request();
-                        pw_log::debug!(
-                            "SETUP: {:02x} {:02x} val={:04x} idx={:04x} len={:04x}",
-                            bmreq as u32,
-                            request as u8,
-                            pkt.value() as u16,
-                            pkt.index() as u16,
-                            pkt.length() as u16,
-                        );
-
-                        ep0_action = ep0
-                            .handle_event(event, &descriptors)
-                            .unwrap_or(UsbAction::None);
-                    } else {
-                        pw_log::debug!("Setup on bad EP {}", endpoint as u8);
-                    }
-                }
-
-                UsbEvent::DataOutPacket(pkt) => match u8::try_from(pkt.endpoint_index()).unwrap() {
-                    CONTROL_EP_OUT_NUM => {
-                        pw_log::debug!("OUT on control ep");
-                    }
-                    ep => {
-                        pw_log::debug!(
-                            "Unhandled OUT on EP {} len={}",
-                            ep as u8,
-                            pkt.len() as usize
-                        );
-                    }
-                },
-                UsbEvent::UsbReset => {
-                    pw_log::debug!("USB reset");
-                }
-                _ => {
-                    ep0_action.merge(
-                        ep0.handle_event(event, &descriptors)
-                            .unwrap_or(UsbAction::None),
-                    );
-                }
-            }
-            ep0_action.run(&mut usb);
+            let mut action = match cdc_acm.handle_event(event) {
+                Ok(a) => a,
+                Err(e) => ep0.handle_event(e, &descriptors).unwrap_or(UsbAction::None),
+            };
+            action.run(&mut usb);
         }
+
+        // Loopback received data to send buffer
+        while let Some(byte) = cdc_acm.rx_queue.pop() {
+            pw_log::info!("CDC-ACM echo byte {:#04x}", byte as u8);
+            let _ = cdc_acm.tx_queue.push(byte);
+        }
+
+        // Initiate any pending transmissions
+        cdc_acm.poll_transmit(&mut usb);
     }
 }
 
