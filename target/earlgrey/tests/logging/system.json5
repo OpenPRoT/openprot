@@ -1,0 +1,78 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+{
+  arch: {
+    type: "riscv",
+  },
+  kernel: {
+    flash_start_address: 0xA0010000,
+    flash_size_bytes: 65536,
+    ram_start_address: 0x10000000,
+    ram_size_bytes: 32768,
+    interrupt_table: {
+      table: {}
+    },
+  },
+  apps: [
+    {
+      name: "main_logging_task",
+      flash_size_bytes: 32768,
+      processes: [
+        {
+          name: "main_logging_task",
+          ram_size_bytes: 8192,
+          objects: [
+            {
+              name: "ipc",
+              type: "channel_handler",
+            },
+            {
+              name: "main_thread",
+              type: "thread",
+              kernel_stack_size_bytes: 2048,
+            },
+          ],
+          memory_mappings: [
+            {
+              name: "rv_timer",
+              type: "device",
+              start_address: 0x40100000,
+              size_bytes: 0x200,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      name: "demo_task",
+      flash_size_bytes: 32768,
+      processes: [
+        {
+          name: "demo_task",
+          ram_size_bytes: 8192,
+          objects: [
+            {
+              name: "ipc",
+              type: "channel_initiator",
+              handler_process: "main_logging_task",
+              handler_object_name: "ipc",
+            },
+            {
+              name: "demo_thread",
+              type: "thread",
+              kernel_stack_size_bytes: 2048,
+            },
+          ],
+          memory_mappings: [
+            {
+              name: "rv_timer",
+              type: "device",
+              start_address: 0x40100000,
+              size_bytes: 0x200,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}
