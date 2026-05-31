@@ -1,0 +1,20 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "cdc_acm",
+    srcs = ["lib.rs"],
+    crate_name = "protocol_usb_cdc_acm",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking/usb:hal_usb",
+        "//protocol/usb/stack",
+        "//target/earlgrey/drivers:usb_driver",
+        "//util/ringbuffer",
+        "@rust_crates//:aligned",
+        "@rust_crates//:zerocopy",
+    ],
+)
