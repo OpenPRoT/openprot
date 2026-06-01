@@ -82,6 +82,10 @@ pub mod commands {
     pub const READ_ID: u8 = 0x9F;
 }
 
+const STATUS_WIP: u8 = 0x01;
+const WRITE_COMPLETE_MAX_POLLS: u32 = 1_000_000;
+const STATUS_POLL_SPIN_DELAY: u32 = 64;
+
 /// Addressing policy for SPI NOR command transactions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FlashAddressingPolicy {
@@ -164,6 +168,12 @@ where
         cursor += n;
     }
     Ok(true)
+}
+
+fn poll_delay() {
+    for _ in 0..STATUS_POLL_SPIN_DELAY {
+        core::hint::spin_loop();
+    }
 }
 
 enum FlashBackend<'a> {
@@ -472,13 +482,19 @@ impl<'a> SpiNorFlash<'a> {
         Ok(id)
     }
 
+    fn write_enable(&mut self) -> Result<(), SmcError> {
+        let profile = self.command_profile();
+        self.issue_command(&[profile.write_enable], &[])
+    }
+
     fn wait_write_complete(&self, max_polls: u32) -> Result<(), SmcError> {
         let mut polls = 0u32;
         while polls < max_polls {
             let sr = self.read_status_impl()?;
-            if (sr & 0x01) == 0 {
+            if (sr & STATUS_WIP) == 0 {
                 return Ok(());
             }
+            poll_delay();
             polls += 1;
         }
         Err(SmcError::Timeout)
@@ -510,10 +526,10 @@ impl SpiNorFlashDevice for SpiNorFlash<'_> {
 
         let profile = self.command_profile();
         let width = self.addr_width();
-        self.issue_command(&[profile.write_enable], &[])?;
+        self.write_enable()?;
         let (cmd, len) = encode_addr_cmd(profile.erase_sector_4k, offset, width);
         self.issue_command(&cmd[..len], &[])?;
-        self.wait_write_complete(10_000)
+        self.wait_write_complete(WRITE_COMPLETE_MAX_POLLS)
     }
 
     fn program_page(&mut self, offset: u32, data: &[u8]) -> Result<usize, SmcError> {
@@ -521,10 +537,10 @@ impl SpiNorFlashDevice for SpiNorFlash<'_> {
 
         let profile = self.command_profile();
         let width = self.addr_width();
-        self.issue_command(&[profile.write_enable], &[])?;
+        self.write_enable()?;
         let (cmd, len) = encode_addr_cmd(profile.page_program, offset, width);
         self.issue_command(&cmd[..len], data)?;
-        self.wait_write_complete(10_000)?;
+        self.wait_write_complete(WRITE_COMPLETE_MAX_POLLS)?;
         Ok(data.len())
     }
 

@@ -164,18 +164,32 @@ pub(crate) fn validate_dma_read(
     })
 }
 
-/// Encode a memory segment into hardware register format.
+/// Encode an FMC memory segment into hardware register format.
 ///
-/// Hardware uses 512 KB units for addressing.
-pub(crate) fn encode_segment(start: usize, end: usize) -> Result<u32, SmcError> {
-    let start_512k = (start >> 19) as u32;
-    let end_512k = ((end >> 19) - 1) as u32;
-
-    if start_512k > 0xFFFF || end_512k > 0xFFFF {
+/// FMC decode fields use 512 KiB alignment. `end` is exclusive.
+pub(crate) fn encode_fmc_segment(start: usize, end: usize) -> Result<u32, SmcError> {
+    if end == 0 || end <= start {
         return Err(SmcError::InvalidCapacity);
     }
 
-    Ok((end_512k << 16) | start_512k)
+    let start = start as u32;
+    let inclusive_end = (end - 1) as u32;
+    Ok(((((start >> 19) << 19) >> 16) & 0x0ff8)
+        | (((inclusive_end >> 19) << 19) & 0x0ff8_0000))
+}
+
+/// Encode an SPI1/SPI2 memory segment into hardware register format.
+///
+/// SPI decode fields use 1 MiB alignment. `end` is exclusive.
+pub(crate) fn encode_spi_segment(start: usize, end: usize) -> Result<u32, SmcError> {
+    if end == 0 || end <= start {
+        return Err(SmcError::InvalidCapacity);
+    }
+
+    let start = start as u32;
+    let inclusive_end = (end - 1) as u32;
+    Ok(((((start >> 20) << 20) >> 16) & 0xffff)
+        | (((inclusive_end >> 20) << 20) & 0xffff_0000))
 }
 
 /// Calculate AST-compatible SPI clock divider field for CS control registers.
@@ -267,18 +281,18 @@ mod tests {
 
     #[test]
     fn test_encode_segment() {
-        let seg = encode_segment(0, 16 * 1024 * 1024).unwrap();
-        let start_512k = seg & 0xFFFF;
-        let end_512k = (seg >> 16) & 0xFFFF;
+        let seg = encode_fmc_segment(0, 16 * 1024 * 1024).unwrap();
+        let start_512k = ((seg & 0x0ff8) << 16) >> 19;
+        let end_512k = (((seg & 0x0ff8_0000) | 0x0007_ffff) >> 19);
         assert_eq!(start_512k, 0);
         assert_eq!(end_512k, 31);
     }
 
     #[test]
     fn test_encode_segment_8mb_cs0() {
-        let seg = encode_segment(0, 8 * 1024 * 1024).unwrap();
-        let start_512k = seg & 0xFFFF;
-        let end_512k = (seg >> 16) & 0xFFFF;
+        let seg = encode_fmc_segment(0, 8 * 1024 * 1024).unwrap();
+        let start_512k = ((seg & 0x0ff8) << 16) >> 19;
+        let end_512k = (((seg & 0x0ff8_0000) | 0x0007_ffff) >> 19);
         assert_eq!(start_512k, 0);
         assert_eq!(end_512k, 15);
     }
@@ -287,9 +301,9 @@ mod tests {
     fn test_encode_segment_64mb_cs1_after_8mb_cs0() {
         let start = 8 * 1024 * 1024;
         let end = start + 64 * 1024 * 1024;
-        let seg = encode_segment(start, end).unwrap();
-        let start_512k = seg & 0xFFFF;
-        let end_512k = (seg >> 16) & 0xFFFF;
+        let seg = encode_fmc_segment(start, end).unwrap();
+        let start_512k = ((seg & 0x0ff8) << 16) >> 19;
+        let end_512k = (((seg & 0x0ff8_0000) | 0x0007_ffff) >> 19);
         assert_eq!(start_512k, 16);
         assert_eq!(end_512k, 143);
     }
@@ -328,7 +342,7 @@ mod tests {
 
     #[test]
     fn test_segment_overflow() {
-        let result = encode_segment(0, 512 * 1024 * 1024);
+        let result = encode_fmc_segment(0, 512 * 1024 * 1024);
         assert!(result.is_err());
     }
 

@@ -6,6 +6,7 @@ exports_files(
     visibility = [
         "//target/ast10x0/tests/smc/dma_irq:__pkg__",
         "//target/ast10x0/tests/smc/read:__pkg__",
+        "//target/ast10x0/tests/smc/write:__pkg__",
     ],
 )
 
@@ -27,4 +28,14 @@ alias(
 alias(
     name = "smc_irq_evb_test",
     actual = "//target/ast10x0/tests/smc/dma_irq:smc_irq_evb_test",
+)
+
+alias(
+    name = "smc_write_test",
+    actual = "//target/ast10x0/tests/smc/write:smc_write_test",
+)
+
+alias(
+    name = "smc_write_evb_test",
+    actual = "//target/ast10x0/tests/smc/write:smc_write_evb_test",
 )
