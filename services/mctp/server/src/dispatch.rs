@@ -6,9 +6,7 @@
 //! Decodes wire-protocol requests and dispatches them to the [`Server`].
 //! This is the server-side counterpart of `openprot-mctp-client`.
 
-use openprot_mctp_api::wire::{
-    self, flags, MctpOp, MctpRequestHeader,
-};
+use openprot_mctp_api::wire::{self, flags, MctpOp, MctpRequestHeader};
 use openprot_mctp_api::{Handle, ResponseCode};
 
 use crate::{RecvResult, Sender, Server};

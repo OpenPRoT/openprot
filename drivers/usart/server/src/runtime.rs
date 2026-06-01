@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use usart_api::backend::{IrqMask, UsartBackend};
-use usart_api::{UsartResponseHeader};
+use usart_api::UsartResponseHeader;
 use userspace::syscall::{self, Signals};
 use userspace::time::Instant;
 
-use crate::{DispatchOutcome, MAX_REQUEST_SIZE, MAX_RESPONSE_SIZE, dispatch_request};
+use crate::{dispatch_request, DispatchOutcome, MAX_REQUEST_SIZE, MAX_RESPONSE_SIZE};
 
 /// Holds at most one in-flight `TryRead` request that is waiting for the RX
 /// interrupt to fire before it can be completed.
@@ -83,8 +83,7 @@ pub fn run<B: UsartBackend>(backend: &mut B, wg: u32, irq: u32, irq_signals: Sig
             continue;
         };
 
-        if wait_return.user_data as u32 == irq
-            && wait_return.pending_signals.contains(irq_signals)
+        if wait_return.user_data as u32 == irq && wait_return.pending_signals.contains(irq_signals)
         {
             let acked = wait_return.pending_signals & irq_signals;
             let _ = syscall::interrupt_ack(irq, acked);
@@ -99,9 +98,9 @@ pub fn run<B: UsartBackend>(backend: &mut B, wg: u32, irq: u32, irq_signals: Sig
                 // try_read also finds no data (unlikely at this point).
                 let _ = backend.disable_interrupts(IrqMask::RX_DATA_AVAILABLE);
 
-                let resp_len = match backend.try_read(
-                    &mut response_buf[payload_offset..payload_offset + read_buf_len],
-                ) {
+                let resp_len = match backend
+                    .try_read(&mut response_buf[payload_offset..payload_offset + read_buf_len])
+                {
                     Ok(n) => {
                         let hdr = UsartResponseHeader::success(n as u16);
                         response_buf[..UsartResponseHeader::SIZE]

@@ -21,7 +21,7 @@ use ast10x0_peripherals::scu::pinctrl;
 use codegen as _;
 use console_backend::console_backend_write_all;
 use entry as _;
-use target_common::{TargetInterface, declare_target};
+use target_common::{declare_target, TargetInterface};
 
 pub struct Target {}
 
@@ -41,10 +41,7 @@ fn i2c2_config() -> I2cConfig {
 }
 
 /// Poll handle_slave_interrupt until an event arrives or the budget runs out.
-fn wait_event<Y: FnMut(u32)>(
-    slave: &mut Ast1060I2c<'_, Y>,
-    max_polls: u32,
-) -> Option<SlaveEvent> {
+fn wait_event<Y: FnMut(u32)>(slave: &mut Ast1060I2c<'_, Y>, max_polls: u32) -> Option<SlaveEvent> {
     for _ in 0..max_polls {
         if let Some(ev) = slave.handle_slave_interrupt() {
             return Some(ev);
@@ -56,7 +53,10 @@ fn wait_event<Y: FnMut(u32)>(
 
 fn run_slave() -> Result<(), &'static str> {
     pw_log::info!("=== I2C slave IRQ test: SLAVE (device B) ===");
-    pw_log::info!("Listening at addr 0x{:02x}. Start master (device A) now.", SLAVE_ADDR as u32);
+    pw_log::info!(
+        "Listening at addr 0x{:02x}. Start master (device A) now.",
+        SLAVE_ADDR as u32
+    );
 
     let board = Ast10x0Board::new(Ast10x0BoardDescriptor {
         pinctrl_groups: &[pinctrl::PINCTRL_I2C2],
@@ -87,11 +87,17 @@ fn run_slave() -> Result<(), &'static str> {
     match wait_event(&mut slave, 50_000_000) {
         Some(SlaveEvent::DataReceived { len }) => {
             if len != EXPECTED_WRITE.len() {
-                pw_log::error!("test 1: DataReceived len={} expected={}", len as u32, EXPECTED_WRITE.len() as u32);
+                pw_log::error!(
+                    "test 1: DataReceived len={} expected={}",
+                    len as u32,
+                    EXPECTED_WRITE.len() as u32
+                );
                 return Err("test 1: DataReceived len mismatch");
             }
             let mut buf = [0u8; EXPECTED_WRITE.len()];
-            slave.slave_read(&mut buf).map_err(|_| "test 1: slave_read failed")?;
+            slave
+                .slave_read(&mut buf)
+                .map_err(|_| "test 1: slave_read failed")?;
             if buf != *EXPECTED_WRITE {
                 return Err("test 1: DataReceived payload mismatch");
             }

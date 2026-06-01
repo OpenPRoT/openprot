@@ -6,7 +6,7 @@
 
 use console_backend::console_backend_write_all;
 use entry as _;
-use target_common::{TargetInterface, declare_target};
+use target_common::{declare_target, TargetInterface};
 
 pub struct Target {}
 
@@ -21,7 +21,11 @@ impl TargetInterface for Target {
 
     fn shutdown(code: u32) -> ! {
         pw_log::info!("Shutting down with code {}", code as u32);
-        let sentinel: &[u8] = if code == 0 { b"TEST_RESULT:PASS\n" } else { b"TEST_RESULT:FAIL\n" };
+        let sentinel: &[u8] = if code == 0 {
+            b"TEST_RESULT:PASS\n"
+        } else {
+            b"TEST_RESULT:FAIL\n"
+        };
         let _ = console_backend_write_all(sentinel);
         #[expect(clippy::empty_loop)]
         loop {}

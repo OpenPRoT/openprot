@@ -148,7 +148,10 @@ mod tests {
         assert_eq!(ResponseCode::AddrInUse.to_string(), "address in use");
         assert_eq!(ResponseCode::TimedOut.to_string(), "timed out");
         assert_eq!(ResponseCode::BadArgument.to_string(), "bad argument");
-        assert_eq!(ResponseCode::ServerRestarted.to_string(), "server restarted");
+        assert_eq!(
+            ResponseCode::ServerRestarted.to_string(),
+            "server restarted"
+        );
     }
 
     #[test]

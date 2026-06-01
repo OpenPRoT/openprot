@@ -23,7 +23,6 @@ use openprot_mctp_server::Server;
 
 use common::{transfer, BufferSender, DirectClient};
 
-
 // ---------------------------------------------------------------------------
 // Echo application logic (client side)
 // ---------------------------------------------------------------------------
@@ -69,13 +68,11 @@ fn mctp_echo_roundtrip() {
     // -- Server side: set up two MCTP server instances with mock transport --
     let buf_a = RefCell::new(Vec::new());
     let sender_a = BufferSender { packets: &buf_a };
-    let server_a: RefCell<Server<_, 16>> =
-        RefCell::new(Server::new(Eid(8), 0, sender_a));
+    let server_a: RefCell<Server<_, 16>> = RefCell::new(Server::new(Eid(8), 0, sender_a));
 
     let buf_b = RefCell::new(Vec::new());
     let sender_b = BufferSender { packets: &buf_b };
-    let server_b: RefCell<Server<_, 16>> =
-        RefCell::new(Server::new(Eid(42), 0, sender_b));
+    let server_b: RefCell<Server<_, 16>> = RefCell::new(Server::new(Eid(42), 0, sender_b));
 
     // -- Client side: wrap servers in DirectClient to use MctpClient trait --
     let client_a = DirectClient::new(&server_a);
@@ -109,7 +106,10 @@ fn mctp_echo_roundtrip() {
         .expect("Client B should have received the echo response");
 
     let response = &resp_buf[..resp_meta.payload_size];
-    assert_eq!(response, payload, "Echo response should match original payload");
+    assert_eq!(
+        response, payload,
+        "Echo response should match original payload"
+    );
     assert_eq!(resp_meta.msg_type, 1);
     assert_eq!(resp_meta.remote_eid, 8);
 
@@ -123,13 +123,11 @@ fn mctp_echo_roundtrip() {
 fn mctp_echo_multiple() {
     let buf_a = RefCell::new(Vec::new());
     let sender_a = BufferSender { packets: &buf_a };
-    let server_a: RefCell<Server<_, 16>> =
-        RefCell::new(Server::new(Eid(8), 0, sender_a));
+    let server_a: RefCell<Server<_, 16>> = RefCell::new(Server::new(Eid(8), 0, sender_a));
 
     let buf_b = RefCell::new(Vec::new());
     let sender_b = BufferSender { packets: &buf_b };
-    let server_b: RefCell<Server<_, 16>> =
-        RefCell::new(Server::new(Eid(42), 0, sender_b));
+    let server_b: RefCell<Server<_, 16>> = RefCell::new(Server::new(Eid(42), 0, sender_b));
 
     let client_a = DirectClient::new(&server_a);
     let client_b = DirectClient::new(&server_b);

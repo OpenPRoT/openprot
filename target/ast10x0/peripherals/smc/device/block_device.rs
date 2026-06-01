@@ -23,10 +23,7 @@ pub struct SpiNorBlockDevice<'a, 'b> {
 
 impl<'a, 'b> SpiNorBlockDevice<'a, 'b> {
     /// Build a block facade from an existing `SpiNorFlash` plus known config.
-    pub fn from_flash(
-        flash: &'a mut SpiNorFlash<'b>,
-        cfg: FlashConfig,
-    ) -> Result<Self, SmcError> {
+    pub fn from_flash(flash: &'a mut SpiNorFlash<'b>, cfg: FlashConfig) -> Result<Self, SmcError> {
         let expected = cfg_capacity_bytes(cfg)?;
         let actual = SpiNorFlashDevice::capacity_bytes(flash)?;
         if expected != actual {
@@ -39,10 +36,7 @@ impl<'a, 'b> SpiNorBlockDevice<'a, 'b> {
     }
 
     /// Build a block facade by mapping a JEDEC ID to a known flash profile.
-    pub fn from_jedec_id(
-        flash: &'a mut SpiNorFlash<'b>,
-        jedec: JedecId,
-    ) -> Result<Self, SmcError> {
+    pub fn from_jedec_id(flash: &'a mut SpiNorFlash<'b>, jedec: JedecId) -> Result<Self, SmcError> {
         let cfg = cfg_from_jedec(jedec)?;
         Self::from_flash(flash, cfg)
     }

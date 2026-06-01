@@ -7,8 +7,8 @@
 
 #![no_std]
 
-use ast10x0_peripherals::uart::Usart;
 use ast1060_pac as device;
+use ast10x0_peripherals::uart::Usart;
 use embedded_io::Write;
 use kernel::sync::spinlock::SpinLock;
 use pw_status::{Error, Result};

@@ -8,8 +8,8 @@
 
 use arch_arm_cortex_m::Arch;
 use console_backend::console_backend_write_all;
-use target_common::{TargetInterface, declare_target};
 use entry as _;
+use target_common::{declare_target, TargetInterface};
 
 pub struct Target {}
 

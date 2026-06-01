@@ -3,13 +3,13 @@
 
 //! AST10x0 System Control Unit (SCU) module.
 
-pub mod registers;
-pub mod types;
-pub mod reset;
 pub mod clock;
-pub mod status;
 pub mod pinctrl;
+pub mod registers;
+pub mod reset;
+pub mod status;
+pub mod types;
 
-pub use registers::ScuRegisters;
 pub use pinctrl::PinctrlPin;
+pub use registers::ScuRegisters;
 pub use types::{ClockRegisterHalf, ScuRegisterHalf};

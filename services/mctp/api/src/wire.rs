@@ -133,9 +133,14 @@ impl MctpRequestHeader {
             self.flags,
             self.msg_type,
             self.eid,
-            h[0], h[1], h[2], h[3],
+            h[0],
+            h[1],
+            h[2],
+            h[3],
             self.tag,
-            0, 0, 0, // reserved
+            0,
+            0,
+            0, // reserved
         ]
     }
 
@@ -232,8 +237,12 @@ impl MctpResponseHeader {
             self.flags,
             self.msg_type,
             self.eid,
-            h[0], h[1], h[2], h[3],
-            pl[0], pl[1],
+            h[0],
+            h[1],
+            h[2],
+            h[3],
+            pl[0],
+            pl[1],
             self.tag,
             0, // reserved
         ]
@@ -520,7 +529,10 @@ pub fn decode_response_header(buf: &[u8]) -> Result<MctpResponseHeader, WireErro
 }
 
 /// Get response payload data (after header).
-pub fn get_response_payload<'a>(buf: &'a [u8], header: &MctpResponseHeader) -> Result<&'a [u8], WireError> {
+pub fn get_response_payload<'a>(
+    buf: &'a [u8],
+    header: &MctpResponseHeader,
+) -> Result<&'a [u8], WireError> {
     let end = MctpResponseHeader::SIZE + header.payload_len as usize;
     if buf.len() < end {
         return Err(WireError::Truncated);

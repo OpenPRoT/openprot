@@ -46,7 +46,8 @@ struct CalibrationScratch(UnsafeCell<[u8; SPI_CALIB_LEN]>);
 // ownership, so this scratch buffer is not accessed concurrently.
 unsafe impl Sync for CalibrationScratch {}
 
-static CALIBRATION_SCRATCH: CalibrationScratch = CalibrationScratch(UnsafeCell::new([0; SPI_CALIB_LEN]));
+static CALIBRATION_SCRATCH: CalibrationScratch =
+    CalibrationScratch(UnsafeCell::new([0; SPI_CALIB_LEN]));
 
 const fn spi_nor_qread_cmd_for_capacity(capacity_bytes: usize) -> u32 {
     if capacity_bytes > SPI_NOR_4B_READ_THRESHOLD_BYTES {

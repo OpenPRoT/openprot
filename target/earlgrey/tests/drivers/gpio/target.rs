@@ -3,7 +3,7 @@
 
 #![no_std]
 #![no_main]
-use target_common::{TargetInterface, declare_target};
+use target_common::{declare_target, TargetInterface};
 use {console_backend as _, entry as _};
 
 pub struct Target {}
