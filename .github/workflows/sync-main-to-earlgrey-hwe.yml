@@ -10,10 +10,22 @@ jobs:
   create-pull-request:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout the earlgrey-hwe branch
         uses: actions/checkout@v4
         with:
+          ref: earlgrey-hwe
           fetch-depth: 0 # Fetches all history so branches can be compared
+
+      - name: Merge main into earlgrey-hwe
+        run: |
+          git config --global user.name 'synchronize-bot[bot]'
+          git config --global user.email 'synchronize[bot]@users.noreply.github.com'
+
+          # Fetch the latest main branch
+          git fetch origin main:main
+
+          # Merge main into the currently checked-out dev branch
+          git merge main --no-edit
 
       - name: Generate GitHub App Token
         id: generate-token
