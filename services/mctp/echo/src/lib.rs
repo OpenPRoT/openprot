@@ -22,7 +22,9 @@ pub const ECHO_MSG_TYPE: u8 = 1;
 pub const ECHO_EID: u8 = 8;
 
 /// Prepare a stack for echoing by setting the local EID and opening a listener.
-pub fn prepare_listener<C: MctpClient>(stack: &Stack<C>) -> Result<StackListener<'_, C>, MctpError> {
+pub fn prepare_listener<C: MctpClient>(
+    stack: &Stack<C>,
+) -> Result<StackListener<'_, C>, MctpError> {
     stack.set_eid(ECHO_EID)?;
     stack.listener(ECHO_MSG_TYPE, 0)
 }
@@ -47,4 +49,3 @@ where
     let (_meta, msg, mut resp) = listener.recv(buf)?;
     resp.send(msg)
 }
-

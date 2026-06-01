@@ -272,4 +272,3 @@ pub trait TargetCallbacks {
     /// Called when a stop condition is received.
     fn on_stop(&mut self);
 }
-

@@ -41,10 +41,7 @@ impl Sender for BufferSender<'_> {
     }
 }
 
-fn transfer<S: Sender, const N: usize>(
-    packets: &RefCell<Vec<Vec<u8>>>,
-    dest: &mut Server<S, N>,
-) {
+fn transfer<S: Sender, const N: usize>(packets: &RefCell<Vec<Vec<u8>>>, dest: &mut Server<S, N>) {
     let pkts = packets.borrow();
     for pkt in pkts.iter() {
         dest.inbound(pkt).expect("inbound should accept packet");
@@ -87,7 +84,9 @@ impl<S: Sender, const N: usize> MctpClient for DirectClient<'_, S, N> {
         self.server
             .borrow_mut()
             .try_recv(handle, buf)
-            .ok_or(MctpError::from_code(openprot_mctp_api::ResponseCode::TimedOut))
+            .ok_or(MctpError::from_code(
+                openprot_mctp_api::ResponseCode::TimedOut,
+            ))
     }
 
     fn send(
@@ -129,7 +128,8 @@ fn echo_path_roundtrip_via_stack_and_echo_helper() {
 
     let mut req_b = stack_b.req(8, 0).expect("request channel should open");
     let payload = b"echo from host test";
-    req_b.send(ECHO_MSG_TYPE, payload)
+    req_b
+        .send(ECHO_MSG_TYPE, payload)
         .expect("request send should succeed");
 
     // Deliver request packets from B -> A, run one echo step, then A -> B.

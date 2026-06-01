@@ -29,8 +29,8 @@
 //! let (meta, response) = req.recv(&mut buf).unwrap();
 //! ```
 
-use crate::{Handle, MctpClient, MctpError, RecvMetadata, ResponseCode};
 use crate::traits::{MctpListener, MctpReqChannel, MctpRespChannel};
+use crate::{Handle, MctpClient, MctpError, RecvMetadata, ResponseCode};
 
 // ============================================================================
 // Stack
@@ -65,11 +65,7 @@ impl<C: MctpClient> Stack<C> {
     /// Open an outbound request channel to `eid`.
     ///
     /// `timeout_millis` of 0 means no timeout (block indefinitely).
-    pub fn req(
-        &self,
-        eid: u8,
-        timeout_millis: u32,
-    ) -> Result<StackReqChannel<'_, C>, MctpError> {
+    pub fn req(&self, eid: u8, timeout_millis: u32) -> Result<StackReqChannel<'_, C>, MctpError> {
         let handle = self.client.req(eid)?;
         Ok(StackReqChannel {
             stack: self,
@@ -118,22 +114,15 @@ impl<C: MctpClient> MctpReqChannel for StackReqChannel<'_, C> {
         if self.sent_tag.is_some() {
             return Err(MctpError::from_code(ResponseCode::BadArgument));
         }
-        let tag = self.stack.client.send(
-            Some(self.handle),
-            msg_type,
-            None,
-            None,
-            false,
-            buf,
-        )?;
+        let tag = self
+            .stack
+            .client
+            .send(Some(self.handle), msg_type, None, None, false, buf)?;
         self.sent_tag = Some(tag);
         Ok(())
     }
 
-    fn recv<'f>(
-        &mut self,
-        buf: &'f mut [u8],
-    ) -> Result<(RecvMetadata, &'f mut [u8]), MctpError> {
+    fn recv<'f>(&mut self, buf: &'f mut [u8]) -> Result<(RecvMetadata, &'f mut [u8]), MctpError> {
         if self.sent_tag.is_none() {
             return Err(MctpError::from_code(ResponseCode::BadArgument));
         }
@@ -214,7 +203,14 @@ impl<C: MctpClient> MctpRespChannel for StackRespChannel<'_, C> {
         // responses by the presence or absence of a handle.
         self.stack
             .client
-            .send(None, self.msg_type, Some(self.eid), Some(self.tag), false, buf)
+            .send(
+                None,
+                self.msg_type,
+                Some(self.eid),
+                Some(self.tag),
+                false,
+                buf,
+            )
             .map(|_| ())
     }
 

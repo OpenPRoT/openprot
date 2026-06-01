@@ -22,8 +22,8 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use core::task::Poll;
 
 use arch_arm_cortex_m::Arch;
-use ast10x0_peripherals::scu::ScuRegisters;
 use ast10x0_peripherals::scu::pinctrl::PINCTRL_FMC_QUAD;
+use ast10x0_peripherals::scu::ScuRegisters;
 use ast10x0_peripherals::smc::{
     ChipSelect, FlashConfig, SmcConfig, SmcController, SmcError, SmcInterrupt, SmcTopology,
     UninitSmc,
@@ -32,7 +32,7 @@ use codegen as _;
 use console_backend::console_backend_write_all;
 use kernel::Arch as KernelArch;
 use kernel::Kernel;
-use target_common::{TargetInterface, declare_target};
+use target_common::{declare_target, TargetInterface};
 use {console_backend as _, entry as _};
 
 #[path = "../target_debug.rs"]

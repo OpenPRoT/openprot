@@ -75,10 +75,7 @@ pub trait MctpReqChannel {
     fn send(&mut self, msg_type: u8, buf: &[u8]) -> Result<(), MctpError>;
 
     /// Receive the response to a previously sent request.
-    fn recv<'f>(
-        &mut self,
-        buf: &'f mut [u8],
-    ) -> Result<(RecvMetadata, &'f mut [u8]), MctpError>;
+    fn recv<'f>(&mut self, buf: &'f mut [u8]) -> Result<(RecvMetadata, &'f mut [u8]), MctpError>;
 
     /// The remote endpoint ID this channel targets.
     fn remote_eid(&self) -> u8;

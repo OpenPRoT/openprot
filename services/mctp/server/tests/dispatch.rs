@@ -13,7 +13,10 @@ use std::cell::RefCell;
 
 use mctp::Eid;
 use openprot_mctp_api::{wire, Handle};
-use openprot_mctp_server::{dispatch::{dispatch_mctp_op, drive_pending, DispatchOutcome}, Server};
+use openprot_mctp_server::{
+    dispatch::{dispatch_mctp_op, drive_pending, DispatchOutcome},
+    Server,
+};
 
 use common::{transfer, BufferSender};
 
@@ -94,16 +97,8 @@ fn dispatch_echo_roundtrip() {
 
     // B sends a message via dispatch
     let payload = b"dispatch echo!";
-    let req_len = wire::encode_send(
-        &mut req,
-        Some(req_handle),
-        1,
-        None,
-        None,
-        false,
-        payload,
-    )
-    .unwrap();
+    let req_len =
+        wire::encode_send(&mut req, Some(req_handle), 1, None, None, false, payload).unwrap();
     let resp_len = dispatch_reply(&req[..req_len], &mut resp, &mut server_b, &mut recv_buf);
     let header = wire::decode_response_header(&resp[..resp_len]).unwrap();
     assert!(header.is_success());

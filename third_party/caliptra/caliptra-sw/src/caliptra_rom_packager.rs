@@ -105,13 +105,15 @@ fn elf2rom(elf_bytes: &[u8]) -> Result<Vec<u8>> {
         let src = elf_bytes
             .get(file_offset..file_offset + len)
             .ok_or_else(|| anyhow!("segment at file offset 0x{file_offset:x} out of bounds"))?;
-        let dst = result.get_mut(mem_offset..mem_offset + len).ok_or_else(|| {
-            anyhow!(
-                "segment at 0x{mem_offset:x}..0x{:x} exceeds ROM region 0x0..0x{:x}",
-                mem_offset + len,
-                ROM_SIZE
-            )
-        })?;
+        let dst = result
+            .get_mut(mem_offset..mem_offset + len)
+            .ok_or_else(|| {
+                anyhow!(
+                    "segment at 0x{mem_offset:x}..0x{:x} exceeds ROM region 0x0..0x{:x}",
+                    mem_offset + len,
+                    ROM_SIZE
+                )
+            })?;
         dst.copy_from_slice(src);
     }
 
@@ -161,7 +163,9 @@ fn main() -> Result<()> {
     if args.len() != 3 {
         bail!(
             "usage: {} <input_elf> <output_bin>",
-            args.first().map(String::as_str).unwrap_or("caliptra_rom_packager")
+            args.first()
+                .map(String::as_str)
+                .unwrap_or("caliptra_rom_packager")
         );
     }
     let input_path = &args[1];

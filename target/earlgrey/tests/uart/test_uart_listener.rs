@@ -3,8 +3,8 @@
 
 #![no_std]
 #![no_main]
-use test_uart_listener_codegen::{handle, signals};
 use pw_status::{Error, Result};
+use test_uart_listener_codegen::{handle, signals};
 use userspace::syscall::Signals;
 use userspace::time::Instant;
 use userspace::{entry, syscall};
