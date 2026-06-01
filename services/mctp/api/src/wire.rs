@@ -542,6 +542,18 @@ pub fn get_request_payload(buf: &[u8]) -> &[u8] {
     }
 }
 
+/// Extract the `timeout_millis` field from a `Recv` request.
+///
+/// The 4-byte little-endian timeout follows the 12-byte request header.
+/// Returns 0 if the buffer is too short (no timeout → wait forever).
+pub fn get_recv_timeout(buf: &[u8]) -> u32 {
+    let start = MctpRequestHeader::SIZE;
+    if buf.len() < start + 4 {
+        return 0;
+    }
+    u32::from_le_bytes(buf[start..start + 4].try_into().unwrap())
+}
+
 // ============================================================================
 // Tests
 // ============================================================================

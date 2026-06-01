@@ -7,22 +7,23 @@ Platform-independent MCTP types, traits, and stack facade.
 This crate defines the API contract between MCTP applications and the MCTP server.
 It provides two layers:
 
-1. **`MctpClient` trait** — low-level interface mirroring the IPC wire operations
-   (req, listener, recv, send, drop_handle). Platform-specific crates such as
-   `openprot-mctp-client` implement this trait using the OS transport (e.g. Pigweed IPC).
+1. **`MctpClient` trait** — low-level service-transport interface for
+   `req`, `listener`, `recv`, `send`, `drop_handle`, plus local EID control
+   (`get_eid` / `set_eid`). Platform-specific clients implement this trait
+   over a chosen transport (for example Pigweed IPC, sockets, or test doubles).
 
 2. **`Stack` facade** (`stack` module) — high-level entry point that wraps any `MctpClient`
    and returns typed channel objects (`StackListener`, `StackReqChannel`, `StackRespChannel`)
    that implement the `MctpListener` / `MctpReqChannel` / `MctpRespChannel` traits.
 
 This two-layer design hides both the **concrete MCTP stack implementation** (which lives
-inside the server process) and the **OS / IPC transport** from application code.
+inside the server process) and the **transport mechanism** from application code.
 Applications depend only on the high-level traits; swapping the transport or stack
 requires no application changes.
 
 ```text
 ┌─────────────────────┐
-│   Application       │  uses MctpListener / MctpReqChannel / MctpRespChannel traits
+│   Application       │  uses Stack facade, then channel traits
 └─────────┬───────────┘
           │
           ▼
@@ -32,10 +33,10 @@ requires no application changes.
           │ MctpClient trait
           ▼
 ┌─────────────────────┐
-│  IpcMctpClient      │  encodes wire protocol, calls OS IPC (e.g. Pigweed channel_transact)
-│  (mctp-client crate)│
+│  MctpClient impl    │  encodes wire protocol, uses a transport backend
+│  (IPC/sockets/test) │
 └─────────┬───────────┘
-          │ IPC
+          │ Transport
           ▼
 ┌─────────────────────┐
 │   MCTP Server       │  owns the concrete MCTP stack (mctp-lib, etc.)
@@ -75,11 +76,13 @@ All channel types release their server-side handle automatically on `Drop`.
 `Stack<C: MctpClient>` applies the **Strategy pattern**:
 
 - **Context** → `Stack<C>` holds the strategy and exposes the high-level API
-- **Strategy trait** → `MctpClient` defines the IPC operations (req, listener, recv, send, drop_handle)
-- **Concrete strategies** → `IpcMctpClient` (Pigweed IPC), test `DirectClient`, future Linux socket client
+- **Strategy trait** → `MctpClient` defines the service-transport operations (`req`, `listener`, `recv`, `send`, `drop_handle`) and local EID control (`get_eid`/`set_eid`).
+- **Concrete strategies** → transport-specific `MctpClient` implementations (for example IPC clients) and test `DirectClient`
 
-Applications code against `MctpListener` / `MctpReqChannel` / `MctpRespChannel` traits and never
-see the strategy. The concrete `MctpClient` implementation is injected via `Stack::new(client)`.
+Application code enters through the `Stack` facade and then operates on channels
+implementing `MctpListener` / `MctpReqChannel` / `MctpRespChannel`. During
+initialization, a concrete `MctpClient` is provided to `Stack::new(client)`;
+after that, protocol logic remains transport-agnostic.
 
 This gives two independent axes of variation:
 
@@ -91,13 +94,11 @@ This gives two independent axes of variation:
 
 
 
-The `wire` module implements binary request/response encoding for IPC communication.
-It is used internally by `openprot-mctp-client` and the server; applications do not
-use it directly.
+The `wire` module implements binary request/response encoding.
+It is used internally by transport client implementations and server endpoints;
+applications do not use it directly.
 
 ## Dependencies
 
-- `zerocopy` — zero-copy serialization
-- `heapless` — `no_std` collections
-
-This crate is `no_std` compatible.
+This crate currently has no external Rust crate dependencies.
+It is no_std compatible and relies on core plus internal modules.

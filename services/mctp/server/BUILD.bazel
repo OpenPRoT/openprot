@@ -1,0 +1,90 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "mctp_server_lib",
+    srcs = [
+        "src/dispatch.rs",
+        "src/lib.rs",
+        "src/server.rs",
+    ],
+    crate_name = "openprot_mctp_server",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/mctp/api:mctp_api",
+        "@rust_crates//:heapless",
+        "@rust_crates//:mctp",
+        "@rust_crates//:mctp-lib",
+    ],
+)
+
+# Integration tests — each tests/ file is its own Bazel test target.
+# All share tests/common/mod.rs for fixtures (BufferSender, DirectClient, etc.).
+# No I2C transport dependency; the mock Sender replaces it entirely.
+
+rust_test(
+    name = "mctp_server_echo_test",
+    srcs = [
+        "tests/common/mod.rs",
+        "tests/echo.rs",
+    ],
+    crate_root = "tests/echo.rs",
+    edition = "2024",
+    deps = [
+        ":mctp_server_lib",
+        "//services/mctp/api:mctp_api",
+        "@rust_crates//:mctp",
+        "@rust_crates//:mctp-lib",
+    ],
+)
+
+rust_test(
+    name = "mctp_server_dispatch_test",
+    srcs = [
+        "tests/common/mod.rs",
+        "tests/dispatch.rs",
+    ],
+    crate_root = "tests/dispatch.rs",
+    edition = "2024",
+    deps = [
+        ":mctp_server_lib",
+        "//services/mctp/api:mctp_api",
+        "@rust_crates//:mctp",
+        "@rust_crates//:mctp-lib",
+    ],
+)
+
+rust_test(
+    name = "mctp_server_unit_test",
+    srcs = [
+        "tests/common/mod.rs",
+        "tests/server_unit.rs",
+    ],
+    crate_root = "tests/server_unit.rs",
+    edition = "2024",
+    deps = [
+        ":mctp_server_lib",
+        "//services/mctp/api:mctp_api",
+        "@rust_crates//:mctp",
+        "@rust_crates//:mctp-lib",
+    ],
+)
+
+rust_test(
+    name = "mctp_server_integration_test",
+    srcs = [
+        "tests/common/mod.rs",
+        "tests/integration.rs",
+    ],
+    crate_root = "tests/integration.rs",
+    edition = "2024",
+    deps = [
+        ":mctp_server_lib",
+        "//services/mctp/api:mctp_api",
+        "@rust_crates//:mctp",
+        "@rust_crates//:mctp-lib",
+    ],
+)

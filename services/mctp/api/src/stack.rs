@@ -11,7 +11,7 @@
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use openprot_mctp_client::IpcMctpClient;
+//! use openprot_mctp_client_ipc::IpcMctpClient;
 //! use openprot_mctp_api::stack::Stack;
 //! use openprot_mctp_api::{MctpListener, MctpReqChannel, MctpRespChannel};
 //!

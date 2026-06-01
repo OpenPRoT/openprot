@@ -1,0 +1,29 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "mctp_echo",
+    srcs = ["src/lib.rs"],
+    crate_name = "openprot_mctp_echo",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/mctp/api:mctp_api",
+    ],
+)
+
+rust_test(
+    name = "mctp_echo_host_test",
+    srcs = ["tests/echo_host.rs"],
+    crate_root = "tests/echo_host.rs",
+    edition = "2024",
+    deps = [
+        ":mctp_echo",
+        "//services/mctp/api:mctp_api",
+        "//services/mctp/server:mctp_server_lib",
+        "@rust_crates//:mctp",
+        "@rust_crates//:mctp-lib",
+    ],
+)

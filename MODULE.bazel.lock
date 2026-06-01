@@ -487,7 +487,7 @@
   "moduleExtensions": {
     "//third_party/caliptra:extensions.bzl%caliptra_repos": {
       "general": {
-        "bzlTransitiveDigest": "8cEFLBZLSpLCUIwJNo9rxhRQdKOh+hDpG+Qoj+4YU+k=",
+        "bzlTransitiveDigest": "IqbLLgyVsd8umITqf9vzEn8cxGEZMWhiE7hasq8/sl4=",
         "usagesDigest": "ODX7jX2XQ5ywJ6htOZNVOezD0lY5SqvrMRMaa38fSMQ=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -527,7 +527,7 @@
     },
     "//third_party/hsm:extensions.bzl%hsm": {
       "general": {
-        "bzlTransitiveDigest": "dMr6eMmFrHzjZoSlJF19xOQiEGyEWeYgBcnHpSIo8uY=",
+        "bzlTransitiveDigest": "DkekJx1MaT5hLoVEIe08+tkv3G0Gz09HqjAs4OHpHLY=",
         "usagesDigest": "gbze9F5NvSkv3y6dQhVG6h7LR50p7DQQUEx+Uoy8E/s=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -554,7 +554,7 @@
     },
     "//third_party/qemu:extensions.bzl%qemu": {
       "general": {
-        "bzlTransitiveDigest": "vYbS6zbBSUEYrJr8ZFwTQQ36P+gfjwYHsC6c3Of1Mbw=",
+        "bzlTransitiveDigest": "xVF0kp0jHpHJzcDn379uiJwBQjKPQM2ifRJAtLg2FPw=",
         "usagesDigest": "sd4NrZaNp1CVFJ9pAaTO/LvX7gn0a5KpGnmBklHnLK4=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},

@@ -1,0 +1,27 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+package(default_visibility = ["//visibility:public"])
+
+# Embedded-safe production crates only (no rust_test targets).
+filegroup(
+    name = "mctp_embedded_all",
+    srcs = [
+        "//services/mctp/api:mctp_api",
+        "//services/mctp/echo:mctp_echo",
+        "//services/mctp/server:mctp_server_lib",
+    ],
+)
+
+# Host-side tests; run without embedded target config.
+test_suite(
+    name = "mctp_host_tests",
+    tests = [
+        "//services/mctp/api:mctp_api_test",
+        "//services/mctp/echo:mctp_echo_host_test",
+        "//services/mctp/server:mctp_server_dispatch_test",
+        "//services/mctp/server:mctp_server_echo_test",
+        "//services/mctp/server:mctp_server_integration_test",
+        "//services/mctp/server:mctp_server_unit_test",
+    ],
+)
