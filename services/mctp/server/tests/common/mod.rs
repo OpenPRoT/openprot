@@ -264,7 +264,10 @@ impl<'a, S: Sender, const N: usize> DirectListener<'a, S, N> {
 }
 
 impl<'a, S: Sender, const N: usize> MctpListener for DirectListener<'a, S, N> {
-    type RespChannel<'r> = DirectRespChannel<'a, S, N> where Self: 'r;
+    type RespChannel<'r>
+        = DirectRespChannel<'a, S, N>
+    where
+        Self: 'r;
 
     fn recv<'f>(
         &mut self,
@@ -325,10 +328,7 @@ impl<S: Sender, const N: usize> MctpReqChannel for DirectReqChannel<'_, S, N> {
             .map(|_| ())
     }
 
-    fn recv<'f>(
-        &mut self,
-        buf: &'f mut [u8],
-    ) -> Result<(RecvMetadata, &'f mut [u8]), MctpError> {
+    fn recv<'f>(&mut self, buf: &'f mut [u8]) -> Result<(RecvMetadata, &'f mut [u8]), MctpError> {
         let meta = self
             .client
             .server
@@ -349,9 +349,6 @@ impl<S: Sender, const N: usize> MctpReqChannel for DirectReqChannel<'_, S, N> {
 // ---------------------------------------------------------------------------
 
 /// Construct a `Server` + its outbound packet buffer, for two-endpoint tests.
-pub fn make_server(
-    eid: u8,
-    packets: &RefCell<Vec<Vec<u8>>>,
-) -> Server<BufferSender<'_>, 16> {
+pub fn make_server(eid: u8, packets: &RefCell<Vec<Vec<u8>>>) -> Server<BufferSender<'_>, 16> {
     Server::new(Eid(eid), 0, BufferSender { packets })
 }

@@ -10,9 +10,7 @@
 //! the production AST10x0 hardware datasheet.
 #![no_std]
 
-pub use kernel_config::{
-    CortexMKernelConfigInterface, KernelConfigInterface, NvicConfigInterface,
-};
+pub use kernel_config::{CortexMKernelConfigInterface, KernelConfigInterface, NvicConfigInterface};
 
 pub struct KernelConfig;
 

@@ -225,7 +225,11 @@ impl<'a> SpiNorFlash<'a> {
     }
 
     /// Build a flash facade from an initialized FMC controller wrapper with explicit CS.
-    pub fn from_fmc_cs(fmc: &'a mut FmcReady, cfg: FlashConfig, cs: ChipSelect) -> Result<Self, SmcError> {
+    pub fn from_fmc_cs(
+        fmc: &'a mut FmcReady,
+        cfg: FlashConfig,
+        cs: ChipSelect,
+    ) -> Result<Self, SmcError> {
         let addressing_policy = Self::default_addressing_for_cfg(cfg);
         Self::validate_capacity_cfg(cfg, fmc.cs_config(cs)?)?;
         Ok(Self {
@@ -244,7 +248,11 @@ impl<'a> SpiNorFlash<'a> {
     }
 
     /// Build a flash facade from an initialized SPI1/SPI2 controller wrapper with explicit CS.
-    pub fn from_spi_cs(spi: &'a mut SpiReady, cfg: FlashConfig, cs: ChipSelect) -> Result<Self, SmcError> {
+    pub fn from_spi_cs(
+        spi: &'a mut SpiReady,
+        cfg: FlashConfig,
+        cs: ChipSelect,
+    ) -> Result<Self, SmcError> {
         let addressing_policy = Self::default_addressing_for_cfg(cfg);
         Self::validate_capacity_cfg(cfg, spi.cs_config(cs)?)?;
         Ok(Self {
@@ -388,7 +396,6 @@ impl<'a> SpiNorFlash<'a> {
         self.command_profile
     }
 
-
     /// Validate a device-local offset before handing it to the controller.
     ///
     /// `FmcReady::read` / `SpiReady::read` already select the per-CS AHB
@@ -444,12 +451,8 @@ impl<'a> SpiNorFlash<'a> {
         let opcode = self.command_profile().read_status;
         let mut status = [0u8; 1];
         match &self.backend {
-            FlashBackend::Fmc(fmc) => {
-                fmc.transceive_user(cs, &[opcode], &[], &mut status, mode)?
-            }
-            FlashBackend::Spi(spi) => {
-                spi.transceive_user(cs, &[opcode], &[], &mut status, mode)?
-            }
+            FlashBackend::Fmc(fmc) => fmc.transceive_user(cs, &[opcode], &[], &mut status, mode)?,
+            FlashBackend::Spi(spi) => spi.transceive_user(cs, &[opcode], &[], &mut status, mode)?,
         }
         Ok(status[0])
     }
@@ -651,10 +654,12 @@ mod tests {
     #[test]
     fn compare_chunked_propagates_read_error() {
         let expected = fixture_1kb();
-        let read = |_offset: u32, _dst: &mut [u8]| -> Result<usize, SmcError> {
+        let read =
+            |_offset: u32, _dst: &mut [u8]| -> Result<usize, SmcError> { Err(SmcError::Timeout) };
+        assert_eq!(
+            compare_chunked(read, 0, &expected, 256),
             Err(SmcError::Timeout)
-        };
-        assert_eq!(compare_chunked(read, 0, &expected, 256), Err(SmcError::Timeout));
+        );
     }
 
     #[test]
@@ -667,6 +672,9 @@ mod tests {
     fn expect_jedec_match_rejects_mismatch() {
         let expected = JedecId::from_bytes([0xEF, 0x40, 0x18]);
         let actual = JedecId::from_bytes([0xC2, 0x20, 0x19]);
-        assert_eq!(expect_jedec_match(actual, expected), Err(SmcError::HardwareError));
+        assert_eq!(
+            expect_jedec_match(actual, expected),
+            Err(SmcError::HardwareError)
+        );
     }
 }

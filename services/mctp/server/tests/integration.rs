@@ -22,7 +22,9 @@ use openprot_mctp_api::{MctpClient, MctpListener, MctpReqChannel, MctpRespChanne
 use openprot_mctp_server::Server;
 use openprot_mctp_server::ServerConfig;
 
-use common::{transfer, BufferSender, DirectClient, DirectListener, DirectReqChannel, SmallMtuBufferSender};
+use common::{
+    transfer, BufferSender, DirectClient, DirectListener, DirectReqChannel, SmallMtuBufferSender,
+};
 
 // ---------------------------------------------------------------------------
 // Multi-fragment roundtrip
@@ -215,9 +217,7 @@ fn req_channel_send_recv() {
 
     // A echoes manually (through MctpClient)
     let mut echo_buf = [0u8; 255];
-    let meta = client_a
-        .recv(listener_handle, 0, &mut echo_buf)
-        .unwrap();
+    let meta = client_a.recv(listener_handle, 0, &mut echo_buf).unwrap();
     client_a
         .send(
             None,
@@ -448,7 +448,9 @@ fn stack_req_channel_recv_before_send_errors() {
 
     let mut req = stack.req(42, 0).expect("req alloc");
     let mut resp_buf = [0u8; 255];
-    let err = req.recv(&mut resp_buf).expect_err("recv before send must fail");
+    let err = req
+        .recv(&mut resp_buf)
+        .expect_err("recv before send must fail");
     assert_eq!(err.code, openprot_mctp_api::ResponseCode::BadArgument);
 }
 
@@ -545,4 +547,3 @@ fn stack_eid_accessors() {
     stack.set_eid(99).expect("set_eid should succeed");
     assert_eq!(stack.get_eid(), 99);
 }
-

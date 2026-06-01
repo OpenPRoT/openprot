@@ -8,6 +8,8 @@ filegroup(
     name = "mctp_embedded_all",
     srcs = [
         "//services/mctp/api:mctp_api",
+        # Kernel-only crate (depends on pw_kernel userspace; not host-testable).
+        "//services/mctp/client-ipc:mctp_client_ipc",
         "//services/mctp/echo:mctp_echo",
         "//services/mctp/server:mctp_server_lib",
     ],

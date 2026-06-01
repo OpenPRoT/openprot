@@ -1,0 +1,18 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "mctp_client_ipc",
+    srcs = ["src/lib.rs"],
+    crate_name = "openprot_mctp_client_ipc",
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = ["@platforms//os:none"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/mctp/api:mctp_api",
+        "@pigweed//pw_kernel/userspace",
+    ],
+)

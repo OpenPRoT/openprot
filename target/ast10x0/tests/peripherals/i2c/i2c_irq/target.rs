@@ -25,7 +25,7 @@ use ast10x0_peripherals::scu::pinctrl;
 use codegen as _;
 use console_backend::console_backend_write_all;
 use entry as _;
-use target_common::{TargetInterface, declare_target};
+use target_common::{declare_target, TargetInterface};
 
 pub struct Target {}
 
@@ -68,9 +68,9 @@ fn run_master() -> Result<(), &'static str> {
     // Test 1: master write → slave DataReceived
     // ------------------------------------------------------------------
     pw_log::info!("Test 1: master write");
-    master
-        .write(SLAVE_ADDR, WRITE_PAYLOAD)
-        .map_err(|_| "test 1: master write failed (slave not responding — check J15 and slave firmware)")?;
+    master.write(SLAVE_ADDR, WRITE_PAYLOAD).map_err(|_| {
+        "test 1: master write failed (slave not responding — check J15 and slave firmware)"
+    })?;
     pw_log::info!("Test 1 passed");
 
     // ------------------------------------------------------------------

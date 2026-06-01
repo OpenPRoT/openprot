@@ -82,7 +82,14 @@ fn parse_image_cfg(s: &str) -> Result<(PathBuf, u64, u64, u32, u32, u32)> {
     } else {
         0
     };
-    Ok((path, load_addr, staging_addr, image_id, exec_bit, component_id))
+    Ok((
+        path,
+        load_addr,
+        staging_addr,
+        image_id,
+        exec_bit,
+        component_id,
+    ))
 }
 
 fn parse_addr(s: &str) -> Result<u64> {
@@ -129,9 +136,7 @@ fn create_image_metadata(
     })
 }
 
-fn create_auth_manifest(
-    image_metadata_list: Vec<AuthManifestImageMetadata>,
-) -> Result<Vec<u8>> {
+fn create_auth_manifest(image_metadata_list: Vec<AuthManifestImageMetadata>) -> Result<Vec<u8>> {
     let vendor_fw_key_info = AuthManifestGeneratorKeyConfig {
         pub_keys: AuthManifestPubKeysConfig {
             ecc_pub_key: VENDOR_ECC_KEY_0_PUBLIC,
@@ -207,9 +212,7 @@ fn main() -> Result<()> {
         Commands::Experimental(cmd) => firmware_bundler::execute(cmd),
         Commands::AuthManifest { subcommand } => match subcommand {
             AuthManifestCommands::Create {
-                mcu_image,
-                output,
-                ..
+                mcu_image, output, ..
             } => {
                 let (path, load_addr, staging_addr, image_id, exec_bit, component_id) =
                     parse_image_cfg(&mcu_image)?;

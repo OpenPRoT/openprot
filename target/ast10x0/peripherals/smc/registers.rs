@@ -9,7 +9,7 @@
 //! # Phase 5: Topology Logic Boundary
 //!
 //! **This trait is pure register abstraction. No topology logic belongs here.**
-//! 
+//!
 //! All decisions about when to call these operations, how to interpret results
 //! based on controller role, and topology-gated behaviors (decode-range sizing,
 //! calibration skip, control register programming per role) live in the
@@ -19,8 +19,8 @@
 //! The controller layer answers "what to do with the data based on the topology."
 
 use ast1060_pac as device;
-use core::marker::PhantomData;
 use core::cell::UnsafeCell;
+use core::marker::PhantomData;
 
 use crate::smc::helpers::{
     SPI_DMA_DISCARD_REQ_MAGIC, SPI_DMA_GET_REQ_MAGIC, SPI_DMA_GRANT, SPI_DMA_REQUEST,
@@ -104,7 +104,9 @@ impl SmcRegisters {
 
     /// FMC008: Clear DMA status bits (write-1-to-clear).
     pub fn clear_dma_status(&self, clear_mask: u32) {
-        self.regs().fmc008().write(|w| unsafe { w.bits(clear_mask) });
+        self.regs()
+            .fmc008()
+            .write(|w| unsafe { w.bits(clear_mask) });
     }
 
     /// FMC008: Enable DMA interrupt (bit 3, `dmaintenbl`).
@@ -118,7 +120,9 @@ impl SmcRegisters {
     ///
     /// Call at the top of the IRQ handler before processing status bits.
     pub fn disable_dma_irq(&self) {
-        self.regs().fmc008().modify(|_, w| w.dmaintenbl().clear_bit());
+        self.regs()
+            .fmc008()
+            .modify(|_, w| w.dmaintenbl().clear_bit());
     }
 
     /// FMC010: CS0 control register
@@ -310,13 +314,9 @@ impl SmcRegisters {
 
     pub fn already_calibrated(&self, cs: crate::smc::types::ChipSelect) -> bool {
         match cs {
-            crate::smc::types::ChipSelect::Cs0 => {
-                self.read_cs0_timing_compensation() != 0
-            }
+            crate::smc::types::ChipSelect::Cs0 => self.read_cs0_timing_compensation() != 0,
 
-            crate::smc::types::ChipSelect::Cs1 => {
-                self.read_cs1_timing_compensation() != 0
-            }
+            crate::smc::types::ChipSelect::Cs1 => self.read_cs1_timing_compensation() != 0,
         }
     }
 }

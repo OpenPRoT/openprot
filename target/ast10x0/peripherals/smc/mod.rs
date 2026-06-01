@@ -6,23 +6,26 @@
 //! Provides safe abstractions over the FMC (Firmware Memory Controller)
 //! and SPI1/SPI2 flash controllers.
 
-pub mod registers;
-pub mod types;
-mod helpers;
 pub mod controller;
-pub mod fmc;
-pub mod spi;
-pub mod interrupts;
 pub mod device;
+pub mod fmc;
+mod helpers;
+pub mod interrupts;
+pub mod registers;
+pub mod spi;
+pub mod types;
 
-pub use types::{SmcError, SmcController, ChipSelect, FlashConfig, SmcConfig, SmcRetryable, TransferMode, AddressWidth, SmcTopology};
 pub use controller::{Ready, ReadySmc, Smc, UninitSmc, Uninitialized};
-pub use fmc::{FmcReady, FmcUninit};
-pub use spi::{SpiReady, SpiUninit};
-pub use interrupts::{SmcInterrupt, SmcInterruptDecoder};
 pub use device::{
-	BlockDeviceInfo, FlashAddressingPolicy, FlashCommandProfile, JedecId, SpiNorBlockDevice,
-	SpiNorFlash, SpiNorFlashDevice,
+    BlockDeviceInfo, FlashAddressingPolicy, FlashCommandProfile, JedecId, SpiNorBlockDevice,
+    SpiNorFlash, SpiNorFlashDevice,
+};
+pub use fmc::{FmcReady, FmcUninit};
+pub use interrupts::{SmcInterrupt, SmcInterruptDecoder};
+pub use spi::{SpiReady, SpiUninit};
+pub use types::{
+    AddressWidth, ChipSelect, FlashConfig, SmcConfig, SmcController, SmcError, SmcRetryable,
+    SmcTopology, TransferMode,
 };
 
 /// Result type for SMC operations

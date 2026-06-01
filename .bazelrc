@@ -3,6 +3,9 @@
 
 # Default to C++17 to ensure compatibility.
 common --@pigweed//pw_toolchain/cc:cxx_standard=17
+
+# Enable Rust formatting support in pigweed presubmits
+common --@pigweed//pw_presubmit/py:enable_rust_formatter=true
 common:cxx20 --//pw_toolchain/cc:cxx_standard=20
 common --per_file_copt=external/.*,.*\.pb\.cc@-w
 common --host_per_file_copt=external/.*,.*\.pb\.cc@-w

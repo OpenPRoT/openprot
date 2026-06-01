@@ -12,7 +12,7 @@ use ast10x0_peripherals::scu::pinctrl;
 use codegen as _;
 use console_backend::console_backend_write_all;
 use entry as _;
-use target_common::{TargetInterface, declare_target};
+use target_common::{declare_target, TargetInterface};
 
 pub struct Target {}
 
@@ -391,11 +391,7 @@ fn run_init_case(name: &str, config: I2cConfig) -> Result<(), &'static str> {
         }
         Err(error) => {
             let error_name = i2c_error_str(error);
-            pw_log::error!(
-                "{} mode init failed: {}",
-                name as &str,
-                error_name as &str
-            );
+            pw_log::error!("{} mode init failed: {}", name as &str, error_name as &str);
             dump_i2c1_registers(name, &config);
             Err(ERR_INIT_FAILED)
         }
@@ -430,11 +426,7 @@ fn run_init_case_dma(name: &str, config: I2cConfig) -> Result<(), &'static str> 
         }
         Err(error) => {
             let error_name = i2c_error_str(error);
-            pw_log::error!(
-                "{} mode init failed: {}",
-                name as &str,
-                error_name as &str
-            );
+            pw_log::error!("{} mode init failed: {}", name as &str, error_name as &str);
             dump_i2c1_registers(name, &config);
             Err(ERR_INIT_FAILED)
         }
