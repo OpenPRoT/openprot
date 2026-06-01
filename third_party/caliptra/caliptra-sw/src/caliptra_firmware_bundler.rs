@@ -37,9 +37,7 @@ use std::path::PathBuf;
 use anyhow::{anyhow, bail, Context, Result};
 use caliptra_image_crypto::RustCrypto as Crypto;
 use caliptra_image_fake_keys::{OWNER_CONFIG, VENDOR_CONFIG_KEY_0};
-use caliptra_image_gen::{
-    ImageGenerator, ImageGeneratorConfig, ImageGeneratorExecutable,
-};
+use caliptra_image_gen::{ImageGenerator, ImageGeneratorConfig, ImageGeneratorExecutable};
 use caliptra_image_types::{FwVerificationPqcKeyType, ImageRevision};
 use elf::endian::AnyEndian;
 use elf::ElfBytes;
@@ -84,9 +82,7 @@ impl ElfExecutable {
             }
             let seg_addr = segment.p_paddr as u32;
             if seg_addr < load_addr {
-                bail!(
-                    "segment at 0x{seg_addr:08x} below base 0x{load_addr:08x}"
-                );
+                bail!("segment at 0x{seg_addr:08x} below base 0x{load_addr:08x}");
             }
             let offset = (seg_addr - load_addr) as usize;
             let end = offset + data.len();
@@ -166,15 +162,14 @@ fn main() -> Result<()> {
     // rev-parse anyway.
     let rev: ImageRevision = *b"~~~~~NO_GIT_REVISION";
 
-    let fmc_bytes = fs::read(&args.fmc)
-        .with_context(|| format!("failed to read FMC ELF {:?}", args.fmc))?;
+    let fmc_bytes =
+        fs::read(&args.fmc).with_context(|| format!("failed to read FMC ELF {:?}", args.fmc))?;
     let runtime_bytes = fs::read(&args.runtime)
         .with_context(|| format!("failed to read Runtime ELF {:?}", args.runtime))?;
 
-    let fmc = ElfExecutable::from_bytes(&fmc_bytes, 0, rev)
-        .context("failed to pack FMC ELF")?;
-    let runtime = ElfExecutable::from_bytes(&runtime_bytes, 0, rev)
-        .context("failed to pack Runtime ELF")?;
+    let fmc = ElfExecutable::from_bytes(&fmc_bytes, 0, rev).context("failed to pack FMC ELF")?;
+    let runtime =
+        ElfExecutable::from_bytes(&runtime_bytes, 0, rev).context("failed to pack Runtime ELF")?;
 
     let cfg = ImageGeneratorConfig {
         pqc_key_type: FwVerificationPqcKeyType::LMS,

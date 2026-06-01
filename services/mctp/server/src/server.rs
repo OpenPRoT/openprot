@@ -103,11 +103,7 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
     /// If a message is available, returns the metadata and copies the
     /// payload into `buf`. Otherwise returns `None` and the caller
     /// should register a pending recv via [`register_recv`](Self::register_recv).
-    pub fn try_recv(
-        &mut self,
-        handle: Handle,
-        buf: &mut [u8],
-    ) -> Option<RecvMetadata> {
+    pub fn try_recv(&mut self, handle: Handle, buf: &mut [u8]) -> Option<RecvMetadata> {
         let cookie = AppCookie(handle.0 as usize);
         let msg = self.stack.recv(cookie)?;
 
@@ -182,14 +178,9 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
         // Responses need no handle, use 255 as dummy
         let cookie = AppCookie(handle.unwrap_or(Handle(255)).0 as usize);
 
-        let result = self.stack.send(
-            eid.map(Eid),
-            MsgType(typ),
-            tag,
-            MsgIC(ic),
-            cookie,
-            buf,
-        );
+        let result = self
+            .stack
+            .send(eid.map(Eid), MsgType(typ), tag, MsgIC(ic), cookie, buf);
 
         match result {
             Ok(tag) => Ok(tag.tag().0),
@@ -208,10 +199,7 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
         recv_buf: &mut [u8],
     ) -> (u32, heapless::Vec<(Handle, RecvResult), OUTSTANDING>) {
         // Update the mctp-stack; get the next timeout interval
-        let stack_timeout = self
-            .stack
-            .update(now_millis)
-            .unwrap_or(60_000) as u32;
+        let stack_timeout = self.stack.update(now_millis).unwrap_or(60_000) as u32;
 
         let mut ready: heapless::Vec<(Handle, RecvResult), OUTSTANDING> = heapless::Vec::new();
 
@@ -264,9 +252,7 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
     /// binding. The packet should be a raw MCTP packet without transport
     /// headers (the transport binding strips those).
     pub fn inbound(&mut self, pkt: &[u8]) -> Result<(), MctpError> {
-        self.stack
-            .inbound(pkt)
-            .map_err(mctp_error_to_server_error)
+        self.stack.inbound(pkt).map_err(mctp_error_to_server_error)
     }
 }
 

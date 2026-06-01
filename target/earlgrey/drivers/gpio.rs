@@ -3,8 +3,8 @@
 
 #![no_std]
 
-use earlgrey_pinmux::{EarlGreyPinmux, Pad, PadConfig, Pull};
 use core::fmt::Debug;
+use earlgrey_pinmux::{EarlGreyPinmux, Pad, PadConfig, Pull};
 use openprot_hal_blocking::gpio_port::{
     EdgeSensitivity, GpioError, GpioErrorKind, GpioErrorType, GpioInterrupt, GpioPort,
     InterruptOperation, PinMask,
@@ -34,9 +34,9 @@ pub struct EarlGreyGpio {
 
 impl EarlGreyGpio {
     /// Create a new instance of the EarlGrey GPIO driver using real MMIO.
-    /// 
+    ///
     /// # Safety
-    /// 
+    ///
     /// The caller must ensure that they have exclusive access to the GPIO and Pinmux peripherals.
     pub unsafe fn new() -> Self {
         Self {
@@ -46,7 +46,7 @@ impl EarlGreyGpio {
     }
 
     /// Read current state of output pins.
-    /// 
+    ///
     /// This is a target-specific extension not yet in the core HAL.
     pub fn read_output(&self) -> Result<GpioMask, EarlGreyGpioError> {
         Ok(GpioMask(self.registers.direct_out().read()))
@@ -97,10 +97,38 @@ impl PinMask for GpioMask {
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum GpioPin {
-    Pin0 = 0, Pin1 = 1, Pin2 = 2, Pin3 = 3, Pin4 = 4, Pin5 = 5, Pin6 = 6, Pin7 = 7,
-    Pin8 = 8, Pin9 = 9, Pin10 = 10, Pin11 = 11, Pin12 = 12, Pin13 = 13, Pin14 = 14, Pin15 = 15,
-    Pin16 = 16, Pin17 = 17, Pin18 = 18, Pin19 = 19, Pin20 = 20, Pin21 = 21, Pin22 = 22, Pin23 = 23,
-    Pin24 = 24, Pin25 = 25, Pin26 = 26, Pin27 = 27, Pin28 = 28, Pin29 = 29, Pin30 = 30, Pin31 = 31,
+    Pin0 = 0,
+    Pin1 = 1,
+    Pin2 = 2,
+    Pin3 = 3,
+    Pin4 = 4,
+    Pin5 = 5,
+    Pin6 = 6,
+    Pin7 = 7,
+    Pin8 = 8,
+    Pin9 = 9,
+    Pin10 = 10,
+    Pin11 = 11,
+    Pin12 = 12,
+    Pin13 = 13,
+    Pin14 = 14,
+    Pin15 = 15,
+    Pin16 = 16,
+    Pin17 = 17,
+    Pin18 = 18,
+    Pin19 = 19,
+    Pin20 = 20,
+    Pin21 = 21,
+    Pin22 = 22,
+    Pin23 = 23,
+    Pin24 = 24,
+    Pin25 = 25,
+    Pin26 = 26,
+    Pin27 = 27,
+    Pin28 = 28,
+    Pin29 = 29,
+    Pin30 = 30,
+    Pin31 = 31,
 }
 
 impl From<GpioPin> for GpioMask {
@@ -116,7 +144,7 @@ pub struct EarlGreyPinConfig {
     pub is_output: bool,
     /// Whether to enable the 16-cycle input filter.
     pub input_filter: bool,
-    /// Optional pad to connect these pins to. 
+    /// Optional pad to connect these pins to.
     /// If multiple pins are specified in the mask, this should be None.
     pub pad: Option<Pad>,
     /// Pull-up/down configuration for the pad.
@@ -175,8 +203,8 @@ impl GpioPort for EarlGreyGpio {
         // Handle Pinmux and Pad attributes
         if let Some(pad) = config.pad {
             let pin_idx = pins.0.trailing_zeros() as usize;
-            
-            // DIO pads are dedicated and don't require routing, 
+
+            // DIO pads are dedicated and don't require routing,
             // only attribute configuration.
             if !pad.is_dio() {
                 if config.is_input {
@@ -187,10 +215,13 @@ impl GpioPort for EarlGreyGpio {
                 }
             }
 
-            self.pinmux.configure_pad(pad, &PadConfig {
-                pull: config.pull,
-                ..Default::default()
-            });
+            self.pinmux.configure_pad(
+                pad,
+                &PadConfig {
+                    pull: config.pull,
+                    ..Default::default()
+                },
+            );
         }
 
         Ok(())
@@ -207,9 +238,9 @@ impl GpioPort for EarlGreyGpio {
         let lower_mask = set_lower | reset_lower;
 
         if lower_mask != 0 {
-            self.registers.masked_out_lower().write(|w| {
-                w.mask(lower_mask).data(set_lower)
-            });
+            self.registers
+                .masked_out_lower()
+                .write(|w| w.mask(lower_mask).data(set_lower));
         }
 
         // Process upper 16 bits
@@ -218,9 +249,9 @@ impl GpioPort for EarlGreyGpio {
         let upper_mask = set_upper | reset_upper;
 
         if upper_mask != 0 {
-            self.registers.masked_out_upper().write(|w| {
-                w.mask(upper_mask).data(set_upper)
-            });
+            self.registers
+                .masked_out_upper()
+                .write(|w| w.mask(upper_mask).data(set_upper));
         }
 
         Ok(())
@@ -248,8 +279,12 @@ impl GpioInterrupt for EarlGreyGpio {
     ) -> Result<(), Self::Error> {
         // Clear all sensitivity settings for these pins first
         self.registers.intr_ctrl_en_rising().modify(|w| w & !mask.0);
-        self.registers.intr_ctrl_en_falling().modify(|w| w & !mask.0);
-        self.registers.intr_ctrl_en_lvlhigh().modify(|w| w & !mask.0);
+        self.registers
+            .intr_ctrl_en_falling()
+            .modify(|w| w & !mask.0);
+        self.registers
+            .intr_ctrl_en_lvlhigh()
+            .modify(|w| w & !mask.0);
         self.registers.intr_ctrl_en_lvllow().modify(|w| w & !mask.0);
 
         // Apply new sensitivity

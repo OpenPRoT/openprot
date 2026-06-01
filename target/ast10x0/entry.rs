@@ -87,8 +87,6 @@ unsafe fn pre_init() {
     unsafe { init_cache() };
 }
 
-
-
 #[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub extern "C" fn pw_assert_HandleFailure() -> ! {
@@ -113,14 +111,9 @@ macro_rules! default_handler {
 
 // Default stub handlers for peripherals not yet implemented
 default_handler!(
-    fmc, gpio, hace,
-    i2c, i2c1, i2c2, i2c3, i2c4, i2c5, i2c6, i2c7, i2c8, i2c9, i2c10, i2c11, i2c12, i2c13,
-    i2cfilter,
-    i3c, i3c1, i3c2, i3c3,
-    scu, sgpiom,
-    spi, spi1, spipf1, spipf2, spipf3,
-    timer1, timer2, timer3, timer4, timer5, timer6, timer7,
-    uart, uartdma, wdt
+    fmc, gpio, hace, i2c, i2c1, i2c2, i2c3, i2c4, i2c5, i2c6, i2c7, i2c8, i2c9, i2c10, i2c11,
+    i2c12, i2c13, i2cfilter, i3c, i3c1, i3c2, i3c3, scu, sgpiom, spi, spi1, spipf1, spipf2, spipf3,
+    timer1, timer2, timer3, timer4, timer5, timer6, timer7, uart, uartdma, wdt
 );
 
 mod console_backend {

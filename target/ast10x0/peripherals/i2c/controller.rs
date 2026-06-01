@@ -286,4 +286,3 @@ impl<'a, Y: FnMut(u32)> Ast1060I2c<'a, Y> {
         }
     }
 }
-

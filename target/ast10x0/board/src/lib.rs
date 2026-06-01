@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #![no_std]
-
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -12,8 +11,8 @@
     clippy::unimplemented
 )]
 
-use ast10x0_peripherals::scu::{PinctrlPin, ScuRegisters};
 use ast10x0_peripherals::scu::{ClockRegisterHalf, ScuRegisterHalf};
+use ast10x0_peripherals::scu::{PinctrlPin, ScuRegisters};
 
 /// Board descriptor metadata for AST10x0 board initialization.
 #[derive(Clone, Debug)]

@@ -12,10 +12,10 @@ mod common;
 use std::cell::RefCell;
 
 use mctp::Eid;
-use openprot_mctp_api::{ResponseCode};
+use openprot_mctp_api::ResponseCode;
 use openprot_mctp_server::{RecvResult, Server, ServerConfig};
 
-use common::{BufferSender, DroppingBufferSender, transfer};
+use common::{transfer, BufferSender, DroppingBufferSender};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -95,7 +95,9 @@ fn listener_duplicate_msg_type_returns_addr_in_use() {
     let sender = DroppingBufferSender;
     let mut server: Server<_, 16> = Server::new(Eid(8), 0, sender);
     server.listener(1).expect("first listener should succeed");
-    let err = server.listener(1).expect_err("duplicate listener should fail");
+    let err = server
+        .listener(1)
+        .expect_err("duplicate listener should fail");
     assert_eq!(err.code, ResponseCode::AddrInUse);
 }
 

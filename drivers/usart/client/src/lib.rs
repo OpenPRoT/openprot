@@ -3,9 +3,7 @@
 
 #![no_std]
 
-use usart_api::{
-    UsartError, UsartOp, UsartRequestHeader, UsartResponseHeader, MAX_PAYLOAD_SIZE,
-};
+use usart_api::{UsartError, UsartOp, UsartRequestHeader, UsartResponseHeader, MAX_PAYLOAD_SIZE};
 use userspace::syscall;
 use userspace::time::Instant;
 
