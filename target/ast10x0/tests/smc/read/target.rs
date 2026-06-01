@@ -85,6 +85,7 @@ fn run_smc_read_test() -> Result<(), SmcError> {
     pw_log::info!("=== Dump 0x7E62_0000 ===");
     dump_smc_register(0x7E62_0000, 16);
     dump_smc_register(0x8000_0000, 16);
+    dump_smc_register(0x8080_0000, 16);
     if !controller.is_ready() || controller.controller_id() != SmcController::Fmc {
         return Err(SmcError::HardwareError);
     }
@@ -92,7 +93,6 @@ fn run_smc_read_test() -> Result<(), SmcError> {
     // --- 2. MMIO read — success path ---
     // Confirm the call succeeds and returns the correct byte count.  Flash
     // content is not inspected so this is safe on both QEMU and silicon.
-    // TODO: need to add test CS1
     pw_log::info!("=== read test cs0===");
     let mut buf = [0u8; 64];
     let n = controller.read(ChipSelect::Cs0, 0x400, &mut buf)?;
@@ -102,7 +102,7 @@ fn run_smc_read_test() -> Result<(), SmcError> {
     dump_smc_read(&buf, 64);
 
     pw_log::info!("=== read test cs1===");
-    let n = controller.read(ChipSelect::Cs1, 0x400, &mut buf)?;
+    let n = controller.read(ChipSelect::Cs1, 0x100000, &mut buf)?;
     if n != 64 {
         return Err(SmcError::HardwareError);
     }

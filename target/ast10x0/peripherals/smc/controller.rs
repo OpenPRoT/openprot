@@ -7,7 +7,7 @@ use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 
 use crate::smc::helpers::{
-    encode_segment, flash_capacity_bytes, get_mid_point_of_longest_one, spi_calibration_enable,
+    encode_fmc_segment, encode_spi_segment, flash_capacity_bytes, get_mid_point_of_longest_one, spi_calibration_enable,
     spi_freq_div, total_capacity_bytes, validate_dma_read, validate_mapped_range,
     SPI_CTRL_FREQ_MASK, SPI_DMA_CALC_CKSUM, SPI_DMA_CALIB_MODE, SPI_DMA_ENABLE,
     SPI_DMA_RAM_MAP_BASE,
@@ -19,7 +19,7 @@ use crate::smc::types::*;
 /// Internal controller state
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SmcState {
-    /// Controller is initialized and idle — no operation in progress.
+    /// Controller is initialized and idle - no operation in progress.
     Idle,
     /// A DMA transfer has been kicked and is in progress.
     DmaInFlight,
@@ -35,7 +35,7 @@ pub const SPI_NOR_CMD_QREAD_4B: u32 = 0x6C;
 const SPI_NOR_4B_READ_THRESHOLD_BYTES: usize = 16 * 1024 * 1024;
 const SPI_NOR_ADDR_WIDTH_MASK: u32 = 0x11;
 const DMA_STATUS_RELEVANT_BITS: u32 = (1 << 11) | (1 << 10) | (1 << 9);
-/// Mask for bits that are not IO mode or mode-type fields — preserves
+/// Mask for bits that are not IO mode or mode-type fields - preserves
 /// frequency divisor and other config bits across per-phase ctrl writes.
 const SPI_CTRL_IO_MODE_MASK: u32 = !0x7000_0000;
 const SPI_CALIB_LEN: usize = 0x400;
@@ -166,7 +166,15 @@ impl Smc<Uninitialized> {
         // Compute per-CS AHB flash window base addresses.
         let base = self.controller_id.flash_window_address();
         let cs0_size = flash_capacity_bytes(self.config.cs0).unwrap_or(0);
+        let cs1_size = flash_capacity_bytes(self.config.cs1).unwrap_or(0);
         let flash_window_base = [base, base + cs0_size];
+        pw_log::info!(
+            "SMC CS windows cs0=0x{:08x}/{} cs1=0x{:08x}/{}",
+            flash_window_base[0] as u32,
+            cs0_size as u32,
+            flash_window_base[1] as u32,
+            cs1_size as u32
+        );
 
         Ok(Smc {
             regs: self.regs,
@@ -177,6 +185,12 @@ impl Smc<Uninitialized> {
             flash_window_base,
             _mode: PhantomData,
         })
+    }
+    fn encode_segment(&self, start: usize, end: usize) -> Result<u32, SmcError> {
+        match self.config.controller_id {
+            SmcController::Fmc => encode_fmc_segment(start, end),
+            SmcController::Spi1 | SmcController::Spi2 => encode_spi_segment(start, end),
+        }
     }
     fn setup_segments(&self) -> Result<(), SmcError> {
         // Decode-range sizing is topology-aware.
@@ -197,12 +211,12 @@ impl Smc<Uninitialized> {
         total_capacity_bytes(self.config.cs0, self.config.cs1)?;
 
         if cs0_size > 0 {
-            let seg = encode_segment(0, cs0_size)?;
+            let seg = self.encode_segment(0, cs0_size)?;
             self.regs.write_cs0_segment(seg);
         }
 
         if cs1_size > 0 {
-            let seg = encode_segment(cs0_size, cs0_size + cs1_size)?;
+            let seg = self.encode_segment(cs0_size, cs0_size + cs1_size)?;
             self.regs.write_cs1_segment(seg);
         }
 
@@ -222,18 +236,19 @@ impl Smc<Ready> {
         let window = self.flash_window_base[cs_idx] as *const u8;
         let offset = validate_mapped_range(offset, buf.len(), cs_capacity)?;
         let flash_ptr = window.wrapping_add(offset);
-        pw_log::debug!(
-            "read: offset0x{:08x}, size:0x{:08x}, flash ptr:0x{:08x}",
-            offset as u32,
-            buf.len() as u32,
-            flash_ptr as u32
-        );
         // SAFETY: `flash_ptr` is derived from the controller's fixed MMIO flash
         // window using `wrapping_add`, which avoids imposing Rust allocation
         // provenance rules on the raw address arithmetic itself. The actual read
         // below requires the requested `[offset, offset + buf.len())` range to be
         // backed by the controller's mapped flash aperture, and `buf` provides a
         // valid, writable destination that does not overlap this MMIO window.
+        pw_log::debug!(
+            "SMC read cs{} offset=0x{:08x} len=0x{:08x} -> flash_ptr=0x{:08x}",
+            cs_idx as u32,
+            offset as u32,
+            buf.len() as u32,
+            flash_ptr as u32
+        );
         unsafe {
             core::ptr::copy_nonoverlapping(flash_ptr, buf.as_mut_ptr(), buf.len());
         }
@@ -301,7 +316,7 @@ impl Smc<Ready> {
 
         // Acquire the DMA bus arbiter before programming any DMA registers.
         // On SPI1/SPI2: writes SPI_DMA_GET_REQ_MAGIC and spins until DMAGrant
-        // (bit 30 of spi080) is set. On FMC: bits 20–31 are Reserved — the write
+        // (bit 30 of spi080) is set. On FMC: bits 20-31 are Reserved - the write
         // is a no-op and the spin condition is immediately false. Safe to call
         // unconditionally on all controllers, matching aspeed-rust's approach.
         self.regs.acquire_dma_arbiter();
@@ -504,8 +519,9 @@ impl Smc<Ready> {
 
         let cs_idx = cs as usize;
         // Derive user-mode base from the stored normal-read value: preserve
-        // frequency bits and replace mode type with ASPEED_SPI_USER.
-        let user_base = (self.normal_read_ctrl[cs_idx] & SPI_CTRL_FREQ_MASK) | ASPEED_SPI_USER;
+        // controller timing/control bits and replace only the low mode type.
+		// TODO: check this logic
+        let user_base = (self.normal_read_ctrl[cs_idx] & !0x7) | ASPEED_SPI_USER;
         let window = self.flash_window_base[cs_idx] as *mut u32;
 
         // Assert CS: inactive first, then active (matches aspeed-rust activate_user).
@@ -516,7 +532,7 @@ impl Smc<Ready> {
         // SAFETY: user mode is active; the flash aperture is the hardware-defined
         // byte-stream port for SPI command traffic while user mode is held.
         unsafe {
-            // Command phase — always single-wire.
+            // Command phase - always single-wire.
             let cmd_ctrl = (user_base & SPI_CTRL_IO_MODE_MASK) | mode.cmd_io_bits();
             self.regs.write_cs_ctrl(cs, cmd_ctrl);
             spi_write_data(window, cmd);
