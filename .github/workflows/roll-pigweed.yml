@@ -1,0 +1,47 @@
+name: Roll pigweed
+
+on:
+  schedule:
+    # Runs every day at 15:00 UTC (8:00 AM PDT / 7:00 AM PST)
+    - cron: '0 15 * * *'
+  workflow_dispatch: # Allows you to trigger it manually from the Actions tab
+
+jobs:
+  create-pull-request:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the earlgrey-hwe branch
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run Script
+        run: |
+          python presubmit/roller.py \
+              --remote pigweed=https://github.com/pigweed-project/pigweed.git \
+              MODULE.bazel
+
+      - name: Generate GitHub App Token
+        id: generate-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.SYNCHRONIZE_BOT_APP_ID }}
+          private-key: ${{ secrets.SYNCHRONIZE_BOT_PRIVATE_KEY }}
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ steps.generate-token.outputs.token }}
+          branch: automation/roll-pigweed
+          base: main
+          title: 'chore: roll pigweed'
+          reviewers: cfrantz
+          body: |
+            This is an automated PR to roll forward to the latest pigweed.
+            Please review and fix any bugs if they arise.
+          labels: |
+            automated-pr
+            sync
