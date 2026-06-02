@@ -88,7 +88,10 @@ mod tests {
     #[test]
     fn decode_emits_dma_error_on_abort_by_default() {
         let intr_ctrl = 1 << 10;
-        assert_eq!(SmcInterruptDecoder::decode(intr_ctrl), SmcInterrupt::DmaError);
+        assert_eq!(
+            SmcInterruptDecoder::decode(intr_ctrl),
+            SmcInterrupt::DmaError
+        );
     }
 
     #[test]
