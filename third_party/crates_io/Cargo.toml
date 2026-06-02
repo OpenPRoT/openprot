@@ -42,6 +42,7 @@ zeroize = { version = "1.8", default-features = false, features = ["derive"] }
 cortex-m = "0.7.7"
 cortex-m-rt = "0.7.5"
 cortex-m-semihosting = "0.5.0"
+critical-section = "1.2"
 embedded-hal = "1.0"
 embedded-hal-async = "1.0"
 embedded-hal-nb = "1.0"
@@ -51,6 +52,7 @@ nb = "1.1"
 fugit = "0.3.7"
 openprot-hal-blocking = { git = "https://github.com/rusty1968/openprot.git", rev = "c6cd23a" }
 heapless = { version = "0.9", default-features = false }
+proposed-traits = { git = "https://github.com/rusty1968/proposed_traits.git", rev = "85641310df5a5276c67f81621b104322cff0286c" }
 mctp = { git = "https://github.com/CodeConstruct/mctp-rs.git" }
 mctp-lib = { git = "https://github.com/OpenPRoT/mctp-lib.git", branch = "9e-buildup" }
 # Pin to match Hubris ecosystem
