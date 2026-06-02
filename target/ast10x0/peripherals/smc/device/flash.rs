@@ -505,6 +505,8 @@ impl SpiNorFlashDevice for SpiNorFlash<'_> {
         self.validate_range(offset, buf.len())?;
         let translated = self.device_to_controller_offset(offset)?;
         let cs = self.cs;
+        //TODO: need to add dma_read variant if buf.len() is above some threshold
+        // and dma is enabled
         match &self.backend {
             FlashBackend::Fmc(fmc) => fmc.read(cs, translated, buf),
             FlashBackend::Spi(spi) => spi.read(cs, translated, buf),
