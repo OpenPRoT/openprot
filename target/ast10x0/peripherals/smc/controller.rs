@@ -9,9 +9,8 @@ use core::marker::PhantomData;
 use crate::smc::helpers::{
     encode_fmc_segment, encode_spi_segment, flash_capacity_bytes, get_mid_point_of_longest_one,
     spi_calibration_enable, spi_freq_div, total_capacity_bytes, validate_dma_read,
-    validate_mapped_range,
-    SPI_CTRL_FREQ_MASK, SPI_DMA_CALC_CKSUM, SPI_DMA_CALIB_MODE, SPI_DMA_ENABLE,
-    SPI_DMA_RAM_MAP_BASE,
+    validate_mapped_range, SPI_CTRL_FREQ_MASK, SPI_DMA_CALC_CKSUM, SPI_DMA_CALIB_MODE,
+    SPI_DMA_ENABLE, SPI_DMA_RAM_MAP_BASE,
 };
 use crate::smc::interrupts::{SmcInterrupt, SmcInterruptDecoder};
 use crate::smc::registers::SmcRegisters;
