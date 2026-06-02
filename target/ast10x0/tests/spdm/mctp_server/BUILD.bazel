@@ -1,0 +1,31 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+#
+# MCTP Server for SPDM testing
+#
+# STUB IMPLEMENTATION — This is a minimal MCTP server that speaks the
+# openprot_mctp_api::wire protocol with deterministic responses for testing.
+#
+# TODO: Replace this stub with a real MCTP server implementation when
+# hardware transport is integrated. The rust_app target in the test
+# BUILD.bazel should only need to change its dependency from this
+# package to the real implementation.
+
+load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app")
+load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
+
+rust_app(
+    name = "mctp_server",
+    srcs = ["src/main.rs"],
+    codegen_crate_name = "app_mctp_server",
+    edition = "2024",
+    system_config = "//target/ast10x0/tests/spdm/responder:system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//target/ast10x0/tests/spdm:__subpackages__"],
+    deps = [
+        "//services/mctp/api:mctp_api",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)

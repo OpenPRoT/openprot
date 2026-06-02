@@ -1,0 +1,81 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 SPDM Responder test system image.
+//
+// Two-process layout:
+//
+//   mctp_server     — MCTP channel handler (stub for testing)
+//   spdm_responder  — SPDM responder using spdm-lib
+//
+// Memory map (AST10x0: 768 KB SRAM, no XIP):
+//   0x00000000 - 0x00000500  vector table (1280 B)
+//   0x00000500 - 0x00020500  kernel flash (~128 KB)
+//   0x00020500 - 0x00060500  app flash (256 KB total; 128 KB per app)
+//   0x00060000 - 0x00080000  kernel RAM (128 KB)
+//   0x00080000 - 0x000C0000  app RAM (256 KB total)
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,
+    },
+    kernel: {
+        flash_start_address: 0x00000500,
+        flash_size_bytes: 129792,
+        ram_start_address: 0x00060000,
+        ram_size_bytes: 131072,
+    },
+    apps: [
+        {
+            name: "mctp_server",
+            flash_size_bytes: 131072,
+            processes: [
+                {
+                    name: "mctp_server_process",
+                    ram_size_bytes: 32768,
+                    objects: [
+                        {
+                            name: "wg",
+                            type: "wait_group",
+                        },
+                        {
+                            name: "mctp",
+                            type: "channel_handler",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "mctp_server_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            name: "spdm_responder",
+            flash_size_bytes: 131072,
+            processes: [
+                {
+                    name: "spdm_responder_process",
+                    ram_size_bytes: 65536,
+                    objects: [
+                        {
+                            name: "mctp",
+                            type: "channel_initiator",
+                            handler_process: "mctp_server_process",
+                            handler_object_name: "mctp",
+                        },
+                    ],
+                    threads: [
+                        {
+                            name: "spdm_responder_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}
