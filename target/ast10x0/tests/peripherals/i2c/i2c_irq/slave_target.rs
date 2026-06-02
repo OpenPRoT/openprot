@@ -15,7 +15,8 @@
 
 use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
 use ast10x0_peripherals::i2c::{
-    Ast1060I2c, ClockConfig, I2cConfig, I2cSpeed, I2cXferMode, SlaveConfig, SlaveEvent,
+    Ast1060I2c, Ast1060I2cRegisters, ClockConfig, I2cConfig, I2cSpeed, I2cXferMode, SlaveConfig,
+    SlaveEvent,
 };
 use ast10x0_peripherals::scu::pinctrl;
 use codegen as _;
@@ -60,18 +61,15 @@ fn run_slave() -> Result<(), &'static str> {
 
     let board = Ast10x0Board::new(Ast10x0BoardDescriptor {
         pinctrl_groups: &[pinctrl::PINCTRL_I2C2],
+        i2c_buses: &[],
     });
     // SAFETY: single call at boot with exclusive access to SCU/I2C global regs.
-    unsafe { board.init() };
+    unsafe { board.init() }.expect("board init failed");
 
-    // SAFETY: I2C2 registers accessed only through `slave` for this test.
+    // SAFETY: single MMIO-pointer perimeter — the test owns I2C2 for the process lifetime.
     let mut slave = unsafe {
-        Ast1060I2c::new(
-            ast1060_pac::I2c2::ptr(),
-            ast1060_pac::I2cbuff2::ptr(),
-            &i2c2_config(),
-            |_| core::hint::spin_loop(),
-        )
+        let mmio = Ast1060I2cRegisters::new(ast1060_pac::I2c2::ptr(), ast1060_pac::I2cbuff2::ptr());
+        Ast1060I2c::new(mmio, &i2c2_config(), |_| core::hint::spin_loop())
     }
     .map_err(|_| "slave I2C2 init failed")?;
 

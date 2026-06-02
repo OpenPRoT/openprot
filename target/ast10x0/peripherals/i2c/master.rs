@@ -38,9 +38,9 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
         }
 
         match self.xfer_mode {
-            I2cXferMode::ByteMode => self.write_byte_mode(addr, bytes),
-            I2cXferMode::BufferMode => self.write_buffer_mode(addr, bytes),
-            I2cXferMode::DmaMode => self.write_dma_mode(addr, bytes),
+            I2cXferMode::ByteMode => self.write_byte_mode(addr, bytes, true),
+            I2cXferMode::BufferMode => self.write_buffer_mode(addr, bytes, true),
+            I2cXferMode::DmaMode => self.write_dma_mode(addr, bytes, true),
         }
     }
 
@@ -57,27 +57,43 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
         }
     }
 
-    /// Write then read (combined transaction)
+    /// Write then read with repeated-START (no STOP between phases).
+    ///
+    /// The write phase omits `STOP_CMD` so the hardware holds SCL low
+    /// (clock-stretch) after the last TX ACK. The read's `START_CMD` on a
+    /// held bus is interpreted by the hardware as a repeated-START, matching
+    /// MCTP/SMBus semantics.
+    ///
+    /// This works in the polling model because the CPU issues the read command
+    /// within microseconds of write completion — well within the clock-stretch
+    /// window. Requires `smbus_timeout` disabled (or set long enough) in the
+    /// bus config to prevent the hardware releasing the bus before the read
+    /// command is issued.
     pub fn write_read(
         &mut self,
         addr: u8,
         bytes: &[u8],
         buffer: &mut [u8],
     ) -> Result<(), I2cError> {
-        // Write phase
-        self.write(addr, bytes)?;
-
-        // Read phase
-        self.read(addr, buffer)?;
-
-        Ok(())
+        // Write without STOP — bus stays held for repeated-START
+        let result = match self.xfer_mode {
+            I2cXferMode::ByteMode => self.write_byte_mode(addr, bytes, false),
+            I2cXferMode::BufferMode => self.write_buffer_mode(addr, bytes, false),
+            I2cXferMode::DmaMode => self.write_dma_mode(addr, bytes, false),
+        };
+        // Read — START on held bus = repeated-START
+        result.and_then(|()| match self.xfer_mode {
+            I2cXferMode::ByteMode => self.read_byte_mode(addr, buffer),
+            I2cXferMode::BufferMode => self.read_buffer_mode(addr, buffer),
+            I2cXferMode::DmaMode => self.read_dma_mode(addr, buffer),
+        })
     }
 
     /// Write in byte mode (for small transfers)
     ///
     /// Uses i2cc08 for TX byte data buffer, i2cm18 for commands.
     /// Only sends START on first byte, STOP on last byte.
-    fn write_byte_mode(&mut self, addr: u8, bytes: &[u8]) -> Result<(), I2cError> {
+    fn write_byte_mode(&mut self, addr: u8, bytes: &[u8], stop: bool) -> Result<(), I2cError> {
         let msg_len = bytes.len();
 
         // Initialize transfer state
@@ -109,8 +125,8 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
                 cmd |= constants::ast_i2cm_pkt_addr(addr) | constants::AST_I2CM_START_CMD;
             }
 
-            // Send STOP on last byte
-            if is_last {
+            // Send STOP on last byte (omitted when caller wants repeated-START)
+            if is_last && stop {
                 cmd |= constants::AST_I2CM_STOP_CMD;
             }
 
@@ -197,7 +213,7 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
     /// Single transaction model: START+addr on first chunk only,
     /// subsequent chunks continue the transaction without re-addressing.
     /// Reference: `ast1060_i2c.rs` `do_i2cm_tx()` continuation logic
-    fn write_buffer_mode(&mut self, addr: u8, bytes: &[u8]) -> Result<(), I2cError> {
+    fn write_buffer_mode(&mut self, addr: u8, bytes: &[u8], stop: bool) -> Result<(), I2cError> {
         let total_len = bytes.len();
         let mut offset = 0;
 
@@ -242,8 +258,8 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
                 cmd |= constants::ast_i2cm_pkt_addr(addr) | constants::AST_I2CM_START_CMD;
             }
 
-            // Add STOP on last chunk
-            if is_last {
+            // Add STOP on last chunk (omitted when caller wants repeated-START)
+            if is_last && stop {
                 cmd |= constants::AST_I2CM_STOP_CMD;
             }
 
@@ -359,6 +375,21 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
 
         // Check for packet mode completion
         if status & constants::AST_I2CM_PKT_DONE != 0 {
+            // Workaround: master/slave packet mode TX_ACK stuck issue.
+            // When master gets TX_ACK mid-transaction (no STOP yet) while slave
+            // packet mode is active, the slave state machine latches a spurious
+            // RX_DONE and will NACK the next master byte. Pulse i2cs28 to clear it.
+            // Ref: Zephyr i2c_aspeed.c aspeed_i2c_master_irq() ~line 1284
+            if status & (constants::AST_I2CM_TX_ACK | constants::AST_I2CM_NORMAL_STOP)
+                == constants::AST_I2CM_TX_ACK
+            {
+                if self.regs().i2cs28().read().enbl_slave_pkt_op_mode().bit() {
+                    let slave_cmd = self.regs().i2cs28().read().bits();
+                    self.regs().i2cs28().write(|w| unsafe { w.bits(0) });
+                    self.regs().i2cs28().write(|w| unsafe { w.bits(slave_cmd) });
+                }
+            }
+
             self.completion = true;
             self.clear_interrupts(constants::AST_I2CM_PKT_DONE);
 
@@ -433,7 +464,7 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
     /// staging area. For transfers larger than `DMA_MODE_MAX_SIZE` the data is
     /// chunked into successive START-less continuation transactions (i.e. the bus
     /// is NOT released between chunks).
-    fn write_dma_mode(&mut self, addr: u8, bytes: &[u8]) -> Result<(), I2cError> {
+    fn write_dma_mode(&mut self, addr: u8, bytes: &[u8], stop: bool) -> Result<(), I2cError> {
         let total_len = bytes.len();
         let mut offset = 0;
 
@@ -452,9 +483,12 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
             let is_first = offset == 0;
             let is_last = offset + chunk_len >= total_len;
 
-            // Copy chunk to DMA buffer (non-cached SRAM)
+            // Copy chunk to master DMA buffer (non-cached SRAM)
             {
-                let dma_buf = self.dma_buf.as_deref_mut().ok_or(I2cError::Invalid)?;
+                let dma_buf = self
+                    .master_dma_buf
+                    .as_deref_mut()
+                    .ok_or(I2cError::Invalid)?;
                 if dma_buf.len() < chunk_len {
                     return Err(I2cError::Invalid);
                 }
@@ -462,7 +496,7 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
             }
 
             let phy_addr = {
-                let dma_buf = self.dma_buf.as_deref().ok_or(I2cError::Invalid)?;
+                let dma_buf = self.master_dma_buf.as_deref().ok_or(I2cError::Invalid)?;
                 dma_buf.as_ptr() as u32
             };
 
@@ -491,7 +525,8 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
             if is_first {
                 cmd |= constants::ast_i2cm_pkt_addr(addr) | constants::AST_I2CM_START_CMD;
             }
-            if is_last {
+            // Add STOP on last chunk (omitted when caller wants repeated-START)
+            if is_last && stop {
                 cmd |= constants::AST_I2CM_STOP_CMD;
             }
 
@@ -535,14 +570,14 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
             let is_last = offset + chunk_len >= total_len;
 
             {
-                let dma_buf = self.dma_buf.as_deref().ok_or(I2cError::Invalid)?;
+                let dma_buf = self.master_dma_buf.as_deref().ok_or(I2cError::Invalid)?;
                 if dma_buf.len() < chunk_len {
                     return Err(I2cError::Invalid);
                 }
             }
 
             let phy_addr = {
-                let dma_buf = self.dma_buf.as_deref().ok_or(I2cError::Invalid)?;
+                let dma_buf = self.master_dma_buf.as_deref().ok_or(I2cError::Invalid)?;
                 dma_buf.as_ptr() as u32
             };
 
@@ -587,9 +622,9 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
                 return Err(I2cError::Abnormal);
             }
 
-            // Copy from DMA buffer into caller's buffer
+            // Copy from master DMA buffer into caller's buffer
             {
-                let dma_buf = self.dma_buf.as_deref().ok_or(I2cError::Invalid)?;
+                let dma_buf = self.master_dma_buf.as_deref().ok_or(I2cError::Invalid)?;
                 buffer
                     .get_mut(offset..offset + chunk_len)
                     .ok_or(I2cError::Invalid)?

@@ -5,18 +5,17 @@ load("@rules_rust//rust:defs.bzl", "rust_library")
 load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
 
 rust_library(
-    name = "ast10x0_board",
-    srcs = [
-        "src/lib.rs",
-        "src/monitor.rs",
-        "src/spim_wiring.rs",
-    ],
-    crate_name = "ast10x0_board",
+    name = "i2c_backend_ast10x0",
+    srcs = ["src/lib.rs"],
+    crate_name = "i2c_backend",
     edition = "2024",
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],
     deps = [
-        "//target/ast10x0/backend/i2c:i2c_backend_ast10x0",
+        "//hal/blocking",
+        "//services/i2c/api:i2c_api",
         "//target/ast10x0/peripherals",
+        "@ast1060_pac",
+        "@rust_crates//:embedded-hal",
     ],
 )

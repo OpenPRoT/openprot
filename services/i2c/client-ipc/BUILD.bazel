@@ -4,19 +4,16 @@
 load("@rules_rust//rust:defs.bzl", "rust_library")
 load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
 
+# The single kernel-tagged piece of the client path: the IPC Transport impl.
 rust_library(
-    name = "ast10x0_board",
-    srcs = [
-        "src/lib.rs",
-        "src/monitor.rs",
-        "src/spim_wiring.rs",
-    ],
-    crate_name = "ast10x0_board",
+    name = "i2c_client_ipc",
+    srcs = ["src/lib.rs"],
     edition = "2024",
+    tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],
     deps = [
-        "//target/ast10x0/backend/i2c:i2c_backend_ast10x0",
-        "//target/ast10x0/peripherals",
+        "//services/i2c/api:i2c_api",
+        "@pigweed//pw_kernel/userspace",
     ],
 )

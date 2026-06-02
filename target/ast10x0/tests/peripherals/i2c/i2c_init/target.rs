@@ -6,7 +6,7 @@
 
 use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
 use ast10x0_peripherals::i2c::{
-    Ast1060I2c, ClockConfig, I2cConfig, I2cError, I2cSpeed, I2cXferMode,
+    Ast1060I2c, Ast1060I2cRegisters, ClockConfig, I2cConfig, I2cError, I2cSpeed, I2cXferMode,
 };
 use ast10x0_peripherals::scu::pinctrl;
 use codegen as _;
@@ -314,10 +314,11 @@ fn run_i2c_init_smoke_test() -> Result<(), &'static str> {
 
     let board = Ast10x0Board::new(Ast10x0BoardDescriptor {
         pinctrl_groups: &[pinctrl::PINCTRL_I2C1],
+        i2c_buses: &[],
     });
 
     // SAFETY: Test target runs once at boot with exclusive access to the board.
-    unsafe { board.init() };
+    unsafe { board.init() }.expect("board init failed");
     pw_log::info!("Board-level I2C global init complete");
 
     run_init_case(
@@ -372,15 +373,10 @@ fn run_i2c_init_smoke_test() -> Result<(), &'static str> {
 fn run_init_case(name: &str, config: I2cConfig) -> Result<(), &'static str> {
     pw_log::info!("Instantiating controller 1 in {} mode", name as &str);
 
-    // SAFETY: The test owns the controller for the process lifetime and uses
-    // the matching I2C/I2CBUFF register pair for controller 1.
+    // SAFETY: single MMIO-pointer perimeter — the test owns I2C1 for the process lifetime.
     let result = unsafe {
-        Ast1060I2c::new(
-            ast1060_pac::I2c1::ptr(),
-            ast1060_pac::I2cbuff1::ptr(),
-            &config,
-            |_| core::hint::spin_loop(),
-        )
+        let mmio = Ast1060I2cRegisters::new(ast1060_pac::I2c1::ptr(), ast1060_pac::I2cbuff1::ptr());
+        Ast1060I2c::new(mmio, &config, |_| core::hint::spin_loop())
     };
 
     match result {
@@ -404,16 +400,17 @@ fn run_init_case_dma(name: &str, config: I2cConfig) -> Result<(), &'static str> 
         name as &str
     );
 
-    let mut dma_buf = [0u8; 64];
+    let mut master_dma_buf = [0u8; 64];
+    let mut slave_dma_buf = [0u8; 64];
 
-    // SAFETY: The test owns the controller for the process lifetime and uses
-    // the matching I2C/I2CBUFF register pair for controller 1.
+    // SAFETY: single MMIO-pointer perimeter — the test owns I2C1 for the process lifetime.
     let result = unsafe {
+        let mmio = Ast1060I2cRegisters::new(ast1060_pac::I2c1::ptr(), ast1060_pac::I2cbuff1::ptr());
         Ast1060I2c::new_with_dma(
-            ast1060_pac::I2c1::ptr(),
-            ast1060_pac::I2cbuff1::ptr(),
+            mmio,
             &config,
-            &mut dma_buf,
+            &mut master_dma_buf,
+            &mut slave_dma_buf,
             |_| core::hint::spin_loop(),
         )
     };

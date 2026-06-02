@@ -54,6 +54,7 @@ constraint_value(
     visibility = [
         ":__subpackages__",
         "//drivers:__subpackages__",
+        "//services:__subpackages__",
     ],
 )
 

@@ -1,0 +1,19 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_test")
+
+# Host end-to-end: consumer -> I2cClient (real marshalling) ->
+# LoopbackTransport -> i2c_server::dispatch -> mock embedded-hal bus.
+# No kernel, no QEMU. This is the regression guard for "encoders/decoders
+# must be host-testable".
+rust_test(
+    name = "i2c_loopback_test",
+    srcs = ["loopback.rs"],
+    edition = "2024",
+    deps = [
+        "//services/i2c/api:i2c_api",
+        "//services/i2c/client:i2c_client",
+        "//services/i2c/server:i2c_server",
+    ],
+)

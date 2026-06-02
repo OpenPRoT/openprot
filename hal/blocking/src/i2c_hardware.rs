@@ -33,16 +33,19 @@
 //!
 //! For non-blocking slave operations, see `openprot-hal-nb::i2c_hardware`.
 
-use embedded_hal::i2c::{AddressMode, Operation, SevenBitAddress};
+use embedded_hal::i2c::{AddressMode, ErrorType, Operation, SevenBitAddress};
 
 /// Core I2C hardware interface providing basic operations
 ///
 /// This is the foundation trait that all I2C hardware implementations must provide.
 /// It contains only the most basic operations needed for any I2C controller.
-pub trait I2cHardwareCore {
-    /// Hardware-specific error type that implements embedded-hal error traits
-    type Error: embedded_hal::i2c::Error + core::fmt::Debug;
-
+///
+/// The associated error type comes from [`embedded_hal::i2c::ErrorType`] — the
+/// same minimal error-type base embedded-hal itself layers capability traits
+/// on (and that `i2c_device::I2CCoreTarget` already uses). Capability traits
+/// (`I2cSlaveCore`, …) depend only on `ErrorType`, **not** on this whole
+/// init/timing/recover contract.
+pub trait I2cHardwareCore: ErrorType {
     /// Hardware-specific configuration type for I2C initialization and setup
     type Config;
 
@@ -87,8 +90,20 @@ pub trait I2cHardwareCore {
 
     /// Handle hardware interrupt events (called from ISR)
     fn handle_interrupt(&mut self);
+}
 
-    /// Attempt to recover the I2C bus from stuck conditions
+/// Bus recovery — minimal seam for callers that need recovery without the full
+/// `I2cHardwareCore` init/timing contract.
+///
+/// Implemented by hardware drivers that can toggle SCL to un-stick a held-SDA
+/// condition. The server-runtime requires this bound so it can recover after
+/// bus/arbitration errors without the client needing to know.
+pub trait I2cBusRecovery: ErrorType {
+    /// Attempt to recover the bus from a stuck condition (held SDA/SCL).
+    ///
+    /// On success the bus is idle and the next transaction can proceed.
+    /// On error the bus is unrecoverable by software; the caller should
+    /// propagate the original transfer error to its client.
     fn recover_bus(&mut self) -> Result<(), Self::Error>;
 }
 
@@ -160,7 +175,11 @@ pub mod slave {
     /// This trait provides the fundamental slave operations that all slave
     /// implementations need: setting slave address and enabling/disabling slave mode.
     /// This is the minimal trait for any I2C slave implementation.
-    pub trait I2cSlaveCore<A: AddressMode = SevenBitAddress>: super::I2cHardwareCore {
+    // Slave operation needs only an error type, not the full
+    // init/timing/recover contract — mirrors embedded-hal's own
+    // `I2c: ErrorType` layering. (Previously `: super::I2cHardwareCore`,
+    // which wrongly forced every slave impl to also be a full controller.)
+    pub trait I2cSlaveCore<A: AddressMode = SevenBitAddress>: super::ErrorType {
         /// Configure the slave address for this I2C controller
         fn configure_slave_address(&mut self, addr: A) -> Result<(), Self::Error>;
 

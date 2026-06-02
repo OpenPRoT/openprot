@@ -1,0 +1,17 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+# Host-buildable: generic over i2c_api::Transport, no kernel/IPC dependency.
+# The IPC transport lives in //services/i2c/client-ipc (kernel-tagged).
+rust_library(
+    name = "i2c_client",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/i2c/api:i2c_api",
+        "@rust_crates//:zerocopy",
+    ],
+)

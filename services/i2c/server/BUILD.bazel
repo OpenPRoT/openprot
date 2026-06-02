@@ -1,0 +1,28 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+# Host-buildable: pure `dispatch` + `LoopbackTransport`. No kernel/IPC dep —
+# that is what makes the protocol path host-testable. The Pigweed wait/respond
+# loop lives in //services/i2c/server-runtime (kernel-tagged).
+rust_library(
+    name = "i2c_server",
+    srcs = [
+        "src/lib.rs",
+        "src/loopback.rs",
+        "src/slave.rs",
+    ],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/i2c/api:i2c_api",
+        "@rust_crates//:zerocopy",
+    ],
+)
+
+# Host dispatch/error-mapping tests, no kernel/QEMU.
+rust_test(
+    name = "i2c_server_test",
+    crate = ":i2c_server",
+)
