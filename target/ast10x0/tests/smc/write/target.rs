@@ -39,6 +39,7 @@ const CS1_CONFIG: FlashConfig = FlashConfig {
 
 const TEST_OFFSET: u32 = 0x10_0000;
 const TEST_LEN: usize = 256;
+const TEST_SECTOR_LEN: usize = 4096;
 
 pub struct Target {}
 
@@ -56,6 +57,22 @@ fn expect_erased(buf: &[u8]) -> Result<(), SmcError> {
             return Err(SmcError::HardwareError);
         }
     }
+    Ok(())
+}
+
+fn restore_sector(flash: &mut SpiNorFlash<'_>, original: &[u8]) -> Result<(), SmcError> {
+    pw_log::info!("=== restore CS1 sector ===");
+    flash.erase_sector(TEST_OFFSET)?;
+
+    let written = flash.program(TEST_OFFSET, original)?;
+    if written != TEST_SECTOR_LEN {
+        return Err(SmcError::HardwareError);
+    }
+
+    if !flash.verify(TEST_OFFSET, original)? {
+        return Err(SmcError::HardwareError);
+    }
+
     Ok(())
 }
 
@@ -81,14 +98,36 @@ fn run_smc_fmc_cs1_write_test() -> Result<(), SmcError> {
         return Err(SmcError::HardwareError);
     }
 
-    let mut flash = SpiNorFlash::from_fmc_cs(&mut fmc, CS1_CONFIG, ChipSelect::Cs1)?;
-    let jedec = flash.jedec_id()?;
+    let jedec = {
+        let flash = SpiNorFlash::from_fmc_cs(&mut fmc, CS1_CONFIG, ChipSelect::Cs1)?;
+        flash.jedec_id()?
+    };
     pw_log::info!(
         "CS1 JEDEC ID: {:02x} {:02x} {:02x}",
         jedec[0] as u32,
         jedec[1] as u32,
         jedec[2] as u32
     );
+
+    pw_log::info!("=== backup CS1 sector ===");
+    let original = unsafe { core::slice::from_raw_parts_mut(0x41000 as *mut u8, TEST_SECTOR_LEN) };
+    fmc.dma_read(
+        ChipSelect::Cs1,
+        TEST_OFFSET,
+        0x41000usize,
+        TEST_SECTOR_LEN as u32,
+    )?;
+    loop {
+        match fmc.poll_dma_completion() {
+            core::task::Poll::Pending => {}
+            core::task::Poll::Ready(result) => {
+                result?;
+                break;
+            }
+        }
+    }
+
+    let mut flash = SpiNorFlash::from_fmc_cs(&mut fmc, CS1_CONFIG, ChipSelect::Cs1)?;
 
     pw_log::info!("=== erase CS1 sector ===");
     flash.erase_sector(TEST_OFFSET)?;
@@ -121,6 +160,8 @@ fn run_smc_fmc_cs1_write_test() -> Result<(), SmcError> {
     if !flash.verify(TEST_OFFSET, &pattern)? {
         return Err(SmcError::HardwareError);
     }
+
+    restore_sector(&mut flash, original)?;
 
     dump_smc_register(0x7E62_0000, 16);
     Ok(())
