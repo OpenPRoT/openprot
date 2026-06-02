@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout the earlgrey-hwe branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: earlgrey-hwe
           fetch-depth: 0 # Fetches all history so branches can be compared
