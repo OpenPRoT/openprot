@@ -8,7 +8,6 @@
 use core::{cmp::min, num::NonZero};
 pub use hal_flash_driver::FlashAddress;
 use hal_flash_driver::FlashDriver;
-use util_error::ErrorCode;
 use util_io::RandomRead;
 use util_types::{Blocking, PowerOf2Usize};
 
@@ -16,6 +15,7 @@ use util_types::{Blocking, PowerOf2Usize};
 ///
 /// This trait provides a simplified, blocking interface for flash operations.
 pub trait Flash {
+    type Error;
     /// Returns the geometry of the flash.
     ///
     /// Returns a tuple of (total_size, page_size, erasable_sizes_bitmap).
@@ -26,24 +26,24 @@ pub trait Flash {
     /// # Arguments
     /// * `start_addr`: The address to start reading from.
     /// * `buf`: The buffer to read data into.
-    fn read(&mut self, start_addr: FlashAddress, buf: &mut [u8]) -> Result<(), ErrorCode>;
+    fn read(&mut self, start_addr: FlashAddress, buf: &mut [u8]) -> Result<(), Self::Error>;
 
     /// Erases a block of flash.
     ///
     /// # Arguments
     /// * `start_addr`: The start address of the block to erase.
     /// * `size`: The size of the block to erase.
-    fn erase(&mut self, start_addr: FlashAddress, size: PowerOf2Usize) -> Result<(), ErrorCode>;
+    fn erase(&mut self, start_addr: FlashAddress, size: PowerOf2Usize) -> Result<(), Self::Error>;
 
     /// Programs data into flash.
     ///
     /// # Arguments
     /// * `start_addr`: The address to start programming at.
     /// * `data`: The data to program.
-    fn program(&mut self, start_addr: FlashAddress, data: &[u8]) -> Result<(), ErrorCode>;
+    fn program(&mut self, start_addr: FlashAddress, data: &[u8]) -> Result<(), Self::Error>;
 
     /// Returns a `RandomRead` implementation for this flash.
-    fn random_reader(&mut self) -> impl RandomRead
+    fn random_reader(&mut self) -> impl RandomRead<Error = Self::Error>
     where
         Self: Sized,
     {
@@ -52,20 +52,21 @@ pub trait Flash {
 }
 
 impl<F: Flash> Flash for &mut F {
+    type Error = F::Error;
     #[inline(always)]
     fn geometry(&self) -> (NonZero<usize>, PowerOf2Usize, u32) {
         (**self).geometry()
     }
     #[inline(always)]
-    fn read(&mut self, start_addr: FlashAddress, buf: &mut [u8]) -> Result<(), ErrorCode> {
+    fn read(&mut self, start_addr: FlashAddress, buf: &mut [u8]) -> Result<(), Self::Error> {
         (**self).read(start_addr, buf)
     }
     #[inline(always)]
-    fn program(&mut self, start_addr: FlashAddress, data: &[u8]) -> Result<(), ErrorCode> {
+    fn program(&mut self, start_addr: FlashAddress, data: &[u8]) -> Result<(), Self::Error> {
         (**self).program(start_addr, data)
     }
     #[inline(always)]
-    fn erase(&mut self, start_addr: FlashAddress, size: PowerOf2Usize) -> Result<(), ErrorCode> {
+    fn erase(&mut self, start_addr: FlashAddress, size: PowerOf2Usize) -> Result<(), Self::Error> {
         (**self).erase(start_addr, size)
     }
 }
@@ -96,11 +97,17 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> FlashPageSize
 }
 
 impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver, TBlocking> {
+    type Error = TDriver::Error;
     fn geometry(&self) -> (NonZero<usize>, PowerOf2Usize, u32) {
-        let page_size = PowerOf2Usize::new(1 << (TDriver::ERASABLE_SIZES_BITMAP.trailing_zeros())).unwrap();
-        (self.driver.size(), page_size, TDriver::ERASABLE_SIZES_BITMAP)
+        let page_size =
+            PowerOf2Usize::new(1 << (TDriver::ERASABLE_SIZES_BITMAP.trailing_zeros())).unwrap();
+        (
+            self.driver.size(),
+            page_size,
+            TDriver::ERASABLE_SIZES_BITMAP,
+        )
     }
-    fn read(&mut self, start_addr: FlashAddress, mut buf: &mut [u8]) -> Result<(), ErrorCode> {
+    fn read(&mut self, start_addr: FlashAddress, mut buf: &mut [u8]) -> Result<(), Self::Error> {
         let mut addr = start_addr;
         let align_skip_len = (addr.offset() & (TDriver::READ_ALIGNMENT as u32 - 1)) as usize;
         if (align_skip_len) != 0 {
@@ -119,12 +126,12 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
         }
         Ok(())
     }
-    fn erase(&mut self, start_addr: FlashAddress, size: PowerOf2Usize) -> Result<(), ErrorCode> {
+    fn erase(&mut self, start_addr: FlashAddress, size: PowerOf2Usize) -> Result<(), Self::Error> {
         self.driver.start_erase(start_addr, size)?;
         self.blocking.wait_for_notification();
         self.driver.complete_op()
     }
-    fn program(&mut self, start_addr: FlashAddress, mut data: &[u8]) -> Result<(), ErrorCode> {
+    fn program(&mut self, start_addr: FlashAddress, mut data: &[u8]) -> Result<(), Self::Error> {
         assert!(
             TDriver::PROGRAM_WINDOW_SIZE.count_ones() == 1,
             "TDriver::PROGRAM_WINDOW_SIZE must be a power of 2"
@@ -148,7 +155,8 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
 
 struct FlashRandomReader<'a, F: Flash>(&'a mut F);
 impl<F: Flash> RandomRead for FlashRandomReader<'_, F> {
-    fn read(&mut self, start_addr: usize, buf: &mut [u8]) -> Result<(), ErrorCode> {
+    type Error = F::Error;
+    fn read(&mut self, start_addr: usize, buf: &mut [u8]) -> Result<(), Self::Error> {
         self.0.read(FlashAddress::new(0, start_addr as u32), buf)
     }
     fn size(&self) -> usize {
@@ -165,10 +173,12 @@ mod test {
         fn wait_for_notification(&self) {}
     }
 
+    #[derive(Debug, Clone, Copy)]
+    pub struct FakeDriverError;
     #[derive(Clone)]
     pub struct FakeFlashDriver {
         pub data: Vec<u8>,
-        pub check_err_result: Result<(), ErrorCode>,
+        pub check_err_result: Result<(), FakeDriverError>,
     }
     impl FakeFlashDriver {
         pub fn new(data: Vec<u8>) -> Self {
@@ -179,6 +189,7 @@ mod test {
         }
     }
     impl FlashDriver for FakeFlashDriver {
+        type Error = FakeDriverError;
         const ERASABLE_SIZES_BITMAP: u32 = 1 << 11;
         const PROGRAM_WINDOW_SIZE: usize = 64;
         const MAX_READ_SIZE: usize = 4096;
@@ -188,7 +199,7 @@ mod test {
         fn size(&self) -> NonZero<usize> {
             NonZero::new(self.data.len()).unwrap()
         }
-        fn read(&mut self, start_addr: FlashAddress, buf: &mut [u8]) -> Result<(), ErrorCode> {
+        fn read(&mut self, start_addr: FlashAddress, buf: &mut [u8]) -> Result<(), Self::Error> {
             let start_addr = start_addr.offset() as usize;
             assert!(start_addr.checked_add(buf.len()).unwrap() <= self.data.len());
             assert!(buf.len() <= Self::MAX_READ_SIZE);
@@ -196,7 +207,11 @@ mod test {
             buf.copy_from_slice(&self.data[start_addr..][..buf.len()]);
             Ok(())
         }
-        fn start_erase(&mut self, start_addr: FlashAddress, size: PowerOf2Usize) -> Result<(), ErrorCode> {
+        fn start_erase(
+            &mut self,
+            start_addr: FlashAddress,
+            size: PowerOf2Usize,
+        ) -> Result<(), Self::Error> {
             let start_addr = start_addr.offset() as usize;
             assert_eq!(size.get(), 2048);
             assert!(start_addr.checked_add(size.get()).unwrap() <= self.data.len());
@@ -208,7 +223,7 @@ mod test {
             &mut self,
             start_addr: FlashAddress,
             data: &[u8],
-        ) -> Result<(), ErrorCode> {
+        ) -> Result<(), Self::Error> {
             let start_addr = start_addr.offset() as usize;
             assert!(start_addr.checked_add(data.len()).unwrap() <= self.data.len());
             assert!(
@@ -229,7 +244,7 @@ mod test {
         fn is_busy(&mut self) -> bool {
             false
         }
-        fn complete_op(&mut self) -> Result<(), ErrorCode> {
+        fn complete_op(&mut self) -> Result<(), Self::Error> {
             self.check_err_result
         }
     }
@@ -238,20 +253,26 @@ mod test {
     #[should_panic(expected = "Program window violation")]
     pub fn test_fake_flash_program_window_violation_0() {
         let mut flash_driver = FakeFlashDriver::new((0..255).collect());
-        flash_driver.start_program(FlashAddress::new(0, 0x3c), &[0x42; 5]).unwrap();
+        flash_driver
+            .start_program(FlashAddress::new(0, 0x3c), &[0x42; 5])
+            .unwrap();
     }
 
     #[test]
     #[should_panic(expected = "Program window violation")]
     pub fn test_fake_flash_program_window_violation_1() {
         let mut flash_driver = FakeFlashDriver::new((0..255).collect());
-        flash_driver.start_program(FlashAddress::new(0, 0x0), &[0; 68]).unwrap();
+        flash_driver
+            .start_program(FlashAddress::new(0, 0x0), &[0; 68])
+            .unwrap();
     }
 
     #[test]
     pub fn test_fake_flash_full_program_window() {
         let mut flash_driver = FakeFlashDriver::new((0..255).collect());
-        flash_driver.start_program(FlashAddress::new(0, 0x40), &[0; 0x40]).unwrap();
+        flash_driver
+            .start_program(FlashAddress::new(0, 0x40), &[0; 0x40])
+            .unwrap();
         assert_eq!(flash_driver.data[0x40..0x80], [0; 0x40]);
     }
 
@@ -308,7 +329,9 @@ mod test {
 
         for i in 0..32 {
             let mut buf = [0_u8; 32];
-            flash.read(FlashAddress::new(0, 32 - i as u32), &mut buf[..i]).unwrap();
+            flash
+                .read(FlashAddress::new(0, 32 - i as u32), &mut buf[..i])
+                .unwrap();
             assert_eq!(&buf[..i], &flash.driver.data[32 - i..32]);
         }
     }
@@ -319,12 +342,22 @@ mod test {
             driver: FakeFlashDriver::new(vec![0x42; 0x4000]),
             blocking: FakeBlocking(),
         };
-        flash.erase(FlashAddress::new(0, 0x0800), PowerOf2Usize::new(2048).unwrap()).unwrap();
+        flash
+            .erase(
+                FlashAddress::new(0, 0x0800),
+                PowerOf2Usize::new(2048).unwrap(),
+            )
+            .unwrap();
         assert_eq!(flash.driver.data[0x0000..0x0800], [0x42; 0x0800]);
         assert_eq!(flash.driver.data[0x0800..0x1000], [0xff; 0x0800]);
         assert_eq!(flash.driver.data[0x1000..0x4000], [0x42; 0x3000]);
 
-        flash.erase(FlashAddress::new(0, 0x3000), PowerOf2Usize::new(2048).unwrap()).unwrap();
+        flash
+            .erase(
+                FlashAddress::new(0, 0x3000),
+                PowerOf2Usize::new(2048).unwrap(),
+            )
+            .unwrap();
         assert_eq!(flash.driver.data[0x0000..0x0800], [0x42; 0x0800]);
         assert_eq!(flash.driver.data[0x0800..0x1000], [0xff; 0x0800]);
         assert_eq!(flash.driver.data[0x1000..0x3000], [0x42; 0x2000]);
@@ -340,14 +373,19 @@ mod test {
         };
 
         flash
-            .program(FlashAddress::new(0, 0x3c), &[0x10, 0x11, 0x12, 0x13, 0x14, 0x15])
+            .program(
+                FlashAddress::new(0, 0x3c),
+                &[0x10, 0x11, 0x12, 0x13, 0x14, 0x15],
+            )
             .unwrap();
         assert_eq!(
             flash.driver.data[0x38..0x44],
             [0xff, 0xff, 0xff, 0xff, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0xff, 0xff]
         );
 
-        flash.program(FlashAddress::new(0, 0x40), &[0x24, 0x25]).unwrap();
+        flash
+            .program(FlashAddress::new(0, 0x40), &[0x24, 0x25])
+            .unwrap();
         assert_eq!(
             flash.driver.data[0x38..0x44],
             [0xff, 0xff, 0xff, 0xff, 0x10, 0x11, 0x12, 0x13, 0x04, 0x05, 0xff, 0xff]

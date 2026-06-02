@@ -4,7 +4,6 @@
 
 use core::num::NonZero;
 
-use util_error::ErrorCode;
 use util_types::PowerOf2Usize;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
@@ -14,6 +13,7 @@ use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 /// It supports asynchronous-style operations (start/is_busy/complete) but can also be
 /// implemented for synchronous drivers.
 pub trait FlashDriver {
+    type Error;
     /// A bitmap of supported erase block sizes.
     ///
     /// Each bit i represents a supported erase block size of 2^i bytes.
@@ -35,27 +35,35 @@ pub trait FlashDriver {
     /// # Arguments
     /// * `start_addr`: The address to start reading from.
     /// * `buf`: The buffer to read data into.
-    fn read(&mut self, start_addr: FlashAddress, buf: &mut [u8]) -> Result<(), ErrorCode>;
+    fn read(&mut self, start_addr: FlashAddress, buf: &mut [u8]) -> Result<(), Self::Error>;
 
     /// Starts an erase operation.
     ///
     /// # Arguments
     /// * `start_addr`: The start address of the block to erase.
     /// * `size`: The size of the block to erase.
-    fn start_erase(&mut self, start_addr: FlashAddress, size: PowerOf2Usize) -> Result<(), ErrorCode>;
+    fn start_erase(
+        &mut self,
+        start_addr: FlashAddress,
+        size: PowerOf2Usize,
+    ) -> Result<(), Self::Error>;
 
     /// Starts a program operation.
     ///
     /// # Arguments
     /// * `start_address`: The address to start programming at.
     /// * `data`: The data to program.
-    fn start_program(&mut self, start_address: FlashAddress, data: &[u8]) -> Result<(), ErrorCode>;
+    fn start_program(
+        &mut self,
+        start_address: FlashAddress,
+        data: &[u8],
+    ) -> Result<(), Self::Error>;
 
     /// Returns whether the driver is currently busy with an operation.
     fn is_busy(&mut self) -> bool;
 
     /// Completes a pending operation and returns the result.
-    fn complete_op(&mut self) -> Result<(), ErrorCode>;
+    fn complete_op(&mut self) -> Result<(), Self::Error>;
 }
 
 /// Represents an address in flash memory.

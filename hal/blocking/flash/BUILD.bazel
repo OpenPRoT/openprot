@@ -12,7 +12,6 @@ rust_library(
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
-        "//util/error",
         "//util/types",
         "@rust_crates//:zerocopy",
     ],
@@ -28,7 +27,6 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         ":driver",
-        "//util/error",
         "//util/io",
         "//util/types",
     ],

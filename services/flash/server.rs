@@ -17,7 +17,7 @@ pub struct FlashIpcServer<TFlash: Flash> {
     flash: TFlash,
 }
 
-impl<TFlash: Flash> FlashIpcServer<TFlash> {
+impl<TFlash: Flash<Error = ErrorCode>> FlashIpcServer<TFlash> {
     /// Creates a new `FlashIpcServer` wrapping the given flash implementation.
     pub fn new(flash: TFlash) -> Self {
         Self { flash }
@@ -36,8 +36,7 @@ impl<TFlash: Flash> FlashIpcServer<TFlash> {
     fn handle_erase<'a>(&mut self, data: &'a mut [u8]) -> Result<&'a [u8], ErrorCode> {
         let (addr, data) =
             FlashAddress::read_from_prefix(data).map_err(|_| error::IPC_ERROR_BAD_REQ_LEN)?;
-        let (size, data) =
-            u32::read_from_prefix(data).map_err(|_| error::IPC_ERROR_BAD_REQ_LEN)?;
+        let (size, data) = u32::read_from_prefix(data).map_err(|_| error::IPC_ERROR_BAD_REQ_LEN)?;
         let Some(size) = PowerOf2Usize::new(size as usize) else {
             return Err(error::FLASH_GENERIC_ERASE_INVALID_SIZE);
         };

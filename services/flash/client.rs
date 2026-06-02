@@ -52,6 +52,7 @@ impl FlashIpcClient {
 }
 
 impl Flash for FlashIpcClient {
+    type Error = ErrorCode;
     fn geometry(&self) -> (NonZero<usize>, PowerOf2Usize, u32) {
         (self.total_size, self.page_size, self.erasable_sizes_bitmap)
     }

@@ -12,19 +12,21 @@ pub const IO_GENERIC_READ_OUT_OF_BOUNDS: ErrorCode =
 
 /// Trait for random access read operations.
 pub trait RandomRead {
+    type Error;
     /// Reads data from the source into the destination buffer.
     ///
     /// # Arguments
     /// * `start_addr`: The offset from which to start reading.
     /// * `dst`: The buffer to read data into.
-    fn read(&mut self, start_addr: usize, dst: &mut [u8]) -> Result<(), ErrorCode>;
+    fn read(&mut self, start_addr: usize, dst: &mut [u8]) -> Result<(), Self::Error>;
 
     /// Returns the total size of the readable data in bytes.
     fn size(&self) -> usize;
 }
 
 impl RandomRead for &[u8] {
-    fn read(&mut self, start_addr: usize, dst: &mut [u8]) -> Result<(), ErrorCode> {
+    type Error = ErrorCode;
+    fn read(&mut self, start_addr: usize, dst: &mut [u8]) -> Result<(), Self::Error> {
         // Explicit wrapping add. Overflows are expected to
         // be detected in the indexing operation
         let end_addr = start_addr.wrapping_add(dst.len());

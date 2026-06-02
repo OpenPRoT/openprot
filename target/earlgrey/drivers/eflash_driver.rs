@@ -6,8 +6,8 @@ use earlgrey_util::{AsMubi, EarlgreyFlashAddress};
 use flash_ctrl_core::{self, regs::ControlWriteVal};
 use hal_flash_driver::{FlashAddress, FlashDriver};
 use util_error::{self as error, ErrorCode};
-use util_types::PowerOf2Usize;
 use util_regcpy::{copy_from_reg_unaligned, copy_to_reg_unaligned};
+use util_types::PowerOf2Usize;
 
 pub struct Permission {
     pub read: bool,
@@ -95,6 +95,7 @@ impl EmbeddedFlash {
 //    u32::try_from(val).unwrap()
 //}
 impl FlashDriver for EmbeddedFlash {
+    type Error = ErrorCode;
     // BytesPerWord: 8
     // WordsPerPage: 256
     // BytesPerBank: 524288
@@ -111,7 +112,7 @@ impl FlashDriver for EmbeddedFlash {
     }
 
     #[inline(never)]
-    fn read(&mut self, start_addr: FlashAddress, buf: &mut [u8]) -> Result<(), ErrorCode> {
+    fn read(&mut self, start_addr: FlashAddress, buf: &mut [u8]) -> Result<(), Self::Error> {
         if buf.is_empty() {
             return Ok(());
         }
@@ -142,7 +143,11 @@ impl FlashDriver for EmbeddedFlash {
         self.complete_op()
     }
 
-    fn start_erase(&mut self, start_addr: FlashAddress, size: PowerOf2Usize) -> Result<(), ErrorCode> {
+    fn start_erase(
+        &mut self,
+        start_addr: FlashAddress,
+        size: PowerOf2Usize,
+    ) -> Result<(), Self::Error> {
         if size.get() != 2048 {
             return Err(error::FLASH_GENERIC_ERASE_INVALID_SIZE);
         }
@@ -173,7 +178,7 @@ impl FlashDriver for EmbeddedFlash {
         Ok(())
     }
 
-    fn start_program(&mut self, start_addr: FlashAddress, data: &[u8]) -> Result<(), ErrorCode> {
+    fn start_program(&mut self, start_addr: FlashAddress, data: &[u8]) -> Result<(), Self::Error> {
         if data.is_empty() {
             return Ok(());
         }
@@ -222,7 +227,7 @@ impl FlashDriver for EmbeddedFlash {
         self.busy
     }
 
-    fn complete_op(&mut self) -> Result<(), ErrorCode> {
+    fn complete_op(&mut self) -> Result<(), Self::Error> {
         if self.is_busy() {
             return Err(error::FLASH_GENERIC_BUSY);
         }
