@@ -24,8 +24,8 @@ jobs:
           # Fetch the latest main branch
           git fetch origin main:main
 
-          # Merge main into the currently checked-out dev branch
-          git merge main --no-edit
+          # Rebase main onto the currently checked-out dev branch
+          git rebase main
 
       - name: Generate GitHub App Token
         id: generate-token
