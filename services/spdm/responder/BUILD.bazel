@@ -9,6 +9,6 @@ rust_library(
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
-        "@oot_crates_no_std//:spdm-lib",
+        "@rust_crates//:spdm-lib",
     ],
 )

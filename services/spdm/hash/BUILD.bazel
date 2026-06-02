@@ -9,8 +9,9 @@ rust_library(
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
-        "//services/crypto/client:crypto_client",
-        "@oot_crates_no_std//:spdm-lib",
+        # TODO: Replace stub with real //services/crypto/client when imported
+        "//services/crypto/client-stub:crypto_client",
+        "@rust_crates//:spdm-lib",
     ],
 )
 

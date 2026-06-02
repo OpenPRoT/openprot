@@ -10,7 +10,7 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         "//services/mctp/api:mctp_api",
-        "@oot_crates_no_std//:spdm-lib",
+        "@rust_crates//:spdm-lib",
         "@pigweed//pw_log/rust:pw_log",
     ],
 )

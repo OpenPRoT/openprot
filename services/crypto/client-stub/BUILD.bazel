@@ -1,0 +1,17 @@
+# Licensed under the Apache-2.0 license
+#
+# STUB LIBRARY — This is a placeholder implementation of the crypto client.
+# It provides the minimal interface required by services/spdm/hash and
+# services/spdm/rng to compile, but all operations return errors.
+#
+# TODO: Replace with real //services/crypto/client when imported.
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "crypto_client",
+    srcs = ["src/lib.rs"],
+    crate_name = "crypto_client",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+)

@@ -103,7 +103,7 @@ impl<C: MctpClient> SpdmTransport for MctpSpdmTransport<'_, C> {
                         pw_log::error!(
                             "MctpSpdmTransport: req(eid={}) failed: ResponseCode={}",
                             remote_eid as u32,
-                            e.code as u8,
+                            e.code as u32,
                         );
                         TransportError::DriverError
                     })?,
@@ -121,7 +121,7 @@ impl<C: MctpClient> SpdmTransport for MctpSpdmTransport<'_, C> {
                     .map_err(|e| {
                         pw_log::error!(
                             "MctpSpdmTransport: listener(msg_type=0x05) failed: ResponseCode={}",
-                            e.code as u8,
+                            e.code as u32,
                         );
                         TransportError::DriverError
                     })?,
