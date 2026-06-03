@@ -69,33 +69,38 @@ fn log_target_hj_state(label: u32) {
     );
 }
 
-fn log_target_master_write(len: u8, data: &[u8; XFER_DATA_LEN]) {
+fn log_target_master_write(exchange: u32, len: u8, data: &[u8; XFER_DATA_LEN]) {
+    let w0 = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
+    let w1 = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
+    let w2 = u32::from_be_bytes([data[8], data[9], data[10], data[11]]);
+    let w3 = u32::from_be_bytes([data[12], data[13], data[14], data[15]]);
     pw_log::info!(
-        "[MASTER ==> TARGET] target received {} bytes: {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
+        "TARGET_RX_FROM_MASTER #{} {}B {:08x} {:08x} {:08x} {:08x}",
+        exchange as u32,
         len as u32,
-        data[0] as u32,
-        data[1] as u32,
-        data[2] as u32,
-        data[3] as u32,
-        data[4] as u32,
-        data[5] as u32,
-        data[6] as u32,
-        data[7] as u32
-    );
-    pw_log::info!(
-        "[MASTER ==> TARGET] target received cont {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
-        data[8] as u32,
-        data[9] as u32,
-        data[10] as u32,
-        data[11] as u32,
-        data[12] as u32,
-        data[13] as u32,
-        data[14] as u32,
-        data[15] as u32
+        w0 as u32,
+        w1 as u32,
+        w2 as u32,
+        w3 as u32
     );
 }
 
-fn wait_for_master_write(ibi_cons: &mut IbiConsumer) -> Result<(), &'static str> {
+fn log_target_read_payload(ibi_count: u32, data: &[u8; XFER_DATA_LEN]) {
+    let w0 = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
+    let w1 = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
+    let w2 = u32::from_be_bytes([data[8], data[9], data[10], data[11]]);
+    let w3 = u32::from_be_bytes([data[12], data[13], data[14], data[15]]);
+    pw_log::info!(
+        "TARGET_TX_TO_MASTER #{} 16B {:08x} {:08x} {:08x} {:08x}",
+        ibi_count as u32,
+        w0 as u32,
+        w1 as u32,
+        w2 as u32,
+        w3 as u32
+    );
+}
+
+fn wait_for_master_write(ibi_cons: &mut IbiConsumer, exchange: u32) -> Result<(), &'static str> {
     let mut spin_count = 0u32;
     loop {
         let Some(work) = ibi_cons.dequeue() else {
@@ -109,7 +114,7 @@ fn wait_for_master_write(ibi_cons: &mut IbiConsumer) -> Result<(), &'static str>
 
         match work {
             IbiWork::TargetMasterWrite { len, data } => {
-                log_target_master_write(len, &data);
+                log_target_master_write(exchange, len, &data);
                 return Ok(());
             }
             IbiWork::TargetDaAssignment => pw_log::info!("[IBI] TargetDaAssignment"),
@@ -222,7 +227,7 @@ fn run_target() -> Result<(), &'static str> {
                 pw_log::info!("[IBI] SIRQ from 0x{:02x} len {}", addr as u32, len as u32);
             }
             IbiWork::TargetMasterWrite { len, data } => {
-                log_target_master_write(len, &data);
+                log_target_master_write(0, len, &data);
             }
         }
     }
@@ -230,18 +235,15 @@ fn run_target() -> Result<(), &'static str> {
     // Raise IBIs, each presenting a 16-byte incrementing payload for the master.
     let mut ibi_count = 0u32;
     while ibi_count < MAX_IBIS {
-        let mut data = [0u8; 16];
+        let mut data = [0u8; XFER_DATA_LEN];
         for (i, b) in data.iter_mut().enumerate() {
             *b = u8::try_from(i).unwrap_or(0);
         }
-        pw_log::info!(
-            "[MASTER <== TARGET] target write, ibi #{}",
-            ibi_count as u32
-        );
         if ctrl.target_get_ibi_payload(&mut data).is_err() {
             return Err("target_get_ibi_payload failed");
         }
-        wait_for_master_write(&mut ibi_cons)?;
+        log_target_read_payload(ibi_count, &data);
+        wait_for_master_write(&mut ibi_cons, ibi_count)?;
         ibi_count += 1;
     }
 
