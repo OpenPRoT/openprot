@@ -28,6 +28,7 @@ pub const MAX_PAYLOAD_SIZE: usize = 256;
 /// Max number of `Operation`s in one transaction.
 pub const MAX_OPS: usize = 16;
 
+#[non_exhaustive]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum I2cOp {
@@ -84,9 +85,10 @@ impl TryFrom<u8> for I2cOp {
 }
 
 /// Kind of event returned by `SlaveWaitEvent`.
+#[non_exhaustive]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SlaveEventKind {
+pub enum SlaveEvent {
     /// Master wrote data to our slave address.
     DataReceived = 0x00,
     /// Master issued a read from our slave address.
@@ -95,7 +97,7 @@ pub enum SlaveEventKind {
     Stop = 0x02,
 }
 
-impl TryFrom<u8> for SlaveEventKind {
+impl TryFrom<u8> for SlaveEvent {
     type Error = I2cError;
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
@@ -109,6 +111,7 @@ impl TryFrom<u8> for SlaveEventKind {
 }
 
 /// Kind of a single bus operation within a transaction.
+#[non_exhaustive]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum I2cOpKind {
@@ -132,10 +135,10 @@ impl TryFrom<u8> for I2cOpKind {
 ///
 /// The bus-failure variants map 1-to-1 onto `embedded_hal::i2c::ErrorKind`
 /// (see [`crate::seam::error_kind`]).
+#[non_exhaustive]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum I2cError {
-    Success = 0x00,
     InvalidOperation = 0x01,
     BufferTooSmall = 0x02,
     TooManyOperations = 0x03,
@@ -157,7 +160,6 @@ pub enum I2cError {
 impl From<u8> for I2cError {
     fn from(value: u8) -> Self {
         match value {
-            0x00 => Self::Success,
             0x01 => Self::InvalidOperation,
             0x02 => Self::BufferTooSmall,
             0x03 => Self::TooManyOperations,
@@ -174,21 +176,42 @@ impl From<u8> for I2cError {
     }
 }
 
+impl core::fmt::Display for I2cError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::InvalidOperation => f.write_str("invalid i2c operation"),
+            Self::BufferTooSmall => f.write_str("buffer too small"),
+            Self::TooManyOperations => f.write_str("too many operations"),
+            Self::AddressNack => f.write_str("nack on address phase"),
+            Self::DataNack => f.write_str("nack on data byte"),
+            Self::Nack => f.write_str("nack (phase unknown)"),
+            Self::ArbitrationLoss => f.write_str("arbitration loss"),
+            Self::Bus => f.write_str("bus error"),
+            Self::Overrun => f.write_str("overrun"),
+            Self::Timeout => f.write_str("timeout"),
+            Self::NoData => f.write_str("no slave data pending"),
+            Self::InternalError => f.write_str("internal i2c server error"),
+        }
+    }
+}
+
+impl core::error::Error for I2cError {}
+
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct I2cRequestHeader {
-    pub op_code: u8,
-    pub flags: u8,
+    pub(crate) op_code: u8,
+    pub(crate) flags: u8,
     /// Target address. 7-bit address in the low 7 bits; 10-bit reserved.
-    pub address: u16,
+    pub(crate) address: u16,
     /// Number of `I2cOpDesc` records that follow this header.
-    pub op_count: u16,
+    pub(crate) op_count: u16,
     /// Total bytes after the header (op descriptors + inline write data).
-    pub payload_len: u16,
+    pub(crate) payload_len: u16,
 }
 
 impl I2cRequestHeader {
-    pub const SIZE: usize = 8;
+    pub const SIZE: usize = core::mem::size_of::<Self>();
 
     pub fn new(op: I2cOp, address: u16, op_count: u16, payload_len: u16) -> Self {
         Self {
@@ -223,13 +246,13 @@ impl I2cRequestHeader {
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct I2cOpDesc {
-    pub kind: u8,
-    pub reserved: u8,
-    pub len: u16,
+    pub(crate) kind: u8,
+    pub(crate) reserved: u8,
+    pub(crate) len: u16,
 }
 
 impl I2cOpDesc {
-    pub const SIZE: usize = 4;
+    pub const SIZE: usize = core::mem::size_of::<Self>();
 
     pub fn new(kind: I2cOpKind, len: u16) -> Self {
         Self {
@@ -251,18 +274,18 @@ impl I2cOpDesc {
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy, FromBytes, IntoBytes, Immutable, KnownLayout)]
 pub struct I2cResponseHeader {
-    pub status: u8,
-    pub reserved: u8,
+    pub(crate) status: u8,
+    pub(crate) reserved: u8,
     /// Total read-payload bytes following this header.
-    pub payload_len: u16,
+    pub(crate) payload_len: u16,
 }
 
 impl I2cResponseHeader {
-    pub const SIZE: usize = 4;
+    pub const SIZE: usize = core::mem::size_of::<Self>();
 
     pub fn success(payload_len: u16) -> Self {
         Self {
-            status: I2cError::Success as u8,
+            status: 0,
             reserved: 0,
             payload_len: payload_len.to_le(),
         }
@@ -277,7 +300,7 @@ impl I2cResponseHeader {
     }
 
     pub fn is_success(&self) -> bool {
-        self.status == I2cError::Success as u8
+        self.status == 0
     }
 
     pub fn error_code(&self) -> I2cError {
@@ -335,9 +358,11 @@ mod tests {
 
     #[test]
     fn error_and_op_byte_mapping_is_stable() {
-        for raw in 0u8..=0x0B {
+        for raw in 0x01u8..=0x0B {
             assert_eq!(I2cError::from(raw) as u8, raw);
         }
+        // 0x00 is the success sentinel on the wire — it is not an I2cError variant.
+        assert_eq!(I2cError::from(0x00), I2cError::InternalError);
         assert_eq!(I2cError::from(0x0B), I2cError::NoData);
         assert_eq!(I2cError::from(0xFF), I2cError::InternalError);
         assert_eq!(I2cError::from(0x42), I2cError::InternalError);
@@ -364,17 +389,14 @@ mod tests {
     #[test]
     fn slave_event_kinds_roundtrip() {
         for (raw, kind) in [
-            (0x00u8, SlaveEventKind::DataReceived),
-            (0x01, SlaveEventKind::ReadRequest),
-            (0x02, SlaveEventKind::Stop),
+            (0x00u8, SlaveEvent::DataReceived),
+            (0x01, SlaveEvent::ReadRequest),
+            (0x02, SlaveEvent::Stop),
         ] {
-            assert_eq!(SlaveEventKind::try_from(raw), Ok(kind));
+            assert_eq!(SlaveEvent::try_from(raw), Ok(kind));
             assert_eq!(kind as u8, raw);
         }
-        assert_eq!(
-            SlaveEventKind::try_from(0xFF),
-            Err(I2cError::InvalidOperation)
-        );
+        assert_eq!(SlaveEvent::try_from(0xFF), Err(I2cError::InvalidOperation));
     }
 
     #[test]

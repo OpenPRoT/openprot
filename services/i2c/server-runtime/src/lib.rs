@@ -25,11 +25,9 @@
 #![no_std]
 
 use i2c_api::seam::{
-    I2c, I2cBusRecovery, I2cSEvent, I2cSlaveBuffer, I2cSlaveEvent, SevenBitAddress,
+    I2c, I2cBusRecovery, I2cIsrEvent, I2cSlaveBuffer, I2cSlaveEvent, SevenBitAddress,
 };
-use i2c_api::{
-    I2cError, I2cOp, I2cRequestHeader, I2cResponseHeader, SlaveEventKind, MAX_PAYLOAD_SIZE,
-};
+use i2c_api::{I2cError, I2cOp, I2cRequestHeader, I2cResponseHeader, SlaveEvent, MAX_PAYLOAD_SIZE};
 use i2c_server::slave::dispatch_slave;
 use i2c_server::{dispatch, MAX_BUF_SIZE};
 use userspace::syscall::{self, Signals};
@@ -52,7 +50,7 @@ pub struct Bus<B> {
     rx_source: u8,
     /// Event kind that triggered the latch (DataReceived, ReadRequest, Stop).
     /// Only meaningful when rx_len > 0 or notification was armed.
-    rx_event_kind: SlaveEventKind,
+    rx_event_kind: SlaveEvent,
 }
 
 impl<B> Bus<B> {
@@ -65,7 +63,7 @@ impl<B> Bus<B> {
             rx: [0u8; MAX_PAYLOAD_SIZE],
             rx_len: 0,
             rx_source: 0,
-            rx_event_kind: SlaveEventKind::DataReceived,
+            rx_event_kind: SlaveEvent::DataReceived,
         }
     }
 }
@@ -132,13 +130,13 @@ where
                         Ok(Some((kind, _))) => {
                             // Store the actual hardware event kind
                             bus.rx_event_kind = match kind {
-                                I2cSEvent::SlaveWrRecvd => SlaveEventKind::DataReceived,
-                                I2cSEvent::SlaveRdReq => SlaveEventKind::ReadRequest,
-                                I2cSEvent::SlaveStop => SlaveEventKind::Stop,
-                                _ => SlaveEventKind::DataReceived,
+                                I2cIsrEvent::SlaveWrRecvd => SlaveEvent::DataReceived,
+                                I2cIsrEvent::SlaveRdReq => SlaveEvent::ReadRequest,
+                                I2cIsrEvent::SlaveStop => SlaveEvent::Stop,
+                                _ => SlaveEvent::DataReceived,
                             };
                             // For DataReceived, read the buffer; other events have no data
-                            if kind == I2cSEvent::SlaveWrRecvd {
+                            if kind == I2cIsrEvent::SlaveWrRecvd {
                                 match bus.driver.read_slave_buffer(&mut bus.rx) {
                                     Ok(n) => {
                                         if n > 0 {
@@ -176,8 +174,8 @@ where
                 }
                 // Wake client on data events (DataReceived with bytes) or transaction
                 // boundaries (Stop). ReadRequest without data is deferred (post-demo).
-                let should_wake = bus.notif_enabled
-                    && (bus.rx_len > 0 || bus.rx_event_kind == SlaveEventKind::Stop);
+                let should_wake =
+                    bus.notif_enabled && (bus.rx_len > 0 || bus.rx_event_kind == SlaveEvent::Stop);
                 if should_wake {
                     // ORs USER onto the bus channel without disturbing READABLE.
                     if let Err(_) = syscall::object_set_peer_user_signal(bus.channel, true) {
@@ -234,7 +232,7 @@ where
                 bus.notif_enabled = false;
                 bus.rx_len = 0;
                 bus.rx_source = 0;
-                bus.rx_event_kind = SlaveEventKind::DataReceived;
+                bus.rx_event_kind = SlaveEvent::DataReceived;
                 encode_ok(&mut response_buf, 0)
             }
             Some((I2cOp::SlaveReceive, max_len)) => {
@@ -272,7 +270,7 @@ where
                     }
                 }
             }
-            None => encode_error(&mut response_buf, I2cError::InvalidOperation),
+            Some((_, _)) | None => encode_error(&mut response_buf, I2cError::InvalidOperation),
         };
         if let Err(_) = syscall::channel_respond(channel, &response_buf[..resp_len]) {
             pw_log::error!("channel_respond failed");

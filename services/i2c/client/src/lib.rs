@@ -20,10 +20,12 @@
 
 use i2c_api::seam::{error_kind, ErrorKind, ErrorType, I2c, Operation, SevenBitAddress};
 use i2c_api::{
-    I2cError, I2cOp, I2cOpDesc, I2cOpKind, I2cRequestHeader, I2cResponseHeader, SlaveEventKind,
+    I2cError, I2cOp, I2cOpDesc, I2cOpKind, I2cRequestHeader, I2cResponseHeader, SlaveEvent,
     Transport, TransportError, MAX_OPS, MAX_PAYLOAD_SIZE,
 };
 
+// One IPC message fits in a single 512-byte channel buffer on the server side.
+// Raising this requires a matching change to the server's receive buffer.
 const MAX_BUF_SIZE: usize = 512;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,12 +43,36 @@ pub enum ClientError {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SlaveReceiveEvent {
     /// Kind of event that triggered this receive (DataReceived, ReadRequest, Stop).
-    pub kind: SlaveEventKind,
+    pub kind: SlaveEvent,
     /// Source I2C address (7-bit) of the master that wrote to us.
-    /// May be set to 0xFF if unavailable (hardware doesn't track it).
-    pub source_address: u8,
+    /// `None` if the hardware did not capture it.
+    pub source_address: Option<SevenBitAddress>,
     /// Number of data bytes in the buffer.
     pub data_len: usize,
+    /// True if the latched buffer exceeded `buf` and was truncated.
+    pub truncated: bool,
+}
+
+impl core::fmt::Display for ClientError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Transport(e) => write!(f, "i2c transport error: {e}"),
+            Self::ServerError(e) => write!(f, "i2c server error: {e}"),
+            Self::InvalidResponse => f.write_str("malformed i2c response"),
+            Self::BufferTooSmall => f.write_str("transaction exceeds one round-trip buffer"),
+            Self::TooManyOperations => f.write_str("too many operations in one transaction"),
+        }
+    }
+}
+
+impl core::error::Error for ClientError {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        match self {
+            Self::Transport(e) => Some(e),
+            Self::ServerError(e) => Some(e),
+            _ => None,
+        }
+    }
 }
 
 impl From<TransportError> for ClientError {
@@ -74,6 +100,7 @@ pub struct I2cClient<T: Transport> {
 }
 
 impl<T: Transport> I2cClient<T> {
+    /// Create a client bound to `transport`.
     pub const fn new(transport: T) -> Self {
         Self { transport }
     }
@@ -126,17 +153,32 @@ impl<T: Transport> I2cClient<T> {
     }
 
     /// Set this bus's slave (target) address.
+    ///
+    /// # Errors
+    /// - [`ClientError::Transport`] — the IPC round-trip failed.
+    /// - [`ClientError::ServerError`] — the server rejected the address.
+    /// - [`ClientError::InvalidResponse`] — the response was malformed.
     pub fn configure_slave(&mut self, address: SevenBitAddress) -> Result<(), ClientError> {
         self.slave_cmd(I2cOp::ConfigureSlave, address as u16, 0, None)
             .map(|_| ())
     }
 
     /// Enter slave mode (start ACKing the configured address).
+    ///
+    /// # Errors
+    /// - [`ClientError::Transport`] — the IPC round-trip failed.
+    /// - [`ClientError::ServerError`] — the server could not enable slave mode.
+    /// - [`ClientError::InvalidResponse`] — the response was malformed.
     pub fn enable_slave(&mut self) -> Result<(), ClientError> {
         self.slave_cmd(I2cOp::EnableSlave, 0, 0, None).map(|_| ())
     }
 
     /// Leave slave mode.
+    ///
+    /// # Errors
+    /// - [`ClientError::Transport`] — the IPC round-trip failed.
+    /// - [`ClientError::ServerError`] — the server could not disable slave mode.
+    /// - [`ClientError::InvalidResponse`] — the response was malformed.
     pub fn disable_slave(&mut self) -> Result<(), ClientError> {
         self.slave_cmd(I2cOp::DisableSlave, 0, 0, None).map(|_| ())
     }
@@ -144,12 +186,22 @@ impl<T: Transport> I2cClient<T> {
     /// Arm interrupt-driven slave-RX notification. After this the server
     /// raises `Signals::USER` on this bus's channel when data is latched;
     /// the consumer then calls [`slave_receive`](Self::slave_receive).
+    ///
+    /// # Errors
+    /// - [`ClientError::Transport`] — the IPC round-trip failed.
+    /// - [`ClientError::ServerError`] — the server could not arm the notification.
+    /// - [`ClientError::InvalidResponse`] — the response was malformed.
     pub fn enable_notification(&mut self) -> Result<(), ClientError> {
         self.slave_cmd(I2cOp::EnableSlaveNotification, 0, 0, None)
             .map(|_| ())
     }
 
     /// Disarm slave-RX notification (also drops any latched buffer).
+    ///
+    /// # Errors
+    /// - [`ClientError::Transport`] — the IPC round-trip failed.
+    /// - [`ClientError::ServerError`] — the server could not disarm the notification.
+    /// - [`ClientError::InvalidResponse`] — the response was malformed.
     pub fn disable_notification(&mut self) -> Result<(), ClientError> {
         self.slave_cmd(I2cOp::DisableSlaveNotification, 0, 0, None)
             .map(|_| ())
@@ -160,6 +212,11 @@ impl<T: Transport> I2cClient<T> {
     /// Call this after a `Signals::USER` wake on the channel.
     ///
     /// Response payload format: [kind (1), source_addr (1), data (0..)]
+    ///
+    /// # Errors
+    /// - [`ClientError::Transport`] — the IPC round-trip failed.
+    /// - [`ClientError::ServerError`]`(`[`I2cError::NoData`]`)` — nothing is latched yet.
+    /// - [`ClientError::InvalidResponse`] — the response was malformed.
     pub fn slave_receive(&mut self, buf: &mut [u8]) -> Result<SlaveReceiveEvent, ClientError> {
         let max = (buf.len().saturating_sub(2)).min(MAX_PAYLOAD_SIZE) as u16;
         let mut resp = [0u8; I2cResponseHeader::SIZE + MAX_PAYLOAD_SIZE];
@@ -197,7 +254,7 @@ impl<T: Transport> I2cClient<T> {
         let source_addr = resp[payload_offset + 1];
         let data_len = payload_len - 2;
 
-        let kind = SlaveEventKind::try_from(kind_byte).map_err(|_| ClientError::InvalidResponse)?;
+        let kind = SlaveEvent::try_from(kind_byte).map_err(|_| ClientError::InvalidResponse)?;
 
         // Copy data into the caller's buffer.
         let copy = data_len.min(buf.len());
@@ -207,8 +264,13 @@ impl<T: Transport> I2cClient<T> {
 
         Ok(SlaveReceiveEvent {
             kind,
-            source_address: source_addr,
-            data_len,
+            source_address: if source_addr == 0xFF {
+                None
+            } else {
+                Some(source_addr)
+            },
+            data_len: copy,
+            truncated: data_len > copy,
         })
     }
 
@@ -217,6 +279,12 @@ impl<T: Transport> I2cClient<T> {
     ///
     /// NOTE: not required for MCTP-over-I2C. Provided for testing slave-TX
     /// and register-echo patterns only.
+    ///
+    /// # Errors
+    /// - [`ClientError::BufferTooSmall`] — `data` exceeds the one round-trip buffer.
+    /// - [`ClientError::Transport`] — the IPC round-trip failed.
+    /// - [`ClientError::ServerError`] — the server rejected the TX buffer.
+    /// - [`ClientError::InvalidResponse`] — the response was malformed.
     pub fn slave_set_response(&mut self, data: &[u8]) -> Result<(), ClientError> {
         let hdr = I2cRequestHeader::new(I2cOp::SlaveSetResponse, 0, 0, data.len() as u16);
         let req_len = I2cRequestHeader::SIZE + data.len();
@@ -341,6 +409,14 @@ impl<T: Transport> ErrorType for I2cClient<T> {
 }
 
 impl<T: Transport> I2c<SevenBitAddress> for I2cClient<T> {
+    /// Execute one atomic I2C transaction (address + ordered read/write ops).
+    ///
+    /// # Errors
+    /// - [`ClientError::TooManyOperations`] — more than `MAX_OPS` ops supplied.
+    /// - [`ClientError::BufferTooSmall`] — total read or write payload exceeds one round-trip buffer.
+    /// - [`ClientError::Transport`] — the IPC round-trip failed.
+    /// - [`ClientError::ServerError`] — the server reported a bus-level error (NACK, timeout, …).
+    /// - [`ClientError::InvalidResponse`] — the response was malformed or payload length mismatch.
     fn transaction(
         &mut self,
         address: SevenBitAddress,

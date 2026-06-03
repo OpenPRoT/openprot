@@ -131,16 +131,16 @@
 //!
 //! ```text
 //! use openprot_platform_mock::i2c_hardware::MockI2cHardware;
-//! use openprot_hal_blocking::i2c_hardware::slave::I2cSEvent;
+//! use openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent;
 //!
 //! let mut mock = MockI2cHardware::new();
 //!
 //! // Inject single event for testing (mock only stores most recent event)
-//! mock.inject_slave_event(I2cSEvent::SlaveWrReq);
+//! mock.inject_slave_event(I2cIsrEvent::SlaveWrReq);
 //!
 //! // Poll for events (non-blocking)
 //! match mock.poll_slave_events() {
-//!     Ok(Some(I2cSEvent::SlaveWrReq)) => {
+//!     Ok(Some(I2cIsrEvent::SlaveWrReq)) => {
 //!         // Event received as expected
 //!     },
 //!     Ok(Some(_)) => {
@@ -340,7 +340,7 @@ pub struct MockI2cHardware {
     /// Number of valid bytes in transmit buffer (8 bytes: usize on 64-bit)
     slave_tx_count: usize,
     /// Most recent slave event that occurred (1 byte: `Option<enum>`)
-    last_slave_event: Option<openprot_hal_blocking::i2c_hardware::slave::I2cSEvent>,
+    last_slave_event: Option<openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent>,
 }
 
 impl MockI2cHardware {
@@ -810,7 +810,7 @@ impl openprot_hal_blocking::i2c_hardware::slave::I2cSlaveInterrupts<SevenBitAddr
         }
     }
 
-    fn last_slave_event(&self) -> Option<openprot_hal_blocking::i2c_hardware::slave::I2cSEvent> {
+    fn last_slave_event(&self) -> Option<openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent> {
         self.last_slave_event
     }
 }
@@ -870,7 +870,7 @@ impl MockI2cHardware {
     /// No complex event queue management.
     pub fn inject_slave_event(
         &mut self,
-        event: openprot_hal_blocking::i2c_hardware::slave::I2cSEvent,
+        event: openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent,
     ) {
         self.last_slave_event = Some(event);
     }
@@ -881,7 +881,7 @@ impl MockI2cHardware {
     /// Simplified version of event polling.
     pub fn poll_slave_events(
         &mut self,
-    ) -> Result<Option<openprot_hal_blocking::i2c_hardware::slave::I2cSEvent>, MockI2cError> {
+    ) -> Result<Option<openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent>, MockI2cError> {
         self.check_success()?;
         let event = self.last_slave_event.take();
         Ok(event)
@@ -892,7 +892,7 @@ impl MockI2cHardware {
     /// Simplified event checking without complex queue management.
     pub fn is_event_pending_nb(
         &self,
-        event: openprot_hal_blocking::i2c_hardware::slave::I2cSEvent,
+        event: openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent,
     ) -> Result<bool, MockI2cError> {
         if self.config.success {
             Ok(self.last_slave_event == Some(event))
@@ -906,18 +906,18 @@ impl MockI2cHardware {
     /// Processes a slave event with mock behavior.
     pub fn handle_slave_event_nb(
         &mut self,
-        event: openprot_hal_blocking::i2c_hardware::slave::I2cSEvent,
+        event: openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent,
     ) -> Result<(), MockI2cError> {
         self.check_success()?;
         self.last_slave_event = Some(event);
 
         // Simulate event handling based on event type
         match event {
-            openprot_hal_blocking::i2c_hardware::slave::I2cSEvent::SlaveWrRecvd => {
+            openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent::SlaveWrRecvd => {
                 // Simulate receiving data using safe injection
                 self.inject_slave_data(&[0xAA, 0xBB, 0xCC]);
             }
-            openprot_hal_blocking::i2c_hardware::slave::I2cSEvent::SlaveRdReq => {
+            openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent::SlaveRdReq => {
                 // Prepare response data using safe method
                 use openprot_hal_blocking::i2c_hardware::slave::I2cSlaveBuffer;
                 match self.write_slave_response(&[0x11, 0x22, 0x33]) {
@@ -1238,7 +1238,7 @@ where
         self.base_hardware.slave_status()
     }
 
-    fn last_slave_event(&self) -> Option<openprot_hal_blocking::i2c_hardware::slave::I2cSEvent> {
+    fn last_slave_event(&self) -> Option<openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent> {
         self.base_hardware.last_slave_event()
     }
 }
@@ -1259,7 +1259,7 @@ where
     /// Inject slave event (for testing)
     pub fn inject_slave_event(
         &mut self,
-        event: openprot_hal_blocking::i2c_hardware::slave::I2cSEvent,
+        event: openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent,
     ) {
         self.base_hardware.inject_slave_event(event);
     }
@@ -1267,7 +1267,7 @@ where
     /// Poll slave events (for testing)
     pub fn poll_slave_events(
         &mut self,
-    ) -> Result<Option<openprot_hal_blocking::i2c_hardware::slave::I2cSEvent>, MockI2cError> {
+    ) -> Result<Option<openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent>, MockI2cError> {
         self.base_hardware.poll_slave_events()
     }
 }
@@ -1465,14 +1465,14 @@ mod tests {
     fn test_slave_events() {
         let mut mock = MockI2cHardware::new();
 
-        use openprot_hal_blocking::i2c_hardware::slave::{I2cSEvent, I2cSlaveInterrupts};
+        use openprot_hal_blocking::i2c_hardware::slave::{I2cIsrEvent, I2cSlaveInterrupts};
 
         // Test event injection and polling
-        mock.inject_slave_event(I2cSEvent::SlaveWrReq);
+        mock.inject_slave_event(I2cIsrEvent::SlaveWrReq);
 
         // Test event polling
         match mock.poll_slave_events() {
-            Ok(event) => assert_eq!(event, Some(I2cSEvent::SlaveWrReq)),
+            Ok(event) => assert_eq!(event, Some(I2cIsrEvent::SlaveWrReq)),
             Err(_) => {
                 panic!("Failed to poll events");
             }
@@ -1486,19 +1486,19 @@ mod tests {
         }
 
         // Test event handling
-        match mock.handle_slave_event_nb(I2cSEvent::SlaveWrRecvd) {
+        match mock.handle_slave_event_nb(I2cIsrEvent::SlaveWrRecvd) {
             Ok(()) => {}
             Err(_) => {
                 panic!("Failed to handle event");
             }
         }
-        assert_eq!(mock.last_slave_event(), Some(I2cSEvent::SlaveWrRecvd));
+        assert_eq!(mock.last_slave_event(), Some(I2cIsrEvent::SlaveWrRecvd));
 
         // Test slave status
         match mock.slave_status() {
             Ok(status) => {
                 assert!(!status.enabled); // Not enabled by default
-                assert_eq!(status.last_event, Some(I2cSEvent::SlaveWrRecvd));
+                assert_eq!(status.last_event, Some(I2cIsrEvent::SlaveWrRecvd));
             }
             Err(_) => {
                 panic!("Failed to get status");
@@ -1510,10 +1510,10 @@ mod tests {
     fn test_slave_event_pending_check() {
         let mut mock = MockI2cHardware::new();
 
-        use openprot_hal_blocking::i2c_hardware::slave::I2cSEvent;
+        use openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent;
 
         // Initially no events pending
-        match mock.is_event_pending_nb(I2cSEvent::SlaveWrReq) {
+        match mock.is_event_pending_nb(I2cIsrEvent::SlaveWrReq) {
             Ok(pending) => assert!(!pending),
             Err(_) => {
                 panic!("Failed to check pending");
@@ -1521,14 +1521,14 @@ mod tests {
         }
 
         // Inject an event
-        mock.inject_slave_event(I2cSEvent::SlaveWrReq);
-        match mock.is_event_pending_nb(I2cSEvent::SlaveWrReq) {
+        mock.inject_slave_event(I2cIsrEvent::SlaveWrReq);
+        match mock.is_event_pending_nb(I2cIsrEvent::SlaveWrReq) {
             Ok(pending) => assert!(pending),
             Err(_) => {
                 panic!("Failed to check pending");
             }
         }
-        match mock.is_event_pending_nb(I2cSEvent::SlaveRdReq) {
+        match mock.is_event_pending_nb(I2cIsrEvent::SlaveRdReq) {
             Ok(pending) => assert!(!pending),
             Err(_) => {
                 panic!("Failed to check pending");
@@ -1542,7 +1542,7 @@ mod tests {
                 panic!("Failed to poll events");
             }
         }
-        match mock.is_event_pending_nb(I2cSEvent::SlaveWrReq) {
+        match mock.is_event_pending_nb(I2cIsrEvent::SlaveWrReq) {
             Ok(pending) => assert!(!pending),
             Err(_) => {
                 panic!("Failed to check pending");
@@ -1567,7 +1567,7 @@ mod tests {
         assert!(mock.poll_slave_events().is_err());
         assert!(mock
             .handle_slave_event_nb(
-                openprot_hal_blocking::i2c_hardware::slave::I2cSEvent::SlaveWrReq
+                openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent::SlaveWrReq
             )
             .is_err());
     }

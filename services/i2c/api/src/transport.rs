@@ -21,11 +21,22 @@
 
 /// Why a transport round-trip failed. Deliberately tiny and transport-neutral;
 /// i2c-level status travels inside the response payload, not here.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransportError {
     /// The underlying channel/syscall/loopback call failed.
     Failed,
 }
+
+impl core::fmt::Display for TransportError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Failed => f.write_str("i2c transport round-trip failed"),
+        }
+    }
+}
+
+impl core::error::Error for TransportError {}
 
 /// Bytes-in → bytes-out, exactly one round-trip.
 ///

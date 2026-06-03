@@ -16,24 +16,24 @@
 //! read). Methods outside that path are honest best-effort and marked.
 
 use embedded_hal::i2c::SevenBitAddress;
-use openprot_hal_blocking::i2c_hardware::slave::{I2cSEvent, I2cSlaveBuffer, I2cSlaveCore};
+use openprot_hal_blocking::i2c_hardware::slave::{I2cIsrEvent, I2cSlaveBuffer, I2cSlaveCore};
 use openprot_hal_blocking::i2c_hardware::I2cBusRecovery;
 
 use super::controller::Ast1060I2c;
 use super::error::I2cError;
 use super::slave::{SlaveConfig, SlaveEvent};
 
-/// Driver `SlaveEvent` → HAL `I2cSEvent`. The notification path only acts on
+/// Driver `SlaveEvent` → HAL `I2cIsrEvent`. The notification path only acts on
 /// the data-received case; the rest map to their nearest HAL kind.
-fn to_hal_event(ev: SlaveEvent) -> I2cSEvent {
+fn to_hal_event(ev: SlaveEvent) -> I2cIsrEvent {
     match ev {
-        SlaveEvent::ReadRequest => I2cSEvent::SlaveRdReq,
-        SlaveEvent::WriteRequest => I2cSEvent::SlaveWrReq,
+        SlaveEvent::ReadRequest => I2cIsrEvent::SlaveRdReq,
+        SlaveEvent::WriteRequest => I2cIsrEvent::SlaveWrReq,
         SlaveEvent::DataReceived { .. } | SlaveEvent::DataReceivedAndSent { .. } => {
-            I2cSEvent::SlaveWrRecvd
+            I2cIsrEvent::SlaveWrRecvd
         }
-        SlaveEvent::DataSent { .. } => I2cSEvent::SlaveRdProc,
-        SlaveEvent::Stop => I2cSEvent::SlaveStop,
+        SlaveEvent::DataSent { .. } => I2cIsrEvent::SlaveRdProc,
+        SlaveEvent::Stop => I2cIsrEvent::SlaveStop,
     }
 }
 
@@ -118,7 +118,7 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
     /// This exposes the full hardware event (ReadRequest, Stop, etc.) alongside
     /// the receive count, so the server-runtime can store the actual event kind
     /// rather than always hardcoding DataReceived.
-    pub fn try_next_slave_event(&mut self) -> Result<Option<(I2cSEvent, usize)>, I2cError> {
+    pub fn try_next_slave_event(&mut self) -> Result<Option<(I2cIsrEvent, usize)>, I2cError> {
         let Some(ev) = self.handle_slave_interrupt() else {
             return Ok(None);
         };

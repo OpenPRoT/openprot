@@ -20,7 +20,7 @@ pub use embedded_hal::i2c::{
 // Target-side traits are re-exported from `openprot_hal_blocking`.
 // The runtime stays generic, and each backend forwards to its platform driver.
 pub use openprot_hal_blocking::i2c_hardware::slave::{
-    I2cSEvent, I2cSlaveBuffer, I2cSlaveCore, I2cSlaveInterrupts, SlaveStatus,
+    I2cIsrEvent, I2cSlaveBuffer, I2cSlaveCore, I2cSlaveInterrupts, SlaveStatus,
 };
 pub use openprot_hal_blocking::i2c_hardware::{I2cBusRecovery, I2cHardwareCore};
 
@@ -33,10 +33,10 @@ use crate::protocol::I2cError;
 pub trait I2cSlaveEvent: I2cSlaveBuffer {
     /// Return the next slave event and rx length, if any.
     /// Default impl uses `poll_slave_data()` and reports DataReceived kind.
-    fn try_next_slave_event(&mut self) -> Result<Option<(I2cSEvent, usize)>, Self::Error> {
+    fn try_next_slave_event(&mut self) -> Result<Option<(I2cIsrEvent, usize)>, Self::Error> {
         Ok(self
             .poll_slave_data()?
-            .map(|n| (I2cSEvent::SlaveWrRecvd, n)))
+            .map(|n| (I2cIsrEvent::SlaveWrRecvd, n)))
     }
 }
 

@@ -98,11 +98,11 @@ client.enable_notification()?;
 loop {
     // Wait for Signals::USER on channel
     object_wait_signal(&channel, USER_BIT)?;
-    
+
     let event = client.slave_receive(&mut buf)?;
     // Use event.source_address for per-requester state
     // Use event.kind to distinguish read/write/stop
-    
+
     // Stage response for master's next read
     client.slave_set_response(&buf[..event.data_len])?;
 }

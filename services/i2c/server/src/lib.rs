@@ -110,7 +110,7 @@ where
         match desc.op_kind() {
             Ok(I2cOpKind::Write) => write_total += desc.length(),
             Ok(I2cOpKind::Read) => read_total += desc.length(),
-            Err(_) => return encode_error(response, I2cError::InvalidOperation),
+            Ok(_) | Err(_) => return encode_error(response, I2cError::InvalidOperation),
         }
     }
     if write_total > MAX_PAYLOAD_SIZE
@@ -146,7 +146,7 @@ where
                 *op = Operation::Read(head);
                 read_rem = tail;
             }
-            Err(_) => unreachable!("op kinds validated in the sizing pass"),
+            Ok(_) | Err(_) => unreachable!("op kinds validated in the sizing pass"),
         }
     }
 

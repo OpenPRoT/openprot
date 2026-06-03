@@ -136,9 +136,9 @@ pub trait I2cMaster<A: AddressMode = SevenBitAddress>: I2cHardwareCore {
 pub mod slave {
     use super::*;
 
-    /// I2C slave events that can occur during slave operations
+    /// I2C slave events raised by the hardware ISR.
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-    pub enum I2cSEvent {
+    pub enum I2cIsrEvent {
         /// Master is requesting to read from slave
         SlaveRdReq,
         /// Master is requesting to write to slave
@@ -165,7 +165,7 @@ pub mod slave {
         /// Number of bytes in transmit buffer
         pub tx_buffer_count: usize,
         /// Last slave event that occurred
-        pub last_event: Option<I2cSEvent>,
+        pub last_event: Option<I2cIsrEvent>,
         /// Whether an error condition exists
         pub error: bool,
     }
@@ -272,7 +272,7 @@ pub mod slave {
         /// Returns the most recent slave event, useful for debugging
         /// and state tracking. May return None if no events have occurred
         /// since reset or if the hardware doesn't track this information.
-        fn last_slave_event(&self) -> Option<I2cSEvent>;
+        fn last_slave_event(&self) -> Option<I2cIsrEvent>;
     }
 
     /// Blocking slave event handling (sync pattern)
@@ -289,7 +289,7 @@ pub mod slave {
         /// with master transactions.
         fn wait_for_slave_event(
             &mut self,
-            expected_event: I2cSEvent,
+            expected_event: I2cIsrEvent,
             timeout_ms: u32,
         ) -> Result<bool, Self::Error>;
 
@@ -298,15 +298,17 @@ pub mod slave {
         /// Blocks until any slave event occurs or timeout expires.
         /// Returns the event that occurred, or None if timeout expired.
         /// Useful when any event needs to be processed synchronously.
-        fn wait_for_any_event(&mut self, timeout_ms: u32)
-            -> Result<Option<I2cSEvent>, Self::Error>;
+        fn wait_for_any_event(
+            &mut self,
+            timeout_ms: u32,
+        ) -> Result<Option<I2cIsrEvent>, Self::Error>;
 
         /// Handle a specific slave event with blocking semantics
         ///
         /// Processes a slave event and may block if the event handling
         /// requires waiting for hardware completion. This is different
         /// from the polling version which always returns immediately.
-        fn handle_slave_event_blocking(&mut self, event: I2cSEvent) -> Result<(), Self::Error>;
+        fn handle_slave_event_blocking(&mut self, event: I2cIsrEvent) -> Result<(), Self::Error>;
     }
 
     /// Complete slave implementation combining core functionality
