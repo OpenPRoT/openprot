@@ -54,8 +54,8 @@ pub use error::{CccErrorKind, I3cError, Result};
 
 // Configuration
 pub use config::{
-    AddrBook, Attached, CommonCfg, CommonState, DeviceEntry, I3cConfig, I3cTargetConfig, ResetSpec,
-    I3C_MAX_CORE_CLK, I3C_MIN_CORE_CLK_HDR, I3C_MIN_CORE_CLK_SDR,
+    AddrBook, Attached, CommonCfg, CommonState, DeviceEntry, I3C_MAX_CORE_CLK,
+    I3C_MIN_CORE_CLK_HDR, I3C_MIN_CORE_CLK_SDR, I3cConfig, I3cTargetConfig, ResetSpec,
 };
 
 // Core types
@@ -66,21 +66,22 @@ pub use types::{
 
 // Hardware interface
 pub use hardware::{
-    dispatch_i3c_irq, register_i3c_irq_handler, Ast1060I3c, HardwareClock, HardwareCore,
-    HardwareFifo, HardwareInterface, HardwareRecovery, HardwareTarget, HardwareTransfer, Instance,
+    Ast1060I3c, HardwareClock, HardwareCore, HardwareFifo, HardwareInterface, HardwareRecovery,
+    HardwareTarget, HardwareTransfer, Instance, dispatch_i3c_irq, register_i3c_irq_handler,
 };
 
 // CCC operations
 pub use ccc::{
-    ccc_events_all_set, ccc_events_set, ccc_getbcr, ccc_getpid, ccc_getstatus, ccc_getstatus_fmt1,
-    ccc_rstact_all, ccc_rstdaa_all, ccc_setnewda, Ccc, CccPayload, CccRstActDefByte,
-    CccTargetPayload, GetStatusDefByte, GetStatusFormat, GetStatusResp,
+    Ccc, CccPayload, CccRstActDefByte, CccTargetPayload, GetStatusDefByte, GetStatusFormat,
+    GetStatusResp, ccc_events_all_set, ccc_events_set, ccc_getbcr, ccc_getpid, ccc_getstatus,
+    ccc_getstatus_fmt1, ccc_rstact_all, ccc_rstdaa_all, ccc_setnewda,
 };
 
 // IBI work queue
 pub use ibi::{
-    i3c_ibi_work_enqueue_hotjoin, i3c_ibi_work_enqueue_target_da_assignment,
-    i3c_ibi_work_enqueue_target_irq, i3c_ibi_workq_consumer, IbiWork,
+    IbiConsumer, IbiWork, i3c_ibi_work_enqueue_hotjoin, i3c_ibi_work_enqueue_target_da_assignment,
+    i3c_ibi_work_enqueue_target_irq, i3c_ibi_work_enqueue_target_master_write,
+    i3c_ibi_workq_consumer,
 };
 
 // Constants (wildcard export for convenience)

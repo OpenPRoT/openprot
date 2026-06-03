@@ -28,29 +28,30 @@
 use core::cell::RefCell;
 use critical_section::Mutex;
 
-use super::ccc::{ccc_events_set, CccPayload};
-use super::config::{I3cConfig, I3C_MIN_CORE_CLK_SDR};
+use super::ccc::{CccPayload, ccc_events_set};
+use super::config::{I3C_MIN_CORE_CLK_SDR, I3cConfig};
 use super::constants::{
-    bit, field_get, field_prep, CM_TFR_STS_MASTER_HALT, CM_TFR_STS_TARGET_HALT,
-    COMMAND_ATTR_ADDR_ASSGN_CMD, COMMAND_ATTR_SLAVE_DATA_CMD, COMMAND_ATTR_XFER_ARG,
-    COMMAND_ATTR_XFER_CMD, COMMAND_PORT_ARG_DATA_LEN, COMMAND_PORT_ARG_DB, COMMAND_PORT_ATTR,
-    COMMAND_PORT_CMD, COMMAND_PORT_CP, COMMAND_PORT_DBP, COMMAND_PORT_DEV_COUNT,
-    COMMAND_PORT_DEV_INDEX, COMMAND_PORT_READ_TRANSFER, COMMAND_PORT_ROC, COMMAND_PORT_SPEED,
-    COMMAND_PORT_TID, COMMAND_PORT_TOC, DEV_ADDR_TABLE_IBI_MDB, DEV_ADDR_TABLE_IBI_PEC,
-    DEV_ADDR_TABLE_SIR_REJECT, I3CG_REG1_SCL_IN_SW_MODE_EN, I3CG_REG1_SCL_IN_SW_MODE_VAL,
-    I3CG_REG1_SDA_IN_SW_MODE_EN, I3CG_REG1_SDA_IN_SW_MODE_VAL, I3C_BCR_IBI_PAYLOAD_HAS_DATA_BYTE,
-    I3C_BUS_I2C_FMP_TF_MAX_NS, I3C_BUS_I2C_FMP_THIGH_MIN_NS, I3C_BUS_I2C_FMP_TLOW_MIN_NS,
-    I3C_BUS_I2C_FMP_TR_MAX_NS, I3C_BUS_I2C_FM_TF_MAX_NS, I3C_BUS_I2C_FM_THIGH_MIN_NS,
-    I3C_BUS_I2C_FM_TLOW_MIN_NS, I3C_BUS_I2C_FM_TR_MAX_NS, I3C_BUS_I2C_STD_TF_MAX_NS,
-    I3C_BUS_I2C_STD_THIGH_MIN_NS, I3C_BUS_I2C_STD_TLOW_MIN_NS, I3C_BUS_I2C_STD_TR_MAX_NS,
-    I3C_BUS_THIGH_MAX_NS, I3C_CCC_DEVCTRL, I3C_CCC_ENTDAA, I3C_CCC_EVT_INTR, I3C_CCC_SETHID,
-    I3C_MSG_READ, IBIQ_STATUS_IBI_DATA_LEN, IBIQ_STATUS_IBI_DATA_LEN_SHIFT, IBIQ_STATUS_IBI_ID,
+    CM_TFR_STS_MASTER_HALT, CM_TFR_STS_TARGET_HALT, COMMAND_ATTR_ADDR_ASSGN_CMD,
+    COMMAND_ATTR_SLAVE_DATA_CMD, COMMAND_ATTR_XFER_ARG, COMMAND_ATTR_XFER_CMD,
+    COMMAND_PORT_ARG_DATA_LEN, COMMAND_PORT_ARG_DB, COMMAND_PORT_ATTR, COMMAND_PORT_CMD,
+    COMMAND_PORT_CP, COMMAND_PORT_DBP, COMMAND_PORT_DEV_COUNT, COMMAND_PORT_DEV_INDEX,
+    COMMAND_PORT_READ_TRANSFER, COMMAND_PORT_ROC, COMMAND_PORT_SPEED, COMMAND_PORT_TID,
+    COMMAND_PORT_TOC, DEV_ADDR_TABLE_IBI_MDB, DEV_ADDR_TABLE_IBI_PEC, DEV_ADDR_TABLE_SIR_REJECT,
+    I3C_BCR_IBI_PAYLOAD_HAS_DATA_BYTE, I3C_BUS_I2C_FM_TF_MAX_NS, I3C_BUS_I2C_FM_THIGH_MIN_NS,
+    I3C_BUS_I2C_FM_TLOW_MIN_NS, I3C_BUS_I2C_FM_TR_MAX_NS, I3C_BUS_I2C_FMP_TF_MAX_NS,
+    I3C_BUS_I2C_FMP_THIGH_MIN_NS, I3C_BUS_I2C_FMP_TLOW_MIN_NS, I3C_BUS_I2C_FMP_TR_MAX_NS,
+    I3C_BUS_I2C_STD_TF_MAX_NS, I3C_BUS_I2C_STD_THIGH_MIN_NS, I3C_BUS_I2C_STD_TLOW_MIN_NS,
+    I3C_BUS_I2C_STD_TR_MAX_NS, I3C_BUS_THIGH_MAX_NS, I3C_CCC_DEVCTRL, I3C_CCC_ENTDAA,
+    I3C_CCC_EVT_INTR, I3C_CCC_SETHID, I3C_MSG_READ, I3CG_REG1_SCL_IN_SW_MODE_EN,
+    I3CG_REG1_SCL_IN_SW_MODE_VAL, I3CG_REG1_SDA_IN_SW_MODE_EN, I3CG_REG1_SDA_IN_SW_MODE_VAL,
+    IBIQ_STATUS_IBI_DATA_LEN, IBIQ_STATUS_IBI_DATA_LEN_SHIFT, IBIQ_STATUS_IBI_ID,
     IBIQ_STATUS_IBI_ID_SHIFT, INTR_CCC_UPDATED_STAT, INTR_DYN_ADDR_ASSGN_STAT, INTR_IBI_THLD_STAT,
     INTR_RESP_READY_STAT, INTR_TRANSFER_ABORT_STAT, INTR_TRANSFER_ERR_STAT, MAX_CMDS, NSEC_PER_SEC,
     RESET_CTRL_ALL, RESET_CTRL_QUEUES, RESET_CTRL_XFER_QUEUES, RESPONSE_ERROR_IBA_NACK,
     RESPONSE_PORT_DATA_LEN_MASK, RESPONSE_PORT_DATA_LEN_SHIFT, RESPONSE_PORT_ERR_STATUS_MASK,
     RESPONSE_PORT_ERR_STATUS_SHIFT, RESPONSE_PORT_TID_MASK, RESPONSE_PORT_TID_SHIFT,
-    SDA_TX_HOLD_MASK, SDA_TX_HOLD_MAX, SDA_TX_HOLD_MIN, SLV_DCR_MASK, SLV_EVENT_CTRL_SIR_EN,
+    SDA_TX_HOLD_MASK, SDA_TX_HOLD_MAX, SDA_TX_HOLD_MIN, SLV_DCR_MASK, SLV_EVENT_CTRL_SIR_EN, bit,
+    field_get, field_prep,
 };
 use super::error::I3cError as I3cDrvError;
 use super::error::I3cError;
@@ -1003,11 +1004,9 @@ impl<I3C: Instance, Y: FnMut(u32)> HardwareCore for Ast1060I3c<I3C, Y> {
     }
 
     fn i3c_aspeed_isr(&mut self, config: &mut I3cConfig) {
-        self.disable_irq();
         let status = self.i3c().i3cd03c().read().bits();
         i3c_debug!(self.logger, "[ISR] 0x{:08x}", status);
         if status == 0 {
-            self.enable_irq();
             return;
         }
 
@@ -1040,7 +1039,6 @@ impl<I3C: Instance, Y: FnMut(u32)> HardwareCore for Ast1060I3c<I3C, Y> {
         }
 
         self.i3c().i3cd03c().write(|w| unsafe { w.bits(status) });
-        self.enable_irq();
     }
 }
 
@@ -1880,6 +1878,37 @@ impl<I3C: Instance, Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<I3C, Y> {
         let pos_opt = config.attached.pos_of_pid(pid);
         let pos: u8 = pos_opt.ok_or(I3cDrvError::NoDatPos)?;
 
+        if msgs.len() == 1 {
+            let mut cmd = I3cCmd::new();
+            let cmds = core::slice::from_mut(&mut cmd);
+
+            self.priv_xfer_build_cmds(cmds, msgs, pos)?;
+
+            let mut xfer = I3cXfer::new(cmds);
+            self.start_xfer(config, &mut xfer);
+
+            if !xfer.done.wait_for_us(1_000_000_000, &mut self.yield_fn) {
+                self.enter_halt(true, config);
+                self.reset_ctrl(RESET_CTRL_XFER_QUEUES);
+                self.exit_halt(config);
+                let _ = config
+                    .curr_xfer
+                    .swap(core::ptr::null_mut(), Ordering::AcqRel);
+                return Err(I3cDrvError::Timeout);
+            }
+
+            if let Some(m) = msgs.first_mut()
+                && (m.flags & I3C_MSG_READ) != 0
+            {
+                m.actual_len = xfer.cmds.first().map_or(0, |c| c.rx_len);
+            }
+
+            return match xfer.ret {
+                0 => Ok(()),
+                _ => Err(I3cDrvError::Timeout),
+            };
+        }
+
         let mut cmds: heapless::Vec<I3cCmd, MAX_CMDS> = heapless::Vec::new();
         for _ in 0..msgs.len() {
             // `?` (not `.unwrap()`) keeps this panic-free; > MAX_CMDS msgs is a
@@ -2058,11 +2087,21 @@ impl<I3C: Instance, Y: FnMut(u32)> HardwareTarget for Ast1060I3c<I3C, Y> {
 
             if rx_len != 0 {
                 let mut buf: [u8; 256] = [0u8; 256];
-                self.rd_rx_fifo(&mut buf[..rx_len]);
+                // Bound `rx_len` (a raw hardware field) to the buffer via
+                // `get_mut`: this ISR runs in handler mode, so an oversized
+                // length must not panic (same hardening as `end_xfer`).
+                let n = rx_len.min(buf.len());
+                if let Some(dst) = buf.get_mut(..n) {
+                    self.rd_rx_fifo(dst);
+                }
+                let _ = ibi_workq::i3c_ibi_work_enqueue_target_master_write(
+                    I3C::BUS_NUM.into(),
+                    buf.get(..n).unwrap_or(&[]),
+                );
                 i3c_debug!(
                     self.logger,
                     "[MASTER ==> TARGET] TARGET READ: {:02x?}",
-                    &buf[..rx_len]
+                    buf.get(..n).unwrap_or(&[])
                 );
             }
 
