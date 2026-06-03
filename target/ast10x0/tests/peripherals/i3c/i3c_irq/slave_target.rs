@@ -24,29 +24,117 @@
 
 use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
 use ast10x0_peripherals::i3c::{
-    i3c_ibi_workq_consumer, Ast1060I3c, HardwareCore, HardwareTarget, HardwareTransfer, I3cConfig,
-    I3cController, I3cTargetConfig, IbiWork,
+    Ast1060I3c, HardwareCore, HardwareTarget, HardwareTransfer, I3cConfig, I3cController,
+    I3cTargetConfig, IbiConsumer, IbiWork, i3c_ibi_workq_consumer,
 };
 use ast10x0_peripherals::scu::pinctrl;
 use codegen as _;
 use console_backend::console_backend_write_all;
 use entry as _;
-use target_common::{declare_target, TargetInterface};
+use kernel::Kernel;
+use target_common::{TargetInterface, declare_target};
 
 pub struct Target {}
 
 /// Number of IBIs the target raises once it has a dynamic address.
 const MAX_IBIS: u32 = 10;
+/// Give the controller time to finish init and open the hot-join ACK window.
+const HOT_JOIN_STARTUP_DELAY_SPINS: u32 = 0x1000_0000;
+/// Re-raise hot-join while waiting in case the first request hit the NACK window.
+const HOT_JOIN_RETRY_SPINS: u32 = 0x0400_0000;
+const WAIT_MASTER_WRITE_SPINS: u32 = 0x0400_0000;
+const XFER_DATA_LEN: usize = 16;
 
-fn run_target() -> Result<(), &'static str> {
-    pw_log::info!("####### I3C target test #######");
+fn spin_wait(mut cycles: u32) {
+    while cycles != 0 {
+        core::hint::spin_loop();
+        cycles = cycles.wrapping_sub(1);
+    }
+}
 
-    let board = Ast10x0Board::new(Ast10x0BoardDescriptor {
-        pinctrl_groups: &[pinctrl::PINCTRL_HVI3C2],
-    });
-    // SAFETY: single call at boot with exclusive access to the board.
-    unsafe { board.init() };
+fn log_target_hj_state(label: u32) {
+    let regs = unsafe { &*ast1060_pac::I3c2::ptr() };
+    let dev_addr = regs.i3cd004().read().bits();
+    let event_ctrl = regs.i3cd038().read().bits();
+    let device_char = regs.i3cd008().read().bits();
+    pw_log::info!(
+        "[DBG] target hj label={} dev_addr={}",
+        label as u32,
+        dev_addr as u32
+    );
+    pw_log::info!(
+        "[DBG] target hj event_ctrl={} device_char={}",
+        event_ctrl as u32,
+        device_char as u32
+    );
+}
 
+fn log_target_master_write(len: u8, data: &[u8; XFER_DATA_LEN]) {
+    pw_log::info!(
+        "[MASTER ==> TARGET] target received {} bytes: {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
+        len as u32,
+        data[0] as u32,
+        data[1] as u32,
+        data[2] as u32,
+        data[3] as u32,
+        data[4] as u32,
+        data[5] as u32,
+        data[6] as u32,
+        data[7] as u32
+    );
+    pw_log::info!(
+        "[MASTER ==> TARGET] target received cont {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
+        data[8] as u32,
+        data[9] as u32,
+        data[10] as u32,
+        data[11] as u32,
+        data[12] as u32,
+        data[13] as u32,
+        data[14] as u32,
+        data[15] as u32
+    );
+}
+
+fn wait_for_master_write(ibi_cons: &mut IbiConsumer) -> Result<(), &'static str> {
+    let mut spin_count = 0u32;
+    loop {
+        let Some(work) = ibi_cons.dequeue() else {
+            core::hint::spin_loop();
+            spin_count = spin_count.wrapping_add(1);
+            if spin_count >= WAIT_MASTER_WRITE_SPINS {
+                return Err("master write not received");
+            }
+            continue;
+        };
+
+        match work {
+            IbiWork::TargetMasterWrite { len, data } => {
+                log_target_master_write(len, &data);
+                return Ok(());
+            }
+            IbiWork::TargetDaAssignment => pw_log::info!("[IBI] TargetDaAssignment"),
+            IbiWork::HotJoin => pw_log::info!("[IBI] hotjoin"),
+            IbiWork::Sirq { addr, len, .. } => {
+                pw_log::info!("[IBI] SIRQ from 0x{:02x} len {}", addr as u32, len as u32);
+            }
+        }
+    }
+}
+
+/// Calibrated busy-wait used as the driver's yield/delay hook. Mirrors the
+/// reference `DummyDelay::delay_ns` (busy-loop of ~`ns / 100` nops). A named
+/// `fn` (not a closure) keeps [`build_target`]'s return type nameable.
+fn yield_delay(ns: u32) {
+    for _ in 0..(ns / 100) {
+        core::hint::spin_loop();
+    }
+}
+
+/// Build + validate the target controller in its own `#[inline(never)]` frame
+/// so the temporary `I3cConfig` (256-byte `AddrBook` inside) is freed on return
+/// rather than lingering alongside `ctrl` on the 2 KiB kernel bootstrap stack.
+#[inline(never)]
+fn build_target() -> Result<I3cController<Ast1060I3c<ast1060_pac::I3c2, fn(u32)>>, &'static str> {
     // Secondary (target) timing — identical to the reference target.
     let mut config = I3cConfig::new()
         .core_clk_hz(200_000_000)
@@ -66,12 +154,29 @@ fn run_target() -> Result<(), &'static str> {
         .map_err(|_| "invalid clock configuration")?;
 
     // SAFETY: the test owns I3C bus 2 and uses the matching PAC blocks.
-    let hw = unsafe { Ast1060I3c::<ast1060_pac::I3c2, _>::new(|_| core::hint::spin_loop()) };
-    let mut ctrl = I3cController::new(hw, config);
-    ctrl.init_hardware();
+    let hw = unsafe { Ast1060I3c::<ast1060_pac::I3c2, fn(u32)>::new(yield_delay) };
+    Ok(I3cController::new(hw, config))
+}
 
+fn run_target() -> Result<(), &'static str> {
+    pw_log::info!("####### I3C target test #######");
+
+    let board = Ast10x0Board::new(Ast10x0BoardDescriptor {
+        pinctrl_groups: &[pinctrl::PINCTRL_HVI3C2],
+    });
+    // SAFETY: single call at boot with exclusive access to the board.
+    unsafe { board.init() };
+
+    // Build the controller in a separate (never-inlined) frame so the temporary
+    // `I3cConfig` (256-byte `AddrBook` inside) is freed before `ctrl` is used —
+    // the kernel bootstrap thread stack is only 2 KiB and two live `I3cConfig`s
+    // overflow it. See `build_target`.
+    let mut ctrl = build_target()?;
     let bus = ctrl.hw.bus_num() as usize;
     let mut ibi_cons = i3c_ibi_workq_consumer(bus).ok_or("IBI consumer unavailable")?;
+    pw_log::info!("IBI work queue ready on bus {}", bus as u32);
+
+    ctrl.init_hardware();
 
     let dyn_addr = 8u8;
     let dev_idx = 0usize;
@@ -82,13 +187,25 @@ fn run_target() -> Result<(), &'static str> {
         dyn_addr as u32
     );
 
+    pw_log::info!("waiting before hot-join...");
+    spin_wait(HOT_JOIN_STARTUP_DELAY_SPINS);
     pw_log::info!("raising hot-join; waiting for dynamic address assignment...");
-    let _ = ctrl.hw.target_ibi_raise_hj(&mut ctrl.config);
+    let hj_ok = ctrl.hw.target_ibi_raise_hj(&mut ctrl.config).is_ok();
+    pw_log::info!("[DBG] hot-join raise ok={}", hj_ok as u32);
+    log_target_hj_state(0);
 
     // Wait for the controller to assign our dynamic address.
+    let mut spin_count = 0u32;
     loop {
         let Some(work) = ibi_cons.dequeue() else {
             core::hint::spin_loop();
+            spin_count = spin_count.wrapping_add(1);
+            if spin_count & (HOT_JOIN_RETRY_SPINS - 1) == 0 {
+                pw_log::info!("[DBG] retry hot-join");
+                let hj_ok = ctrl.hw.target_ibi_raise_hj(&mut ctrl.config).is_ok();
+                pw_log::info!("[DBG] hot-join retry ok={}", hj_ok as u32);
+                log_target_hj_state(1);
+            }
             continue;
         };
         match work {
@@ -103,6 +220,9 @@ fn run_target() -> Result<(), &'static str> {
             IbiWork::HotJoin => pw_log::info!("[IBI] hotjoin"),
             IbiWork::Sirq { addr, len, .. } => {
                 pw_log::info!("[IBI] SIRQ from 0x{:02x} len {}", addr as u32, len as u32);
+            }
+            IbiWork::TargetMasterWrite { len, data } => {
+                log_target_master_write(len, &data);
             }
         }
     }
@@ -121,12 +241,19 @@ fn run_target() -> Result<(), &'static str> {
         if ctrl.target_get_ibi_payload(&mut data).is_err() {
             return Err("target_get_ibi_payload failed");
         }
+        wait_for_master_write(&mut ibi_cons)?;
         ibi_count += 1;
     }
 
     pw_log::info!("I3C target test done");
     Ok(())
 }
+
+pub fn i3c2_irq<K: Kernel>(_k: K) {
+    ast10x0_peripherals::i3c::dispatch_i3c_irq(2);
+}
+
+codegen::declare_kernel_interrupt_handlers!();
 
 impl TargetInterface for Target {
     const NAME: &'static str = "AST10x0 Kernel I3C IBI (target)";

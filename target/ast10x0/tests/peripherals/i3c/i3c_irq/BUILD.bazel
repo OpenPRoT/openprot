@@ -97,6 +97,7 @@ filegroup(
 target_codegen(
     name = "slave_codegen",
     arch = "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+    crate_name = "codegen",
     system_config = ":slave_system_config",
     target_compatible_with = TARGET_COMPATIBLE_WITH,
 )
@@ -112,7 +113,6 @@ target_linker_script(
 rust_binary(
     name = "slave_target",
     srcs = ["slave_target.rs"],
-    aliases = {":slave_codegen": "codegen"},
     edition = "2024",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,

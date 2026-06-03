@@ -40,10 +40,32 @@ impl I3cTargetConfig {
 
 /// Address allocation and tracking for I3C bus
 pub struct AddrBook {
-    /// Addresses currently in use
-    pub in_use: [bool; 128],
-    /// Reserved addresses (not available for allocation)
-    pub reserved: [bool; 128],
+    /// Bitmap (128 bits) of addresses currently in use.
+    in_use: [u32; 4],
+    /// Bitmap (128 bits) of reserved addresses (not available for allocation).
+    reserved: [u32; 4],
+}
+
+impl AddrBook {
+    /// Read bit `addr` (0..=127) of a 128-bit map. The `& 3` index keeps this
+    /// panic-free (provably in `0..4`) for the `no_panics` analysis.
+    #[inline]
+    fn bit_get(bits: &[u32; 4], addr: u8) -> bool {
+        let i = addr as usize;
+        (bits[(i >> 5) & 3] >> (i & 31)) & 1 != 0
+    }
+
+    /// Set/clear bit `addr` (0..=127) of a 128-bit map (panic-free).
+    #[inline]
+    fn bit_set(bits: &mut [u32; 4], addr: u8, val: bool) {
+        let i = addr as usize;
+        let mask = 1u32 << (i & 31);
+        if val {
+            bits[(i >> 5) & 3] |= mask;
+        } else {
+            bits[(i >> 5) & 3] &= !mask;
+        }
+    }
 }
 
 impl Default for AddrBook {
@@ -57,8 +79,8 @@ impl AddrBook {
     #[must_use]
     pub const fn new() -> Self {
         Self {
-            in_use: [false; 128],
-            reserved: [false; 128],
+            in_use: [0; 4],
+            reserved: [0; 4],
         }
     }
 
@@ -66,7 +88,7 @@ impl AddrBook {
     #[inline]
     #[must_use]
     pub fn is_free(&self, addr: u8) -> bool {
-        !self.in_use[addr as usize] && !self.reserved[addr as usize]
+        !Self::bit_get(&self.in_use, addr) && !Self::bit_get(&self.reserved, addr)
     }
 
     /// Reserve default I3C addresses per specification
@@ -75,16 +97,16 @@ impl AddrBook {
     /// differ from 0x7E by a single bit.
     pub fn reserve_defaults(&mut self) {
         // Reserve addresses 0-7
-        for a in 0usize..=7 {
-            self.reserved[a] = true;
+        for a in 0u8..=7 {
+            Self::bit_set(&mut self.reserved, a, true);
         }
         // Reserve broadcast address
-        self.reserved[0x7E_usize] = true;
+        Self::bit_set(&mut self.reserved, 0x7E, true);
         // Reserve addresses differing from 0x7E by single bit
         for i in 0..=7 {
             let alt = 0x7E ^ (1u8 << i);
             if alt <= 0x7E {
-                self.reserved[alt as usize] = true;
+                Self::bit_set(&mut self.reserved, alt, true);
             }
         }
     }
@@ -107,7 +129,7 @@ impl AddrBook {
     #[inline]
     pub fn mark_use(&mut self, addr: u8, used: bool) {
         if addr != 0 {
-            self.in_use[addr as usize] = used;
+            Self::bit_set(&mut self.in_use, addr, used);
         }
     }
 }

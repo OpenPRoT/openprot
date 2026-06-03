@@ -124,27 +124,15 @@ pub enum GetStatusResp {
 // =============================================================================
 
 const fn ccc_enec(broadcast: bool) -> u8 {
-    if broadcast {
-        0x00
-    } else {
-        0x80
-    }
+    if broadcast { 0x00 } else { 0x80 }
 }
 
 const fn ccc_disec(broadcast: bool) -> u8 {
-    if broadcast {
-        0x01
-    } else {
-        0x81
-    }
+    if broadcast { 0x01 } else { 0x81 }
 }
 
 const fn ccc_rstact(broadcast: bool) -> u8 {
-    if broadcast {
-        0x2a
-    } else {
-        0x9a
-    }
+    if broadcast { 0x2a } else { 0x9a }
 }
 
 // =============================================================================
