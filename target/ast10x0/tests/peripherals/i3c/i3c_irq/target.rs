@@ -59,54 +59,34 @@ fn yield_delay(ns: u32) {
     }
 }
 
-fn log_master_read_payload(len: u32, data: &[u8; XFER_DATA_LEN]) {
+fn log_master_read_payload(exchange: u32, len: u32, data: &[u8; XFER_DATA_LEN]) {
+    let w0 = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
+    let w1 = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
+    let w2 = u32::from_be_bytes([data[8], data[9], data[10], data[11]]);
+    let w3 = u32::from_be_bytes([data[12], data[13], data[14], data[15]]);
     pw_log::info!(
-        "[MASTER <== TARGET] data len={} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
+        "MASTER_RX_FROM_TARGET #{} {}B {:08x} {:08x} {:08x} {:08x}",
+        exchange as u32,
         len as u32,
-        data[0] as u32,
-        data[1] as u32,
-        data[2] as u32,
-        data[3] as u32,
-        data[4] as u32,
-        data[5] as u32,
-        data[6] as u32,
-        data[7] as u32
-    );
-    pw_log::info!(
-        "[MASTER <== TARGET] data cont {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
-        data[8] as u32,
-        data[9] as u32,
-        data[10] as u32,
-        data[11] as u32,
-        data[12] as u32,
-        data[13] as u32,
-        data[14] as u32,
-        data[15] as u32
+        w0 as u32,
+        w1 as u32,
+        w2 as u32,
+        w3 as u32
     );
 }
 
-fn log_master_write_payload(data: &[u8; XFER_DATA_LEN]) {
+fn log_master_write_payload(exchange: u32, data: &[u8; XFER_DATA_LEN]) {
+    let w0 = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
+    let w1 = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
+    let w2 = u32::from_be_bytes([data[8], data[9], data[10], data[11]]);
+    let w3 = u32::from_be_bytes([data[12], data[13], data[14], data[15]]);
     pw_log::info!(
-        "[MASTER ==> TARGET] data {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
-        data[0] as u32,
-        data[1] as u32,
-        data[2] as u32,
-        data[3] as u32,
-        data[4] as u32,
-        data[5] as u32,
-        data[6] as u32,
-        data[7] as u32
-    );
-    pw_log::info!(
-        "[MASTER ==> TARGET] data cont {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
-        data[8] as u32,
-        data[9] as u32,
-        data[10] as u32,
-        data[11] as u32,
-        data[12] as u32,
-        data[13] as u32,
-        data[14] as u32,
-        data[15] as u32
+        "MASTER_TX_TO_TARGET #{} 16B {:08x} {:08x} {:08x} {:08x}",
+        exchange as u32,
+        w0 as u32,
+        w1 as u32,
+        w2 as u32,
+        w3 as u32
     );
 }
 
@@ -165,7 +145,7 @@ fn master_read_from_target(
 }
 
 #[inline(never)]
-fn master_write_to_target(ctrl: &mut I3c2Controller) -> Result<(), &'static str> {
+fn master_write_to_target(ctrl: &mut I3c2Controller, exchange: u32) -> Result<(), &'static str> {
     let mut tx_buf: [u8; XFER_DATA_LEN] = [
         0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
         0x88,
@@ -181,7 +161,7 @@ fn master_write_to_target(ctrl: &mut I3c2Controller) -> Result<(), &'static str>
     ctrl.hw
         .priv_xfer(&mut ctrl.config, KNOWN_PID, &mut wr_msgs)
         .map_err(|_| "private write failed")?;
-    log_master_write_payload(&tx_buf);
+    log_master_write_payload(exchange, &tx_buf);
     Ok(())
 }
 
@@ -276,13 +256,12 @@ fn run_controller() -> Result<(), &'static str> {
                     pw_log::error!("acknowledge_ibi failed");
                 }
 
+                let exchange = received;
                 let (read_len, read_data) = master_read_from_target(&mut ctrl)?;
-                pw_log::info!("[MASTER <== TARGET] read {} bytes", read_len as u32);
-                log_master_read_payload(read_len, &read_data);
+                log_master_read_payload(exchange, read_len, &read_data);
 
+                master_write_to_target(&mut ctrl, exchange)?;
                 received += 1;
-                master_write_to_target(&mut ctrl)?;
-                pw_log::info!("[MASTER ==> TARGET] wrote 16 bytes");
 
                 if received >= MAX_EXCHANGES {
                     pw_log::info!("I3C master test done");
