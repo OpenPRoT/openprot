@@ -1,4 +1,4 @@
-name: Scheduled Sync Main to Earlgrey HWE
+name: Sync main into earlgrey-hwe
 
 on:
   schedule:
@@ -10,22 +10,11 @@ jobs:
   create-pull-request:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout the earlgrey-hwe branch
+      - name: Checkout the main branch
         uses: actions/checkout@v6
         with:
-          ref: earlgrey-hwe
+          ref: main
           fetch-depth: 0 # Fetches all history so branches can be compared
-
-      - name: Merge main into earlgrey-hwe
-        run: |
-          git config --global user.name 'synchronize-bot[bot]'
-          git config --global user.email 'synchronize[bot]@users.noreply.github.com'
-
-          # Fetch the latest main branch
-          git fetch origin main:main
-
-          # Merge main into the currently checked-out dev branch
-          git merge main --no-commit --no-ff || echo "Conflicts found; resolve in the PR."
 
       - name: Generate GitHub App Token
         id: generate-token
@@ -38,8 +27,8 @@ jobs:
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ steps.generate-token.outputs.token }}
-          branch: automation/sync-main-to-earlgrey-hwe
           base: earlgrey-hwe
+          branch: sync/main-to-earlgrey-hwe
           title: 'chore: sync main into earlgrey hwe'
           reviewers: cfrantz, moidx
           body: |
