@@ -547,6 +547,12 @@ pub const PINCTRL_I2C1: &[PinctrlPin] = &[PIN_SCU414_30, PIN_SCU414_31];
 /// FMC quad-SPI pin group: mux selection on SCU430[10:11].
 pub const PINCTRL_FMC_QUAD: &[PinctrlPin] = &[PIN_SCU430_10, PIN_SCU430_11];
 
+/// SPI1 quad.
+pub const PINCTRL_SPI1_QUAD: &[PinctrlPin] = &[PIN_SCU430_17, PIN_SCU430_18];
+
+/// SPI2 quad.
+pub const PINCTRL_SPI2_QUAD: &[PinctrlPin] = &[PIN_SCU41C_30, PIN_SCU41C_31, PIN_SCU430_0, PIN_SCU430_1, PIN_SCU430_2, PIN_SCU430_3, PIN_SCU430_4];
+
 /// I2C2 pin group: SCL3/SDA3 mux selection on SCU418[0:1].
 ///
 /// The SVD names these EnblSCL3FnPin/EnblSDA3FnPin, corresponding to
