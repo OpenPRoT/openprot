@@ -1,0 +1,41 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+Authority (parity-normative) source for the AST10x0 I3C port
+============================================================
+
+Repository : aspeed-rust  (OpenPRoT/aspeed-ddk working tree)
+Upstream   : github.com/OpenPRoT (aspeed-rust), branch `main`
+Revision   : ce3b5677b95bc98a61ebf8783d00d93a910c4495
+             "Merge pull request #74 from wmaroneAMD/dma-mode-linlin-fix"
+Frozen     : 2026-06-02
+Path       : src/i3c/  (10 files, 4835 LoC)
+             ccc.rs config.rs constants.rs controller.rs error.rs
+             hal_impl.rs hardware.rs ibi.rs mod.rs types.rs
+
+Why authoritative
+-----------------
+The aspeed-rust I3C driver is the pinned behavioral-parity authority for this
+openprot AST10x0 port. It is the same driver family already ported for I2C
+(target/ast10x0/peripherals/i2c/, itself a port of aspeed-rust/src/i2c_core/),
+so it is both the normative and the convenient reference here; there is no
+separate deployed implementation to prefer over it.
+
+Informative-only references (authority wins on any divergence)
+--------------------------------------------------------------
+- Linux/Zephyr dw-i3c / aspeed-i3c controller drivers (DesignWare-style
+  command/response-queue model). Useful for register semantics ONLY; where
+  they differ from aspeed-rust, aspeed-rust wins and the informative ref is
+  treated as not-our-target.
+- proposed_traits (github.com/rusty1968/proposed_traits.git @85641310) — the
+  trait surface aspeed-rust's hal_impl.rs targets. NOT available in openprot
+  (same as for the I2C port); treated as informative for the shape of the
+  master/target operations only. See goal.md Delta D1.
+
+Verbatim vendoring
+------------------
+The 10 authority files are NOT re-copied into this directory to avoid a stale
+second copy drifting from the live tree; they are pinned by the revision above
+and read in place at ../../../../../../../aspeed-rust/src/i3c/ . If this working
+tree is ever detached from aspeed-rust, copy the 10 files here verbatim and
+delete this paragraph.

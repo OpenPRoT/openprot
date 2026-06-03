@@ -753,6 +753,74 @@ pub const PINCTRL_I2C2: &[PinctrlPin] = &[PIN_SCU418_0, PIN_SCU418_1];
 pub const PINCTRL_SGPIOM: &[PinctrlPin] =
     &[PIN_SCU41C_8, PIN_SCU41C_9, PIN_SCU41C_10, PIN_SCU41C_11];
 
+// =============================================================================
+// I3C pin groups
+// =============================================================================
+//
+// The AST1060 routes each I3C bus to either a Low-Voltage (LV) pad set,
+// enabled in SCU418, or a High-Voltage (HV) pad set, enabled in SCU4B8
+// (SVD fields `EnblI3CSCLn/SDAn{LV,HV}FnPin`). Setting the bit selects the
+// I3C function on that pad.
+//
+// Naming follows the PAC instance / `BUS_NUM`, 0-based: `PINCTRL_I3C0` is PAC
+// `I3c` (bus 0), `_I3C1` is PAC `I3c1` (bus 1), etc. — matching the aspeed-rust
+// reference's `PINCTRL_HVI3Cn` groups (e.g. `PINCTRL_HVI3C2` == bus 2 == PAC
+// `I3c2`). NOTE the SVD names the pads 1-based (SDA1..SDA4); bus `n` uses the
+// SVD's `SDA(n+1)`/`SCL(n+1)` pads.
+//
+// The HV groups additionally **clear** the conflicting LV function bits on the
+// same pads (`CLR_PIN_SCU418_*`), exactly as the reference does — enabling the
+// HV pad alone without first releasing the LV pad would leave both functions
+// muxed onto it. LV groups need no such clear (HV defaults off).
+
+/// I3C bus 0 (PAC `I3c`) — LV pads: SCL/SDA on SCU418[16:17].
+pub const PINCTRL_I3C0: &[PinctrlPin] = &[PIN_SCU418_16, PIN_SCU418_17];
+/// I3C bus 1 (PAC `I3c1`) — LV pads: SCL/SDA on SCU418[18:19].
+pub const PINCTRL_I3C1: &[PinctrlPin] = &[PIN_SCU418_18, PIN_SCU418_19];
+/// I3C bus 2 (PAC `I3c2`) — LV pads: SCL/SDA on SCU418[20:21].
+pub const PINCTRL_I3C2: &[PinctrlPin] = &[PIN_SCU418_20, PIN_SCU418_21];
+/// I3C bus 3 (PAC `I3c3`) — LV pads: SCL/SDA on SCU418[22:23].
+pub const PINCTRL_I3C3: &[PinctrlPin] = &[PIN_SCU418_22, PIN_SCU418_23];
+
+/// I3C bus 0 (PAC `I3c`) — HV pads: SCU4B8[8:9], clearing LV SCU418[8:9],[16:17].
+pub const PINCTRL_HVI3C0: &[PinctrlPin] = &[
+    CLR_PIN_SCU418_8,
+    CLR_PIN_SCU418_9,
+    CLR_PIN_SCU418_16,
+    CLR_PIN_SCU418_17,
+    PIN_SCU4B8_8,
+    PIN_SCU4B8_9,
+];
+/// I3C bus 1 (PAC `I3c1`) — HV pads: SCU4B8[10:11], clearing LV SCU418[10:11],[18:19].
+pub const PINCTRL_HVI3C1: &[PinctrlPin] = &[
+    CLR_PIN_SCU418_10,
+    CLR_PIN_SCU418_11,
+    CLR_PIN_SCU418_18,
+    CLR_PIN_SCU418_19,
+    PIN_SCU4B8_10,
+    PIN_SCU4B8_11,
+];
+/// I3C bus 2 (PAC `I3c2`) — HV pads: SCU4B8[12:13], clearing LV SCU418[12:13],[20:21].
+/// This is the bus/pad set the AST1060 Test Harness wires for I3C, and the one
+/// the aspeed-rust EVB tests (`PINCTRL_HVI3C2`) use.
+pub const PINCTRL_HVI3C2: &[PinctrlPin] = &[
+    CLR_PIN_SCU418_12,
+    CLR_PIN_SCU418_13,
+    CLR_PIN_SCU418_20,
+    CLR_PIN_SCU418_21,
+    PIN_SCU4B8_12,
+    PIN_SCU4B8_13,
+];
+/// I3C bus 3 (PAC `I3c3`) — HV pads: SCU4B8[14:15], clearing LV SCU418[14:15],[22:23].
+pub const PINCTRL_HVI3C3: &[PinctrlPin] = &[
+    CLR_PIN_SCU418_14,
+    CLR_PIN_SCU418_15,
+    CLR_PIN_SCU418_22,
+    CLR_PIN_SCU418_23,
+    PIN_SCU4B8_14,
+    PIN_SCU4B8_15,
+];
+
 /// Macro to safely modify a register bit (set or clear).
 macro_rules! modify_reg {
     ($reg:expr, $bit:expr, $clear:expr) => {{
