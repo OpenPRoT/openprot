@@ -547,3 +547,4 @@ fn stack_eid_accessors() {
     stack.set_eid(99).expect("set_eid should succeed");
     assert_eq!(stack.get_eid(), 99);
 }
+
