@@ -1,4 +1,5 @@
 // Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
 
 //! MCTP-based SPDM Transport
 //!
@@ -96,18 +97,14 @@ impl<C: MctpClient> SpdmTransport for MctpSpdmTransport<'_, C> {
         if let Some(remote_eid) = self.remote_eid {
             // Requester mode: get request channel for remote EID
             pw_log::debug!("MctpSpdmTransport: req(eid={})", remote_eid as u32);
-            self.req_channel = Some(
-                self.stack
-                    .req(remote_eid, 0)
-                    .map_err(|e| {
-                        pw_log::error!(
-                            "MctpSpdmTransport: req(eid={}) failed: ResponseCode={}",
-                            remote_eid as u32,
-                            e.code as u32,
-                        );
-                        TransportError::DriverError
-                    })?,
-            );
+            self.req_channel = Some(self.stack.req(remote_eid, 0).map_err(|e| {
+                pw_log::error!(
+                    "MctpSpdmTransport: req(eid={}) failed: ResponseCode={}",
+                    remote_eid as u32,
+                    e.code as u32,
+                );
+                TransportError::DriverError
+            })?);
             pw_log::debug!("MctpSpdmTransport: req channel allocated");
         } else {
             // Responder mode: register listener for SPDM messages
@@ -115,17 +112,13 @@ impl<C: MctpClient> SpdmTransport for MctpSpdmTransport<'_, C> {
                 "MctpSpdmTransport: listener(msg_type=0x{:02x})",
                 MCTP_MSG_TYPE_SPDM as u32
             );
-            self.listener = Some(
-                self.stack
-                    .listener(MCTP_MSG_TYPE_SPDM, 0)
-                    .map_err(|e| {
-                        pw_log::error!(
-                            "MctpSpdmTransport: listener(msg_type=0x05) failed: ResponseCode={}",
-                            e.code as u32,
-                        );
-                        TransportError::DriverError
-                    })?,
-            );
+            self.listener = Some(self.stack.listener(MCTP_MSG_TYPE_SPDM, 0).map_err(|e| {
+                pw_log::error!(
+                    "MctpSpdmTransport: listener(msg_type=0x05) failed: ResponseCode={}",
+                    e.code as u32,
+                );
+                TransportError::DriverError
+            })?);
             pw_log::debug!("MctpSpdmTransport: listener allocated");
         }
 

@@ -19,9 +19,7 @@ use std::cell::RefCell;
 use mctp::{Eid, Tag};
 use mctp_lib::fragment::{Fragmenter, SendOutput};
 use mctp_lib::Sender;
-use openprot_mctp_api::{
-    Handle, MctpClient, MctpError, RecvMetadata, ResponseCode,
-};
+use openprot_mctp_api::{Handle, MctpClient, MctpError, RecvMetadata, ResponseCode};
 use openprot_mctp_server::Server;
 
 use spdm_lib::cert_store::{CertStoreError, CertStoreResult, PeerCertStore, SpdmCertStore};
@@ -461,8 +459,7 @@ pub struct DemoPeerCertStore {
 
 impl DemoPeerCertStore {
     pub fn new() -> Self {
-        let mut slots = Vec::new();
-        slots.push(None);
+        let slots = vec![None];
         Self {
             supported_slots_mask: 0,
             provisioned_slots_mask: 0,
@@ -521,12 +518,11 @@ impl PeerCertStore for DemoPeerCertStore {
 
     fn set_supported_slots(&mut self, slot_mask: u8) -> CertStoreResult<()> {
         for b in 0..8 {
-            if slot_mask & (1 << b) != 0 {
-                if let Some(slot) = self.peer_slots.get_mut(b as usize) {
-                    if slot.is_none() {
-                        *slot = Some(PeerSlot::default());
-                    }
-                }
+            if slot_mask & (1 << b) != 0
+                && let Some(slot) = self.peer_slots.get_mut(b as usize)
+                && slot.is_none()
+            {
+                *slot = Some(PeerSlot::default());
             }
         }
         self.supported_slots_mask = slot_mask;

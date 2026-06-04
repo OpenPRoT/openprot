@@ -1,4 +1,5 @@
 # Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
 
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
@@ -10,7 +11,7 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         # TODO: Replace stub with real //services/crypto/client when imported
-        "//services/crypto/client-stub:crypto_client",
+        "//services/spdm/requester/tests/crypto-client-stub:crypto_client",
         "@rust_crates//:spdm-lib",
     ],
 )

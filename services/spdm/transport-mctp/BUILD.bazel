@@ -1,4 +1,5 @@
 # Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
 
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
@@ -10,8 +11,8 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         "//services/mctp/api:mctp_api",
-        "@rust_crates//:spdm-lib",
         "@pigweed//pw_log/rust:pw_log",
+        "@rust_crates//:spdm-lib",
     ],
 )
 

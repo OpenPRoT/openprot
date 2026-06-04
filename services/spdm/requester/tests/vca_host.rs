@@ -7,13 +7,16 @@
 //! in-memory transport pattern as the MCTP echo tests. No IPC, no QEMU —
 //! runs entirely on the host.
 //!
+//! This test demonstrates how to use the `SpdmRequester` and `SpdmResponder`
+//! APIs with custom capabilities passed via configuration.
+//!
 //! ## Architecture
 //!
 //! ```text
 //! ┌─ Requester (EID 8) ────────┐      ┌─ Responder (EID 42) ───────┐
 //! │ Stack<DirectClient>        │      │ Stack<DirectClient>        │
 //! │   └→ MctpSpdmTransport     │      │   └→ MctpSpdmTransport     │
-//! │       └→ SpdmContext       │      │       └→ SpdmContext       │
+//! │       └→ SpdmRequester     │      │       └→ SpdmResponder     │
 //! └────────────────────────────┘      └────────────────────────────┘
 //!              │                                   │
 //!              └──── BufferSender ←─ transfer() ───┘
@@ -28,24 +31,19 @@ use openprot_mctp_api::stack::Stack;
 #[allow(unused_imports)]
 use openprot_mctp_api::MctpClient;
 use openprot_mctp_server::Server;
+use openprot_spdm_requester::{RequesterConfig, SpdmRequester};
 use openprot_spdm_transport_mctp::MctpSpdmTransport;
 use spdm_lib::codec::MessageBuf;
 use spdm_lib::commands::algorithms::request::generate_negotiate_algorithms_request;
 use spdm_lib::commands::capabilities::request::generate_capabilities_request_local;
-use spdm_lib::commands::version::VersionReqPayload;
 use spdm_lib::commands::version::request::generate_get_version;
-use spdm_lib::context::SpdmContext;
+use spdm_lib::commands::version::VersionReqPayload;
 use spdm_lib::platform::transport::SpdmTransport;
-use spdm_lib::protocol::{
-    AeadCipherSuite, AlgorithmPriorityTable, BaseAsymAlgo, BaseHashAlgo, CapabilityFlags,
-    DeviceAlgorithms, DeviceCapabilities, DheNamedGroup, KeySchedule, LocalDeviceAlgorithms,
-    MeasurementHashAlgo, MeasurementSpecification, MelSpecification, OtherParamSupport,
-    ReqBaseAsymAlg, SpdmVersion,
-};
+use spdm_responder::{ResponderConfig, SpdmResponder};
 
 use common::{
-    transfer, BufferSender, DemoPeerCertStore, DirectClient, MockCertStore, MockEvidence,
-    MockHash, MockRng,
+    transfer, BufferSender, DemoPeerCertStore, DirectClient, MockCertStore, MockEvidence, MockHash,
+    MockRng,
 };
 
 /// Requester EID
@@ -54,93 +52,9 @@ const REQUESTER_EID: u8 = 8;
 /// Responder EID
 const RESPONDER_EID: u8 = 42;
 
-/// Supported SPDM versions
-static SUPPORTED_VERSIONS: [SpdmVersion; 2] = [SpdmVersion::V12, SpdmVersion::V13];
-
-/// Create local device algorithms configuration.
-fn create_local_algorithms<'a>() -> LocalDeviceAlgorithms<'a> {
-    let mut measurement_spec = MeasurementSpecification::default();
-    measurement_spec.set_dmtf_measurement_spec(1);
-
-    let mut measurement_hash_algo = MeasurementHashAlgo::default();
-    measurement_hash_algo.set_tpm_alg_sha_384(1);
-
-    let mut base_asym_algo = BaseAsymAlgo::default();
-    base_asym_algo.set_tpm_alg_ecdsa_ecc_nist_p384(1);
-
-    let mut base_hash_algo = BaseHashAlgo::default();
-    base_hash_algo.set_tpm_alg_sha_384(1);
-
-    let device_algorithms = DeviceAlgorithms {
-        measurement_spec,
-        other_param_support: OtherParamSupport::default(),
-        measurement_hash_algo,
-        base_asym_algo,
-        base_hash_algo,
-        mel_specification: MelSpecification::default(),
-        dhe_group: DheNamedGroup::default(),
-        aead_cipher_suite: AeadCipherSuite::default(),
-        req_base_asym_algo: ReqBaseAsymAlg::default(),
-        key_schedule: KeySchedule::default(),
-    };
-
-    let algorithm_priority_table = AlgorithmPriorityTable {
-        measurement_specification: None,
-        opaque_data_format: None,
-        base_asym_algo: None,
-        base_hash_algo: None,
-        mel_specification: None,
-        dhe_group: None,
-        aead_cipher_suite: None,
-        req_base_asym_algo: None,
-        key_schedule: None,
-    };
-
-    LocalDeviceAlgorithms {
-        device_algorithms,
-        algorithm_priority_table,
-    }
-}
-
-/// Create requester capabilities.
-fn create_requester_capabilities() -> DeviceCapabilities {
-    let mut flags = CapabilityFlags::default();
-    flags.set_cert_cap(1);
-    flags.set_chal_cap(1);
-    flags.set_meas_cap(0);
-    flags.set_chunk_cap(1);
-
-    DeviceCapabilities {
-        ct_exponent: 0,
-        flags,
-        data_transfer_size: 1024,
-        max_spdm_msg_size: 4096,
-        include_supported_algorithms: false,
-    }
-}
-
-/// Create responder capabilities.
-fn create_responder_capabilities() -> DeviceCapabilities {
-    let mut flags = CapabilityFlags::default();
-    flags.set_cert_cap(1);
-    flags.set_chal_cap(1);
-    flags.set_meas_cap(2);
-    flags.set_meas_fresh_cap(1);
-    flags.set_chunk_cap(1);
-
-    DeviceCapabilities {
-        ct_exponent: 0,
-        flags,
-        data_transfer_size: 1024,
-        max_spdm_msg_size: 4096,
-        include_supported_algorithms: true,
-    }
-}
-
 /// Sanity check: verify the MCTP layer works before testing SPDM.
 #[test]
 fn mctp_sanity_check() {
-    use mctp::Eid;
     use openprot_mctp_api::{MctpListener, MctpReqChannel};
 
     let buf_a = RefCell::new(Vec::new());
@@ -177,16 +91,25 @@ fn mctp_sanity_check() {
 ///
 /// This test exercises the full VCA flow between a requester and responder,
 /// using in-memory MCTP transport with no platform dependencies.
+///
+/// Demonstrates usage of `SpdmRequester` and `SpdmResponder` APIs with
+/// custom capabilities passed via `RequesterConfig` and `ResponderConfig`.
 #[test]
 fn spdm_vca_roundtrip() {
     // -- Set up MCTP servers with in-memory transport --
     let buf_req = RefCell::new(Vec::new());
     let buf_resp = RefCell::new(Vec::new());
 
-    let server_req: RefCell<Server<_, 16>> =
-        RefCell::new(Server::new(Eid(REQUESTER_EID), 0, BufferSender { packets: &buf_req }));
-    let server_resp: RefCell<Server<_, 16>> =
-        RefCell::new(Server::new(Eid(RESPONDER_EID), 0, BufferSender { packets: &buf_resp }));
+    let server_req: RefCell<Server<_, 16>> = RefCell::new(Server::new(
+        Eid(REQUESTER_EID),
+        0,
+        BufferSender { packets: &buf_req },
+    ));
+    let server_resp: RefCell<Server<_, 16>> = RefCell::new(Server::new(
+        Eid(RESPONDER_EID),
+        0,
+        BufferSender { packets: &buf_resp },
+    ));
 
     // -- Create Stack facades (same API as production) --
     let stack_req = Stack::new(DirectClient::new(&server_req));
@@ -194,15 +117,21 @@ fn spdm_vca_roundtrip() {
 
     // Set EIDs on stacks
     stack_req.set_eid(REQUESTER_EID).expect("set requester EID");
-    stack_resp.set_eid(RESPONDER_EID).expect("set responder EID");
+    stack_resp
+        .set_eid(RESPONDER_EID)
+        .expect("set responder EID");
 
     // -- Create SPDM transports --
     let mut transport_req = MctpSpdmTransport::new_requester(&stack_req, RESPONDER_EID);
     let mut transport_resp = MctpSpdmTransport::new_responder(&stack_resp);
 
     // Initialize transports
-    transport_req.init_sequence().expect("requester transport init");
-    transport_resp.init_sequence().expect("responder transport init");
+    transport_req
+        .init_sequence()
+        .expect("requester transport init");
+    transport_resp
+        .init_sequence()
+        .expect("responder transport init");
 
     // -- Create mock platform implementations --
     // Requester side
@@ -222,36 +151,52 @@ fn spdm_vca_roundtrip() {
     let mut resp_rng = MockRng::new();
     let resp_evidence = MockEvidence::new();
 
-    // -- Create SPDM contexts --
-    let mut ctx_req = SpdmContext::new(
-        &SUPPORTED_VERSIONS,
+    // -- Create SPDM requester and responder using library APIs --
+    // This demonstrates how to use the SpdmRequester/SpdmResponder with
+    // custom capabilities and algorithms passed via configuration.
+    //
+    // Pattern: Get defaults, modify as needed, pass to new()
+    // Here we just use the defaults which apply DEFAULT_DTS and DEFAULT_SMS.
+    let req_caps = RequesterConfig::default_capabilities();
+    let req_algos = RequesterConfig::default_algorithms();
+
+    let requester_config = RequesterConfig {
+        capabilities: Some(req_caps),
+        algorithms: Some(req_algos),
+    };
+
+    let resp_caps = ResponderConfig::default_capabilities();
+    let resp_algos = ResponderConfig::default_algorithms();
+
+    let responder_config = ResponderConfig {
+        capabilities: Some(resp_caps),
+        algorithms: Some(resp_algos),
+    };
+
+    let mut requester = SpdmRequester::new(
         &mut transport_req,
-        create_requester_capabilities(),
-        create_local_algorithms(),
         &mut req_cert_store,
-        Some(&mut req_peer_cert_store),
+        &mut req_peer_cert_store,
         &mut req_hash,
         &mut req_m1_hash,
         &mut req_l1_hash,
         &mut req_rng,
         &req_evidence,
+        Some(requester_config),
     )
-    .expect("requester context creation");
+    .expect("requester creation");
 
-    let mut ctx_resp = SpdmContext::new(
-        &SUPPORTED_VERSIONS,
+    let mut responder = SpdmResponder::new(
         &mut transport_resp,
-        create_responder_capabilities(),
-        create_local_algorithms(),
         &mut resp_cert_store,
-        None,
         &mut resp_hash,
         &mut resp_m1_hash,
         &mut resp_l1_hash,
         &mut resp_rng,
         &resp_evidence,
+        Some(responder_config),
     )
-    .expect("responder context creation");
+    .expect("responder creation");
 
     // -- Message buffers (one per context, reused via reset) --
     let mut req_buf_storage = [0u8; 4096];
@@ -264,10 +209,15 @@ fn spdm_vca_roundtrip() {
     // ══════════════════════════════════════════════════════════════════════
 
     // Requester: generate and send GET_VERSION
-    generate_get_version(&mut ctx_req, &mut req_buf, VersionReqPayload::new(0, 0))
-        .expect("generate GET_VERSION");
+    generate_get_version(
+        requester.context_mut(),
+        &mut req_buf,
+        VersionReqPayload::new(0, 0),
+    )
+    .expect("generate GET_VERSION");
 
-    ctx_req
+    requester
+        .context_mut()
         .requester_send_request(&mut req_buf, RESPONDER_EID)
         .expect("send GET_VERSION");
 
@@ -276,7 +226,8 @@ fn spdm_vca_roundtrip() {
     buf_req.borrow_mut().clear();
 
     // Responder: process request and send VERSION response
-    ctx_resp
+    responder
+        .context_mut()
         .responder_process_message(&mut resp_buf)
         .expect("responder process GET_VERSION");
 
@@ -286,7 +237,8 @@ fn spdm_vca_roundtrip() {
 
     // Requester: process VERSION response
     req_buf.reset();
-    ctx_req
+    requester
+        .context_mut()
         .requester_process_message(&mut req_buf)
         .expect("requester process VERSION");
 
@@ -296,9 +248,10 @@ fn spdm_vca_roundtrip() {
 
     // Requester: generate and send GET_CAPABILITIES
     req_buf.reset();
-    generate_capabilities_request_local(&mut ctx_req, &mut req_buf)
+    generate_capabilities_request_local(requester.context_mut(), &mut req_buf)
         .expect("generate GET_CAPABILITIES");
-    ctx_req
+    requester
+        .context_mut()
         .requester_send_request(&mut req_buf, RESPONDER_EID)
         .expect("send GET_CAPABILITIES");
 
@@ -308,7 +261,8 @@ fn spdm_vca_roundtrip() {
 
     // Responder: process request and send CAPABILITIES response
     resp_buf.reset();
-    ctx_resp
+    responder
+        .context_mut()
         .responder_process_message(&mut resp_buf)
         .expect("responder process GET_CAPABILITIES");
 
@@ -318,7 +272,8 @@ fn spdm_vca_roundtrip() {
 
     // Requester: process CAPABILITIES response
     req_buf.reset();
-    ctx_req
+    requester
+        .context_mut()
         .requester_process_message(&mut req_buf)
         .expect("requester process CAPABILITIES");
 
@@ -328,9 +283,17 @@ fn spdm_vca_roundtrip() {
 
     // Requester: generate and send NEGOTIATE_ALGORITHMS
     req_buf.reset();
-    generate_negotiate_algorithms_request(&mut ctx_req, &mut req_buf, None, None, None, None)
-        .expect("generate NEGOTIATE_ALGORITHMS");
-    ctx_req
+    generate_negotiate_algorithms_request(
+        requester.context_mut(),
+        &mut req_buf,
+        None,
+        None,
+        None,
+        None,
+    )
+    .expect("generate NEGOTIATE_ALGORITHMS");
+    requester
+        .context_mut()
         .requester_send_request(&mut req_buf, RESPONDER_EID)
         .expect("send NEGOTIATE_ALGORITHMS");
 
@@ -340,7 +303,8 @@ fn spdm_vca_roundtrip() {
 
     // Responder: process request and send ALGORITHMS response
     resp_buf.reset();
-    ctx_resp
+    responder
+        .context_mut()
         .responder_process_message(&mut resp_buf)
         .expect("responder process NEGOTIATE_ALGORITHMS");
 
@@ -350,7 +314,8 @@ fn spdm_vca_roundtrip() {
 
     // Requester: process ALGORITHMS response
     req_buf.reset();
-    ctx_req
+    requester
+        .context_mut()
         .requester_process_message(&mut req_buf)
         .expect("requester process ALGORITHMS");
 

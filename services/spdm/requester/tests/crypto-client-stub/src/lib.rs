@@ -1,4 +1,5 @@
 // Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
 //
 // STUB LIBRARY — Placeholder crypto client for SPDM hash/rng compilation.
 // All operations return CryptoError::NotImplemented.

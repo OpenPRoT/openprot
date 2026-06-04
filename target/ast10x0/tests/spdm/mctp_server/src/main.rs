@@ -60,9 +60,8 @@ fn entry() {
         let header = match MctpRequestHeader::from_bytes(&req_buf[..len]) {
             Some(h) => h,
             None => {
-                let rlen =
-                    wire::encode_error_response(&mut resp_buf, ResponseCode::BadArgument)
-                        .unwrap_or(0);
+                let rlen = wire::encode_error_response(&mut resp_buf, ResponseCode::BadArgument)
+                    .unwrap_or(0);
                 let _ = syscall::channel_respond(handle::MCTP, &resp_buf[..rlen]);
                 continue;
             }

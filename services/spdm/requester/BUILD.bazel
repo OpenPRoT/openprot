@@ -1,4 +1,5 @@
 # Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
 
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
@@ -9,6 +10,7 @@ rust_library(
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
+        "//services/spdm/common:spdm_common",
         "//services/spdm/transport-mctp:spdm_transport_mctp",
         "@rust_crates//:heapless",
         "@rust_crates//:spdm-lib",
@@ -22,6 +24,7 @@ rust_test(
 
 # Host integration test: SPDM VCA flow with in-memory MCTP transport.
 # Uses the same pattern as //services/mctp/server:mctp_server_echo_test.
+# Demonstrates usage of SpdmRequester and SpdmResponder APIs.
 rust_test(
     name = "spdm_requester_vca_host_test",
     srcs = [
@@ -31,8 +34,10 @@ rust_test(
     crate_root = "tests/vca_host.rs",
     edition = "2024",
     deps = [
+        ":spdm_requester_lib",
         "//services/mctp/api:mctp_api",
         "//services/mctp/server:mctp_server_lib",
+        "//services/spdm/responder:spdm_responder_lib",
         "//services/spdm/transport-mctp:spdm_transport_mctp",
         "@rust_crates//:mctp",
         "@rust_crates//:mctp-lib",

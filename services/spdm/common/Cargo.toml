@@ -2,11 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [package]
-name = "spdm-responder"
+name = "openprot-spdm-common"
 version = "0.1.0"
 edition = "2021"
-description = "SPDM responder service for OpenPRoT"
+description = "Common constants and types for SPDM requester and responder"
 license = "Apache-2.0"
 
 [dependencies]
-spdm-lib = { git = "https://github.com/9elements/spdm-lib.git", branch = "buildup" }
