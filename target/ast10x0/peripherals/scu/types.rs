@@ -10,6 +10,7 @@ pub type Result<T> = core::result::Result<T, ScuError>;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ScuError {
     InvalidMonitorInstance,
+    InvalidMuxSelection,
 }
 
 /// Selects the lower or upper 32-bit control register half for reset domains.

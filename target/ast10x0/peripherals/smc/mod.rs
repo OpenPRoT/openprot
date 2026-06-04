@@ -22,7 +22,7 @@ pub use device::{
 };
 pub use fmc::{FmcReady, FmcUninit};
 pub use interrupts::{SmcInterrupt, SmcInterruptDecoder};
-pub use spi::{SpiReady, SpiUninit};
+pub use spi::{SpiReady, SpiTransaction, SpiUninit};
 pub use types::{
     AddressWidth, ChipSelect, FlashConfig, SmcConfig, SmcController, SmcError, SmcRetryable,
     SmcTopology, TransferMode,

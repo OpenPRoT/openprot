@@ -14,6 +14,12 @@
 use ast10x0_peripherals::scu::{ClockRegisterHalf, ScuRegisterHalf};
 use ast10x0_peripherals::scu::{PinctrlPin, ScuRegisters};
 
+pub mod monitor;
+pub mod spim_wiring;
+
+pub use monitor::Ast1060Monitor;
+pub use spim_wiring::{apply_spim_wiring, presets, SpimWiring, SpimWiringError};
+
 /// Board descriptor metadata for AST10x0 board initialization.
 #[derive(Clone, Debug)]
 pub struct Ast10x0BoardDescriptor {
