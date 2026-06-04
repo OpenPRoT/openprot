@@ -249,6 +249,7 @@ where
                 encode_ok(&mut response_buf, 0)
             }
             Some((I2cOp::SlaveReceive, max_len)) => {
+                let _ = syscall::object_set_peer_user_signal(bus.channel, false);
                 if bus.rx_len == 0 {
                     encode_error(&mut response_buf, I2cError::NoData)
                 } else {
