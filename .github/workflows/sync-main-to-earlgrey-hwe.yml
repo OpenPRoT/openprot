@@ -1,4 +1,4 @@
-name: Scheduled Sync Main to Earlgrey HWE
+name: Sync main into earlgrey-hwe
 
 on:
   schedule:
@@ -10,41 +10,46 @@ jobs:
   create-pull-request:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout the earlgrey-hwe branch
-        uses: actions/checkout@v4
-        with:
-          ref: earlgrey-hwe
-          fetch-depth: 0 # Fetches all history so branches can be compared
-
-      - name: Merge main into earlgrey-hwe
-        run: |
-          git config --global user.name 'synchronize-bot[bot]'
-          git config --global user.email 'synchronize[bot]@users.noreply.github.com'
-
-          # Fetch the latest main branch
-          git fetch origin main:main
-
-          # Merge main into the currently checked-out dev branch
-          git merge main --no-edit
-
       - name: Generate GitHub App Token
         id: generate-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.SYNCHRONIZE_BOT_APP_ID }}
           private-key: ${{ secrets.SYNCHRONIZE_BOT_PRIVATE_KEY }}
 
-      - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v6
+      - name: Checkout the main branch
+        uses: actions/checkout@v6
         with:
+          ref: main
+          fetch-depth: 0 # Fetches all history so branches can be compared
           token: ${{ steps.generate-token.outputs.token }}
-          branch: automation/sync-main-to-earlgrey-hwe
-          base: earlgrey-hwe
-          title: 'chore: sync main into earlgrey hwe'
-          reviewers: cfrantz, moidx
-          body: |
-            This is an automated PR to sync the latest commits from `main` into `earlgrey-hwe`.
-            Please review and resolve any merge conflicts if they arise.
-          labels: |
-            automated-pr
-            sync
+
+      - name: Create and push sync branch
+        run: |
+          git config --global user.name "synchronize-bot[bot]"
+          git config --global user.email "synchronize-bot[bot]@users.noreply.github.com"
+
+          # Create and switch to the staging branch
+          git checkout -b sync/main-to-earlgrey-hwe
+
+          # Push the sync branch to the repo.
+          git push origin sync/main-to-earlgrey-hwe --force
+
+      - name: Create Pull Request
+        env:
+          GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
+        run: |
+          PR_EXISTS=$(gh pr list --base earlgrey-hwe --head sync/main-to-earlgrey-hwe --state open --json number | jq '.[].number')
+
+          if [ -z "$PR_EXISTS" ]; then
+            echo "No active PR found. Generating a new sync PR..."
+            gh pr create \
+              --base earlgrey-hwe \
+              --head sync/main-to-earlgrey-hwe \
+              --title "chore: sync main into earlgrey-hwe" \
+              --label "automated-pr,sync" \
+              --reviewer "cfrantz,moidx" \
+              --body $'Automated daily sync from `main` to `earlgrey-hwe`.\n\n⚠️ If conflicts exist, click the "Resolve conflicts" button below to fix them in your browser.'
+          else
+            echo "A Pull Request already exists (PR #$PR_EXISTS). Updates pushed to branch automatically."
+          fi

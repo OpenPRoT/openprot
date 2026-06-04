@@ -7,10 +7,10 @@ use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 
 use crate::smc::helpers::{
-    encode_segment, flash_capacity_bytes, get_mid_point_of_longest_one, spi_calibration_enable,
-    spi_freq_div, total_capacity_bytes, validate_dma_read, validate_mapped_range,
-    SPI_CTRL_FREQ_MASK, SPI_DMA_CALC_CKSUM, SPI_DMA_CALIB_MODE, SPI_DMA_ENABLE,
-    SPI_DMA_RAM_MAP_BASE,
+    encode_fmc_segment, encode_spi_segment, flash_capacity_bytes, get_mid_point_of_longest_one,
+    spi_calibration_enable, spi_freq_div, total_capacity_bytes, validate_dma_read,
+    validate_mapped_range, SPI_CTRL_FREQ_MASK, SPI_DMA_CALC_CKSUM, SPI_DMA_CALIB_MODE,
+    SPI_DMA_ENABLE, SPI_DMA_RAM_MAP_BASE,
 };
 use crate::smc::interrupts::{SmcInterrupt, SmcInterruptDecoder};
 use crate::smc::registers::SmcRegisters;
@@ -179,6 +179,13 @@ impl Smc<Uninitialized> {
             _mode: PhantomData,
         })
     }
+    fn encode_segment(&self, start: usize, end: usize) -> Result<u32, SmcError> {
+        match self.config.controller_id {
+            SmcController::Fmc => encode_fmc_segment(start, end),
+            SmcController::Spi1 | SmcController::Spi2 => encode_spi_segment(start, end),
+        }
+    }
+
     fn setup_segments(&self) -> Result<(), SmcError> {
         // Decode-range sizing is topology-aware.
         //
@@ -198,12 +205,12 @@ impl Smc<Uninitialized> {
         total_capacity_bytes(self.config.cs0, self.config.cs1)?;
 
         if cs0_size > 0 {
-            let seg = encode_segment(0, cs0_size)?;
+            let seg = self.encode_segment(0, cs0_size)?;
             self.regs.write_cs0_segment(seg);
         }
 
         if cs1_size > 0 {
-            let seg = encode_segment(cs0_size, cs0_size + cs1_size)?;
+            let seg = self.encode_segment(cs0_size, cs0_size + cs1_size)?;
             self.regs.write_cs1_segment(seg);
         }
 
@@ -506,7 +513,7 @@ impl Smc<Ready> {
         let cs_idx = cs as usize;
         // Derive user-mode base from the stored normal-read value: preserve
         // frequency bits and replace mode type with ASPEED_SPI_USER.
-        let user_base = (self.normal_read_ctrl[cs_idx] & SPI_CTRL_FREQ_MASK) | ASPEED_SPI_USER;
+        let user_base = (self.normal_read_ctrl[cs_idx] & !0x7) | ASPEED_SPI_USER;
         let window = self.flash_window_base[cs_idx] as *mut u32;
 
         // Assert CS: inactive first, then active (matches aspeed-rust activate_user).

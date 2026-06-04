@@ -70,7 +70,10 @@ fn run() -> Result<(), ()> {
         pw_log::error!("TC-03 FAIL: code={}", e.code as u32);
     })?;
     if listener_handle.0 != 42 {
-        pw_log::error!("TC-03 FAIL: expected handle 42, got {}", listener_handle.0 as u32);
+        pw_log::error!(
+            "TC-03 FAIL: expected handle 42, got {}",
+            listener_handle.0 as u32
+        );
         return Err(());
     }
 
@@ -80,7 +83,10 @@ fn run() -> Result<(), ()> {
         pw_log::error!("TC-04 FAIL: code={}", e.code as u32);
     })?;
     if req_handle.0 != 43 {
-        pw_log::error!("TC-04 FAIL: expected handle 43, got {}", req_handle.0 as u32);
+        pw_log::error!(
+            "TC-04 FAIL: expected handle 43, got {}",
+            req_handle.0 as u32
+        );
         return Err(());
     }
 
@@ -93,15 +99,24 @@ fn run() -> Result<(), ()> {
             pw_log::error!("TC-05 FAIL: code={}", e.code as u32);
         })?;
     if meta.msg_type != 5 {
-        pw_log::error!("TC-05 FAIL: msg_type expected 5, got {}", meta.msg_type as u32);
+        pw_log::error!(
+            "TC-05 FAIL: msg_type expected 5, got {}",
+            meta.msg_type as u32
+        );
         return Err(());
     }
     if meta.remote_eid != 8 {
-        pw_log::error!("TC-05 FAIL: remote_eid expected 8, got {}", meta.remote_eid as u32);
+        pw_log::error!(
+            "TC-05 FAIL: remote_eid expected 8, got {}",
+            meta.remote_eid as u32
+        );
         return Err(());
     }
     if meta.payload_size != 4 {
-        pw_log::error!("TC-05 FAIL: payload_size expected 4, got {}", meta.payload_size as u32);
+        pw_log::error!(
+            "TC-05 FAIL: payload_size expected 4, got {}",
+            meta.payload_size as u32
+        );
         return Err(());
     }
     if recv_buf[..4] != [0xDE, 0xAD, 0xBE, 0xEF] {

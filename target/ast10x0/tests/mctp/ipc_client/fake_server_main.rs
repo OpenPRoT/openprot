@@ -30,9 +30,9 @@ use openprot_mctp_api::wire::{
     self, MctpOp, MctpRequestHeader, MAX_REQUEST_SIZE, MAX_RESPONSE_SIZE,
 };
 use openprot_mctp_api::ResponseCode;
-use userspace::{entry, syscall};
 use userspace::syscall::Signals;
 use userspace::time::Instant;
+use userspace::{entry, syscall};
 
 use app_fake_server::handle;
 
@@ -63,9 +63,8 @@ fn entry() {
         let header = match MctpRequestHeader::from_bytes(&req_buf[..len]) {
             Some(h) => h,
             None => {
-                let rlen =
-                    wire::encode_error_response(&mut resp_buf, ResponseCode::BadArgument)
-                        .unwrap_or(0);
+                let rlen = wire::encode_error_response(&mut resp_buf, ResponseCode::BadArgument)
+                    .unwrap_or(0);
                 let _ = syscall::channel_respond(handle::MCTP, &resp_buf[..rlen]);
                 continue;
             }
@@ -86,9 +85,7 @@ fn entry() {
 fn dispatch(header: &MctpRequestHeader, resp: &mut [u8]) -> usize {
     let op = match header.operation() {
         Some(op) => op,
-        None => {
-            return wire::encode_error_response(resp, ResponseCode::BadArgument).unwrap_or(0)
-        }
+        None => return wire::encode_error_response(resp, ResponseCode::BadArgument).unwrap_or(0),
     };
 
     match op {
