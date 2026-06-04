@@ -51,16 +51,6 @@ alias(
 )
 
 alias(
-    name = "smc_spi2_read_test",
-    actual = "//target/ast10x0/tests/smc/read:smc_spi2_read_test",
-)
-
-alias(
-    name = "smc_spi2_read_evb_test",
-    actual = "//target/ast10x0/tests/smc/read:smc_spi2_read_evb_test",
-)
-
-alias(
     name = "smc_spi_cs0_read_test",
     actual = "//target/ast10x0/tests/smc/read:smc_spi_cs0_read_test",
 )
