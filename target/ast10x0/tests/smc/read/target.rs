@@ -112,7 +112,7 @@ fn run_smc_read_test() -> Result<(), SmcError> {
     // --- 4. DMA  ---
     let tempbuf = unsafe { core::slice::from_raw_parts(0x41000 as *mut u8, 256) };
 
-    let _ = match controller.dma_read(ChipSelect::Cs0, 0x500, 0x41000 as usize, 256) {
+    let _ = match controller.dma_read(ChipSelect::Cs0, 0x400, 0x41000 as usize, 256) {
         Err(SmcError::InvalidCapacity) => Ok(()),
         Err(other) => Err(other),
         Ok(()) => Err(SmcError::HardwareError),

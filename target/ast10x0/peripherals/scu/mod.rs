@@ -13,6 +13,7 @@ pub mod types;
 
 pub use pinctrl::PinctrlPin;
 pub use registers::ScuRegisters;
+pub use routing::SpimGpioOriVal;
 pub use types::{
     ClockRegisterHalf, ScuError, ScuExtMuxSelect, ScuRegisterHalf, SpiMonitorInstance,
     SpiMonitorPassthrough, SpiMonitorSource,
