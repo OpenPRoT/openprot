@@ -377,9 +377,9 @@ impl I3cRegisters {
 
     /// I3CD004: program the secondary-role static address (and mark valid).
     pub(crate) fn program_secondary_static_addr(&self, addr: u8) {
-        self.i3c().i3cd004().write(|w| unsafe {
-            w.dev_static_addr().bits(addr).static_addr_valid().set_bit()
-        });
+        self.i3c()
+            .i3cd004()
+            .write(|w| unsafe { w.dev_static_addr().bits(addr).static_addr_valid().set_bit() });
     }
 
     /// I3CD004: program the primary-role dynamic address (and mark valid).

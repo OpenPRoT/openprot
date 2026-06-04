@@ -56,8 +56,8 @@ pub use error::{CccErrorKind, I3cError, Result};
 
 // Configuration
 pub use config::{
-    AddrBook, Attached, CommonCfg, CommonState, DeviceEntry, I3C_MAX_CORE_CLK,
-    I3C_MIN_CORE_CLK_HDR, I3C_MIN_CORE_CLK_SDR, I3cConfig, I3cTargetConfig, ResetSpec,
+    AddrBook, Attached, CommonCfg, CommonState, DeviceEntry, I3cConfig, I3cTargetConfig, ResetSpec,
+    I3C_MAX_CORE_CLK, I3C_MIN_CORE_CLK_HDR, I3C_MIN_CORE_CLK_SDR,
 };
 
 // Core types
@@ -68,8 +68,8 @@ pub use types::{
 
 // Hardware interface
 pub use hardware::{
-    Ast1060I3c, HardwareClock, HardwareCore, HardwareFifo, HardwareInterface, HardwareRecovery,
-    HardwareTarget, HardwareTransfer, IsrCtx, dispatch_i3c_irq, register_i3c_irq_handler,
+    dispatch_i3c_irq, register_i3c_irq_handler, Ast1060I3c, HardwareClock, HardwareCore,
+    HardwareFifo, HardwareInterface, HardwareRecovery, HardwareTarget, HardwareTransfer, IsrCtx,
 };
 
 // Confined-unsafe MMIO façade (runtime bus selection)
@@ -77,16 +77,16 @@ pub use registers::I3cRegisters;
 
 // CCC operations
 pub use ccc::{
-    Ccc, CccPayload, CccRstActDefByte, CccTargetPayload, GetStatusDefByte, GetStatusFormat,
-    GetStatusResp, ccc_events_all_set, ccc_events_set, ccc_getbcr, ccc_getpid, ccc_getstatus,
-    ccc_getstatus_fmt1, ccc_rstact_all, ccc_rstdaa_all, ccc_setnewda,
+    ccc_events_all_set, ccc_events_set, ccc_getbcr, ccc_getpid, ccc_getstatus, ccc_getstatus_fmt1,
+    ccc_rstact_all, ccc_rstdaa_all, ccc_setnewda, Ccc, CccPayload, CccRstActDefByte,
+    CccTargetPayload, GetStatusDefByte, GetStatusFormat, GetStatusResp,
 };
 
 // IBI work queue
 pub use ibi::{
-    IbiConsumer, IbiWork, i3c_ibi_work_enqueue_hotjoin, i3c_ibi_work_enqueue_target_da_assignment,
+    i3c_ibi_work_enqueue_hotjoin, i3c_ibi_work_enqueue_target_da_assignment,
     i3c_ibi_work_enqueue_target_irq, i3c_ibi_work_enqueue_target_master_write,
-    i3c_ibi_workq_consumer,
+    i3c_ibi_workq_consumer, IbiConsumer, IbiWork,
 };
 
 // Constants (wildcard export for convenience)

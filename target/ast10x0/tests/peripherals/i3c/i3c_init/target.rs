@@ -21,7 +21,7 @@ use ast10x0_peripherals::scu::pinctrl;
 use codegen as _;
 use console_backend::console_backend_write_all;
 use entry as _;
-use target_common::{TargetInterface, declare_target};
+use target_common::{declare_target, TargetInterface};
 
 pub struct Target {}
 

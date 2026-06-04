@@ -217,11 +217,7 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
             config.addrbook.mark_use(dyn_addr, false);
         }
 
-        let dev_pos = config
-            .attached
-            .devices
-            .get(dev_idx)
-            .and_then(|dev| dev.pos);
+        let dev_pos = config.attached.devices.get(dev_idx).and_then(|dev| dev.pos);
         if let Some(pos) = dev_pos {
             hw.detach_i3c_dev(pos.into());
         }
@@ -387,8 +383,7 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
         hw.do_entdaa(config, slot.into())
             .map_err(|_| I3cError::AddrInUse)?;
 
-        let pid =
-            ccc::ccc_getpid(hw, config, static_address).map_err(|_| I3cError::Invalid)?;
+        let pid = ccc::ccc_getpid(hw, config, static_address).map_err(|_| I3cError::Invalid)?;
 
         let dev_idx = config
             .attached
@@ -408,8 +403,7 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
             return Err(I3cError::Other);
         }
 
-        let bcr =
-            ccc::ccc_getbcr(hw, config, static_address).map_err(|_| I3cError::Invalid)?;
+        let bcr = ccc::ccc_getbcr(hw, config, static_address).map_err(|_| I3cError::Invalid)?;
 
         {
             let dev = config
