@@ -6,11 +6,10 @@
 //! Configuration structures for I3C controller and devices.
 
 use core::marker::PhantomData;
-use core::sync::atomic::AtomicPtr;
 use heapless::Vec;
 
 use super::error::I3cError;
-use super::types::{Completion, DevKind};
+use super::types::DevKind;
 
 // =============================================================================
 // Target Configuration
@@ -377,10 +376,6 @@ pub struct I3cConfig {
     /// Collection of attached devices
     pub attached: Attached,
 
-    // Concurrency
-    /// Pointer to current transfer in progress
-    pub curr_xfer: AtomicPtr<()>,
-
     // Clock configuration
     /// Core clock frequency in Hz (injected by platform)
     ///
@@ -423,10 +418,6 @@ pub struct I3cConfig {
     // Target-mode data
     /// Whether SIR (Slave Interrupt Request) is allowed by software
     pub sir_allowed_by_sw: bool,
-    /// Completion for target IBI
-    pub target_ibi_done: Completion,
-    /// Completion for target data transfer
-    pub target_data_done: Completion,
 }
 
 impl Default for I3cConfig {
@@ -444,7 +435,6 @@ impl I3cConfig {
             target_config: None,
             addrbook: AddrBook::new(),
             attached: Attached::new(),
-            curr_xfer: AtomicPtr::new(core::ptr::null_mut()),
             core_clk_hz: None,
             core_period: 0,
             i2c_scl_hz: 0,
@@ -461,8 +451,6 @@ impl I3cConfig {
             addrs: [0; 8],
             dcr: 0,
             sir_allowed_by_sw: false,
-            target_ibi_done: Completion::new(),
-            target_data_done: Completion::new(),
         }
     }
 

@@ -15,20 +15,19 @@
 //! | [`Uninitialized`] | [`I3cController::new`] | [`start()`](I3cController::start) |
 //! | [`Ready`] | `start()` (IRQ trampoline claimed + hardware programmed) | bus operations |
 //!
-//! After `start()` the integration layer unmasks the NVIC line it owns (see
-//! [`i3c_bus_interrupt`](super::hardware::i3c_bus_interrupt)); the driver
-//! never touches the NVIC.
+//! After `start()` the integration layer unmasks the NVIC line it owns (it
+//! selected the bus, so it knows the matching platform interrupt line);
+//! the driver never touches the NVIC.
 //!
-//! # ISR sharing
+//! # ISR decoupling
 //!
-//! The IRQ trampoline needs a pointer that outlives every interrupt, so the
-//! hardware + config live in an [`I3cCore`] that the caller places in a
-//! `static` and pins: [`I3cController::new`] takes `Pin<&'static mut
-//! I3cCore<H>>`. Pointer *validity* in the ISR is therefore a type guarantee
-//! (`'static` + pinned), not a convention; what remains documented contract is
-//! aliasing: on this single-core target the ISR runs atomically with respect
-//! to the thread, and the thread only polls atomic completion flags while a
-//! transfer is in flight.
+//! The ISR shares **no** `&mut` state with this controller: at `start()` the
+//! driver parks an ISR-owned register handle plus the role flag in the
+//! per-bus registry (`hardware::register_i3c_irq_handler`), and the ISR
+//! communicates back exclusively through per-bus atomics and the global IBI
+//! work rings (the SMC flag-and-defer model). The controller is therefore a
+//! plain owned value — no pinning, no `'static` storage, no raw context
+//! pointer.
 //!
 //! # Example
 //!
@@ -39,19 +38,16 @@
 //! scu.deassert_i3c_reset(bus);
 //!
 //! let hw = unsafe { Ast1060I3c::new(bus, yield_fn) }.ok_or(...)?;
-//! let core = cortex_m::singleton!(: I3cCore<_> = I3cCore::new(hw, config))
-//!     .ok_or("storage taken")?;
-//! let mut ctrl = I3cController::new(Pin::static_mut(core))
-//!     .start()?;            // register IRQ (single-shot) + program hardware
+//! let mut ctrl = I3cController::new(hw, &mut config)
+//!     .start()?;            // register ISR ctx (single-shot) + program hardware
 //!
 //! // Integration layer owns the NVIC line; unmask it now.
-//! unsafe { NVIC::unmask(i3c_bus_interrupt(bus).unwrap()) };
+//! unsafe { NVIC::unmask(integration_owned_irq_line) };
 //!
 //! ctrl.priv_write(pid, &mut data)?;
 //! ```
 
-use core::marker::{PhantomData, PhantomPinned};
-use core::pin::Pin;
+use core::marker::PhantomData;
 
 use super::ccc;
 use super::config::{DeviceEntry, I3cConfig, I3cTargetConfig};
@@ -60,46 +56,6 @@ use super::error::I3cError;
 use super::hardware::HardwareInterface;
 use super::types::{DevKind, I3cIbi, I3cIbiType, I3cMsg};
 use embedded_hal::i2c::SevenBitAddress;
-
-// =============================================================================
-// Pinned core (the ISR-shared part)
-// =============================================================================
-
-/// Hardware + configuration for one I3C bus — the part the IRQ trampoline
-/// dereferences, so it must live at a stable `'static` address.
-///
-/// Construct with [`I3cCore::new`] (no I/O), park it in a `static` (e.g.
-/// `cortex_m::singleton!`), and hand `Pin<&'static mut I3cCore<H>>` to
-/// [`I3cController::new`].
-pub struct I3cCore<H: HardwareInterface> {
-    hw: H,
-    config: I3cConfig,
-    _pin: PhantomPinned,
-}
-
-impl<H: HardwareInterface> I3cCore<H> {
-    /// Bundle hardware and configuration. No I/O is performed.
-    #[must_use]
-    pub fn new(hw: H, config: I3cConfig) -> Self {
-        Self {
-            hw,
-            config,
-            _pin: PhantomPinned,
-        }
-    }
-
-    /// IRQ trampoline registered (per bus) by [`I3cController::start`].
-    fn irq_trampoline(ctx: usize) {
-        // SAFETY: `ctx` comes from a `Pin<&'static mut I3cCore<H>>` in
-        // `start`, so the pointer is valid and address-stable for the
-        // program's lifetime (type-guaranteed, not a convention). Aliasing:
-        // this single-core target runs the ISR atomically with respect to the
-        // thread, and the thread side only polls atomic completion flags while
-        // a transfer is in flight, so no `&mut` is concurrently *used*.
-        let core: &mut Self = unsafe { &mut *(ctx as *mut Self) };
-        core.hw.i3c_aspeed_isr(&mut core.config);
-    }
-}
 
 // =============================================================================
 // Lifecycle states
@@ -116,82 +72,74 @@ pub struct Ready;
 // Controller shell
 // =============================================================================
 
-/// I3C controller: a movable shell over the pinned [`I3cCore`].
+/// I3C controller: a plain owned value over the hardware driver, borrowing
+/// the caller's configuration. No pinning or `'static` storage is required —
+/// the ISR never holds a pointer into this object (see the module docs).
 ///
-/// `H: 'static` because the core is `static`-pinned for the IRQ trampoline.
-pub struct I3cController<H: HardwareInterface + 'static, S = Uninitialized> {
-    core: Pin<&'static mut I3cCore<H>>,
+/// The configuration is **borrowed** (`&'c mut I3cConfig`), not owned: the
+/// config embeds the device tables (~0.5 KiB), and the typestate transition
+/// (`start(self) -> Self<Ready>`) moves the controller by value — owning the
+/// config would transiently stack two copies inside one frame, which the
+/// 2 KiB kernel bootstrap stack cannot afford. Borrowing keeps exactly one
+/// config alive, wherever the caller placed it.
+pub struct I3cController<'c, H: HardwareInterface, S = Uninitialized> {
+    hw: H,
+    config: &'c mut I3cConfig,
     _state: PhantomData<S>,
 }
 
-impl<H: HardwareInterface + 'static, S> I3cController<H, S> {
-    /// Project the pinned core to `(&mut hw, &mut config)`.
+impl<'c, H: HardwareInterface, S> I3cController<'c, H, S> {
+    /// Split-borrow helper for operations that drive `hw` with `config`.
     #[inline]
     fn parts(&mut self) -> (&mut H, &mut I3cConfig) {
-        // SAFETY: structural pin projection — neither field is moved out and
-        // the core's address is unchanged.
-        let core = unsafe { self.core.as_mut().get_unchecked_mut() };
-        (&mut core.hw, &mut core.config)
-    }
-
-    #[inline]
-    fn core_ref(&self) -> &I3cCore<H> {
-        self.core.as_ref().get_ref()
+        (&mut self.hw, &mut *self.config)
     }
 
     /// Return this controller's bus number.
     #[inline]
     #[must_use]
     pub fn bus_num(&self) -> u8 {
-        self.core_ref().hw.bus_num()
+        self.hw.bus_num()
     }
 }
 
-impl<H: HardwareInterface + 'static> I3cController<H, Uninitialized> {
-    /// Wrap a pinned core. No I/O, no registration.
+impl<'c, H: HardwareInterface> I3cController<'c, H, Uninitialized> {
+    /// Bundle hardware and a borrowed configuration. No I/O, no registration.
     #[must_use]
-    pub fn new(core: Pin<&'static mut I3cCore<H>>) -> Self {
+    pub fn new(hw: H, config: &'c mut I3cConfig) -> Self {
         Self {
-            core,
+            hw,
+            config,
             _state: PhantomData,
         }
     }
 
-    /// Bring the controller up: claim this bus's IRQ slot (single-shot per
-    /// bus) and program the hardware.
+    /// Bring the controller up: park this bus's ISR context in the registry
+    /// (single-shot per bus) and program the hardware.
     ///
     /// The target/kernel owns the top-level interrupt vector; its ISR calls
-    /// [`dispatch_i3c_irq`](super::hardware::dispatch_i3c_irq), which forwards
-    /// to the trampoline registered here. On return the device may assert its
-    /// IRQ line; nothing is delivered until the integration layer unmasks the
-    /// NVIC line it owns (see
-    /// [`i3c_bus_interrupt`](super::hardware::i3c_bus_interrupt)).
+    /// [`dispatch_i3c_irq`](super::hardware::dispatch_i3c_irq), which services
+    /// the bus through the registered context. On return the device may
+    /// assert its IRQ line; nothing is delivered until the integration layer
+    /// unmasks the NVIC line it owns.
     ///
     /// Returns [`I3cError::Busy`] if the bus's IRQ slot was already claimed by
     /// another controller.
-    pub fn start(mut self) -> Result<I3cController<H, Ready>, I3cError> {
-        {
-            // SAFETY: structural pin projection — the core is not moved; we
-            // only take its (stable, 'static) address for the IRQ registry.
-            let core = unsafe { self.core.as_mut().get_unchecked_mut() };
-            let bus = core.hw.bus_num() as usize;
-            let ctx = core::ptr::from_mut::<I3cCore<H>>(core) as usize;
-            if !super::hardware::register_i3c_irq_handler(bus, I3cCore::<H>::irq_trampoline, ctx)
-            {
-                return Err(I3cError::Busy);
-            }
+    pub fn start(mut self) -> Result<I3cController<'c, H, Ready>, I3cError> {
+        let bus = self.hw.bus_num() as usize;
+        let ctx = self.hw.isr_ctx(self.config.is_secondary);
+        if !super::hardware::register_i3c_irq_handler(bus, ctx) {
+            return Err(I3cError::Busy);
         }
 
-        {
-            let (hw, config) = self.parts();
-            hw.init(config);
-        }
+        self.hw.init(self.config);
         // Memory barrier so init writes are visible before the integration
         // layer unmasks the IRQ line.
         cortex_m::asm::dmb();
 
         Ok(I3cController {
-            core: self.core,
+            hw: self.hw,
+            config: self.config,
             _state: PhantomData,
         })
     }
@@ -201,7 +149,7 @@ impl<H: HardwareInterface + 'static> I3cController<H, Uninitialized> {
 // Bus operations (Ready)
 // =============================================================================
 
-impl<H: HardwareInterface + 'static> I3cController<H, Ready> {
+impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
     // =========================================================================
     // Device Management
     // =========================================================================
@@ -356,14 +304,16 @@ impl<H: HardwareInterface + 'static> I3cController<H, Ready> {
     }
 
     /// Return the currently assigned target dynamic address, if any.
+    ///
+    /// The address is assigned by the bus master and latched by the ISR into
+    /// the per-bus event block; the locally configured address (if any) is
+    /// the fallback.
     #[inline]
     #[must_use]
     pub fn target_dynamic_address(&self) -> Option<u8> {
-        self.core_ref()
-            .config
-            .target_config
-            .as_ref()
-            .and_then(|t| t.addr)
+        super::hardware::isr_events(self.hw.bus_num() as usize)
+            .dyn_addr()
+            .or_else(|| self.config.target_config.as_ref().and_then(|t| t.addr))
     }
 
     /// Set the device's IBI mandatory data byte and enable IBI delivery for `addr`.
@@ -544,19 +494,18 @@ impl<H: HardwareInterface + 'static> I3cController<H, Ready> {
     /// Returns `true` if `addr` matches this target's assigned address.
     #[must_use]
     pub fn target_on_address_match(&self, addr: u8) -> bool {
-        self.core_ref()
-            .config
-            .target_config
-            .as_ref()
-            .and_then(|t| t.addr)
-            == Some(addr)
+        self.target_dynamic_address() == Some(addr)
     }
 
     /// Record that the controller assigned this target a dynamic address; SIRs
-    /// are then permitted by software.
+    /// are then permitted by software. Also syncs the ISR-latched address into
+    /// the thread-owned target config.
     pub fn target_on_dynamic_address_assigned(&mut self) {
-        let (_, config) = self.parts();
-        config.sir_allowed_by_sw = true;
+        let da = super::hardware::isr_events(self.hw.bus_num() as usize).dyn_addr();
+        if let (Some(da), Some(tc)) = (da, self.config.target_config.as_mut()) {
+            tc.addr = Some(da);
+        }
+        self.config.sir_allowed_by_sw = true;
     }
 
     /// This target always wants to raise IBIs when it has data.

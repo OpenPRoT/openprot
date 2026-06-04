@@ -26,12 +26,9 @@
 #![no_std]
 #![no_main]
 
-use core::pin::Pin;
-
 use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
 use ast10x0_peripherals::i3c::{
-    Ast1060I3c, I3cConfig, I3cController, I3cCore, IbiWork, Ready, i3c_bus_interrupt,
-    i3c_ibi_workq_consumer,
+    Ast1060I3c, I3cConfig, I3cController, IbiWork, Ready, i3c_ibi_workq_consumer,
 };
 use ast10x0_peripherals::scu::pinctrl;
 use codegen as _;
@@ -45,7 +42,7 @@ pub struct Target {}
 
 /// One driver type serves every bus; the instance is selected at runtime.
 type I3cHw = Ast1060I3c<fn(u32)>;
-type I3c2Controller = I3cController<I3cHw, Ready>;
+type I3c2Controller<'c> = I3cController<'c, I3cHw, Ready>;
 
 /// Bus index under test (PAC `I3c2`, HV pads).
 const I3C_BUS: u8 = 2;
@@ -59,7 +56,7 @@ const WAIT_LOG_SPINS: u32 = 0x0400_0000;
 
 /// Calibrated busy-wait used as the driver's yield/delay hook. Mirrors the
 /// reference `DummyDelay::delay_ns` (busy-loop of ~`ns / 100` nops). A named
-/// `fn` (not a closure) keeps [`build_controller`]'s return type nameable.
+/// `fn` (not a closure) keeps the driver type nameable.
 fn yield_delay(ns: u32) {
     for _ in 0..(ns / 100) {
         core::hint::spin_loop();
@@ -97,15 +94,12 @@ fn log_master_write_payload(exchange: u32, data: &[u8; XFER_DATA_LEN]) {
     );
 }
 
-/// Build + validate the controller in its own `#[inline(never)]` frame.
-///
-/// The temporary `I3cConfig` embeds a 256-byte `AddrBook` and the kernel
-/// bootstrap stack is only 2 KiB, so the temporaries are freed on return; the
-/// long-lived hardware + config live in the `singleton!` static (`I3cCore`),
-/// not on the stack. Returns the controller in the `Ready` state: handler
-/// registered, hardware programmed, NVIC line still masked.
+/// Build + validate the configuration in its own `#[inline(never)]` frame so
+/// builder temporaries are freed on return — the kernel bootstrap stack is
+/// only 2 KiB and the config embeds the ~0.5 KiB device tables. The caller
+/// keeps the single live config and lends it to the controller (`&mut`).
 #[inline(never)]
-fn build_controller() -> Result<I3c2Controller, &'static str> {
+fn build_config() -> Result<I3cConfig, &'static str> {
     // Controller (primary) timing — identical to the reference master.
     let mut config = I3cConfig::new()
         .core_clk_hz(200_000_000)
@@ -121,19 +115,12 @@ fn build_controller() -> Result<I3c2Controller, &'static str> {
     config
         .validate_clock()
         .map_err(|_| "invalid clock configuration")?;
-
-    // SAFETY: the test owns I3C bus 2 and uses the matching PAC blocks.
-    let hw = unsafe { I3cHw::new(I3C_BUS, yield_delay) }.ok_or("invalid I3C bus index")?;
-    let i3c_core = cortex_m::singleton!(: I3cCore<I3cHw> = I3cCore::new(hw, config))
-        .ok_or("I3C core storage already taken")?;
-    I3cController::new(Pin::static_mut(i3c_core))
-        .start()
-        .map_err(|_| "controller start failed")
+    Ok(config)
 }
 
 #[inline(never)]
 fn master_read_from_target(
-    ctrl: &mut I3c2Controller,
+    ctrl: &mut I3c2Controller<'_>,
 ) -> Result<(u32, [u8; XFER_DATA_LEN]), &'static str> {
     let mut rx_buf = [0u8; 128];
     let actual_len = ctrl
@@ -146,7 +133,7 @@ fn master_read_from_target(
 }
 
 #[inline(never)]
-fn master_write_to_target(ctrl: &mut I3c2Controller, exchange: u32) -> Result<(), &'static str> {
+fn master_write_to_target(ctrl: &mut I3c2Controller<'_>, exchange: u32) -> Result<(), &'static str> {
     let mut tx_buf: [u8; XFER_DATA_LEN] = [
         0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
         0x88,
@@ -166,22 +153,25 @@ fn run_controller() -> Result<(), &'static str> {
     // SAFETY: single call at boot with exclusive access to the board.
     unsafe { board.init() };
 
-    // Build the controller (register IRQ + program hardware) in a separate
-    // (never-inlined) frame so the temporary `I3cConfig` is freed on return
-    // (see `build_controller`): the kernel bootstrap thread stack is only
-    // 2 KiB; the long-lived state lives in the `I3cCore` static.
-    let mut ctrl = build_controller()?;
+    // Build the config in a separate (never-inlined) frame, keep the single
+    // live copy here, and lend it to the controller — see `build_config`.
+    let mut config = build_config()?;
+    // SAFETY: the test owns I3C bus 2 and uses the matching PAC blocks.
+    let hw = unsafe { I3cHw::new(I3C_BUS, yield_delay) }.ok_or("invalid I3C bus index")?;
+    let mut ctrl = I3cController::new(hw, &mut config)
+        .start()
+        .map_err(|_| "controller start failed")?;
     let bus = ctrl.bus_num() as usize;
     let mut ibi_cons = i3c_ibi_workq_consumer(bus).ok_or("IBI consumer unavailable")?;
     pw_log::info!("IBI work queue ready on bus {}", bus as u32);
 
     // The kernel vector (system.json5 IRQ 104 -> `i3c2_irq`) is in place and
-    // the handler is registered; the integration layer owns the NVIC line, so
-    // unmask it now.
-    let irq = i3c_bus_interrupt(ctrl.bus_num()).ok_or("no IRQ line for bus")?;
+    // the handler is registered; this integration layer owns the NVIC line
+    // for the bus it selected (`I3C_BUS` = 2 -> `Interrupt::i3c2`), so unmask
+    // it now.
     // SAFETY: handler registered and hardware initialized (Ready state);
     // unmasking cannot deliver an IRQ into partially-initialized state.
-    unsafe { NVIC::unmask(irq) };
+    unsafe { NVIC::unmask(ast1060_pac::Interrupt::i3c2) };
     pw_log::info!("I3C2 controller ready");
 
     let dyn_addr = ctrl

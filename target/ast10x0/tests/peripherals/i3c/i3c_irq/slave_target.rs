@@ -22,12 +22,10 @@
 #![no_std]
 #![no_main]
 
-use core::pin::Pin;
-
 use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
 use ast10x0_peripherals::i3c::{
-    Ast1060I3c, I3cConfig, I3cController, I3cCore, I3cTargetConfig, IbiConsumer, IbiWork, Ready,
-    i3c_bus_interrupt, i3c_ibi_workq_consumer,
+    Ast1060I3c, I3cConfig, I3cController, I3cTargetConfig, IbiConsumer, IbiWork,
+    i3c_ibi_workq_consumer,
 };
 use ast10x0_peripherals::scu::pinctrl;
 use codegen as _;
@@ -137,20 +135,19 @@ fn wait_for_master_write(ibi_cons: &mut IbiConsumer, exchange: u32) -> Result<()
 
 /// Calibrated busy-wait used as the driver's yield/delay hook. Mirrors the
 /// reference `DummyDelay::delay_ns` (busy-loop of ~`ns / 100` nops). A named
-/// `fn` (not a closure) keeps [`build_target`]'s return type nameable.
+/// `fn` (not a closure) keeps the driver type nameable.
 fn yield_delay(ns: u32) {
     for _ in 0..(ns / 100) {
         core::hint::spin_loop();
     }
 }
 
-/// Build + validate the target controller in its own `#[inline(never)]` frame
-/// so the temporary `I3cConfig` (256-byte `AddrBook` inside) is freed on
-/// return; the long-lived hardware + config live in the `singleton!` static
-/// (`I3cCore`). Returns the controller in the `Ready` state: handler
-/// registered, hardware programmed, NVIC line still masked.
+/// Build + validate the configuration in its own `#[inline(never)]` frame so
+/// builder temporaries are freed on return — the kernel bootstrap stack is
+/// only 2 KiB and the config embeds the ~0.5 KiB device tables. The caller
+/// keeps the single live config and lends it to the controller (`&mut`).
 #[inline(never)]
-fn build_target() -> Result<I3cController<I3cHw, Ready>, &'static str> {
+fn build_config() -> Result<I3cConfig, &'static str> {
     // Secondary (target) timing — identical to the reference target.
     let mut config = I3cConfig::new()
         .core_clk_hz(200_000_000)
@@ -168,14 +165,7 @@ fn build_target() -> Result<I3cController<I3cHw, Ready>, &'static str> {
     config
         .validate_clock()
         .map_err(|_| "invalid clock configuration")?;
-
-    // SAFETY: the test owns I3C bus 2 and uses the matching PAC blocks.
-    let hw = unsafe { I3cHw::new(I3C_BUS, yield_delay) }.ok_or("invalid I3C bus index")?;
-    let i3c_core = cortex_m::singleton!(: I3cCore<I3cHw> = I3cCore::new(hw, config))
-        .ok_or("I3C core storage already taken")?;
-    I3cController::new(Pin::static_mut(i3c_core))
-        .start()
-        .map_err(|_| "controller start failed")
+    Ok(config)
 }
 
 fn run_target() -> Result<(), &'static str> {
@@ -187,20 +177,24 @@ fn run_target() -> Result<(), &'static str> {
     // SAFETY: single call at boot with exclusive access to the board.
     unsafe { board.init() };
 
-    // Build the controller (register IRQ + program hardware) in a separate
-    // (never-inlined) frame so the temporary `I3cConfig` is freed on return
-    // (see `build_target`); the long-lived state lives in the `I3cCore` static.
-    let mut ctrl = build_target()?;
+    // Build the config in a separate (never-inlined) frame, keep the single
+    // live copy here, and lend it to the controller — see `build_config`.
+    let mut config = build_config()?;
+    // SAFETY: the test owns I3C bus 2 and uses the matching PAC blocks.
+    let hw = unsafe { I3cHw::new(I3C_BUS, yield_delay) }.ok_or("invalid I3C bus index")?;
+    let mut ctrl = I3cController::new(hw, &mut config)
+        .start()
+        .map_err(|_| "controller start failed")?;
     let bus = ctrl.bus_num() as usize;
     let mut ibi_cons = i3c_ibi_workq_consumer(bus).ok_or("IBI consumer unavailable")?;
     pw_log::info!("IBI work queue ready on bus {}", bus as u32);
 
-    // Kernel vector is in place and the handler is registered; the integration
-    // layer owns the NVIC line, so unmask it now.
-    let irq = i3c_bus_interrupt(ctrl.bus_num()).ok_or("no IRQ line for bus")?;
+    // Kernel vector is in place and the handler is registered; this
+    // integration layer owns the NVIC line for the bus it selected
+    // (`I3C_BUS` = 2 -> `Interrupt::i3c2`), so unmask it now.
     // SAFETY: handler registered and hardware initialized (Ready state);
     // unmasking cannot deliver an IRQ into partially-initialized state.
-    unsafe { NVIC::unmask(irq) };
+    unsafe { NVIC::unmask(ast1060_pac::Interrupt::i3c2) };
 
     let dyn_addr = 8u8;
     let dev_idx = 0usize;

@@ -117,6 +117,11 @@ impl IbiRing {
     }
 }
 
+// INTENTIONAL EXCEPTION to borrow-arbitrated exclusivity (goal.md ADR-3):
+// the IBI plane is process-global mutable state because the producer is the
+// ISR, which cannot borrow a stack-owned device. Bounded (one fixed-depth
+// ring per bus) and serialized by the critical section; access is via the
+// leaf `ring_push`/`ring_pop` helpers only.
 static IBI_RINGS: [Mutex<UnsafeCell<IbiRing>>; 4] = [
     Mutex::new(UnsafeCell::new(IbiRing::new())),
     Mutex::new(UnsafeCell::new(IbiRing::new())),

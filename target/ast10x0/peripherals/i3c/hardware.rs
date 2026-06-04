@@ -59,99 +59,333 @@ use super::constants::{
 use super::error::I3cError as I3cDrvError;
 use super::error::I3cError;
 use super::ibi as ibi_workq;
-use super::types::{I3cCmd, I3cIbi, I3cMsg, I3cXfer, SpeedI3c, Tid};
+use super::types::{Completion, I3cCmd, I3cIbi, I3cMsg, I3cXfer, SpeedI3c, Tid};
 
 use super::registers::I3cRegisters;
-use core::sync::atomic::Ordering;
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 // =============================================================================
 // IRQ Handler Infrastructure
 // =============================================================================
+//
+// The ISR fabricates NO `&mut` over any thread-owned object. It works only
+// with:
+//   - its own `I3cRegisters` handle (all methods take `&self`), stored in the
+//     per-bus registry below;
+//   - the per-bus `ISR_EVENTS` atomics;
+//   - the global IBI work rings (`ibi.rs`).
+// Master transfer completion is flag-and-defer (the ISR masks the sources and
+// latches the status; the polling thread drains the response queue itself),
+// so there is no ISR/thread `&mut` aliasing and no transfer-pointer handoff.
 
-#[derive(Clone, Copy)]
-struct Handler {
-    func: fn(usize),
-    ctx: usize,
+/// Everything the ISR needs for one bus. Built by
+/// [`Ast1060I3c::isr_ctx`] and parked in the per-bus registry at
+/// [`I3cController::start`](super::controller::I3cController::start).
+pub struct IsrCtx {
+    /// ISR-side register handle. A second `I3cRegisters` for the same bus as
+    /// the driver's own — sound for MMIO (no Rust memory is aliased), and
+    /// device-access serialization holds because the single-core ISR runs
+    /// atomically with respect to the thread.
+    regs: I3cRegisters,
+    /// Role selected at `start()` (the ISR must not read the thread-owned
+    /// config).
+    is_secondary: bool,
 }
 
-// `UnsafeCell` (not `RefCell`) for the same reason as `IBI_RINGS` in `ibi.rs`:
-// mutual exclusion comes from the critical section, and the access helpers
-// below are leaf functions (no caller code runs while the reference is live),
-// so the `RefCell` runtime borrow flag would only add a reachable panic path
-// that the `no_panics` analysis must reject.
-static BUS_HANDLERS: [Mutex<UnsafeCell<Option<Handler>>>; 4] = [
+// SAFETY: `IsrCtx` holds raw MMIO pointers (valid from any execution context
+// on this single-address-space target) and a bool; parking it in the
+// critical-section-guarded registry below is sound.
+unsafe impl Send for IsrCtx {}
+
+// INTENTIONAL EXCEPTION to borrow-arbitrated exclusivity: this per-bus
+// dispatch table is process-global mutable state, because an ISR cannot
+// borrow a stack-owned controller — the global registry is the structural
+// price of IRQ dispatch (same rationale as `IBI_RINGS` in `ibi.rs`, ADR-3).
+// It is bounded (one slot per bus, claimed once via the single-shot
+// `register_i3c_irq_handler`) and serialized by the critical section.
+//
+// `UnsafeCell` (not `RefCell`): mutual exclusion comes from the critical
+// section, and the access helpers below are leaf functions (no caller code
+// runs while the reference is live), so the `RefCell` runtime borrow flag
+// would only add a reachable panic path that the `no_panics` analysis must
+// reject.
+static BUS_ISR: [Mutex<UnsafeCell<Option<IsrCtx>>>; 4] = [
     Mutex::new(UnsafeCell::new(None)),
     Mutex::new(UnsafeCell::new(None)),
     Mutex::new(UnsafeCell::new(None)),
     Mutex::new(UnsafeCell::new(None)),
 ];
 
-/// Register an IRQ handler for an I3C bus.
+/// Per-bus ISR↔thread signal block: plain atomics, written by the ISR and
+/// consumed by the polling thread. Part of the same intentional global-state
+/// exception as the registry above.
+pub(crate) struct IsrEvents {
+    /// Latched interrupt-status bits deferred to the thread (master
+    /// completion path).
+    pending: AtomicU32,
+    /// Dynamic address assigned by the bus master; bit 8 = valid.
+    dyn_addr: AtomicU32,
+    /// A deferred fault: the ISR observed a halted/errored engine and left
+    /// recovery (halt/resume sequencing needs the wait policy) to the thread.
+    fault: AtomicBool,
+    /// Target mode: the SIR (IBI) command completed.
+    pub(crate) target_ibi_done: Completion,
+    /// Target mode: the pending-read data was fetched by the master.
+    pub(crate) target_data_done: Completion,
+}
+
+impl IsrEvents {
+    const fn new() -> Self {
+        Self {
+            pending: AtomicU32::new(0),
+            dyn_addr: AtomicU32::new(0),
+            fault: AtomicBool::new(false),
+            target_ibi_done: Completion::new(),
+            target_data_done: Completion::new(),
+        }
+    }
+
+    /// Atomically take (read-and-clear) the latched status bits.
+    pub(crate) fn take_pending(&self) -> u32 {
+        self.pending.swap(0, Ordering::AcqRel)
+    }
+
+    /// Atomically take (read-and-clear) the deferred-fault flag.
+    pub(crate) fn take_fault(&self) -> bool {
+        self.fault.swap(false, Ordering::AcqRel)
+    }
+
+    /// Dynamic address assigned by the master, if any.
+    pub(crate) fn dyn_addr(&self) -> Option<u8> {
+        let v = self.dyn_addr.load(Ordering::Acquire);
+        if v & 0x100 != 0 {
+            Some((v & 0x7f) as u8)
+        } else {
+            None
+        }
+    }
+}
+
+static ISR_EVENTS: [IsrEvents; 4] = [
+    IsrEvents::new(),
+    IsrEvents::new(),
+    IsrEvents::new(),
+    IsrEvents::new(),
+];
+
+/// Per-bus ISR event block (clamps an out-of-range bus to 0, which a
+/// constructed driver can never pass).
+#[inline]
+pub(crate) fn isr_events(bus: usize) -> &'static IsrEvents {
+    ISR_EVENTS.get(bus).unwrap_or(&ISR_EVENTS[0])
+}
+
+/// Register the ISR context for an I3C bus.
 ///
 /// Single-shot per bus: the first registration claims the slot for the
 /// program's lifetime, mirroring the one-controller-per-physical-bus contract
-/// of [`Ast1060I3c::new`]. Returns `false` (and leaves the existing handler in
+/// of [`Ast1060I3c::new`]. Returns `false` (and leaves the existing context in
 /// place) if `bus` is out of range or the slot is already claimed.
-///
-/// # Arguments
-/// * `bus` - Bus index (0-3)
-/// * `func` - Handler function
-/// * `ctx` - Context value passed to handler
 #[must_use]
-pub fn register_i3c_irq_handler(bus: usize, func: fn(usize), ctx: usize) -> bool {
-    let Some(slot) = BUS_HANDLERS.get(bus) else {
+pub fn register_i3c_irq_handler(bus: usize, ctx: IsrCtx) -> bool {
+    let Some(slot) = BUS_ISR.get(bus) else {
         return false;
     };
     critical_section::with(|cs| {
         // SAFETY: the critical section excludes ISR/thread concurrency, and
         // the `&mut` never escapes this leaf function, so this is the only
         // live reference to the slot.
-        let handler: &mut Option<Handler> = unsafe { &mut *slot.borrow(cs).get() };
-        if handler.is_some() {
+        let parked: &mut Option<IsrCtx> = unsafe { &mut *slot.borrow(cs).get() };
+        if parked.is_some() {
             return false;
         }
-        *handler = Some(Handler { func, ctx });
+        *parked = Some(ctx);
         true
     })
 }
 
-/// NVIC interrupt line for an I3C bus, if the bus exists.
-///
-/// The driver does not touch the NVIC (Delta D6): the kernel/integration layer
-/// owns the top-level vector *and* the line mask. After registering a handler
-/// and initializing the hardware, the integration layer uses this mapping to
-/// unmask (and, on teardown, mask) the line it owns.
-#[must_use]
-pub const fn i3c_bus_interrupt(bus: u8) -> Option<ast1060_pac::Interrupt> {
-    match bus {
-        0 => Some(ast1060_pac::Interrupt::i3c),
-        1 => Some(ast1060_pac::Interrupt::i3c1),
-        2 => Some(ast1060_pac::Interrupt::i3c2),
-        3 => Some(ast1060_pac::Interrupt::i3c3),
-        _ => None,
-    }
-}
+// NVIC ownership (Delta D6): the driver does not touch the NVIC and exposes
+// no interrupt-line mapping. The kernel/integration layer owns the top-level
+// vector *and* the line mask; it selects the bus, so it also knows the line
+// (the platform interrupt line) to unmask after `start()` and to mask on
+// teardown. This keeps the driver above the register facade entirely free of
+// PAC types.
 
-/// Dispatch IRQ for a specific bus
+/// Dispatch IRQ for a specific bus.
 ///
-/// Called by the actual IRQ entry points (defined elsewhere to avoid symbol conflicts).
+/// Called by the actual IRQ entry points (defined in the kernel integration
+/// layer). Runs the service routine inside the critical section: we are
+/// already in interrupt context, so no thread can be blocked by it, and the
+/// section guarantees the registry slot is not concurrently replaced.
 #[inline]
 pub fn dispatch_i3c_irq(bus: usize) {
-    // Copy handler out of critical section to avoid blocking IRQs during handler
-    let handler = critical_section::with(|cs| {
+    critical_section::with(|cs| {
+        let Some(slot) = BUS_ISR.get(bus) else {
+            return;
+        };
         // SAFETY: the critical section excludes the writer
-        // (`register_i3c_irq_handler`); `Handler` is `Copy`, so the value is
-        // copied out and no reference escapes.
-        BUS_HANDLERS.get(bus).and_then(|m| unsafe { *m.borrow(cs).get() })
+        // (`register_i3c_irq_handler`); the shared reference never escapes
+        // this leaf closure.
+        let parked: &Option<IsrCtx> = unsafe { &*slot.borrow(cs).get() };
+        if let Some(ctx) = parked {
+            isr_service(ctx);
+        }
     });
-    if let Some(h) = handler {
-        (h.func)(h.ctx);
+}
+
+// =============================================================================
+// ISR service routines — `&self`/atomics only, no `&mut` anywhere
+// =============================================================================
+
+/// Top-level I3C interrupt service. Touches only the ISR-side register
+/// handle, the per-bus atomics, and the global IBI rings.
+fn isr_service(ctx: &IsrCtx) {
+    let regs = &ctx.regs;
+    let status = regs.read_intr_status();
+    if status == 0 {
+        return;
+    }
+    let bus = regs.bus() as usize;
+    let events = isr_events(bus);
+
+    if ctx.is_secondary {
+        if status & INTR_DYN_ADDR_ASSGN_STAT != 0 {
+            let da = u32::from(regs.dynamic_addr());
+            events.dyn_addr.store(0x100 | da, Ordering::Release);
+            let _ = ibi_workq::i3c_ibi_work_enqueue_target_da_assignment(bus);
+        }
+
+        if (status & INTR_RESP_READY_STAT) != 0 {
+            isr_target_responses(regs, events, bus);
+        }
+
+        if (status & INTR_CCC_UPDATED_STAT) != 0 {
+            // Read-and-clear the event; if the engine halted, defer the
+            // resume sequencing (it needs the wait policy) to the thread.
+            let event = regs.read_slv_event_ctrl();
+            regs.write_slv_event_ctrl(event);
+            if regs.xfer_status() == CM_TFR_STS_TARGET_HALT {
+                events.fault.store(true, Ordering::Release);
+            }
+        }
+    } else {
+        if (status & (INTR_RESP_READY_STAT | INTR_TRANSFER_ERR_STAT | INTR_TRANSFER_ABORT_STAT))
+            != 0
+        {
+            // Flag-and-defer (the SMC model): mask the sources so the level
+            // status cannot refire, latch the bits; the polling thread drains
+            // the response queue itself and re-enables the sources.
+            regs.mask_master_xfer_irqs();
+            events.pending.fetch_or(
+                status
+                    & (INTR_RESP_READY_STAT
+                        | INTR_TRANSFER_ERR_STAT
+                        | INTR_TRANSFER_ABORT_STAT),
+                Ordering::AcqRel,
+            );
+        }
+
+        if (status & INTR_IBI_THLD_STAT) != 0 {
+            isr_master_ibis(regs, bus);
+        }
+    }
+
+    regs.clear_intr_status(status);
+}
+
+/// Target mode: service the response queue from the ISR (master writes and
+/// SIR/read completions arrive whether or not a thread is waiting, and the
+/// hardware queues are shallow — this is the IBI plane that cannot defer).
+fn isr_target_responses(regs: &I3cRegisters, events: &IsrEvents, bus: usize) {
+    let nresp = regs.resp_buf_level();
+
+    for _ in 0..nresp {
+        let resp = regs.pop_response();
+
+        let tid = field_get(resp, RESPONSE_PORT_TID_MASK, RESPONSE_PORT_TID_SHIFT) as usize;
+        let rx_len = field_get(
+            resp,
+            RESPONSE_PORT_DATA_LEN_MASK,
+            RESPONSE_PORT_DATA_LEN_SHIFT,
+        ) as usize;
+        let err = field_get(
+            resp,
+            RESPONSE_PORT_ERR_STATUS_MASK,
+            RESPONSE_PORT_ERR_STATUS_SHIFT,
+        );
+
+        if err != 0 {
+            // Recovery needs halt/resume sequencing (wait policy) — defer.
+            events.fault.store(true, Ordering::Release);
+            continue;
+        }
+
+        if rx_len != 0 {
+            let mut buf: [u8; 256] = [0u8; 256];
+            // Bound `rx_len` (a raw hardware field) to the buffer via `get`:
+            // an oversized length must not panic in handler mode.
+            let n = rx_len.min(buf.len());
+            if let Some(dst) = buf.get_mut(..n) {
+                regs.rx_fifo_read(dst);
+            }
+            let _ =
+                ibi_workq::i3c_ibi_work_enqueue_target_master_write(bus, buf.get(..n).unwrap_or(&[]));
+        }
+
+        if tid == Tid::TargetIbi as usize {
+            events.target_ibi_done.complete();
+        }
+
+        if tid == Tid::TargetRdData as usize {
+            events.target_data_done.complete();
+        }
     }
 }
 
-// IRQ entry points - defined in src/i3c/ module to avoid symbol conflicts.
-// Use register_i3c_irq_handler() to register handlers that will be called
-// from those entry points.
+/// Master mode: drain the IBI status queue into the global work rings.
+///
+/// Porting delta: the reference validated the SIR address against the
+/// attached-device table here; that table is thread-owned, so the check moves
+/// to the consumer (`acknowledge_ibi` already validates before acting).
+fn isr_master_ibis(regs: &I3cRegisters, bus: usize) {
+    let nibis = regs.ibi_status_count();
+    if nibis == 0 {
+        return;
+    }
+
+    for _ in 0..nibis {
+        let reg = regs.ibi_fifo_pop();
+
+        let ibi_id = field_get(reg, IBIQ_STATUS_IBI_ID, IBIQ_STATUS_IBI_ID_SHIFT);
+        let ibi_data_len = field_get(
+            reg,
+            IBIQ_STATUS_IBI_DATA_LEN,
+            IBIQ_STATUS_IBI_DATA_LEN_SHIFT,
+        ) as usize;
+        let ibi_addr = (ibi_id >> 1) & 0x7F;
+        let rnw = (ibi_id & 1) != 0;
+
+        if ibi_addr != 2 && rnw {
+            // SIR
+            let mut ibi_buf: [u8; 2] = [0u8; 2];
+            let take = core::cmp::min(ibi_data_len, ibi_buf.len());
+            if let Some(dst) = ibi_buf.get_mut(..take) {
+                regs.ibi_fifo_read(dst);
+            }
+            let _ = ibi_workq::i3c_ibi_work_enqueue_target_irq(
+                bus,
+                ibi_addr as u8,
+                ibi_buf.get(..take).unwrap_or(&[]),
+            );
+        } else if ibi_addr == 2 && !rnw {
+            // hot-join
+            let _ = ibi_workq::i3c_ibi_work_enqueue_hotjoin(bus);
+        } else {
+            // normal ibi
+            regs.ibi_fifo_drain(ibi_data_len);
+        }
+    }
+}
 
 // =============================================================================
 // Sub-trait: Core Operations
@@ -174,8 +408,9 @@ pub trait HardwareCore {
     /// Set the controller role (primary/secondary)
     fn set_role(&mut self, is_secondary: bool);
 
-    /// Main ISR handler
-    fn i3c_aspeed_isr(&mut self, config: &mut I3cConfig);
+    /// Build the ISR context to park in the per-bus registry
+    /// (see [`register_i3c_irq_handler`]).
+    fn isr_ctx(&self, is_secondary: bool) -> IsrCtx;
 }
 
 // =============================================================================
@@ -234,11 +469,20 @@ pub trait HardwareTransfer {
     /// Enable IBI for a device
     fn ibi_enable(&mut self, config: &mut I3cConfig, addr: u8) -> Result<(), I3cError>;
 
-    /// Start a transfer
+    /// Start a transfer. Overlap is structurally impossible: the transfer is
+    /// thread-owned for its whole life (`&mut` exclusivity), and the ISR only
+    /// latches completion flags — there is no in-flight pointer to clobber.
     fn start_xfer(&mut self, config: &mut I3cConfig, xfer: &mut I3cXfer);
 
-    /// End a transfer
-    fn end_xfer(&mut self, config: &mut I3cConfig);
+    /// Wait (bounded, cooperative-yield) for the transfer the ISR flagged,
+    /// then drain the response queue into `xfer` on the thread side.
+    /// Returns `false` on timeout (after halt/reset recovery).
+    fn wait_xfer_complete(
+        &mut self,
+        config: &mut I3cConfig,
+        xfer: &mut I3cXfer,
+        timeout_us: u32,
+    ) -> bool;
 
     /// Get DAT position for an address
     fn get_addr_pos(&mut self, config: &I3cConfig, addr: u8) -> Option<u8>;
@@ -270,12 +514,6 @@ pub trait HardwareTransfer {
         pid: u64,
         msgs: &mut [I3cMsg],
     ) -> Result<(), I3cError>;
-
-    /// Handle IBI SIR (Slave Interrupt Request)
-    fn handle_ibi_sir(&mut self, config: &mut I3cConfig, addr: u8, len: usize);
-
-    /// Handle all pending IBIs
-    fn handle_ibis(&mut self, config: &mut I3cConfig);
 }
 
 // =============================================================================
@@ -312,9 +550,6 @@ pub trait HardwareTarget {
     /// Raise a Hot-Join IBI (target mode)
     fn target_ibi_raise_hj(&self, config: &mut I3cConfig) -> Result<(), I3cError>;
 
-    /// Handle response ready in target mode
-    fn target_handle_response_ready(&mut self, config: &mut I3cConfig);
-
     /// Notify pending read in target mode
     fn target_pending_read_notify(
         &mut self,
@@ -322,9 +557,6 @@ pub trait HardwareTarget {
         buf: &[u8],
         notifier: &mut I3cIbi,
     ) -> Result<(), I3cError>;
-
-    /// Handle CCC update in target mode
-    fn target_handle_ccc_update(&mut self, config: &mut I3cConfig);
 }
 
 // =============================================================================
@@ -511,6 +743,86 @@ impl<Y: FnMut(u32)> Ast1060I3c<Y> {
         reg &= !(I3CG_REG1_SCL_IN_SW_MODE_EN | I3CG_REG1_SDA_IN_SW_MODE_EN);
         self.regs.i3cg_reg1_overwrite(reg);
     }
+
+    /// Thread-side response drain — the old ISR `end_xfer`, minus the
+    /// transfer-pointer handoff: the ISR only latched completion (see
+    /// [`isr_service`]), so this runs with the thread's own `&mut xfer` and
+    /// no `unsafe`.
+    fn process_responses(&mut self, config: &mut I3cConfig, xfer: &mut I3cXfer) {
+        let nresp = self.regs.resp_buf_level();
+
+        for _ in 0..nresp {
+            let resp = self.regs.pop_response();
+
+            let tid = field_get(resp, RESPONSE_PORT_TID_MASK, RESPONSE_PORT_TID_SHIFT) as usize;
+            let rx_len = field_get(
+                resp,
+                RESPONSE_PORT_DATA_LEN_MASK,
+                RESPONSE_PORT_DATA_LEN_SHIFT,
+            ) as usize;
+            let err = field_get(
+                resp,
+                RESPONSE_PORT_ERR_STATUS_MASK,
+                RESPONSE_PORT_ERR_STATUS_SHIFT,
+            );
+
+            i3c_debug!(
+                self.logger,
+                "process_responses: tid={}, rx_len={}, err={}",
+                tid,
+                rx_len,
+                err
+            );
+            if tid >= xfer.cmds.len() {
+                if rx_len > 0 {
+                    self.regs.rx_fifo_drain(rx_len);
+                }
+                continue;
+            }
+
+            // `get_mut` (not `[tid]`) keeps the scatter path panic-free for the
+            // `no_panics` analysis; `tid < len` is already guaranteed above.
+            let Some(cmd) = xfer.cmds.get_mut(tid) else {
+                continue;
+            };
+            cmd.rx_len = u32::try_from(rx_len).unwrap_or(0);
+            cmd.ret = i32::try_from(err).unwrap_or(-1);
+
+            if rx_len == 0 {
+                continue;
+            }
+
+            if err == 0 {
+                // `get_mut(..rx_len)` guards a malformed hardware length that
+                // would otherwise panic on `rx_buf[..rx_len]`; on mismatch the
+                // bytes are drained instead.
+                if let Some(dst) = cmd.rx.as_deref_mut().and_then(|b| b.get_mut(..rx_len)) {
+                    self.regs.rx_fifo_read(dst);
+                } else {
+                    self.regs.rx_fifo_drain(rx_len);
+                }
+            } else if rx_len > 0 {
+                self.regs.rx_fifo_drain(rx_len);
+            }
+        }
+
+        let mut ret = 0;
+        for i in 0..nresp {
+            if let Some(c) = xfer.cmds.get(i)
+                && c.ret != 0
+            {
+                ret = c.ret;
+            }
+        }
+
+        if ret != 0 {
+            self.enter_halt(false, config);
+            self.reset_ctrl(RESET_CTRL_QUEUES);
+            self.exit_halt(config);
+        }
+
+        xfer.ret = ret;
+    }
 }
 
 impl<Y: FnMut(u32)> HardwareCore for Ast1060I3c<Y> {
@@ -650,42 +962,12 @@ impl<Y: FnMut(u32)> HardwareCore for Ast1060I3c<Y> {
         self.regs.set_dev_op_mode(u8::from(is_secondary));
     }
 
-    fn i3c_aspeed_isr(&mut self, config: &mut I3cConfig) {
-        let status = self.regs.read_intr_status();
-        i3c_debug!(self.logger, "[ISR] 0x{:08x}", status);
-        if status == 0 {
-            return;
-        }
-
-        if config.is_secondary {
-            if status & INTR_DYN_ADDR_ASSGN_STAT != 0 {
-                let da = self.regs.dynamic_addr();
-                if let Some(tc) = &mut config.target_config {
-                    tc.addr = Some(da);
-                }
-                let _ = ibi_workq::i3c_ibi_work_enqueue_target_da_assignment(self.bus().into());
-            }
-
-            if (status & INTR_RESP_READY_STAT) != 0 {
-                self.target_handle_response_ready(config);
-            }
-
-            if (status & INTR_CCC_UPDATED_STAT) != 0 {
-                self.target_handle_ccc_update(config);
-            }
-        } else {
-            if (status & (INTR_RESP_READY_STAT | INTR_TRANSFER_ERR_STAT | INTR_TRANSFER_ABORT_STAT))
-                != 0
-            {
-                self.end_xfer(config);
-            }
-
-            if (status & INTR_IBI_THLD_STAT) != 0 {
-                self.handle_ibis(config);
-            }
-        }
-
-        self.regs.clear_intr_status(status);
+    fn isr_ctx(&self, is_secondary: bool) -> IsrCtx {
+        // SAFETY: the ISR runs atomically with respect to the thread on this
+        // single-core target, so device access through the alias stays
+        // serialized (see `I3cRegisters::isr_alias`).
+        let regs = unsafe { self.regs.isr_alias() };
+        IsrCtx { regs, is_secondary }
     }
 }
 
@@ -995,15 +1277,17 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
     }
 
     fn start_xfer(&mut self, config: &mut I3cConfig, xfer: &mut I3cXfer) {
-        let prev = config
-            .curr_xfer
-            .swap(core::ptr::from_mut(xfer).cast::<()>(), Ordering::AcqRel);
-        if !prev.is_null() {
-            i3c_debug!(self.logger, "start_xfer: previous xfer still in flight");
-        }
-
+        let _ = config;
         xfer.ret = -1;
-        xfer.done.reset();
+
+        // Clear any stale completion flag and drain any stale responses left
+        // by an earlier timed-out transfer (the old ISR-side null-pointer
+        // drain, now done on the thread before the next submission).
+        let _ = isr_events(self.bus() as usize).take_pending();
+        let nresp = self.regs.resp_buf_level();
+        for _ in 0..nresp {
+            let _ = self.regs.pop_response();
+        }
 
         for cmd in xfer.cmds.iter() {
             if let Some(tx) = cmd.tx {
@@ -1029,103 +1313,43 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
         }
     }
 
-    fn end_xfer(&mut self, config: &mut I3cConfig) {
-        let p = config
-            .curr_xfer
-            .swap(core::ptr::null_mut(), Ordering::AcqRel);
+    fn wait_xfer_complete(
+        &mut self,
+        config: &mut I3cConfig,
+        xfer: &mut I3cXfer,
+        timeout_us: u32,
+    ) -> bool {
+        let events = isr_events(self.bus() as usize);
 
-        if p.is_null() {
-            // Drain the response queue to prevent interrupt loops if no xfer is active
-            let nresp = self.regs.resp_buf_level();
-            for _ in 0..nresp {
-                let _ = self.regs.pop_response();
-            }
-            return;
-        }
-
-        // SAFETY: `curr_xfer` is published by `start_xfer` from a unique
-        // `&mut I3cXfer`. The ISR path here and the timeout cleanup paths both
-        // compete via `swap(null, AcqRel)`; only the side that observes a
-        // non-null pointer may reconstruct and use it, while the loser sees
-        // null and performs no dereference. This target runs the handoff on a
-        // single core, and the owning thread waits for completion or timeout
-        // before dropping the stack-owned `xfer`, so the pointee outlives this
-        // exclusive ownership transfer.
-        let xfer: &mut I3cXfer = unsafe { &mut *(p.cast::<I3cXfer>()) };
-
-        let nresp = self.regs.resp_buf_level();
-
-        for _ in 0..nresp {
-            let resp = self.regs.pop_response();
-
-            let tid = field_get(resp, RESPONSE_PORT_TID_MASK, RESPONSE_PORT_TID_SHIFT) as usize;
-            let rx_len = field_get(
-                resp,
-                RESPONSE_PORT_DATA_LEN_MASK,
-                RESPONSE_PORT_DATA_LEN_SHIFT,
-            ) as usize;
-            let err = field_get(
-                resp,
-                RESPONSE_PORT_ERR_STATUS_MASK,
-                RESPONSE_PORT_ERR_STATUS_SHIFT,
-            );
-
-            i3c_debug!(
-                self.logger,
-                "end_xfer: tid={}, rx_len={}, err={}",
-                tid,
-                rx_len,
-                err
-            );
-            if tid >= xfer.cmds.len() {
-                if rx_len > 0 {
-                    self.regs.rx_fifo_drain(rx_len);
-                }
-                continue;
-            }
-
-            // `get_mut` (not `[tid]`) keeps the scatter path panic-free for the
-            // `no_panics` analysis; `tid < len` is already guaranteed above.
-            let Some(cmd) = xfer.cmds.get_mut(tid) else {
-                continue;
-            };
-            cmd.rx_len = u32::try_from(rx_len).unwrap_or(0);
-            cmd.ret = i32::try_from(err).unwrap_or(-1);
-
-            if rx_len == 0 {
-                continue;
-            }
-
-            if err == 0 {
-                // `get_mut(..rx_len)` guards a malformed hardware length that
-                // would otherwise panic on `rx_buf[..rx_len]`; on mismatch the
-                // bytes are drained instead.
-                if let Some(dst) = cmd.rx.as_deref_mut().and_then(|b| b.get_mut(..rx_len)) {
-                    self.regs.rx_fifo_read(dst);
-                } else {
-                    self.regs.rx_fifo_drain(rx_len);
-                }
-            } else if rx_len > 0 {
-                self.regs.rx_fifo_drain(rx_len);
-            }
-        }
-        let mut ret = 0;
-        for i in 0..nresp {
-            if let Some(c) = xfer.cmds.get(i)
-                && c.ret != 0
+        // Cooperative-yield bounded poll (Delta D2) on the ISR's latched
+        // status; the ISR masked the sources, so on a hit this thread owns
+        // the response queue and drains it into its own `xfer` — no `&mut`
+        // ever crosses the ISR boundary.
+        let mut left = timeout_us;
+        loop {
+            let pending = events.take_pending();
+            if pending
+                & (INTR_RESP_READY_STAT | INTR_TRANSFER_ERR_STAT | INTR_TRANSFER_ABORT_STAT)
+                != 0
             {
-                ret = c.ret;
+                self.process_responses(config, xfer);
+                self.regs.unmask_master_xfer_irqs();
+                return true;
             }
+            if left == 0 {
+                break;
+            }
+            (self.yield_fn)(1_000);
+            left -= 1;
         }
 
-        if ret != 0 {
-            self.enter_halt(false, config);
-            self.reset_ctrl(RESET_CTRL_QUEUES);
-            self.exit_halt(config);
-        }
-
-        xfer.ret = ret;
-        xfer.done.complete();
+        // Timeout: recover the engine and re-arm the IRQ sources.
+        i3c_debug!(self.logger, "wait_xfer_complete: timeout");
+        self.enter_halt(true, config);
+        self.reset_ctrl(RESET_CTRL_XFER_QUEUES);
+        self.exit_halt(config);
+        self.regs.unmask_master_xfer_irqs();
+        false
     }
 
     fn get_addr_pos(&mut self, config: &I3cConfig, addr: u8) -> Option<u8> {
@@ -1286,14 +1510,10 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
         let mut xfer = I3cXfer::new(&mut cmds[..]);
         self.start_xfer(config, &mut xfer);
 
-        if !xfer.done.wait_for_us(I3C_OP_TIMEOUT_US, &mut self.yield_fn) {
-            self.enter_halt(true, config);
-            self.reset_ctrl(RESET_CTRL_XFER_QUEUES);
-            self.exit_halt(config);
-            let _ = config
-                .curr_xfer
-                .swap(core::ptr::null_mut(), Ordering::AcqRel);
-        }
+        // On timeout `wait_xfer_complete` already recovered the engine;
+        // `xfer.ret` stays -1 and falls through to the error mapping below
+        // (same outcome as the reference's timeout path).
+        let _ = self.wait_xfer_complete(config, &mut xfer, I3C_OP_TIMEOUT_US);
 
         let ret = xfer.ret;
         if ret == i32::try_from(RESPONSE_ERROR_IBA_NACK).map_err(|_| I3cDrvError::Invalid)? {
@@ -1342,13 +1562,7 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
 
         self.start_xfer(config, &mut xfer);
 
-        if !xfer.done.wait_for_us(I3C_OP_TIMEOUT_US, &mut self.yield_fn) {
-            self.enter_halt(true, config);
-            self.reset_ctrl(RESET_CTRL_XFER_QUEUES);
-            self.exit_halt(config);
-            let _ = config
-                .curr_xfer
-                .swap(core::ptr::null_mut(), Ordering::AcqRel);
+        if !self.wait_xfer_complete(config, &mut xfer, I3C_OP_TIMEOUT_US) {
             return Err(I3cDrvError::Invalid);
         }
 
@@ -1449,13 +1663,7 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
             let mut xfer = I3cXfer::new(cmds);
             self.start_xfer(config, &mut xfer);
 
-            if !xfer.done.wait_for_us(I3C_OP_TIMEOUT_US, &mut self.yield_fn) {
-                self.enter_halt(true, config);
-                self.reset_ctrl(RESET_CTRL_XFER_QUEUES);
-                self.exit_halt(config);
-                let _ = config
-                    .curr_xfer
-                    .swap(core::ptr::null_mut(), Ordering::AcqRel);
+            if !self.wait_xfer_complete(config, &mut xfer, I3C_OP_TIMEOUT_US) {
                 return Err(I3cDrvError::Timeout);
             }
 
@@ -1496,13 +1704,7 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
         let mut xfer = I3cXfer::new(cmds.as_mut_slice());
         self.start_xfer(config, &mut xfer);
 
-        if !xfer.done.wait_for_us(I3C_OP_TIMEOUT_US, &mut self.yield_fn) {
-            self.enter_halt(true, config);
-            self.reset_ctrl(RESET_CTRL_XFER_QUEUES);
-            self.exit_halt(config);
-            let _ = config
-                .curr_xfer
-                .swap(core::ptr::null_mut(), Ordering::AcqRel);
+        if !self.wait_xfer_complete(config, &mut xfer, I3C_OP_TIMEOUT_US) {
             return Err(I3cDrvError::Timeout);
         }
 
@@ -1520,65 +1722,6 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
         }
     }
 
-    fn handle_ibi_sir(&mut self, config: &mut I3cConfig, addr: u8, len: usize) {
-        i3c_debug!(self.logger, "handle_ibi_sir: addr=0x{:02x}", addr);
-        let pos = config.attached.pos_of_addr(addr);
-        if pos.is_none() {
-            i3c_debug!(
-                self.logger,
-                "handle_ibi_sir: no such addr in attached devices"
-            );
-            self.regs.ibi_fifo_drain(len);
-        }
-
-        let mut ibi_buf: [u8; 2] = [0u8; 2];
-        let take = core::cmp::min(len, ibi_buf.len());
-        self.rd_ibi_fifo(&mut ibi_buf[..take]);
-        let bus = self.bus() as usize;
-        let _ = ibi_workq::i3c_ibi_work_enqueue_target_irq(bus, addr, &ibi_buf[..take]);
-    }
-
-    fn handle_ibis(&mut self, config: &mut I3cConfig) {
-        let nibis = self.regs.ibi_status_count();
-
-        i3c_debug!(self.logger, "Number of IBIs: {}", nibis);
-        if nibis == 0 {
-            return;
-        }
-
-        for _ in 0..nibis {
-            let reg = self.regs.ibi_fifo_pop();
-
-            let ibi_id = field_get(reg, IBIQ_STATUS_IBI_ID, IBIQ_STATUS_IBI_ID_SHIFT);
-            let ibi_data_len = field_get(
-                reg,
-                IBIQ_STATUS_IBI_DATA_LEN,
-                IBIQ_STATUS_IBI_DATA_LEN_SHIFT,
-            ) as usize;
-            let ibi_addr = (ibi_id >> 1) & 0x7F;
-            let rnw = (ibi_id & 1) != 0;
-            i3c_debug!(
-                self.logger,
-                "IBI: addr=0x{:02x}, rnw={}, len={}",
-                ibi_addr,
-                rnw,
-                ibi_data_len
-            );
-            if ibi_addr != 2 && rnw {
-                // sirq
-                self.handle_ibi_sir(config, ibi_addr as u8, ibi_data_len);
-            } else if ibi_addr == 2 && !rnw {
-                // hot-join
-                let bus = self.bus() as usize;
-                i3c_debug!(self.logger, "Hot-join IBI");
-                let _ = ibi_workq::i3c_ibi_work_enqueue_hotjoin(bus);
-            } else {
-                // normal ibi
-                i3c_debug!(self.logger, "Normal IBI");
-                self.regs.ibi_fifo_drain(ibi_data_len);
-            }
-        }
-    }
 }
 
 impl<Y: FnMut(u32)> HardwareTarget for Ast1060I3c<Y> {
@@ -1611,74 +1754,23 @@ impl<Y: FnMut(u32)> HardwareTarget for Ast1060I3c<Y> {
         Ok(())
     }
 
-    fn target_handle_response_ready(&mut self, config: &mut I3cConfig) {
-        let nresp = self.regs.resp_buf_level();
-
-        for _ in 0..nresp {
-            let resp = self.regs.pop_response();
-
-            let tid = field_get(resp, RESPONSE_PORT_TID_MASK, RESPONSE_PORT_TID_SHIFT) as usize;
-            let rx_len = field_get(
-                resp,
-                RESPONSE_PORT_DATA_LEN_MASK,
-                RESPONSE_PORT_DATA_LEN_SHIFT,
-            ) as usize;
-            let err = field_get(
-                resp,
-                RESPONSE_PORT_ERR_STATUS_MASK,
-                RESPONSE_PORT_ERR_STATUS_SHIFT,
-            );
-            i3c_debug!(
-                self.logger,
-                "Response: tid={}, rx_len={}, err={}",
-                tid,
-                rx_len,
-                err
-            );
-
-            if err != 0 {
-                self.enter_halt(false, config);
-                self.reset_ctrl(RESET_CTRL_QUEUES);
-                self.exit_halt(config);
-                continue;
-            }
-
-            if rx_len != 0 {
-                let mut buf: [u8; 256] = [0u8; 256];
-                // Bound `rx_len` (a raw hardware field) to the buffer via
-                // `get_mut`: this ISR runs in handler mode, so an oversized
-                // length must not panic (same hardening as `end_xfer`).
-                let n = rx_len.min(buf.len());
-                if let Some(dst) = buf.get_mut(..n) {
-                    self.rd_rx_fifo(dst);
-                }
-                let _ = ibi_workq::i3c_ibi_work_enqueue_target_master_write(
-                    self.bus().into(),
-                    buf.get(..n).unwrap_or(&[]),
-                );
-                i3c_debug!(
-                    self.logger,
-                    "[MASTER ==> TARGET] TARGET READ: {:02x?}",
-                    buf.get(..n).unwrap_or(&[])
-                );
-            }
-
-            if tid == Tid::TargetIbi as usize {
-                config.target_ibi_done.complete();
-            }
-
-            if tid == Tid::TargetRdData as usize {
-                config.target_data_done.complete();
-            }
-        }
-    }
-
     fn target_pending_read_notify(
         &mut self,
         config: &mut I3cConfig,
         buf: &[u8],
         notifier: &mut I3cIbi,
     ) -> Result<(), I3cDrvError> {
+        let events = isr_events(self.bus() as usize);
+
+        // A fault the ISR deferred (errored response / halted engine after a
+        // CCC): recover here on the thread, where the wait policy lives.
+        if events.take_fault() {
+            i3c_debug!(self.logger, "recovering deferred target fault");
+            self.enter_halt(false, config);
+            self.reset_ctrl(RESET_CTRL_QUEUES);
+            self.exit_halt(config);
+        }
+
         let reg = self.regs.read_slv_event_ctrl();
         if !(config.sir_allowed_by_sw && (reg & SLV_EVENT_CTRL_SIR_EN != 0)) {
             return Err(I3cDrvError::Access);
@@ -1702,16 +1794,16 @@ impl<Y: FnMut(u32)> HardwareTarget for Ast1060I3c<Y> {
             | field_prep(COMMAND_PORT_TID, Tid::TargetIbi as u32);
         self.regs.push_cmd(cmd);
 
-        config.target_ibi_done.reset();
+        events.target_ibi_done.reset();
 
         self.regs.set_resp_buf_threshold(0);
 
         self.target_tx_write(buf);
-        config.target_data_done.reset();
+        events.target_data_done.reset();
 
         self.regs.raise_sir();
 
-        if !config
+        if !events
             .target_ibi_done
             .wait_for_us(I3C_OP_TIMEOUT_US, &mut self.yield_fn)
         {
@@ -1722,7 +1814,7 @@ impl<Y: FnMut(u32)> HardwareTarget for Ast1060I3c<Y> {
             return Err(I3cDrvError::IoError);
         }
 
-        if !config
+        if !events
             .target_data_done
             .wait_for_us(I3C_OP_TIMEOUT_US, &mut self.yield_fn)
         {
@@ -1734,16 +1826,5 @@ impl<Y: FnMut(u32)> HardwareTarget for Ast1060I3c<Y> {
         }
 
         Ok(())
-    }
-
-    fn target_handle_ccc_update(&mut self, config: &mut I3cConfig) {
-        let event = self.regs.read_slv_event_ctrl();
-        self.regs.write_slv_event_ctrl(event);
-        i3c_debug!(self.logger, "CCC update event: 0x{:08x}", event);
-        let reg = self.regs.xfer_status();
-        if reg == CM_TFR_STS_TARGET_HALT {
-            self.enter_halt(true, config);
-            self.exit_halt(config);
-        }
     }
 }
