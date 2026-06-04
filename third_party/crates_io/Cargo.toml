@@ -51,7 +51,7 @@ nb = "1.1"
 fugit = "0.3.7"
 openprot-hal-blocking = { git = "https://github.com/rusty1968/openprot.git", rev = "c6cd23a" }
 heapless = { version = "0.9", default-features = false }
-mctp = { git = "https://github.com/CodeConstruct/mctp-rs.git" }
+mctp = { git = "https://github.com/CodeConstruct/mctp-rs.git", default-features = false }
 mctp-lib = { git = "https://github.com/OpenPRoT/mctp-lib.git", branch = "9e-buildup" }
 spdm-lib = { git = "https://github.com/OpenPRoT/spdm-lib.git", branch = "main" }
 # Pin to match Hubris ecosystem
