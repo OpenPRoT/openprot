@@ -47,6 +47,8 @@ pub enum I3cError {
     InvalidParam,
     /// CCC (Common Command Code) error
     CccError(CccErrorKind),
+    /// Resource (bus IRQ slot) already claimed by another controller
+    Busy,
     /// Other unspecified error
     Other,
 }
@@ -69,6 +71,7 @@ impl fmt::Display for I3cError {
             Self::DevAlreadyAttached => write!(f, "device already attached"),
             Self::InvalidParam => write!(f, "invalid parameter"),
             Self::CccError(kind) => write!(f, "CCC error: {kind:?}"),
+            Self::Busy => write!(f, "resource busy"),
             Self::Other => write!(f, "other error"),
         }
     }

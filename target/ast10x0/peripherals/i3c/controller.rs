@@ -5,14 +5,30 @@
 //!
 //! Main hardware abstraction for I3C bus controller.
 //!
-//! # Construction Patterns
+//! # Lifecycle
 //!
-//! The controller uses an explicit two-stage bring-up:
+//! Two states, matching the SMC peripheral's `Uninitialized -> Ready`
+//! precedent:
 //!
-//! | Step | Purpose | Performance | Use Case |
-//! |------|---------|-------------|----------|
-//! | [`new()`](I3cController::new) / [`from_initialized()`](I3cController::from_initialized) | Construct controller value only | Fast (no I/O) | Build the owner that will be pinned |
-//! | [`init_hardware()`](I3cController::init_hardware) | Register IRQ handler + program hardware | Slower (register writes) | First-time setup after the controller is pinned |
+//! | State | Entered by | Available operations |
+//! |-------|-----------|----------------------|
+//! | [`Uninitialized`] | [`I3cController::new`] | [`start()`](I3cController::start) |
+//! | [`Ready`] | `start()` (IRQ trampoline claimed + hardware programmed) | bus operations |
+//!
+//! After `start()` the integration layer unmasks the NVIC line it owns (see
+//! [`i3c_bus_interrupt`](super::hardware::i3c_bus_interrupt)); the driver
+//! never touches the NVIC.
+//!
+//! # ISR sharing
+//!
+//! The IRQ trampoline needs a pointer that outlives every interrupt, so the
+//! hardware + config live in an [`I3cCore`] that the caller places in a
+//! `static` and pins: [`I3cController::new`] takes `Pin<&'static mut
+//! I3cCore<H>>`. Pointer *validity* in the ISR is therefore a type guarantee
+//! (`'static` + pinned), not a convention; what remains documented contract is
+//! aliasing: on this single-core target the ISR runs atomically with respect
+//! to the thread, and the thread only polls atomic completion flags while a
+//! transfer is in flight.
 //!
 //! # Example
 //!
@@ -22,16 +38,19 @@
 //! scu.enable_i3c_clock(bus);
 //! scu.deassert_i3c_reset(bus);
 //!
-//! // Construct, pin, then initialize so the IRQ handler sees a stable address.
-//! let mut ctrl = core::pin::pin!(I3cController::new(hw, config));
-//! ctrl.as_mut().init_hardware();
+//! let hw = unsafe { Ast1060I3c::new(bus, yield_fn) }.ok_or(...)?;
+//! let core = cortex_m::singleton!(: I3cCore<_> = I3cCore::new(hw, config))
+//!     .ok_or("storage taken")?;
+//! let mut ctrl = I3cController::new(Pin::static_mut(core))
+//!     .start()?;            // register IRQ (single-shot) + program hardware
 //!
-//! // === HOT PATH (hardware already configured) ===
-//! let ctrl = I3cController::from_initialized(hw, config);
-//! ctrl.do_transfer(...);
+//! // Integration layer owns the NVIC line; unmask it now.
+//! unsafe { NVIC::unmask(i3c_bus_interrupt(bus).unwrap()) };
+//!
+//! ctrl.priv_write(pid, &mut data)?;
 //! ```
 
-use core::marker::PhantomPinned;
+use core::marker::{PhantomData, PhantomPinned};
 use core::pin::Pin;
 
 use super::ccc;
@@ -42,51 +61,26 @@ use super::hardware::HardwareInterface;
 use super::types::{DevKind, I3cIbi, I3cIbiType, I3cMsg};
 use embedded_hal::i2c::SevenBitAddress;
 
-/// I3C controller wrapping hardware interface
-pub struct I3cController<H: HardwareInterface> {
-    /// Hardware interface implementation
+// =============================================================================
+// Pinned core (the ISR-shared part)
+// =============================================================================
+
+/// Hardware + configuration for one I3C bus — the part the IRQ trampoline
+/// dereferences, so it must live at a stable `'static` address.
+///
+/// Construct with [`I3cCore::new`] (no I/O), park it in a `static` (e.g.
+/// `cortex_m::singleton!`), and hand `Pin<&'static mut I3cCore<H>>` to
+/// [`I3cController::new`].
+pub struct I3cCore<H: HardwareInterface> {
     hw: H,
-    /// Bus configuration
     config: I3cConfig,
     _pin: PhantomPinned,
 }
 
-impl<H: HardwareInterface> I3cController<H> {
-    // =========================================================================
-    // Construction
-    // =========================================================================
-
-    /// Construct an I3C controller value without touching hardware.
-    ///
-    /// This does **not** register an IRQ handler or program registers. Call
-    /// [`init_hardware`](Self::init_hardware) after pinning the controller to a
-    /// stable address.
-    pub fn new(hw: H, config: I3cConfig) -> Self {
-        Self::from_initialized(hw, config)
-    }
-
-    /// Wrap pre-initialized hardware (lightweight, no I/O)
-    ///
-    /// Creates instance without touching hardware registers.
-    ///
-    /// # When to Use
-    ///
-    /// - Hardware was initialized at boot before kernel/RTOS start
-    /// - Creating temporary instances for single operations
-    /// - Avoiding redundant re-initialization overhead
-    /// - Hot path where performance matters
-    ///
-    /// # Preconditions
-    ///
-    /// Caller must ensure hardware is already configured:
-    /// - [`new()`](Self::new) was called previously, OR
-    /// - Hardware initialized by bootloader/firmware
-    ///
-    /// # Performance
-    ///
-    /// No register writes - significantly faster than `new()`.
+impl<H: HardwareInterface> I3cCore<H> {
+    /// Bundle hardware and configuration. No I/O is performed.
     #[must_use]
-    pub fn from_initialized(hw: H, config: I3cConfig) -> Self {
+    pub fn new(hw: H, config: I3cConfig) -> Self {
         Self {
             hw,
             config,
@@ -94,47 +88,120 @@ impl<H: HardwareInterface> I3cController<H> {
         }
     }
 
-    /// Initialize/reinitialize hardware registers
-    ///
-    /// Registers the IRQ handler and configures the hardware.
-    ///
-    /// This method requires a pinned controller so the IRQ registry can keep a
-    /// stable pointer to it. The target/kernel owns the top-level interrupt
-    /// vector; its ISR should call [`dispatch_i3c_irq`](super::hardware::dispatch_i3c_irq).
-    pub fn init_hardware(self: Pin<&mut Self>) {
-        let this = unsafe { self.get_unchecked_mut() };
-        let ctx = core::ptr::from_mut::<Self>(this) as usize;
-        let bus = this.hw.bus_num() as usize;
-        super::hardware::register_i3c_irq_handler(bus, Self::irq_trampoline, ctx);
+    /// IRQ trampoline registered (per bus) by [`I3cController::start`].
+    fn irq_trampoline(ctx: usize) {
+        // SAFETY: `ctx` comes from a `Pin<&'static mut I3cCore<H>>` in
+        // `start`, so the pointer is valid and address-stable for the
+        // program's lifetime (type-guaranteed, not a convention). Aliasing:
+        // this single-core target runs the ISR atomically with respect to the
+        // thread, and the thread side only polls atomic completion flags while
+        // a transfer is in flight, so no `&mut` is concurrently *used*.
+        let core: &mut Self = unsafe { &mut *(ctx as *mut Self) };
+        core.hw.i3c_aspeed_isr(&mut core.config);
+    }
+}
 
-        // IMPORTANT: init() must complete before enable_irq() to prevent
-        // IRQ firing on partially-initialized hardware
-        this.hw.init(&mut this.config);
+// =============================================================================
+// Lifecycle states
+// =============================================================================
 
-        // Memory barrier to ensure init writes are visible before IRQ enable
+/// Initial state: nothing registered, no I/O done.
+pub struct Uninitialized;
+/// IRQ trampoline claimed and hardware programmed; bus operations available.
+/// The integration layer unmasks the NVIC line it owns after entering this
+/// state.
+pub struct Ready;
+
+// =============================================================================
+// Controller shell
+// =============================================================================
+
+/// I3C controller: a movable shell over the pinned [`I3cCore`].
+///
+/// `H: 'static` because the core is `static`-pinned for the IRQ trampoline.
+pub struct I3cController<H: HardwareInterface + 'static, S = Uninitialized> {
+    core: Pin<&'static mut I3cCore<H>>,
+    _state: PhantomData<S>,
+}
+
+impl<H: HardwareInterface + 'static, S> I3cController<H, S> {
+    /// Project the pinned core to `(&mut hw, &mut config)`.
+    #[inline]
+    fn parts(&mut self) -> (&mut H, &mut I3cConfig) {
+        // SAFETY: structural pin projection — neither field is moved out and
+        // the core's address is unchanged.
+        let core = unsafe { self.core.as_mut().get_unchecked_mut() };
+        (&mut core.hw, &mut core.config)
+    }
+
+    #[inline]
+    fn core_ref(&self) -> &I3cCore<H> {
+        self.core.as_ref().get_ref()
+    }
+
+    /// Return this controller's bus number.
+    #[inline]
+    #[must_use]
+    pub fn bus_num(&self) -> u8 {
+        self.core_ref().hw.bus_num()
+    }
+}
+
+impl<H: HardwareInterface + 'static> I3cController<H, Uninitialized> {
+    /// Wrap a pinned core. No I/O, no registration.
+    #[must_use]
+    pub fn new(core: Pin<&'static mut I3cCore<H>>) -> Self {
+        Self {
+            core,
+            _state: PhantomData,
+        }
+    }
+
+    /// Bring the controller up: claim this bus's IRQ slot (single-shot per
+    /// bus) and program the hardware.
+    ///
+    /// The target/kernel owns the top-level interrupt vector; its ISR calls
+    /// [`dispatch_i3c_irq`](super::hardware::dispatch_i3c_irq), which forwards
+    /// to the trampoline registered here. On return the device may assert its
+    /// IRQ line; nothing is delivered until the integration layer unmasks the
+    /// NVIC line it owns (see
+    /// [`i3c_bus_interrupt`](super::hardware::i3c_bus_interrupt)).
+    ///
+    /// Returns [`I3cError::Busy`] if the bus's IRQ slot was already claimed by
+    /// another controller.
+    pub fn start(mut self) -> Result<I3cController<H, Ready>, I3cError> {
+        {
+            // SAFETY: structural pin projection — the core is not moved; we
+            // only take its (stable, 'static) address for the IRQ registry.
+            let core = unsafe { self.core.as_mut().get_unchecked_mut() };
+            let bus = core.hw.bus_num() as usize;
+            let ctx = core::ptr::from_mut::<I3cCore<H>>(core) as usize;
+            if !super::hardware::register_i3c_irq_handler(bus, I3cCore::<H>::irq_trampoline, ctx)
+            {
+                return Err(I3cError::Busy);
+            }
+        }
+
+        {
+            let (hw, config) = self.parts();
+            hw.init(config);
+        }
+        // Memory barrier so init writes are visible before the integration
+        // layer unmasks the IRQ line.
         cortex_m::asm::dmb();
 
-        this.hw.enable_irq();
+        Ok(I3cController {
+            core: self.core,
+            _state: PhantomData,
+        })
     }
+}
 
-    /// IRQ trampoline function
-    fn irq_trampoline(ctx: usize) {
-        // SAFETY: `ctx` was created from `&mut Self` in `init_hardware()`.
-        // Aliasing safety relies on caller not holding `&mut self` when IRQs enabled.
-        let ctrl: &mut Self = unsafe { &mut *(ctx as *mut Self) };
-        ctrl.hw.i3c_aspeed_isr(&mut ctrl.config);
-    }
+// =============================================================================
+// Bus operations (Ready)
+// =============================================================================
 
-    #[inline]
-    fn project_mut(self: Pin<&mut Self>) -> &mut Self {
-        unsafe { self.get_unchecked_mut() }
-    }
-
-    #[inline]
-    fn project_ref(self: Pin<&Self>) -> &Self {
-        Pin::get_ref(self)
-    }
-
+impl<H: HardwareInterface + 'static> I3cController<H, Ready> {
     // =========================================================================
     // Device Management
     // =========================================================================
@@ -145,13 +212,8 @@ impl<H: HardwareInterface> I3cController<H> {
     /// * `pid` - Provisional ID of the device
     /// * `desired_da` - Desired dynamic address
     /// * `slot` - DAT slot to use
-    pub fn attach_i3c_dev(
-        self: Pin<&mut Self>,
-        pid: u64,
-        desired_da: u8,
-        slot: u8,
-    ) -> Result<(), I3cError> {
-        let this = self.project_mut();
+    pub fn attach_i3c_dev(&mut self, pid: u64, desired_da: u8, slot: u8) -> Result<(), I3cError> {
+        let (hw, config) = self.parts();
         if desired_da == 0 || desired_da >= I3C_BROADCAST_ADDR {
             return Err(I3cError::InvalidArgs);
         }
@@ -173,47 +235,50 @@ impl<H: HardwareInterface> I3cController<H> {
             pos: Some(slot),
         };
 
-        let idx = this
-            .config
+        let idx = config
             .attached
             .attach(dev)
             .map_err(|_| I3cError::AddrInUse)?;
-        this.config
+        config
             .attached
             .map_pos(slot, u8::try_from(idx).map_err(|_| I3cError::InvalidArgs)?);
-        this.config.addrbook.mark_use(desired_da, true);
+        config.addrbook.mark_use(desired_da, true);
 
-        this.hw
-            .attach_i3c_dev(slot.into(), desired_da)
+        hw.attach_i3c_dev(slot.into(), desired_da)
             .map_err(|_| I3cError::AddrInUse)
     }
 
     /// Detach an I3C device by DAT position
-    pub fn detach_i3c_dev(self: Pin<&mut Self>, pos: usize) {
-        let this = self.project_mut();
-        this.config.attached.detach_by_pos(pos);
-        this.hw.detach_i3c_dev(pos);
+    pub fn detach_i3c_dev(&mut self, pos: usize) {
+        let (hw, config) = self.parts();
+        config.attached.detach_by_pos(pos);
+        hw.detach_i3c_dev(pos);
     }
 
     /// Detach an I3C device by device index
-    pub fn detach_i3c_dev_by_idx(self: Pin<&mut Self>, dev_idx: usize) {
-        let this = self.project_mut();
+    pub fn detach_i3c_dev_by_idx(&mut self, dev_idx: usize) {
+        let (hw, config) = self.parts();
         // `get` (not `[dev_idx]`) keeps this panic-free for the `no_panics`
         // analysis; an out-of-range index is simply a no-op.
-        let Some(dev) = this.config.attached.devices.get(dev_idx) else {
+        let Some(dev) = config.attached.devices.get(dev_idx) else {
             return;
         };
 
         if dev.dyn_addr != 0 {
-            this.config.addrbook.mark_use(dev.dyn_addr, false);
+            let dyn_addr = dev.dyn_addr;
+            config.addrbook.mark_use(dyn_addr, false);
         }
 
-        let dev_pos = dev.pos;
+        let dev_pos = config
+            .attached
+            .devices
+            .get(dev_idx)
+            .and_then(|dev| dev.pos);
         if let Some(pos) = dev_pos {
-            this.hw.detach_i3c_dev(pos.into());
+            hw.detach_i3c_dev(pos.into());
         }
 
-        this.config.attached.detach(dev_idx);
+        config.attached.detach(dev_idx);
     }
 
     // =========================================================================
@@ -246,12 +311,12 @@ impl<H: HardwareInterface> I3cController<H> {
     /// // More aggressive recovery
     /// ctrl.recover_bus(18);
     /// ```
-    pub fn recover_bus(self: Pin<&mut Self>, scl_toggles: u32) {
-        let this = self.project_mut();
-        this.hw.enter_sw_mode();
-        this.hw.i3c_toggle_scl_in(scl_toggles);
-        this.hw.gen_internal_stop();
-        this.hw.exit_sw_mode();
+    pub fn recover_bus(&mut self, scl_toggles: u32) {
+        let (hw, _) = self.parts();
+        hw.enter_sw_mode();
+        hw.i3c_toggle_scl_in(scl_toggles);
+        hw.gen_internal_stop();
+        hw.exit_sw_mode();
     }
 
     /// Perform full bus recovery with controller reset
@@ -273,30 +338,28 @@ impl<H: HardwareInterface> I3cController<H> {
     /// let reset = RESET_CTRL_RX_FIFO | RESET_CTRL_TX_FIFO | RESET_CTRL_CMD_QUEUE;
     /// ctrl.recover_bus_full(reset);
     /// ```
-    pub fn recover_bus_full(mut self: Pin<&mut Self>, reset_mask: u32) {
-        self.as_mut().recover_bus(8);
-        self.project_mut().hw.reset_ctrl(reset_mask);
+    pub fn recover_bus_full(&mut self, reset_mask: u32) {
+        self.recover_bus(8);
+        let (hw, _) = self.parts();
+        hw.reset_ctrl(reset_mask);
     }
 
+    // =========================================================================
     // Accessors
     // =========================================================================
 
-    /// Return this controller's bus number.
-    #[inline]
-    pub fn bus_num(self: Pin<&Self>) -> u8 {
-        self.project_ref().hw.bus_num()
-    }
-
     /// Allocate a dynamic address from `start_addr`.
     #[inline]
-    pub fn alloc_dynamic_address_from(self: Pin<&mut Self>, start_addr: u8) -> Option<u8> {
-        self.project_mut().config.addrbook.alloc_from(start_addr)
+    pub fn alloc_dynamic_address_from(&mut self, start_addr: u8) -> Option<u8> {
+        let (_, config) = self.parts();
+        config.addrbook.alloc_from(start_addr)
     }
 
     /// Return the currently assigned target dynamic address, if any.
     #[inline]
-    pub fn target_dynamic_address(self: Pin<&Self>) -> Option<u8> {
-        self.project_ref()
+    #[must_use]
+    pub fn target_dynamic_address(&self) -> Option<u8> {
+        self.core_ref()
             .config
             .target_config
             .as_ref()
@@ -304,15 +367,15 @@ impl<H: HardwareInterface> I3cController<H> {
     }
 
     /// Set the device's IBI mandatory data byte and enable IBI delivery for `addr`.
-    pub fn enable_ibi(self: Pin<&mut Self>, addr: u8, mdb: u8) -> Result<(), I3cError> {
-        let this = self.project_mut();
-        this.hw.set_ibi_mdb(mdb);
-        this.hw.ibi_enable(&mut this.config, addr)
+    pub fn enable_ibi(&mut self, addr: u8, mdb: u8) -> Result<(), I3cError> {
+        let (hw, config) = self.parts();
+        hw.set_ibi_mdb(mdb);
+        hw.ibi_enable(config, addr)
     }
 
     /// Issue a private read to `pid`, returning the number of received bytes.
-    pub fn priv_read(self: Pin<&mut Self>, pid: u64, out: &mut [u8]) -> Result<u32, I3cError> {
-        let this = self.project_mut();
+    pub fn priv_read(&mut self, pid: u64, out: &mut [u8]) -> Result<u32, I3cError> {
+        let (hw, config) = self.parts();
         let actual_len = u32::try_from(out.len()).map_err(|_| I3cError::InvalidArgs)?;
         let mut msgs = [I3cMsg {
             buf: Some(out),
@@ -322,13 +385,13 @@ impl<H: HardwareInterface> I3cController<H> {
             hdr_mode: 0,
             hdr_cmd_mode: 0,
         }];
-        this.hw.priv_xfer(&mut this.config, pid, &mut msgs)?;
+        hw.priv_xfer(config, pid, &mut msgs)?;
         Ok(msgs[0].actual_len)
     }
 
     /// Issue a private write to `pid`.
-    pub fn priv_write(self: Pin<&mut Self>, pid: u64, data: &mut [u8]) -> Result<(), I3cError> {
-        let this = self.project_mut();
+    pub fn priv_write(&mut self, pid: u64, data: &mut [u8]) -> Result<(), I3cError> {
+        let (hw, config) = self.parts();
         let actual_len = u32::try_from(data.len()).map_err(|_| I3cError::InvalidArgs)?;
         let mut msgs = [I3cMsg {
             buf: Some(data),
@@ -338,70 +401,51 @@ impl<H: HardwareInterface> I3cController<H> {
             hdr_mode: 0,
             hdr_cmd_mode: 0,
         }];
-        this.hw.priv_xfer(&mut this.config, pid, &mut msgs)
+        hw.priv_xfer(config, pid, &mut msgs)
     }
 
     /// Raise a hot-join request from the target side.
-    pub fn target_raise_hot_join(self: Pin<&mut Self>) -> Result<(), I3cError> {
-        let this = self.project_mut();
-        this.hw.target_ibi_raise_hj(&mut this.config)
+    pub fn target_raise_hot_join(&mut self) -> Result<(), I3cError> {
+        let (hw, config) = self.parts();
+        hw.target_ibi_raise_hj(config)
     }
-}
 
-// =============================================================================
-// Conversions
-// =============================================================================
+    // =========================================================================
+    // Master / Target operations  (Delta D1)
+    // =========================================================================
+    //
+    // The reference exposed these through `proposed_traits::i3c_master::I3c`
+    // and the `proposed_traits` target traits (`aspeed-rust/src/i3c/hal_impl.rs`).
+    // That crate is unavailable in openprot and embedded-hal 1.0 defines no I3C
+    // trait, so — as the I2C port did for `proposed_traits::i2c_target` — the
+    // logic is preserved verbatim here as **inherent methods**. The only change
+    // is that `ErrorKind`-mapped errors become direct `I3cError` variants
+    // (`DynamicAddressConflict` -> `AddrInUse`, `InvalidCcc` -> `Invalid`).
 
-impl<H: HardwareInterface> From<(H, I3cConfig)> for I3cController<H> {
-    /// Lightweight conversion (no hardware I/O)
-    ///
-    /// Equivalent to [`from_initialized`](I3cController::from_initialized).
-    fn from((hw, config): (H, I3cConfig)) -> Self {
-        Self::from_initialized(hw, config)
-    }
-}
-
-// =============================================================================
-// Master / Target operations  (Delta D1)
-// =============================================================================
-//
-// The reference exposed these through `proposed_traits::i3c_master::I3c` and the
-// `proposed_traits` target traits (`aspeed-rust/src/i3c/hal_impl.rs`). That crate
-// is unavailable in openprot and embedded-hal 1.0 defines no I3C trait, so — as
-// the I2C port did for `proposed_traits::i2c_target` — the logic is preserved
-// verbatim here as **inherent methods**. The only change is that
-// `ErrorKind`-mapped errors become direct `I3cError` variants
-// (`DynamicAddressConflict` -> `AddrInUse`, `InvalidCcc` -> `Invalid`).
-
-impl<H: HardwareInterface> I3cController<H> {
     /// Assign a dynamic address to the device at `static_address` via ENTDAA,
     /// then read back PID/BCR and enable IBI. Returns the assigned address.
     pub fn assign_dynamic_address(
-        self: Pin<&mut Self>,
+        &mut self,
         static_address: SevenBitAddress,
     ) -> Result<SevenBitAddress, I3cError> {
-        let this = self.project_mut();
-        let slot = this
-            .config
+        let (hw, config) = self.parts();
+        let slot = config
             .attached
             .pos_of_addr(static_address)
             .ok_or(I3cError::AddrInUse)?;
 
-        this.hw
-            .do_entdaa(&mut this.config, slot.into())
+        hw.do_entdaa(config, slot.into())
             .map_err(|_| I3cError::AddrInUse)?;
 
-        let pid = ccc::ccc_getpid(&mut this.hw, &mut this.config, static_address)
-            .map_err(|_| I3cError::Invalid)?;
+        let pid =
+            ccc::ccc_getpid(hw, config, static_address).map_err(|_| I3cError::Invalid)?;
 
-        let dev_idx = this
-            .config
+        let dev_idx = config
             .attached
             .find_dev_idx_by_addr(static_address)
             .ok_or(I3cError::Other)?;
 
-        let old_pid = this
-            .config
+        let old_pid = config
             .attached
             .devices
             .get(dev_idx)
@@ -414,12 +458,11 @@ impl<H: HardwareInterface> I3cController<H> {
             return Err(I3cError::Other);
         }
 
-        let bcr = ccc::ccc_getbcr(&mut this.hw, &mut this.config, static_address)
-            .map_err(|_| I3cError::Invalid)?;
+        let bcr =
+            ccc::ccc_getbcr(hw, config, static_address).map_err(|_| I3cError::Invalid)?;
 
         {
-            let dev = this
-                .config
+            let dev = config
                 .attached
                 .devices
                 .get_mut(dev_idx)
@@ -429,34 +472,30 @@ impl<H: HardwareInterface> I3cController<H> {
             dev.bcr = bcr;
         }
 
-        let dyn_addr: SevenBitAddress = this
-            .config
+        let dyn_addr: SevenBitAddress = config
             .attached
             .devices
             .get(dev_idx)
             .ok_or(I3cError::Other)?
             .dyn_addr;
 
-        this.hw
-            .ibi_enable(&mut this.config, dyn_addr)
+        hw.ibi_enable(config, dyn_addr)
             .map_err(|_| I3cError::Other)?;
 
         Ok(dyn_addr)
     }
 
     /// Acknowledge an IBI from `address` (validates the device is known).
-    pub fn acknowledge_ibi(self: Pin<&mut Self>, address: SevenBitAddress) -> Result<(), I3cError> {
-        let this = self.project_mut();
-        let dev_idx = this
-            .config
+    pub fn acknowledge_ibi(&mut self, address: SevenBitAddress) -> Result<(), I3cError> {
+        let (_, config) = self.parts();
+        let dev_idx = config
             .attached
             .find_dev_idx_by_addr(address)
             .ok_or(I3cError::Other)?;
 
         // `get` (not `[dev_idx]`) keeps this panic-free for the `no_panics`
         // analysis; `find_dev_idx_by_addr` already returns a valid index.
-        let dev = this
-            .config
+        let dev = config
             .attached
             .devices
             .get(dev_idx)
@@ -471,41 +510,41 @@ impl<H: HardwareInterface> I3cController<H> {
     /// Hot-join handler hook. Call [`assign_dynamic_address`](Self::assign_dynamic_address)
     /// after receiving a hot-join IBI; nothing else is required here.
     #[allow(clippy::unused_self)]
-    pub fn handle_hot_join(self: Pin<&mut Self>) -> Result<(), I3cError> {
+    pub fn handle_hot_join(&mut self) -> Result<(), I3cError> {
         Ok(())
     }
 
     /// Bus speed is fixed on the AST1060 controller; this is a no-op.
     #[allow(clippy::unused_self)]
-    pub fn set_bus_speed(self: Pin<&mut Self>) -> Result<(), I3cError> {
+    pub fn set_bus_speed(&mut self) -> Result<(), I3cError> {
         Ok(())
     }
 
     /// The AST1060 controller does not support multi-master; this is a no-op.
     #[allow(clippy::unused_self)]
-    pub fn request_mastership(self: Pin<&mut Self>) -> Result<(), I3cError> {
+    pub fn request_mastership(&mut self) -> Result<(), I3cError> {
         Ok(())
     }
 
     // --- Target (secondary) mode callbacks ---
 
     /// Initialize target mode with `own_addr` (sets the static/target address).
-    pub fn target_init(self: Pin<&mut Self>, own_addr: u8) {
-        let this = self.project_mut();
-        if let Some(t) = this.config.target_config.as_mut() {
+    pub fn target_init(&mut self, own_addr: u8) {
+        let (_, config) = self.parts();
+        if let Some(t) = config.target_config.as_mut() {
             if t.addr.is_none() {
                 t.addr = Some(own_addr);
             }
         } else {
-            this.config.target_config =
+            config.target_config =
                 Some(I3cTargetConfig::new(0, Some(own_addr), /* mdb */ 0xae));
         }
     }
 
     /// Returns `true` if `addr` matches this target's assigned address.
     #[must_use]
-    pub fn target_on_address_match(self: Pin<&Self>, addr: u8) -> bool {
-        self.project_ref()
+    pub fn target_on_address_match(&self, addr: u8) -> bool {
+        self.core_ref()
             .config
             .target_config
             .as_ref()
@@ -515,25 +554,23 @@ impl<H: HardwareInterface> I3cController<H> {
 
     /// Record that the controller assigned this target a dynamic address; SIRs
     /// are then permitted by software.
-    pub fn target_on_dynamic_address_assigned(self: Pin<&mut Self>) {
-        self.project_mut().config.sir_allowed_by_sw = true;
+    pub fn target_on_dynamic_address_assigned(&mut self) {
+        let (_, config) = self.parts();
+        config.sir_allowed_by_sw = true;
     }
 
     /// This target always wants to raise IBIs when it has data.
     #[must_use]
     #[allow(clippy::unused_self)]
-    pub fn target_wants_ibi(self: Pin<&Self>) -> bool {
+    pub fn target_wants_ibi(&self) -> bool {
         true
     }
 
     /// Build and submit the IBI payload `[mdb, crc8_ccitt(addr_rnw, mdb)]` for a
     /// pending target read, returning the number of bytes made available.
-    pub fn target_get_ibi_payload(
-        self: Pin<&mut Self>,
-        buffer: &mut [u8],
-    ) -> Result<usize, I3cError> {
-        let this = self.project_mut();
-        let (da, mdb) = match this.config.target_config.as_ref() {
+    pub fn target_get_ibi_payload(&mut self, buffer: &mut [u8]) -> Result<usize, I3cError> {
+        let (hw, config) = self.parts();
+        let (da, mdb) = match config.target_config.as_ref() {
             Some(t) => (
                 match t.addr {
                     Some(da) => da,
@@ -553,9 +590,7 @@ impl<H: HardwareInterface> I3cController<H> {
             ibi_type: I3cIbiType::TargetIntr,
             payload: Some(&payload),
         };
-        let rc = this
-            .hw
-            .target_pending_read_notify(&mut this.config, buffer, &mut ibi);
+        let rc = hw.target_pending_read_notify(config, buffer, &mut ibi);
 
         match rc {
             Ok(()) => Ok(buffer.len() + payload.len()),

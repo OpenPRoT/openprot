@@ -73,6 +73,7 @@ rust_binary(
         "@pigweed//pw_kernel/target:target_common",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:cortex-m",
         "@rust_crates//:cortex-m-semihosting",
     ],
 )

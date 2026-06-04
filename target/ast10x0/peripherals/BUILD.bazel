@@ -42,6 +42,7 @@ rust_library(
         "i3c/hardware.rs",
         "i3c/ibi.rs",
         "i3c/mod.rs",
+        "i3c/registers.rs",
         "i3c/types.rs",
         "lib.rs",
         "scu/cache.rs",

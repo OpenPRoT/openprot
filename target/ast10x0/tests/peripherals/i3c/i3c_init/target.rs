@@ -10,12 +10,15 @@
 //! driver — the behavioral-parity port of `aspeed-rust/src/i3c/`
 //! (see `target/ast10x0/peripherals/i3c/plans/goal.md`). Validates the clock
 //! configuration, constructs the controller behind the confined-`unsafe`
-//! façade with a busy-spin yield closure, runs `init_hardware`, and (on real
-//! hardware) verifies the controller-enable bit. Reports PASS/FAIL via the
-//! console sentinel, matching the I2C tests.
+//! façade with a busy-spin yield hook, runs the `Uninitialized -> Ready`
+//! bring-up (`start()`), and (on real hardware) verifies the
+//! controller-enable bit. Reports PASS/FAIL via the console sentinel,
+//! matching the I2C tests.
+
+use core::pin::Pin;
 
 use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
-use ast10x0_peripherals::i3c::{Ast1060I3c, I3cConfig, I3cController};
+use ast10x0_peripherals::i3c::{Ast1060I3c, I3cConfig, I3cController, I3cCore};
 use ast10x0_peripherals::scu::pinctrl;
 use codegen as _;
 use console_backend::console_backend_write_all;
@@ -23,6 +26,17 @@ use entry as _;
 use target_common::{TargetInterface, declare_target};
 
 pub struct Target {}
+
+/// One driver type serves every bus; the instance is selected at runtime.
+type I3cHw = Ast1060I3c<fn(u32)>;
+/// Bus index under test (PAC `I3c`, the first instance).
+const I3C_BUS: u8 = 0;
+
+/// Busy-spin yield hook (bare-metal wait policy). A named `fn` (not a closure)
+/// keeps the `I3cCore` type nameable for the `singleton!` storage.
+fn yield_spin(_ns: u32) {
+    core::hint::spin_loop();
+}
 
 /// Example platform core clock (Hz) for timing computation. The AST1060 I3C
 /// core is fed from the HCLK domain; 200 MHz is a representative value and is
@@ -55,13 +69,20 @@ fn run_i3c_init_smoke_test() -> Result<(), &'static str> {
     pw_log::info!("Clock configuration validated");
 
     // SAFETY: the test owns I3C bus 0 for its lifetime and uses the matching
-    // PAC register blocks; the busy-spin closure is the bare-metal wait policy.
-    let hw = unsafe { Ast1060I3c::<ast1060_pac::I3c, _>::new(|_| core::hint::spin_loop()) };
-    let mut ctrl = core::pin::pin!(I3cController::new(hw, config));
+    // PAC register blocks; the busy-spin hook is the bare-metal wait policy.
+    let hw = unsafe { I3cHw::new(I3C_BUS, yield_spin) }.ok_or("invalid I3C bus index")?;
+    // The ISR-shared core lives in a static so its address is stable and
+    // `'static` — the IRQ trampoline's pointer validity is type-guaranteed.
+    let i3c_core = cortex_m::singleton!(: I3cCore<I3cHw> = I3cCore::new(hw, config))
+        .ok_or("I3C core storage already taken")?;
+    let ctrl = I3cController::new(Pin::static_mut(i3c_core));
     pw_log::info!("Controller constructed");
 
-    ctrl.as_mut().init_hardware();
-    pw_log::info!("init_hardware complete");
+    // `start()` claims the IRQ slot (single-shot) and programs the hardware.
+    // This smoke test leaves the NVIC line masked (its system.json5 has no
+    // I3C vector entry), so no interrupt can be delivered.
+    let _ctrl = ctrl.start().map_err(|_| "controller start failed")?;
+    pw_log::info!("controller start complete");
 
     // On real hardware the controller-enable bit must be set after a primary
     // (non-secondary) init. QEMU `ast1030-evb` does not model the I3C block, so
