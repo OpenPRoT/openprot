@@ -30,8 +30,7 @@ use core::pin::Pin;
 
 use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
 use ast10x0_peripherals::i3c::{
-    Ast1060I3c, HardwareCore, HardwareTransfer, I3C_MSG_READ, I3C_MSG_STOP, I3C_MSG_WRITE,
-    I3cConfig, I3cController, I3cMsg, IbiWork, i3c_ibi_workq_consumer,
+    Ast1060I3c, I3cConfig, I3cController, IbiWork, i3c_ibi_workq_consumer,
 };
 use ast10x0_peripherals::scu::pinctrl;
 use codegen as _;
@@ -126,19 +125,9 @@ fn master_read_from_target(
     ctrl: Pin<&mut I3c2Controller>,
 ) -> Result<(u32, [u8; XFER_DATA_LEN]), &'static str> {
     let mut rx_buf = [0u8; 128];
-    let actual_len = {
-        let mut rd_msgs = [I3cMsg {
-            buf: Some(&mut rx_buf[..]),
-            actual_len: 128,
-            num_xfer: 0,
-            flags: I3C_MSG_READ | I3C_MSG_STOP,
-            hdr_mode: 0,
-            hdr_cmd_mode: 0,
-        }];
-        ctrl.with_hw_and_config(|hw, config| hw.priv_xfer(config, KNOWN_PID, &mut rd_msgs))
-            .map_err(|_| "private read failed")?;
-        rd_msgs[0].actual_len
-    };
+    let actual_len = ctrl
+        .priv_read(KNOWN_PID, &mut rx_buf)
+        .map_err(|_| "private read failed")?;
     let mut data = [0u8; XFER_DATA_LEN];
     let take = (actual_len as usize).min(data.len()).min(rx_buf.len());
     data[..take].copy_from_slice(&rx_buf[..take]);
@@ -154,15 +143,7 @@ fn master_write_to_target(
         0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
         0x88,
     ];
-    let mut wr_msgs = [I3cMsg {
-        buf: Some(&mut tx_buf[..]),
-        actual_len: 16,
-        num_xfer: 0,
-        flags: I3C_MSG_WRITE | I3C_MSG_STOP,
-        hdr_mode: 0,
-        hdr_cmd_mode: 0,
-    }];
-    ctrl.with_hw_and_config(|hw, config| hw.priv_xfer(config, KNOWN_PID, &mut wr_msgs))
+    ctrl.priv_write(KNOWN_PID, &mut tx_buf)
         .map_err(|_| "private write failed")?;
     log_master_write_payload(exchange, &tx_buf);
     Ok(())
@@ -182,7 +163,7 @@ fn run_controller() -> Result<(), &'static str> {
     // `build_controller`): the kernel bootstrap thread stack is only 2 KiB and
     // two live `I3cConfig`s (each embeds a 256-byte `AddrBook`) overflow it.
     let mut ctrl = core::pin::pin!(build_controller()?);
-    let bus = ctrl.as_ref().hw().bus_num() as usize;
+    let bus = ctrl.as_ref().bus_num() as usize;
     let mut ibi_cons = i3c_ibi_workq_consumer(bus).ok_or("IBI consumer unavailable")?;
     pw_log::info!("IBI work queue ready on bus {}", bus as u32);
 
@@ -192,16 +173,13 @@ fn run_controller() -> Result<(), &'static str> {
 
     let dyn_addr = ctrl
         .as_mut()
-        .config_mut()
-        .addrbook
-        .alloc_from(8)
+        .alloc_dynamic_address_from(8)
         .ok_or("no dynamic address available")?;
     ctrl.as_mut()
         .attach_i3c_dev(KNOWN_PID, dyn_addr, 0)
         .map_err(|_| "attach_i3c_dev failed")?;
-    ctrl.as_mut().hw_mut().set_ibi_mdb(0);
     ctrl.as_mut()
-        .with_hw_and_config(|hw, config| hw.ibi_enable(config, dyn_addr))
+        .enable_ibi(dyn_addr, 0)
         .map_err(|_| "ibi_enable failed")?;
     pw_log::info!("pre-attached dev at slot 0, dyn addr {}", dyn_addr as u32);
 

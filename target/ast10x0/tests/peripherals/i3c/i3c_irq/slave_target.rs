@@ -24,8 +24,8 @@
 
 use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
 use ast10x0_peripherals::i3c::{
-    Ast1060I3c, HardwareCore, HardwareTarget, HardwareTransfer, I3cConfig, I3cController,
-    I3cTargetConfig, IbiConsumer, IbiWork, i3c_ibi_workq_consumer,
+    Ast1060I3c, I3cConfig, I3cController, I3cTargetConfig, IbiConsumer, IbiWork,
+    i3c_ibi_workq_consumer,
 };
 use ast10x0_peripherals::scu::pinctrl;
 use codegen as _;
@@ -177,7 +177,7 @@ fn run_target() -> Result<(), &'static str> {
     // the kernel bootstrap thread stack is only 2 KiB and two live `I3cConfig`s
     // overflow it. See `build_target`.
     let mut ctrl = core::pin::pin!(build_target()?);
-    let bus = ctrl.as_ref().hw().bus_num() as usize;
+    let bus = ctrl.as_ref().bus_num() as usize;
     let mut ibi_cons = i3c_ibi_workq_consumer(bus).ok_or("IBI consumer unavailable")?;
     pw_log::info!("IBI work queue ready on bus {}", bus as u32);
 
@@ -185,7 +185,7 @@ fn run_target() -> Result<(), &'static str> {
 
     let dyn_addr = 8u8;
     let dev_idx = 0usize;
-    let _ = ctrl.as_mut().hw_mut().attach_i3c_dev(dev_idx, dyn_addr);
+    let _ = ctrl.as_mut().attach_i3c_dev(0, dyn_addr, dev_idx as u8);
     pw_log::info!(
         "target dev at slot {}, dyn addr {}",
         dev_idx as u32,
@@ -195,10 +195,7 @@ fn run_target() -> Result<(), &'static str> {
     pw_log::info!("waiting before hot-join...");
     spin_wait(HOT_JOIN_STARTUP_DELAY_SPINS);
     pw_log::info!("raising hot-join; waiting for dynamic address assignment...");
-    let hj_ok = ctrl
-        .as_mut()
-        .with_hw_and_config(|hw, config| hw.target_ibi_raise_hj(config))
-        .is_ok();
+    let hj_ok = ctrl.as_mut().target_raise_hot_join().is_ok();
     pw_log::info!("[DBG] hot-join raise ok={}", hj_ok as u32);
     log_target_hj_state(0);
 
@@ -210,10 +207,7 @@ fn run_target() -> Result<(), &'static str> {
             spin_count = spin_count.wrapping_add(1);
             if spin_count & (HOT_JOIN_RETRY_SPINS - 1) == 0 {
                 pw_log::info!("[DBG] retry hot-join");
-                let hj_ok = ctrl
-                    .as_mut()
-                    .with_hw_and_config(|hw, config| hw.target_ibi_raise_hj(config))
-                    .is_ok();
+                let hj_ok = ctrl.as_mut().target_raise_hot_join().is_ok();
                 pw_log::info!("[DBG] hot-join retry ok={}", hj_ok as u32);
                 log_target_hj_state(1);
             }
@@ -221,12 +215,7 @@ fn run_target() -> Result<(), &'static str> {
         };
         match work {
             IbiWork::TargetDaAssignment => {
-                let da = ctrl
-                    .as_ref()
-                    .config()
-                    .target_config
-                    .as_ref()
-                    .and_then(|t| t.addr);
+                let da = ctrl.as_ref().target_dynamic_address();
                 if let Some(da) = da {
                     pw_log::info!("[IBI] dyn addr 0x{:02x} assigned by master", da as u32);
                 }

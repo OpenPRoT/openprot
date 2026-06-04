@@ -39,15 +39,15 @@ use super::config::{DeviceEntry, I3cConfig, I3cTargetConfig};
 use super::constants::I3C_BROADCAST_ADDR;
 use super::error::I3cError;
 use super::hardware::HardwareInterface;
-use super::types::{DevKind, I3cIbi, I3cIbiType};
+use super::types::{DevKind, I3cIbi, I3cIbiType, I3cMsg};
 use embedded_hal::i2c::SevenBitAddress;
 
 /// I3C controller wrapping hardware interface
 pub struct I3cController<H: HardwareInterface> {
     /// Hardware interface implementation
-    pub hw: H,
+    hw: H,
     /// Bus configuration
-    pub config: I3cConfig,
+    config: I3cConfig,
     _pin: PhantomPinned,
 }
 
@@ -281,39 +281,70 @@ impl<H: HardwareInterface> I3cController<H> {
     // Accessors
     // =========================================================================
 
-    /// Get a reference to the hardware interface
+    /// Return this controller's bus number.
     #[inline]
-    pub fn hw(self: Pin<&Self>) -> &H {
-        &self.project_ref().hw
+    pub fn bus_num(self: Pin<&Self>) -> u8 {
+        self.project_ref().hw.bus_num()
     }
 
-    /// Get a mutable reference to the hardware interface
+    /// Allocate a dynamic address from `start_addr`.
     #[inline]
-    pub fn hw_mut(self: Pin<&mut Self>) -> &mut H {
-        &mut self.project_mut().hw
+    pub fn alloc_dynamic_address_from(self: Pin<&mut Self>, start_addr: u8) -> Option<u8> {
+        self.project_mut().config.addrbook.alloc_from(start_addr)
     }
 
-    /// Get a reference to the configuration
+    /// Return the currently assigned target dynamic address, if any.
     #[inline]
-    pub fn config(self: Pin<&Self>) -> &I3cConfig {
-        &self.project_ref().config
+    pub fn target_dynamic_address(self: Pin<&Self>) -> Option<u8> {
+        self.project_ref()
+            .config
+            .target_config
+            .as_ref()
+            .and_then(|t| t.addr)
     }
 
-    /// Get a mutable reference to the configuration
-    #[inline]
-    pub fn config_mut(self: Pin<&mut Self>) -> &mut I3cConfig {
-        &mut self.project_mut().config
-    }
-
-    /// Borrow the hardware interface and config together for a single
-    /// controller-local operation.
-    #[inline]
-    pub fn with_hw_and_config<R>(
-        self: Pin<&mut Self>,
-        f: impl FnOnce(&mut H, &mut I3cConfig) -> R,
-    ) -> R {
+    /// Set the device's IBI mandatory data byte and enable IBI delivery for `addr`.
+    pub fn enable_ibi(self: Pin<&mut Self>, addr: u8, mdb: u8) -> Result<(), I3cError> {
         let this = self.project_mut();
-        f(&mut this.hw, &mut this.config)
+        this.hw.set_ibi_mdb(mdb);
+        this.hw.ibi_enable(&mut this.config, addr)
+    }
+
+    /// Issue a private read to `pid`, returning the number of received bytes.
+    pub fn priv_read(self: Pin<&mut Self>, pid: u64, out: &mut [u8]) -> Result<u32, I3cError> {
+        let this = self.project_mut();
+        let actual_len = u32::try_from(out.len()).map_err(|_| I3cError::InvalidArgs)?;
+        let mut msgs = [I3cMsg {
+            buf: Some(out),
+            actual_len,
+            num_xfer: 0,
+            flags: super::constants::I3C_MSG_READ | super::constants::I3C_MSG_STOP,
+            hdr_mode: 0,
+            hdr_cmd_mode: 0,
+        }];
+        this.hw.priv_xfer(&mut this.config, pid, &mut msgs)?;
+        Ok(msgs[0].actual_len)
+    }
+
+    /// Issue a private write to `pid`.
+    pub fn priv_write(self: Pin<&mut Self>, pid: u64, data: &mut [u8]) -> Result<(), I3cError> {
+        let this = self.project_mut();
+        let actual_len = u32::try_from(data.len()).map_err(|_| I3cError::InvalidArgs)?;
+        let mut msgs = [I3cMsg {
+            buf: Some(data),
+            actual_len,
+            num_xfer: 0,
+            flags: super::constants::I3C_MSG_WRITE | super::constants::I3C_MSG_STOP,
+            hdr_mode: 0,
+            hdr_cmd_mode: 0,
+        }];
+        this.hw.priv_xfer(&mut this.config, pid, &mut msgs)
+    }
+
+    /// Raise a hot-join request from the target side.
+    pub fn target_raise_hot_join(self: Pin<&mut Self>) -> Result<(), I3cError> {
+        let this = self.project_mut();
+        this.hw.target_ibi_raise_hj(&mut this.config)
     }
 }
 
