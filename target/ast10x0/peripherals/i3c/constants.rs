@@ -262,12 +262,10 @@ pub const MAX_DEVICES_PER_BUS: usize = 8;
 pub const I3C_DEFAULT_STATIC_ADDR: u8 = 0x74;
 /// One-second operation timeout expressed in microseconds.
 pub const I3C_OP_TIMEOUT_US: u32 = USEC_PER_SEC;
+/// Bring-up reset poll delay between iterations in nanoseconds.
+pub const I3C_INIT_POLL_DELAY_NS: u32 = 100_000;
 /// Generic bounded-poll iteration ceiling used by controller bring-up waits.
 pub const I3C_POLL_MAX_ITERS: u32 = 1_000_000;
-/// Generic bounded-poll delay between iterations in nanoseconds.
-pub const I3C_POLL_DELAY_NS: u32 = 10_000;
-/// IBI enable / halt / reset-control poll ceiling.
-pub const I3C_CTRL_POLL_MAX_ITERS: u32 = 1_000_000;
 /// Queue reset / halt / IBI enable poll delay in nanoseconds.
 pub const I3C_CTRL_POLL_DELAY_NS: u32 = 10_000;
 /// Program the maximum IBI data threshold supported by the controller.
