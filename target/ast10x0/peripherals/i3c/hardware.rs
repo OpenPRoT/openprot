@@ -25,7 +25,7 @@
 //! They should be performed by the platform/board layer before creating the
 //! I3C controller.
 
-use core::cell::RefCell;
+use core::cell::UnsafeCell;
 use critical_section::Mutex;
 
 use super::ccc::{CccPayload, ccc_events_set};
@@ -61,10 +61,8 @@ use super::error::I3cError;
 use super::ibi as ibi_workq;
 use super::types::{I3cCmd, I3cIbi, I3cMsg, I3cXfer, SpeedI3c, Tid};
 
-use core::cell::UnsafeCell;
-use core::marker::PhantomData;
+use super::registers::I3cRegisters;
 use core::sync::atomic::Ordering;
-use cortex_m::peripheral::NVIC;
 
 // =============================================================================
 // IRQ Handler Infrastructure
@@ -76,27 +74,62 @@ struct Handler {
     ctx: usize,
 }
 
-static BUS_HANDLERS: [Mutex<RefCell<Option<Handler>>>; 4] = [
-    Mutex::new(RefCell::new(None)),
-    Mutex::new(RefCell::new(None)),
-    Mutex::new(RefCell::new(None)),
-    Mutex::new(RefCell::new(None)),
+// `UnsafeCell` (not `RefCell`) for the same reason as `IBI_RINGS` in `ibi.rs`:
+// mutual exclusion comes from the critical section, and the access helpers
+// below are leaf functions (no caller code runs while the reference is live),
+// so the `RefCell` runtime borrow flag would only add a reachable panic path
+// that the `no_panics` analysis must reject.
+static BUS_HANDLERS: [Mutex<UnsafeCell<Option<Handler>>>; 4] = [
+    Mutex::new(UnsafeCell::new(None)),
+    Mutex::new(UnsafeCell::new(None)),
+    Mutex::new(UnsafeCell::new(None)),
+    Mutex::new(UnsafeCell::new(None)),
 ];
 
-/// Register an IRQ handler for an I3C bus
+/// Register an IRQ handler for an I3C bus.
+///
+/// Single-shot per bus: the first registration claims the slot for the
+/// program's lifetime, mirroring the one-controller-per-physical-bus contract
+/// of [`Ast1060I3c::new`]. Returns `false` (and leaves the existing handler in
+/// place) if `bus` is out of range or the slot is already claimed.
 ///
 /// # Arguments
 /// * `bus` - Bus index (0-3)
 /// * `func` - Handler function
 /// * `ctx` - Context value passed to handler
-///
-/// # Panics
-/// Panics if `bus >= 4`.
-pub fn register_i3c_irq_handler(bus: usize, func: fn(usize), ctx: usize) {
-    assert!(bus < 4);
+#[must_use]
+pub fn register_i3c_irq_handler(bus: usize, func: fn(usize), ctx: usize) -> bool {
+    let Some(slot) = BUS_HANDLERS.get(bus) else {
+        return false;
+    };
     critical_section::with(|cs| {
-        *BUS_HANDLERS[bus].borrow(cs).borrow_mut() = Some(Handler { func, ctx });
-    });
+        // SAFETY: the critical section excludes ISR/thread concurrency, and
+        // the `&mut` never escapes this leaf function, so this is the only
+        // live reference to the slot.
+        let handler: &mut Option<Handler> = unsafe { &mut *slot.borrow(cs).get() };
+        if handler.is_some() {
+            return false;
+        }
+        *handler = Some(Handler { func, ctx });
+        true
+    })
+}
+
+/// NVIC interrupt line for an I3C bus, if the bus exists.
+///
+/// The driver does not touch the NVIC (Delta D6): the kernel/integration layer
+/// owns the top-level vector *and* the line mask. After registering a handler
+/// and initializing the hardware, the integration layer uses this mapping to
+/// unmask (and, on teardown, mask) the line it owns.
+#[must_use]
+pub const fn i3c_bus_interrupt(bus: u8) -> Option<ast1060_pac::Interrupt> {
+    match bus {
+        0 => Some(ast1060_pac::Interrupt::i3c),
+        1 => Some(ast1060_pac::Interrupt::i3c1),
+        2 => Some(ast1060_pac::Interrupt::i3c2),
+        3 => Some(ast1060_pac::Interrupt::i3c3),
+        _ => None,
+    }
 }
 
 /// Dispatch IRQ for a specific bus
@@ -105,8 +138,12 @@ pub fn register_i3c_irq_handler(bus: usize, func: fn(usize), ctx: usize) {
 #[inline]
 pub fn dispatch_i3c_irq(bus: usize) {
     // Copy handler out of critical section to avoid blocking IRQs during handler
-    let handler =
-        critical_section::with(|cs| BUS_HANDLERS.get(bus).and_then(|m| *m.borrow(cs).borrow()));
+    let handler = critical_section::with(|cs| {
+        // SAFETY: the critical section excludes the writer
+        // (`register_i3c_irq_handler`); `Handler` is `Copy`, so the value is
+        // copied out and no reference escapes.
+        BUS_HANDLERS.get(bus).and_then(|m| unsafe { *m.borrow(cs).get() })
+    });
     if let Some(h) = handler {
         (h.func)(h.ctx);
     }
@@ -127,12 +164,6 @@ pub trait HardwareCore {
 
     /// Get the bus number for this instance
     fn bus_num(&self) -> u8;
-
-    /// Enable interrupts
-    fn enable_irq(&mut self);
-
-    /// Disable interrupts
-    fn disable_irq(&mut self);
 
     /// Enable the I3C controller
     fn i3c_enable(&mut self, config: &I3cConfig);
@@ -338,37 +369,6 @@ impl<T> HardwareInterface for T where
         + HardwareTarget
 {
 }
-pub trait Instance {
-    fn ptr() -> *const ast1060_pac::i3c::RegisterBlock;
-    fn ptr_global() -> *const ast1060_pac::i3cglobal::RegisterBlock;
-    fn scu() -> *const ast1060_pac::scu::RegisterBlock;
-    const BUS_NUM: u8;
-}
-
-macro_rules! macro_i3c {
-    ($I3cx: ident, $x: literal) => {
-        impl Instance for ast1060_pac::$I3cx {
-            fn ptr() -> *const ast1060_pac::i3c::RegisterBlock {
-                ast1060_pac::$I3cx::ptr()
-            }
-
-            fn ptr_global() -> *const ast1060_pac::i3cglobal::RegisterBlock {
-                ast1060_pac::I3cglobal::ptr()
-            }
-
-            fn scu() -> *const ast1060_pac::scu::RegisterBlock {
-                ast1060_pac::Scu::ptr()
-            }
-            const BUS_NUM: u8 = $x;
-        }
-    };
-}
-
-macro_i3c!(I3c, 0);
-macro_i3c!(I3c1, 1);
-macro_i3c!(I3c2, 2);
-macro_i3c!(I3c3, 3);
-
 /// I3C bus 0 interrupt handler - call this from your ISR
 #[inline]
 pub fn i3c_irq_handler() {
@@ -402,76 +402,67 @@ pub fn i3c3_irq_handler() {
 // kernel ISR and an `unexpected_cfgs` lint, with no observable difference in
 // the deployed (feature-off) build.
 
-/// Concrete AST1060 I3C hardware implementation — a Confined-`unsafe` MMIO
-/// façade (Delta D3) over the I3C / I3C-global / SCU register blocks for one
-/// bus, plus a Cooperative-Yield wait policy (Delta D2).
+/// Concrete AST1060 I3C hardware implementation: the per-bus
+/// [`I3cRegisters`] façade (Delta D3 — all MMIO `unsafe` confined there)
+/// plus a Cooperative-Yield wait policy (Delta D2).
 ///
-/// The three register blocks are held as raw `*const` pointers; the entire
-/// `unsafe` perimeter is the single [`new`](Self::new) constructor. `Y` is the
-/// caller-injected yield closure invoked between completion polls (see
-/// [`super::types::Completion::wait_for_us`]); pass
-/// `|_| core::hint::spin_loop()` for a bare-metal busy-wait.
-pub struct Ast1060I3c<I3C: Instance, Y: FnMut(u32)> {
-    i3c: *const ast1060_pac::i3c::RegisterBlock,
-    i3cg: *const ast1060_pac::i3cglobal::RegisterBlock,
-    scu: *const ast1060_pac::scu::RegisterBlock,
+/// One driver type manages any of the bus instances — the bus is selected at
+/// **runtime** in [`new`](Self::new), so several controllers (one per bus)
+/// share this single type. `Y` is the caller-injected yield closure invoked
+/// between completion polls (see [`super::types::Completion::wait_for_us`]);
+/// pass `|_| core::hint::spin_loop()` for a bare-metal busy-wait.
+///
+/// Not `Copy`/`Clone`: this value owns the (also non-`Copy`) registers
+/// wrapper, so bus exclusivity follows from ownership.
+pub struct Ast1060I3c<Y: FnMut(u32)> {
+    regs: I3cRegisters,
     /// Cooperative yield hook invoked between status polls. Argument is the
-    /// suggested wait window in nanoseconds (advisory).
-    pub(crate) yield_fn: Y,
-    _marker: PhantomData<I3C>,
-    /// Makes `Ast1060I3c` `!Sync` so the raw register pointers can't be shared
-    /// across threads without explicit synchronization.
-    _not_sync: PhantomData<UnsafeCell<()>>,
+    /// suggested wait window in nanoseconds (advisory). Private so external
+    /// code cannot swap the wait policy out from under an active driver.
+    yield_fn: Y,
 }
 
-impl<I3C: Instance, Y: FnMut(u32)> Ast1060I3c<I3C, Y> {
-    /// Create a new I3C hardware façade for bus `I3C`.
+impl<Y: FnMut(u32)> Ast1060I3c<Y> {
+    /// Create the I3C hardware driver for `bus` (0..=3). Returns `None` if
+    /// `bus` is out of range.
     ///
     /// # Safety
     ///
-    /// This is the entire `unsafe` perimeter for this type (Delta D3):
-    /// - `I3C::ptr()` / `I3C::ptr_global()` / `I3C::scu()` must return valid
-    ///   pointers to the I3C, I3C-global, and SCU register blocks for the
-    ///   program's lifetime (they do for the AST1060 PAC singletons).
-    /// - Access to the returned instance must be serialized by the caller
-    ///   (the device is `!Sync`); only one `Ast1060I3c` per physical bus may
-    ///   be active at a time.
-    pub unsafe fn new(yield_fn: Y) -> Self {
-        Self {
-            i3c: I3C::ptr(),
-            i3cg: I3C::ptr_global(),
-            scu: I3C::scu(),
-            yield_fn,
-            _marker: PhantomData,
-            _not_sync: PhantomData,
-        }
+    /// Delegates the [`I3cRegisters::new`] contract — the entire MMIO
+    /// `unsafe` perimeter:
+    /// - the AST1060 PAC singleton pointers are valid for the program's
+    ///   lifetime (they are on AST1060 hardware);
+    /// - access to the returned instance is serialized by the caller (the
+    ///   device is `!Sync`); only one `Ast1060I3c` per physical bus may be
+    ///   active at a time.
+    pub unsafe fn new(bus: u8, yield_fn: Y) -> Option<Self> {
+        // SAFETY: forwarded — see this function's contract above.
+        let regs = unsafe { I3cRegisters::new(bus) }?;
+        Some(Self { regs, yield_fn })
     }
 
-    /// The only repeated interior `unsafe` for the I3C block.
-    ///
-    /// Returns a `'static` reference: the constructor's contract guarantees the
-    /// pointer is valid for the program lifetime, so the borrow is not tied to
-    /// `&self`. This lets a register reference and `&mut self.yield_fn` be held
-    /// in disjoint statements at the bounded-poll sites without a borrow clash.
+    /// I3C register block (safe delegate to the façade).
     #[inline]
     fn i3c(&self) -> &'static ast1060_pac::i3c::RegisterBlock {
-        // SAFETY: `new` guarantees a valid pointer for the program lifetime;
-        // access is serialized by the caller (the type is `!Sync`).
-        unsafe { &*self.i3c }
+        self.regs.i3c()
     }
 
-    /// The only repeated interior `unsafe` for the I3C-global block. See [`i3c`](Self::i3c).
+    /// I3C-global register block (safe delegate to the façade).
     #[inline]
     fn i3cg(&self) -> &'static ast1060_pac::i3cglobal::RegisterBlock {
-        // SAFETY: see `i3c`.
-        unsafe { &*self.i3cg }
+        self.regs.i3cg()
     }
 
-    /// The only repeated interior `unsafe` for the SCU block. See [`i3c`](Self::i3c).
+    /// SCU register block (safe delegate to the façade).
     #[inline]
     fn scu(&self) -> &'static ast1060_pac::scu::RegisterBlock {
-        // SAFETY: see `i3c`.
-        unsafe { &*self.scu }
+        self.regs.scu()
+    }
+
+    /// Bus index this driver was constructed for.
+    #[inline]
+    fn bus(&self) -> u8 {
+        self.regs.bus()
     }
 }
 
@@ -499,7 +490,8 @@ macro_rules! read_i3cg_reg1 {
             1 => $self.i3cg().i3c024().read().bits(),
             2 => $self.i3cg().i3c034().read().bits(),
             3 => $self.i3cg().i3c044().read().bits(),
-            _ => panic!("invalid I3C bus index: {}", $bus),
+            // Unreachable: `I3cRegisters::new` validates the bus index.
+            _ => 0,
         }
     }};
 }
@@ -511,7 +503,8 @@ macro_rules! write_i3cg_reg0 {
             1 => $self.i3cg().i3c020().write(|$w| $body),
             2 => $self.i3cg().i3c030().write(|$w| $body),
             3 => $self.i3cg().i3c040().write(|$w| $body),
-            _ => panic!("invalid I3C bus index: {}", $bus),
+            // Unreachable: `I3cRegisters::new` validates the bus index.
+            _ => 0,
         }
     }};
 }
@@ -523,7 +516,8 @@ macro_rules! read_i3cg_reg0 {
             1 => $self.i3cg().i3c020().read().bits(),
             2 => $self.i3cg().i3c030().read().bits(),
             3 => $self.i3cg().i3c040().read().bits(),
-            _ => panic!("invalid I3C bus index: {}", $bus),
+            // Unreachable: `I3cRegisters::new` validates the bus index.
+            _ => 0,
         }
     }};
 }
@@ -535,7 +529,8 @@ macro_rules! write_i3cg_reg1 {
             1 => $self.i3cg().i3c024().write(|$w| $body),
             2 => $self.i3cg().i3c034().write(|$w| $body),
             3 => $self.i3cg().i3c044().write(|$w| $body),
-            _ => panic!("invalid I3C bus index: {}", $bus),
+            // Unreachable: `I3cRegisters::new` validates the bus index.
+            _ => 0,
         }
     }};
 }
@@ -547,7 +542,8 @@ macro_rules! modify_i3cg_reg1 {
             1 => $self.i3cg().i3c024().modify(|$r, $w| $body),
             2 => $self.i3cg().i3c034().modify(|$r, $w| $body),
             3 => $self.i3cg().i3c044().modify(|$r, $w| $body),
-            _ => panic!("invalid I3C bus index: {}", $bus),
+            // Unreachable: `I3cRegisters::new` validates the bus index.
+            _ => 0,
         }
     }};
 }
@@ -632,9 +628,9 @@ where
     Err(PollError::Timeout)
 }
 
-impl<I3C: Instance, Y: FnMut(u32)> Ast1060I3c<I3C, Y> {
+impl<Y: FnMut(u32)> Ast1060I3c<Y> {
     fn toggle_scl_in(&mut self, count: u32) {
-        let bus = I3C::BUS_NUM;
+        let bus = self.bus();
         for _ in 0..count {
             modify_i3cg_reg1!(self, bus, |r, w| unsafe {
                 w.bits(r.bits() & !I3CG_REG1_SCL_IN_SW_MODE_VAL)
@@ -646,7 +642,7 @@ impl<I3C: Instance, Y: FnMut(u32)> Ast1060I3c<I3C, Y> {
     }
 
     fn gen_internal_stop(&mut self) {
-        let bus = I3C::BUS_NUM;
+        let bus = self.bus();
         modify_i3cg_reg1!(self, bus, |r, w| unsafe {
             w.bits(r.bits() & !I3CG_REG1_SCL_IN_SW_MODE_VAL)
         });
@@ -663,7 +659,7 @@ impl<I3C: Instance, Y: FnMut(u32)> Ast1060I3c<I3C, Y> {
 
     fn enter_sw_mode(&mut self) {
         i3c_debug!(self.logger, "enter sw mode");
-        let bus = I3C::BUS_NUM;
+        let bus = self.bus();
         let mut reg = read_i3cg_reg1!(self, bus);
         reg |= I3CG_REG1_SCL_IN_SW_MODE_VAL | I3CG_REG1_SDA_IN_SW_MODE_VAL;
         modify_i3cg_reg1!(self, bus, |_r, w| unsafe { w.bits(reg) });
@@ -672,7 +668,7 @@ impl<I3C: Instance, Y: FnMut(u32)> Ast1060I3c<I3C, Y> {
     }
 
     fn exit_sw_mode(&mut self) {
-        let bus = I3C::BUS_NUM;
+        let bus = self.bus();
         let mut reg = read_i3cg_reg1!(self, bus);
         reg &= !(I3CG_REG1_SCL_IN_SW_MODE_EN | I3CG_REG1_SDA_IN_SW_MODE_EN);
         modify_i3cg_reg1!(self, bus, |_r, w| unsafe { w.bits(reg) });
@@ -696,7 +692,8 @@ impl<I3C: Instance, Y: FnMut(u32)> Ast1060I3c<I3C, Y> {
                 .scu()
                 .scu050()
                 .modify(|_, w| w.rst_i3c3ctrl().set_bit()),
-            _ => panic!("invalid I3C bus index: {bus}"),
+            // Unreachable: `I3cRegisters::new` validates the bus index.
+            _ => 0,
         };
     }
 
@@ -729,37 +726,37 @@ impl<I3C: Instance, Y: FnMut(u32)> Ast1060I3c<I3C, Y> {
     }
 }
 
-impl<I3C: Instance, Y: FnMut(u32)> HardwareCore for Ast1060I3c<I3C, Y> {
+impl<Y: FnMut(u32)> HardwareCore for Ast1060I3c<Y> {
     #[allow(clippy::too_many_lines)]
     fn init(&mut self, config: &mut I3cConfig) {
         i3c_debug!(self.logger, "i3c init");
 
         self.global_reset_deassert();
 
-        write_i3cg_reg1!(self, I3C::BUS_NUM, |w| unsafe {
+        write_i3cg_reg1!(self, self.bus(), |w| unsafe {
             w.actmode()
                 .bits(1)
                 .instid()
-                .bits(I3C::BUS_NUM)
+                .bits(self.bus())
                 .staticaddr()
                 .bits(I3C_DEFAULT_STATIC_ADDR)
         });
-        let reg = read_i3cg_reg1!(self, I3C::BUS_NUM);
+        let reg = read_i3cg_reg1!(self, self.bus());
         i3c_debug!(self.logger, "i3cg_reg1: {:#x}", reg);
 
-        write_i3cg_reg0!(self, I3C::BUS_NUM, |w| unsafe { w.bits(0x0) });
-        let reg = read_i3cg_reg0!(self, I3C::BUS_NUM);
+        write_i3cg_reg0!(self, self.bus(), |w| unsafe { w.bits(0x0) });
+        let reg = read_i3cg_reg0!(self, self.bus());
         i3c_debug!(self.logger, "i3cg_reg0: {:#x}", reg);
 
-        self.core_reset_assert(I3C::BUS_NUM);
-        self.clock_on(I3C::BUS_NUM);
-        self.core_reset_deassert(I3C::BUS_NUM);
+        self.core_reset_assert(self.bus());
+        self.clock_on(self.bus());
+        self.core_reset_deassert(self.bus());
         self.i3c_disable(config.is_secondary);
 
         i3c_debug!(
             self.logger,
             "bus num: {}, is_secondary: {}",
-            I3C::BUS_NUM,
+            self.bus(),
             config.is_secondary
         );
 
@@ -906,32 +903,7 @@ impl<I3C: Instance, Y: FnMut(u32)> HardwareCore for Ast1060I3c<I3C, Y> {
     }
 
     fn bus_num(&self) -> u8 {
-        I3C::BUS_NUM
-    }
-
-    fn enable_irq(&mut self) {
-        // The integration layer owns the top-level vector and should point it
-        // at `dispatch_i3c_irq(bus)`. This helper only unmasks the bus IRQ
-        // line after registration + hardware init have completed.
-        unsafe {
-            match I3C::BUS_NUM {
-                0 => NVIC::unmask(ast1060_pac::Interrupt::i3c),
-                1 => NVIC::unmask(ast1060_pac::Interrupt::i3c1),
-                2 => NVIC::unmask(ast1060_pac::Interrupt::i3c2),
-                3 => NVIC::unmask(ast1060_pac::Interrupt::i3c3),
-                _ => {}
-            }
-        }
-    }
-
-    fn disable_irq(&mut self) {
-        match I3C::BUS_NUM {
-            0 => NVIC::mask(ast1060_pac::Interrupt::i3c),
-            1 => NVIC::mask(ast1060_pac::Interrupt::i3c1),
-            2 => NVIC::mask(ast1060_pac::Interrupt::i3c2),
-            3 => NVIC::mask(ast1060_pac::Interrupt::i3c3),
-            _ => {}
-        }
+        self.bus()
     }
 
     fn i3c_disable(&mut self, is_secondary: bool) {
@@ -1011,7 +983,7 @@ impl<I3C: Instance, Y: FnMut(u32)> HardwareCore for Ast1060I3c<I3C, Y> {
                 if let Some(tc) = &mut config.target_config {
                     tc.addr = Some(da);
                 }
-                let _ = ibi_workq::i3c_ibi_work_enqueue_target_da_assignment(I3C::BUS_NUM.into());
+                let _ = ibi_workq::i3c_ibi_work_enqueue_target_da_assignment(self.bus().into());
             }
 
             if (status & INTR_RESP_READY_STAT) != 0 {
@@ -1037,7 +1009,7 @@ impl<I3C: Instance, Y: FnMut(u32)> HardwareCore for Ast1060I3c<I3C, Y> {
     }
 }
 
-impl<I3C: Instance, Y: FnMut(u32)> HardwareClock for Ast1060I3c<I3C, Y> {
+impl<Y: FnMut(u32)> HardwareClock for Ast1060I3c<Y> {
     fn init_clock(&mut self, config: &mut I3cConfig) {
         // `unwrap_or` + `.max(1)` (not `.expect()` / raw divides) keep this
         // panic-free for the `no_panics` analysis: a missing/zero core clock
@@ -1155,7 +1127,7 @@ impl<I3C: Instance, Y: FnMut(u32)> HardwareClock for Ast1060I3c<I3C, Y> {
     }
 
     fn init_pid(&mut self, config: &mut I3cConfig) {
-        let bus = I3C::BUS_NUM;
+        let bus = self.bus();
         self.i3c().i3cd070().write(|w| unsafe {
             w.slvmipimfgid()
                 .bits(I3C_AST10X0_MIPI_MANUF_ID)
@@ -1174,7 +1146,7 @@ impl<I3C: Instance, Y: FnMut(u32)> HardwareClock for Ast1060I3c<I3C, Y> {
     }
 }
 
-impl<I3C: Instance, Y: FnMut(u32)> HardwareFifo for Ast1060I3c<I3C, Y> {
+impl<Y: FnMut(u32)> HardwareFifo for Ast1060I3c<Y> {
     fn wr_tx_fifo(&mut self, bytes: &[u8]) {
         let mut chunks = bytes.chunks_exact(4);
         for chunk in &mut chunks {
@@ -1234,7 +1206,7 @@ impl<I3C: Instance, Y: FnMut(u32)> HardwareFifo for Ast1060I3c<I3C, Y> {
     }
 }
 
-impl<I3C: Instance, Y: FnMut(u32)> HardwareRecovery for Ast1060I3c<I3C, Y> {
+impl<Y: FnMut(u32)> HardwareRecovery for Ast1060I3c<Y> {
     fn enter_sw_mode(&mut self) {
         self.enter_sw_mode();
     }
@@ -1264,7 +1236,7 @@ impl<I3C: Instance, Y: FnMut(u32)> HardwareRecovery for Ast1060I3c<I3C, Y> {
     }
 }
 
-impl<I3C: Instance, Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<I3C, Y> {
+impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
     fn set_ibi_mdb(&mut self, mdb: u8) {
         self.i3c()
             .i3cd000()
@@ -1979,7 +1951,7 @@ impl<I3C: Instance, Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<I3C, Y> {
         let mut ibi_buf: [u8; 2] = [0u8; 2];
         let take = core::cmp::min(len, ibi_buf.len());
         self.rd_ibi_fifo(&mut ibi_buf[..take]);
-        let bus = I3C::BUS_NUM as usize;
+        let bus = self.bus() as usize;
         let _ = ibi_workq::i3c_ibi_work_enqueue_target_irq(bus, addr, &ibi_buf[..take]);
     }
 
@@ -2014,7 +1986,7 @@ impl<I3C: Instance, Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<I3C, Y> {
                 self.handle_ibi_sir(config, ibi_addr as u8, ibi_data_len);
             } else if ibi_addr == 2 && !rnw {
                 // hot-join
-                let bus = I3C::BUS_NUM as usize;
+                let bus = self.bus() as usize;
                 i3c_debug!(self.logger, "Hot-join IBI");
                 let _ = ibi_workq::i3c_ibi_work_enqueue_hotjoin(bus);
             } else {
@@ -2027,7 +1999,7 @@ impl<I3C: Instance, Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<I3C, Y> {
     }
 }
 
-impl<I3C: Instance, Y: FnMut(u32)> HardwareTarget for Ast1060I3c<I3C, Y> {
+impl<Y: FnMut(u32)> HardwareTarget for Ast1060I3c<Y> {
     fn target_tx_write(&mut self, buf: &[u8]) {
         self.wr_tx_fifo(buf);
         let cmd = field_prep(COMMAND_PORT_ATTR, COMMAND_ATTR_SLAVE_DATA_CMD)
@@ -2101,7 +2073,7 @@ impl<I3C: Instance, Y: FnMut(u32)> HardwareTarget for Ast1060I3c<I3C, Y> {
                     self.rd_rx_fifo(dst);
                 }
                 let _ = ibi_workq::i3c_ibi_work_enqueue_target_master_write(
-                    I3C::BUS_NUM.into(),
+                    self.bus().into(),
                     buf.get(..n).unwrap_or(&[]),
                 );
                 i3c_debug!(

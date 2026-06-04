@@ -22,19 +22,28 @@
 #![no_std]
 #![no_main]
 
+use core::pin::Pin;
+
 use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
 use ast10x0_peripherals::i3c::{
-    Ast1060I3c, I3cConfig, I3cController, I3cTargetConfig, IbiConsumer, IbiWork,
-    i3c_ibi_workq_consumer,
+    Ast1060I3c, I3cConfig, I3cController, I3cCore, I3cTargetConfig, IbiConsumer, IbiWork, Ready,
+    i3c_bus_interrupt, i3c_ibi_workq_consumer,
 };
 use ast10x0_peripherals::scu::pinctrl;
 use codegen as _;
 use console_backend::console_backend_write_all;
+use cortex_m::peripheral::NVIC;
 use entry as _;
 use kernel::Kernel;
 use target_common::{TargetInterface, declare_target};
 
 pub struct Target {}
+
+/// One driver type serves every bus; the instance is selected at runtime.
+type I3cHw = Ast1060I3c<fn(u32)>;
+
+/// Bus index under test (PAC `I3c2`, HV pads).
+const I3C_BUS: u8 = 2;
 
 /// Number of IBIs the target raises once it has a dynamic address.
 const MAX_IBIS: u32 = 10;
@@ -136,10 +145,12 @@ fn yield_delay(ns: u32) {
 }
 
 /// Build + validate the target controller in its own `#[inline(never)]` frame
-/// so the temporary `I3cConfig` (256-byte `AddrBook` inside) is freed on return
-/// rather than lingering alongside `ctrl` on the 2 KiB kernel bootstrap stack.
+/// so the temporary `I3cConfig` (256-byte `AddrBook` inside) is freed on
+/// return; the long-lived hardware + config live in the `singleton!` static
+/// (`I3cCore`). Returns the controller in the `Ready` state: handler
+/// registered, hardware programmed, NVIC line still masked.
 #[inline(never)]
-fn build_target() -> Result<I3cController<Ast1060I3c<ast1060_pac::I3c2, fn(u32)>>, &'static str> {
+fn build_target() -> Result<I3cController<I3cHw, Ready>, &'static str> {
     // Secondary (target) timing — identical to the reference target.
     let mut config = I3cConfig::new()
         .core_clk_hz(200_000_000)
@@ -159,8 +170,12 @@ fn build_target() -> Result<I3cController<Ast1060I3c<ast1060_pac::I3c2, fn(u32)>
         .map_err(|_| "invalid clock configuration")?;
 
     // SAFETY: the test owns I3C bus 2 and uses the matching PAC blocks.
-    let hw = unsafe { Ast1060I3c::<ast1060_pac::I3c2, fn(u32)>::new(yield_delay) };
-    Ok(I3cController::new(hw, config))
+    let hw = unsafe { I3cHw::new(I3C_BUS, yield_delay) }.ok_or("invalid I3C bus index")?;
+    let i3c_core = cortex_m::singleton!(: I3cCore<I3cHw> = I3cCore::new(hw, config))
+        .ok_or("I3C core storage already taken")?;
+    I3cController::new(Pin::static_mut(i3c_core))
+        .start()
+        .map_err(|_| "controller start failed")
 }
 
 fn run_target() -> Result<(), &'static str> {
@@ -172,20 +187,24 @@ fn run_target() -> Result<(), &'static str> {
     // SAFETY: single call at boot with exclusive access to the board.
     unsafe { board.init() };
 
-    // Build the controller in a separate (never-inlined) frame so the temporary
-    // `I3cConfig` (256-byte `AddrBook` inside) is freed before `ctrl` is used —
-    // the kernel bootstrap thread stack is only 2 KiB and two live `I3cConfig`s
-    // overflow it. See `build_target`.
-    let mut ctrl = core::pin::pin!(build_target()?);
-    let bus = ctrl.as_ref().bus_num() as usize;
+    // Build the controller (register IRQ + program hardware) in a separate
+    // (never-inlined) frame so the temporary `I3cConfig` is freed on return
+    // (see `build_target`); the long-lived state lives in the `I3cCore` static.
+    let mut ctrl = build_target()?;
+    let bus = ctrl.bus_num() as usize;
     let mut ibi_cons = i3c_ibi_workq_consumer(bus).ok_or("IBI consumer unavailable")?;
     pw_log::info!("IBI work queue ready on bus {}", bus as u32);
 
-    ctrl.as_mut().init_hardware();
+    // Kernel vector is in place and the handler is registered; the integration
+    // layer owns the NVIC line, so unmask it now.
+    let irq = i3c_bus_interrupt(ctrl.bus_num()).ok_or("no IRQ line for bus")?;
+    // SAFETY: handler registered and hardware initialized (Ready state);
+    // unmasking cannot deliver an IRQ into partially-initialized state.
+    unsafe { NVIC::unmask(irq) };
 
     let dyn_addr = 8u8;
     let dev_idx = 0usize;
-    let _ = ctrl.as_mut().attach_i3c_dev(0, dyn_addr, dev_idx as u8);
+    let _ = ctrl.attach_i3c_dev(0, dyn_addr, dev_idx as u8);
     pw_log::info!(
         "target dev at slot {}, dyn addr {}",
         dev_idx as u32,
@@ -195,7 +214,7 @@ fn run_target() -> Result<(), &'static str> {
     pw_log::info!("waiting before hot-join...");
     spin_wait(HOT_JOIN_STARTUP_DELAY_SPINS);
     pw_log::info!("raising hot-join; waiting for dynamic address assignment...");
-    let hj_ok = ctrl.as_mut().target_raise_hot_join().is_ok();
+    let hj_ok = ctrl.target_raise_hot_join().is_ok();
     pw_log::info!("[DBG] hot-join raise ok={}", hj_ok as u32);
     log_target_hj_state(0);
 
@@ -207,7 +226,7 @@ fn run_target() -> Result<(), &'static str> {
             spin_count = spin_count.wrapping_add(1);
             if spin_count & (HOT_JOIN_RETRY_SPINS - 1) == 0 {
                 pw_log::info!("[DBG] retry hot-join");
-                let hj_ok = ctrl.as_mut().target_raise_hot_join().is_ok();
+                let hj_ok = ctrl.target_raise_hot_join().is_ok();
                 pw_log::info!("[DBG] hot-join retry ok={}", hj_ok as u32);
                 log_target_hj_state(1);
             }
@@ -215,11 +234,11 @@ fn run_target() -> Result<(), &'static str> {
         };
         match work {
             IbiWork::TargetDaAssignment => {
-                let da = ctrl.as_ref().target_dynamic_address();
+                let da = ctrl.target_dynamic_address();
                 if let Some(da) = da {
                     pw_log::info!("[IBI] dyn addr 0x{:02x} assigned by master", da as u32);
                 }
-                ctrl.as_mut().target_on_dynamic_address_assigned();
+                ctrl.target_on_dynamic_address_assigned();
                 break;
             }
             IbiWork::HotJoin => pw_log::info!("[IBI] hotjoin"),
@@ -239,7 +258,7 @@ fn run_target() -> Result<(), &'static str> {
         for (i, b) in data.iter_mut().enumerate() {
             *b = u8::try_from(i).unwrap_or(0);
         }
-        if ctrl.as_mut().target_get_ibi_payload(&mut data).is_err() {
+        if ctrl.target_get_ibi_payload(&mut data).is_err() {
             return Err("target_get_ibi_payload failed");
         }
         log_target_read_payload(ibi_count, &data);

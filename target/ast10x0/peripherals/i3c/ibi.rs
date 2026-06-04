@@ -124,28 +124,36 @@ static IBI_RINGS: [Mutex<UnsafeCell<IbiRing>>; 4] = [
     Mutex::new(UnsafeCell::new(IbiRing::new())),
 ];
 
-/// Run `f` against the ring for `bus`, serialized by the critical section.
+/// Push `work` onto the ring for `bus`. Returns `false` if `bus` is out of
+/// range or the ring is full.
 ///
-/// Returns `None` if `bus` is out of range.
-///
-/// # Safety Contract
-///
-/// `f` must not re-enter this module's queue API (`with_ring`, `dequeue`, or
-/// any of the enqueue helpers). Nested `critical_section::with(...)` calls are
-/// legal on this target, so re-entering while `ring: &mut IbiRing` is live
-/// would violate the exclusive-borrow assumption documented below.
-fn with_ring<R>(bus: usize, f: impl FnOnce(&mut IbiRing) -> R) -> Option<R> {
-    let workq = IBI_RINGS.get(bus)?;
-    Some(critical_section::with(|cs| {
-        // SAFETY: each ring is reachable only through this helper and wrapped
-        // in a `critical_section::Mutex`. While the critical section is held
-        // there is no ISR/thread concurrency. The caller-provided closure is
-        // also required not to re-enter this module's queue API while the
-        // mutable borrow is live, so it is sound to project the
-        // `UnsafeCell<IbiRing>` to `&mut IbiRing`.
+/// The `&mut IbiRing` is confined to this leaf function — no caller-provided
+/// code runs while it is live — so the exclusive borrow cannot be re-entered.
+fn ring_push(bus: usize, work: IbiWork) -> bool {
+    let Some(workq) = IBI_RINGS.get(bus) else {
+        return false;
+    };
+    critical_section::with(|cs| {
+        // SAFETY: the critical section excludes ISR/thread concurrency, and
+        // the `&mut IbiRing` never escapes this function (the ring is only
+        // reachable via `ring_push`/`ring_pop`, neither of which calls back
+        // into caller code), so this is the only live reference.
         let ring: &mut IbiRing = unsafe { &mut *workq.borrow(cs).get() };
-        f(ring)
-    }))
+        ring.push(work)
+    })
+}
+
+/// Pop the next work item from the ring for `bus`, if any.
+///
+/// Same confinement argument as [`ring_push`].
+fn ring_pop(bus: usize) -> Option<IbiWork> {
+    let workq = IBI_RINGS.get(bus)?;
+    critical_section::with(|cs| {
+        // SAFETY: see `ring_push` — critical section + leaf confinement make
+        // this the only live reference to the ring.
+        let ring: &mut IbiRing = unsafe { &mut *workq.borrow(cs).get() };
+        ring.pop()
+    })
 }
 
 // =============================================================================
@@ -164,7 +172,7 @@ impl IbiConsumer {
     /// Dequeue the next IBI work item, if any.
     #[must_use]
     pub fn dequeue(&mut self) -> Option<IbiWork> {
-        with_ring(self.bus, IbiRing::pop).flatten()
+        ring_pop(self.bus)
     }
 }
 
@@ -186,13 +194,13 @@ pub fn i3c_ibi_workq_consumer(bus: usize) -> Option<IbiConsumer> {
 /// Enqueue a target dynamic address assignment notification
 #[must_use]
 pub fn i3c_ibi_work_enqueue_target_da_assignment(bus: usize) -> bool {
-    with_ring(bus, |r| r.push(IbiWork::TargetDaAssignment)).unwrap_or(false)
+    ring_push(bus, IbiWork::TargetDaAssignment)
 }
 
 /// Enqueue a Hot-Join notification
 #[must_use]
 pub fn i3c_ibi_work_enqueue_hotjoin(bus: usize) -> bool {
-    with_ring(bus, |r| r.push(IbiWork::HotJoin)).unwrap_or(false)
+    ring_push(bus, IbiWork::HotJoin)
 }
 
 /// Enqueue a target interrupt (SIR) notification
@@ -206,7 +214,7 @@ pub fn i3c_ibi_work_enqueue_target_irq(bus: usize, addr: u8, data: &[u8]) -> boo
         len: u8::try_from(take).unwrap_or(IBI_DATA_MAX),
         data: ibi_buf,
     };
-    with_ring(bus, |r| r.push(work)).unwrap_or(false)
+    ring_push(bus, work)
 }
 
 /// Enqueue a private write received by this target from the controller.
@@ -219,5 +227,5 @@ pub fn i3c_ibi_work_enqueue_target_master_write(bus: usize, data: &[u8]) -> bool
         len: u8::try_from(take).unwrap_or(IBI_DATA_MAX),
         data: buf,
     };
-    with_ring(bus, |r| r.push(work)).unwrap_or(false)
+    ring_push(bus, work)
 }

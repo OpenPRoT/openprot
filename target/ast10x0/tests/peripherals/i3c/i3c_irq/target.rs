@@ -30,19 +30,25 @@ use core::pin::Pin;
 
 use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
 use ast10x0_peripherals::i3c::{
-    Ast1060I3c, I3cConfig, I3cController, IbiWork, i3c_ibi_workq_consumer,
+    Ast1060I3c, I3cConfig, I3cController, I3cCore, IbiWork, Ready, i3c_bus_interrupt,
+    i3c_ibi_workq_consumer,
 };
 use ast10x0_peripherals::scu::pinctrl;
 use codegen as _;
 use console_backend::console_backend_write_all;
+use cortex_m::peripheral::NVIC;
 use entry as _;
 use kernel::Kernel;
 use target_common::{TargetInterface, declare_target};
 
 pub struct Target {}
 
-type I3c2Hw = Ast1060I3c<ast1060_pac::I3c2, fn(u32)>;
-type I3c2Controller = I3cController<I3c2Hw>;
+/// One driver type serves every bus; the instance is selected at runtime.
+type I3cHw = Ast1060I3c<fn(u32)>;
+type I3c2Controller = I3cController<I3cHw, Ready>;
+
+/// Bus index under test (PAC `I3c2`, HV pads).
+const I3C_BUS: u8 = 2;
 
 /// PID of the peer target (matches the `:slave` image / the reference).
 const KNOWN_PID: u64 = 0x07ec_a003_2000;
@@ -93,10 +99,11 @@ fn log_master_write_payload(exchange: u32, data: &[u8; XFER_DATA_LEN]) {
 
 /// Build + validate the controller in its own `#[inline(never)]` frame.
 ///
-/// The temporary `I3cConfig` embeds a 256-byte `AddrBook`; keeping it live
-/// alongside `ctrl` (which owns a moved copy) would put two `I3cConfig`s on the
-/// 2 KiB kernel bootstrap stack and overflow it. Building here frees the
-/// temporary on return, leaving `run_controller` with only `ctrl`.
+/// The temporary `I3cConfig` embeds a 256-byte `AddrBook` and the kernel
+/// bootstrap stack is only 2 KiB, so the temporaries are freed on return; the
+/// long-lived hardware + config live in the `singleton!` static (`I3cCore`),
+/// not on the stack. Returns the controller in the `Ready` state: handler
+/// registered, hardware programmed, NVIC line still masked.
 #[inline(never)]
 fn build_controller() -> Result<I3c2Controller, &'static str> {
     // Controller (primary) timing — identical to the reference master.
@@ -116,13 +123,17 @@ fn build_controller() -> Result<I3c2Controller, &'static str> {
         .map_err(|_| "invalid clock configuration")?;
 
     // SAFETY: the test owns I3C bus 2 and uses the matching PAC blocks.
-    let hw = unsafe { Ast1060I3c::<ast1060_pac::I3c2, fn(u32)>::new(yield_delay) };
-    Ok(I3cController::new(hw, config))
+    let hw = unsafe { I3cHw::new(I3C_BUS, yield_delay) }.ok_or("invalid I3C bus index")?;
+    let i3c_core = cortex_m::singleton!(: I3cCore<I3cHw> = I3cCore::new(hw, config))
+        .ok_or("I3C core storage already taken")?;
+    I3cController::new(Pin::static_mut(i3c_core))
+        .start()
+        .map_err(|_| "controller start failed")
 }
 
 #[inline(never)]
 fn master_read_from_target(
-    ctrl: Pin<&mut I3c2Controller>,
+    ctrl: &mut I3c2Controller,
 ) -> Result<(u32, [u8; XFER_DATA_LEN]), &'static str> {
     let mut rx_buf = [0u8; 128];
     let actual_len = ctrl
@@ -135,10 +146,7 @@ fn master_read_from_target(
 }
 
 #[inline(never)]
-fn master_write_to_target(
-    ctrl: Pin<&mut I3c2Controller>,
-    exchange: u32,
-) -> Result<(), &'static str> {
+fn master_write_to_target(ctrl: &mut I3c2Controller, exchange: u32) -> Result<(), &'static str> {
     let mut tx_buf: [u8; XFER_DATA_LEN] = [
         0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
         0x88,
@@ -158,28 +166,30 @@ fn run_controller() -> Result<(), &'static str> {
     // SAFETY: single call at boot with exclusive access to the board.
     unsafe { board.init() };
 
-    // Build the controller in a separate (never-inlined) frame so the temporary
-    // `I3cConfig` is freed before the long-lived `ctrl` is used (see
-    // `build_controller`): the kernel bootstrap thread stack is only 2 KiB and
-    // two live `I3cConfig`s (each embeds a 256-byte `AddrBook`) overflow it.
-    let mut ctrl = core::pin::pin!(build_controller()?);
-    let bus = ctrl.as_ref().bus_num() as usize;
+    // Build the controller (register IRQ + program hardware) in a separate
+    // (never-inlined) frame so the temporary `I3cConfig` is freed on return
+    // (see `build_controller`): the kernel bootstrap thread stack is only
+    // 2 KiB; the long-lived state lives in the `I3cCore` static.
+    let mut ctrl = build_controller()?;
+    let bus = ctrl.bus_num() as usize;
     let mut ibi_cons = i3c_ibi_workq_consumer(bus).ok_or("IBI consumer unavailable")?;
     pw_log::info!("IBI work queue ready on bus {}", bus as u32);
 
-    pw_log::info!("initializing I3C2 controller");
-    ctrl.as_mut().init_hardware();
+    // The kernel vector (system.json5 IRQ 104 -> `i3c2_irq`) is in place and
+    // the handler is registered; the integration layer owns the NVIC line, so
+    // unmask it now.
+    let irq = i3c_bus_interrupt(ctrl.bus_num()).ok_or("no IRQ line for bus")?;
+    // SAFETY: handler registered and hardware initialized (Ready state);
+    // unmasking cannot deliver an IRQ into partially-initialized state.
+    unsafe { NVIC::unmask(irq) };
     pw_log::info!("I3C2 controller ready");
 
     let dyn_addr = ctrl
-        .as_mut()
         .alloc_dynamic_address_from(8)
         .ok_or("no dynamic address available")?;
-    ctrl.as_mut()
-        .attach_i3c_dev(KNOWN_PID, dyn_addr, 0)
+    ctrl.attach_i3c_dev(KNOWN_PID, dyn_addr, 0)
         .map_err(|_| "attach_i3c_dev failed")?;
-    ctrl.as_mut()
-        .enable_ibi(dyn_addr, 0)
+    ctrl.enable_ibi(dyn_addr, 0)
         .map_err(|_| "ibi_enable failed")?;
     pw_log::info!("pre-attached dev at slot 0, dyn addr {}", dyn_addr as u32);
 
@@ -230,20 +240,20 @@ fn run_controller() -> Result<(), &'static str> {
         match work {
             IbiWork::HotJoin => {
                 pw_log::info!("[IBI] hotjoin");
-                let _ = ctrl.as_mut().handle_hot_join();
-                let _ = ctrl.as_mut().assign_dynamic_address(dyn_addr);
+                let _ = ctrl.handle_hot_join();
+                let _ = ctrl.assign_dynamic_address(dyn_addr);
             }
             IbiWork::Sirq { addr, len, .. } => {
                 pw_log::info!("[IBI] SIRQ from 0x{:02x} len {}", addr as u32, len as u32);
-                if ctrl.as_mut().acknowledge_ibi(addr).is_err() {
+                if ctrl.acknowledge_ibi(addr).is_err() {
                     pw_log::error!("acknowledge_ibi failed");
                 }
 
                 let exchange = received;
-                let (read_len, read_data) = master_read_from_target(ctrl.as_mut())?;
+                let (read_len, read_data) = master_read_from_target(&mut ctrl)?;
                 log_master_read_payload(exchange, read_len, &read_data);
 
-                master_write_to_target(ctrl.as_mut(), exchange)?;
+                master_write_to_target(&mut ctrl, exchange)?;
                 received += 1;
 
                 if received >= MAX_EXCHANGES {
