@@ -20,7 +20,7 @@ use ast10x0_peripherals::scu::pinctrl;
 use codegen as _;
 use console_backend::console_backend_write_all;
 use entry as _;
-use target_common::{declare_target, TargetInterface};
+use target_common::{TargetInterface, declare_target};
 
 pub struct Target {}
 
@@ -57,10 +57,10 @@ fn run_i3c_init_smoke_test() -> Result<(), &'static str> {
     // SAFETY: the test owns I3C bus 0 for its lifetime and uses the matching
     // PAC register blocks; the busy-spin closure is the bare-metal wait policy.
     let hw = unsafe { Ast1060I3c::<ast1060_pac::I3c, _>::new(|_| core::hint::spin_loop()) };
-    let mut ctrl = I3cController::new(hw, config);
+    let mut ctrl = core::pin::pin!(I3cController::new(hw, config));
     pw_log::info!("Controller constructed");
 
-    ctrl.init_hardware();
+    ctrl.as_mut().init_hardware();
     pw_log::info!("init_hardware complete");
 
     // On real hardware the controller-enable bit must be set after a primary

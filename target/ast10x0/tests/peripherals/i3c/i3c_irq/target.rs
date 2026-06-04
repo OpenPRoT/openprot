@@ -26,6 +26,8 @@
 #![no_std]
 #![no_main]
 
+use core::pin::Pin;
+
 use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
 use ast10x0_peripherals::i3c::{
     Ast1060I3c, HardwareCore, HardwareTransfer, I3C_MSG_READ, I3C_MSG_STOP, I3C_MSG_WRITE,
@@ -121,7 +123,7 @@ fn build_controller() -> Result<I3c2Controller, &'static str> {
 
 #[inline(never)]
 fn master_read_from_target(
-    ctrl: &mut I3c2Controller,
+    ctrl: Pin<&mut I3c2Controller>,
 ) -> Result<(u32, [u8; XFER_DATA_LEN]), &'static str> {
     let mut rx_buf = [0u8; 128];
     let actual_len = {
@@ -133,8 +135,7 @@ fn master_read_from_target(
             hdr_mode: 0,
             hdr_cmd_mode: 0,
         }];
-        ctrl.hw
-            .priv_xfer(&mut ctrl.config, KNOWN_PID, &mut rd_msgs)
+        ctrl.with_hw_and_config(|hw, config| hw.priv_xfer(config, KNOWN_PID, &mut rd_msgs))
             .map_err(|_| "private read failed")?;
         rd_msgs[0].actual_len
     };
@@ -145,7 +146,10 @@ fn master_read_from_target(
 }
 
 #[inline(never)]
-fn master_write_to_target(ctrl: &mut I3c2Controller, exchange: u32) -> Result<(), &'static str> {
+fn master_write_to_target(
+    ctrl: Pin<&mut I3c2Controller>,
+    exchange: u32,
+) -> Result<(), &'static str> {
     let mut tx_buf: [u8; XFER_DATA_LEN] = [
         0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
         0x88,
@@ -158,8 +162,7 @@ fn master_write_to_target(ctrl: &mut I3c2Controller, exchange: u32) -> Result<()
         hdr_mode: 0,
         hdr_cmd_mode: 0,
     }];
-    ctrl.hw
-        .priv_xfer(&mut ctrl.config, KNOWN_PID, &mut wr_msgs)
+    ctrl.with_hw_and_config(|hw, config| hw.priv_xfer(config, KNOWN_PID, &mut wr_msgs))
         .map_err(|_| "private write failed")?;
     log_master_write_payload(exchange, &tx_buf);
     Ok(())
@@ -178,25 +181,27 @@ fn run_controller() -> Result<(), &'static str> {
     // `I3cConfig` is freed before the long-lived `ctrl` is used (see
     // `build_controller`): the kernel bootstrap thread stack is only 2 KiB and
     // two live `I3cConfig`s (each embeds a 256-byte `AddrBook`) overflow it.
-    let mut ctrl = build_controller()?;
-    let bus = ctrl.hw.bus_num() as usize;
+    let mut ctrl = core::pin::pin!(build_controller()?);
+    let bus = ctrl.as_ref().hw().bus_num() as usize;
     let mut ibi_cons = i3c_ibi_workq_consumer(bus).ok_or("IBI consumer unavailable")?;
     pw_log::info!("IBI work queue ready on bus {}", bus as u32);
 
     pw_log::info!("initializing I3C2 controller");
-    ctrl.init_hardware();
+    ctrl.as_mut().init_hardware();
     pw_log::info!("I3C2 controller ready");
 
     let dyn_addr = ctrl
-        .config
+        .as_mut()
+        .config_mut()
         .addrbook
         .alloc_from(8)
         .ok_or("no dynamic address available")?;
-    ctrl.attach_i3c_dev(KNOWN_PID, dyn_addr, 0)
+    ctrl.as_mut()
+        .attach_i3c_dev(KNOWN_PID, dyn_addr, 0)
         .map_err(|_| "attach_i3c_dev failed")?;
-    ctrl.hw.set_ibi_mdb(0);
-    ctrl.hw
-        .ibi_enable(&mut ctrl.config, dyn_addr)
+    ctrl.as_mut().hw_mut().set_ibi_mdb(0);
+    ctrl.as_mut()
+        .with_hw_and_config(|hw, config| hw.ibi_enable(config, dyn_addr))
         .map_err(|_| "ibi_enable failed")?;
     pw_log::info!("pre-attached dev at slot 0, dyn addr {}", dyn_addr as u32);
 
@@ -247,20 +252,20 @@ fn run_controller() -> Result<(), &'static str> {
         match work {
             IbiWork::HotJoin => {
                 pw_log::info!("[IBI] hotjoin");
-                let _ = ctrl.handle_hot_join();
-                let _ = ctrl.assign_dynamic_address(dyn_addr);
+                let _ = ctrl.as_mut().handle_hot_join();
+                let _ = ctrl.as_mut().assign_dynamic_address(dyn_addr);
             }
             IbiWork::Sirq { addr, len, .. } => {
                 pw_log::info!("[IBI] SIRQ from 0x{:02x} len {}", addr as u32, len as u32);
-                if ctrl.acknowledge_ibi(addr).is_err() {
+                if ctrl.as_mut().acknowledge_ibi(addr).is_err() {
                     pw_log::error!("acknowledge_ibi failed");
                 }
 
                 let exchange = received;
-                let (read_len, read_data) = master_read_from_target(&mut ctrl)?;
+                let (read_len, read_data) = master_read_from_target(ctrl.as_mut())?;
                 log_master_read_payload(exchange, read_len, &read_data);
 
-                master_write_to_target(&mut ctrl, exchange)?;
+                master_write_to_target(ctrl.as_mut(), exchange)?;
                 received += 1;
 
                 if received >= MAX_EXCHANGES {
