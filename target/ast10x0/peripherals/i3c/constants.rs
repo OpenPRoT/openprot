@@ -51,6 +51,8 @@ pub const I3C_BUS_THIGH_MAX_NS: u32 = 41;
 
 /// Nanoseconds per second
 pub const NSEC_PER_SEC: u32 = 1_000_000_000;
+/// Microseconds per second
+pub const USEC_PER_SEC: u32 = 1_000_000;
 
 // =============================================================================
 // SDA TX Hold Configuration
@@ -251,6 +253,33 @@ pub const MAX_CMDS: usize = 32;
 pub const MAX_BUSES: usize = 4;
 /// Maximum devices per bus
 pub const MAX_DEVICES_PER_BUS: usize = 8;
+
+// =============================================================================
+// Driver Policy / Bring-up Defaults
+// =============================================================================
+
+/// Default static address programmed into the controller during init.
+pub const I3C_DEFAULT_STATIC_ADDR: u8 = 0x74;
+/// One-second operation timeout expressed in microseconds.
+pub const I3C_OP_TIMEOUT_US: u32 = USEC_PER_SEC;
+/// Generic bounded-poll iteration ceiling used by controller bring-up waits.
+pub const I3C_POLL_MAX_ITERS: u32 = 1_000_000;
+/// Generic bounded-poll delay between iterations in nanoseconds.
+pub const I3C_POLL_DELAY_NS: u32 = 10_000;
+/// IBI enable / halt / reset-control poll ceiling.
+pub const I3C_CTRL_POLL_MAX_ITERS: u32 = 1_000_000;
+/// Queue reset / halt / IBI enable poll delay in nanoseconds.
+pub const I3C_CTRL_POLL_DELAY_NS: u32 = 10_000;
+/// Program the maximum IBI data threshold supported by the controller.
+pub const I3C_IBI_DATA_THRESHOLD_MAX: u8 = 31;
+/// Global I3C reset deassert bit in `SCU054`.
+pub const I3C_GLOBAL_RESET_DEASSERT_MASK: u32 = 0x80;
+/// Write-one-to-clear mask for all interrupt-status bits.
+pub const I3C_INTR_STATUS_ALL_BITS: u32 = u32::MAX;
+/// Bring-up value for `BUS_FREE_TIMING` (`i3cd0d4`).
+pub const I3C_BUS_FREE_TIMING_RESET: u32 = 0xffff_007c;
+/// AST10x0 target MIPI manufacturer identifier.
+pub const I3C_AST10X0_MIPI_MANUF_ID: u16 = 0x03f6;
 
 // =============================================================================
 // CCC (Common Command Code) Constants
