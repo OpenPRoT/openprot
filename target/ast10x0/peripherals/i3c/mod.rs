@@ -49,7 +49,7 @@ pub mod types;
 
 // Controller (two-state lifecycle: Uninitialized -> Ready, matching the SMC
 // peripheral's precedent)
-pub use controller::{I3cController, I3cCore, Ready, Uninitialized};
+pub use controller::{I3cController, Ready, Uninitialized};
 
 // Error types
 pub use error::{CccErrorKind, I3cError, Result};
@@ -69,8 +69,7 @@ pub use types::{
 // Hardware interface
 pub use hardware::{
     Ast1060I3c, HardwareClock, HardwareCore, HardwareFifo, HardwareInterface, HardwareRecovery,
-    HardwareTarget, HardwareTransfer, dispatch_i3c_irq, i3c_bus_interrupt,
-    register_i3c_irq_handler,
+    HardwareTarget, HardwareTransfer, IsrCtx, dispatch_i3c_irq, register_i3c_irq_handler,
 };
 
 // Confined-unsafe MMIO façade (runtime bus selection)

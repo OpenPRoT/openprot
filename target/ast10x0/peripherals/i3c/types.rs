@@ -182,19 +182,13 @@ pub struct I3cXfer<'cmds, 'buf> {
     pub cmds: &'cmds mut [I3cCmd<'buf>],
     /// Return code from transfer
     pub ret: i32,
-    /// Completion signaling primitive
-    pub done: Completion,
 }
 
 impl<'cmds, 'buf> I3cXfer<'cmds, 'buf> {
     /// Create a new transfer with the given commands
     #[must_use]
     pub fn new(cmds: &'cmds mut [I3cCmd<'buf>]) -> Self {
-        Self {
-            cmds,
-            ret: 0,
-            done: Completion::new(),
-        }
+        Self { cmds, ret: 0 }
     }
 
     /// Get the number of commands in this transfer

@@ -93,6 +93,11 @@ impl I3cRegisters {
     /// therefore panic-free: a constructed façade always holds valid pointers
     /// and an in-range bus index.
     ///
+    /// `pub(crate)`: the single *public* unsafe gate is
+    /// [`Ast1060I3c::new`](super::hardware::Ast1060I3c::new), which forwards
+    /// this contract; external callers cannot construct a second façade for
+    /// a bus behind the driver's back.
+    ///
     /// # Safety
     ///
     /// This is the entire `unsafe` perimeter for I3C MMIO (Delta D3):
@@ -103,7 +108,7 @@ impl I3cRegisters {
     ///   (the type is `!Sync`); only one owner per physical bus may be
     ///   active at a time.
     #[must_use]
-    pub const unsafe fn new(bus: u8) -> Option<Self> {
+    pub(crate) const unsafe fn new(bus: u8) -> Option<Self> {
         let i3c = match bus {
             0 => ast1060_pac::I3c::ptr(),
             1 => ast1060_pac::I3c1::ptr(),
@@ -130,6 +135,28 @@ impl I3cRegisters {
     #[must_use]
     pub fn bus(&self) -> u8 {
         self.bus
+    }
+
+    /// Second handle over the same bus for the **ISR side**.
+    ///
+    /// This is the one sanctioned exception to "one `I3cRegisters` per bus":
+    /// the interrupt service routine cannot borrow the thread-owned handle,
+    /// so it gets its own. No Rust memory is aliased (the pointers target
+    /// MMIO, not Rust objects).
+    ///
+    /// # Safety
+    ///
+    /// Device access through the alias must remain serialized with the
+    /// owning handle — on this single-core target that holds because the ISR
+    /// runs atomically with respect to the thread.
+    pub(crate) unsafe fn isr_alias(&self) -> Self {
+        Self {
+            i3c: self.i3c,
+            i3cg: self.i3cg,
+            scu: self.scu,
+            bus: self.bus,
+            _not_send_sync: PhantomData,
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -630,6 +657,48 @@ impl I3cRegisters {
         self.i3c()
             .i3cd044()
             .modify(|_, w| w.ibithldsignalen().set_bit());
+    }
+
+    /// I3CD040/I3CD044: mask the master transfer-completion interrupt sources
+    /// (response ready + transfer error), status and signal.
+    ///
+    /// Called by the ISR (flag-and-defer): the response queue stays non-empty
+    /// until the polling thread drains it, so the level-style status would
+    /// refire the line forever if left enabled. The thread re-enables via
+    /// [`unmask_master_xfer_irqs`](Self::unmask_master_xfer_irqs) after
+    /// draining. `modify` (not `write`) so the IBI-threshold enables are
+    /// untouched.
+    pub(crate) fn mask_master_xfer_irqs(&self) {
+        self.i3c().i3cd040().modify(|_, w| {
+            w.transfererrstaten()
+                .clear_bit()
+                .respreadystatintren()
+                .clear_bit()
+        });
+        self.i3c().i3cd044().modify(|_, w| {
+            w.transfererrsignalen()
+                .clear_bit()
+                .respreadysignalintren()
+                .clear_bit()
+        });
+    }
+
+    /// I3CD040/I3CD044: re-enable the master transfer-completion interrupt
+    /// sources after the thread has drained the response queue. Counterpart
+    /// of [`mask_master_xfer_irqs`](Self::mask_master_xfer_irqs).
+    pub(crate) fn unmask_master_xfer_irqs(&self) {
+        self.i3c().i3cd040().modify(|_, w| {
+            w.transfererrstaten()
+                .set_bit()
+                .respreadystatintren()
+                .set_bit()
+        });
+        self.i3c().i3cd044().modify(|_, w| {
+            w.transfererrsignalen()
+                .set_bit()
+                .respreadysignalintren()
+                .set_bit()
+        });
     }
 
     /// I3CD040: read the interrupt status-enable mask (debug).

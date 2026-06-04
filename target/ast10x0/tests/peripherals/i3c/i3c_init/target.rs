@@ -15,10 +15,8 @@
 //! controller-enable bit. Reports PASS/FAIL via the console sentinel,
 //! matching the I2C tests.
 
-use core::pin::Pin;
-
 use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
-use ast10x0_peripherals::i3c::{Ast1060I3c, I3cConfig, I3cController, I3cCore};
+use ast10x0_peripherals::i3c::{Ast1060I3c, I3cConfig, I3cController};
 use ast10x0_peripherals::scu::pinctrl;
 use codegen as _;
 use console_backend::console_backend_write_all;
@@ -71,11 +69,7 @@ fn run_i3c_init_smoke_test() -> Result<(), &'static str> {
     // SAFETY: the test owns I3C bus 0 for its lifetime and uses the matching
     // PAC register blocks; the busy-spin hook is the bare-metal wait policy.
     let hw = unsafe { I3cHw::new(I3C_BUS, yield_spin) }.ok_or("invalid I3C bus index")?;
-    // The ISR-shared core lives in a static so its address is stable and
-    // `'static` — the IRQ trampoline's pointer validity is type-guaranteed.
-    let i3c_core = cortex_m::singleton!(: I3cCore<I3cHw> = I3cCore::new(hw, config))
-        .ok_or("I3C core storage already taken")?;
-    let ctrl = I3cController::new(Pin::static_mut(i3c_core));
+    let ctrl = I3cController::new(hw, &mut config);
     pw_log::info!("Controller constructed");
 
     // `start()` claims the IRQ slot (single-shot) and programs the hardware.
