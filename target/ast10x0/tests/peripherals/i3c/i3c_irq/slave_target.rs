@@ -24,8 +24,8 @@
 
 use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
 use ast10x0_peripherals::i3c::{
-    Ast1060I3c, I3cConfig, I3cController, I3cTargetConfig, IbiConsumer, IbiWork,
-    i3c_ibi_workq_consumer,
+    i3c_ibi_workq_consumer, Ast1060I3c, I3cConfig, I3cController, I3cTargetConfig, IbiConsumer,
+    IbiWork,
 };
 use ast10x0_peripherals::scu::pinctrl;
 use codegen as _;
@@ -33,7 +33,7 @@ use console_backend::console_backend_write_all;
 use cortex_m::peripheral::NVIC;
 use entry as _;
 use kernel::Kernel;
-use target_common::{TargetInterface, declare_target};
+use target_common::{declare_target, TargetInterface};
 
 pub struct Target {}
 

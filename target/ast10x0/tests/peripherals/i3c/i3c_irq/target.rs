@@ -28,7 +28,7 @@
 
 use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
 use ast10x0_peripherals::i3c::{
-    Ast1060I3c, I3cConfig, I3cController, IbiWork, Ready, i3c_ibi_workq_consumer,
+    i3c_ibi_workq_consumer, Ast1060I3c, I3cConfig, I3cController, IbiWork, Ready,
 };
 use ast10x0_peripherals::scu::pinctrl;
 use codegen as _;
@@ -36,7 +36,7 @@ use console_backend::console_backend_write_all;
 use cortex_m::peripheral::NVIC;
 use entry as _;
 use kernel::Kernel;
-use target_common::{TargetInterface, declare_target};
+use target_common::{declare_target, TargetInterface};
 
 pub struct Target {}
 
@@ -133,7 +133,10 @@ fn master_read_from_target(
 }
 
 #[inline(never)]
-fn master_write_to_target(ctrl: &mut I3c2Controller<'_>, exchange: u32) -> Result<(), &'static str> {
+fn master_write_to_target(
+    ctrl: &mut I3c2Controller<'_>,
+    exchange: u32,
+) -> Result<(), &'static str> {
     let mut tx_buf: [u8; XFER_DATA_LEN] = [
         0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
         0x88,
