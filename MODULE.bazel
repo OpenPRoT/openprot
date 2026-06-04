@@ -90,8 +90,8 @@ override_repo(
 bazel_dep(name = "opentitan_devbundle")
 archive_override(
     module_name = "opentitan_devbundle",
-    integrity = "sha256-GP3ysylvAFBUKyDHu1al2swa2CA2Od2GGMgJLcoOZTY=",
-    url = "https://storage.googleapis.com/artifacts.opentitan.org/dev_bundle/devbundle-20260401.tar.xz",
+    integrity = "sha256-LGKvET6WY+P4kwrZMSnkBrkqxS1f/ES/rmkPBQmfnwg=",
+    url = "https://github.com/lowRISC/opentitan/releases/download/devbundle-2026-06-02-1/devbundle.tar.xz",
 )
 
 # Caliptra source repositories — declared via a module_extension in
