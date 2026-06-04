@@ -43,18 +43,18 @@ use super::constants::{
     I3C_BUS_I2C_FMP_TLOW_MIN_NS, I3C_BUS_I2C_FMP_TR_MAX_NS, I3C_BUS_I2C_STD_TF_MAX_NS,
     I3C_BUS_I2C_STD_THIGH_MIN_NS, I3C_BUS_I2C_STD_TLOW_MIN_NS, I3C_BUS_I2C_STD_TR_MAX_NS,
     I3C_BUS_THIGH_MAX_NS, I3C_CCC_DEVCTRL, I3C_CCC_ENTDAA, I3C_CCC_EVT_INTR, I3C_CCC_SETHID,
-    I3C_CTRL_POLL_DELAY_NS, I3C_CTRL_POLL_MAX_ITERS, I3C_DEFAULT_STATIC_ADDR,
-    I3C_GLOBAL_RESET_DEASSERT_MASK, I3C_IBI_DATA_THRESHOLD_MAX, I3C_INTR_STATUS_ALL_BITS,
-    I3C_MSG_READ, I3C_OP_TIMEOUT_US, I3C_POLL_DELAY_NS, I3C_POLL_MAX_ITERS,
-    I3CG_REG1_SCL_IN_SW_MODE_EN, I3CG_REG1_SCL_IN_SW_MODE_VAL, I3CG_REG1_SDA_IN_SW_MODE_EN,
-    I3CG_REG1_SDA_IN_SW_MODE_VAL, IBIQ_STATUS_IBI_DATA_LEN, IBIQ_STATUS_IBI_DATA_LEN_SHIFT,
-    IBIQ_STATUS_IBI_ID, IBIQ_STATUS_IBI_ID_SHIFT, INTR_CCC_UPDATED_STAT, INTR_DYN_ADDR_ASSGN_STAT,
-    INTR_IBI_THLD_STAT, INTR_RESP_READY_STAT, INTR_TRANSFER_ABORT_STAT, INTR_TRANSFER_ERR_STAT,
-    MAX_CMDS, NSEC_PER_SEC, RESET_CTRL_ALL, RESET_CTRL_QUEUES, RESET_CTRL_XFER_QUEUES,
-    RESPONSE_ERROR_IBA_NACK, RESPONSE_PORT_DATA_LEN_MASK, RESPONSE_PORT_DATA_LEN_SHIFT,
-    RESPONSE_PORT_ERR_STATUS_MASK, RESPONSE_PORT_ERR_STATUS_SHIFT, RESPONSE_PORT_TID_MASK,
-    RESPONSE_PORT_TID_SHIFT, SDA_TX_HOLD_MASK, SDA_TX_HOLD_MAX, SDA_TX_HOLD_MIN, SLV_DCR_MASK,
-    SLV_EVENT_CTRL_SIR_EN, bit, field_get, field_prep,
+    I3C_CTRL_POLL_DELAY_NS, I3C_DEFAULT_STATIC_ADDR, I3C_GLOBAL_RESET_DEASSERT_MASK,
+    I3C_IBI_DATA_THRESHOLD_MAX, I3C_INIT_POLL_DELAY_NS, I3C_INTR_STATUS_ALL_BITS, I3C_MSG_READ,
+    I3C_OP_TIMEOUT_US, I3C_POLL_MAX_ITERS, I3CG_REG1_SCL_IN_SW_MODE_EN,
+    I3CG_REG1_SCL_IN_SW_MODE_VAL, I3CG_REG1_SDA_IN_SW_MODE_EN, I3CG_REG1_SDA_IN_SW_MODE_VAL,
+    IBIQ_STATUS_IBI_DATA_LEN, IBIQ_STATUS_IBI_DATA_LEN_SHIFT, IBIQ_STATUS_IBI_ID,
+    IBIQ_STATUS_IBI_ID_SHIFT, INTR_CCC_UPDATED_STAT, INTR_DYN_ADDR_ASSGN_STAT, INTR_IBI_THLD_STAT,
+    INTR_RESP_READY_STAT, INTR_TRANSFER_ABORT_STAT, INTR_TRANSFER_ERR_STAT, MAX_CMDS, NSEC_PER_SEC,
+    RESET_CTRL_ALL, RESET_CTRL_QUEUES, RESET_CTRL_XFER_QUEUES, RESPONSE_ERROR_IBA_NACK,
+    RESPONSE_PORT_DATA_LEN_MASK, RESPONSE_PORT_DATA_LEN_SHIFT, RESPONSE_PORT_ERR_STATUS_MASK,
+    RESPONSE_PORT_ERR_STATUS_SHIFT, RESPONSE_PORT_TID_MASK, RESPONSE_PORT_TID_SHIFT,
+    SDA_TX_HOLD_MASK, SDA_TX_HOLD_MAX, SDA_TX_HOLD_MIN, SLV_DCR_MASK, SLV_EVENT_CTRL_SIR_EN, bit,
+    field_get, field_prep,
 };
 use super::error::I3cError as I3cDrvError;
 use super::error::I3cError;
@@ -783,7 +783,7 @@ impl<I3C: Instance, Y: FnMut(u32)> HardwareCore for Ast1060I3c<I3C, Y> {
             || regs.i3cd034().read().bits(),
             |val| val == 0,
             &mut self.yield_fn,
-            I3C_POLL_DELAY_NS,
+            I3C_INIT_POLL_DELAY_NS,
             I3C_POLL_MAX_ITERS,
         );
 
@@ -910,6 +910,9 @@ impl<I3C: Instance, Y: FnMut(u32)> HardwareCore for Ast1060I3c<I3C, Y> {
     }
 
     fn enable_irq(&mut self) {
+        // The integration layer owns the top-level vector and should point it
+        // at `dispatch_i3c_irq(bus)`. This helper only unmasks the bus IRQ
+        // line after registration + hardware init have completed.
         unsafe {
             match I3C::BUS_NUM {
                 0 => NVIC::unmask(ast1060_pac::Interrupt::i3c),
@@ -1288,7 +1291,7 @@ impl<I3C: Instance, Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<I3C, Y> {
             |val| val != u32::from(expected),
             &mut self.yield_fn,
             I3C_CTRL_POLL_DELAY_NS,
-            I3C_CTRL_POLL_MAX_ITERS,
+            I3C_POLL_MAX_ITERS,
         );
 
         if rc.is_err() {
@@ -1313,7 +1316,7 @@ impl<I3C: Instance, Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<I3C, Y> {
             |val| val == u32::from(expected),
             &mut self.yield_fn,
             I3C_CTRL_POLL_DELAY_NS,
-            I3C_CTRL_POLL_MAX_ITERS,
+            I3C_POLL_MAX_ITERS,
         );
 
         if rc.is_err() {
@@ -1335,7 +1338,7 @@ impl<I3C: Instance, Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<I3C, Y> {
             |val| val == 0,
             &mut self.yield_fn,
             I3C_CTRL_POLL_DELAY_NS,
-            I3C_CTRL_POLL_MAX_ITERS,
+            I3C_POLL_MAX_ITERS,
         );
 
         if rc.is_err() {
@@ -1473,11 +1476,14 @@ impl<I3C: Instance, Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<I3C, Y> {
             return;
         }
 
-        // SAFETY: `curr_xfer` is written by `start_xfer` from a unique `&mut I3cXfer`
-        // for the duration of the active transfer, and is reset back to null exactly
-        // once here with `swap(..., AcqRel)` before reconstructing the reference.
-        // The caller waits for transfer completion before dropping the stack-owned
-        // `xfer`, so the pointed-to object remains valid for this ISR handoff.
+        // SAFETY: `curr_xfer` is published by `start_xfer` from a unique
+        // `&mut I3cXfer`. The ISR path here and the timeout cleanup paths both
+        // compete via `swap(null, AcqRel)`; only the side that observes a
+        // non-null pointer may reconstruct and use it, while the loser sees
+        // null and performs no dereference. This target runs the handoff on a
+        // single core, and the owning thread waits for completion or timeout
+        // before dropping the stack-owned `xfer`, so the pointee outlives this
+        // exclusive ownership transfer.
         let xfer: &mut I3cXfer = unsafe { &mut *(p.cast::<I3cXfer>()) };
 
         let nresp = self.i3c().i3cd04c().read().respbufblr().bits() as usize;

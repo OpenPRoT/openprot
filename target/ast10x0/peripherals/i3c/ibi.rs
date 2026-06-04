@@ -10,12 +10,13 @@
 //!
 //! **Porting delta (queue mechanism).** The reference uses `heapless::spsc`
 //! `Producer`/`Consumer` handles, split once and parked in a global
-//! `Mutex<RefCell<..>>`. On this target (heapless 0.9 + this toolchain) those
-//! handles do not survive being stored in a `static` and re-accessed across
-//! separate critical sections: a split that read back `prod=Some, cons=Some`
-//! in-place would, after the consumer was taken in a later critical section,
-//! read back `prod=None, cons=Some` — i.e. the niche-`Option`/`'static`-erased
-//! handles got corrupted. The `RefCell` borrow flag was also observed stuck.
+//! `Mutex<UnsafeCell<..>>`. On this target (heapless 0.9 + this toolchain) we
+//! observed unstable behavior when those handles were stored in a `static` and
+//! later re-accessed across separate critical sections: a split that read back
+//! `prod=Some, cons=Some` in-place would, after the consumer was taken in a
+//! later critical section, read back `prod=None, cons=Some`. The root cause was
+//! not fully isolated, so this port uses a simpler fixed-size ring buffer whose
+//! aliasing and lifetime rules are easier to audit.
 //!
 //! So the SPSC split is replaced by a plain fixed-size ring buffer of
 //! `Option<IbiWork>` (`IbiWork` is `Copy`, no niche pointers), guarded by the
@@ -25,7 +26,7 @@
 //! API (`i3c_ibi_workq_consumer().dequeue()` + the three enqueue functions) is
 //! unchanged.
 
-use core::cell::RefCell;
+use core::cell::UnsafeCell;
 use critical_section::Mutex;
 
 /// IBI queue depth
@@ -116,25 +117,33 @@ impl IbiRing {
     }
 }
 
-static IBI_RINGS: [Mutex<RefCell<IbiRing>>; 4] = [
-    Mutex::new(RefCell::new(IbiRing::new())),
-    Mutex::new(RefCell::new(IbiRing::new())),
-    Mutex::new(RefCell::new(IbiRing::new())),
-    Mutex::new(RefCell::new(IbiRing::new())),
+static IBI_RINGS: [Mutex<UnsafeCell<IbiRing>>; 4] = [
+    Mutex::new(UnsafeCell::new(IbiRing::new())),
+    Mutex::new(UnsafeCell::new(IbiRing::new())),
+    Mutex::new(UnsafeCell::new(IbiRing::new())),
+    Mutex::new(UnsafeCell::new(IbiRing::new())),
 ];
 
 /// Run `f` against the ring for `bus`, serialized by the critical section.
 ///
 /// Returns `None` if `bus` is out of range.
+///
+/// # Safety Contract
+///
+/// `f` must not re-enter this module's queue API (`with_ring`, `dequeue`, or
+/// any of the enqueue helpers). Nested `critical_section::with(...)` calls are
+/// legal on this target, so re-entering while `ring: &mut IbiRing` is live
+/// would violate the exclusive-borrow assumption documented below.
 fn with_ring<R>(bus: usize, f: impl FnOnce(&mut IbiRing) -> R) -> Option<R> {
     let workq = IBI_RINGS.get(bus)?;
     Some(critical_section::with(|cs| {
-        // SAFETY: the critical section serializes all access to this ring, so no
-        // other reference is live. We go through `as_ptr()` rather than
-        // `borrow_mut()`/`try_borrow_mut()` because the `RefCell` runtime borrow
-        // flag is unreliable on this target (it stuck "borrowed" after a clean
-        // borrow/release); mutual exclusion comes from the critical section.
-        let ring: &mut IbiRing = unsafe { &mut *workq.borrow(cs).as_ptr() };
+        // SAFETY: each ring is reachable only through this helper and wrapped
+        // in a `critical_section::Mutex`. While the critical section is held
+        // there is no ISR/thread concurrency. The caller-provided closure is
+        // also required not to re-enter this module's queue API while the
+        // mutable borrow is live, so it is sound to project the
+        // `UnsafeCell<IbiRing>` to `&mut IbiRing`.
+        let ring: &mut IbiRing = unsafe { &mut *workq.borrow(cs).get() };
         f(ring)
     }))
 }
