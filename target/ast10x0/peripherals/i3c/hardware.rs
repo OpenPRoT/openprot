@@ -206,20 +206,10 @@ pub trait HardwareFifo {
     /// Write to TX FIFO
     fn wr_tx_fifo(&mut self, bytes: &[u8]);
 
-    /// Read from FIFO using provided read function
-    fn rd_fifo<F>(&mut self, read_word: F, out: &mut [u8])
-    where
-        F: FnMut() -> u32;
-
-    /// Drain FIFO without storing data
-    fn drain_fifo<F>(&mut self, read_word: F, len: usize)
-    where
-        F: FnMut() -> u32;
-
-    /// Read from RX FIFO
+    /// Read `out.len()` bytes from the RX FIFO
     fn rd_rx_fifo(&mut self, out: &mut [u8]);
 
-    /// Read from IBI FIFO
+    /// Read `out.len()` bytes from the IBI FIFO
     fn rd_ibi_fifo(&mut self, out: &mut [u8]);
 }
 
@@ -441,24 +431,6 @@ impl<Y: FnMut(u32)> Ast1060I3c<Y> {
         Some(Self { regs, yield_fn })
     }
 
-    /// I3C register block (safe delegate to the façade).
-    #[inline]
-    fn i3c(&self) -> &'static ast1060_pac::i3c::RegisterBlock {
-        self.regs.i3c()
-    }
-
-    /// I3C-global register block (safe delegate to the façade).
-    #[inline]
-    fn i3cg(&self) -> &'static ast1060_pac::i3cglobal::RegisterBlock {
-        self.regs.i3cg()
-    }
-
-    /// SCU register block (safe delegate to the façade).
-    #[inline]
-    fn scu(&self) -> &'static ast1060_pac::scu::RegisterBlock {
-        self.regs.scu()
-    }
-
     /// Bus index this driver was constructed for.
     #[inline]
     fn bus(&self) -> u8 {
@@ -475,124 +447,6 @@ impl<Y: FnMut(u32)> Ast1060I3c<Y> {
 macro_rules! i3c_debug {
     ($logger:expr, $($arg:tt)*) => {{
         let _ = format_args!($($arg)*);
-    }};
-}
-
-// -----------------------------------------------------------------------------
-// Register Helper Macros
-// -----------------------------------------------------------------------------
-
-#[allow(unused_macros)]
-macro_rules! read_i3cg_reg1 {
-    ($self:expr, $bus:expr) => {{
-        match $bus {
-            0 => $self.i3cg().i3c014().read().bits(),
-            1 => $self.i3cg().i3c024().read().bits(),
-            2 => $self.i3cg().i3c034().read().bits(),
-            3 => $self.i3cg().i3c044().read().bits(),
-            // Unreachable: `I3cRegisters::new` validates the bus index.
-            _ => 0,
-        }
-    }};
-}
-
-macro_rules! write_i3cg_reg0 {
-    ($self:expr, $bus:expr, |$w:ident| $body:expr) => {{
-        match $bus {
-            0 => $self.i3cg().i3c010().write(|$w| $body),
-            1 => $self.i3cg().i3c020().write(|$w| $body),
-            2 => $self.i3cg().i3c030().write(|$w| $body),
-            3 => $self.i3cg().i3c040().write(|$w| $body),
-            // Unreachable: `I3cRegisters::new` validates the bus index.
-            _ => 0,
-        }
-    }};
-}
-
-macro_rules! read_i3cg_reg0 {
-    ($self:expr, $bus:expr) => {{
-        match $bus {
-            0 => $self.i3cg().i3c010().read().bits(),
-            1 => $self.i3cg().i3c020().read().bits(),
-            2 => $self.i3cg().i3c030().read().bits(),
-            3 => $self.i3cg().i3c040().read().bits(),
-            // Unreachable: `I3cRegisters::new` validates the bus index.
-            _ => 0,
-        }
-    }};
-}
-
-macro_rules! write_i3cg_reg1 {
-    ($self:expr, $bus:expr, |$w:ident| $body:expr) => {{
-        match $bus {
-            0 => $self.i3cg().i3c014().write(|$w| $body),
-            1 => $self.i3cg().i3c024().write(|$w| $body),
-            2 => $self.i3cg().i3c034().write(|$w| $body),
-            3 => $self.i3cg().i3c044().write(|$w| $body),
-            // Unreachable: `I3cRegisters::new` validates the bus index.
-            _ => 0,
-        }
-    }};
-}
-
-macro_rules! modify_i3cg_reg1 {
-    ($self:expr, $bus:expr, |$r:ident, $w:ident| $body:expr) => {{
-        match $bus {
-            0 => $self.i3cg().i3c014().modify(|$r, $w| $body),
-            1 => $self.i3cg().i3c024().modify(|$r, $w| $body),
-            2 => $self.i3cg().i3c034().modify(|$r, $w| $body),
-            3 => $self.i3cg().i3c044().modify(|$r, $w| $body),
-            // Unreachable: `I3cRegisters::new` validates the bus index.
-            _ => 0,
-        }
-    }};
-}
-
-macro_rules! i3c_dat_read {
-    ($self:expr, $pos:expr) => {{
-        match ($pos) {
-            0 => $self.i3c().i3cd280().read().bits(),
-            1 => $self.i3c().i3cd284().read().bits(),
-            2 => $self.i3c().i3cd288().read().bits(),
-            3 => $self.i3c().i3cd28c().read().bits(),
-            4 => $self.i3c().i3cd290().read().bits(),
-            5 => $self.i3c().i3cd294().read().bits(),
-            6 => $self.i3c().i3cd298().read().bits(),
-            7 => $self.i3c().i3cd29c().read().bits(),
-            _ => 0,
-        }
-    }};
-}
-
-macro_rules! i3c_dat_write {
-    ($self:expr, $pos:expr, |$w:ident| $body:expr) => {{
-        match ($pos) {
-            0 => {
-                $self.i3c().i3cd280().write(|$w| $body);
-            }
-            1 => {
-                $self.i3c().i3cd284().write(|$w| $body);
-            }
-            2 => {
-                $self.i3c().i3cd288().write(|$w| $body);
-            }
-            3 => {
-                $self.i3c().i3cd28c().write(|$w| $body);
-            }
-            4 => {
-                $self.i3c().i3cd290().write(|$w| $body);
-            }
-            5 => {
-                $self.i3c().i3cd294().write(|$w| $body);
-            }
-            6 => {
-                $self.i3c().i3cd298().write(|$w| $body);
-            }
-            7 => {
-                $self.i3c().i3cd29c().write(|$w| $body);
-            }
-            _ => { /* ignore */ }
-        }
     }};
 }
 
@@ -630,127 +484,53 @@ where
 
 impl<Y: FnMut(u32)> Ast1060I3c<Y> {
     fn toggle_scl_in(&mut self, count: u32) {
-        let bus = self.bus();
         for _ in 0..count {
-            modify_i3cg_reg1!(self, bus, |r, w| unsafe {
-                w.bits(r.bits() & !I3CG_REG1_SCL_IN_SW_MODE_VAL)
-            });
-            modify_i3cg_reg1!(self, bus, |r, w| unsafe {
-                w.bits(r.bits() | I3CG_REG1_SCL_IN_SW_MODE_VAL)
-            });
+            self.regs.i3cg_reg1_clear_bits(I3CG_REG1_SCL_IN_SW_MODE_VAL);
+            self.regs.i3cg_reg1_set_bits(I3CG_REG1_SCL_IN_SW_MODE_VAL);
         }
     }
 
     fn gen_internal_stop(&mut self) {
-        let bus = self.bus();
-        modify_i3cg_reg1!(self, bus, |r, w| unsafe {
-            w.bits(r.bits() & !I3CG_REG1_SCL_IN_SW_MODE_VAL)
-        });
-        modify_i3cg_reg1!(self, bus, |r, w| unsafe {
-            w.bits(r.bits() & !I3CG_REG1_SDA_IN_SW_MODE_VAL)
-        });
-        modify_i3cg_reg1!(self, bus, |r, w| unsafe {
-            w.bits(r.bits() | I3CG_REG1_SCL_IN_SW_MODE_VAL)
-        });
-        modify_i3cg_reg1!(self, bus, |r, w| unsafe {
-            w.bits(r.bits() | I3CG_REG1_SDA_IN_SW_MODE_VAL)
-        });
+        self.regs.i3cg_reg1_clear_bits(I3CG_REG1_SCL_IN_SW_MODE_VAL);
+        self.regs.i3cg_reg1_clear_bits(I3CG_REG1_SDA_IN_SW_MODE_VAL);
+        self.regs.i3cg_reg1_set_bits(I3CG_REG1_SCL_IN_SW_MODE_VAL);
+        self.regs.i3cg_reg1_set_bits(I3CG_REG1_SDA_IN_SW_MODE_VAL);
     }
 
     fn enter_sw_mode(&mut self) {
         i3c_debug!(self.logger, "enter sw mode");
-        let bus = self.bus();
-        let mut reg = read_i3cg_reg1!(self, bus);
+        let mut reg = self.regs.i3cg_read_reg1();
         reg |= I3CG_REG1_SCL_IN_SW_MODE_VAL | I3CG_REG1_SDA_IN_SW_MODE_VAL;
-        modify_i3cg_reg1!(self, bus, |_r, w| unsafe { w.bits(reg) });
+        self.regs.i3cg_reg1_overwrite(reg);
         reg |= I3CG_REG1_SCL_IN_SW_MODE_EN | I3CG_REG1_SDA_IN_SW_MODE_EN;
-        modify_i3cg_reg1!(self, bus, |_r, w| unsafe { w.bits(reg) });
+        self.regs.i3cg_reg1_overwrite(reg);
     }
 
     fn exit_sw_mode(&mut self) {
-        let bus = self.bus();
-        let mut reg = read_i3cg_reg1!(self, bus);
+        let mut reg = self.regs.i3cg_read_reg1();
         reg &= !(I3CG_REG1_SCL_IN_SW_MODE_EN | I3CG_REG1_SDA_IN_SW_MODE_EN);
-        modify_i3cg_reg1!(self, bus, |_r, w| unsafe { w.bits(reg) });
-    }
-
-    fn core_reset_assert(&mut self, bus: u8) {
-        match bus {
-            0 => self
-                .scu()
-                .scu050()
-                .modify(|_, w| w.rst_i3c0ctrl().set_bit()),
-            1 => self
-                .scu()
-                .scu050()
-                .modify(|_, w| w.rst_i3c1ctrl().set_bit()),
-            2 => self
-                .scu()
-                .scu050()
-                .modify(|_, w| w.rst_i3c2ctrl().set_bit()),
-            3 => self
-                .scu()
-                .scu050()
-                .modify(|_, w| w.rst_i3c3ctrl().set_bit()),
-            // Unreachable: `I3cRegisters::new` validates the bus index.
-            _ => 0,
-        };
-    }
-
-    fn core_reset_deassert(&mut self, bus: u8) {
-        let mask = 1u32 << (8 + u32::from(bus));
-        self.scu()
-            .scu054()
-            .modify(|_, w| unsafe { w.scu050sys_rst_ctrl_clear_reg2().bits(mask) });
-    }
-
-    #[allow(dead_code)]
-    fn global_reset_assert(&mut self) {
-        self.scu()
-            .scu050()
-            .modify(|_, w| w.rst_i3cregdmactrl().set_bit());
-    }
-
-    fn global_reset_deassert(&mut self) {
-        self.scu().scu054().modify(|_, w| unsafe {
-            w.scu050sys_rst_ctrl_clear_reg2()
-                .bits(I3C_GLOBAL_RESET_DEASSERT_MASK)
-        });
-    }
-
-    fn clock_on(&mut self, bus: u8) {
-        let mask = 1u32 << (8 + u32::from(bus));
-        self.scu()
-            .scu094()
-            .modify(|_, w| unsafe { w.scu090clk_stop_ctrl_clear_reg_set2().bits(mask) });
+        self.regs.i3cg_reg1_overwrite(reg);
     }
 }
 
 impl<Y: FnMut(u32)> HardwareCore for Ast1060I3c<Y> {
-    #[allow(clippy::too_many_lines)]
     fn init(&mut self, config: &mut I3cConfig) {
         i3c_debug!(self.logger, "i3c init");
 
-        self.global_reset_deassert();
+        self.regs
+            .global_reset_deassert(I3C_GLOBAL_RESET_DEASSERT_MASK);
 
-        write_i3cg_reg1!(self, self.bus(), |w| unsafe {
-            w.actmode()
-                .bits(1)
-                .instid()
-                .bits(self.bus())
-                .staticaddr()
-                .bits(I3C_DEFAULT_STATIC_ADDR)
-        });
-        let reg = read_i3cg_reg1!(self, self.bus());
+        self.regs.i3cg_program_reg1(I3C_DEFAULT_STATIC_ADDR);
+        let reg = self.regs.i3cg_read_reg1();
         i3c_debug!(self.logger, "i3cg_reg1: {:#x}", reg);
 
-        write_i3cg_reg0!(self, self.bus(), |w| unsafe { w.bits(0x0) });
-        let reg = read_i3cg_reg0!(self, self.bus());
+        self.regs.i3cg_write_reg0(0x0);
+        let reg = self.regs.i3cg_read_reg0();
         i3c_debug!(self.logger, "i3cg_reg0: {:#x}", reg);
 
-        self.core_reset_assert(self.bus());
-        self.clock_on(self.bus());
-        self.core_reset_deassert(self.bus());
+        self.regs.core_reset_assert();
+        self.regs.clock_on();
+        self.regs.core_reset_deassert();
         self.i3c_disable(config.is_secondary);
 
         i3c_debug!(
@@ -760,24 +540,11 @@ impl<Y: FnMut(u32)> HardwareCore for Ast1060I3c<Y> {
             config.is_secondary
         );
 
-        self.i3c().i3cd034().write(|w| {
-            w.ibiqueue_sw_rst()
-                .set_bit()
-                .rx_buffer_sw_rst()
-                .set_bit()
-                .tx_buffer_sw_rst()
-                .set_bit()
-                .response_queue_sw_rst()
-                .set_bit()
-                .cmd_queue_sw_rst()
-                .set_bit()
-                .core_sw_rst()
-                .set_bit()
-        });
+        self.regs.assert_all_queue_resets();
 
-        let regs = self.i3c();
+        let regs = &self.regs;
         let _ = poll_with_timeout(
-            || regs.i3cd034().read().bits(),
+            || regs.read_reset_ctrl(),
             |val| val == 0,
             &mut self.yield_fn,
             I3C_INIT_POLL_DELAY_NS,
@@ -787,68 +554,22 @@ impl<Y: FnMut(u32)> HardwareCore for Ast1060I3c<Y> {
         self.set_role(config.is_secondary);
         self.init_clock(config);
 
-        self.i3c()
-            .i3cd03c()
-            .write(|w| unsafe { w.bits(I3C_INTR_STATUS_ALL_BITS) });
+        self.regs.clear_intr_status(I3C_INTR_STATUS_ALL_BITS);
         if config.is_secondary {
-            self.i3c().i3cd040().write(|w| {
-                w.transfererrstaten()
-                    .set_bit()
-                    .respreadystatintren()
-                    .set_bit()
-                    .cccupdatedstaten()
-                    .set_bit()
-                    .dynaddrassgnstaten()
-                    .set_bit()
-                    .ibiupdatedstaten()
-                    .set_bit()
-                    .readreqrecvstaten()
-                    .set_bit()
-            });
-
-            self.i3c().i3cd044().write(|w| {
-                w.transfererrsignalen()
-                    .set_bit()
-                    .respreadysignalintren()
-                    .set_bit()
-                    .cccupdatedsignalen()
-                    .set_bit()
-                    .dynaddrassgnsignalen()
-                    .set_bit()
-                    .ibiupdatedsignalen()
-                    .set_bit()
-                    .readreqrecvsignalen()
-                    .set_bit()
-            });
+            self.regs.enable_target_irqs();
         } else {
-            self.i3c().i3cd040().write(|w| {
-                w.transfererrstaten()
-                    .set_bit()
-                    .respreadystatintren()
-                    .set_bit()
-            });
-
-            self.i3c().i3cd044().write(|w| {
-                w.transfererrsignalen()
-                    .set_bit()
-                    .respreadysignalintren()
-                    .set_bit()
-            });
+            self.regs.enable_master_irqs();
         }
 
         config.sir_allowed_by_sw = false;
 
-        self.i3c()
-            .i3cd01c()
-            .write(|w| unsafe { w.ibidata_threshold_value().bits(I3C_IBI_DATA_THRESHOLD_MAX) });
-
-        self.i3c()
-            .i3cd020()
-            .modify(|_, w| unsafe { w.rx_buffer_threshold_value().bits(0) });
+        self.regs
+            .set_ibi_data_threshold(I3C_IBI_DATA_THRESHOLD_MAX);
+        self.regs.set_rx_buf_threshold(0);
 
         self.init_pid(config);
 
-        config.maxdevs = self.i3c().i3cd05c().read().devaddrtabledepth().bits();
+        config.maxdevs = self.regs.dat_depth();
         config.free_pos = if config.maxdevs == 32 {
             u32::MAX
         } else {
@@ -857,45 +578,26 @@ impl<Y: FnMut(u32)> HardwareCore for Ast1060I3c<Y> {
         config.need_da = 0;
 
         for i in 0..(config.maxdevs) {
-            i3c_dat_write!(self, i, |w| {
-                w.sirreject().set_bit().mrreject().set_bit()
-            });
+            self.regs.dat_set_reject(i.into());
         }
 
-        self.i3c()
-            .i3cd02c()
-            .write(|w| unsafe { w.bits(I3C_INTR_STATUS_ALL_BITS) });
-        self.i3c()
-            .i3cd030()
-            .write(|w| unsafe { w.bits(I3C_INTR_STATUS_ALL_BITS) });
-        self.i3c()
-            .i3cd000()
-            .modify(|_, w| w.hot_join_ack_nack_ctrl().set_bit());
+        self.regs.write_mr_reject(I3C_INTR_STATUS_ALL_BITS);
+        self.regs.write_sir_reject(I3C_INTR_STATUS_ALL_BITS);
+        self.regs.set_hot_join_nack(true);
 
         if config.is_secondary {
-            self.i3c()
-                .i3cd004()
-                .write(|w| unsafe { w.dev_static_addr().bits(9).static_addr_valid().set_bit() });
+            self.regs.program_secondary_static_addr(9);
         } else {
-            self.i3c()
-                .i3cd004()
-                .write(|w| unsafe { w.dev_dynamic_addr().bits(8).dynamic_addr_valid().set_bit() });
+            self.regs.program_primary_dynamic_addr(8);
         }
 
         self.i3c_enable(config);
 
         i3c_debug!(self.logger, "i3c enabled");
         if !config.is_secondary {
-            self.i3c()
-                .i3cd040()
-                .modify(|_, w| w.ibithldstaten().set_bit());
-            self.i3c()
-                .i3cd044()
-                .modify(|_, w| w.ibithldsignalen().set_bit());
+            self.regs.enable_ibi_thld_irq();
         }
-        self.i3c()
-            .i3cd000()
-            .modify(|_, w| w.hot_join_ack_nack_ctrl().clear_bit());
+        self.regs.set_hot_join_nack(false);
         i3c_debug!(self.logger, "i3c init done");
 
         // Safety: Ensure memory barrier and init completion before interrupts are enabled by the caller
@@ -908,16 +610,14 @@ impl<Y: FnMut(u32)> HardwareCore for Ast1060I3c<Y> {
 
     fn i3c_disable(&mut self, is_secondary: bool) {
         i3c_debug!(self.logger, "i3c disable");
-        if self.i3c().i3cd000().read().enbl_i3cctrl().bit_is_clear() {
+        if !self.regs.controller_enabled() {
             return;
         }
 
         if is_secondary {
             self.enter_sw_mode();
         }
-        self.i3c()
-            .i3cd000()
-            .modify(|_, w| w.enbl_i3cctrl().clear_bit());
+        self.regs.disable_controller();
 
         if is_secondary {
             self.toggle_scl_in(8);
@@ -930,48 +630,28 @@ impl<Y: FnMut(u32)> HardwareCore for Ast1060I3c<Y> {
         i3c_debug!(self.logger, "i3c enable");
         if config.is_secondary {
             i3c_debug!(self.logger, "i3c enable as secondary");
-            self.i3c().i3cd038().write(|w| unsafe { w.bits(0) });
+            self.regs.write_slv_event_ctrl(0);
             self.enter_sw_mode();
-            self.i3c().i3cd000().modify(|_, w| {
-                w.enbl_adaption_of_i2ci3cmode()
-                    .clear_bit()
-                    .ibipayloaden()
-                    .set_bit()
-                    .enbl_i3cctrl()
-                    .set_bit()
-            });
-            let wait_cnt = self.i3c().i3cd0d4().read().i3cibifree().bits();
-            let wait_ns = u32::from(wait_cnt) * config.core_period;
+            self.regs.enable_controller_secondary();
+            let wait_cnt = self.regs.ibi_free_cycles();
+            let wait_ns = wait_cnt * config.core_period;
             (self.yield_fn)(wait_ns * 100_u32);
             self.toggle_scl_in(8);
-            if self.i3c().i3cd000().read().enbl_i3cctrl().bit_is_set() {
+            if self.regs.controller_enabled() {
                 self.gen_internal_stop();
             }
             self.exit_sw_mode();
         } else {
-            self.i3c().i3cd000().modify(|_, w| {
-                w.i3cbroadcast_addr_include()
-                    .set_bit()
-                    .enbl_i3cctrl()
-                    .set_bit()
-            });
+            self.regs.enable_controller_primary();
         }
     }
 
     fn set_role(&mut self, is_secondary: bool) {
-        if is_secondary {
-            self.i3c()
-                .i3cd0b0()
-                .modify(|_, w| unsafe { w.dev_op_mode().bits(1) });
-        } else {
-            self.i3c()
-                .i3cd0b0()
-                .modify(|_, w| unsafe { w.dev_op_mode().bits(0) });
-        }
+        self.regs.set_dev_op_mode(u8::from(is_secondary));
     }
 
     fn i3c_aspeed_isr(&mut self, config: &mut I3cConfig) {
-        let status = self.i3c().i3cd03c().read().bits();
+        let status = self.regs.read_intr_status();
         i3c_debug!(self.logger, "[ISR] 0x{:08x}", status);
         if status == 0 {
             return;
@@ -979,7 +659,7 @@ impl<Y: FnMut(u32)> HardwareCore for Ast1060I3c<Y> {
 
         if config.is_secondary {
             if status & INTR_DYN_ADDR_ASSGN_STAT != 0 {
-                let da = self.i3c().i3cd004().read().dev_dynamic_addr().bits();
+                let da = self.regs.dynamic_addr();
                 if let Some(tc) = &mut config.target_config {
                     tc.addr = Some(da);
                 }
@@ -1005,7 +685,7 @@ impl<Y: FnMut(u32)> HardwareCore for Ast1060I3c<Y> {
             }
         }
 
-        self.i3c().i3cd03c().write(|w| unsafe { w.bits(status) });
+        self.regs.clear_intr_status(status);
     }
 }
 
@@ -1027,21 +707,13 @@ impl<Y: FnMut(u32)> HardwareClock for Ast1060I3c<Y> {
 
         // I2C FM
         let (fm_hi_ns, fm_lo_ns) = self.calc_i2c_clk(config.i2c_scl_hz);
-        self.i3c().i3cd0bc().write(|w| unsafe {
-            w.i2cfmhcnt()
-                .bits(ns_to_cnt_u16(fm_hi_ns))
-                .i2cfmlcnt()
-                .bits(ns_to_cnt_u16(fm_lo_ns))
-        });
+        self.regs
+            .set_i2c_fm_timing(ns_to_cnt_u16(fm_hi_ns), ns_to_cnt_u16(fm_lo_ns));
 
         // I2C FMP
         let (i2c_fmp_hi_ns, i2c_fmp_lo_ns) = self.calc_i2c_clk(1_000_000);
-        self.i3c().i3cd0c0().write(|w| unsafe {
-            w.i2cfmphcnt()
-                .bits(ns_to_cnt_u8(i2c_fmp_hi_ns))
-                .i2cfmplcnt()
-                .bits(ns_to_cnt_u16(i2c_fmp_lo_ns))
-        });
+        self.regs
+            .set_i2c_fmp_timing(ns_to_cnt_u8(i2c_fmp_hi_ns), ns_to_cnt_u16(i2c_fmp_lo_ns));
 
         // I3C OD
         let (od_hi_ns, od_lo_ns) =
@@ -1053,12 +725,8 @@ impl<Y: FnMut(u32)> HardwareClock for Ast1060I3c<Y> {
             } else {
                 (i2c_fmp_hi_ns, i2c_fmp_lo_ns)
             };
-        self.i3c().i3cd0b4().write(|w| unsafe {
-            w.i3codhcnt()
-                .bits(ns_to_cnt_u8(od_hi_ns))
-                .i3codlcnt()
-                .bits(ns_to_cnt_u8(od_lo_ns))
-        });
+        self.regs
+            .set_od_timing(ns_to_cnt_u8(od_hi_ns), ns_to_cnt_u8(od_lo_ns));
 
         // I3C PP
         let (i3c_pp_hi_ns, i3c_pp_lo_ns) =
@@ -1073,25 +741,19 @@ impl<Y: FnMut(u32)> HardwareClock for Ast1060I3c<Y> {
                 let lo_ns = total_ns.saturating_sub(hi_ns).max(1);
                 (hi_ns, lo_ns)
             };
-        self.i3c().i3cd0b8().write(|w| unsafe {
-            w.i3cpphcnt()
-                .bits(ns_to_cnt_u8(i3c_pp_hi_ns))
-                .i3cpplcnt()
-                .bits(ns_to_cnt_u8(i3c_pp_lo_ns))
-        });
+        self.regs
+            .set_pp_timing(ns_to_cnt_u8(i3c_pp_hi_ns), ns_to_cnt_u8(i3c_pp_lo_ns));
 
         // SDA TX hold time (`period` is the clamped, provably-non-zero divisor)
         let hold_steps = (config.sda_tx_hold_ns)
             .div_ceil(period)
             .clamp(SDA_TX_HOLD_MIN, SDA_TX_HOLD_MAX);
-        let mut reg = self.i3c().i3cd0d0().read().bits();
+        let mut reg = self.regs.read_sda_hold();
         reg = (reg & !SDA_TX_HOLD_MASK) | ((hold_steps & 0x7) << 16);
-        self.i3c().i3cd0d0().write(|w| unsafe { w.bits(reg) });
+        self.regs.write_sda_hold(reg);
 
         // BUS_FREE_TIMING
-        self.i3c()
-            .i3cd0d4()
-            .write(|w| unsafe { w.bits(I3C_BUS_FREE_TIMING_RESET) });
+        self.regs.write_bus_free_timing(I3C_BUS_FREE_TIMING_RESET);
     }
 
     fn calc_i2c_clk(&mut self, fscl_hz: u32) -> (u32, u32) {
@@ -1128,81 +790,30 @@ impl<Y: FnMut(u32)> HardwareClock for Ast1060I3c<Y> {
 
     fn init_pid(&mut self, config: &mut I3cConfig) {
         let bus = self.bus();
-        self.i3c().i3cd070().write(|w| unsafe {
-            w.slvmipimfgid()
-                .bits(I3C_AST10X0_MIPI_MANUF_ID)
-                .slvpiddcr()
-                .clear_bit()
-        });
+        self.regs.set_pid_mfg_id(I3C_AST10X0_MIPI_MANUF_ID);
 
-        let rev_id: u32 = self.scu().scu004().read().hw_rev_id().bits().into();
+        let rev_id: u32 = self.regs.hw_rev_id();
         let mut reg: u32 = rev_id << 16 | u32::from(bus) << 12;
         reg |= 0xa000_0000;
-        self.i3c().i3cd074().write(|w| unsafe { w.bits(reg) });
-        let mut reg: u32 = self.i3c().i3cd078().read().bits();
+        self.regs.write_slv_pid_value(reg);
+        let mut reg: u32 = self.regs.read_slv_char_ctrl();
         reg &= !SLV_DCR_MASK;
         reg |= (config.dcr << 8) | 0x66;
-        self.i3c().i3cd078().write(|w| unsafe { w.bits(reg) });
+        self.regs.write_slv_char_ctrl(reg);
     }
 }
 
 impl<Y: FnMut(u32)> HardwareFifo for Ast1060I3c<Y> {
     fn wr_tx_fifo(&mut self, bytes: &[u8]) {
-        let mut chunks = bytes.chunks_exact(4);
-        for chunk in &mut chunks {
-            let word = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
-            self.i3c()
-                .i3cd014()
-                .write(|w| unsafe { w.tx_data_port().bits(word) });
-        }
-
-        let rem = chunks.remainder();
-        if !rem.is_empty() {
-            let mut tmp = [0u8; 4];
-            tmp[..rem.len()].copy_from_slice(rem);
-            let word = u32::from_le_bytes(tmp);
-            self.i3c()
-                .i3cd014()
-                .write(|w| unsafe { w.tx_data_port().bits(word) });
-        }
-    }
-
-    fn rd_fifo<F>(&mut self, mut read_word: F, out: &mut [u8])
-    where
-        F: FnMut() -> u32,
-    {
-        let mut chunks = out.chunks_exact_mut(4);
-        for chunk in &mut chunks {
-            let val = read_word();
-            chunk.copy_from_slice(&val.to_le_bytes());
-        }
-
-        let rem = chunks.into_remainder();
-        if !rem.is_empty() {
-            let val = read_word();
-            let bytes = val.to_le_bytes();
-            rem.copy_from_slice(&bytes[..rem.len()]);
-        }
-    }
-
-    fn drain_fifo<F>(&mut self, mut read_word: F, len: usize)
-    where
-        F: FnMut() -> u32,
-    {
-        let nwords = (len + 3) >> 2;
-        for _ in 0..nwords {
-            let _ = read_word();
-        }
+        self.regs.tx_fifo_write(bytes);
     }
 
     fn rd_rx_fifo(&mut self, out: &mut [u8]) {
-        let regs = self.i3c();
-        self.rd_fifo(|| regs.i3cd014().read().rx_data_port().bits(), out);
+        self.regs.rx_fifo_read(out);
     }
 
     fn rd_ibi_fifo(&mut self, out: &mut [u8]) {
-        let regs = self.i3c();
-        self.rd_fifo(|| regs.i3cd018().read().bits(), out);
+        self.regs.ibi_fifo_read(out);
     }
 }
 
@@ -1238,13 +849,11 @@ impl<Y: FnMut(u32)> HardwareRecovery for Ast1060I3c<Y> {
 
 impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
     fn set_ibi_mdb(&mut self, mdb: u8) {
-        self.i3c()
-            .i3cd000()
-            .modify(|_, w| unsafe { w.mdb().bits(mdb) });
+        self.regs.set_ibi_mdb(mdb);
     }
 
     fn exit_halt(&mut self, config: &mut I3cConfig) {
-        let state = self.i3c().i3cd054().read().cmtfrstatus().bits();
+        let state = self.regs.xfer_status();
         let expected = if config.is_secondary {
             CM_TFR_STS_TARGET_HALT
         } else {
@@ -1255,11 +864,11 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
             return;
         }
 
-        self.i3c().i3cd000().modify(|_, w| w.i3cresume().set_bit());
+        self.regs.resume();
 
-        let regs = self.i3c();
+        let regs = &self.regs;
         let rc = poll_with_timeout(
-            || u32::from(regs.i3cd054().read().cmtfrstatus().bits()),
+            || u32::from(regs.xfer_status()),
             |val| val != u32::from(expected),
             &mut self.yield_fn,
             I3C_CTRL_POLL_DELAY_NS,
@@ -1279,12 +888,12 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
         };
 
         if by_sw {
-            self.i3c().i3cd000().modify(|_, w| w.i3cabort().set_bit());
+            self.regs.abort();
         }
 
-        let regs = self.i3c();
+        let regs = &self.regs;
         let rc = poll_with_timeout(
-            || u32::from(regs.i3cd054().read().cmtfrstatus().bits()),
+            || u32::from(regs.xfer_status()),
             |val| val == u32::from(expected),
             &mut self.yield_fn,
             I3C_CTRL_POLL_DELAY_NS,
@@ -1303,10 +912,10 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
             return;
         }
 
-        self.i3c().i3cd034().write(|w| unsafe { w.bits(reg) });
-        let regs = self.i3c();
+        self.regs.write_reset_ctrl(reg);
+        let regs = &self.regs;
         let rc = poll_with_timeout(
-            || regs.i3cd034().read().bits(),
+            || regs.read_reset_ctrl(),
             |val| val == 0,
             &mut self.yield_fn,
             I3C_CTRL_POLL_DELAY_NS,
@@ -1340,27 +949,19 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
             .get(dev_idx)
             .ok_or(I3cDrvError::NoSuchDev)?;
         let tgt_bcr: u32 = u32::from(dev.bcr);
-        let mut reg = i3c_dat_read!(self, u32::from(pos));
+        let mut reg = self.regs.dat_read(pos.into());
         reg &= !DEV_ADDR_TABLE_SIR_REJECT;
         if tgt_bcr & I3C_BCR_IBI_PAYLOAD_HAS_DATA_BYTE != 0 {
             reg |= DEV_ADDR_TABLE_IBI_MDB | DEV_ADDR_TABLE_IBI_PEC;
         }
 
-        i3c_dat_write!(self, pos, |w| unsafe { w.bits(reg) });
+        self.regs.dat_write_raw(pos.into(), reg);
 
-        let mut sir_reject = self.i3c().i3cd030().read().bits();
+        let mut sir_reject = self.regs.read_sir_reject();
         sir_reject &= !bit(pos.into());
-        self.i3c()
-            .i3cd030()
-            .write(|w| unsafe { w.bits(sir_reject) });
+        self.regs.write_sir_reject(sir_reject);
 
-        self.i3c()
-            .i3cd040()
-            .modify(|_, w| w.ibithldstaten().set_bit());
-
-        self.i3c()
-            .i3cd044()
-            .modify(|_, w| w.ibithldsignalen().set_bit());
+        self.regs.enable_ibi_thld_irq();
 
         let events = I3C_CCC_EVT_INTR;
         // ccc_events_set requires HardwareTransfer trait bound on Self.
@@ -1376,18 +977,18 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
         i3c_debug!(
             self.logger,
             "i3cd040 (IBI thld) = {:#x}",
-            self.i3c().i3cd040().read().bits()
+            self.regs.read_intr_status_en()
         );
         i3c_debug!(
             self.logger,
             "i3cd044 (IBI thld sig) = {:#x}",
-            self.i3c().i3cd044().read().bits()
+            self.regs.read_intr_signal_en()
         );
         i3c_debug!(
             self.logger,
             "i3cd280 dat_addr[{}] = {:#x}",
             pos,
-            i3c_dat_read!(self, u32::from(pos))
+            self.regs.dat_read(pos.into())
         );
         i3c_debug!(self.logger, "ibi_enable done");
         Ok(())
@@ -1413,10 +1014,8 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
                 }
             }
         }
-        self.i3c().i3cd01c().modify(|_, w| unsafe {
-            w.response_buffer_threshold_value()
-                .bits(u8::try_from(xfer.cmds.len().saturating_sub(1)).unwrap_or(0))
-        });
+        self.regs
+            .set_resp_buf_threshold(u8::try_from(xfer.cmds.len().saturating_sub(1)).unwrap_or(0));
 
         for cmd in xfer.cmds.iter() {
             i3c_debug!(
@@ -1425,12 +1024,8 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
                 cmd.cmd_hi,
                 cmd.cmd_lo
             );
-            self.i3c()
-                .i3cd00c()
-                .write(|w| unsafe { w.bits(cmd.cmd_hi) });
-            self.i3c()
-                .i3cd00c()
-                .write(|w| unsafe { w.bits(cmd.cmd_lo) });
+            self.regs.push_cmd(cmd.cmd_hi);
+            self.regs.push_cmd(cmd.cmd_lo);
         }
     }
 
@@ -1441,9 +1036,9 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
 
         if p.is_null() {
             // Drain the response queue to prevent interrupt loops if no xfer is active
-            let nresp = self.i3c().i3cd04c().read().respbufblr().bits() as usize;
+            let nresp = self.regs.resp_buf_level();
             for _ in 0..nresp {
-                let _ = self.i3c().i3cd010().read().bits();
+                let _ = self.regs.pop_response();
             }
             return;
         }
@@ -1458,10 +1053,10 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
         // exclusive ownership transfer.
         let xfer: &mut I3cXfer = unsafe { &mut *(p.cast::<I3cXfer>()) };
 
-        let nresp = self.i3c().i3cd04c().read().respbufblr().bits() as usize;
+        let nresp = self.regs.resp_buf_level();
 
         for _ in 0..nresp {
-            let resp = self.i3c().i3cd010().read().bits();
+            let resp = self.regs.pop_response();
 
             let tid = field_get(resp, RESPONSE_PORT_TID_MASK, RESPONSE_PORT_TID_SHIFT) as usize;
             let rx_len = field_get(
@@ -1484,8 +1079,7 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
             );
             if tid >= xfer.cmds.len() {
                 if rx_len > 0 {
-                    let regs = self.i3c();
-                    self.drain_fifo(|| regs.i3cd014().read().rx_data_port().bits(), rx_len);
+                    self.regs.rx_fifo_drain(rx_len);
                 }
                 continue;
             }
@@ -1502,18 +1096,17 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
                 continue;
             }
 
-            let regs = self.i3c();
             if err == 0 {
                 // `get_mut(..rx_len)` guards a malformed hardware length that
                 // would otherwise panic on `rx_buf[..rx_len]`; on mismatch the
                 // bytes are drained instead.
                 if let Some(dst) = cmd.rx.as_deref_mut().and_then(|b| b.get_mut(..rx_len)) {
-                    self.rd_rx_fifo(dst);
+                    self.regs.rx_fifo_read(dst);
                 } else {
-                    self.drain_fifo(|| regs.i3cd014().read().rx_data_port().bits(), rx_len);
+                    self.regs.rx_fifo_drain(rx_len);
                 }
             } else if rx_len > 0 {
-                self.drain_fifo(|| regs.i3cd014().read().rx_data_port().bits(), rx_len);
+                self.regs.rx_fifo_drain(rx_len);
             }
         }
         let mut ret = 0;
@@ -1545,9 +1138,7 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
     }
 
     fn detach_i3c_dev(&mut self, pos: usize) {
-        i3c_dat_write!(self, pos, |w| {
-            w.sirreject().set_bit().mrreject().set_bit()
-        });
+        self.regs.dat_set_reject(pos);
     }
 
     fn attach_i3c_dev(&mut self, pos: usize, addr: u8) -> Result<(), I3cDrvError> {
@@ -1556,14 +1147,7 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
             da_with_parity |= 1 << 7;
         }
 
-        i3c_dat_write!(self, pos, |w| unsafe {
-            w.sirreject()
-                .set_bit()
-                .mrreject()
-                .set_bit()
-                .devdynamicaddr()
-                .bits(da_with_parity)
-        });
+        self.regs.dat_program_addr(pos, da_with_parity);
 
         Ok(())
     }
@@ -1944,8 +1528,7 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
                 self.logger,
                 "handle_ibi_sir: no such addr in attached devices"
             );
-            let regs = self.i3c();
-            self.drain_fifo(|| regs.i3cd018().read().bits(), len);
+            self.regs.ibi_fifo_drain(len);
         }
 
         let mut ibi_buf: [u8; 2] = [0u8; 2];
@@ -1956,7 +1539,7 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
     }
 
     fn handle_ibis(&mut self, config: &mut I3cConfig) {
-        let nibis = self.i3c().i3cd04c().read().ibistatuscnt().bits();
+        let nibis = self.regs.ibi_status_count();
 
         i3c_debug!(self.logger, "Number of IBIs: {}", nibis);
         if nibis == 0 {
@@ -1964,7 +1547,7 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
         }
 
         for _ in 0..nibis {
-            let reg = self.i3c().i3cd018().read().bits();
+            let reg = self.regs.ibi_fifo_pop();
 
             let ibi_id = field_get(reg, IBIQ_STATUS_IBI_ID, IBIQ_STATUS_IBI_ID_SHIFT);
             let ibi_data_len = field_get(
@@ -1992,8 +1575,7 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
             } else {
                 // normal ibi
                 i3c_debug!(self.logger, "Normal IBI");
-                let regs = self.i3c();
-                self.drain_fifo(|| regs.i3cd018().read().bits(), ibi_data_len);
+                self.regs.ibi_fifo_drain(ibi_data_len);
             }
         }
     }
@@ -2009,33 +1591,31 @@ impl<Y: FnMut(u32)> HardwareTarget for Ast1060I3c<Y> {
             )
             | field_prep(COMMAND_PORT_TID, Tid::TargetRdData as u32);
 
-        self.i3c().i3cd00c().write(|w| unsafe { w.bits(cmd) });
+        self.regs.push_cmd(cmd);
     }
 
     fn target_ibi_raise_hj(&self, config: &mut I3cConfig) -> Result<(), I3cDrvError> {
         if !config.is_secondary {
             return Err(I3cDrvError::Invalid);
         }
-        let hj_support = self.i3c().i3cd008().read().slvhjcap().bit();
-        if !hj_support {
+        if !self.regs.hj_capable() {
             return Err(I3cDrvError::Invalid);
         }
 
-        let addr_valid = self.i3c().i3cd004().read().dynamic_addr_valid().bit();
-        if addr_valid {
+        if self.regs.dynamic_addr_valid() {
             return Err(I3cDrvError::Access);
         }
 
-        self.i3c().i3cd038().write(|w| unsafe { w.bits(8) }); // set HJ request
+        self.regs.write_slv_event_ctrl(8); // set HJ request
 
         Ok(())
     }
 
     fn target_handle_response_ready(&mut self, config: &mut I3cConfig) {
-        let nresp = self.i3c().i3cd04c().read().respbufblr().bits();
+        let nresp = self.regs.resp_buf_level();
 
         for _ in 0..nresp {
-            let resp = self.i3c().i3cd010().read().bits();
+            let resp = self.regs.pop_response();
 
             let tid = field_get(resp, RESPONSE_PORT_TID_MASK, RESPONSE_PORT_TID_SHIFT) as usize;
             let rx_len = field_get(
@@ -2099,7 +1679,7 @@ impl<Y: FnMut(u32)> HardwareTarget for Ast1060I3c<Y> {
         buf: &[u8],
         notifier: &mut I3cIbi,
     ) -> Result<(), I3cDrvError> {
-        let reg = self.i3c().i3cd038().read().bits();
+        let reg = self.regs.read_slv_event_ctrl();
         if !(config.sir_allowed_by_sw && (reg & SLV_EVENT_CTRL_SIR_EN != 0)) {
             return Err(I3cDrvError::Access);
         }
@@ -2120,18 +1700,16 @@ impl<Y: FnMut(u32)> HardwareTarget for Ast1060I3c<Y> {
         let cmd: u32 = field_prep(COMMAND_PORT_ATTR, COMMAND_ATTR_SLAVE_DATA_CMD)
             | field_prep(COMMAND_PORT_ARG_DATA_LEN, payload_len)
             | field_prep(COMMAND_PORT_TID, Tid::TargetIbi as u32);
-        self.i3c().i3cd00c().write(|w| unsafe { w.bits(cmd) });
+        self.regs.push_cmd(cmd);
 
         config.target_ibi_done.reset();
 
-        self.i3c()
-            .i3cd01c()
-            .modify(|_, w| unsafe { w.response_buffer_threshold_value().bits(0) });
+        self.regs.set_resp_buf_threshold(0);
 
         self.target_tx_write(buf);
         config.target_data_done.reset();
 
-        self.i3c().i3cd08c().write(|w| w.sir().set_bit());
+        self.regs.raise_sir();
 
         if !config
             .target_ibi_done
@@ -2159,10 +1737,10 @@ impl<Y: FnMut(u32)> HardwareTarget for Ast1060I3c<Y> {
     }
 
     fn target_handle_ccc_update(&mut self, config: &mut I3cConfig) {
-        let event = self.i3c().i3cd038().read().bits();
-        self.i3c().i3cd038().write(|w| unsafe { w.bits(event) });
+        let event = self.regs.read_slv_event_ctrl();
+        self.regs.write_slv_event_ctrl(event);
         i3c_debug!(self.logger, "CCC update event: 0x{:08x}", event);
-        let reg = self.i3c().i3cd054().read().cmtfrstatus().bits();
+        let reg = self.regs.xfer_status();
         if reg == CM_TFR_STS_TARGET_HALT {
             self.enter_halt(true, config);
             self.exit_halt(config);
