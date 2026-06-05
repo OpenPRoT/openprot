@@ -142,14 +142,16 @@ impl SpiMonitor<Configured> {
     ///
     /// Mirrors Zephyr's `spim_monitor_enable(dev, true)`.
     pub fn enable(&self) {
-        self.regs.modify_ctrl(|bits| *bits |= CTRL_MONITOR_ENABLE_BIT);
+        self.regs
+            .modify_ctrl(|bits| *bits |= CTRL_MONITOR_ENABLE_BIT);
     }
 
     /// Disable the monitor filter (SPIPF000 bit 0).
     ///
     /// Mirrors Zephyr's `spim_monitor_enable(dev, false)`.
     pub fn disable(&self) {
-        self.regs.modify_ctrl(|bits| *bits &= !CTRL_MONITOR_ENABLE_BIT);
+        self.regs
+            .modify_ctrl(|bits| *bits &= !CTRL_MONITOR_ENABLE_BIT);
     }
 
     /// Configure passthrough mode (SPIPF000 passthrough bit).
@@ -172,19 +174,19 @@ impl SpiMonitor<Configured> {
     /// for each SPIPF instance, following the aspeed-rust pattern.
     pub fn set_ext_mux(&self, sel: ExtMuxSel) {
         use crate::scu::types::{ScuExtMuxSelect, SpiMonitorInstance};
-        
+
         let mux_sel = match sel {
             ExtMuxSel::Sel0 => ScuExtMuxSelect::Mux0,
             ExtMuxSel::Sel1 => ScuExtMuxSelect::Mux1,
         };
-        
+
         let instance = match self.controller {
             SpiMonitorController::Spim0 => SpiMonitorInstance::Spim0,
             SpiMonitorController::Spim1 => SpiMonitorInstance::Spim1,
             SpiMonitorController::Spim2 => SpiMonitorInstance::Spim2,
             SpiMonitorController::Spim3 => SpiMonitorInstance::Spim3,
         };
-        
+
         self.scu.set_spim_ext_mux(instance, mux_sel);
     }
 
@@ -328,19 +330,19 @@ impl<Mode> SpiMonitor<Mode> {
 /// Confirmed from aspeed-rust implementation (src/spimonitor/hardware.rs).
 /// Register field names from ast1060_pac provide safe typed accessors.
 const CTRL_MONITOR_ENABLE_BIT: u32 = 1 << 0; // enbl_filter_fn() in SPIPF000[0]
-const CTRL_PASSTHROUGH_BIT: u32 = 1 << 1;   // enbl_single_bit_passthrough() in SPIPF000[1]
+const CTRL_PASSTHROUGH_BIT: u32 = 1 << 1; // enbl_single_bit_passthrough() in SPIPF000[1]
 #[allow(dead_code)]
-const CTRL_SW_RESET_BIT: u32 = 1 << 0;       // sweng_rst() in SPIPF000[?] - uses PAC field
+const CTRL_SW_RESET_BIT: u32 = 1 << 0; // sweng_rst() in SPIPF000[?] - uses PAC field
 #[allow(dead_code)]
-const CTRL_EXT_MUX_SEL_BIT: u32 = 1 << 2;    // PLACEHOLDER - NOT in SPIPF000! See note below.
+const CTRL_EXT_MUX_SEL_BIT: u32 = 1 << 2; // PLACEHOLDER - NOT in SPIPF000! See note below.
 #[allow(dead_code)]
-const CTRL_LOCK_BIT: u32 = 1 << 31;          // PLACEHOLDER - NOT in SPIPF000! See note below.
-//
-// NOTE: CTRL_EXT_MUX_SEL and CTRL_LOCK are NOT in SPIPF000 register:
-// - ExtMux is controlled via SCU0F0 register (ext_mux_select_sig_of_spipfN bits)
-//   See aspeed-rust: spim_ext_mux_config()
-// - Lock is controlled via SPIPF07C write-disable bits and individual command
-//   table entry lock bits. See aspeed-rust: spim_lock_common(), spim_lock_rw_priv_table()
+const CTRL_LOCK_BIT: u32 = 1 << 31; // PLACEHOLDER - NOT in SPIPF000! See note below.
+                                    //
+                                    // NOTE: CTRL_EXT_MUX_SEL and CTRL_LOCK are NOT in SPIPF000 register:
+                                    // - ExtMux is controlled via SCU0F0 register (ext_mux_select_sig_of_spipfN bits)
+                                    //   See aspeed-rust: spim_ext_mux_config()
+                                    // - Lock is controlled via SPIPF07C write-disable bits and individual command
+                                    //   table entry lock bits. See aspeed-rust: spim_lock_common(), spim_lock_rw_priv_table()
 
 /// Shared drain-log implementation used by both `Configured` and `Locked`.
 fn drain_log_impl<'a>(
@@ -357,9 +359,7 @@ fn drain_log_impl<'a>(
     for i in 0..count {
         // SAFETY: log_base is a hardware RAM address validated by the PAC
         // base-address mapping. Offset stays within [0, max_entries) words.
-        let word = unsafe {
-            core::ptr::read_volatile((log_base as *const u32).add(i))
-        };
+        let word = unsafe { core::ptr::read_volatile((log_base as *const u32).add(i)) };
         buf[i] = ViolationLogEntry::parse(word);
     }
 

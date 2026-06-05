@@ -72,13 +72,23 @@ impl RegionPolicy {
     /// Construct a region that grants access in the given direction.
     #[must_use]
     pub const fn allow(start: u32, length: u32, direction: PrivilegeDirection) -> Self {
-        Self { start, length, direction, op: PrivilegeOp::Enable }
+        Self {
+            start,
+            length,
+            direction,
+            op: PrivilegeOp::Enable,
+        }
     }
 
     /// Construct a region that denies access in the given direction.
     #[must_use]
     pub const fn deny(start: u32, length: u32, direction: PrivilegeDirection) -> Self {
-        Self { start, length, direction, op: PrivilegeOp::Disable }
+        Self {
+            start,
+            length,
+            direction,
+            op: PrivilegeOp::Disable,
+        }
     }
 }
 

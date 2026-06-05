@@ -42,7 +42,12 @@ impl MonitorPolicy {
         if self.region_count >= MAX_REGION_SLOTS {
             return false;
         }
-        self.regions[self.region_count] = Some(RegionPolicy { start, length, direction, op });
+        self.regions[self.region_count] = Some(RegionPolicy {
+            start,
+            length,
+            direction,
+            op,
+        });
         self.region_count += 1;
         true
     }

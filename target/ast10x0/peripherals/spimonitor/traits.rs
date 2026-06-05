@@ -7,8 +7,8 @@
 //! with SPI monitor hardware during platform initialization.
 
 use super::types::{
-    BootError, BootResult, MuxSelect, MonitorInstance, MonitorStatus,
-    PrivilegeDirection, PrivilegeOp,
+    BootError, BootResult, MonitorInstance, MonitorStatus, MuxSelect, PrivilegeDirection,
+    PrivilegeOp,
 };
 
 /// Abstract hardware interface for SPI monitor boot operations.
@@ -89,14 +89,8 @@ mod tests {
 
     #[test]
     fn test_mux_select_conversion() {
-        assert_eq!(
-            ExtMuxSel::from(MuxSelect::RotControl),
-            ExtMuxSel::Sel0
-        );
-        assert_eq!(
-            ExtMuxSel::from(MuxSelect::HostControl),
-            ExtMuxSel::Sel1
-        );
+        assert_eq!(ExtMuxSel::from(MuxSelect::RotControl), ExtMuxSel::Sel0);
+        assert_eq!(ExtMuxSel::from(MuxSelect::HostControl), ExtMuxSel::Sel1);
     }
 
     #[test]
