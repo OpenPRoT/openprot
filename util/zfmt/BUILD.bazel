@@ -1,0 +1,41 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "zfmt",
+    srcs = [
+        "buffer.rs",
+        "clock.rs",
+        "lib.rs",
+        "messages.rs",
+        "render.rs",
+        "server.rs",
+    ],
+    crate_features = select({
+        "//target/earlgrey:is_target_earlgrey": ["clock-earlgrey"],
+        "//conditions:default": [],
+    }),
+    crate_name = "util_zfmt",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util/error",
+        "//util/ipc",
+        "//util/types",
+        "@pigweed//pw_log/rust:pw_log",
+        "@rust_crates//:zerocopy",
+        "@zfmt//zfmt",
+    ] + select({
+        "//target/earlgrey:is_target_earlgrey": [
+            "//target/earlgrey/util",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+rust_test(
+    name = "zfmt_test",
+    crate = ":zfmt",
+)
