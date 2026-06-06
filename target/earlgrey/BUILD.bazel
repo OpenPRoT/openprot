@@ -69,6 +69,12 @@ constraint_value(
     visibility = [":__subpackages__"],
 )
 
+config_setting(
+    name = "is_target_earlgrey",
+    constraint_values = [":target_earlgrey"],
+    visibility = ["//visibility:public"],
+)
+
 rust_library(
     name = "entry",
     srcs = [
@@ -91,6 +97,7 @@ rust_library(
         "@pigweed//pw_kernel/arch/riscv:arch_riscv",
         "@pigweed//pw_kernel/kernel",
         "@pigweed//pw_kernel/lib/memory_config",
+        "@pigweed//pw_log/rust:pw_log",
         "@rust_crates//:riscv-rt",
     ],
 )
