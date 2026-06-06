@@ -9,11 +9,13 @@ use {console_backend as _, entry as _};
 pub struct Target {}
 
 impl TargetInterface for Target {
-    const NAME: &'static str = "Earlgrey Userspace UART";
+    const NAME: &'static str = "Earlgrey Hardware Enablement Firmware";
 
     fn main() -> ! {
         codegen::start();
-        loop {}
+        loop {
+            core::hint::spin_loop();
+        }
     }
 
     fn shutdown(code: u32) -> ! {
@@ -22,7 +24,9 @@ impl TargetInterface for Target {
             0 => pw_log::info!("PASS"),
             _ => pw_log::info!("FAIL: {}", code as u32),
         };
-        loop {}
+        loop {
+            core::hint::spin_loop();
+        }
     }
 }
 

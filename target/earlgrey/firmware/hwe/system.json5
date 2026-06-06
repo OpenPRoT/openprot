@@ -44,6 +44,13 @@
               type: "channel_handler"
             },
             {
+              name: "uart0_interrupts",
+              type: "interrupt",
+              irqs: [
+                { name: "uart0_tx_done", number: 3 }
+              ]
+            },
+            {
               name: "logmgr_thread",
               kernel_stack_size_bytes: 2048,
               type: "thread"
@@ -55,6 +62,12 @@
               type: "device",
               start_address: 0x40100000,
               size_bytes: 0x200
+            },
+            {
+              name: "uart0",
+              type: "device",
+              start_address: 0x40000000,
+              size_bytes: 0x1000
             }
           ]
         },
