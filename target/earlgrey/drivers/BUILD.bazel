@@ -55,3 +55,17 @@ rust_test(
         "debug-assertions",
     ],
 )
+
+rust_library(
+    name = "uart_driver",
+    srcs = ["uart_driver.rs"],
+    crate_name = "earlgrey_uart_driver",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//drivers/usart/api:usart_api",
+        "//target/earlgrey:clock_domain",
+        "//target/earlgrey/registers:uart",
+        "@ureg",
+    ],
+)
