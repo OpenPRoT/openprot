@@ -1,0 +1,19 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
+
+rust_library(
+    name = "util",
+    srcs = [
+        "clock.rs",
+        "lib.rs",
+        "timer.rs",
+    ],
+    crate_name = "earlgrey_util",
+    edition = "2024",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+    deps = ["//target/earlgrey/registers:rv_timer"],
+)
