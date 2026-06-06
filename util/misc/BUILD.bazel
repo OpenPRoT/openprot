@@ -1,0 +1,25 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "misc",
+    srcs = [
+        "hexdump.rs",
+        "lib.rs",
+    ],
+    crate_name = "util_misc",
+    edition = "2024",
+    deps = [
+        "@pigweed//pw_log/rust:pw_log",
+        "@rust_crates//:zerocopy",
+    ],
+)
+
+rust_test(
+    name = "misc_test",
+    crate = ":misc",
+)
