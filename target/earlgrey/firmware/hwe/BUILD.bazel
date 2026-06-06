@@ -22,9 +22,16 @@ rust_process(
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
+        "//drivers/usart/api:usart_api",
+        "//target/earlgrey/drivers:uart_driver",
+        "//target/earlgrey/registers:uart",
+        "//util/error",
+        "//util/ipc",
+        "//util/zfmt",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:zerocopy",
     ],
 )
 
@@ -39,9 +46,22 @@ rust_process(
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
+        "//hal/blocking/usb:hal_usb",
+        "//protocol/usb/cdc_acm",
+        "//protocol/usb/stack",
+        "//target/earlgrey/drivers:usb_driver",
+        "//target/earlgrey/registers:pinmux",
+        "//target/earlgrey/registers:top_earlgrey",
+        "//target/earlgrey/registers:usbdev",
+        "//target/earlgrey/util",
+        "//util/error",
+        "//util/zfmt",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:aligned",
+        "@rust_crates//:zerocopy",
+        "@zfmt//zfmt",
     ],
 )
 
@@ -73,9 +93,11 @@ rust_process(
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
+        "//util/zfmt",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
+        "@zfmt//zfmt",
     ],
 )
 
@@ -154,7 +176,6 @@ rust_binary(
         "@pigweed//pw_kernel/kernel",
         "@pigweed//pw_kernel/subsys/console:console_backend",
         "@pigweed//pw_kernel/target:target_common",
-        "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
     ],
 )
