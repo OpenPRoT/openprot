@@ -30,10 +30,10 @@
             },
           ],
           objects: [
-              {
-              type: "thread",
-              name: "syscall_latency",
+            {
+              name: "syscall_latency_thread",
               kernel_stack_size_bytes: 4096,
+              type: "thread",
             },
           ],
         },

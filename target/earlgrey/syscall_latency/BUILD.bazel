@@ -28,6 +28,7 @@ rust_app(
     system_config = "@pigweed//pw_kernel/target:system_config_file",
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
+        "//target/earlgrey:clock_domain",
         "//target/earlgrey:config",
         "//target/earlgrey/registers",
         "@pigweed//pw_base64/rust:pw_base64",

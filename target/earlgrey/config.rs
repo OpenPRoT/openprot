@@ -27,14 +27,7 @@ const PLIC_SIZE: usize = 0x0800_0000;
 pub struct KernelConfig;
 
 impl KernelConfigInterface for KernelConfig {
-    #[cfg(feature = "silicon")]
-    const SYSTEM_CLOCK_HZ: u64 = 100_000_000;
-    #[cfg(feature = "fpga")]
-    const SYSTEM_CLOCK_HZ: u64 = 6_000_000;
-    #[cfg(feature = "verilator")]
-    const SYSTEM_CLOCK_HZ: u64 = 125_000;
-    #[cfg(feature = "qemu")]
-    const SYSTEM_CLOCK_HZ: u64 = 24_000_000;
+    const SYSTEM_CLOCK_HZ: u64 = earlgrey_clock_domain::SYSTEM_CLOCK_HZ;
 }
 
 impl RiscVKernelConfigInterface for KernelConfig {
