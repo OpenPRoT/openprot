@@ -19,7 +19,8 @@ use usb_stack::{DescriptorSource, UsbAction, UsbClass};
 
 use protocol_usb_cdc_acm::{CdcAcm, CdcAcmBuilder};
 
-use util_error::ErrorCode;
+use util_error::{AsStatus, ErrorCode};
+use util_zfmt::messages::{ProcessExit, ProcessStart};
 use util_zfmt::{render::render_event, FixedBuf};
 use zfmt::Zfmt;
 
@@ -248,17 +249,20 @@ fn usb_setup_pinmux() {
         .modify(|_| (PinmuxInsel::ConstantOne as u32).into());
 }
 
+fn usbmgr_server() -> Result<(), ErrorCode> {
+    usb_setup_pinmux();
+    handle_usb()
+}
+
 #[process_entry("usbmgr")]
 fn entry() -> Result<(), Error> {
-    pw_log::info!("🔄 RUNNING");
-    usb_setup_pinmux();
-    match handle_usb() {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            let e = u32::from(e);
-            pw_log::error!("usbmgr FAIL: {}", e as u32);
-            // TODO: make an appropiate conversion function.
-            Err(Error::try_from(e & 0x1f)?)
-        }
-    }
+    pw_log::info!("usbmgr_server");
+    util_zfmt::info!(ProcessStart { name: "usbmgr" });
+    let ret = usbmgr_server();
+    util_zfmt::error!(ProcessExit {
+        name: "usbmgr",
+        status: ret.as_status()
+    });
+
+    Err(Error::Unknown)
 }

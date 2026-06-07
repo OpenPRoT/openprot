@@ -4,13 +4,14 @@
 #![no_std]
 #![no_main]
 
+use earlgrey_clock_domain::PERIPHERAL_CLOCK_HZ;
 use logmgr_codegen::{handle, signals};
 use pw_status::{Error, StatusCode};
 use userspace::syscall::Signals;
 use userspace::time::Instant;
 use userspace::{process_entry, syscall};
 use util_ipc::{IpcChannel, IpcHandle};
-use util_zfmt::{render::render_event, FixedBuf, LogServer, Write};
+use util_zfmt::{render::render_event, FixedBuf, LogServer, StreamStart, Write, ZfmtU64};
 use zerocopy::IntoBytes;
 
 use earlgrey_uart_driver::UartDriver;
@@ -171,6 +172,18 @@ fn logmgr_server() -> Result<(), Error> {
         Signals::READABLE,
         handle::LOGGER_USB as usize,
     )?;
+    syscall::wait_group_add(
+        handle::LOGMGR_WAIT_GROUP,
+        handle::LOGGER_PLATFORM,
+        Signals::READABLE,
+        handle::LOGGER_PLATFORM as usize,
+    )?;
+    syscall::wait_group_add(
+        handle::LOGMGR_WAIT_GROUP,
+        handle::LOGGER_FLASH,
+        Signals::READABLE,
+        handle::LOGGER_FLASH as usize,
+    )?;
     // Add UART interrupt to wait group
     syscall::wait_group_add(
         handle::LOGMGR_WAIT_GROUP,
@@ -186,9 +199,28 @@ fn logmgr_server() -> Result<(), Error> {
     )?;
 
     let mut server = LogServer::<2048>::new();
-    let mut req = [0u8; 260];
     let mut active_log = ActiveLog::new();
     let mut uart_cursor = 0u64;
+
+    // Log StreamStart event to the buffer on startup.
+    let ss = StreamStart {
+        protocol_version: StreamStart::PROTOCOL_VERSION,
+        _pad0: [0; 2],
+        tick_rate_hz: ZfmtU64::from_u64(PERIPHERAL_CLOCK_HZ),
+        firmware_build_id: ZfmtU64::from_u64(0),
+    };
+    let mut ss_frame = [0u8; 4 + 1 + 20]; // tag(4) + len(1) + payload(20)
+    ss_frame[0..4].copy_from_slice(&StreamStart::ZFMT_TAG.to_le_bytes());
+    ss_frame[4] = 20; // len
+    ss.serialize_into(&mut ss_frame[5..]);
+    server.buffer.push_frame(&ss_frame);
+
+    // Kick off UART transmission.
+    if let Err(e) = service_uart_tx(&mut uart, &mut active_log, &server, &mut uart_cursor) {
+        pw_log::error!("Failed to kick off UART: {}", e as u32);
+    }
+
+    let mut req = [0u8; 260];
 
     loop {
         let wait_result =
@@ -217,7 +249,7 @@ fn logmgr_server() -> Result<(), Error> {
                 // Try to service TX (load new logs if idle)
                 service_uart_tx(&mut uart, &mut active_log, &server, &mut uart_cursor)?;
                 // Signal the USB task that there are logs available.
-                syscall::object_set_peer_user_signal(handle::LOGGER_USB, raise)?;
+                let _ = syscall::object_set_peer_user_signal(handle::LOGGER_USB, raise);
             }
         }
     }
@@ -227,5 +259,6 @@ fn logmgr_server() -> Result<(), Error> {
 fn entry() -> Result<(), Error> {
     let ret = logmgr_server();
     pw_log::error!("logmgr status = {}", ret.status_code());
+    let _ = syscall::debug_shutdown(ret);
     ret
 }
