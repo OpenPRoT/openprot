@@ -1,0 +1,49 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "client",
+    srcs = [
+        "client.rs",
+    ],
+    crate_name = "earlgrey_sysmgr_client",
+    edition = "2024",
+    deps = [
+        "//target/earlgrey/util",
+        "//util/error",
+        "//util/ipc",
+        "//util/types",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@rust_crates//:zerocopy",
+        "@zfmt//zfmt",
+    ],
+)
+
+rust_library(
+    name = "server",
+    srcs = [
+        "server.rs",
+    ],
+    crate_name = "earlgrey_sysmgr_server",
+    edition = "2024",
+    deps = [
+        ":client",
+        "//target/earlgrey/registers:lc_ctrl",
+        "//target/earlgrey/registers:rstmgr",
+        "//target/earlgrey/util",
+        "//util/error",
+        "//util/ipc",
+        "//util/types",
+        "//util/zfmt",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@rust_crates//:sha2",
+        "@rust_crates//:zerocopy",
+        "@zfmt//zfmt",
+    ],
+)
