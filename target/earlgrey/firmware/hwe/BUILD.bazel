@@ -24,6 +24,7 @@ rust_process(
     visibility = ["//visibility:public"],
     deps = [
         "//drivers/usart/api:usart_api",
+        "//target/earlgrey:clock_domain",
         "//target/earlgrey/drivers:uart_driver",
         "//target/earlgrey/registers:uart",
         "//util/error",
@@ -77,9 +78,12 @@ rust_process(
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
+        "//util/error",
+        "//util/zfmt",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
+        "@zfmt//zfmt",
     ],
 )
 
@@ -94,6 +98,9 @@ rust_process(
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
+        "//target/earlgrey/services/sysmgr:server",
+        "//util/error",
+        "//util/ipc",
         "//util/zfmt",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
@@ -113,9 +120,12 @@ rust_process(
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
+        "//util/error",
+        "//util/zfmt",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
+        "@zfmt//zfmt",
     ],
 )
 

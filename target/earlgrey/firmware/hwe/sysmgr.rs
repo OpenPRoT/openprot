@@ -4,29 +4,40 @@
 #![no_std]
 #![no_main]
 
-use pw_status::{Result, StatusCode};
+use earlgrey_sysmgr_server::SysmgrServer;
+use pw_status::Error;
+use sysmgr_codegen::handle;
 use userspace::process_entry;
-use userspace::time::{sleep_until, Clock, Duration, SystemClock};
+use userspace::syscall::{self, Signals};
+use userspace::time::Instant;
+use util_error::{AsStatus, ErrorCode};
+use util_ipc::IpcHandle;
+use util_zfmt::messages::{ProcessExit, ProcessStart};
 
-use zfmt::Zfmt;
+fn sysmgr_server() -> Result<(), ErrorCode> {
+    // SysmgrServer::new() will read boot log from retram and log boot info.
+    let mut server = SysmgrServer::new()?;
+    let service_channel = IpcHandle::new(handle::SYSMGR_SERVICE);
+    let mut buf = [0u8; 1024];
 
-#[derive(Zfmt)]
-#[zfmt(format = "Hello from sysmgr")]
-struct SysmgrHello;
-
-const DELAY: Duration = Duration::from_millis(1000);
-
-fn sysmgr_server() -> Result<()> {
     loop {
-        let wake_time = SystemClock::now() + DELAY;
-        sleep_until(wake_time)?;
-        util_zfmt::info!(SysmgrHello);
+        // Wait for incoming IPC request.
+        syscall::object_wait(handle::SYSMGR_SERVICE, Signals::READABLE, Instant::MAX)
+            .map_err(ErrorCode::kernel_error)?;
+
+        // Process request.
+        server.handle_one(&service_channel, &mut buf)?;
     }
 }
 
 #[process_entry("sysmgr")]
-fn entry() -> Result<()> {
+fn entry() -> Result<(), Error> {
+    pw_log::info!("sysmgr_server");
+    util_zfmt::info!(ProcessStart { name: "sysmgr" });
     let ret = sysmgr_server();
-    pw_log::error!("sysmgr status = {}", ret.status_code());
-    ret
+    util_zfmt::error!(ProcessExit {
+        name: "sysmgr",
+        status: ret.as_status()
+    });
+    Err(Error::Unknown)
 }
