@@ -37,3 +37,27 @@ rust_library(
         "@zfmt//zfmt",
     ],
 )
+
+rust_library(
+    name = "dfu",
+    srcs = ["dfu.rs"],
+    crate_name = "earlgrey_dfu",
+    edition = "2024",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":util",
+        "//hal/blocking/flash",
+        "//hal/blocking/usb:hal_usb",
+        "//protocol/usb/dfu",
+        "//services/flash:client",
+        "//target/earlgrey/services/sysmgr:client",
+        "//util/error",
+        "//util/ipc",
+        "//util/zfmt",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:zerocopy",
+        "@zfmt//zfmt",
+    ],
+)

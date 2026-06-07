@@ -165,6 +165,6 @@ use_repo(pip, "openprot_python_deps")
 bazel_dep(name = "zfmt", version = "0.1.0")
 git_override(
     module_name = "zfmt",
-    commit = "81f0789c326e952415f87d6fa1e847f7e598cb7c",
+    commit = "20a0140eab308783abea3567e1240f3df8296c9e",
     remote = "https://github.com/cfrantz/zfmt.git",
 )

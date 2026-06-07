@@ -77,12 +77,10 @@ impl<'a> PersoCertificate<'a> {
         let namelen = (namelen_certsz >> 12) as usize;
         let certsz = (namelen_certsz & 0x0FFF) as usize;
 
-        if rest.len() < namelen + certsz {
-            return Err(EG_ERROR_CERT_NOT_FOUND);
-        }
-
-        let name = core::str::from_utf8(&rest[..namelen]).map_err(|_| EG_ERROR_CERT_BAD_NAME)?;
-        let certificate = &rest[namelen..namelen + certsz];
+        let end_idx = namelen.checked_add(certsz).ok_or(EG_ERROR_CERT_NOT_FOUND)?;
+        let name_bytes = rest.get(..namelen).ok_or(EG_ERROR_CERT_NOT_FOUND)?;
+        let name = core::str::from_utf8(name_bytes).map_err(|_| EG_ERROR_CERT_BAD_NAME)?;
+        let certificate = rest.get(namelen..end_idx).ok_or(EG_ERROR_CERT_NOT_FOUND)?;
         // TLV objects are padded to 8-byte boundary (64-bit alignment)
         let end = (obj_size + 7) & !7;
 

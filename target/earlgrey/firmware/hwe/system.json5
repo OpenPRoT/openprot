@@ -17,7 +17,7 @@
   apps: [
     {
       name: "hwe",
-      flash_size_bytes: 32768,
+      flash_size_bytes: 49152,
       processes: [
         {
           name: "logmgr",
@@ -174,7 +174,7 @@
         },
         {
           name: "usbmgr",
-          ram_size_bytes: 6144,
+          ram_size_bytes: 16384,
           objects: [
             {
               name: "logger_usb",
@@ -206,10 +206,22 @@
                 // { name: "usbdev_rx_pid_err", number: 147 },
                 // { name: "usbdev_rx_bitstuff_err", number: 148 },
                 // { name: "usbdev_frame", number: 149 },
-                { name: "usbdev_powered", number: 150 },
+                // { name: "usbdev_powered", number: 150 },
                 // { name: "usbdev_link_out_err", number: 151 },
                 { name: "usbdev_av_setup_empty", number: 152 }
               ]
+            },
+            {
+              name: "flash_usb",
+              type: "channel_initiator",
+              handler_process: "flash_server",
+              handler_object_name: "flash_service"
+            },
+            {
+              name: "sysmgr_usb",
+              type: "channel_initiator",
+              handler_process: "sysmgr",
+              handler_object_name: "sysmgr_service"
             },
             {
               name: "usbmgr_thread",

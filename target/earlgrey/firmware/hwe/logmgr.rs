@@ -53,7 +53,6 @@ impl ActiveLog {
         self.clear();
         let consumed = render_event(event, &mut self.buf);
         if consumed.is_some() {
-            //pw_log::info!("rendered: {}", self.buf.as_str() as &str);
             self.state = TxState::Body;
             consumed
         } else {

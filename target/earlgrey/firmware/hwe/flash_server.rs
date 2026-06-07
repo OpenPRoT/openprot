@@ -65,7 +65,6 @@ fn flash_server() -> Result<(), ErrorCode> {
 
 #[process_entry("flash_server")]
 fn entry() -> Result<(), Error> {
-    pw_log::info!("flash_server");
     util_zfmt::info!(ProcessStart {
         name: "flash_server"
     });

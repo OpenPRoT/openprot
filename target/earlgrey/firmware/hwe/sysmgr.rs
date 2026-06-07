@@ -32,7 +32,6 @@ fn sysmgr_server() -> Result<(), ErrorCode> {
 
 #[process_entry("sysmgr")]
 fn entry() -> Result<(), Error> {
-    pw_log::info!("sysmgr_server");
     util_zfmt::info!(ProcessStart { name: "sysmgr" });
     let ret = sysmgr_server();
     util_zfmt::error!(ProcessExit {
