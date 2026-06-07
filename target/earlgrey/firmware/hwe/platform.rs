@@ -5,7 +5,7 @@
 #![no_main]
 
 use pw_status::Error;
-use userspace::time::{sleep_until, Instant};
+use userspace::time::{sleep_until, Clock, Duration, SystemClock};
 use userspace::{process_entry, syscall};
 use util_error::{AsStatus, ErrorCode};
 use util_zfmt::messages::{ProcessExit, ProcessStart};
@@ -16,16 +16,13 @@ use util_zfmt::messages::{ProcessExit, ProcessStart};
 
 fn platform_server() -> Result<(), ErrorCode> {
     loop {
-        let wake_time = syscall::debug_clock_now().ticks() + 10_000_000;
-        sleep_until(Instant::from_ticks(wake_time)).map_err(ErrorCode::kernel_error)?;
-        break;
+        sleep_until(SystemClock::now() + Duration::from_secs(600))
+            .map_err(ErrorCode::kernel_error)?;
     }
-    Ok(())
 }
 
 #[process_entry("platform")]
 fn entry() -> Result<(), Error> {
-    pw_log::info!("platform_server");
     util_zfmt::info!(ProcessStart { name: "platform" });
     let ret = platform_server();
     util_zfmt::error!(ProcessExit {
