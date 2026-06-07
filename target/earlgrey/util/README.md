@@ -34,3 +34,9 @@ This package provides hardware-specific utility drivers, memory-mapped data stru
 ### 6. Diagnostics & Errors (`rom_error.rs`, `error.rs`)
 *   **`RomError`**: Strongly-typed mapping of raw `u32` bootloader error codes (e.g. signature verification failures, key manager faults, flash controller errors).
 *   **`EG_ERROR`**: Target-specific userspace error module (ASCII `'FL'`) for logging utilities.
+
+### 7. Flash Address Mapping (`flash.rs`)
+*   **`EarlgreyFlashAddress`**: An extension trait for `FlashAddress` that implements Earlgrey-specific partition mapping.
+    *   Uses the most significant bit (MSB) of the 32-bit offset to distinguish between the main **DATA** partition (MSB=0) and auxiliary **INFO** partitions (MSB=1).
+    *   Provides constructors (`data()`, `info()`) and helpers to extract the bank, page, and relative offset from an encoded `FlashAddress`.
+

@@ -7,6 +7,7 @@ pub mod boot_log;
 pub mod boot_svc;
 pub mod clock;
 pub mod error;
+pub mod flash;
 mod misc;
 mod mubi;
 mod perso_tlv;
@@ -15,6 +16,7 @@ pub mod rom_error;
 pub mod tags;
 pub mod timer;
 
+pub use flash::EarlgreyFlashAddress;
 pub use mubi::AsMubi;
 pub use perso_tlv::{PersoCertificate, PersoTlvType};
 
