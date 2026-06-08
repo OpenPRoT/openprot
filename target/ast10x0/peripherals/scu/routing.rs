@@ -211,9 +211,7 @@ impl ScuRegisters {
             op_idx as u32,
             clk_gpio_ori_val[op_idx] as u32
         );
-        Some(SpimGpioOriVal {
-            clk_gpio_ori_val,
-        })
+        Some(SpimGpioOriVal { clk_gpio_ori_val })
     }
 
     /// Restore AST1060 SPIM proprietary pin state after a transaction.
