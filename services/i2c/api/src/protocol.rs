@@ -312,8 +312,12 @@ impl I2cResponseHeader {
         self.status == 0
     }
 
-    pub fn error_code(&self) -> I2cError {
-        I2cError::from(self.status)
+    pub fn error_code(&self) -> Option<I2cError> {
+        if self.is_success() {
+            None
+        } else {
+            Some(I2cError::from(self.status))
+        }
     }
 
     pub fn payload_length(&self) -> usize {
@@ -361,7 +365,7 @@ mod tests {
         let err = I2cResponseHeader::error(I2cError::AddressNack);
         let err = I2cResponseHeader::ref_from_bytes(err.as_bytes()).unwrap();
         assert!(!err.is_success());
-        assert_eq!(err.error_code(), I2cError::AddressNack);
+        assert_eq!(err.error_code(), Some(I2cError::AddressNack));
         assert_eq!(err.payload_length(), 0);
     }
 
@@ -430,6 +434,6 @@ mod tests {
         let nd = I2cResponseHeader::error(I2cError::NoData);
         let nd = I2cResponseHeader::ref_from_bytes(nd.as_bytes()).unwrap();
         assert!(!nd.is_success());
-        assert_eq!(nd.error_code(), I2cError::NoData);
+        assert_eq!(nd.error_code(), Some(I2cError::NoData));
     }
 }

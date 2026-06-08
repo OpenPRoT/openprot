@@ -211,11 +211,13 @@ where
                     .ok()
                     {
                         use i2c_api::I2cError;
-                        match rhdr.error_code() {
-                            I2cError::Bus | I2cError::ArbitrationLoss | I2cError::Timeout => {
-                                let _ = bus.driver.recover_bus();
+                        if let Some(code) = rhdr.error_code() {
+                            match code {
+                                I2cError::Bus | I2cError::ArbitrationLoss | I2cError::Timeout => {
+                                    let _ = bus.driver.recover_bus();
+                                }
+                                _ => {}
                             }
-                            _ => {}
                         }
                     }
                 }

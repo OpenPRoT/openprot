@@ -293,7 +293,7 @@ mod tests {
             zerocopy::Ref::<_, I2cResponseHeader>::from_bytes(&resp[..I2cResponseHeader::SIZE])
                 .unwrap();
         assert!(!rh.is_success());
-        assert_eq!(rh.error_code(), I2cError::AddressNack);
+        assert_eq!(rh.error_code(), Some(I2cError::AddressNack));
     }
 
     #[test]
@@ -305,6 +305,6 @@ mod tests {
         let rh =
             zerocopy::Ref::<_, I2cResponseHeader>::from_bytes(&resp[..I2cResponseHeader::SIZE])
                 .unwrap();
-        assert_eq!(rh.error_code(), I2cError::InvalidOperation);
+        assert_eq!(rh.error_code(), Some(I2cError::InvalidOperation));
     }
 }
