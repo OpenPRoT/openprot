@@ -53,8 +53,17 @@ pub enum I2cOp {
     /// Disarm slave-RX notification for this bus. No args.
     DisableSlaveNotification = 0x06,
     /// Fetch the latched slave-RX buffer (non-blocking). `op_count` = caller's
-    /// max byte count. Response payload = received bytes; status `NoData` if
-    /// nothing is latched.
+    /// max byte count. Status `NoData` if nothing is latched.
+    ///
+    /// **Response payload layout** (on success):
+    /// ```text
+    /// [ kind (1) | source_addr (1) | data (0..max_len) ]
+    /// ```
+    /// - `kind`: [`SlaveEvent`] discriminant — what triggered the latch
+    ///   (DataReceived, ReadRequest, Stop).
+    /// - `source_addr`: 7-bit address of the sending master (`0x00..=0x7F`),
+    ///   or `0xFF` if unavailable (message too short to extract it).
+    /// - `data`: the received bytes, up to `op_count` (caller's max).
     SlaveReceive = 0x07,
     /// Pre-load the slave TX buffer for the next master read.
     /// `write_len` bytes from the request payload are written into the
