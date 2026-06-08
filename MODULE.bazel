@@ -30,6 +30,9 @@ git_override(
         "//third_party/pigweed:integration_tests_armv7m.patch",
         # Stage .bin alongside .elf in system_image_test runfiles.
         "//third_party/pigweed:system_image_test_bin_runfiles.patch",
+        # Fix syscall_defs/syscall_user being gated on userspace_build_enabled,
+        # which breaks userspace=False kernel builds (pigweed regression).
+        "//third_party/pigweed:syscall_no_userspace_constraint.patch",
     ],
     remote = "https://pigweed.googlesource.com/pigweed/pigweed",
 )
