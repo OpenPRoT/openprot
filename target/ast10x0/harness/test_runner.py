@@ -353,7 +353,13 @@ def main() -> int:
         action="store_true",
         help="Skip GPIO and firmware upload; stream and detokenize UART output only",
     )
-    args = parser.parse_args()
+    args, remaining = parser.parse_known_args()
+
+    if os.environ.get("PW_RUNNER_PASSTHROUGH") == "1":
+        import subprocess
+
+        res = subprocess.run([args.firmware] + remaining)
+        return res.returncode
 
     uart_device = os.environ.get("UART_DEVICE") or config["uart"]["serial_port"]
 
