@@ -264,10 +264,10 @@ impl<T: Transport> I2cClient<T> {
 
         Ok(SlaveReceiveEvent {
             kind,
-            source_address: if source_addr == 0xFF {
-                None
-            } else {
+            source_address: if source_addr <= 0x7F {
                 Some(source_addr)
+            } else {
+                None
             },
             data_len: copy,
             truncated: data_len > copy,
