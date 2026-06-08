@@ -27,21 +27,27 @@ pub use openprot_hal_blocking::i2c_hardware::{I2cBusRecovery, I2cHardwareCore};
 use crate::protocol::I2cError;
 
 /// Extension trait for fetching the next slave event with its full event kind.
-/// Enables backends to return both the hardware event kind (ReadRequest, Stop, etc.)
-/// alongside the rx length, so the server-runtime can propagate correct metadata.
-/// Default impl delegates to `poll_slave_data()` for backward compatibility.
+///
+/// Enables backends to return both the hardware event kind (ReadRequest, Stop,
+/// etc.) alongside the rx length, so the server-runtime can propagate correct
+/// event metadata. Backends that have richer ISR event information should
+/// implement this directly rather than relying on the default.
+///
+/// The default impl delegates to [`I2cSlaveBuffer::poll_slave_data`] and
+/// always reports [`I2cIsrEvent::SlaveWrRecvd`] — correct for data-received
+/// events but loses ReadRequest and Stop distinctions. Override to propagate
+/// the full hardware event.
+///
+/// Implement this explicitly on every backend; do not rely on a blanket impl,
+/// which would prevent overriding the default via trait dispatch.
 pub trait I2cSlaveEvent: I2cSlaveBuffer {
     /// Return the next slave event and rx length, if any.
-    /// Default impl uses `poll_slave_data()` and reports DataReceived kind.
     fn try_next_slave_event(&mut self) -> Result<Option<(I2cIsrEvent, usize)>, Self::Error> {
         Ok(self
             .poll_slave_data()?
             .map(|n| (I2cIsrEvent::SlaveWrRecvd, n)))
     }
 }
-
-/// Blanket impl so all I2cSlaveBuffer types get the default behavior.
-impl<T: I2cSlaveBuffer> I2cSlaveEvent for T {}
 
 /// Map a wire status code onto the `embedded_hal::i2c::ErrorKind` taxonomy so
 /// the client can satisfy `embedded_hal::i2c::Error`.
