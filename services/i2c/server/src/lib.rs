@@ -114,7 +114,7 @@ where
     // Stash validated (is_read, len) pairs so the build pass needs no re-parse.
     // Using bool avoids matching a #[non_exhaustive] enum a second time.
     let mut op_meta = [(false, 0usize); MAX_OPS];
-    for i in 0..op_count {
+    for (i, meta) in op_meta[..op_count].iter_mut().enumerate() {
         let off = desc_base + i * I2cOpDesc::SIZE;
         let Ok(desc) =
             zerocopy::Ref::<_, I2cOpDesc>::from_bytes(&request[off..off + I2cOpDesc::SIZE])
@@ -123,11 +123,11 @@ where
         };
         match desc.op_kind() {
             Ok(I2cOpKind::Write) => {
-                op_meta[i] = (false, desc.length());
+                *meta = (false, desc.length());
                 write_total += desc.length();
             }
             Ok(I2cOpKind::Read) => {
-                op_meta[i] = (true, desc.length());
+                *meta = (true, desc.length());
                 read_total += desc.length();
             }
             Ok(_) | Err(_) => return encode_error(response, I2cError::InvalidOperation),
