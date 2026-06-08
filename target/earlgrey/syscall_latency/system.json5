@@ -29,8 +29,9 @@
               size_bytes: 0x200,
             },
           ],
-          threads: [
-            {
+          objects: [
+              {
+              type: "thread",
               name: "syscall_latency",
               kernel_stack_size_bytes: 4096,
             },

@@ -39,7 +39,11 @@
                             type: "interrupt",
                             irqs: [{ name: "i2c2", number: 112 }],
                         },
-                    ],
+                        {
+                            type: "thread",
+                            name: "i2c_server_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },],
                     memory_mappings: [
                         {
                             name: "i2c_regs",
@@ -48,12 +52,7 @@
                             size_bytes: 0x4000,
                         },
                     ],
-                    threads: [
-                        {
-                            name: "i2c_server_thread",
-                            kernel_stack_size_bytes: 4096,
-                        },
-                    ],
+                    
                 },
             ],
         },
@@ -72,13 +71,12 @@
                             handler_process: "i2c_server_process",
                             handler_object_name: "i2c",
                         },
-                    ],
-                    threads: [
                         {
+                            type: "thread",
                             name: "i2c_slave_rx_thread",
                             kernel_stack_size_bytes: 2048,
-                        },
-                    ],
+                        },],
+                    
                 },
             ],
         },

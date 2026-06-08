@@ -57,7 +57,11 @@
                                 },
                             ],
                         },
-                    ],
+                        {
+                            type: "thread",
+                            name: "usart_server_thread",
+                            kernel_stack_size_bytes: 4096,  // 4KB stack
+                        },],
                     memory_mappings: [
                         {
                             // AST1060 UART5 (debug UART, 16550-compatible)
@@ -67,12 +71,7 @@
                             size_bytes: 0x1000,
                         },
                     ],
-                    threads: [
-                        {
-                            name: "usart_server_thread",
-                            kernel_stack_size_bytes: 4096,  // 4KB stack
-                        },
-                    ],
+                    
                 },
             ],
         },
@@ -90,13 +89,12 @@
                             handler_process: "usart_server_process",
                             handler_object_name: "usart",
                         },
-                    ],
-                    threads: [
                         {
+                            type: "thread",
                             name: "usart_client_thread",
                             kernel_stack_size_bytes: 2048,
-                        },
-                    ],
+                        },],
+                    
                 },
             ],
         },
@@ -114,13 +112,12 @@
                             handler_process: "usart_server_process",
                             handler_object_name: "usart2",
                         },
-                    ],
-                    threads: [
                         {
+                            type: "thread",
                             name: "usart_client2_thread",
                             kernel_stack_size_bytes: 2048,
-                        },
-                    ],
+                        },],
+                    
                 },
             ],
         },

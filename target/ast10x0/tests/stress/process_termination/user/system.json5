@@ -42,13 +42,12 @@
                             type: "process",
                             linked_process: "extra",
                         },
-                    ],
-                    threads: [
                         {
+                            type: "thread",
                             name: "main_thread",
                             kernel_stack_size_bytes: 2048,
-                        },
-                    ],
+                        },],
+                    
                 },
             ],
         },
@@ -60,8 +59,9 @@
                     // Name must match #[process_entry("extra")] in forced_exit.rs.
                     name: "extra",
                     ram_size_bytes: 65536,        // 64KB
-                    threads: [
+                    objects: [
                         {
+                            type: "thread",
                             name: "extra_thread",
                             kernel_stack_size_bytes: 2048,
                         },

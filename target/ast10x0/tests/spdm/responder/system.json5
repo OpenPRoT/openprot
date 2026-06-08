@@ -43,13 +43,12 @@
                             name: "mctp",
                             type: "channel_handler",
                         },
-                    ],
-                    threads: [
                         {
+                            type: "thread",
                             name: "mctp_server_thread",
                             kernel_stack_size_bytes: 4096,
-                        },
-                    ],
+                        },],
+                    
                 },
             ],
         },
@@ -67,13 +66,12 @@
                             handler_process: "mctp_server_process",
                             handler_object_name: "mctp",
                         },
-                    ],
-                    threads: [
                         {
+                            type: "thread",
                             name: "spdm_responder_thread",
                             kernel_stack_size_bytes: 4096,
-                        },
-                    ],
+                        },],
+                    
                 },
             ],
         },

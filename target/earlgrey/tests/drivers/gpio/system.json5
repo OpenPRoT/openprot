@@ -21,7 +21,11 @@
         {
           name: "test_gpio",
           ram_size_bytes: 4096,
-          objects: [],
+          objects: [    {
+              type: "thread",
+              name: "main_thread",
+              kernel_stack_size_bytes: 2048,
+            },],
           memory_mappings: [
             {
               name: "gpio",
@@ -36,12 +40,7 @@
               size_bytes: 0x1000,
             }
           ],
-          threads: [
-            {
-              name: "main_thread",
-              kernel_stack_size_bytes: 2048,
-            },
-          ],
+          
         },
       ],
     },
