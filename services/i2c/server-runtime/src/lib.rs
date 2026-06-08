@@ -127,16 +127,10 @@ where
             if let Some(bus) = buses.iter_mut().find(|b| b.irq == irq) {
                 if bus.notif_enabled {
                     match bus.driver.try_next_slave_event() {
-                        Ok(Some((kind, _))) => {
-                            // Store the actual hardware event kind
-                            bus.rx_event_kind = match kind {
-                                I2cIsrEvent::SlaveWrRecvd => SlaveEvent::DataReceived,
-                                I2cIsrEvent::SlaveRdReq => SlaveEvent::ReadRequest,
-                                I2cIsrEvent::SlaveStop => SlaveEvent::Stop,
-                                _ => SlaveEvent::DataReceived,
-                            };
-                            // For DataReceived, read the buffer; other events have no data
-                            if kind == I2cIsrEvent::SlaveWrRecvd {
+                        Ok(Some((kind, _))) => match kind {
+                            I2cIsrEvent::SlaveWrRecvd => {
+                                // Master finished writing — drain buffer into latch.
+                                bus.rx_event_kind = SlaveEvent::DataReceived;
                                 match bus.driver.read_slave_buffer(&mut bus.rx) {
                                     Ok(n) => {
                                         if n > 0 {
@@ -158,7 +152,22 @@ where
                                     }
                                 }
                             }
-                        }
+                            I2cIsrEvent::SlaveRdReq => {
+                                // Master wants to read from us — no RX data, update kind only.
+                                bus.rx_event_kind = SlaveEvent::ReadRequest;
+                            }
+                            I2cIsrEvent::SlaveStop => {
+                                // Transaction ended — update kind so client can detect boundaries.
+                                bus.rx_event_kind = SlaveEvent::Stop;
+                            }
+                            I2cIsrEvent::SlaveWrReq | _ => {
+                                // SlaveWrReq: write is starting, data not yet received.
+                                // SlaveRdProc: our TX bytes were clocked out, informational.
+                                // Unknown future events: ignore.
+                                // Do not update rx_event_kind or wake the client.
+                                pw_log::debug!("slave IRQ: intermediate or unknown event, no latch update");
+                            }
+                        },
                         Ok(None) => {
                             pw_log::debug!(
                                 "slave IRQ fired but no data ready — spurious or non-data event"
