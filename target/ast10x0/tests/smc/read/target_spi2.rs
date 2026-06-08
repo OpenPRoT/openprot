@@ -11,7 +11,7 @@ use ast10x0_peripherals::scu::{
         PINCTRL_GPIOL2, PINCTRL_GPIOL3, PINCTRL_SPI2_QUAD, PINCTRL_SPIM3_DEFAULT,
         PINCTRL_SPIM4_DEFAULT,
     },
-    ScuRegisters, SpiMonitorInstance, SpiMonitorPassthrough, SpiMonitorSource, ScuExtMuxSelect,
+    ScuExtMuxSelect, ScuRegisters, SpiMonitorInstance, SpiMonitorPassthrough, SpiMonitorSource,
 };
 use ast10x0_peripherals::smc::{
     ChipSelect, FlashConfig, SmcConfig, SmcController, SmcError, SmcTopology, SpiTransaction,
@@ -81,10 +81,7 @@ fn configure_spi2_external_mux(select_mux1: bool) {
         // the same 1 MHz / 128-pin settings as the Zephyr board configuration.
         write_volatile(SCU41C, read_volatile(SCU41C) | SGPIOM_PIN_MASK);
         let config = read_volatile(SGPIOM_CONFIG) & !SGPIOM_CONFIG_MASK;
-        write_volatile(
-            SGPIOM_CONFIG,
-            config | SGPIOM_CONFIG_1MHZ_128_PINS,
-        );
+        write_volatile(SGPIOM_CONFIG, config | SGPIOM_CONFIG_1MHZ_128_PINS);
 
         let mut gpio_data = read_volatile(GPIO_E_H_DATA);
         let mut sgpio_data = read_volatile(SGPIOM_WRITE_LATCH_A_D);
@@ -123,9 +120,7 @@ fn config_spi2_master_controller() -> Result<(), SmcError> {
     scu.set_spim_passthrough(SpiMonitorInstance::Spim2, SpiMonitorPassthrough::Enabled);
     scu.set_spim_ext_mux(SpiMonitorInstance::Spim2, ScuExtMuxSelect::Mux1);
     pw_log::info!("SCU pinmux and SPIM routing configured for SPI2 monitoring");
-    unsafe {
-        write_volatile(0x7E6E_20F0 as *mut u32, 0xfff0);
-    }
+
     for _ in 0..1_000_000 {
         core::hint::spin_loop();
     }
