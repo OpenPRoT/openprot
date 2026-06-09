@@ -8,7 +8,7 @@ load("//target/earlgrey/tooling:qemu.bzl", "qemu_cfg", "qemu_otp")
 
 pw_py_importable_runfile(
     name = "opentitantool-runfiles",
-    src = "@opentitan_devbundle//:opentitantool/opentitantool",
+    src = "//third_party/lowrisc_opentitan:opentitantool",
     executable = True,
     import_location = "opentitan.opentitantool",
 )
@@ -73,27 +73,6 @@ qemu_cfg(
 qemu_otp(
     name = "qemu_rma_otp",
     testonly = True,
-)
-
-py_binary(
-    name = "opentitan_runner",
-    srcs = [
-        "opentitan_runner.py",
-    ],
-    main = "opentitan_runner.py",
-    deps = [
-        ":app_prod_ecdsa-runfiles",
-        ":bitstream_hyper310-runfiles",
-        ":bitstream_hyper340-runfiles",
-        ":opentitantool-runfiles",
-        ":rom_ext_cw310-runfiles",
-        ":rom_ext_cw340-runfiles",
-        ":test_otp-runfiles",
-        ":test_rom-runfiles",
-        ":verilator-runfiles",
-        "@pigweed//pw_tokenizer/py:detokenize",
-        "@rules_python//python/runfiles",
-    ],
 )
 
 exports_files(["qemu_start.sh"])
