@@ -1,0 +1,14 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load(":defs.bzl", "opentitan_rust_binary", "opentitan_rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+opentitan_rust_binary(
+    name = "opentitantool",
+    actual = "@lowrisc_opentitan//sw/host/opentitantool",
+)
+
+opentitan_rust_library(
+    name = "opentitanlib",
+    actual = "@lowrisc_opentitan//sw/host/opentitanlib",
+)
