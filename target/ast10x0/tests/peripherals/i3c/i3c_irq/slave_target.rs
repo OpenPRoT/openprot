@@ -173,9 +173,10 @@ fn run_target() -> Result<(), &'static str> {
 
     let board = Ast10x0Board::new(Ast10x0BoardDescriptor {
         pinctrl_groups: &[pinctrl::PINCTRL_HVI3C2],
+        i2c_buses: &[],
     });
     // SAFETY: single call at boot with exclusive access to the board.
-    unsafe { board.init() };
+    unsafe { board.init() }.expect("board init failed");
 
     // Build the config in a separate (never-inlined) frame, keep the single
     // live copy here, and lend it to the controller — see `build_config`.
