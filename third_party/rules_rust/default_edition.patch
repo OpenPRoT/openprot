@@ -1,0 +1,11 @@
+diff -ur a/rust/private/utils.bzl b/rust/private/utils.bzl
+--- a/rust/private/utils.bzl
++++ b/rust/private/utils.bzl
+@@ -909,5 +909,5 @@
+     if getattr(attr, "edition"):
+         return attr.edition
+     elif not toolchain.default_edition:
+-        fail("Attribute `edition` is required for {}.".format(label))
++        return "2024"
+     else:
+         return toolchain.default_edition
