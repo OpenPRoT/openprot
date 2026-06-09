@@ -118,6 +118,17 @@ impl SpiMonitorRegisters {
         self.regs().spipf004().write(|w| unsafe { w.bits(value) });
     }
 
+    pub fn modify_ctrl2<F>(&self, f: F)
+    where
+        F: FnOnce(&mut u32),
+    {
+        self.regs().spipf004().modify(|r, w| {
+            let mut bits = r.bits();
+            f(&mut bits);
+            unsafe { w.bits(bits) }
+        });
+    }
+
     /// SPIPF07C: Lock/status register.
     pub fn read_lock_status(&self) -> u32 {
         self.regs().spipf07c().read().bits()
@@ -151,43 +162,24 @@ impl SpiMonitorRegisters {
 
     // -----------------------------------------------------------------------
     // Violation log registers
-    //
-    // TODO: confirm SPIPF register offsets for log control from the AST10x0
-    // datasheet once available. Offsets below are placeholders consistent with
-    // known Aspeed SPIPF register map patterns.
     // -----------------------------------------------------------------------
 
     /// Current violation log write index (number of entries written so far).
     ///
-    /// Maps to the SPIPF log index register (placeholder offset 0x080).
     pub fn read_log_idx_reg(&self) -> u32 {
-        // SAFETY: raw offset read within the known SPIPF register block page.
-        unsafe {
-            let ptr = (self.base as *const u8).add(0x080) as *const u32;
-            core::ptr::read_volatile(ptr)
-        }
+        self.regs().spipf018().read().bits()
     }
 
     /// Maximum violation log capacity in bytes.
     ///
-    /// Maps to the SPIPF log size register (placeholder offset 0x084).
     pub fn read_log_max_sz(&self) -> u32 {
-        // SAFETY: same as above.
-        unsafe {
-            let ptr = (self.base as *const u8).add(0x084) as *const u32;
-            core::ptr::read_volatile(ptr)
-        }
+        self.regs().spipf014().read().bits() & 0x0007_ffff
     }
 
     /// Base address of the violation log RAM region.
     ///
     /// Returns a `usize` suitable for casting to `*const u32` by the caller.
-    /// Maps to the SPIPF log RAM address register (placeholder offset 0x088).
     pub fn log_ram_base_addr(&self) -> usize {
-        // SAFETY: same as above.
-        unsafe {
-            let ptr = (self.base as *const u8).add(0x088) as *const u32;
-            core::ptr::read_volatile(ptr) as usize
-        }
+        (self.regs().spipf010().read().bits() & !0x3) as usize
     }
 }

@@ -1,7 +1,7 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
-load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
 
 package(default_visibility = ["//visibility:public"])
@@ -47,6 +47,7 @@ rust_library(
         "smc/spi/spi_transaction.rs",
         "smc/types.rs",
         "spimonitor/controller.rs",
+        "spimonitor/commands.rs",
         "spimonitor/mod.rs",
         "spimonitor/policy.rs",
         "spimonitor/profile.rs",
@@ -73,4 +74,11 @@ rust_library(
         "@rust_crates//:embedded-storage",
         "@rust_crates//:nb",
     ],
+)
+
+rust_test(
+    name = "spimonitor_commands_test",
+    srcs = ["spimonitor/commands.rs"],
+    crate_name = "spimonitor_commands_test",
+    edition = "2024",
 )
