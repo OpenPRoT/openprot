@@ -7,6 +7,7 @@ use core::marker::PhantomData;
 
 use crate::scu::registers::ScuRegisters;
 use crate::scu::types::{ScuExtMuxSelect, SpiMonitorInstance};
+use crate::spimonitor::commands::{fixed_slot, table_value};
 use crate::spimonitor::policy::{MonitorPolicy, MAX_REGION_SLOTS};
 use crate::spimonitor::registers::{SpiMonitorController, SpiMonitorRegisters};
 use crate::spimonitor::types::{
@@ -100,10 +101,26 @@ impl SpiMonitor<Uninitialized> {
             return Err(SpiMonitorError::InvalidRegion);
         }
 
-        // Program command allow-list table.
+        let mut next_slot = 2usize;
+
+        // Slots 0 and 1 are reserved for EN4B and EX4B; slot 31 is reserved
+        // for WREAR. Other commands occupy slots 2 through 30.
         for i in 0..policy.allow_command_count {
-            let cmd = policy.allow_commands[i] as u32;
-            self.regs.write_allow_cmd_slot(i, cmd);
+            let opcode = policy.allow_commands[i];
+            let value =
+                table_value(opcode, false).ok_or(SpiMonitorError::UnsupportedCommand(opcode))?;
+            let slot = match fixed_slot(opcode) {
+                Some(slot) => slot,
+                None => {
+                    if next_slot >= 31 {
+                        return Err(SpiMonitorError::NoCommandSlot);
+                    }
+                    let slot = next_slot;
+                    next_slot += 1;
+                    slot
+                }
+            };
+            self.regs.write_allow_cmd_slot(slot, value);
         }
 
         // Program address filter table.
@@ -160,8 +177,10 @@ impl SpiMonitor<Configured> {
     /// Mirrors Zephyr's `spim_passthrough_config`.
     pub fn set_passthrough(&self, mode: PassthroughMode) {
         self.regs.modify_ctrl(|bits| match mode {
-            PassthroughMode::Enabled => *bits |= CTRL_PASSTHROUGH_BIT,
-            PassthroughMode::Disabled => *bits &= !CTRL_PASSTHROUGH_BIT,
+            PassthroughMode::Enabled => {
+                *bits = (*bits & !CTRL_PASSTHROUGH_MASK) | CTRL_SINGLE_PASSTHROUGH_BIT
+            }
+            PassthroughMode::Disabled => *bits &= !CTRL_PASSTHROUGH_MASK,
         });
     }
 
@@ -249,8 +268,10 @@ impl SpiMonitor<Locked> {
     /// during mux ownership transitions at runtime (e.g., BMC boot-hold/release).
     pub fn set_passthrough(&self, mode: PassthroughMode) {
         self.regs.modify_ctrl(|bits| match mode {
-            PassthroughMode::Enabled => *bits |= CTRL_PASSTHROUGH_BIT,
-            PassthroughMode::Disabled => *bits &= !CTRL_PASSTHROUGH_BIT,
+            PassthroughMode::Enabled => {
+                *bits = (*bits & !CTRL_PASSTHROUGH_MASK) | CTRL_SINGLE_PASSTHROUGH_BIT
+            }
+            PassthroughMode::Disabled => *bits &= !CTRL_PASSTHROUGH_MASK,
         });
     }
 
@@ -329,12 +350,11 @@ impl<Mode> SpiMonitor<Mode> {
 ///
 /// Confirmed from aspeed-rust implementation (src/spimonitor/hardware.rs).
 /// Register field names from ast1060_pac provide safe typed accessors.
-const CTRL_MONITOR_ENABLE_BIT: u32 = 1 << 0; // enbl_filter_fn() in SPIPF000[0]
-const CTRL_PASSTHROUGH_BIT: u32 = 1 << 1; // enbl_single_bit_passthrough() in SPIPF000[1]
+const CTRL_SINGLE_PASSTHROUGH_BIT: u32 = 1 << 0;
+const CTRL_PASSTHROUGH_MASK: u32 = (1 << 0) | (1 << 1);
+const CTRL_MONITOR_ENABLE_BIT: u32 = 1 << 2;
 #[allow(dead_code)]
-const CTRL_SW_RESET_BIT: u32 = 1 << 0; // sweng_rst() in SPIPF000[?] - uses PAC field
-#[allow(dead_code)]
-const CTRL_EXT_MUX_SEL_BIT: u32 = 1 << 2; // PLACEHOLDER - NOT in SPIPF000! See note below.
+const CTRL_SW_RESET_BIT: u32 = 1 << 15;
 #[allow(dead_code)]
 const CTRL_LOCK_BIT: u32 = 1 << 31; // PLACEHOLDER - NOT in SPIPF000! See note below.
                                     //
