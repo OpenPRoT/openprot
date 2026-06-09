@@ -25,22 +25,31 @@ def _opentitan_runner_impl(ctx):
     system_image_info = ctx.attr.target[0][SystemImageInfo]
     elf_file = system_image_info.elf
     bin_file = system_image_info.bin
-    runner = ctx.executable._opentitan_runner
+
+    opentitantool = ctx.executable._opentitantool
+
+    test_harness = opentitantool
+    is_custom_harness = False
+    if ctx.attr.test_harness:
+        test_harness = ctx.executable.test_harness
+        is_custom_harness = True
 
     if ctx.attr.ecdsa_key:
         result = sign_binary(
             ctx,
-            ctx.executable._opentitantool,
+            opentitantool,
             bin = bin_file,
             basename = ctx.attr.name,
         )
         bin_file = result["signed"]
 
-    optional_args = ""
-    if hasattr(ctx.attr, "exit_success") and ctx.attr.exit_success:
-        optional_args += " --exit-success='{}'".format(ctx.attr.exit_success)
-    if hasattr(ctx.attr, "exit_failure") and ctx.attr.exit_failure:
-        optional_args += " --exit-failure='{}'".format(ctx.attr.exit_failure)
+    run_script = ctx.actions.declare_file(ctx.attr.name + ".sh")
+    runfiles_list = [elf_file, bin_file, opentitantool]
+    if is_custom_harness:
+        runfiles_list.append(test_harness)
+
+    exit_success = ctx.attr.exit_success if hasattr(ctx.attr, "exit_success") else "PASS\\n"
+    exit_failure = ctx.attr.exit_failure if hasattr(ctx.attr, "exit_failure") else "FAIL: .+\\n"
 
     if ctx.attr.interface == "qemu":
         flash_file = gen_flash(
@@ -57,12 +66,11 @@ def _opentitan_runner_impl(ctx):
         qemu_start = ctx.file._qemu_start
         qemu_runner_exe = ctx.executable._qemu_runner
 
-        run_script = ctx.actions.declare_file(ctx.attr.name + ".sh")
         ctx.actions.write(
             output = run_script,
             is_executable = True,
             content = """#!/bin/bash
-{runner} \
+exec {runner} \
   --qemu-start {qemu_start} \
   --qemu-bin {qemu_bin} \
   --qemu-config {cfg} \
@@ -72,7 +80,8 @@ def _opentitan_runner_impl(ctx):
   --firmware-elf {elf} \
   --icount 6 \
   --timeout-seconds 120 \
-  {optional_args}
+  --exit-success='{exit_success}' \
+  --exit-failure='{exit_failure}'
 """.format(
                 runner = qemu_runner_exe.short_path,
                 qemu_start = qemu_start.short_path,
@@ -82,7 +91,8 @@ def _opentitan_runner_impl(ctx):
                 otp = otp_file.short_path,
                 flash = flash_file.short_path,
                 elf = elf_file.short_path,
-                optional_args = optional_args,
+                exit_success = exit_success,
+                exit_failure = exit_failure,
             ),
         )
 
@@ -90,48 +100,137 @@ def _opentitan_runner_impl(ctx):
 
         return [DefaultInfo(
             runfiles = ctx.runfiles(
-                files = [elf_file, bin_file, qemu_bin, qemu_rom, qemu_start, cfg_file, otp_file, flash_file],
+                files = runfiles_list + [qemu_bin, qemu_rom, qemu_start, cfg_file, otp_file, flash_file],
                 transitive_files = qemu_runner_runfiles,
             ),
             executable = run_script,
         )]
 
-    if ctx.attr.interface == "hyper310" or ctx.attr.interface == "hyper340":
-        load_bitstream = "--load-bitstream"
-        mechanism = "--mechanism=bootstrap"
-    elif ctx.attr.interface == "teacup":
-        load_bitstream = ""
-        mechanism = "--mechanism=rescue"
-    else:
-        load_bitstream = ""
-        mechanism = ""
+    elif ctx.attr.interface == "verilator":
+        verilator_bin = ctx.file._verilator_bin
+        verilator_rom = ctx.file._verilator_rom
+        verilator_otp = ctx.file._verilator_otp
 
-    run_script = ctx.actions.declare_file(ctx.attr.name + ".sh")
-    ctx.actions.write(
-        output = run_script,
-        is_executable = True,
-        content = """#!/bin/bash
-{runner} --interface {interface} {load_bitstream} {mechanism} --elf {elf} --bin {bin} {optional_args} "$@"
+        runfiles_list.extend([verilator_bin, verilator_rom, verilator_otp])
+
+        if ctx.attr.test_cmd:
+            test_cmd_part = ctx.attr.test_cmd
+        else:
+            test_cmd_part = "console --non-interactive --exit-success='{}' --exit-failure='{}'".format(exit_success, exit_failure)
+
+        ctx.actions.write(
+            output = run_script,
+            is_executable = True,
+            content = """#!/bin/bash
+echo {opentitantool} \
+  --rcfile= \
+  --interface=verilator \
+  --verilator-bin={verilator_bin} \
+  --verilator-rom={rom} \
+  --verilator-otp={otp} \
+  --verilator-flash={firmware} \
+  {test_cmd} "$@"
+
+exec {opentitantool} \
+  --rcfile= \
+  --interface=verilator \
+  --verilator-bin={verilator_bin} \
+  --verilator-rom={rom} \
+  --verilator-otp={otp} \
+  --verilator-flash={firmware} \
+  {test_cmd} "$@"
 """.format(
-            runner = runner.short_path,
-            interface = ctx.attr.interface,
-            load_bitstream = load_bitstream,
-            mechanism = mechanism,
-            elf = elf_file.short_path,
-            bin = bin_file.short_path,
-            optional_args = optional_args,
-        ),
-    )
+                opentitantool = opentitantool.short_path,
+                verilator_bin = verilator_bin.short_path,
+                rom = verilator_rom.short_path,
+                otp = verilator_otp.short_path,
+                firmware = bin_file.short_path,
+                test_cmd = test_cmd_part,
+            ),
+        )
+        return [DefaultInfo(
+            runfiles = ctx.runfiles(files = runfiles_list),
+            executable = run_script,
+        )]
 
-    runner_files_depset = ctx.attr._opentitan_runner[DefaultInfo].default_runfiles.files
+    else:
+        bitstream = None
+        rom_ext = None
 
-    return [DefaultInfo(
-        runfiles = ctx.runfiles(
-            files = [elf_file, bin_file, runner],
-            transitive_files = runner_files_depset,
-        ),
-        executable = run_script,
-    )]
+        if ctx.attr.interface == "hyper310":
+            bitstream = ctx.file._bitstream_hyper310
+            rom_ext = ctx.file._rom_ext_cw310
+        elif ctx.attr.interface == "hyper340":
+            bitstream = ctx.file._bitstream_hyper340
+            rom_ext = ctx.file._rom_ext_cw340
+
+        setup_cmds = []
+        setup_cmds.append('exec="transport init"')
+
+        if bitstream:
+            runfiles_list.append(bitstream)
+            setup_cmds.append('exec="fpga load-bitstream {}"'.format(bitstream.short_path))
+
+        if rom_ext:
+            runfiles_list.append(rom_ext)
+            boot_img = "boot_image.img"
+            setup_cmds.append('exec="image assemble --mirror=false --output={boot_img} {rom_ext}@0 {firmware}@0x10000"'.format(
+                boot_img = boot_img,
+                rom_ext = rom_ext.short_path,
+                firmware = bin_file.short_path,
+            ))
+            setup_cmds.append("bootstrap {}".format(boot_img))
+        else:
+            setup_cmds.append("rescue firmware {}".format(bin_file.short_path))
+
+        setup_args_list = []
+        for c in setup_cmds:
+            if c.startswith("exec="):
+                setup_args_list.append("--" + c)
+            else:
+                setup_args_list.append(c)
+        setup_args_str = " ".join(setup_args_list)
+
+        if is_custom_harness:
+            test_exec = test_harness.short_path
+            test_args = "--interface={interface}".format(
+                interface = ctx.attr.interface,
+            )
+            if ctx.attr.test_cmd:
+                test_args += " " + ctx.attr.test_cmd
+        else:
+            test_exec = opentitantool.short_path
+            test_args = "--rcfile= --interface={interface}".format(interface = ctx.attr.interface)
+            if ctx.attr.test_cmd:
+                test_args += " " + ctx.attr.test_cmd
+            else:
+                test_args += " console --non-interactive --exit-success='{}' --exit-failure='{}'".format(exit_success, exit_failure)
+
+        ctx.actions.write(
+            output = run_script,
+            is_executable = True,
+            content = """#!/bin/bash
+set -e
+
+echo "=== Performing Board Setup ==="
+echo {opentitantool} --rcfile= --interface={interface} {setup_args}
+{opentitantool} --rcfile= --interface={interface} {setup_args}
+
+echo "=== Running Test ==="
+echo {test_exec} {test_args} "$@"
+exec {test_exec} {test_args} "$@"
+""".format(
+                opentitantool = opentitantool.short_path,
+                interface = ctx.attr.interface,
+                setup_args = setup_args_str,
+                test_exec = test_exec,
+                test_args = test_args,
+            ),
+        )
+        return [DefaultInfo(
+            runfiles = ctx.runfiles(files = runfiles_list),
+            executable = run_script,
+        )]
 
 _BASE_ATTRS = {
     "ecdsa_key": attr.label_keyed_string_dict(
@@ -158,23 +257,53 @@ _BASE_ATTRS = {
         providers = [SystemImageInfo],
         cfg = _target_type_transition,
     ),
-    "_opentitan_runner": attr.label(
+    "test_cmd": attr.string(
+        default = "",
+        doc = "Custom command to run after setup (for FPGA/Silicon) or instead of console (for Verilator)",
+    ),
+    "test_harness": attr.label(
         executable = True,
         cfg = "exec",
-        default = "//target/earlgrey/tooling:opentitan_runner",
+        doc = "Alternative test harness binary",
+    ),
+    "_bitstream_hyper310": attr.label(
+        allow_single_file = True,
+        default = "@opentitan_devbundle//:earlgrey/bitstreams/bitstream_fpga_hyper310.bit",
+    ),
+    "_bitstream_hyper340": attr.label(
+        allow_single_file = True,
+        default = "@opentitan_devbundle//:earlgrey/bitstreams/bitstream_fpga_hyper340.bit",
     ),
     "_opentitantool": attr.label(
         executable = True,
         allow_single_file = True,
         cfg = "exec",
-        default = "@opentitan_devbundle//:opentitantool/opentitantool",
+        default = "//third_party/lowrisc_opentitan:opentitantool",
         doc = "opentitantool",
+    ),
+    "_rom_ext_cw310": attr.label(
+        allow_single_file = True,
+        default = "@opentitan_devbundle//:rom_ext/rom_ext_dice_x509_slot_virtual_fpga_cw310.prod_key_0.prod_key_0.signed.bin",
+    ),
+    "_rom_ext_cw340": attr.label(
+        allow_single_file = True,
+        default = "@opentitan_devbundle//:rom_ext/rom_ext_dice_x509_slot_virtual_fpga_cw340.prod_key_0.prod_key_0.signed.bin",
+    ),
+    "_verilator_bin": attr.label(
+        allow_single_file = True,
+        cfg = "exec",
+        default = "@opentitan_devbundle//:earlgrey/verilator/Vchip_sim_tb",
+    ),
+    "_verilator_otp": attr.label(
+        allow_single_file = True,
+        default = "@opentitan_devbundle//:earlgrey/otp/img_rma.24.vmem",
+    ),
+    "_verilator_rom": attr.label(
+        allow_single_file = True,
+        default = "@opentitan_devbundle//:earlgrey/test_rom/test_rom_sim_verilator.39.scr.vmem",
     ),
 }
 
-# Hidden attrs for the qemu interface.  Kept separate from _BASE_ATTRS because
-# several of these deps are testonly=True; merging them into _BASE_ATTRS would
-# prevent non-test opentitan_runner targets from loading without errors.
 _QEMU_ATTRS = {
     "_flashgen": attr.label(
         executable = True,
