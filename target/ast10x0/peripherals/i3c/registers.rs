@@ -581,6 +581,11 @@ impl I3cRegisters {
         self.i3c().i3cd038().write(|w| unsafe { w.bits(val) });
     }
 
+    /// I3CD038: request a hot-join (secondary role, no dynamic address yet).
+    pub(crate) fn raise_hot_join_request(&self) {
+        self.write_slv_event_ctrl(super::constants::SLV_EVENT_CTRL_HJ_REQ);
+    }
+
     // -------------------------------------------------------------------------
     // Interrupt status / enables
     // -------------------------------------------------------------------------

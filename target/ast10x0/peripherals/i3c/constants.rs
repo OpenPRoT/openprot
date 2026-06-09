@@ -247,8 +247,22 @@ pub const I3C_MAX_ADDR: u8 = 0x7F;
 // Hardware Limits
 // =============================================================================
 
-/// Maximum number of commands in a single transfer
+/// Maximum number of commands in a single transfer (hardware command-FIFO
+/// depth).
 pub const MAX_CMDS: usize = 32;
+/// Maximum number of commands in a single *private* transfer.
+///
+/// The command/response transfer-ID field (`COMMAND_PORT_TID` /
+/// `RESPONSE_PORT_TID_MASK`) is 4 bits wide, so only 16 distinct IDs exist.
+/// A batch using the message index as the TID must stay below this bound:
+/// indices >= 16 alias earlier commands once `field_prep` masks the TID,
+/// which mis-routes responses. Necessarily smaller than [`MAX_CMDS`].
+pub const MAX_PRIV_XFER_CMDS: usize = 16;
+/// Maximum data length encodable in a command.
+///
+/// `COMMAND_PORT_ARG_DATA_LEN` is a 16-bit field; a longer length truncates
+/// silently in `field_prep`, so transfers must validate against this bound.
+pub const MAX_XFER_DATA_LEN: usize = 0xffff;
 /// Maximum number of I3C buses supported
 pub const MAX_BUSES: usize = 4;
 /// Maximum devices per bus
