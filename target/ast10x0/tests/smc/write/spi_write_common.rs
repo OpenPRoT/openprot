@@ -5,11 +5,11 @@
 
 use core::cell::UnsafeCell;
 
+use ast10x0_peripherals::scu::SpiMonitorInstance;
 use ast10x0_peripherals::smc::{
     ChipSelect, FlashConfig, SmcConfig, SmcController, SmcError, SmcTopology, SpiReady,
     SpiTransaction, SpiUninit, TransferMode,
 };
-use ast10x0_peripherals::scu::SpiMonitorInstance;
 
 #[path = "../target_debug.rs"]
 mod target_debug;
@@ -80,15 +80,7 @@ fn command_with_spim(
     rx: &mut [u8],
     mode: TransferMode,
 ) -> Result<(), SmcError> {
-    SpiTransaction::transceive_user_with_spim(
-        spi,
-        spim,
-        ChipSelect::Cs0,
-        cmd,
-        tx,
-        rx,
-        mode,
-    )
+    SpiTransaction::transceive_user_with_spim(spi, spim, ChipSelect::Cs0, cmd, tx, rx, mode)
 }
 
 fn dma_read_with_spim(
@@ -116,26 +108,12 @@ fn dma_read_with_spim(
 
 fn read_status(spi: &mut SpiReady, spim: SpiMonitorInstance) -> Result<u8, SmcError> {
     let mut status = [0u8; 1];
-    command_with_spim(
-        spi,
-        spim,
-        &[0x05],
-        &[],
-        &mut status,
-        TransferMode::Mode111,
-    )?;
+    command_with_spim(spi, spim, &[0x05], &[], &mut status, TransferMode::Mode111)?;
     Ok(status[0])
 }
 
 fn write_enable(spi: &mut SpiReady, spim: SpiMonitorInstance) -> Result<(), SmcError> {
-    command_with_spim(
-        spi,
-        spim,
-        &[0x06],
-        &[],
-        &mut [],
-        TransferMode::Mode111,
-    )?;
+    command_with_spim(spi, spim, &[0x06], &[], &mut [], TransferMode::Mode111)?;
 
     let status = read_status(spi, spim)?;
     if status & STATUS_WEL == 0 {
@@ -192,35 +170,15 @@ fn read_fast_with_spim(
 ) -> Result<(), SmcError> {
     let address = offset.to_be_bytes();
     // 0x0C: 4-byte-address Fast Read, followed by one dummy byte.
-    let cmd = [
-        0x0c, address[0], address[1], address[2], address[3], 0x00,
-    ];
-    command_with_spim(
-        spi,
-        spim,
-        &cmd,
-        &[],
-        buf,
-        TransferMode::Mode114,
-    )
+    let cmd = [0x0c, address[0], address[1], address[2], address[3], 0x00];
+    command_with_spim(spi, spim, &cmd, &[], buf, TransferMode::Mode114)
 }
 
-fn erase_sector(
-    spi: &mut SpiReady,
-    spim: SpiMonitorInstance,
-    offset: u32,
-) -> Result<(), SmcError> {
+fn erase_sector(spi: &mut SpiReady, spim: SpiMonitorInstance, offset: u32) -> Result<(), SmcError> {
     write_enable(spi, spim)?;
     let address = offset.to_be_bytes();
     let cmd = [0x21, address[0], address[1], address[2], address[3]];
-    command_with_spim(
-        spi,
-        spim,
-        &cmd,
-        &[],
-        &mut [],
-        TransferMode::Mode111,
-    )?;
+    command_with_spim(spi, spim, &cmd, &[], &mut [], TransferMode::Mode111)?;
     let status = read_status(spi, spim)?;
     pw_log::info!("erase command SR1=0x{:02x}", status as u32);
     if status & STATUS_WIP == 0 {
@@ -239,14 +197,7 @@ fn program_page(
     write_enable(spi, spim)?;
     let address = offset.to_be_bytes();
     let cmd = [0x12, address[0], address[1], address[2], address[3]];
-    command_with_spim(
-        spi,
-        spim,
-        &cmd,
-        data,
-        &mut [],
-        TransferMode::Mode114,
-    )?;
+    command_with_spim(spi, spim, &cmd, data, &mut [], TransferMode::Mode114)?;
     let status = read_status(spi, spim)?;
     pw_log::info!("program command SR1=0x{:02x}", status as u32);
     wait_write_complete(spi, spim, status)
@@ -263,17 +214,10 @@ fn verify_data(
     let mut cursor = 0usize;
     while cursor < expected.len() {
         let len = core::cmp::min(PAGE_LEN, expected.len() - cursor);
-        dma_read_with_spim(
-            spi,
-            spim,
-            offset + cursor as u32,
-            &mut dma_buf[..len],
-        )?;
+        dma_read_with_spim(spi, spim, offset + cursor as u32, &mut dma_buf[..len])?;
         if dma_buf[..len] != expected[cursor..cursor + len] {
             let mut mismatch = 0usize;
-            while mismatch < len
-                && dma_buf[mismatch] == expected[cursor + mismatch]
-            {
+            while mismatch < len && dma_buf[mismatch] == expected[cursor + mismatch] {
                 mismatch += 1;
             }
             pw_log::info!(
@@ -318,7 +262,7 @@ fn destructive_test(
     erase_sector(spi, spim, TEST_OFFSET)?;
 
     let mut read_buf = PageBuffer([0u8; PAGE_LEN]);
-    
+
     read_fast_with_spim(spi, spim, TEST_OFFSET, &mut read_buf.0)?;
     if let Err(error) = expect_erased(&read_buf.0) {
         pw_log::info!("user-mode erase verification failed");
@@ -326,7 +270,7 @@ fn destructive_test(
     }
     pw_log::info!("user-mode erase verification passed");
 
-    let dma_buf = unsafe { core::slice::from_raw_parts_mut((DMA_BUFFER+0x100) as *mut u8, 256) };
+    let dma_buf = unsafe { core::slice::from_raw_parts_mut((DMA_BUFFER + 0x100) as *mut u8, 256) };
     dma_read_with_spim(spi, spim, TEST_OFFSET, dma_buf)?;
     expect_erased(dma_buf)?;
 
@@ -338,7 +282,6 @@ fn destructive_test(
 
     dma_read_with_spim(spi, spim, TEST_OFFSET, dma_buf)?;
 
-    
     if dma_buf != pattern {
         let mut mismatch = 0usize;
         while mismatch < PAGE_LEN && dma_buf[mismatch] == pattern[mismatch] {
@@ -356,7 +299,7 @@ fn destructive_test(
         dump_smc_read(dma_buf, PAGE_LEN as u32);
         return Err(SmcError::HardwareError);
     }
-    
+
     Ok(())
 }
 
@@ -366,14 +309,7 @@ pub fn run_flash_test(
     salt: u8,
 ) -> Result<(), SmcError> {
     let mut jedec = [0u8; 3];
-    command_with_spim(
-        spi,
-        spim,
-        &[0x9f],
-        &[],
-        &mut jedec,
-        TransferMode::Mode111,
-    )?;
+    command_with_spim(spi, spim, &[0x9f], &[], &mut jedec, TransferMode::Mode111)?;
     pw_log::info!(
         "JEDEC ID: {:02x} {:02x} {:02x}",
         jedec[0] as u32,
@@ -401,10 +337,7 @@ pub fn run_flash_test(
     test_result
 }
 
-pub fn new_spi(
-    controller: SmcController,
-    topology: SmcTopology,
-) -> Result<SpiReady, SmcError> {
+pub fn new_spi(controller: SmcController, topology: SmcTopology) -> Result<SpiReady, SmcError> {
     let config = SmcConfig {
         controller_id: controller,
         cs0: Some(FLASH_CONFIG),

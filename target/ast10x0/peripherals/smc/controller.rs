@@ -514,13 +514,12 @@ impl Smc<Ready> {
         if cs == ChipSelect::Cs1 && self.config.cs1.is_none() {
             return Err(SmcError::InvalidChipSelect);
         }
-        
         let cs_idx = cs as usize;
         // Derive user-mode base from the stored normal-read value: preserve
         // frequency bits and replace mode type with ASPEED_SPI_USER.
         let user_base = (self.normal_read_ctrl[cs_idx] & !0x7) | ASPEED_SPI_USER;
         let window = self.flash_window_base[cs_idx] as *mut u32;
-         pw_log::debug!("cs ctrl: {:08x}", self.regs.read_cs_ctrl(cs) as u32);
+
         // Assert CS: inactive first, then active (matches aspeed-rust activate_user).
         self.regs
             .write_cs_ctrl(cs, user_base | ASPEED_SPI_USER_INACTIVE);
@@ -550,7 +549,6 @@ impl Smc<Ready> {
         self.regs
             .write_cs_ctrl(cs, user_base | ASPEED_SPI_USER_INACTIVE);
         self.regs.write_cs_ctrl(cs, self.normal_read_ctrl[cs_idx]);
-        pw_log::debug!("cs ctrl: {:08x}", self.regs.read_cs_ctrl(cs) as u32);
         Ok(())
     }
 
@@ -605,8 +603,11 @@ impl Smc<Ready> {
         let reg = self.regs.read_cs_ctrl(cs);
         self.regs
             .write_cs_ctrl(cs, (reg & !SPI_CTRL_FREQ_MASK) | encoded_div);
-        self.normal_read_ctrl[cs_idx] =  self.regs.read_cs_ctrl(cs);
-        pw_log::debug!("normal_read_ctrl: {:08x}", self.normal_read_ctrl[cs_idx] as u32);
+        self.normal_read_ctrl[cs_idx] = self.regs.read_cs_ctrl(cs);
+        pw_log::debug!(
+            "normal_read_ctrl: {:08x}",
+            self.normal_read_ctrl[cs_idx] as u32
+        );
         Ok(())
     }
 
