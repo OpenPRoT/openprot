@@ -30,6 +30,11 @@ git_override(
         "//third_party/pigweed:integration_tests_armv7m.patch",
         # Stage .bin alongside .elf in system_image_test runfiles.
         "//third_party/pigweed:system_image_test_bin_runfiles.patch",
+        # syscall_defs is pure type defs that the kernel always depends on, but
+        # upstream gates it incompatible unless userspace_build is enabled. That
+        # breaks every userspace=False system_image (i2c/i3c/smc/...). Drop the
+        # gate so kernel-only images build again.
+        "//third_party/pigweed:syscall_defs_always_compatible.patch",
     ],
     remote = "https://pigweed.googlesource.com/pigweed/pigweed",
 )

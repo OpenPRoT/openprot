@@ -1,0 +1,23 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 I3C IBI Test — target image (device B). Same layout as the controller.
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1536,  // 0x600: exception vectors + PW_KERNEL_INTERRUPT_TABLE_ARRAY up to IRQ 104
+    },
+    kernel: {
+        flash_start_address: 0x00000600,
+        flash_size_bytes: 262144,
+        ram_start_address: 0x00040600,
+        ram_size_bytes: 393216,
+        interrupt_table: {
+            table: {
+                // I3C2 IRQ (bus 2, used by the HV IBI test).
+                "104": "crate::i3c2_irq",
+            },
+        },
+    },
+}
