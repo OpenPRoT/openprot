@@ -124,7 +124,8 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Uninitialized> {
     /// unmasks the NVIC line it owns.
     ///
     /// Returns [`I3cError::Busy`] if the bus's IRQ slot was already claimed by
-    /// another controller.
+    /// another controller, or [`I3cError::Timeout`] if the hardware's initial
+    /// queue-reset poll timed out.
     pub fn start(mut self) -> Result<I3cController<'c, H, Ready>, I3cError> {
         let bus = self.hw.bus_num() as usize;
         let ctx = self.hw.isr_ctx(self.config.is_secondary);
@@ -132,7 +133,12 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Uninitialized> {
             return Err(I3cError::Busy);
         }
 
-        self.hw.init(self.config);
+        if let Err(e) = self.hw.init(self.config) {
+            // Release the just-claimed slot, or every retry of `start()`
+            // would fail with `Busy` against a controller that never came up.
+            super::hardware::unregister_i3c_irq_handler(bus);
+            return Err(e);
+        }
         // Memory barrier so init writes are visible before the integration
         // layer unmasks the IRQ line.
         cortex_m::asm::dmb();
@@ -280,12 +286,17 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
     ///
     /// // Full recovery with FIFO reset
     /// let reset = RESET_CTRL_RX_FIFO | RESET_CTRL_TX_FIFO | RESET_CTRL_CMD_QUEUE;
-    /// ctrl.recover_bus_full(reset);
+    /// ctrl.recover_bus_full(reset)?;
     /// ```
-    pub fn recover_bus_full(&mut self, reset_mask: u32) {
+    ///
+    /// # Errors
+    ///
+    /// [`I3cError::Timeout`] if the controller reset bits did not self-clear —
+    /// the engine is wedged beyond what software recovery can fix.
+    pub fn recover_bus_full(&mut self, reset_mask: u32) -> Result<(), I3cError> {
         self.recover_bus(8);
         let (hw, _) = self.parts();
-        hw.reset_ctrl(reset_mask);
+        hw.reset_ctrl(reset_mask)
     }
 
     // =========================================================================

@@ -127,7 +127,12 @@ impl Default for I3cCmd<'_> {
 
 /// I3C message descriptor
 pub struct I3cMsg<'a> {
-    /// Data buffer
+    /// Data buffer.
+    ///
+    /// **Consumed by the transfer**: `priv_xfer_build_cmds` moves the reborrow
+    /// into the command descriptor (`Option::take`), so this is `None` after a
+    /// transfer. Read the result through `actual_len`/`num_xfer`; the caller
+    /// still owns the underlying buffer.
     pub buf: Option<&'a mut [u8]>,
     /// Actual bytes transferred
     pub actual_len: u32,
