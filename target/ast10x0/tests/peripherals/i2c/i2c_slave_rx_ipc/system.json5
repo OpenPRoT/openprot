@@ -1,0 +1,84 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 I2C slave-RX IPC test: i2c_server (hw owner) + i2c_slave_rx (client).
+//
+// Memory layout:
+//   0x00000000 - 0x000007FF: Vector table (2048 bytes)
+//   0x00000800 - 0x0001FFFF: Kernel flash (~126KB)
+//   0x00020000 - 0x0003FFFF: i2c_server flash (128KB)
+//   0x00040000 - 0x0005FFFF: i2c_slave_rx flash (128KB)
+//   0x00060000 - 0x0007FFFF: Kernel RAM (128KB)
+//   0x00080000 - 0x0008FFFF: i2c_server RAM (64KB)
+//   0x00090000 - 0x00097FFF: i2c_slave_rx RAM (32KB)
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 2048,
+    },
+    kernel: {
+        flash_start_address: 0x00000800,
+        flash_size_bytes: 129024,
+        ram_start_address: 0x00060000,
+        ram_size_bytes: 131072,
+    },
+    apps: [
+        {
+            name: "i2c_server",
+            flash_size_bytes: 131072,
+            processes: [
+                {
+                    name: "i2c_server_process",
+                    ram_size_bytes: 65536,
+                    objects: [
+                        { name: "wg",       type: "wait_group" },
+                        { name: "i2c",      type: "channel_handler" },
+                        {
+                            name: "i2c2_irq",
+                            type: "interrupt",
+                            irqs: [{ name: "i2c2", number: 112 }],
+                        },
+                        {
+                            type: "thread",
+                            name: "i2c_server_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },],
+                    memory_mappings: [
+                        {
+                            name: "i2c_regs",
+                            type: "device",
+                            start_address: 0x7e7b0000,
+                            size_bytes: 0x4000,
+                        },
+                    ],
+                    
+                },
+            ],
+        },
+        // ──── I2C Slave RX Test App ────
+        {
+            name: "i2c_slave_rx",
+            flash_size_bytes: 131072,
+            processes: [
+                {
+                    name: "i2c_slave_rx_process",
+                    ram_size_bytes: 32768,
+                    objects: [
+                        {
+                            name: "i2c",
+                            type: "channel_initiator",
+                            handler_process: "i2c_server_process",
+                            handler_object_name: "i2c",
+                        },
+                        {
+                            type: "thread",
+                            name: "i2c_slave_rx_thread",
+                            kernel_stack_size_bytes: 2048,
+                        },],
+                    
+                },
+            ],
+        },
+    ],
+}

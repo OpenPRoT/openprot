@@ -1,0 +1,11 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "openprot-spdm-common"
+version = "0.1.0"
+edition = "2021"
+description = "Common constants and types for SPDM requester and responder"
+license = "Apache-2.0"
+
+[dependencies]

@@ -14,12 +14,34 @@
 use ast10x0_peripherals::scu::{ClockRegisterHalf, ScuRegisterHalf};
 use ast10x0_peripherals::scu::{PinctrlPin, ScuRegisters};
 
+pub mod monitor;
+pub mod spim_wiring;
+
+pub use monitor::Ast1060Monitor;
+pub use spim_wiring::{apply_spim_wiring, presets, SpimWiring, SpimWiringError};
+
+pub use ast10x0_peripherals::i2c::{I2cConfig, I2cError};
+
+/// Per-bus I2C bring-up entry: which controller, and the config its
+/// `init_hardware()` (timing/master/interrupts) is run with.
+#[derive(Clone, Debug)]
+pub struct I2cBusCfg {
+    /// Controller index (`0..=i2c_backend::MAX_BUS`).
+    pub bus: u8,
+    /// Per-controller configuration applied by `init_bus`.
+    pub config: I2cConfig,
+}
+
 /// Board descriptor metadata for AST10x0 board initialization.
 #[derive(Clone, Debug)]
 pub struct Ast10x0BoardDescriptor {
     /// Pin control groups to apply during board init.
     /// Applied in order via `ScuRegisters::apply_pinctrl_group()`.
     pub pinctrl_groups: &'static [&'static [PinctrlPin]],
+    /// I2C controllers this board wires, with their per-bus config. The board
+    /// brings every one up eagerly during [`Ast10x0Board::init`]. Empty for
+    /// boards/tests that manage I2C themselves.
+    pub i2c_buses: &'static [I2cBusCfg],
 }
 
 /// Runtime board object that executes hardware initialization steps.
@@ -44,11 +66,16 @@ impl Ast10x0Board {
     /// 5. Deassert reset
     /// 6. Delay for recovery
     /// 7. Configure I2C global registers (clock dividers, etc.)
+    /// 8. Per-controller bring-up (`init_bus`) for every wired bus in
+    ///    `descriptor.i2c_buses`.
+    ///
+    /// # Errors
+    /// Returns the first per-controller init failure. Steps 1-7 are infallible.
     ///
     /// # Safety
     /// - Must be called only once during board initialization.
     /// - Not thread-safe; caller must ensure no concurrent SCU or I2C accesses.
-    pub unsafe fn init(&self) {
+    pub unsafe fn init(&self) -> Result<(), I2cError> {
         // Unlock SCU once before the sequence of writes (aspeed-rust pattern)
         let scu = unsafe { ScuRegisters::new_global_unlocked() };
 
@@ -70,6 +97,16 @@ impl Ast10x0Board {
 
         // Configure I2C global registers (clock dividers, etc.)
         unsafe { ast10x0_peripherals::i2c::init_i2c_global() };
+
+        // Eagerly bring up every wired controller. The server later re-wraps
+        // these with no re-init via `open_bus` / `open_bus_dma`.
+        for b in self.descriptor.i2c_buses {
+            // SAFETY: subsystem init (clock/reset/global/pin-mux) is complete;
+            // board init is single-threaded and owns every controller here.
+            unsafe { i2c_backend::init_bus(b.bus, &b.config)? };
+        }
+
+        Ok(())
     }
 }
 

@@ -3,9 +3,7 @@
 
 //! AST1060 I2C controller implementation
 
-use core::cell::UnsafeCell;
-use core::marker::PhantomData;
-
+use super::registers::Ast1060I2cRegisters;
 use super::timing::configure_timing;
 use super::types::{I2cConfig, I2cXferMode};
 use super::{constants, error::I2cError};
@@ -13,10 +11,10 @@ use ast1060_pac::{i2c::RegisterBlock, i2cbuff::RegisterBlock as BuffRegisterBloc
 
 /// Main I2C hardware abstraction.
 ///
-/// Wraps a raw `*const RegisterBlock` and `*const BuffRegisterBlock` pair
-/// for one AST1060 I2C controller. Mirrors the [`Usart`](super::super::uart::Usart)
-/// pattern: the constructor is `unsafe`; ownership/coordination is the
-/// caller's responsibility.
+/// Holds the [`Ast1060I2cRegisters`] MMIO façade for one controller; **all**
+/// `unsafe` register access is confined to that façade (the *Confined-`unsafe`
+/// MMIO Façade* pattern — see `registers.rs`). This type is the driver/state
+/// layer above it and is itself `unsafe`-free for construction.
 ///
 /// `Y` is the caller-supplied yield closure. [`wait_completion`] calls
 /// it as `(yield_ns)(100_000)` between status polls so the runtime can
@@ -24,8 +22,9 @@ use ast1060_pac::{i2c::RegisterBlock, i2cbuff::RegisterBlock as BuffRegisterBloc
 /// pure busy-wait, pass `|_| core::hint::spin_loop()`.
 #[allow(clippy::struct_excessive_bools)]
 pub struct Ast1060I2c<'a, Y: FnMut(u32)> {
-    regs: *const RegisterBlock,
-    buff_regs: *const BuffRegisterBlock,
+    /// MMIO façade — the sole site of register-pointer `unsafe`. Not `Sync`
+    /// (and not `Send`) by construction, so `Ast1060I2c` isn't either.
+    mmio: Ast1060I2cRegisters,
 
     /// Transfer mode (visible to other modules for optimization decisions)
     pub(crate) xfer_mode: I2cXferMode,
@@ -43,16 +42,14 @@ pub struct Ast1060I2c<'a, Y: FnMut(u32)> {
     pub(crate) current_xfer_cnt: u32,
     /// Completion flag for synchronous operations
     pub(crate) completion: bool,
-    /// DMA buffer for DMA mode (non-cached SRAM, caller-owned)
-    pub(crate) dma_buf: Option<&'a mut [u8]>,
+    /// Master DMA staging buffer (non-cached SRAM, caller-owned)
+    pub(crate) master_dma_buf: Option<&'a mut [u8]>,
+    /// Slave DMA buffer for slave RX (non-cached SRAM, caller-owned)
+    pub(crate) slave_dma_buf: Option<&'a mut [u8]>,
     /// Cooperative yield invoked between status polls in
     /// [`wait_completion`]. Argument is the suggested wait window in
     /// nanoseconds.
     pub(crate) yield_ns: Y,
-
-    /// Makes `Ast1060I2c` `!Sync` so the raw register pointers can't be
-    /// shared across threads without explicit synchronization.
-    _not_sync: PhantomData<UnsafeCell<()>>,
 }
 
 impl<'a, Y: FnMut(u32)> Ast1060I2c<'a, Y> {
@@ -63,23 +60,15 @@ impl<'a, Y: FnMut(u32)> Ast1060I2c<'a, Y> {
     /// already been brought up by application code or a previous
     /// `new()` call.
     ///
-    /// # Safety
-    ///
-    /// - `regs` and `buff_regs` must be valid, non-null pointers to the
-    ///   AST1060 I2C register block and its companion buffer block for
-    ///   the **same** controller instance.
-    /// - The pointed register blocks must remain valid for the lifetime
-    ///   of this `Ast1060I2c`.
-    /// - Caller must enforce global ownership/coordination so concurrent
-    ///   mutable access does not occur through other code paths.
-    pub unsafe fn new(
-        regs: *const RegisterBlock,
-        buff_regs: *const BuffRegisterBlock,
+    /// Safe: the `unsafe` register-pointer perimeter was discharged once at
+    /// [`Ast1060I2cRegisters::new`]; this only consumes the resulting façade.
+    pub fn new(
+        mmio: Ast1060I2cRegisters,
         config: &I2cConfig,
         yield_ns: Y,
     ) -> Result<Self, I2cError> {
-        let mut i2c = unsafe { Self::from_initialized(regs, buff_regs, config, yield_ns) };
-        i2c.init_hardware(&config)?;
+        let mut i2c = Self::from_initialized(mmio, config, yield_ns);
+        i2c.init_hardware(config)?;
         Ok(i2c)
     }
 
@@ -91,23 +80,15 @@ impl<'a, Y: FnMut(u32)> Ast1060I2c<'a, Y> {
     /// - Hardware was initialized by a previous `new()` call
     /// - You want to avoid redundant re-initialization overhead
     ///
-    /// # Safety
-    ///
-    /// Same contract as [`new`]. Additionally, the caller must ensure
-    /// hardware is already configured: I2C global registers (I2CG0C,
-    /// I2CG10) are set (call [`super::global::init_i2c_global`] ONCE in
-    /// the app before use); controller is enabled (I2CC00); timing is
-    /// configured; pin mux is configured.
+    /// Precondition (caller-ensured, not a safety obligation of this fn):
+    /// hardware is already configured — I2C global registers (I2CG0C,
+    /// I2CG10) set (call [`super::global::init_i2c_global`] ONCE in the app
+    /// before use); controller enabled (I2CC00); timing configured; pin mux
+    /// configured.
     #[must_use]
-    pub unsafe fn from_initialized(
-        regs: *const RegisterBlock,
-        buff_regs: *const BuffRegisterBlock,
-        config: &I2cConfig,
-        yield_ns: Y,
-    ) -> Self {
+    pub fn from_initialized(mmio: Ast1060I2cRegisters, config: &I2cConfig, yield_ns: Y) -> Self {
         Self {
-            regs,
-            buff_regs,
+            mmio,
             xfer_mode: config.xfer_mode,
             multi_master: config.multi_master,
             smbus_alert: config.smbus_alert,
@@ -116,76 +97,68 @@ impl<'a, Y: FnMut(u32)> Ast1060I2c<'a, Y> {
             current_len: 0,
             current_xfer_cnt: 0,
             completion: false,
-            dma_buf: None,
+            master_dma_buf: None,
+            slave_dma_buf: None,
             yield_ns,
-            _not_sync: PhantomData,
         }
     }
 
     /// Create I2C instance with DMA mode support.
     ///
-    /// Like [`new`] but also attaches a DMA buffer for use when
-    /// `xfer_mode == I2cXferMode::DmaMode`. The buffer must reside in
-    /// non-cached SRAM (e.g. `#[link_section = ".ram_nc"]`) so that the
-    /// DMA engine and CPU see the same data without cache maintenance.
+    /// Like [`new`] but also attaches separate master and slave DMA buffers.
+    /// Both buffers must reside in non-cached SRAM (e.g. `#[link_section = ".ram_nc"]`)
+    /// so that the DMA engine and CPU see the same data without cache maintenance.
     ///
-    /// # Safety
-    ///
-    /// Same contract as [`new`]. Additionally `dma_buf` must remain valid
-    /// for the lifetime of this `Ast1060I2c` and must be in a memory
-    /// region the DMA engine can address coherently with the CPU.
-    pub unsafe fn new_with_dma(
-        regs: *const RegisterBlock,
-        buff_regs: *const BuffRegisterBlock,
+    /// - `master_dma_buf`: staging buffer for master TX/RX DMA (up to 4096 B)
+    /// - `slave_dma_buf`: receive buffer for slave RX DMA (256 B recommended)
+    pub fn new_with_dma(
+        mmio: Ast1060I2cRegisters,
         config: &I2cConfig,
-        dma_buf: &'a mut [u8],
+        master_dma_buf: &'a mut [u8],
+        slave_dma_buf: &'a mut [u8],
         yield_ns: Y,
     ) -> Result<Self, I2cError> {
-        let mut i2c = unsafe { Self::from_initialized(regs, buff_regs, config, yield_ns) };
-        i2c.dma_buf = Some(dma_buf);
-        i2c.init_hardware(&config)?;
+        let mut i2c = Self::from_initialized(mmio, config, yield_ns);
+        i2c.master_dma_buf = Some(master_dma_buf);
+        i2c.slave_dma_buf = Some(slave_dma_buf);
+        i2c.init_hardware(config)?;
         Ok(i2c)
     }
 
-    /// Create I2C instance from pre-initialized hardware with DMA buffer
+    /// Create I2C instance from pre-initialized hardware with DMA buffers
     /// (NO hardware init).
     ///
-    /// Like [`from_initialized`] but attaches a DMA buffer for use when
-    /// `xfer_mode == I2cXferMode::DmaMode`. Use this per-operation after
-    /// the bus has already been initialized via [`new_with_dma`], to
-    /// avoid the overhead of re-running hardware initialization.
+    /// Like [`from_initialized`] but attaches separate master and slave DMA
+    /// buffers. Use when the bus was already initialized via [`new_with_dma`]
+    /// or `init_bus` and you want to avoid redundant hardware init.
     ///
-    /// The buffer must reside in non-cached SRAM (e.g. `#[link_section = ".ram_nc"]`).
-    ///
-    /// # Safety
-    ///
-    /// Same contract as [`from_initialized`] and [`new_with_dma`].
+    /// Both buffers must reside in non-cached SRAM and remain valid for this
+    /// `Ast1060I2c`'s lifetime.
     #[must_use]
-    pub unsafe fn from_initialized_with_dma(
-        regs: *const RegisterBlock,
-        buff_regs: *const BuffRegisterBlock,
+    pub fn from_initialized_with_dma(
+        mmio: Ast1060I2cRegisters,
         config: &I2cConfig,
-        dma_buf: &'a mut [u8],
+        master_dma_buf: &'a mut [u8],
+        slave_dma_buf: &'a mut [u8],
         yield_ns: Y,
     ) -> Self {
-        let mut i2c = unsafe { Self::from_initialized(regs, buff_regs, config, yield_ns) };
-        i2c.dma_buf = Some(dma_buf);
+        let mut i2c = Self::from_initialized(mmio, config, yield_ns);
+        i2c.master_dma_buf = Some(master_dma_buf);
+        i2c.slave_dma_buf = Some(slave_dma_buf);
         i2c
     }
 
-    /// Get access to registers (visible to other modules)
+    /// I2C register block, via the MMIO façade (sole `unsafe` deref is inside
+    /// [`Ast1060I2cRegisters`]). Driver-internal use.
     #[inline]
     pub(crate) fn regs(&self) -> &RegisterBlock {
-        // SAFETY: `Ast1060I2c` construction is `unsafe`, so the caller
-        // upholds pointer validity, non-nullness, and ownership.
-        unsafe { &*self.regs }
+        self.mmio.i2c()
     }
 
-    /// Get access to buffer registers (visible to other modules)
+    /// I2CBUFF register block, via the MMIO façade. Driver-internal use.
     #[inline]
     pub(crate) fn buff_regs(&self) -> &BuffRegisterBlock {
-        // SAFETY: see `regs`.
-        unsafe { &*self.buff_regs }
+        self.mmio.buff()
     }
 
     /// Initialize hardware

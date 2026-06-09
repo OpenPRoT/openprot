@@ -1,0 +1,27 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+package(default_visibility = ["//visibility:public"])
+
+# Embedded-safe production crates only (no rust_test targets).
+filegroup(
+    name = "i2c_embedded_all",
+    srcs = [
+        "//services/i2c/api:i2c_api",
+        "//services/i2c/client:i2c_client",
+        # Kernel-only crates (depend on pw_kernel userspace; not host-testable).
+        "//services/i2c/client-ipc:i2c_client_ipc",
+        "//services/i2c/server:i2c_server",
+        "//services/i2c/server-runtime:i2c_server_runtime",
+    ],
+)
+
+# Host-side tests; run without embedded target config.
+test_suite(
+    name = "i2c_host_tests",
+    tests = [
+        "//services/i2c/api:i2c_api_test",
+        "//services/i2c/server:i2c_server_test",
+        "//services/i2c/tests:i2c_loopback_test",
+    ],
+)

@@ -40,13 +40,12 @@
                             name: "ipc",
                             type: "channel_handler",
                         },
-                    ],
-                    threads: [
                         {
+                            type: "thread",
                             name: "interrupt_thread",
                             kernel_stack_size_bytes: 2048,
-                        },
-                    ],
+                        },],
+                    
                 },
             ],
             constants: [
@@ -81,13 +80,16 @@
                             handler_process: "interrupt_process",
                             handler_object_name: "ipc",
                         },
-                    ],
-                    threads: [
                         {
+                            name: "interrupt_wait_group",
+                            type: "wait_group",
+                        },
+                        {
+                            type: "thread",
                             name: "interrupt_thread",
                             kernel_stack_size_bytes: 2048,
-                        },
-                    ],
+                        },],
+                    
                 },
             ],
         },

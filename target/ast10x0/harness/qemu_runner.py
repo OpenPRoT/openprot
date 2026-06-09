@@ -10,6 +10,7 @@ QEMU (harmless when unused), so both signalling mechanisms work transparently.
 
 import argparse
 import logging
+import os
 import subprocess
 import sys
 import tempfile
@@ -60,7 +61,7 @@ def _parse_args():
         default=30,
         help="Seconds to wait for a test result sentinel (0 = no timeout, default: 30)",
     )
-    return parser.parse_args()
+    return parser.parse_known_args()
 
 
 def _detokenizer(image: Path, tokenized_file: Path, qemu_finished: threading.Event):
@@ -189,4 +190,10 @@ def _main(args) -> None:
 
 
 if __name__ == "__main__":
-    _main(_parse_args())
+    known_args, remaining_args = _parse_args()
+    if os.environ.get("PW_RUNNER_PASSTHROUGH") == "1":
+        _LOG.info("Bypassing QEMU: %s", known_args.image)
+        res = subprocess.run([known_args.image] + remaining_args)
+        sys.exit(res.returncode)
+
+    _main(known_args)

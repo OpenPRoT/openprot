@@ -33,7 +33,7 @@ impl ScuRegisters {
     ///
     /// # Safety
     /// Caller must ensure access to the singleton SCU is coordinated.
-    const unsafe fn new_global() -> Self {
+    pub(crate) const unsafe fn new_global() -> Self {
         // SAFETY: Caller upholds the singleton access contract.
         unsafe { Self::new(device::Scu::ptr()) }
     }
@@ -64,7 +64,7 @@ impl ScuRegisters {
     /// Call this once before a sequence of SCU writes, following the aspeed-rust
     /// pattern of a single unlock per batch of register operations.
     #[inline]
-    fn unlock_write_protection(&self) {
+    pub(crate) fn unlock_write_protection(&self) {
         self.regs()
             .scu000()
             .write(|w| unsafe { w.bits(SCU_UNLOCK_KEY) });

@@ -22,7 +22,7 @@ local_path_override(
 
 git_override(
     module_name = "pigweed",
-    commit = "7882c537d21171b0e9641a132842a373382a78c3",  # roll:pigweed
+    commit = "084a8865ef4d9219b558d1945b8dbc0010a95ba2",  # roll:pigweed
     patch_args = ["-p1"],
     patches = [
         # Allow integration_tests to build for armv7-m / armv7e-m so the
@@ -90,8 +90,8 @@ override_repo(
 bazel_dep(name = "opentitan_devbundle")
 archive_override(
     module_name = "opentitan_devbundle",
-    integrity = "sha256-GP3ysylvAFBUKyDHu1al2swa2CA2Od2GGMgJLcoOZTY=",
-    url = "https://storage.googleapis.com/artifacts.opentitan.org/dev_bundle/devbundle-20260401.tar.xz",
+    integrity = "sha256-LGKvET6WY+P4kwrZMSnkBrkqxS1f/ES/rmkPBQmfnwg=",
+    url = "https://github.com/lowRISC/opentitan/releases/download/devbundle-2026-06-02-1/devbundle.tar.xz",
 )
 
 # Caliptra source repositories — declared via a module_extension in

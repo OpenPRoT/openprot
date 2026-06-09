@@ -461,6 +461,11 @@ impl Smc<Ready> {
         self.controller_id
     }
 
+    /// Get the configured master ID for this controller topology.
+    pub fn master_idx(&self) -> u8 {
+        self.config.topology.master_idx()
+    }
+
     /// Return configured total flash capacity for this controller in bytes.
     pub fn capacity_bytes(&self) -> Result<usize, SmcError> {
         total_capacity_bytes(self.config.cs0, self.config.cs1)

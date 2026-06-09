@@ -16,6 +16,11 @@ use openprot_mctp_api::{Handle, MctpClient, MctpError, MctpReqChannel, RecvMetad
 use openprot_mctp_echo::{echo_once, prepare_listener, ECHO_MSG_TYPE};
 use openprot_mctp_server::Server;
 
+/// MTU for MCTP payload (without header)
+const MCTP_MTU: usize = 255;
+/// MCTP header size (4 bytes)
+const MCTP_HEADER_SIZE: usize = 4;
+
 struct BufferSender<'a> {
     packets: &'a RefCell<Vec<Vec<u8>>>,
 }
@@ -27,7 +32,8 @@ impl Sender for BufferSender<'_> {
         payload: &[&[u8]],
     ) -> mctp::Result<Tag> {
         loop {
-            let mut buf = [0u8; 255];
+            // Buffer must be MTU + header size
+            let mut buf = [0u8; MCTP_MTU + MCTP_HEADER_SIZE];
             match fragmenter.fragment_vectored(payload, &mut buf) {
                 SendOutput::Packet(p) => self.packets.borrow_mut().push(p.to_vec()),
                 SendOutput::Complete { tag, .. } => return Ok(tag),
@@ -37,7 +43,7 @@ impl Sender for BufferSender<'_> {
     }
 
     fn get_mtu(&self) -> usize {
-        255
+        MCTP_MTU
     }
 }
 

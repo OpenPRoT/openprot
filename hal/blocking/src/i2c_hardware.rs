@@ -33,16 +33,19 @@
 //!
 //! For non-blocking slave operations, see `openprot-hal-nb::i2c_hardware`.
 
-use embedded_hal::i2c::{AddressMode, Operation, SevenBitAddress};
+use embedded_hal::i2c::{AddressMode, ErrorType, Operation, SevenBitAddress};
 
 /// Core I2C hardware interface providing basic operations
 ///
 /// This is the foundation trait that all I2C hardware implementations must provide.
 /// It contains only the most basic operations needed for any I2C controller.
-pub trait I2cHardwareCore {
-    /// Hardware-specific error type that implements embedded-hal error traits
-    type Error: embedded_hal::i2c::Error + core::fmt::Debug;
-
+///
+/// The associated error type comes from [`embedded_hal::i2c::ErrorType`] — the
+/// same minimal error-type base embedded-hal itself layers capability traits
+/// on (and that `i2c_device::I2CCoreTarget` already uses). Capability traits
+/// (`I2cSlaveCore`, …) depend only on `ErrorType`, **not** on this whole
+/// init/timing/recover contract.
+pub trait I2cHardwareCore: ErrorType {
     /// Hardware-specific configuration type for I2C initialization and setup
     type Config;
 
@@ -87,8 +90,20 @@ pub trait I2cHardwareCore {
 
     /// Handle hardware interrupt events (called from ISR)
     fn handle_interrupt(&mut self);
+}
 
-    /// Attempt to recover the I2C bus from stuck conditions
+/// Bus recovery — minimal seam for callers that need recovery without the full
+/// `I2cHardwareCore` init/timing contract.
+///
+/// Implemented by hardware drivers that can toggle SCL to un-stick a held-SDA
+/// condition. The server-runtime requires this bound so it can recover after
+/// bus/arbitration errors without the client needing to know.
+pub trait I2cBusRecovery: ErrorType {
+    /// Attempt to recover the bus from a stuck condition (held SDA/SCL).
+    ///
+    /// On success the bus is idle and the next transaction can proceed.
+    /// On error the bus is unrecoverable by software; the caller should
+    /// propagate the original transfer error to its client.
     fn recover_bus(&mut self) -> Result<(), Self::Error>;
 }
 
@@ -121,9 +136,9 @@ pub trait I2cMaster<A: AddressMode = SevenBitAddress>: I2cHardwareCore {
 pub mod slave {
     use super::*;
 
-    /// I2C slave events that can occur during slave operations
+    /// I2C slave events raised by the hardware ISR.
     #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-    pub enum I2cSEvent {
+    pub enum I2cIsrEvent {
         /// Master is requesting to read from slave
         SlaveRdReq,
         /// Master is requesting to write to slave
@@ -150,7 +165,7 @@ pub mod slave {
         /// Number of bytes in transmit buffer
         pub tx_buffer_count: usize,
         /// Last slave event that occurred
-        pub last_event: Option<I2cSEvent>,
+        pub last_event: Option<I2cIsrEvent>,
         /// Whether an error condition exists
         pub error: bool,
     }
@@ -160,7 +175,11 @@ pub mod slave {
     /// This trait provides the fundamental slave operations that all slave
     /// implementations need: setting slave address and enabling/disabling slave mode.
     /// This is the minimal trait for any I2C slave implementation.
-    pub trait I2cSlaveCore<A: AddressMode = SevenBitAddress>: super::I2cHardwareCore {
+    // Slave operation needs only an error type, not the full
+    // init/timing/recover contract — mirrors embedded-hal's own
+    // `I2c: ErrorType` layering. (Previously `: super::I2cHardwareCore`,
+    // which wrongly forced every slave impl to also be a full controller.)
+    pub trait I2cSlaveCore<A: AddressMode = SevenBitAddress>: super::ErrorType {
         /// Configure the slave address for this I2C controller
         fn configure_slave_address(&mut self, addr: A) -> Result<(), Self::Error>;
 
@@ -253,7 +272,7 @@ pub mod slave {
         /// Returns the most recent slave event, useful for debugging
         /// and state tracking. May return None if no events have occurred
         /// since reset or if the hardware doesn't track this information.
-        fn last_slave_event(&self) -> Option<I2cSEvent>;
+        fn last_slave_event(&self) -> Option<I2cIsrEvent>;
     }
 
     /// Blocking slave event handling (sync pattern)
@@ -270,7 +289,7 @@ pub mod slave {
         /// with master transactions.
         fn wait_for_slave_event(
             &mut self,
-            expected_event: I2cSEvent,
+            expected_event: I2cIsrEvent,
             timeout_ms: u32,
         ) -> Result<bool, Self::Error>;
 
@@ -279,15 +298,17 @@ pub mod slave {
         /// Blocks until any slave event occurs or timeout expires.
         /// Returns the event that occurred, or None if timeout expired.
         /// Useful when any event needs to be processed synchronously.
-        fn wait_for_any_event(&mut self, timeout_ms: u32)
-            -> Result<Option<I2cSEvent>, Self::Error>;
+        fn wait_for_any_event(
+            &mut self,
+            timeout_ms: u32,
+        ) -> Result<Option<I2cIsrEvent>, Self::Error>;
 
         /// Handle a specific slave event with blocking semantics
         ///
         /// Processes a slave event and may block if the event handling
         /// requires waiting for hardware completion. This is different
         /// from the polling version which always returns immediately.
-        fn handle_slave_event_blocking(&mut self, event: I2cSEvent) -> Result<(), Self::Error>;
+        fn handle_slave_event_blocking(&mut self, event: I2cIsrEvent) -> Result<(), Self::Error>;
     }
 
     /// Complete slave implementation combining core functionality

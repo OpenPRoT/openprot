@@ -139,6 +139,22 @@ rust_library(
 )
 
 rust_library(
+    name = "clock_domain",
+    srcs = ["clock_domain.rs"],
+    crate_features = select({
+        ":fpga": ["fpga"],
+        ":qemu": ["qemu"],
+        ":silicon": ["silicon"],
+        ":verilator": ["verilator"],
+        "//conditions:default": [],
+    }),
+    crate_name = "earlgrey_clock_domain",
+    edition = "2024",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+)
+
+rust_library(
     name = "config",
     srcs = ["config.rs"],
     crate_features = select({
@@ -153,6 +169,7 @@ rust_library(
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = [":__subpackages__"],
     deps = [
+        ":clock_domain",
         "@pigweed//pw_kernel/config:kernel_config_interface",
         "@pigweed//pw_kernel/lib/memory_config",
     ],

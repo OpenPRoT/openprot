@@ -15,21 +15,21 @@
 //!
 //! ```rust,no_run
 //! use openprot_hal_nb::i2c_hardware::I2cSlaveEventPolling;
-//! use openprot_hal_blocking::i2c_hardware::slave::I2cSEvent;
+//! use openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent;
 //!
 //! fn poll_slave_events<T: I2cSlaveEventPolling>(slave: &mut T) -> Result<(), T::Error> {
 //!     // Non-blocking check for events in main loop
 //!     while let Some(event) = slave.poll_slave_events()? {
 //!         match event {
-//!             I2cSEvent::SlaveWrReq => {
+//!             I2cIsrEvent::SlaveWrReq => {
 //!                 println!("Master wants to write to us");
 //!                 slave.handle_slave_event(event)?;
 //!             },
-//!             I2cSEvent::SlaveRdReq => {
+//!             I2cIsrEvent::SlaveRdReq => {
 //!                 println!("Master wants to read from us");
 //!                 slave.handle_slave_event(event)?;
 //!             },
-//!             I2cSEvent::SlaveStop => {
+//!             I2cIsrEvent::SlaveStop => {
 //!                 println!("Transaction complete");
 //!                 slave.handle_slave_event(event)?;
 //!             },
@@ -46,17 +46,17 @@
 //!
 //! ```rust,no_run
 //! use openprot_hal_nb::i2c_hardware::I2cSlaveEventPolling;
-//! use openprot_hal_blocking::i2c_hardware::slave::I2cSEvent;
+//! use openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent;
 //!
 //! // Called from interrupt service routine
 //! fn i2c_slave_isr<T: I2cSlaveEventPolling>(slave: &mut T) {
 //!     // Check specific events without blocking
-//!     if slave.is_event_pending(I2cSEvent::SlaveWrReq).unwrap_or(false) {
-//!         let _ = slave.handle_slave_event(I2cSEvent::SlaveWrReq);
+//!     if slave.is_event_pending(I2cIsrEvent::SlaveWrReq).unwrap_or(false) {
+//!         let _ = slave.handle_slave_event(I2cIsrEvent::SlaveWrReq);
 //!     }
 //!     
-//!     if slave.is_event_pending(I2cSEvent::SlaveRdReq).unwrap_or(false) {
-//!         let _ = slave.handle_slave_event(I2cSEvent::SlaveRdReq);
+//!     if slave.is_event_pending(I2cIsrEvent::SlaveRdReq).unwrap_or(false) {
+//!         let _ = slave.handle_slave_event(I2cIsrEvent::SlaveRdReq);
 //!     }
 //! }
 //! ```
@@ -85,7 +85,7 @@
 
 use embedded_hal::i2c::{AddressMode, SevenBitAddress};
 use openprot_hal_blocking::i2c_hardware::slave::{
-    I2cSEvent, I2cSlaveBuffer, I2cSlaveCore, I2cSlaveInterrupts,
+    I2cIsrEvent, I2cSlaveBuffer, I2cSlaveCore, I2cSlaveInterrupts,
 };
 
 /// Non-blocking slave event handling (async/polling pattern)
@@ -100,17 +100,17 @@ use openprot_hal_blocking::i2c_hardware::slave::{
 ///
 /// ```rust,no_run
 /// use openprot_hal_nb::i2c_hardware::I2cSlaveEventPolling;
-/// use openprot_hal_blocking::i2c_hardware::slave::I2cSEvent;
+/// use openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent;
 ///
 /// fn handle_i2c_events<T: I2cSlaveEventPolling>(slave: &mut T) -> Result<(), T::Error> {
 ///     // Check for events without blocking
 ///     if let Some(event) = slave.poll_slave_events()? {
 ///         match event {
-///             I2cSEvent::SlaveWrReq => {
+///             I2cIsrEvent::SlaveWrReq => {
 ///                 // Master wants to write - prepare to receive
 ///                 slave.handle_slave_event(event)?;
 ///             },
-///             I2cSEvent::SlaveRdReq => {
+///             I2cIsrEvent::SlaveRdReq => {
 ///                 // Master wants to read - prepare data
 ///                 slave.handle_slave_event(event)?;
 ///             },
@@ -125,13 +125,13 @@ use openprot_hal_blocking::i2c_hardware::slave::{
 ///
 /// ```rust,no_run
 /// use openprot_hal_nb::i2c_hardware::I2cSlaveEventPolling;
-/// use openprot_hal_blocking::i2c_hardware::slave::I2cSEvent;
+/// use openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent;
 ///
 /// // Fast ISR that doesn't block
 /// fn i2c_isr<T: I2cSlaveEventPolling>(slave: &mut T) {
 ///     // Quick event check
-///     if slave.is_event_pending(I2cSEvent::SlaveWrReq).unwrap_or(false) {
-///         let _ = slave.handle_slave_event(I2cSEvent::SlaveWrReq);
+///     if slave.is_event_pending(I2cIsrEvent::SlaveWrReq).unwrap_or(false) {
+///         let _ = slave.handle_slave_event(I2cIsrEvent::SlaveWrReq);
 ///     }
 /// }
 /// ```
@@ -152,7 +152,7 @@ pub trait I2cSlaveEventPolling<A: AddressMode = SevenBitAddress>: I2cSlaveInterr
     ///
     /// ```rust,no_run
     /// use openprot_hal_nb::i2c_hardware::I2cSlaveEventPolling;
-    /// use openprot_hal_blocking::i2c_hardware::slave::I2cSEvent;
+    /// use openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent;
     ///
     /// fn check_events<T: I2cSlaveEventPolling>(slave: &mut T) -> Result<(), T::Error> {
     ///     if let Some(event) = slave.poll_slave_events()? {
@@ -163,7 +163,7 @@ pub trait I2cSlaveEventPolling<A: AddressMode = SevenBitAddress>: I2cSlaveInterr
     ///     Ok(())
     /// }
     /// ```
-    fn poll_slave_events(&mut self) -> Result<Option<I2cSEvent>, Self::Error>;
+    fn poll_slave_events(&mut self) -> Result<Option<I2cIsrEvent>, Self::Error>;
 
     /// Handle a specific slave event (called from ISR or event loop)
     ///
@@ -183,15 +183,15 @@ pub trait I2cSlaveEventPolling<A: AddressMode = SevenBitAddress>: I2cSlaveInterr
     ///
     /// ```rust,no_run
     /// use openprot_hal_nb::i2c_hardware::I2cSlaveEventPolling;
-    /// use openprot_hal_blocking::i2c_hardware::slave::I2cSEvent;
+    /// use openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent;
     ///
     /// fn handle_event<T: I2cSlaveEventPolling>(slave: &mut T) -> Result<(), T::Error> {
-    ///     slave.handle_slave_event(I2cSEvent::SlaveWrReq)?;
+    ///     slave.handle_slave_event(I2cIsrEvent::SlaveWrReq)?;
     ///     println!("Write request handled");
     ///     Ok(())
     /// }
     /// ```
-    fn handle_slave_event(&mut self, event: I2cSEvent) -> Result<(), Self::Error>;
+    fn handle_slave_event(&mut self, event: I2cIsrEvent) -> Result<(), Self::Error>;
 
     /// Non-blocking check if a specific event is pending
     ///
@@ -212,16 +212,16 @@ pub trait I2cSlaveEventPolling<A: AddressMode = SevenBitAddress>: I2cSlaveInterr
     ///
     /// ```rust,no_run
     /// use openprot_hal_nb::i2c_hardware::I2cSlaveEventPolling;
-    /// use openprot_hal_blocking::i2c_hardware::slave::I2cSEvent;
+    /// use openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent;
     ///
     /// fn check_specific_event<T: I2cSlaveEventPolling>(slave: &T) -> Result<(), T::Error> {
-    ///     if slave.is_event_pending(I2cSEvent::SlaveWrReq)? {
+    ///     if slave.is_event_pending(I2cIsrEvent::SlaveWrReq)? {
     ///         println!("Write request is pending");
     ///     }
     ///     Ok(())
     /// }
     /// ```
-    fn is_event_pending(&self, event: I2cSEvent) -> Result<bool, Self::Error>;
+    fn is_event_pending(&self, event: I2cIsrEvent) -> Result<bool, Self::Error>;
 }
 
 /// Complete non-blocking slave implementation
@@ -265,7 +265,7 @@ pub trait I2cSlaveEventPolling<A: AddressMode = SevenBitAddress>: I2cSlaveInterr
 ///
 /// ```rust,no_run
 /// use openprot_hal_nb::i2c_hardware::I2cSlaveNonBlocking;
-/// use openprot_hal_blocking::i2c_hardware::slave::I2cSEvent;
+/// use openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent;
 ///
 /// fn main_loop<T: I2cSlaveNonBlocking>(mut slave: T) -> Result<(), T::Error> {
 ///     loop {

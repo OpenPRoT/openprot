@@ -39,3 +39,23 @@ alias(
     name = "smc_write_evb_test",
     actual = "//target/ast10x0/tests/smc/write:smc_write_evb_test",
 )
+
+alias(
+    name = "smc_spi1_read_test",
+    actual = "//target/ast10x0/tests/smc/read:smc_spi1_read_test",
+)
+
+alias(
+    name = "smc_spi1_read_evb_test",
+    actual = "//target/ast10x0/tests/smc/read:smc_spi1_read_evb_test",
+)
+
+alias(
+    name = "smc_spi_cs0_read_test",
+    actual = "//target/ast10x0/tests/smc/read:smc_spi_cs0_read_test",
+)
+
+alias(
+    name = "smc_spi_cs0_read_evb_test",
+    actual = "//target/ast10x0/tests/smc/read:smc_spi_cs0_read_evb_test",
+)

@@ -6,6 +6,8 @@ on:
   schedule:
     - cron: '0 2 * * *'  # Run every day at 2 AM UTC
   workflow_dispatch:     # Allow manual triggering
+  pull_request:
+    types: [labeled]
 
 env:
   CARGO_TERM_COLOR: always
@@ -15,6 +17,7 @@ jobs:
   nightly-build:
     name: Nightly Build
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-nightly'
 
     steps:
     - uses: actions/checkout@v6

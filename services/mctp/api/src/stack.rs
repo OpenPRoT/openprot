@@ -128,6 +128,8 @@ impl<C: MctpClient> MctpReqChannel for StackReqChannel<'_, C> {
         }
         let meta = self.stack.client.recv(self.handle, self.timeout, buf)?;
         let len = meta.payload_size;
+        // Clear sent_tag after receiving response, allowing another send/recv cycle
+        self.sent_tag = None;
         Ok((meta, &mut buf[..len]))
     }
 

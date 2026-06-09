@@ -139,12 +139,9 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
     }
 
     /// Arm slave receive path based on transfer mode.
-    ///
-    /// This mirrors the old AST1060 driver behavior where packet-slave IRQ
-    /// branches re-arm either RX FIFO or RX DMA depending on `xfer_mode`.
     fn arm_slave_receive(&mut self, cmd: &mut u32) {
         if self.xfer_mode == I2cXferMode::DmaMode {
-            if let Some(dma_buf) = self.dma_buf.as_deref_mut() {
+            if let Some(dma_buf) = self.slave_dma_buf.as_deref_mut() {
                 let dma_addr = dma_buf.as_mut_ptr() as u32;
                 let dma_len = u16::try_from(dma_buf.len().min(4096) - 1).unwrap_or(u16::MAX);
                 unsafe {
@@ -216,7 +213,7 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
                 .i2cc0c()
                 .write(|w| unsafe { w.rx_pool_buffer_size().bits(constants::I2C_BUF_SIZE - 1) });
         } else if self.xfer_mode == I2cXferMode::DmaMode {
-            if let Some(dma_buf) = self.dma_buf.as_deref_mut() {
+            if let Some(dma_buf) = self.slave_dma_buf.as_deref_mut() {
                 // Arm slave DMA: point hardware at the non-cached buffer and enable RX_DMA.
                 // i2cs38/i2cs3c hold the physical DMA buffer address (same address in
                 // both registers — the hardware uses both for different address widths).
@@ -320,16 +317,21 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
     pub fn slave_read(&mut self, buffer: &mut [u8]) -> Result<usize, I2cError> {
         // Get receive length from buffer length register
         if self.xfer_mode == I2cXferMode::BufferMode {
-            let len = self
+            // AST_I2CC_SLAVE_PKT_SAVE_ADDR (I2CC00 bit 20) deposits the I2C
+            // address byte at buffer offset 0. Read the raw count once, subtract
+            // 1 for that byte, then copy only the payload (skipping offset 0).
+            let raw = self
                 .regs()
                 .i2cc0c()
                 .read()
                 .actual_rxd_pool_buffer_size()
                 .bits() as usize;
-            let to_read = len.min(buffer.len()).min(BUFFER_SIZE);
+            let data_len = raw.saturating_sub(1);
+            let to_read = data_len.min(buffer.len()).min(BUFFER_SIZE - 1);
 
-            // Read from buffer
-            self.copy_from_buffer(&mut buffer[..to_read])?;
+            let mut tmp = [0u8; BUFFER_SIZE];
+            self.copy_from_buffer(&mut tmp[..1 + to_read])?;
+            buffer[..to_read].copy_from_slice(&tmp[1..1 + to_read]);
 
             // Re-enable RX buffer
             let mut cmd = constants::AST_I2CS_ACTIVE_ALL | constants::AST_I2CS_PKT_MODE_EN;
@@ -341,18 +343,24 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
             Ok(to_read)
         } else if self.xfer_mode == I2cXferMode::DmaMode {
             // DMA mode: the hardware has already DMA'd into `self.dma_buf`.
-            // Read actual received byte count from the DMA status register.
+            // AST_I2CC_SLAVE_PKT_SAVE_ADDR deposits the address byte at dma_buf[0];
+            // subtract 1 and skip it, matching the buffer-mode treatment above.
             let hw_len = self.regs().i2cs4c().read().dmarx_actual_len_byte().bits() as usize;
-            let to_read = hw_len.min(buffer.len());
+            let data_len = hw_len.saturating_sub(1);
+            let to_read = data_len.min(buffer.len());
 
-            if let Some(dma_buf) = self.dma_buf.as_deref() {
-                let src_len = to_read.min(dma_buf.len());
-                buffer[..src_len].copy_from_slice(&dma_buf[..src_len]);
+            if let Some(dma_buf) = self.slave_dma_buf.as_deref() {
+                let src_len = to_read.min(dma_buf.len().saturating_sub(1));
+                if let (Some(src), Some(dst)) =
+                    (dma_buf.get(1..1 + src_len), buffer.get_mut(..src_len))
+                {
+                    dst.copy_from_slice(src);
+                }
             }
 
             // Re-arm slave DMA for next receive
             let mut cmd = constants::AST_I2CS_ACTIVE_ALL | constants::AST_I2CS_PKT_MODE_EN;
-            if let Some(dma_buf) = self.dma_buf.as_deref_mut() {
+            if let Some(dma_buf) = self.slave_dma_buf.as_deref_mut() {
                 let dma_addr = dma_buf.as_mut_ptr() as u32;
                 let dma_len = u16::try_from(dma_buf.len().min(4096) - 1).unwrap_or(u16::MAX);
                 unsafe {
@@ -377,7 +385,10 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
             Ok(to_read)
         } else {
             // byte mode
-            buffer[0] = self.regs().i2cc08().read().rx_byte_buffer().bits();
+            let byte = self.regs().i2cc08().read().rx_byte_buffer().bits();
+            if let Some(slot) = buffer.get_mut(0) {
+                *slot = byte;
+            }
 
             let cmd = constants::AST_I2CS_ACTIVE_ALL;
             self.regs().i2cs28().write(|w| unsafe { w.bits(cmd) });
@@ -394,7 +405,7 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
         }
 
         if self.xfer_mode == I2cXferMode::BufferMode {
-            let to_write = 1;
+            let to_write = data.len().min(BUFFER_SIZE);
 
             // Copy data to buffer
             self.copy_to_buffer(&data[..to_write])?;
@@ -403,44 +414,30 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
             #[allow(clippy::cast_possible_truncation)]
             self.regs()
                 .i2cc0c()
-                .write(|w| unsafe { w.tx_data_byte_count().bits(to_write as u8 - 1) });
+                .write(|w| unsafe { w.tx_data_byte_count().bits((to_write - 1) as u8) });
 
-            // Trigger slave transmit
+            // Arm TX and keep RX armed in one atomic i2cs28 write.
             let mut cmd = constants::AST_I2CS_ACTIVE_ALL | constants::AST_I2CS_PKT_MODE_EN;
-            cmd |= constants::AST_I2CS_TX_BUFF_EN;
+            cmd |= constants::AST_I2CS_TX_BUFF_EN | constants::AST_I2CS_RX_BUFF_EN;
             unsafe {
                 self.regs().i2cs28().write(|w| w.bits(cmd));
             }
             Ok(to_write)
         } else if self.xfer_mode == I2cXferMode::DmaMode {
-            // In DMA mode, copy data to DMA buffer and set TX length
-            let dma_buf = self.dma_buf.as_deref_mut().ok_or(I2cError::Invalid)?;
+            // Slave TX always uses the 32-byte hardware FIFO, even in DMA mode.
+            // The DMA buffer is reserved exclusively for slave RX — writing TX data
+            // into dma_buf would alias the RX path. This matches base's
+            // slave_set_response() pattern (buffs.buff(0) + TX_BUFF_EN).
+            let to_write = data.len().min(BUFFER_SIZE);
+            self.copy_to_buffer(&data[..to_write])?;
+            #[allow(clippy::cast_possible_truncation)]
+            self.regs()
+                .i2cc0c()
+                .write(|w| unsafe { w.tx_data_byte_count().bits((to_write - 1) as u8) });
 
-            // Copy data to DMA buffer starting at offset 0
-            let to_write = data.len().min(dma_buf.len());
-            unsafe {
-                core::ptr::copy_nonoverlapping(data.as_ptr(), dma_buf.as_mut_ptr(), to_write);
-            }
-
-            // Clear TX status/offset register
-            unsafe {
-                self.regs().i2cs4c().write(|w| w.bits(0));
-            }
-
-            // Set TX length (len - 1) and enable write
-            let tx_len = u16::try_from(to_write - 1).map_err(|_| I2cError::Invalid)?;
-            unsafe {
-                self.regs().i2cs2c().modify(|_, w| {
-                    w.dmatx_buf_len_byte()
-                        .bits(tx_len)
-                        .dmatx_buf_len_wr_enbl_for_cur_cmd()
-                        .set_bit()
-                });
-            }
-
-            // Trigger slave transmit with TX DMA enabled
+            // Arm TX via FIFO and keep RX DMA armed in one atomic i2cs28 write.
             let mut cmd = constants::AST_I2CS_ACTIVE_ALL | constants::AST_I2CS_PKT_MODE_EN;
-            cmd |= constants::AST_I2CS_TX_DMA_EN;
+            cmd |= constants::AST_I2CS_TX_BUFF_EN | AST_I2CS_RX_DMA_EN;
             unsafe {
                 self.regs().i2cs28().write(|w| w.bits(cmd));
             }

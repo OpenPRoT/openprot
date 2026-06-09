@@ -123,6 +123,16 @@ impl SpiReady {
         self.inner.poll_dma_completion()
     }
 
+    /// Get the controller identifier.
+    pub fn controller_id(&self) -> SmcController {
+        self.inner.controller_id()
+    }
+
+    /// Get the configured master ID for this controller topology.
+    pub fn master_idx(&self) -> u8 {
+        self.inner.master_idx()
+    }
+
     /// Check if SPI controller is ready for operations.
     pub fn is_ready(&self) -> bool {
         self.inner.is_ready()

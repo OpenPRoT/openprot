@@ -8,14 +8,7 @@ use pw_status::Result;
 use registers::rv_timer::RvTimer;
 use userspace::{entry, syscall};
 
-#[cfg(feature = "silicon")]
-const IO_CLOCK_HZ: u64 = 24_000_000;
-#[cfg(feature = "fpga")]
-const IO_CLOCK_HZ: u64 = 6_000_000;
-#[cfg(feature = "verilator")]
-const IO_CLOCK_HZ: u64 = 125_000;
-#[cfg(feature = "qemu")]
-const IO_CLOCK_HZ: u64 = 24_000_000;
+const PERIPHERAL_CLOCK_HZ: u64 = earlgrey_clock_domain::PERIPHERAL_CLOCK_HZ;
 
 #[inline(always)]
 fn rv_timer_value(rv_timer: &RvTimer) -> u64 {
@@ -46,7 +39,7 @@ fn measure_nop_syscall(rv_timer: &RvTimer, n: usize) -> Result<()> {
     let average = total / (n as u64);
     pw_log::info!("Average latency: {} rv_timer ticks", average as u64);
 
-    let cpu_clocks = average * KernelConfig::SYSTEM_CLOCK_HZ / IO_CLOCK_HZ;
+    let cpu_clocks = average * KernelConfig::SYSTEM_CLOCK_HZ / PERIPHERAL_CLOCK_HZ;
     pw_log::info!("Average latency: {} cpu clocks", cpu_clocks as u64);
     Ok(())
 }

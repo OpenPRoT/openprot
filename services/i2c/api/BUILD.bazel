@@ -1,0 +1,27 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "i2c_api",
+    srcs = [
+        "src/lib.rs",
+        "src/protocol.rs",
+        "src/seam.rs",
+        "src/transport.rs",
+    ],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking",
+        "@rust_crates//:embedded-hal",
+        "@rust_crates//:zerocopy",
+    ],
+)
+
+# Host wire-codec tests: builds on the host platform, no kernel/QEMU.
+rust_test(
+    name = "i2c_api_test",
+    crate = ":i2c_api",
+)

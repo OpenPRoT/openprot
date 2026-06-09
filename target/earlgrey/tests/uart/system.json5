@@ -26,7 +26,11 @@
               name: "ipc",
               type: "channel_handler",
             },
-          ],
+              {
+              type: "thread",
+              name: "uart_thread",
+              kernel_stack_size_bytes: 2048,
+            },],
           memory_mappings: [
             {
               name: "uart1",
@@ -35,12 +39,7 @@
               size_bytes: 0x40,
             }
           ],
-          threads: [
-            {
-              name: "uart_thread",
-              kernel_stack_size_bytes: 2048,
-            },
-          ],
+          
         },
       ],
     },
@@ -100,7 +99,11 @@
               handler_process: "test_uart",
               handler_object_name: "ipc",
             },
-          ],
+              {
+              type: "thread",
+              name: "uart_thread",
+              kernel_stack_size_bytes: 2048,
+            },],
           memory_mappings: [
             {
               name: "uart1",
@@ -109,12 +112,7 @@
               size_bytes: 0x40,
             }
           ],
-          threads: [
-            {
-              name: "uart_thread",
-              kernel_stack_size_bytes: 2048,
-            },
-          ],
+          
         },
       ],
     },

@@ -8,12 +8,15 @@ rust_library(
     name = "ast10x0_board",
     srcs = [
         "src/lib.rs",
+        "src/monitor.rs",
+        "src/spim_wiring.rs",
     ],
     crate_name = "ast10x0_board",
     edition = "2024",
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],
     deps = [
+        "//target/ast10x0/backend/i2c:i2c_backend_ast10x0",
         "//target/ast10x0/peripherals",
     ],
 )

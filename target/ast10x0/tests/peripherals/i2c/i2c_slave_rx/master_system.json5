@@ -1,0 +1,18 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// I2C slave RX test — master side memory layout.
+// Single kernel binary; mirrors i2c_irq/system.json5.
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,  // 0x500 (320 vectors)
+    },
+    kernel: {
+        flash_start_address: 0x00000500,
+        flash_size_bytes: 262144,         // 256KB
+        ram_start_address: 0x00040500,
+        ram_size_bytes: 393216,           // 384KB
+    },
+}

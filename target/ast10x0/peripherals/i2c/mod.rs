@@ -62,8 +62,10 @@ mod controller;
 mod error;
 mod global;
 mod hal_impl;
+mod hal_slave_impl;
 mod master;
 mod recovery;
+mod registers;
 mod slave;
 mod timing;
 mod transfer;
@@ -74,6 +76,7 @@ pub use constants::*;
 pub use controller::Ast1060I2c;
 pub use error::I2cError;
 pub use global::init_i2c_global;
+pub use registers::Ast1060I2cRegisters;
 pub use slave::{SlaveBuffer, SlaveConfig, SlaveEvent};
 pub use types::*;
 
