@@ -160,16 +160,10 @@ impl ScuRegisters {
         self.unlock_write_protection();
 
         let scu0f0 = self.regs().scu0f0().read().bits();
-        pw_log::debug!("SPIM pre-config: SCU0F0=0x{:08x}", scu0f0 as u32);
         let op_idx = match ast1060_spim_op_idx(scu0f0) {
             Some(idx) => idx,
             None => return None,
         };
-        pw_log::debug!(
-            "SPIM pre-config: active SPIM index {}, op index {}",
-            ((scu0f0 & 0x7) - 1) as u32,
-            op_idx as u32
-        );
 
         let clk = AST1060_SPIM_CLK_GPIO[op_idx];
         let cs = AST1060_SPIM_CS_GPIO[op_idx];
@@ -206,11 +200,6 @@ impl ScuRegisters {
             write_volatile(cs_scu_addr, reg_val);
         }
 
-        pw_log::debug!(
-            "SPIM pre-config: op index {}, saved CLK direction mask 0x{:08x}",
-            op_idx as u32,
-            clk_gpio_ori_val[op_idx] as u32
-        );
         Some(SpimGpioOriVal { clk_gpio_ori_val })
     }
 

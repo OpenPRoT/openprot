@@ -6,6 +6,8 @@
 #![no_std]
 #![no_main]
 
+const TEST_OFFSET: u32 = 0x10_0000;
+
 use ast10x0_peripherals::scu::{
     pinctrl::{PINCTRL_SPI1_QUAD, PINCTRL_SPIM1_DEFAULT},
     ScuExtMuxSelect, ScuRegisters, SpiMonitorInstance, SpiMonitorPassthrough, SpiMonitorSource,
@@ -100,13 +102,13 @@ fn run_spi1_read_test() -> Result<(), SmcError> {
     }
     dump_smc_read(&buf, buf.len() as u32);
 
-    pw_log::info!("=== SPI1 DMA read @ 0x00000000 ===");
+    pw_log::info!("=== SPI1 DMA read @ {:08x} ===", TEST_OFFSET as u32);
     let dma_buf = unsafe { core::slice::from_raw_parts_mut(0x41500 as *mut u8, 256) };
     let mut dma_txn = SpiTransaction::dma_read_with_spim(
         &mut spi,
         SpiMonitorInstance::Spim0,
         ChipSelect::Cs0,
-        0x0,
+        TEST_OFFSET,
         0x41500usize,
         dma_buf.len() as u32,
     )?;
