@@ -128,6 +128,8 @@ impl ViolationLogEntry {
 pub enum SpiMonitorError {
     InvalidRegion,
     InvalidSlot,
+    UnsupportedCommand(u8),
+    NoCommandSlot,
     Locked,
     InvalidTransition,
 }

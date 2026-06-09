@@ -18,7 +18,9 @@ pub mod monitor;
 pub mod spim_wiring;
 
 pub use monitor::Ast1060Monitor;
-pub use spim_wiring::{apply_spim_wiring, presets, SpimWiring, SpimWiringError};
+pub use spim_wiring::{
+    apply_spim_pinctrl, apply_spim_wiring, presets, SpimWiring, SpimWiringError,
+};
 
 pub use ast10x0_peripherals::i2c::{I2cConfig, I2cError};
 

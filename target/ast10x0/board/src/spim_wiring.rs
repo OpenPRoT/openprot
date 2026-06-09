@@ -11,6 +11,10 @@
 //! "configure early, validate, lock, and operate under that locked policy."
 
 use ast10x0_peripherals::scu::{
+    pinctrl::{
+        PINCTRL_SPIM1_DEFAULT, PINCTRL_SPIM2_DEFAULT, PINCTRL_SPIM3_DEFAULT,
+        PINCTRL_SPIM4_DEFAULT,
+    },
     ScuError, ScuExtMuxSelect, ScuRegisters, SpiMonitorInstance, SpiMonitorPassthrough,
     SpiMonitorSource,
 };
@@ -92,10 +96,24 @@ impl From<SpiMonitorError> for SpimWiringError {
     }
 }
 
+/// Apply the default SCU pinctrl group for a SPI monitor instance.
+///
+/// The instance numbering follows the hardware SPIPF blocks: `Spim0` uses
+/// the device-tree `spim1` pins, through `Spim3` using the `spim4` pins.
+pub fn apply_spim_pinctrl(scu: &ScuRegisters, instance: SpiMonitorInstance) {
+    let group = match instance {
+        SpiMonitorInstance::Spim0 => PINCTRL_SPIM1_DEFAULT,
+        SpiMonitorInstance::Spim1 => PINCTRL_SPIM2_DEFAULT,
+        SpiMonitorInstance::Spim2 => PINCTRL_SPIM3_DEFAULT,
+        SpiMonitorInstance::Spim3 => PINCTRL_SPIM4_DEFAULT,
+    };
+    scu.apply_pinctrl_group(group);
+}
+
 /// Apply static SPIM wiring at controller-init time.
 ///
-/// Order: validate → SCU route → passthrough → ext-mux → MISO multi-func →
-/// SPIPF policy → SPIPF lock. The lock is one-way; an empty
+/// Order: validate → pinctrl → SCU route → passthrough → ext-mux →
+/// MISO multi-func → SPIPF policy → SPIPF lock. The lock is one-way; an empty
 /// `MonitorPolicy::empty()` combined with lock will brick the SPI bus until
 /// reset, so callers should pass a vetted preset (see [`presets`]).
 ///
@@ -111,6 +129,7 @@ pub unsafe fn apply_spim_wiring(
     validate_controller_for_source(controller_id, wiring.source)?;
     scu.validate_spim_instance(wiring.instance)?;
 
+    apply_spim_pinctrl(scu, wiring.instance);
     scu.set_spim_internal_master_route(wiring.instance, wiring.source);
     scu.set_spim_passthrough(wiring.instance, wiring.passthrough);
     scu.set_spim_ext_mux(wiring.instance, wiring.ext_mux);
