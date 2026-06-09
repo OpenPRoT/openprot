@@ -64,6 +64,7 @@ rust_binary(
         ":linker_script",
         "//target/ast10x0:entry",
         "//target/ast10x0/peripherals",
+        "@ast1060_pac",
         "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
         "@pigweed//pw_kernel/kernel",
         "@pigweed//pw_kernel/subsys/console:console_backend",
