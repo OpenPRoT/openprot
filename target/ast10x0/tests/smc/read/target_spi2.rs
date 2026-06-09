@@ -5,6 +5,7 @@
 
 #![no_std]
 #![no_main]
+use ast1060_pac as device;
 #[allow(unused_imports)]
 use ast10x0_peripherals::scu::{
     pinctrl::{
@@ -18,7 +19,6 @@ use ast10x0_peripherals::smc::{
     SpiUninit, TransferMode,
 };
 use console_backend::console_backend_write_all;
-use core::ptr::{read_volatile, write_volatile};
 use target_common::{declare_target, TargetInterface};
 use {console_backend as _, entry as _};
 
@@ -41,62 +41,68 @@ GPIO070 = 0x7E78_0070, set bits 26, 27
 GPIO074 = 0x7E78_0074, set bits 26, 27
 */
 fn gpio_flash_power() {
-    // const SCU418: *mut u32 = 0x7E6E_2418 as *mut u32;
-    const GPIO_DATA: *mut u32 = 0x7E78_0070 as *mut u32;
-    const GPIO_DIR: *mut u32 = 0x7E78_0074 as *mut u32;
     const GPIOL2_L3_MASK: u32 = (1 << 26) | (1 << 27);
 
-    unsafe {
-        // Select GPIO function for GPIOL2/GPIOL3.
-        // write_volatile(SCU418, read_volatile(SCU418) & !GPIOL2_L3_MASK);
-        // Configure GPIOL2/GPIOL3 as outputs and drive them high.
-        write_volatile(GPIO_DIR, read_volatile(GPIO_DIR) | GPIOL2_L3_MASK);
-        write_volatile(GPIO_DATA, read_volatile(GPIO_DATA) | GPIOL2_L3_MASK);
-    }
+    // SAFETY: Board initialization has exclusive access to the PAC singleton.
+    let gpio = unsafe { &*device::Gpio::ptr() };
+    gpio.gpio070()
+        .modify(|r, w| unsafe { w.bits(r.bits() | GPIOL2_L3_MASK) });
+    gpio.gpio074()
+        .modify(|r, w| unsafe { w.bits(r.bits() | GPIOL2_L3_MASK) });
 
     for _ in 0..1_000_000 {
         core::hint::spin_loop();
     }
 }
 
-// Temporary raw-MMIO implementation until GPIO and SGPIOM peripherals exist.
 #[allow(dead_code)]
 fn configure_spi2_external_mux(select_mux1: bool) {
-    const SCU41C: *mut u32 = 0x7E6E_241C as *mut u32;
-    const SGPIOM_PIN_MASK: u32 = 0xF << 8;
-
-    const GPIO_E_H_DATA: *mut u32 = 0x7E78_0020 as *mut u32;
-    const GPIO_E_H_DIR: *mut u32 = 0x7E78_0024 as *mut u32;
     const GPIO_E8: u32 = 1 << 8;
-
-    const SGPIOM_DATA_A_D: *mut u32 = 0x7E78_0500 as *mut u32;
-    const SGPIOM_CONFIG: *mut u32 = 0x7E78_0554 as *mut u32;
-    const SGPIOM_WRITE_LATCH_A_D: *const u32 = 0x7E78_0570 as *const u32;
     const SGPIOM_A_D_2: u32 = 1 << 2;
-    const SGPIOM_CONFIG_MASK: u32 = 1 | (0x1F << 6) | (0xFFFF << 16);
-    const SGPIOM_CONFIG_1MHZ_128_PINS: u32 = 1 | (16 << 6) | (24 << 16);
 
-    unsafe {
-        // Select the SGPIOM physical pins and initialize the controller using
-        // the same 1 MHz / 128-pin settings as the Zephyr board configuration.
-        write_volatile(SCU41C, read_volatile(SCU41C) | SGPIOM_PIN_MASK);
-        let config = read_volatile(SGPIOM_CONFIG) & !SGPIOM_CONFIG_MASK;
-        write_volatile(SGPIOM_CONFIG, config | SGPIOM_CONFIG_1MHZ_128_PINS);
+    // SAFETY: Board initialization has exclusive access to the PAC singletons.
+    let gpio = unsafe { &*device::Gpio::ptr() };
+    let sgpio = unsafe { &*device::Sgpiom::ptr() };
+    let _scu_unlocked = unsafe { ScuRegisters::new_global_unlocked() };
+    let scu = unsafe { &*device::Scu::ptr() };
 
-        let mut gpio_data = read_volatile(GPIO_E_H_DATA);
-        let mut sgpio_data = read_volatile(SGPIOM_WRITE_LATCH_A_D);
-        if select_mux1 {
-            gpio_data |= GPIO_E8;
-            sgpio_data |= SGPIOM_A_D_2;
+    scu.scu41c().modify(|_, w| {
+        w.enbl_sgpiomaster_ckfn_pin()
+            .set_bit()
+            .enbl_sgpiomaster_ldfn_pin()
+            .set_bit()
+            .enbl_sgpiomaster_dofn_pin()
+            .set_bit()
+            .enbl_sgpiomaster_difn_pin()
+            .set_bit()
+    });
+    sgpio.gpio554().modify(|_, w| unsafe {
+        w.enbl_of_serial_gpio()
+            .set_bit()
+            .numbers_of_serial_gpiopins()
+            .bits(16)
+            .serial_gpioclk_division()
+            .bits(24)
+    });
+
+    gpio.gpio020().modify(|r, w| unsafe {
+        let bits = if select_mux1 {
+            r.bits() | GPIO_E8
         } else {
-            gpio_data &= !GPIO_E8;
-            sgpio_data &= !SGPIOM_A_D_2;
-        }
+            r.bits() & !GPIO_E8
+        };
+        w.bits(bits)
+    });
+    gpio.gpio024()
+        .modify(|r, w| unsafe { w.bits(r.bits() | GPIO_E8) });
 
-        write_volatile(GPIO_E_H_DATA, gpio_data);
-        write_volatile(GPIO_E_H_DIR, read_volatile(GPIO_E_H_DIR) | GPIO_E8);
-        write_volatile(SGPIOM_DATA_A_D, sgpio_data);
-    }
+    let sgpio_latch = sgpio.gpio570().read().bits();
+    let sgpio_data = if select_mux1 {
+        sgpio_latch | SGPIOM_A_D_2
+    } else {
+        sgpio_latch & !SGPIOM_A_D_2
+    };
+    sgpio.gpio500().write(|w| unsafe { w.bits(sgpio_data) });
 
     // Match the overlay's ext-mux-sel-delay-us = <1000>.
     for _ in 0..100_000 {
