@@ -138,6 +138,17 @@ impl SpiMonitorRegisters {
         self.regs().spipf07c().write(|w| unsafe { w.bits(value) });
     }
 
+    pub fn modify_lock_status<F>(&self, f: F)
+    where
+        F: FnOnce(&mut u32),
+    {
+        self.regs().spipf07c().modify(|r, w| {
+            let mut bits = r.bits();
+            f(&mut bits);
+            unsafe { w.bits(bits) }
+        });
+    }
+
     /// SPIPFWT[n]: Allow-command table entry.
     pub fn read_allow_cmd_slot(&self, index: usize) -> u32 {
         self.regs().spipfwt(index).read().bits()
@@ -164,22 +175,38 @@ impl SpiMonitorRegisters {
     // Violation log registers
     // -----------------------------------------------------------------------
 
-    /// Current violation log write index (number of entries written so far).
-    ///
+    /// Current violation log write index (number of 32-bit entries written).
     pub fn read_log_idx_reg(&self) -> u32 {
-        self.regs().spipf018().read().bits()
+        self.regs()
+            .spipf018()
+            .read()
+            .block_log_dmawr_pointer()
+            .bits()
     }
 
-    /// Maximum violation log capacity in bytes.
-    ///
-    pub fn read_log_max_sz(&self) -> u32 {
-        self.regs().spipf014().read().bits() & 0x0007_ffff
+    /// Maximum violation log capacity in 32-bit entries.
+    pub fn read_log_capacity_entries(&self) -> u32 {
+        self.regs()
+            .spipf014()
+            .read()
+            .size_of_block_log_dmabuffer()
+            .bits()
     }
 
     /// Base address of the violation log RAM region.
-    ///
-    /// Returns a `usize` suitable for casting to `*const u32` by the caller.
     pub fn log_ram_base_addr(&self) -> usize {
         (self.regs().spipf010().read().bits() & !0x3) as usize
     }
+
+    /// Configure the violation-log DMA buffer.
+    pub fn write_log_config(&self, base_addr: u32, entries: u32) {
+        self.regs()
+            .spipf010()
+            .write(|w| unsafe { w.bits(base_addr & !0x3) });
+        self.regs()
+            .spipf014()
+            .write(|w| unsafe { w.bits(LOG_DMA_ENABLE | entries) });
+    }
 }
+
+const LOG_DMA_ENABLE: u32 = 1 << 31;
