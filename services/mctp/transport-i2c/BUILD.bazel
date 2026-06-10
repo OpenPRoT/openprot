@@ -1,0 +1,33 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "mctp_transport_i2c",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "openprot_mctp_transport_i2c",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/i2c/api:i2c_api",
+        "//services/mctp/api:mctp_api",
+        "@pigweed//pw_log/rust:pw_log",
+        "@rust_crates//:embedded-hal",
+        "@rust_crates//:heapless",
+        "@rust_crates//:mctp",
+        "@rust_crates//:mctp-lib",
+    ],
+)
+
+rust_test(
+    name = "mctp_transport_i2c_test",
+    crate = ":mctp_transport_i2c",
+    deps = [
+        "//services/i2c/client:i2c_client",
+        "//services/i2c/server:i2c_server",
+        "//services/mctp/server:mctp_server_lib",
+        "@rust_crates//:mctp",
+        "@rust_crates//:mctp-lib",
+    ],
+)

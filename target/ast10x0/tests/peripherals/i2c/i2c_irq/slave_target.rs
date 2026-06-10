@@ -27,7 +27,9 @@ use target_common::{declare_target, TargetInterface};
 pub struct Target {}
 
 const SLAVE_ADDR: u8 = 0x42;
-const EXPECTED_WRITE: &[u8] = &[0xAA, 0xBB, 0xCC, 0xDD];
+// SLAVE_PKT_SAVE_ADDR prepends dest address byte (SLAVE_ADDR << 1) at offset 0,
+// followed by the master's payload [0xAA, 0xBB, 0xCC, 0xDD].
+const EXPECTED_WRITE: &[u8] = &[SLAVE_ADDR << 1, 0xAA, 0xBB, 0xCC, 0xDD];
 const READ_RESPONSE: &[u8] = &[0x55];
 
 fn i2c2_config() -> I2cConfig {

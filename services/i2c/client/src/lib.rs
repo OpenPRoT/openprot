@@ -137,7 +137,9 @@ impl<T: Transport> I2cClient<T> {
             return Err(ClientError::InvalidResponse);
         };
         if !rhdr.is_success() {
-            return Err(ClientError::ServerError(rhdr.error_code()));
+            return Err(ClientError::ServerError(
+                rhdr.error_code().unwrap_or(I2cError::InternalError),
+            ));
         }
         let n = rhdr.payload_length();
         if resp_len < I2cResponseHeader::SIZE + n {
@@ -236,7 +238,9 @@ impl<T: Transport> I2cClient<T> {
             return Err(ClientError::InvalidResponse);
         };
         if !rhdr.is_success() {
-            return Err(ClientError::ServerError(rhdr.error_code()));
+            return Err(ClientError::ServerError(
+                rhdr.error_code().unwrap_or(I2cError::InternalError),
+            ));
         }
 
         let payload_len = rhdr.payload_length();
@@ -264,10 +268,10 @@ impl<T: Transport> I2cClient<T> {
 
         Ok(SlaveReceiveEvent {
             kind,
-            source_address: if source_addr == 0xFF {
-                None
-            } else {
+            source_address: if source_addr <= 0x7F {
                 Some(source_addr)
+            } else {
+                None
             },
             data_len: copy,
             truncated: data_len > copy,
@@ -308,7 +312,9 @@ impl<T: Transport> I2cClient<T> {
         if rhdr.is_success() {
             Ok(())
         } else {
-            Err(ClientError::ServerError(rhdr.error_code()))
+            Err(ClientError::ServerError(
+                rhdr.error_code().unwrap_or(I2cError::InternalError),
+            ))
         }
     }
 
@@ -382,7 +388,9 @@ impl<T: Transport> I2cClient<T> {
             return Err(ClientError::InvalidResponse);
         };
         if !rhdr.is_success() {
-            return Err(ClientError::ServerError(rhdr.error_code()));
+            return Err(ClientError::ServerError(
+                rhdr.error_code().unwrap_or(I2cError::InternalError),
+            ));
         }
 
         let payload_len = rhdr.payload_length();
