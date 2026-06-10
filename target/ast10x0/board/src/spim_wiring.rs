@@ -20,9 +20,10 @@ use ast10x0_peripherals::scu::{
 };
 use ast10x0_peripherals::smc::SmcController;
 use ast10x0_peripherals::spimonitor::{
-    LockedSpiMonitor, MonitorPolicy, SpiMonitor, SpiMonitorController, SpiMonitorError,
-    Uninitialized,
+    LockedSpiMonitor, MonitorPolicy, PassthroughMode, SpiMonitor, SpiMonitorController,
+    SpiMonitorError, Uninitialized,
 };
+use ast1060_pac as device;
 
 /// Static SPIM wiring for one SPI controller.
 ///
@@ -110,6 +111,63 @@ pub fn apply_spim_pinctrl(scu: &ScuRegisters, instance: SpiMonitorInstance) {
     scu.apply_pinctrl_group(group);
 }
 
+/// Drive the external mux-select GPIO pair described by the AST1060 DTS.
+///
+/// SPIM1/2 use GPIO A-D pin 12 and SGPIOM pin 0. SPIM3/4 use GPIO E-H
+/// pin 8 and SGPIOM pin 2. Both signals carry the same mux selection.
+pub fn apply_spim_external_mux(instance: SpiMonitorInstance, mux: ScuExtMuxSelect) {
+    let high = matches!(mux, ScuExtMuxSelect::Mux1);
+    let (gpio_group, gpio_mask, sgpio_mask) = match instance {
+        SpiMonitorInstance::Spim0 | SpiMonitorInstance::Spim1 => {
+            (ExternalMuxGpioGroup::Abcd, 1 << 12, 1 << 0)
+        }
+        SpiMonitorInstance::Spim2 | SpiMonitorInstance::Spim3 => {
+            (ExternalMuxGpioGroup::Efgh, 1 << 8, 1 << 2)
+        }
+    };
+
+    let gpio = unsafe { &*device::Gpio::ptr() };
+    match gpio_group {
+        ExternalMuxGpioGroup::Abcd => {
+            gpio.gpio000().modify(|r, w| unsafe {
+                w.bits(update_bit(r.bits(), gpio_mask, high))
+            });
+            gpio.gpio004().modify(|r, w| unsafe {
+                w.bits(r.bits() | gpio_mask)
+            });
+        }
+        ExternalMuxGpioGroup::Efgh => {
+            gpio.gpio020().modify(|r, w| unsafe {
+                w.bits(update_bit(r.bits(), gpio_mask, high))
+            });
+            gpio.gpio024().modify(|r, w| unsafe {
+                w.bits(r.bits() | gpio_mask)
+            });
+        }
+    }
+
+    let sgpio = unsafe { &*device::Sgpiom::ptr() };
+    sgpio.gpio500().modify(|r, w| unsafe {
+        w.bits(update_bit(r.bits(), sgpio_mask, high))
+    });
+
+    crate::delay_us(1_000);
+}
+
+#[derive(Clone, Copy)]
+enum ExternalMuxGpioGroup {
+    Abcd,
+    Efgh,
+}
+
+const fn update_bit(value: u32, mask: u32, set: bool) -> u32 {
+    if set {
+        value | mask
+    } else {
+        value & !mask
+    }
+}
+
 /// Apply static SPIM wiring at controller-init time.
 ///
 /// Order: validate → pinctrl → SCU route → passthrough → ext-mux →
@@ -126,14 +184,33 @@ pub unsafe fn apply_spim_wiring(
     wiring: SpimWiring,
     policy: &MonitorPolicy,
 ) -> Result<LockedSpiMonitor, SpimWiringError> {
+    unsafe { apply_spim_wiring_with_log(scu, controller_id, wiring, policy, None) }
+}
+
+/// Apply static SPIM wiring and optionally configure violation-log DMA before
+/// the policy registers are locked.
+///
+/// # Safety
+/// The caller must satisfy [`apply_spim_wiring`] ownership requirements. A
+/// supplied log buffer must remain exclusively owned by the monitor forever.
+pub unsafe fn apply_spim_wiring_with_log(
+    scu: &ScuRegisters,
+    controller_id: SmcController,
+    wiring: SpimWiring,
+    policy: &MonitorPolicy,
+    log_buffer: Option<&'static mut [u32]>,
+) -> Result<LockedSpiMonitor, SpimWiringError> {
     validate_controller_for_source(controller_id, wiring.source)?;
     scu.validate_spim_instance(wiring.instance)?;
 
     apply_spim_pinctrl(scu, wiring.instance);
+    scu.disable_spim_cs_internal_pull_down(wiring.instance);
     scu.set_spim_internal_master_route(wiring.instance, wiring.source);
     scu.set_spim_passthrough(wiring.instance, wiring.passthrough);
     scu.set_spim_ext_mux(wiring.instance, wiring.ext_mux);
+    apply_spim_external_mux(wiring.instance, wiring.ext_mux);
     scu.set_spim_miso_multi_func(wiring.instance, wiring.miso_multi_func);
+    scu.set_spim_filter(wiring.instance, true);
 
     let monitor_controller = match wiring.instance {
         SpiMonitorInstance::Spim0 => SpiMonitorController::Spim0,
@@ -146,6 +223,12 @@ pub unsafe fn apply_spim_wiring(
     // instance, mirroring the SCU exclusivity required above.
     let monitor = unsafe { SpiMonitor::<Uninitialized>::new(monitor_controller) };
     let configured = monitor.apply_policy(policy)?;
+    if let Some(buffer) = log_buffer {
+        configured.configure_log(buffer)?;
+    }
+    configured.set_push_pull(true);
+    configured.set_passthrough(PassthroughMode::Disabled);
+    configured.enable();
     let locked = configured.lock()?;
     Ok(locked)
 }
@@ -165,7 +248,9 @@ fn validate_controller_for_source(
 
 /// Built-in `MonitorPolicy` presets vetted against the BMC's flash opcode set.
 pub mod presets {
-    use ast10x0_peripherals::spimonitor::MonitorPolicy;
+    use ast10x0_peripherals::spimonitor::{
+        profile, MonitorPolicy, PrivilegeDirection, PrivilegeOp,
+    };
 
     /// Allow-list for the BMC's normal flash opcodes covering both 3-byte and
     /// 4-byte addressing variants. Empty `regions` (no address-privilege
@@ -195,5 +280,19 @@ pub mod presets {
         p.allow_commands[12] = 0x99; // RST
         p.allow_command_count = 13;
         p
+    }
+
+    /// Policy matching the supplied Zephyr SPIM nodes: full command list and
+    /// write protection over flash addresses `0x0000_0000..0x0800_0000`.
+    #[must_use]
+    pub fn zephyr_spim_policy() -> MonitorPolicy {
+        let mut policy = profile::zephyr_default();
+        let _ = policy.add_region(
+            0,
+            0x0800_0000,
+            PrivilegeDirection::Write,
+            PrivilegeOp::Disable,
+        );
+        policy
     }
 }

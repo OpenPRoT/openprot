@@ -127,10 +127,15 @@ impl ViolationLogEntry {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SpiMonitorError {
     InvalidRegion,
+    InvalidAddress,
+    InvalidLength,
     InvalidSlot,
+    InvalidLogBuffer,
     UnsupportedCommand(u8),
     NoCommandSlot,
     Locked,
+    LockFailed,
+    VerificationFailed,
     InvalidTransition,
 }
 

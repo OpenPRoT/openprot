@@ -197,6 +197,41 @@ impl ScuRegisters {
         });
     }
 
+    /// Enable or disable the SCU-side SPI monitor filter path. Uses SCU0F0[11:8].
+    pub fn set_spim_filter(&self, instance: SpiMonitorInstance, enable: bool) {
+        self.unlock_write_protection();
+        self.regs().scu0f0().modify(|_, w| match instance {
+            SpiMonitorInstance::Spim0 => w.enbl_filter_of_spipf1().bit(enable),
+            SpiMonitorInstance::Spim1 => w.enbl_filter_of_spipf2().bit(enable),
+            SpiMonitorInstance::Spim2 => w.enbl_filter_of_spipf3().bit(enable),
+            SpiMonitorInstance::Spim3 => w.enbl_filter_of_spipf4().bit(enable),
+        });
+    }
+
+    /// Disable the internal pull-down on the monitor CS output pin.
+    pub fn disable_spim_cs_internal_pull_down(&self, instance: SpiMonitorInstance) {
+        self.unlock_write_protection();
+        match instance {
+            SpiMonitorInstance::Spim0 => {
+                self.regs()
+                    .scu610()
+                    .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 6)) });
+            }
+            SpiMonitorInstance::Spim1 => {
+                self.regs()
+                    .scu610()
+                    .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 20)) });
+            }
+            // SPIM3's corresponding pin cannot have its pull-down disabled.
+            SpiMonitorInstance::Spim2 => {}
+            SpiMonitorInstance::Spim3 => {
+                self.regs()
+                    .scu614()
+                    .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 16)) });
+            }
+        }
+    }
+
     /// Route an internal SPI master through the selected SPI monitor path.
     pub fn set_spim_internal_master_route(
         &self,
