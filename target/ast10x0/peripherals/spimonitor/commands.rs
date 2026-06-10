@@ -94,6 +94,7 @@ pub const fn descriptor(opcode: u8) -> Option<CommandDescriptor> {
         0x5a => command(opcode, true, false, true, false, 1, 8, 0, 3, 1),
         0xb7 | 0xe9 => command(opcode, false, false, false, false, 0, 0, 0, 0, 0),
         0xc5 => command(opcode, false, true, false, false, 1, 0, 0, 0, 0),
+        0xc2 => command(opcode, true, true, false, false, 1, 0, 0, 0, 0),
         _ => return None,
     };
     Some(entry)
@@ -135,5 +136,10 @@ mod tests {
         assert_eq!(fixed_slot(0xb7), Some(0));
         assert_eq!(fixed_slot(0xe9), Some(1));
         assert_eq!(fixed_slot(0xc5), Some(31));
+    }
+
+    #[test]
+    fn winbond_die_select_matches_zephyr_encoding() {
+        assert_eq!(table_value(0xc2, false), Some(0x7100_00c2));
     }
 }
