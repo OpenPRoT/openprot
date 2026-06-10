@@ -20,6 +20,17 @@
 //! in from other drivers.
 
 #![no_std]
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable,
+    clippy::todo,
+    clippy::unimplemented
+)]
+// Tests use .unwrap() on zerocopy::Ref of fixed-size buffers we just wrote —
+// safe by construction, but clippy can't see that.
+#![cfg_attr(test, allow(clippy::unwrap_used))]
 
 pub mod loopback;
 pub mod slave;
@@ -95,12 +106,15 @@ where
         return encode_error(response, I2cError::BufferTooSmall);
     }
 
-    // ---- two passes over the descriptor array: first validate + size ----
+    // ---- single pass: validate, size, and stash (kind, len) ----
     let desc_base = I2cRequestHeader::SIZE;
     let write_base = desc_base + desc_bytes;
     let mut write_total = 0usize;
     let mut read_total = 0usize;
-    for i in 0..op_count {
+    // Stash validated (is_read, len) pairs so the build pass needs no re-parse.
+    // Using bool avoids matching a #[non_exhaustive] enum a second time.
+    let mut op_meta = [(false, 0usize); MAX_OPS];
+    for (i, meta) in op_meta[..op_count].iter_mut().enumerate() {
         let off = desc_base + i * I2cOpDesc::SIZE;
         let Ok(desc) =
             zerocopy::Ref::<_, I2cOpDesc>::from_bytes(&request[off..off + I2cOpDesc::SIZE])
@@ -108,8 +122,14 @@ where
             return encode_error(response, I2cError::InvalidOperation);
         };
         match desc.op_kind() {
-            Ok(I2cOpKind::Write) => write_total += desc.length(),
-            Ok(I2cOpKind::Read) => read_total += desc.length(),
+            Ok(I2cOpKind::Write) => {
+                *meta = (false, desc.length());
+                write_total += desc.length();
+            }
+            Ok(I2cOpKind::Read) => {
+                *meta = (true, desc.length());
+                read_total += desc.length();
+            }
             Ok(_) | Err(_) => return encode_error(response, I2cError::InvalidOperation),
         }
     }
@@ -121,7 +141,7 @@ where
         return encode_error(response, I2cError::BufferTooSmall);
     }
 
-    // ---- build the Operation list ----
+    // ---- build the Operation list from stashed metadata ----
     // Reads land in a private scratch (carved into disjoint &mut subslices in
     // op order) so the borrows of `request` (write data, shared) and the read
     // area never overlap. The filler `Operation::Write(&[])` is `'static`.
@@ -131,22 +151,14 @@ where
     let mut w_off = write_base;
     let mut read_rem: &mut [u8] = &mut read_scratch[..read_total];
     for (i, op) in ops.iter_mut().enumerate().take(op_count) {
-        let off = desc_base + i * I2cOpDesc::SIZE;
-        // Re-parsed; validated identical in the sizing pass above.
-        let desc = zerocopy::Ref::<_, I2cOpDesc>::from_bytes(&request[off..off + I2cOpDesc::SIZE])
-            .unwrap();
-        let len = desc.length();
-        match desc.op_kind() {
-            Ok(I2cOpKind::Write) => {
-                *op = Operation::Write(&request[w_off..w_off + len]);
-                w_off += len;
-            }
-            Ok(I2cOpKind::Read) => {
-                let (head, tail) = read_rem.split_at_mut(len);
-                *op = Operation::Read(head);
-                read_rem = tail;
-            }
-            Ok(_) | Err(_) => unreachable!("op kinds validated in the sizing pass"),
+        let (is_read, len) = op_meta[i];
+        if is_read {
+            let (head, tail) = read_rem.split_at_mut(len);
+            *op = Operation::Read(head);
+            read_rem = tail;
+        } else {
+            *op = Operation::Write(&request[w_off..w_off + len]);
+            w_off += len;
         }
     }
 
@@ -281,7 +293,7 @@ mod tests {
             zerocopy::Ref::<_, I2cResponseHeader>::from_bytes(&resp[..I2cResponseHeader::SIZE])
                 .unwrap();
         assert!(!rh.is_success());
-        assert_eq!(rh.error_code(), I2cError::AddressNack);
+        assert_eq!(rh.error_code(), Some(I2cError::AddressNack));
     }
 
     #[test]
@@ -293,6 +305,6 @@ mod tests {
         let rh =
             zerocopy::Ref::<_, I2cResponseHeader>::from_bytes(&resp[..I2cResponseHeader::SIZE])
                 .unwrap();
-        assert_eq!(rh.error_code(), I2cError::InvalidOperation);
+        assert_eq!(rh.error_code(), Some(I2cError::InvalidOperation));
     }
 }
