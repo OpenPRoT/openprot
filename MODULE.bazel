@@ -30,6 +30,9 @@ git_override(
         "//third_party/pigweed:integration_tests_armv7m.patch",
         # Stage .bin alongside .elf in system_image_test runfiles.
         "//third_party/pigweed:system_image_test_bin_runfiles.patch",
+        # Fix race in ipc_user_test: handler was lowering USER signal before
+        # the initiator's object_wait could observe it, causing a hang.
+        "//third_party/pigweed:ipc_user_test_signal_race.patch",
     ],
     remote = "https://pigweed.googlesource.com/pigweed/pigweed",
 )
