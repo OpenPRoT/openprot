@@ -178,6 +178,117 @@ impl SpiMonitor<Uninitialized> {
 // ---------------------------------------------------------------------------
 
 impl SpiMonitor<Configured> {
+    /// Add or re-enable one command, matching the Zephyr shell `cmd add`.
+    pub fn add_command(&self, opcode: u8, valid_once: bool) -> Result<usize> {
+        let value =
+            table_value(opcode, valid_once).ok_or(SpiMonitorError::UnsupportedCommand(opcode))?;
+
+        for slot in 0..COMMAND_TABLE_SLOTS {
+            let current = self.regs.read_allow_cmd_slot(slot);
+            if current & 0xff == u32::from(opcode) && current & COMMAND_LOCKED == 0 {
+                self.regs.write_allow_cmd_slot(slot, value);
+                return verify_command_slot(&self.regs, slot, value);
+            }
+        }
+
+        let slot = if let Some(slot) = fixed_slot(opcode) {
+            let current = self.regs.read_allow_cmd_slot(slot);
+            if current != 0 && current & 0xff != u32::from(opcode) {
+                return Err(SpiMonitorError::NoCommandSlot);
+            }
+            slot
+        } else {
+            (FIRST_GENERAL_COMMAND_SLOT..COMMAND_TABLE_SLOTS)
+                .find(|slot| self.regs.read_allow_cmd_slot(*slot) == 0)
+                .ok_or(SpiMonitorError::NoCommandSlot)?
+        };
+        if self.regs.read_allow_cmd_slot(slot) & COMMAND_LOCKED != 0 {
+            return Err(SpiMonitorError::Locked);
+        }
+        self.regs.write_allow_cmd_slot(slot, value);
+        verify_command_slot(&self.regs, slot, value)
+    }
+
+    /// Disable every unlocked entry matching an opcode.
+    pub fn remove_command(&self, opcode: u8) -> Result<usize> {
+        let mut count = 0;
+        for slot in 0..COMMAND_TABLE_SLOTS {
+            let current = self.regs.read_allow_cmd_slot(slot);
+            if current & 0xff == u32::from(opcode) {
+                if current & COMMAND_LOCKED != 0 {
+                    return Err(SpiMonitorError::Locked);
+                }
+                self.regs.write_allow_cmd_slot(slot, 0);
+                verify_command_slot(&self.regs, slot, 0)?;
+                count += 1;
+            }
+        }
+        if count == 0 {
+            return Err(SpiMonitorError::UnsupportedCommand(opcode));
+        }
+        Ok(count)
+    }
+
+    /// Lock every command-table entry matching an opcode.
+    pub fn lock_command(&self, opcode: u8) -> Result<usize> {
+        let mut count = 0;
+        for slot in 0..COMMAND_TABLE_SLOTS {
+            let current = self.regs.read_allow_cmd_slot(slot);
+            if current & 0xff == u32::from(opcode) {
+                let updated = current | COMMAND_LOCKED;
+                self.regs.write_allow_cmd_slot(slot, updated);
+                verify_command_slot(&self.regs, slot, updated)?;
+                count += 1;
+            }
+        }
+        if count == 0 {
+            return Err(SpiMonitorError::UnsupportedCommand(opcode));
+        }
+        Ok(count)
+    }
+
+    /// Update an address privilege region, matching the Zephyr shell
+    /// `addr read/write enable/disable` operations.
+    pub fn configure_region(
+        &self,
+        start: u32,
+        length: u32,
+        direction: PrivilegeDirection,
+        op: PrivilegeOp,
+    ) -> Result<()> {
+        let lock = self.regs.read_lock_status();
+        let locked = match direction {
+            PrivilegeDirection::Read => lock & LOCK_READ_PRIVILEGE != 0,
+            PrivilegeDirection::Write => lock & LOCK_WRITE_PRIVILEGE != 0,
+        };
+        if locked {
+            return Err(SpiMonitorError::Locked);
+        }
+        configure_privilege_region(&self.regs, start, length, direction, op)
+    }
+
+    /// Read one word from the selected privilege bitmap.
+    pub fn privilege_word(&self, direction: PrivilegeDirection, index: usize) -> Result<u32> {
+        if index >= PRIVILEGE_TABLE_WORDS {
+            return Err(SpiMonitorError::InvalidSlot);
+        }
+        select_privilege_table(&self.regs, direction);
+        Ok(self.regs.read_addr_filter_slot(index))
+    }
+
+    /// Lock one privilege bitmap, matching the shell `addr lock read/write`.
+    pub fn lock_privilege_table(&self, direction: PrivilegeDirection) -> Result<()> {
+        let mask = match direction {
+            PrivilegeDirection::Read => LOCK_READ_PRIVILEGE,
+            PrivilegeDirection::Write => LOCK_WRITE_PRIVILEGE,
+        };
+        self.regs.modify_lock_status(|bits| *bits |= mask);
+        if self.regs.read_lock_status() & mask != mask {
+            return Err(SpiMonitorError::LockFailed);
+        }
+        Ok(())
+    }
+
     /// Enable the monitor filter (SPIPF000 bit 0).
     ///
     /// Mirrors Zephyr's `spim_monitor_enable(dev, true)`.
@@ -202,6 +313,9 @@ impl SpiMonitor<Configured> {
         self.regs.modify_ctrl(|bits| match mode {
             PassthroughMode::Enabled => {
                 *bits = (*bits & !CTRL_PASSTHROUGH_MASK) | CTRL_SINGLE_PASSTHROUGH_BIT
+            }
+            PassthroughMode::MultiEnabled => {
+                *bits = (*bits & !CTRL_PASSTHROUGH_MASK) | CTRL_MULTI_PASSTHROUGH_BIT
             }
             PassthroughMode::Disabled => *bits &= !CTRL_PASSTHROUGH_MASK,
         });
@@ -436,6 +550,7 @@ impl<Mode> SpiMonitor<Mode> {
 /// Confirmed from aspeed-rust implementation (src/spimonitor/hardware.rs).
 /// Register field names from ast1060_pac provide safe typed accessors.
 const CTRL_SINGLE_PASSTHROUGH_BIT: u32 = 1 << 0;
+const CTRL_MULTI_PASSTHROUGH_BIT: u32 = 1 << 1;
 const CTRL_PASSTHROUGH_MASK: u32 = (1 << 0) | (1 << 1);
 const CTRL_MONITOR_ENABLE_BIT: u32 = 1 << 2;
 #[allow(dead_code)]
@@ -445,7 +560,6 @@ const CTRL_SW_RESET_LOCK: u32 = 1 << 23;
 const CTRL2_VIOLATION_STATUS_MASK: u32 = 0x7;
 const CTRL2_VIOLATION_IRQ_ENABLE_MASK: u32 = 0x7 << 16;
 const CTRL2_PUSH_PULL: u32 = 1 << 31;
-
 const COMMAND_TABLE_SLOTS: usize = 32;
 const FIRST_GENERAL_COMMAND_SLOT: usize = 2;
 const LAST_GENERAL_COMMAND_SLOT_EXCLUSIVE: usize = 31;
@@ -476,6 +590,17 @@ fn select_privilege_table(regs: &SpiMonitorRegisters, direction: PrivilegeDirect
         PrivilegeDirection::Write => PRIVILEGE_WRITE_SELECT,
     };
     regs.modify_ctrl(|bits| *bits = (*bits & 0x00ff_ffff) | selection);
+}
+
+fn verify_command_slot(
+    regs: &SpiMonitorRegisters,
+    slot: usize,
+    expected: u32,
+) -> Result<usize> {
+    if regs.read_allow_cmd_slot(slot) != expected {
+        return Err(SpiMonitorError::VerificationFailed);
+    }
+    Ok(slot)
 }
 
 fn initialize_privilege_table(

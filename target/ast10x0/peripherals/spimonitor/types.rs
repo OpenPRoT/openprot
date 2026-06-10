@@ -28,7 +28,10 @@ pub enum PrivilegeOp {
 /// Mirrors Zephyr's `spim_passthrough_config`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PassthroughMode {
+    /// Enable single-bit passthrough.
     Enabled,
+    /// Enable multi-bit passthrough.
+    MultiEnabled,
     Disabled,
 }
 
