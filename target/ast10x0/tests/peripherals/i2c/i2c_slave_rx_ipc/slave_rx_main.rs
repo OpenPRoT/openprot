@@ -21,8 +21,9 @@ use userspace::time::Instant;
 /// Slave address the test listens on.
 const SLAVE_ADDR: u8 = 0x42;
 
-/// Payload the master binary sends.
-const EXPECTED_PAYLOAD: &[u8] = &[0xDE, 0xAD, 0xBE, 0xEF];
+/// Expected buffer contents: SLAVE_PKT_SAVE_ADDR prepends dest address byte
+/// (SLAVE_ADDR << 1) at offset 0, followed by the master's payload [0xDE, 0xAD, 0xBE, 0xEF].
+const EXPECTED_PAYLOAD: &[u8] = &[SLAVE_ADDR << 1, 0xDE, 0xAD, 0xBE, 0xEF];
 
 macro_rules! fail {
     ($msg:literal) => {{
@@ -80,11 +81,12 @@ fn entry() {
 
     if &rx[..event.data_len] != EXPECTED_PAYLOAD {
         pw_log::error!(
-            "payload mismatch: got [{:02x} {:02x} {:02x} {:02x}]",
+            "payload mismatch: got [{:02x} {:02x} {:02x} {:02x} {:02x}]",
             rx[0] as u32,
             rx[1] as u32,
             rx[2] as u32,
             rx[3] as u32,
+            rx[4] as u32,
         );
         let _ = syscall::debug_shutdown(Err(pw_status::Error::DataLoss));
         loop {}
