@@ -3,30 +3,183 @@
 
 //! SCU routing and mux helpers for SPI monitor integration.
 
+use ast1060_pac as device;
+
 use super::registers::ScuRegisters;
 use super::types::{
     Result, ScuExtMuxSelect, SpiMonitorInstance, SpiMonitorPassthrough, SpiMonitorSource,
 };
-const PIN_SPIM0_CLK_OUT_BIT: u32 = 7;
-const PIN_SPIM1_CLK_OUT_BIT: u32 = 21;
-const PIN_SPIM2_CLK_OUT_BIT: u32 = 3;
-const PIN_SPIM3_CLK_OUT_BIT: u32 = 17;
 
-pub type SpimGpioOriVal = [u32; 4];
+#[derive(Clone, Copy)]
+pub struct SpimGpioOriVal {
+    clk_gpio_ori_val: [u32; 4],
+}
 
-macro_rules! modify_reg {
-    ($reg:expr, $bit:expr, $clear:expr) => {{
-        let mut val: u32 = $reg.read().bits();
-        if $clear {
-            val &= !(1 << $bit);
+#[derive(Clone, Copy)]
+struct SpimGpioInfo {
+    scu_register: SpimScuRegister,
+    scu_bit_mask: u32,
+    gpio_group: GpioGroup,
+    gpio_bit_mask: u32,
+}
+
+#[derive(Clone, Copy)]
+enum SpimScuRegister {
+    Scu690,
+    Scu694,
+}
+
+#[derive(Clone, Copy)]
+enum GpioGroup {
+    Abcd,
+    Efgh,
+}
+
+fn gpio_regs() -> &'static device::gpio::RegisterBlock {
+    // SAFETY: The PAC supplies the GPIO register block base address.
+    unsafe { &*device::Gpio::ptr() }
+}
+
+fn gpio_direction(group: GpioGroup) -> u32 {
+    match group {
+        GpioGroup::Abcd => gpio_regs().gpio004().read().bits(),
+        GpioGroup::Efgh => gpio_regs().gpio024().read().bits(),
+    }
+}
+
+fn gpio_set_direction(group: GpioGroup, mask: u32, output: bool) {
+    let update = |bits: u32| {
+        if output {
+            bits | mask
         } else {
-            val |= 1 << $bit;
+            bits & !mask
         }
-        $reg.write(|w| unsafe { w.bits(val) });
-    }};
+    };
+
+    match group {
+        GpioGroup::Abcd => gpio_regs()
+            .gpio004()
+            .modify(|r, w| unsafe { w.bits(update(r.bits())) }),
+        GpioGroup::Efgh => gpio_regs()
+            .gpio024()
+            .modify(|r, w| unsafe { w.bits(update(r.bits())) }),
+    };
+}
+
+fn gpio_set_data(group: GpioGroup, mask: u32, high: bool) {
+    let update = |bits: u32| {
+        if high {
+            bits | mask
+        } else {
+            bits & !mask
+        }
+    };
+
+    match group {
+        GpioGroup::Abcd => gpio_regs()
+            .gpio000()
+            .modify(|r, w| unsafe { w.bits(update(r.bits())) }),
+        GpioGroup::Efgh => gpio_regs()
+            .gpio020()
+            .modify(|r, w| unsafe { w.bits(update(r.bits())) }),
+    };
+}
+
+fn gpio_set_output(group: GpioGroup, mask: u32, high: bool) {
+    gpio_set_data(group, mask, high);
+    gpio_set_direction(group, mask, true);
+}
+
+// Literal translation of g_ast1060_spim_clk_gpio[] in spi_aspeed.c.
+const AST1060_SPIM_CLK_GPIO: [SpimGpioInfo; 4] = [
+    SpimGpioInfo {
+        scu_register: SpimScuRegister::Scu690,
+        scu_bit_mask: 1 << 7,
+        gpio_group: GpioGroup::Abcd,
+        gpio_bit_mask: 1 << 7,
+    },
+    SpimGpioInfo {
+        scu_register: SpimScuRegister::Scu690,
+        scu_bit_mask: 1 << 21,
+        gpio_group: GpioGroup::Abcd,
+        gpio_bit_mask: 1 << 21,
+    },
+    SpimGpioInfo {
+        scu_register: SpimScuRegister::Scu694,
+        scu_bit_mask: 1 << 3,
+        gpio_group: GpioGroup::Efgh,
+        gpio_bit_mask: 1 << 3,
+    },
+    SpimGpioInfo {
+        scu_register: SpimScuRegister::Scu694,
+        scu_bit_mask: 1 << 17,
+        gpio_group: GpioGroup::Efgh,
+        gpio_bit_mask: 1 << 17,
+    },
+];
+
+// Literal translation of g_ast1060_spim_cs_gpio[] in spi_aspeed.c.
+const AST1060_SPIM_CS_GPIO: [SpimGpioInfo; 4] = [
+    SpimGpioInfo {
+        scu_register: SpimScuRegister::Scu690,
+        scu_bit_mask: 1 << 1,
+        gpio_group: GpioGroup::Abcd,
+        gpio_bit_mask: 1 << 6,
+    },
+    SpimGpioInfo {
+        scu_register: SpimScuRegister::Scu690,
+        scu_bit_mask: 1 << 20,
+        gpio_group: GpioGroup::Abcd,
+        gpio_bit_mask: 1 << 20,
+    },
+    SpimGpioInfo {
+        scu_register: SpimScuRegister::Scu694,
+        scu_bit_mask: 1 << 2,
+        gpio_group: GpioGroup::Efgh,
+        gpio_bit_mask: 1 << 2,
+    },
+    SpimGpioInfo {
+        scu_register: SpimScuRegister::Scu694,
+        scu_bit_mask: 1 << 16,
+        gpio_group: GpioGroup::Efgh,
+        gpio_bit_mask: 1 << 16,
+    },
+];
+
+fn ast1060_spim_op_idx(scu0f0: u32) -> Option<usize> {
+    if scu0f0 & 0x7 == 0 {
+        return None;
+    }
+
+    match (scu0f0 & 0x7) - 1 {
+        2 => Some(3),
+        3 => Some(2),
+        _ => None,
+    }
 }
 
 impl ScuRegisters {
+    fn set_spim_pin_function(&self, pin: SpimGpioInfo, enabled: bool) {
+        let update = |bits: u32| {
+            if enabled {
+                bits | pin.scu_bit_mask
+            } else {
+                bits & !pin.scu_bit_mask
+            }
+        };
+
+        match pin.scu_register {
+            SpimScuRegister::Scu690 => self
+                .regs()
+                .scu690()
+                .modify(|r, w| unsafe { w.bits(update(r.bits())) }),
+            SpimScuRegister::Scu694 => self
+                .regs()
+                .scu694()
+                .modify(|r, w| unsafe { w.bits(update(r.bits())) }),
+        };
+    }
+
     /// Enable or disable passthrough for a SPI monitor instance. Uses SCU0F0[7:4].
     pub fn set_spim_passthrough(
         &self,
@@ -94,120 +247,69 @@ impl ScuRegisters {
     pub fn spim_proprietary_pre_config(&self) -> Option<SpimGpioOriVal> {
         self.unlock_write_protection();
 
-        let scu = self.regs();
-        let gpio = unsafe { &*ast1060_pac::Gpio::ptr() };
+        let scu0f0 = self.regs().scu0f0().read().bits();
+        pw_log::debug!("SPIM pre-config: SCU0F0=0x{:08x}", scu0f0 as u32);
+        let op_idx = match ast1060_spim_op_idx(scu0f0) {
+            Some(idx) => idx,
+            None => return None,
+        };
+        pw_log::debug!(
+            "SPIM pre-config: active SPIM index {}, op index {}",
+            ((scu0f0 & 0x7) - 1) as u32,
+            op_idx as u32
+        );
 
-        let scu0f0 = scu.scu0f0().read().bits();
-        if scu0f0 & 0x7 == 0 {
-            return None;
-        }
+        let clk = AST1060_SPIM_CLK_GPIO[op_idx];
+        let cs = AST1060_SPIM_CS_GPIO[op_idx];
+        let mut clk_gpio_ori_val = [0u32; 4];
+        // Change the paired SPIM CLKOUT pin to GPIO mode.
+        self.set_spim_pin_function(clk, false);
 
-        let spim_idx = (scu0f0 & 0x7) - 1;
-        if spim_idx > 3 {
-            return None;
-        }
+        // Save its GPIO direction bit, then configure it as an input.
+        clk_gpio_ori_val[op_idx] = gpio_direction(clk.gpio_group) & clk.gpio_bit_mask;
+        gpio_set_direction(clk.gpio_group, clk.gpio_bit_mask, false);
 
-        let mut gpio_ori_val = [0; 4];
+        // Drive the paired SPIM CSOUT GPIO high and configure it as output.
+        gpio_set_output(cs.gpio_group, cs.gpio_bit_mask, true);
 
-        for idx in 0..4 {
-            if idx as u32 == spim_idx {
-                continue;
-            }
+        // Change the paired SPIM CSOUT pin to GPIO mode.
+        self.set_spim_pin_function(cs, false);
 
-            match idx {
-                0 => {
-                    modify_reg!(scu.scu690(), PIN_SPIM0_CLK_OUT_BIT, true);
-                    gpio_ori_val[0] = gpio.gpio004().read().bits();
-                    modify_reg!(gpio.gpio004(), PIN_SPIM0_CLK_OUT_BIT, true);
-                }
-                1 => {
-                    modify_reg!(scu.scu690(), PIN_SPIM1_CLK_OUT_BIT, true);
-                    gpio_ori_val[1] = gpio.gpio004().read().bits();
-                    modify_reg!(gpio.gpio004(), PIN_SPIM1_CLK_OUT_BIT, true);
-                }
-                2 => {
-                    modify_reg!(scu.scu694(), PIN_SPIM2_CLK_OUT_BIT, true);
-                    gpio_ori_val[2] = gpio.gpio024().read().bits();
-                    modify_reg!(gpio.gpio024(), PIN_SPIM2_CLK_OUT_BIT, true);
-                }
-                3 => {
-                    modify_reg!(scu.scu694(), PIN_SPIM3_CLK_OUT_BIT, true);
-                    gpio_ori_val[3] = gpio.gpio024().read().bits();
-                    modify_reg!(gpio.gpio024(), PIN_SPIM3_CLK_OUT_BIT, true);
-                }
-                _ => {}
-            }
-        }
-
-        Some(gpio_ori_val)
+        pw_log::debug!(
+            "SPIM pre-config: op index {}, saved CLK direction mask 0x{:08x}",
+            op_idx as u32,
+            clk_gpio_ori_val[op_idx] as u32
+        );
+        Some(SpimGpioOriVal { clk_gpio_ori_val })
     }
 
     /// Restore AST1060 SPIM proprietary pin state after a transaction.
     pub fn spim_proprietary_post_config(&self, gpio_ori_val: SpimGpioOriVal) {
         self.unlock_write_protection();
 
-        let scu = self.regs();
-        let gpio = unsafe { &*ast1060_pac::Gpio::ptr() };
+        let scu0f0 = self.regs().scu0f0().read().bits();
+        let op_idx = match ast1060_spim_op_idx(scu0f0) {
+            Some(idx) => idx,
+            None => return,
+        };
+        let clk = AST1060_SPIM_CLK_GPIO[op_idx];
+        let cs = AST1060_SPIM_CS_GPIO[op_idx];
+        pw_log::debug!(
+            "SPIM post-config: SCU0F0=0x{:08x}, op index {}, saved CLK direction mask 0x{:08x}",
+            scu0f0 as u32,
+            op_idx as u32,
+            gpio_ori_val.clk_gpio_ori_val[op_idx] as u32
+        );
 
-        let bits = scu.scu0f0().read().bits();
-        if bits.trailing_zeros() >= 3 {
-            return;
-        }
+        // Restore the paired CLKOUT GPIO direction bit.
+        let was_output = gpio_ori_val.clk_gpio_ori_val[op_idx] != 0;
+        gpio_set_direction(clk.gpio_group, clk.gpio_bit_mask, was_output);
 
-        let spim_idx = (bits & 0x7) - 1;
-        if spim_idx > 3 {
-            return;
-        }
+        // Return paired CLKOUT and CSOUT pins to SPIM mode.
+        self.set_spim_pin_function(clk, true);
+        self.set_spim_pin_function(cs, true);
 
-        for idx in 0..4 {
-            if idx as u32 == spim_idx {
-                continue;
-            }
-
-            match idx {
-                0 => {
-                    let ori_val = gpio_ori_val[0];
-                    gpio.gpio004().modify(|r, w| unsafe {
-                        let mut current = r.bits();
-                        current &= !(1 << PIN_SPIM0_CLK_OUT_BIT);
-                        current |= ori_val;
-                        w.bits(current)
-                    });
-                    modify_reg!(scu.scu690(), PIN_SPIM0_CLK_OUT_BIT, false);
-                }
-                1 => {
-                    let ori_val = gpio_ori_val[1];
-                    gpio.gpio004().modify(|r, w| unsafe {
-                        let mut current = r.bits();
-                        current &= !(1 << PIN_SPIM1_CLK_OUT_BIT);
-                        current |= ori_val;
-                        w.bits(current)
-                    });
-                    modify_reg!(gpio.gpio004(), PIN_SPIM1_CLK_OUT_BIT, false);
-                }
-                2 => {
-                    let ori_val = gpio_ori_val[2];
-                    gpio.gpio024().modify(|r, w| unsafe {
-                        let mut current = r.bits();
-                        current &= !(1 << PIN_SPIM2_CLK_OUT_BIT);
-                        current |= ori_val;
-                        w.bits(current)
-                    });
-                    modify_reg!(scu.scu694(), PIN_SPIM2_CLK_OUT_BIT, false);
-                }
-                3 => {
-                    let ori_val = gpio_ori_val[3];
-                    gpio.gpio024().modify(|r, w| unsafe {
-                        let mut current = r.bits();
-                        current &= !(1 << PIN_SPIM3_CLK_OUT_BIT);
-                        current |= ori_val;
-                        w.bits(current)
-                    });
-                    modify_reg!(scu.scu694(), PIN_SPIM3_CLK_OUT_BIT, false);
-                }
-                _ => {}
-            }
-        }
+        pw_log::debug!("SPIM post-config: restore complete");
     }
 
     /// Select the external mux signal for a SPI monitor instance. Uses SCU0F0[15:12].
