@@ -4,8 +4,8 @@
 //! Static SPI-monitor wiring for AST10x0 boards.
 //!
 //! Composes the `scu::routing` mux helpers with the `spimonitor::controller`
-//! typestate to apply once-per-process SPIM routing and SPIPF policy at
-//! backend init time. Per-transaction reroutes are explicitly out of scope:
+//! typestate to apply once-per-process external-monitor routing and SPIPF
+//! policy at backend init time. Per-transaction reroutes are explicitly out of scope:
 //! the SPIPF lock is one-way, and the design doc
 //! (`peripherals/spimonitor/planning/overview-and-usage-model.md`) calls for
 //! "configure early, validate, lock, and operate under that locked policy."
@@ -25,16 +25,15 @@ use ast10x0_peripherals::spimonitor::{
 };
 use ast1060_pac as device;
 
-/// Static SPIM wiring for one SPI controller.
+/// Static wiring for one external SPI monitor path.
 ///
-/// Captures the four SCU0F0 fields plus the MISO multi-function pin choice
-/// that together determine which monitor instance a given SPI master is
-/// routed through.
+/// The `source` identifies the external flash bus associated with this policy.
+/// It does not enable the AST1060 internal SPI-master detour.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SpimWiring {
-    /// Monitor instance the master is routed through.
+    /// Monitor instance connected to the external bus.
     pub instance: SpiMonitorInstance,
-    /// Which SPI master is being routed.
+    /// External SPI bus associated with the monitor policy.
     pub source: SpiMonitorSource,
     /// Passthrough enable for the chosen instance.
     pub passthrough: SpiMonitorPassthrough,
@@ -127,6 +126,17 @@ pub fn apply_spim_external_mux(instance: SpiMonitorInstance, mux: ScuExtMuxSelec
     };
 
     let gpio = unsafe { &*device::Gpio::ptr() };
+    let scu = unsafe { &*device::Scu::ptr() };
+    scu.scu41c().modify(|_, w| {
+        w.enbl_sgpiomaster_ckfn_pin()
+            .set_bit()
+            .enbl_sgpiomaster_ldfn_pin()
+            .set_bit()
+            .enbl_sgpiomaster_dofn_pin()
+            .set_bit()
+            .enbl_sgpiomaster_difn_pin()
+            .set_bit()
+    });
     match gpio_group {
         ExternalMuxGpioGroup::Abcd => {
             gpio.gpio000().modify(|r, w| unsafe {
@@ -147,11 +157,49 @@ pub fn apply_spim_external_mux(instance: SpiMonitorInstance, mux: ScuExtMuxSelec
     }
 
     let sgpio = unsafe { &*device::Sgpiom::ptr() };
-    sgpio.gpio500().modify(|r, w| unsafe {
-        w.bits(update_bit(r.bits(), sgpio_mask, high))
+    sgpio.gpio554().modify(|_, w| unsafe {
+        w.enbl_of_serial_gpio()
+            .set_bit()
+            .numbers_of_serial_gpiopins()
+            .bits(16)
+            .serial_gpioclk_division()
+            .bits(24)
     });
+    let latch = sgpio.gpio570().read().bits();
+    sgpio
+        .gpio500()
+        .write(|w| unsafe { w.bits(update_bit(latch, sgpio_mask, high)) });
 
     crate::delay_us(1_000);
+}
+
+/// Read back the two board-level external mux-select outputs.
+#[must_use]
+pub fn spim_external_mux_state(
+    instance: SpiMonitorInstance,
+) -> Option<ScuExtMuxSelect> {
+    let (gpio_group, gpio_mask, sgpio_mask) = match instance {
+        SpiMonitorInstance::Spim0 | SpiMonitorInstance::Spim1 => {
+            (ExternalMuxGpioGroup::Abcd, 1 << 12, 1 << 0)
+        }
+        SpiMonitorInstance::Spim2 | SpiMonitorInstance::Spim3 => {
+            (ExternalMuxGpioGroup::Efgh, 1 << 8, 1 << 2)
+        }
+    };
+    let gpio = unsafe { &*device::Gpio::ptr() };
+    let gpio_high = match gpio_group {
+        ExternalMuxGpioGroup::Abcd => gpio.gpio000().read().bits() & gpio_mask != 0,
+        ExternalMuxGpioGroup::Efgh => gpio.gpio020().read().bits() & gpio_mask != 0,
+    };
+    let sgpio = unsafe { &*device::Sgpiom::ptr() };
+    let sgpio_high = sgpio.gpio570().read().bits() & sgpio_mask != 0;
+    if gpio_high != sgpio_high {
+        None
+    } else if gpio_high {
+        Some(ScuExtMuxSelect::Mux1)
+    } else {
+        Some(ScuExtMuxSelect::Mux0)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -205,7 +253,9 @@ pub unsafe fn apply_spim_wiring_with_log(
 
     apply_spim_pinctrl(scu, wiring.instance);
     scu.disable_spim_cs_internal_pull_down(wiring.instance);
-    scu.set_spim_internal_master_route(wiring.instance, wiring.source);
+    // SPIPF monitors the external BMC/host pins. Keep SCU0F0[3:0] clear so
+    // neither AST1060 internal SPI controller is detoured into the monitor.
+    scu.set_spim_internal_mux(wiring.source, 0)?;
     scu.set_spim_passthrough(wiring.instance, wiring.passthrough);
     scu.set_spim_ext_mux(wiring.instance, wiring.ext_mux);
     apply_spim_external_mux(wiring.instance, wiring.ext_mux);
