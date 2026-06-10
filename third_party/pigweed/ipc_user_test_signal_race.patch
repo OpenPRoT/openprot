@@ -1,0 +1,9 @@
+--- a/pw_kernel/tests/ipc/user/handler.rs
++++ b/pw_kernel/tests/ipc/user/handler.rs
+@@ -32,6 +32,4 @@
+         if wait_return.pending_signals.contains(Signals::USER) {
+             syscall::object_set_peer_user_signal(handle::IPC, true).map_err(|_| Error::Internal)?;
+-            syscall::object_set_peer_user_signal(handle::IPC, false)
+-                .map_err(|_| Error::Internal)?;
+             return Ok(());
+         }
