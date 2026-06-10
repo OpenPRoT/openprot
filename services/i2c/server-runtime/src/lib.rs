@@ -165,7 +165,9 @@ where
                                 // SlaveRdProc: our TX bytes were clocked out, informational.
                                 // Unknown future events: ignore.
                                 // Do not update rx_event_kind or wake the client.
-                                pw_log::debug!("slave IRQ: intermediate or unknown event, no latch update");
+                                pw_log::debug!(
+                                    "slave IRQ: intermediate or unknown event, no latch update"
+                                );
                             }
                         },
                         Ok(None) => {

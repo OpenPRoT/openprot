@@ -137,7 +137,9 @@ impl<T: Transport> I2cClient<T> {
             return Err(ClientError::InvalidResponse);
         };
         if !rhdr.is_success() {
-            return Err(ClientError::ServerError(rhdr.error_code().unwrap_or(I2cError::InternalError)));
+            return Err(ClientError::ServerError(
+                rhdr.error_code().unwrap_or(I2cError::InternalError),
+            ));
         }
         let n = rhdr.payload_length();
         if resp_len < I2cResponseHeader::SIZE + n {
@@ -236,7 +238,9 @@ impl<T: Transport> I2cClient<T> {
             return Err(ClientError::InvalidResponse);
         };
         if !rhdr.is_success() {
-            return Err(ClientError::ServerError(rhdr.error_code().unwrap_or(I2cError::InternalError)));
+            return Err(ClientError::ServerError(
+                rhdr.error_code().unwrap_or(I2cError::InternalError),
+            ));
         }
 
         let payload_len = rhdr.payload_length();
@@ -308,7 +312,9 @@ impl<T: Transport> I2cClient<T> {
         if rhdr.is_success() {
             Ok(())
         } else {
-            Err(ClientError::ServerError(rhdr.error_code().unwrap_or(I2cError::InternalError)))
+            Err(ClientError::ServerError(
+                rhdr.error_code().unwrap_or(I2cError::InternalError),
+            ))
         }
     }
 
@@ -382,7 +388,9 @@ impl<T: Transport> I2cClient<T> {
             return Err(ClientError::InvalidResponse);
         };
         if !rhdr.is_success() {
-            return Err(ClientError::ServerError(rhdr.error_code().unwrap_or(I2cError::InternalError)));
+            return Err(ClientError::ServerError(
+                rhdr.error_code().unwrap_or(I2cError::InternalError),
+            ));
         }
 
         let payload_len = rhdr.payload_length();
