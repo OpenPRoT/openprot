@@ -54,6 +54,11 @@
                     type: "u32",
                     value: 42
                 },
+                {
+                    name: "test_irq2",
+                    type: "u32",
+                    value: 43
+                },
             ],
         },
         {
@@ -71,6 +76,10 @@
                                 {
                                     name: "test_irq",
                                     number: 42,
+                                },
+                                {
+                                    name: "test_irq2",
+                                    number: 43,
                                 },
                             ]
                         },

@@ -219,6 +219,27 @@ impl Smc<Uninitialized> {
 }
 
 impl Smc<Ready> {
+    fn flash_window_base(&self, cs: ChipSelect) -> usize {
+        match cs {
+            ChipSelect::Cs0 => self.flash_window_base[0],
+            ChipSelect::Cs1 => self.flash_window_base[1],
+        }
+    }
+
+    fn normal_read_ctrl(&self, cs: ChipSelect) -> u32 {
+        match cs {
+            ChipSelect::Cs0 => self.normal_read_ctrl[0],
+            ChipSelect::Cs1 => self.normal_read_ctrl[1],
+        }
+    }
+
+    fn set_normal_read_ctrl(&mut self, cs: ChipSelect, val: u32) {
+        match cs {
+            ChipSelect::Cs0 => self.normal_read_ctrl[0] = val,
+            ChipSelect::Cs1 => self.normal_read_ctrl[1] = val,
+        }
+    }
+
     /// Perform a programmed I/O read via memory window.
     ///
     /// Reads directly from the flash memory window. Hardware automatically
@@ -226,8 +247,7 @@ impl Smc<Ready> {
     pub fn read(&self, cs: ChipSelect, offset: u32, buf: &mut [u8]) -> Result<usize, SmcError> {
         let cs_config = self.cs_config(cs)?;
         let cs_capacity = flash_capacity_bytes(Some(cs_config))?;
-        let cs_idx = cs as usize;
-        let window = self.flash_window_base[cs_idx] as *const u8;
+        let window = self.flash_window_base(cs) as *const u8;
         let offset = validate_mapped_range(offset, buf.len(), cs_capacity)?;
         let flash_ptr = window.wrapping_add(offset);
         pw_log::debug!(
@@ -281,11 +301,10 @@ impl Smc<Ready> {
             flash_offset as u32,
             cs_capacity as u32
         );
-        let cs_idx = cs as usize;
 
         let validated = validate_dma_read(
             flash_offset,
-            self.flash_window_base[cs_idx],
+            self.flash_window_base(cs),
             cs_capacity,
             dram_addr,
             len,
@@ -303,8 +322,7 @@ impl Smc<Ready> {
         // SPI command to issue; it must be in normal-read mode (not user mode)
         // before the kick. Matches aspeed-rust fmccontroller.rs::read_dma
         // ctrl construction: preserve frequency bits, set ASPEED_SPI_NORMAL_READ.
-        let cs_idx = cs as usize;
-        let ctrl_val = self.normal_read_ctrl[cs_idx] | ASPEED_SPI_NORMAL_READ;
+        let ctrl_val = self.normal_read_ctrl(cs) | ASPEED_SPI_NORMAL_READ;
         self.regs.write_cs_ctrl(cs, ctrl_val);
 
         // Acquire the DMA bus arbiter before programming any DMA registers.
@@ -438,11 +456,10 @@ impl Smc<Ready> {
         let mut to = timeout;
 
         while (self.regs.read_dma_status() & DMA_STATUS_RELEVANT_BITS) == 0 {
-            to -= 1;
-
             if to == 0 {
                 return 0;
             }
+            to -= 1;
         }
         return to;
     }
@@ -515,11 +532,10 @@ impl Smc<Ready> {
             return Err(SmcError::InvalidChipSelect);
         }
 
-        let cs_idx = cs as usize;
         // Derive user-mode base from the stored normal-read value: preserve
         // frequency bits and replace mode type with ASPEED_SPI_USER.
-        let user_base = (self.normal_read_ctrl[cs_idx] & !0x7) | ASPEED_SPI_USER;
-        let window = self.flash_window_base[cs_idx] as *mut u32;
+        let user_base = (self.normal_read_ctrl(cs) & !0x7) | ASPEED_SPI_USER;
+        let window = self.flash_window_base(cs) as *mut u32;
 
         // Assert CS: inactive first, then active (matches aspeed-rust activate_user).
         self.regs
@@ -549,7 +565,7 @@ impl Smc<Ready> {
         // (matches aspeed-rust deactivate_user restoring cmd_mode[cs].normal_read).
         self.regs
             .write_cs_ctrl(cs, user_base | ASPEED_SPI_USER_INACTIVE);
-        self.regs.write_cs_ctrl(cs, self.normal_read_ctrl[cs_idx]);
+        self.regs.write_cs_ctrl(cs, self.normal_read_ctrl(cs));
         Ok(())
     }
 
@@ -560,7 +576,6 @@ impl Smc<Ready> {
     pub fn spi_nor_read_init(&mut self, cs: ChipSelect) -> Result<(), SmcError> {
         let mode: TransferMode = TransferMode::Mode114;
         let dummy: u32 = 0x1;
-        let cs_idx = cs as usize;
         let cs_capacity = self.cs_capacity_bytes(cs)?;
         let use_4b_addr = spi_nor_uses_4b_addr(cs_capacity);
         let read_opcode = spi_nor_qread_cmd_for_capacity(cs_capacity);
@@ -571,7 +586,7 @@ impl Smc<Ready> {
         self.regs.write_cs_ctrl(cs, read_cmd);
         let addr_width = spi_nor_addr_width_reg(self.regs.read_addr_width(), cs, use_4b_addr);
         self.regs.write_addr_width(addr_width);
-        self.normal_read_ctrl[cs_idx] = read_cmd;
+        self.set_normal_read_ctrl(cs, read_cmd);
         if cs != ChipSelect::Cs0 {
             // CS1 calibration can fault on boards where the secondary FMC flash
             // is not ready for the calibration sweep. Keep CS1 on the same
@@ -600,18 +615,17 @@ impl Smc<Ready> {
         let sysclk_mhz = 200u32;
         let encoded_div = spi_freq_div(sysclk_mhz, spi_clock_mhz)?;
 
-        let cs_idx = cs as usize;
         let reg = self.regs.read_cs_ctrl(cs);
         self.regs
             .write_cs_ctrl(cs, (reg & !SPI_CTRL_FREQ_MASK) | encoded_div);
-        self.normal_read_ctrl[cs_idx] &= (!SPI_CTRL_FREQ_MASK) | encoded_div;
+        let val = self.normal_read_ctrl(cs) & ((!SPI_CTRL_FREQ_MASK) | encoded_div);
+        self.set_normal_read_ctrl(cs, val);
 
         Ok(())
     }
 
     fn timing_calibration(&mut self, cs: ChipSelect) -> Result<(), SmcError> {
         let cs_cfg = self.cs_config(cs)?;
-        let cs_idx = cs as usize;
 
         if self.regs.already_calibrated(cs) {
             pw_log::info!("already calibrated");
@@ -619,7 +633,7 @@ impl Smc<Ready> {
         }
 
         //SPI2 work around
-        if self.config.topology.master_idx() != 0 && cs_idx != 0 {
+        if self.config.topology.master_idx() != 0 && cs != ChipSelect::Cs0 {
             return self.configure_timing(cs, cs_cfg.spi_clock_mhz);
         }
         // TODO: add SPIM config
@@ -631,7 +645,7 @@ impl Smc<Ready> {
         self.regs.write_cs_ctrl(cs, ctrl_val);
 
         let check_buf = unsafe { &mut *CALIBRATION_SCRATCH.0.get() };
-        let window = self.flash_window_base[cs_idx] as *const u8;
+        let window = self.flash_window_base(cs) as *const u8;
         // TODO: configure timing_calibration_start_offset beside be???
         let timing_offset = 0x0;
         let flash_ptr = window.wrapping_add(timing_offset);
@@ -644,7 +658,7 @@ impl Smc<Ready> {
         }
 
         let gold_checksum = self.spi_dma_checksum(cs, 0, 0);
-        self.run_timing_sweep(cs, gold_checksum);
+        self.run_timing_sweep(cs, cs_cfg, gold_checksum);
 
         self.configure_timing(cs, cs_cfg.spi_clock_mhz)
     }
@@ -656,8 +670,7 @@ impl Smc<Ready> {
         self.regs.acquire_dma_arbiter();
 
         // Set DMA flash start address
-        let cs_idx = cs as usize;
-        let flash_addr = self.flash_window_base[cs_idx] + timing_offset;
+        let flash_addr = self.flash_window_base(cs) + timing_offset;
         self.regs.write_dma_flash_addr(flash_addr as u32);
         // Set DMA length
         self.regs.write_dma_len(SPI_CALIB_LEN as u32);
@@ -684,20 +697,19 @@ impl Smc<Ready> {
         return checksum;
     }
 
-    fn run_timing_sweep(&mut self, cs: ChipSelect, gold_checksum: u32) {
+    fn run_timing_sweep(&mut self, cs: ChipSelect, cs_cfg: FlashConfig, gold_checksum: u32) {
         let hclk_masks = [7u32, 14, 6, 13];
         let mut calib_res = [0u8; 6 * 17];
-        let cs_cfg = self.cs_config(cs);
-        let mut freq_to_use = cs_cfg.unwrap().spi_clock_mhz;
-        let sysclk_mhz = 200u32;
+        let mut freq_to_use = cs_cfg.spi_clock_mhz;
+        let sysclk_div_table = [100u32, 66, 50, 40]; // 200 / [2, 3, 4, 5]
 
         for (i, &mask) in hclk_masks.iter().enumerate() {
-            let div = u32::try_from(i).unwrap() + 2;
-            if freq_to_use < sysclk_mhz / div {
+            let freq = *sysclk_div_table.get(i).unwrap_or(&0);
+            if freq_to_use < freq {
                 continue;
             }
 
-            freq_to_use = sysclk_mhz / div;
+            freq_to_use = freq;
 
             self.spi_dma_checksum(cs, mask, 0);
 
@@ -711,7 +723,9 @@ impl Smc<Ready> {
 
                     let pass = checksum == gold_checksum;
                     let index = (hcycle * 17 + delay_ns) as usize;
-                    calib_res[index] = u8::from(pass);
+                    if let Some(cell) = calib_res.get_mut(index) {
+                        *cell = u8::from(pass);
+                    }
                 }
             } //hcycle
 
@@ -739,38 +753,31 @@ impl Smc<Ready> {
 
 unsafe fn spi_read_data(ahb_addr: *const u32, read_arr: &mut [u8]) {
     let len = read_arr.len();
-    let mut index = 0usize;
+    let (chunks, remainder) = read_arr.split_at_mut(len - len % 4);
 
-    while index + 4 <= len {
-        let word = unsafe { core::ptr::read_volatile(ahb_addr.add(index / 4)) };
-        read_arr[index..index + 4].copy_from_slice(&word.to_le_bytes());
-        index += 4;
+    for (i, chunk) in chunks.chunks_exact_mut(4).enumerate() {
+        let word = unsafe { core::ptr::read_volatile(ahb_addr.add(i)) };
+        chunk.copy_from_slice(&word.to_le_bytes());
     }
 
-    while index < len {
-        read_arr[index] = unsafe { core::ptr::read_volatile(ahb_addr.cast::<u8>().add(index)) };
-        index += 1;
+    for (i, cell) in remainder.iter_mut().enumerate() {
+        let offset = len - len % 4 + i;
+        *cell = unsafe { core::ptr::read_volatile(ahb_addr.cast::<u8>().add(offset)) };
     }
 }
 
 unsafe fn spi_write_data(ahb_addr: *mut u32, write_arr: &[u8]) {
     let len = write_arr.len();
-    let mut index = 0usize;
+    let (chunks, remainder) = write_arr.split_at(len - len % 4);
 
-    while index + 4 <= len {
-        let word = u32::from_le_bytes([
-            write_arr[index],
-            write_arr[index + 1],
-            write_arr[index + 2],
-            write_arr[index + 3],
-        ]);
-        unsafe { core::ptr::write_volatile(ahb_addr.add(index / 4), word) };
-        index += 4;
+    for (i, chunk) in chunks.chunks_exact(4).enumerate() {
+        let word = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        unsafe { core::ptr::write_volatile(ahb_addr.add(i), word) };
     }
 
-    while index < len {
-        unsafe { core::ptr::write_volatile(ahb_addr.cast::<u8>().add(index), write_arr[index]) };
-        index += 1;
+    for (i, &val) in remainder.iter().enumerate() {
+        let offset = len - len % 4 + i;
+        unsafe { core::ptr::write_volatile(ahb_addr.cast::<u8>().add(offset), val) };
     }
 }
 
