@@ -12,8 +12,8 @@
 
 use ast10x0_peripherals::scu::{
     pinctrl::{
-        PINCTRL_SPIM1_DEFAULT, PINCTRL_SPIM2_DEFAULT, PINCTRL_SPIM3_DEFAULT,
-        PINCTRL_SPIM4_DEFAULT,
+        PINCTRL_GPIOL2, PINCTRL_GPIOL3, PINCTRL_SPIM1_DEFAULT, PINCTRL_SPIM2_DEFAULT,
+        PINCTRL_SPIM3_DEFAULT, PINCTRL_SPIM4_DEFAULT,
     },
     ScuError, ScuExtMuxSelect, ScuRegisters, SpiMonitorInstance, SpiMonitorPassthrough,
     SpiMonitorSource,
@@ -200,6 +200,82 @@ pub fn spim_external_mux_state(
     } else {
         Some(ScuExtMuxSelect::Mux0)
     }
+}
+
+/// Enable the flash-power outputs required by older AST1060 demo boards.
+#[must_use]
+pub fn enable_flash_power(scu: &ScuRegisters) -> bool {
+    scu.apply_pinctrl_group(PINCTRL_GPIOL2);
+    scu.apply_pinctrl_group(PINCTRL_GPIOL3);
+
+    const FLASH_POWER_MASK: u32 = (1 << 26) | (1 << 27);
+    let gpio = unsafe { &*device::Gpio::ptr() };
+    gpio.gpio070().modify(|r, w| unsafe {
+        w.bits(r.bits() | FLASH_POWER_MASK)
+    });
+    gpio.gpio074().modify(|r, w| unsafe {
+        w.bits(r.bits() | FLASH_POWER_MASK)
+    });
+    crate::delay_us(1_000);
+
+    gpio.gpio0c8().read().bits() & FLASH_POWER_MASK == FLASH_POWER_MASK
+}
+
+/// Assert or release the active-low BMC reset outputs.
+///
+/// The prot board routes BMC_SRST to SGPIOM output 8 and BMC_EXTRST to
+/// SGPIOM output 9. On assertion EXTRST is driven low first; on release SRST
+/// is driven high first.
+#[must_use]
+pub fn set_bmc_resets(asserted: bool) -> bool {
+    const BMC_SRST_MASK: u32 = 1 << 8;
+    const BMC_EXTRST_MASK: u32 = 1 << 9;
+
+    let scu = unsafe { &*device::Scu::ptr() };
+    scu.scu41c().modify(|_, w| {
+        w.enbl_sgpiomaster_ckfn_pin()
+            .set_bit()
+            .enbl_sgpiomaster_ldfn_pin()
+            .set_bit()
+            .enbl_sgpiomaster_dofn_pin()
+            .set_bit()
+            .enbl_sgpiomaster_difn_pin()
+            .set_bit()
+    });
+
+    let sgpio = unsafe { &*device::Sgpiom::ptr() };
+    sgpio.gpio554().modify(|_, w| unsafe {
+        w.enbl_of_serial_gpio()
+            .set_bit()
+            .numbers_of_serial_gpiopins()
+            .bits(16)
+            .serial_gpioclk_division()
+            .bits(24)
+    });
+
+    let output_high = !asserted;
+    let first_mask = if asserted {
+        BMC_EXTRST_MASK
+    } else {
+        BMC_SRST_MASK
+    };
+    let second_mask = if asserted {
+        BMC_SRST_MASK
+    } else {
+        BMC_EXTRST_MASK
+    };
+
+    for mask in [first_mask, second_mask] {
+        let latch = sgpio.gpio570().read().bits();
+        sgpio
+            .gpio500()
+            .write(|w| unsafe { w.bits(update_bit(latch, mask, output_high)) });
+        crate::delay_us(10_000);
+    }
+
+    let latch = sgpio.gpio570().read().bits();
+    let reset_mask = BMC_SRST_MASK | BMC_EXTRST_MASK;
+    (latch & reset_mask == reset_mask) == output_high
 }
 
 #[derive(Clone, Copy)]

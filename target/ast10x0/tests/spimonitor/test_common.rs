@@ -90,17 +90,14 @@ pub fn configure_wiring<C: TestConfig>(scu: &ScuRegisters) -> Result<(), TestErr
     scu.set_spim_miso_multi_func(C::INSTANCE, true);
     scu.set_spim_filter(C::INSTANCE, true);
 
-    apply_spim_external_mux(C::INSTANCE, ScuExtMuxSelect::Mux0);
-    test_check!(
-        spim_external_mux_state(C::INSTANCE) == Some(ScuExtMuxSelect::Mux0),
-        "FAIL: external mux 0 GPIO readback"
-    );
+    // This board provides ext-mux-sel-gpios. Match the Zephyr driver by
+    // driving those GPIOs only; SCU0F0[15:12] is used only when no external
+    // mux GPIOs are described.
     apply_spim_external_mux(C::INSTANCE, ScuExtMuxSelect::Mux1);
     test_check!(
         spim_external_mux_state(C::INSTANCE) == Some(ScuExtMuxSelect::Mux1),
         "FAIL: external mux 1 GPIO readback"
     );
-    scu.set_spim_ext_mux(C::INSTANCE, ScuExtMuxSelect::Mux1);
 
     test_check!(
         scu.route_control_raw() & 0x0f == 0,

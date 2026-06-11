@@ -538,8 +538,14 @@ paste! {
 }
 
 // GPIO
+pub const PINCTRL_GPIOH2: &[PinctrlPin] = &[
+    CLR_PIN_SCU414_26,
+    CLR_PIN_SCU4B4_26,
+    CLR_PIN_SCU694_26,
+];
 pub const PINCTRL_GPIOL2: &[PinctrlPin] = &[CLR_PIN_SCU418_26];
 pub const PINCTRL_GPIOL3: &[PinctrlPin] = &[CLR_PIN_SCU418_27];
+pub const PINCTRL_GPIOM5: &[PinctrlPin] = &[CLR_PIN_SCU41C_5];
 
 /// I2C1 pin group: SCL2/SDA2 mux selection on SCU414[30:31].
 ///
