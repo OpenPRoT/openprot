@@ -339,7 +339,7 @@ pub mod presets {
         let mut policy = profile::zephyr_default();
         let _ = policy.add_region(
             0,
-            0x0800_0000,
+            0x0010_0000,
             PrivilegeDirection::Write,
             PrivilegeOp::Disable,
         );
