@@ -5,12 +5,11 @@
 
 #![no_std]
 #![no_main]
-use ast1060_pac as device;
+use ast10x0_board::{apply_spim_external_mux, enable_flash_power};
 #[allow(unused_imports)]
 use ast10x0_peripherals::scu::{
     pinctrl::{
-        PINCTRL_GPIOL2, PINCTRL_GPIOL3, PINCTRL_SPI2_QUAD, PINCTRL_SPIM3_DEFAULT,
-        PINCTRL_SPIM4_DEFAULT,
+        PINCTRL_SPI2_QUAD, PINCTRL_SPIM3_DEFAULT, PINCTRL_SPIM4_DEFAULT,
     },
     ScuExtMuxSelect, ScuRegisters, SpiMonitorInstance, SpiMonitorPassthrough, SpiMonitorSource,
 };
@@ -35,91 +34,17 @@ const SPI_FLASH_CONFIG: FlashConfig = FlashConfig {
 };
 
 pub struct Target {}
-/*
-SCU418  = 0x7E6E_2418, clear bits 26, 27
-GPIO070 = 0x7E78_0070, set bits 26, 27
-GPIO074 = 0x7E78_0074, set bits 26, 27
-*/
-fn gpio_flash_power() {
-    const GPIOL2_L3_MASK: u32 = (1 << 26) | (1 << 27);
-
-    // SAFETY: Board initialization has exclusive access to the PAC singleton.
-    let gpio = unsafe { &*device::Gpio::ptr() };
-    gpio.gpio070()
-        .modify(|r, w| unsafe { w.bits(r.bits() | GPIOL2_L3_MASK) });
-    gpio.gpio074()
-        .modify(|r, w| unsafe { w.bits(r.bits() | GPIOL2_L3_MASK) });
-
-    for _ in 0..1_000_000 {
-        core::hint::spin_loop();
-    }
-}
-
-#[allow(dead_code)]
-fn configure_spi2_external_mux(select_mux1: bool) {
-    const GPIO_E8: u32 = 1 << 8;
-    const SGPIOM_A_D_2: u32 = 1 << 2;
-
-    // SAFETY: Board initialization has exclusive access to the PAC singletons.
-    let gpio = unsafe { &*device::Gpio::ptr() };
-    let sgpio = unsafe { &*device::Sgpiom::ptr() };
-    let _scu_unlocked = unsafe { ScuRegisters::new_global_unlocked() };
-    let scu = unsafe { &*device::Scu::ptr() };
-
-    scu.scu41c().modify(|_, w| {
-        w.enbl_sgpiomaster_ckfn_pin()
-            .set_bit()
-            .enbl_sgpiomaster_ldfn_pin()
-            .set_bit()
-            .enbl_sgpiomaster_dofn_pin()
-            .set_bit()
-            .enbl_sgpiomaster_difn_pin()
-            .set_bit()
-    });
-    sgpio.gpio554().modify(|_, w| unsafe {
-        w.enbl_of_serial_gpio()
-            .set_bit()
-            .numbers_of_serial_gpiopins()
-            .bits(16)
-            .serial_gpioclk_division()
-            .bits(24)
-    });
-
-    gpio.gpio020().modify(|r, w| unsafe {
-        let bits = if select_mux1 {
-            r.bits() | GPIO_E8
-        } else {
-            r.bits() & !GPIO_E8
-        };
-        w.bits(bits)
-    });
-    gpio.gpio024()
-        .modify(|r, w| unsafe { w.bits(r.bits() | GPIO_E8) });
-
-    let sgpio_latch = sgpio.gpio570().read().bits();
-    let sgpio_data = if select_mux1 {
-        sgpio_latch | SGPIOM_A_D_2
-    } else {
-        sgpio_latch & !SGPIOM_A_D_2
-    };
-    sgpio.gpio500().write(|w| unsafe { w.bits(sgpio_data) });
-
-    // Match the overlay's ext-mux-sel-delay-us = <1000>.
-    for _ in 0..100_000 {
-        core::hint::spin_loop();
-    }
-}
 
 fn config_spi2_master_controller() -> Result<(), SmcError> {
     let scu = unsafe { ScuRegisters::new_global_unlocked() };
     scu.apply_pinctrl_group(PINCTRL_SPIM3_DEFAULT);
     scu.apply_pinctrl_group(PINCTRL_SPIM4_DEFAULT);
     scu.apply_pinctrl_group(PINCTRL_SPI2_QUAD);
-    scu.apply_pinctrl_group(PINCTRL_GPIOL2);
-    scu.apply_pinctrl_group(PINCTRL_GPIOL3);
-    gpio_flash_power();
-    //configure spi2 external mux through gpio pins
-    configure_spi2_external_mux(true);
+    if !enable_flash_power(&scu) {
+        pw_log::info!("GPIOL2/GPIOL3 flash power readback failed");
+        return Err(SmcError::HardwareError);
+    }
+    apply_spim_external_mux(SpiMonitorInstance::Spim2, ScuExtMuxSelect::Mux1);
 
     // Configure the mux for the SPI master controller path.
     scu.set_spim_internal_master_route(SpiMonitorInstance::Spim2, SpiMonitorSource::Spi2);

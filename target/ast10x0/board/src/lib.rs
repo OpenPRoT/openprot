@@ -20,7 +20,8 @@ pub mod spim_wiring;
 pub use monitor::Ast1060Monitor;
 pub use spim_wiring::{
     apply_spim_external_mux, apply_spim_pinctrl, apply_spim_wiring, apply_spim_wiring_with_log,
-    presets, spim_external_mux_state, SpimWiring, SpimWiringError,
+    enable_flash_power, presets, set_bmc_resets, spim_external_mux_state, SpimWiring,
+    SpimWiringError,
 };
 
 pub use ast10x0_peripherals::i2c::{I2cConfig, I2cError};
@@ -118,7 +119,7 @@ impl Ast10x0Board {
 /// This is a placeholder; production code should use a proper timer or delay provider.
 /// Spins for approximately `micros` microseconds.
 #[inline]
-pub(crate) fn delay_us(micros: u32) {
+pub fn delay_us(micros: u32) {
     // Very rough approximation: ~16 cycles per microsecond on Cortex-M4 @ ~50MHz
     // This is calibration-free but inaccurate; improve for production.
     for _ in 0..(micros * 16) {

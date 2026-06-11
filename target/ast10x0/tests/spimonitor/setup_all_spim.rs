@@ -11,6 +11,7 @@ use core::cell::UnsafeCell;
 #[path = "test_common.rs"]
 mod test_common;
 
+use ast10x0_board::{delay_us, enable_flash_power, set_bmc_resets};
 use ast10x0_peripherals::scu::{ScuRegisters, SpiMonitorInstance};
 use ast10x0_peripherals::spimonitor::{
     MonitorPolicy, PrivilegeDirection, PrivilegeOp, SpiMonitorController,
@@ -60,6 +61,9 @@ const ALLOW_COMMANDS: [u8; 32] = [
     0xb7, 0xe9, 0x32, 0x34, 0xd8, 0xdc, 0x02, 0x12, 0x3b, 0x3c, 0x70, 0xbb, 0xbc, 0x50, 0xeb,
     0xec, 0xc2,
 ];
+const SPIM4_ALLOW_COMMANDS: [u8; 15] = [
+    0x01, 0x06, 0x04, 0x20, 0x21, 0xb7, 0xe9, 0x32, 0x34, 0xd8, 0xdc, 0x02, 0x12, 0x50, 0xc2,
+];
 
 fn log_buffer(log: &'static LogRam) -> &'static mut [u32] {
     // SAFETY: The caller assigns each static buffer to exactly one monitor.
@@ -79,9 +83,38 @@ fn production_policy() -> MonitorPolicy {
     policy
 }
 
+fn spim4_test_policy() -> MonitorPolicy {
+    let mut policy = MonitorPolicy::empty();
+    policy.allow_commands[..SPIM4_ALLOW_COMMANDS.len()]
+        .copy_from_slice(&SPIM4_ALLOW_COMMANDS);
+    policy.allow_command_count = SPIM4_ALLOW_COMMANDS.len();
+    let _ = policy.add_region(
+        0,
+        WRITE_PROTECTED_LENGTH,
+        PrivilegeDirection::Write,
+        PrivilegeOp::Disable,
+    );
+    policy
+}
+
 fn setup_all_spim() -> Result<(), test_common::TestError> {
     let scu = unsafe { ScuRegisters::new_global_unlocked() };
     let policy = production_policy();
+    let spim4_policy = spim4_test_policy();
+
+    pw_log::info!("=== GPIO flash power ===");
+    if !enable_flash_power(&scu) {
+        pw_log::info!("FAIL: GPIOL2/GPIOL3 flash power readback");
+        return Err(test_common::TestError::Check);
+    }
+    pw_log::info!("PASS: GPIOL2 and GPIOL3 set high");
+
+    pw_log::info!("=== Hold BMC in reset ===");
+    if !set_bmc_resets(true) {
+        pw_log::info!("FAIL: SGPIOM BMC reset outputs did not assert");
+        return Err(test_common::TestError::Check);
+    }
+    pw_log::info!("PASS: SGPIOM outputs 8 and 9 asserted low");
 
     pw_log::info!("=== SPIM1 ===");
     test_common::configure_wiring::<Spim1Config>(&scu)?;
@@ -111,15 +144,31 @@ fn setup_all_spim() -> Result<(), test_common::TestError> {
     let _spim3 = test_common::lock_monitor(spim3)?;
 
     pw_log::info!("=== SPIM4 ===");
+    pw_log::info!("SPIM4 test policy blocks all read commands");
     test_common::configure_wiring::<Spim4Config>(&scu)?;
     let spim4 = test_common::initialize_monitor_with_policy::<Spim4Config>(
         log_buffer(&SPIM4_LOG),
-        &policy,
+        &spim4_policy,
     )?;
     test_common::dump_policy(&spim4, WRITE_PROTECTED_LENGTH)?;
     let _spim4 = test_common::lock_monitor(spim4)?;
 
     pw_log::info!("All SPIM1-4 monitors are configured and locked");
+    pw_log::info!(
+        "SCU0F0 after SPIM setup: 0x{:08x}",
+        scu.route_control_raw() as u32
+    );
+
+    pw_log::info!("Waiting 60 ms for flash routing to settle");
+    delay_us(60_000);
+
+    pw_log::info!("=== Release BMC reset ===");
+    if !set_bmc_resets(false) {
+        pw_log::info!("FAIL: SGPIOM BMC reset outputs did not release");
+        return Err(test_common::TestError::Check);
+    }
+    pw_log::info!("PASS: SGPIOM outputs 8 and 9 released high");
+
     pw_log::info!("Firmware will remain active until the user stops or resets it");
     Ok(())
 }
