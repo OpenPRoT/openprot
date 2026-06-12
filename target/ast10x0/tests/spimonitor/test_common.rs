@@ -8,7 +8,7 @@
 use core::cell::UnsafeCell;
 
 use ast10x0_board::{
-    apply_spim_external_mux, apply_spim_pinctrl, spim_external_mux_state,
+    apply_spim_external_mux, apply_spim_pinctrl, delay_us, spim_external_mux_state,
 };
 use ast10x0_peripherals::scu::{
     ScuError, ScuExtMuxSelect, ScuRegisters, SpiMonitorInstance, SpiMonitorPassthrough,
@@ -139,6 +139,14 @@ pub fn initialize_monitor_with_policy<C: TestConfig>(
         "FAIL: software reset did not deassert"
     );
 
+    let scu = unsafe { ScuRegisters::new_global_unlocked() };
+    scu.configure_spim_external_flash_reset(C::INSTANCE);
+    test_check!(
+        scu.is_spim_external_flash_reset_configured(C::INSTANCE),
+        "FAIL: SPIPF external flash reset routing readback"
+    );
+    delay_us(5_000);
+
     let configured = monitor.apply_policy(policy)?;
     test_check!(
         configured.state() == MonitorState::Configured,
@@ -188,6 +196,25 @@ pub fn dump_policy(
         "write-protected region: start=0x00000000, length=0x{:08x}",
         write_protected_length as u32
     );
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub fn configure_passthrough<C: TestConfig>(
+    configured: &ConfiguredSpiMonitor,
+) -> Result<(), TestError> {
+    configured.disable();
+    configured.set_passthrough(PassthroughMode::Enabled);
+
+    let scu = unsafe { ScuRegisters::new_global_unlocked() };
+    scu.set_spim_passthrough(C::INSTANCE, SpiMonitorPassthrough::Enabled);
+    scu.set_spim_miso_multi_func(C::INSTANCE, false);
+
+    test_check!(
+        configured.regs().read_ctrl() & 0x7 == 0x1,
+        "FAIL: SPIPF passthrough mode readback"
+    );
+    pw_log::info!("PASS: SPIPF single-bit passthrough mode");
     Ok(())
 }
 

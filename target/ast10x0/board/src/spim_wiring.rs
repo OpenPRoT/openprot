@@ -110,18 +110,30 @@ pub fn apply_spim_pinctrl(scu: &ScuRegisters, instance: SpiMonitorInstance) {
     scu.apply_pinctrl_group(group);
 }
 
-/// Drive the external mux-select GPIO pair described by the AST1060 DTS.
+/// Configure the external flash mux controls described by the board schematic.
 ///
-/// SPIM1/2 use GPIO A-D pin 12 and SGPIOM pin 0. SPIM3/4 use GPIO E-H
-/// pin 8 and SGPIOM pin 2. Both signals carry the same mux selection.
+/// SPIM1/2 use GPIO A-D pin 12 plus SGPIOM select/OE/reset bits 0/1/7.
+/// SPIM3/4 use GPIO E-H pin 8 plus SGPIOM select/OE/reset bits 2/3/6.
 pub fn apply_spim_external_mux(instance: SpiMonitorInstance, mux: ScuExtMuxSelect) {
     let high = matches!(mux, ScuExtMuxSelect::Mux1);
-    let (gpio_group, gpio_mask, sgpio_mask) = match instance {
+    let (gpio_group, gpio_mask, sgpio_select, sgpio_oe_n, sgpio_reset_n) = match instance {
         SpiMonitorInstance::Spim0 | SpiMonitorInstance::Spim1 => {
-            (ExternalMuxGpioGroup::Abcd, 1 << 12, 1 << 0)
+            (
+                ExternalMuxGpioGroup::Abcd,
+                1 << 12,
+                1 << 0,
+                1 << 1,
+                1 << 7,
+            )
         }
         SpiMonitorInstance::Spim2 | SpiMonitorInstance::Spim3 => {
-            (ExternalMuxGpioGroup::Efgh, 1 << 8, 1 << 2)
+            (
+                ExternalMuxGpioGroup::Efgh,
+                1 << 8,
+                1 << 2,
+                1 << 3,
+                1 << 6,
+            )
         }
     };
 
@@ -166,24 +178,38 @@ pub fn apply_spim_external_mux(instance: SpiMonitorInstance, mux: ScuExtMuxSelec
             .bits(24)
     });
     let latch = sgpio.gpio570().read().bits();
+    let control_mask = sgpio_select | sgpio_oe_n | sgpio_reset_n;
+    let control_value = if high { sgpio_select } else { 0 } | sgpio_reset_n;
     sgpio
         .gpio500()
-        .write(|w| unsafe { w.bits(update_bit(latch, sgpio_mask, high)) });
+        .write(|w| unsafe { w.bits((latch & !control_mask) | control_value) });
 
     crate::delay_us(1_000);
 }
 
-/// Read back the two board-level external mux-select outputs.
+/// Read back the board-level mux selection, output enable, and flash reset.
 #[must_use]
 pub fn spim_external_mux_state(
     instance: SpiMonitorInstance,
 ) -> Option<ScuExtMuxSelect> {
-    let (gpio_group, gpio_mask, sgpio_mask) = match instance {
+    let (gpio_group, gpio_mask, sgpio_select, sgpio_oe_n, sgpio_reset_n) = match instance {
         SpiMonitorInstance::Spim0 | SpiMonitorInstance::Spim1 => {
-            (ExternalMuxGpioGroup::Abcd, 1 << 12, 1 << 0)
+            (
+                ExternalMuxGpioGroup::Abcd,
+                1 << 12,
+                1 << 0,
+                1 << 1,
+                1 << 7,
+            )
         }
         SpiMonitorInstance::Spim2 | SpiMonitorInstance::Spim3 => {
-            (ExternalMuxGpioGroup::Efgh, 1 << 8, 1 << 2)
+            (
+                ExternalMuxGpioGroup::Efgh,
+                1 << 8,
+                1 << 2,
+                1 << 3,
+                1 << 6,
+            )
         }
     };
     let gpio = unsafe { &*device::Gpio::ptr() };
@@ -192,7 +218,13 @@ pub fn spim_external_mux_state(
         ExternalMuxGpioGroup::Efgh => gpio.gpio020().read().bits() & gpio_mask != 0,
     };
     let sgpio = unsafe { &*device::Sgpiom::ptr() };
-    let sgpio_high = sgpio.gpio570().read().bits() & sgpio_mask != 0;
+    let latch = sgpio.gpio570().read().bits();
+    let sgpio_high = latch & sgpio_select != 0;
+    let mux_enabled = latch & sgpio_oe_n == 0;
+    let flash_reset_released = latch & sgpio_reset_n != 0;
+    if !mux_enabled || !flash_reset_released {
+        return None;
+    }
     if gpio_high != sgpio_high {
         None
     } else if gpio_high {

@@ -208,6 +208,40 @@ impl ScuRegisters {
         });
     }
 
+    /// Route the external flash-reset input through one SPIPF.
+    ///
+    /// Clears the instance's reset signal and source-selection bits in
+    /// SCU0F0[19:16] and [23:20], and enables its reset output in [27:24].
+    pub fn configure_spim_external_flash_reset(&self, instance: SpiMonitorInstance) {
+        self.unlock_write_protection();
+        let instance_bit = match instance {
+            SpiMonitorInstance::Spim0 => 1 << 0,
+            SpiMonitorInstance::Spim1 => 1 << 1,
+            SpiMonitorInstance::Spim2 => 1 << 2,
+            SpiMonitorInstance::Spim3 => 1 << 3,
+        };
+        let clear_mask = (instance_bit << 16) | (instance_bit << 20);
+        let output_enable = instance_bit << 24;
+        self.regs()
+            .scu0f0()
+            .modify(|r, w| unsafe { w.bits((r.bits() & !clear_mask) | output_enable) });
+    }
+
+    /// Check the external flash-reset source and output-enable configuration.
+    #[must_use]
+    pub fn is_spim_external_flash_reset_configured(&self, instance: SpiMonitorInstance) -> bool {
+        let instance_bit = match instance {
+            SpiMonitorInstance::Spim0 => 1 << 0,
+            SpiMonitorInstance::Spim1 => 1 << 1,
+            SpiMonitorInstance::Spim2 => 1 << 2,
+            SpiMonitorInstance::Spim3 => 1 << 3,
+        };
+        let cleared_mask = (instance_bit << 16) | (instance_bit << 20);
+        let output_enable = instance_bit << 24;
+        let value = self.regs().scu0f0().read().bits();
+        value & cleared_mask == 0 && value & output_enable == output_enable
+    }
+
     /// Disable the internal pull-down on the monitor CS output pin.
     pub fn disable_spim_cs_internal_pull_down(&self, instance: SpiMonitorInstance) {
         self.unlock_write_protection();
