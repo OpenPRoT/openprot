@@ -59,6 +59,29 @@ fn spin_wait(mut cycles: u32) {
     }
 }
 
+/// Read-only register snapshot for debugging (never pops a queue).
+fn dump_slave_i3c2(label: u32) {
+    let regs = unsafe { &*ast1060_pac::I3c2::ptr() };
+    let status = regs.i3cd03c().read().bits();
+    let queue = regs.i3cd04c().read().bits();
+    let present = regs.i3cd054().read().bits();
+    let event_ctrl = regs.i3cd038().read().bits();
+    let dev_addr = regs.i3cd004().read().bits();
+    pw_log::info!(
+        "[SDUMP{}] status={:08x} queue={:08x}",
+        label as u32,
+        status as u32,
+        queue as u32
+    );
+    pw_log::info!(
+        "[SDUMP{}] present={:08x} event_ctrl={:08x}",
+        label as u32,
+        present as u32,
+        event_ctrl as u32
+    );
+    pw_log::info!("[SDUMP{}] dev_addr={:08x}", label as u32, dev_addr as u32);
+}
+
 fn log_target_hj_state(label: u32) {
     let regs = unsafe { &*ast1060_pac::I3c2::ptr() };
     let dev_addr = regs.i3cd004().read().bits();
@@ -76,11 +99,17 @@ fn log_target_hj_state(label: u32) {
     );
 }
 
-fn log_target_master_write(exchange: u32, len: u8, data: &[u8; XFER_DATA_LEN]) {
-    let w0 = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
-    let w1 = u32::from_be_bytes([data[4], data[5], data[6], data[7]]);
-    let w2 = u32::from_be_bytes([data[8], data[9], data[10], data[11]]);
-    let w3 = u32::from_be_bytes([data[12], data[13], data[14], data[15]]);
+/// Logs the first [`XFER_DATA_LEN`] bytes of a received master write. The
+/// work item's inline buffer is larger (`IBI_MWR_DATA_MAX`); this test only
+/// exchanges 16-byte payloads.
+fn log_target_master_write(exchange: u32, len: u8, data: &[u8]) {
+    let mut d = [0u8; XFER_DATA_LEN];
+    let take = data.len().min(d.len());
+    d[..take].copy_from_slice(&data[..take]);
+    let w0 = u32::from_be_bytes([d[0], d[1], d[2], d[3]]);
+    let w1 = u32::from_be_bytes([d[4], d[5], d[6], d[7]]);
+    let w2 = u32::from_be_bytes([d[8], d[9], d[10], d[11]]);
+    let w3 = u32::from_be_bytes([d[12], d[13], d[14], d[15]]);
     pw_log::info!(
         "TARGET_RX_FROM_MASTER #{} {}B {:08x} {:08x} {:08x} {:08x}",
         exchange as u32,
@@ -253,7 +282,9 @@ fn run_target() -> Result<(), &'static str> {
         for (i, b) in data.iter_mut().enumerate() {
             *b = u8::try_from(i).unwrap_or(0);
         }
+        dump_slave_i3c2(ibi_count);
         if ctrl.target_get_ibi_payload(&mut data).is_err() {
+            dump_slave_i3c2(0xdead);
             return Err("target_get_ibi_payload failed");
         }
         log_target_read_payload(ibi_count, &data);

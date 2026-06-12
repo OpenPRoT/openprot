@@ -118,6 +118,43 @@ fn build_config() -> Result<I3cConfig, &'static str> {
     Ok(config)
 }
 
+/// Read-only register snapshot for debugging (never pops a queue).
+fn dump_i3c2(label: u32) {
+    let regs = unsafe { &*ast1060_pac::I3c2::ptr() };
+    let status = regs.i3cd03c().read().bits();
+    let queue = regs.i3cd04c().read().bits();
+    let present = regs.i3cd054().read().bits();
+    let dat0 = regs.i3cd280().read().bits();
+    pw_log::info!(
+        "[DUMP{}] status={:08x} queue={:08x}",
+        label as u32,
+        status as u32,
+        queue as u32
+    );
+    pw_log::info!(
+        "[DUMP{}] present={:08x} dat0={:08x}",
+        label as u32,
+        present as u32,
+        dat0 as u32
+    );
+    let dev_addr = regs.i3cd004().read().bits();
+    let sir_rej = regs.i3cd030().read().bits();
+    let sten = regs.i3cd040().read().bits();
+    let sgen = regs.i3cd044().read().bits();
+    pw_log::info!(
+        "[DUMP{}] dev_addr={:08x} sir_reject={:08x}",
+        label as u32,
+        dev_addr as u32,
+        sir_rej as u32
+    );
+    pw_log::info!(
+        "[DUMP{}] status_en={:08x} signal_en={:08x}",
+        label as u32,
+        sten as u32,
+        sgen as u32
+    );
+}
+
 #[inline(never)]
 fn master_read_from_target(
     ctrl: &mut I3c2Controller<'_>,
@@ -234,8 +271,25 @@ fn run_controller() -> Result<(), &'static str> {
         match work {
             IbiWork::HotJoin => {
                 pw_log::info!("[IBI] hotjoin");
+                dump_i3c2(0);
                 let _ = ctrl.handle_hot_join();
-                let _ = ctrl.assign_dynamic_address(dyn_addr);
+                match ctrl.assign_dynamic_address(dyn_addr) {
+                    Ok(da) => pw_log::info!("DA assigned: 0x{:02x}", da as u32),
+                    Err(e) => {
+                        use ast10x0_peripherals::i3c::I3cError;
+                        // 1=ENTDAA failed (AddrInUse), 2=GETPID/GETBCR failed
+                        // (Invalid), 3=bookkeeping/IBI-enable failed (Other),
+                        // 0xff=anything else
+                        let code: u32 = match e {
+                            I3cError::AddrInUse => 1,
+                            I3cError::Invalid => 2,
+                            I3cError::Other => 3,
+                            _ => 0xff,
+                        };
+                        pw_log::error!("assign_dynamic_address failed: code={}", code as u32);
+                    }
+                }
+                dump_i3c2(1);
             }
             IbiWork::Sirq { addr, len, .. } => {
                 pw_log::info!("[IBI] SIRQ from 0x{:02x} len {}", addr as u32, len as u32);

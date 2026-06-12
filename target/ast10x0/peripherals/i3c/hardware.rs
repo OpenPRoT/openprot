@@ -343,17 +343,35 @@ fn isr_target_responses(regs: &I3cRegisters, events: &IsrEvents, bus: usize) {
 
         if err != 0 {
             // Recovery needs halt/resume sequencing (wait policy) — defer.
+            // The errored response's data must still be drained here: the
+            // deferred recovery may run much later (next SIR attempt), and
+            // leftover words would misalign every subsequent RX FIFO read.
             events.fault.store(true, Ordering::Release);
+            if rx_len != 0 {
+                regs.rx_fifo_drain(rx_len);
+            }
             continue;
         }
 
         if rx_len != 0 {
-            let mut buf: [u8; 256] = [0u8; 256];
+            // Bounce buffer sized to the work-item payload (NOT 256): this
+            // runs on the kernel handler stack, and together with the
+            // by-value `IbiWork` copies in the enqueue path a larger buffer
+            // HardFaulted the AST1060 ISR stack. Anything beyond the
+            // work-item capacity would be truncated at enqueue anyway; the
+            // drain below keeps the FIFO aligned for the excess.
+            let mut buf = [0u8; ibi_workq::IBI_MWR_DATA_MAX];
             // Bound `rx_len` (a raw hardware field) to the buffer via `get`:
             // an oversized length must not panic in handler mode.
             let n = rx_len.min(buf.len());
             if let Some(dst) = buf.get_mut(..n) {
                 regs.rx_fifo_read(dst);
+            }
+            // An oversized write leaves words beyond the bounce buffer in the
+            // RX FIFO; pop them so the next response's data stays aligned
+            // (`n` is word-aligned at 256, so the byte count maps 1:1).
+            if rx_len > n {
+                regs.rx_fifo_drain(rx_len - n);
             }
             let _ = ibi_workq::i3c_ibi_work_enqueue_target_master_write(
                 bus,
@@ -400,6 +418,14 @@ fn isr_master_ibis(regs: &I3cRegisters, bus: usize) {
             let take = core::cmp::min(ibi_data_len, ibi_buf.len());
             if let Some(dst) = ibi_buf.get_mut(..take) {
                 regs.ibi_fifo_read(dst);
+            }
+            // The read above consumed `take` rounded up to a whole queue word;
+            // a payload longer than the bounce buffer leaves further words in
+            // the IBI queue, where they would be misparsed as the next entry's
+            // status word. Pop the remainder to keep the queue aligned.
+            let consumed = take.div_ceil(4) * 4;
+            if ibi_data_len > consumed {
+                regs.ibi_fifo_drain(ibi_data_len - consumed);
             }
             let _ = ibi_workq::i3c_ibi_work_enqueue_target_irq(
                 bus,
@@ -503,6 +529,9 @@ pub trait HardwareTransfer {
     /// Enable IBI for a device
     fn ibi_enable(&mut self, config: &mut I3cConfig, addr: u8) -> Result<(), I3cError>;
 
+    /// Disable IBI for a device (DISEC + reject its SIRs at the controller)
+    fn ibi_disable(&mut self, config: &mut I3cConfig, addr: u8) -> Result<(), I3cError>;
+
     /// Start a transfer. Overlap is structurally impossible: the transfer is
     /// thread-owned for its whole life (`&mut` exclusivity), and the ISR only
     /// latches completion flags — there is no in-flight pointer to clobber.
@@ -517,9 +546,6 @@ pub trait HardwareTransfer {
         xfer: &mut I3cXfer,
         timeout_us: u32,
     ) -> bool;
-
-    /// Get DAT position for an address
-    fn get_addr_pos(&mut self, config: &I3cConfig, addr: u8) -> Option<u8>;
 
     /// Detach a device by DAT position
     fn detach_i3c_dev(&mut self, pos: usize);
@@ -869,11 +895,15 @@ impl<Y: FnMut(u32)> Ast1060I3c<Y> {
         }
 
         if ret != 0 {
-            // Best-effort recovery (mirrors the reference): the transfer error
-            // is already being reported via `xfer.ret`; a recovery timeout on
-            // top of it has no separate observable outcome.
+            // Best-effort recovery; the transfer error is already being
+            // reported via `xfer.ret`, so a recovery timeout on top of it has
+            // no separate observable outcome. `RESET_CTRL_XFER_QUEUES` (not
+            // `RESET_CTRL_QUEUES`) follows the vendor C driver
+            // (`aspeed_i3c_end_xfer`): this is the master completion path, and
+            // resetting the IBI queue here would silently drop IBIs that
+            // arrived during the failed transfer.
             let _ = self.enter_halt(false, config);
-            let _ = self.reset_ctrl(RESET_CTRL_QUEUES);
+            let _ = self.reset_ctrl(RESET_CTRL_XFER_QUEUES);
             let _ = self.exit_halt(config);
         }
 
@@ -1339,6 +1369,40 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
         Ok(())
     }
 
+    fn ibi_disable(&mut self, config: &mut I3cConfig, addr: u8) -> Result<(), I3cDrvError> {
+        let dev_idx = config
+            .attached
+            .find_dev_idx_by_addr(addr)
+            .ok_or(I3cDrvError::NoSuchDev)?;
+        let pos_opt = config
+            .attached
+            .pos_of(dev_idx)
+            .or_else(|| config.attached.devices.get(dev_idx).and_then(|d| d.pos));
+        let pos: u8 = pos_opt.ok_or(I3cDrvError::NoDatPos)?;
+        let dyn_addr = config
+            .attached
+            .devices
+            .get(dev_idx)
+            .ok_or(I3cDrvError::NoSuchDev)?
+            .dyn_addr;
+
+        // Tell the device to stop raising SIRs first (DISEC), while the
+        // controller still ACKs its IBIs; best-effort, mirroring ibi_enable.
+        let _ = ccc_events_set(self, config, dyn_addr, false, I3C_CCC_EVT_INTR);
+
+        // Then reject at the controller: DAT slot + SIR-reject mask.
+        let mut reg = self.regs.dat_read(pos.into());
+        reg |= DEV_ADDR_TABLE_SIR_REJECT;
+        reg &= !(DEV_ADDR_TABLE_IBI_MDB | DEV_ADDR_TABLE_IBI_PEC);
+        self.regs.dat_write_raw(pos.into(), reg);
+
+        let mut sir_reject = self.regs.read_sir_reject();
+        sir_reject |= bit(pos.into());
+        self.regs.write_sir_reject(sir_reject);
+
+        Ok(())
+    }
+
     fn start_xfer(&mut self, config: &mut I3cConfig, xfer: &mut I3cXfer) {
         let _ = config;
         xfer.ret = -1;
@@ -1351,6 +1415,11 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
         for _ in 0..nresp {
             let _ = self.regs.pop_response();
         }
+        // Re-arm the completion IRQ sources. If a late response (e.g. from a
+        // transfer that timed out) arrived with no waiter, the ISR masked the
+        // sources and nobody unmasked them — without this, the new transfer's
+        // completion would never be latched and would falsely time out.
+        self.regs.unmask_master_xfer_irqs();
 
         for cmd in xfer.cmds.iter() {
             if let Some(tx) = cmd.tx {
@@ -1413,15 +1482,6 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
         let _ = self.exit_halt(config);
         self.regs.unmask_master_xfer_irqs();
         false
-    }
-
-    fn get_addr_pos(&mut self, config: &I3cConfig, addr: u8) -> Option<u8> {
-        config
-            .addrs
-            .iter()
-            .take(config.maxdevs as usize)
-            .position(|&a| a == addr)
-            .and_then(|i| u8::try_from(i).ok())
     }
 
     fn detach_i3c_dev(&mut self, pos: usize) {
@@ -1625,8 +1685,14 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
 
         self.start_xfer(config, &mut xfer);
 
+        // Full operation budget — NOT the C driver's 10 ms. The C timeout is
+        // wall-clock (`k_sem_take(K_MSEC(10))`); this driver's timeout unit is
+        // cooperative-yield ticks, and a fast `yield_fn` makes the nominal
+        // value run far shorter in real time. A short budget here aborts a
+        // live ENTDAA mid-flight (halt + queue reset), wedging the DAA
+        // handshake. An ENTDAA nobody answers still exits early via NACK.
         if !self.wait_xfer_complete(config, &mut xfer, I3C_OP_TIMEOUT_US) {
-            return Err(I3cDrvError::Invalid);
+            return Err(I3cDrvError::Timeout);
         }
 
         i3c_debug!(self.logger, "do_entdaa: xfer done");
@@ -1897,11 +1963,14 @@ impl<Y: FnMut(u32)> HardwareTarget for Ast1060I3c<Y> {
             .target_ibi_done
             .wait_for_us(I3C_OP_TIMEOUT_US, &mut self.yield_fn)
         {
-            // Best-effort recovery; `IoError` below already reports the failure.
+            // Vendor C driver parity (`target_rst_worker`): an unanswered SIR
+            // means the engine may be wedged beyond a queue reset — re-run the
+            // full controller init. Side effects match the C driver: the
+            // dynamic address is dropped (the bus master must re-run DAA) and
+            // `sir_allowed_by_sw` is cleared until the next DA assignment.
+            // Best-effort; `IoError` below already reports the failure.
             i3c_debug!(self.logger, "SIR timeout! Reset I3C controller");
-            let _ = self.enter_halt(false, config);
-            let _ = self.reset_ctrl(RESET_CTRL_QUEUES);
-            let _ = self.exit_halt(config);
+            let _ = self.init(config);
             return Err(I3cDrvError::IoError);
         }
 

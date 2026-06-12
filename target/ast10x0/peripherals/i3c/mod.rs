@@ -77,9 +77,9 @@ pub use registers::I3cRegisters;
 
 // CCC operations
 pub use ccc::{
-    ccc_events_all_set, ccc_events_set, ccc_getbcr, ccc_getpid, ccc_getstatus, ccc_getstatus_fmt1,
-    ccc_rstact_all, ccc_rstdaa_all, ccc_setnewda, Ccc, CccPayload, CccRstActDefByte,
-    CccTargetPayload, GetStatusDefByte, GetStatusFormat, GetStatusResp,
+    ccc_events_all_set, ccc_events_set, ccc_getbcr, ccc_getdcr, ccc_getpid, ccc_getstatus,
+    ccc_getstatus_fmt1, ccc_rstact_all, ccc_rstdaa_all, ccc_setnewda, Ccc, CccPayload,
+    CccRstActDefByte, CccTargetPayload, GetStatusDefByte, GetStatusFormat, GetStatusResp,
 };
 
 // IBI work queue
