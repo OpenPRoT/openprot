@@ -1,0 +1,17 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "orchestrator_api",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "openprot_orchestrator_api",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+)
+
+rust_test(
+    name = "orchestrator_api_test",
+    crate = ":orchestrator_api",
+)

@@ -1,0 +1,28 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "orchestrator_sm",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "openprot_orchestrator_sm",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/orchestrator/api:orchestrator_api",
+    ],
+)
+
+# Host-side integration test: drives the run-loop with an in-memory queue and a
+# scripted Actions double. No pw_kernel, no hardware.
+rust_test(
+    name = "orchestrator_sm_integration_test",
+    srcs = ["tests/orchestrator.rs"],
+    crate_root = "tests/orchestrator.rs",
+    edition = "2024",
+    deps = [
+        ":orchestrator_sm",
+        "//services/orchestrator/api:orchestrator_api",
+    ],
+)

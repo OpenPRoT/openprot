@@ -1,0 +1,28 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+# The pw_kernel-backed server binding: drives LifecycleServer over an IPC
+# channel (channel_read -> handle_request -> channel_respond). Depends on the
+# `userspace` syscall crate, which only builds on-target (cortex-m / riscv), so
+# this library is target-only and has no host test; its logic is exercised by
+# the host tests of the api and server crates.
+rust_library(
+    name = "orchestrator_ipc",
+    srcs = ["src/lib.rs"],
+    crate_name = "openprot_orchestrator_ipc",
+    crate_root = "src/lib.rs",
+    edition = "2024",
+    # The `userspace` syscall crate only builds for a bare-metal userspace
+    # target; gate on os:none so host wildcard builds (`//...`) skip this
+    # library instead of failing to compile its kernel dependencies.
+    target_compatible_with = ["@platforms//os:none"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/orchestrator/server:orchestrator_server",
+        "//util/ipc_event_queue",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)

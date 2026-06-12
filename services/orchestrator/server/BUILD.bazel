@@ -1,0 +1,36 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+# Platform-independent orchestrator service: the server end of the orchestrator IPC
+# channel. Decodes inbound requests (via the shared api::wire codec), drives the
+# StateMachine, and encodes responses. The I/O is abstracted (decode and
+# dispatch are syscall-free), so the crate builds and unit-tests on the host;
+# the target glue supplies the EventPort and reads/writes the channel.
+rust_library(
+    name = "orchestrator_server",
+    srcs = ["src/lib.rs"],
+    crate_name = "openprot_orchestrator_server",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/orchestrator/api:orchestrator_api",
+        "//services/orchestrator/sm:orchestrator_sm",
+    ],
+)
+
+# Host integration test: drives the server with decoded requests and an
+# in-memory queue + scripted Actions, asserting the full request -> machine ->
+# response flow. No pw_kernel, no hardware.
+rust_test(
+    name = "orchestrator_server_integration_test",
+    srcs = ["tests/server.rs"],
+    crate_root = "tests/server.rs",
+    edition = "2024",
+    deps = [
+        ":orchestrator_server",
+        "//services/orchestrator/api:orchestrator_api",
+        "//services/orchestrator/sm:orchestrator_sm",
+    ],
+)

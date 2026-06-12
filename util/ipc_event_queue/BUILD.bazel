@@ -1,0 +1,24 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+# Generic, transport-free building blocks for an IPC-backed event queue: the
+# `WireCodec` trait and the in-process `PendingQueue`. No syscall dependency, so
+# it builds and unit-tests on the host. The syscall-driven queue that owns a
+# `pw_kernel` channel handle lives in the target-specific consumer crate.
+rust_library(
+    name = "ipc_event_queue",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "openprot_ipc_event_queue",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@rust_crates//:heapless",
+    ],
+)
+
+rust_test(
+    name = "ipc_event_queue_test",
+    crate = ":ipc_event_queue",
+)
