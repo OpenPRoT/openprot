@@ -77,13 +77,12 @@ impl SpiMonitor<Uninitialized> {
             }
         }
 
-        let general_slot_limit = if policy.allow_commands[..policy.allow_command_count]
-            .contains(&0xc5)
-        {
-            LAST_GENERAL_COMMAND_SLOT_EXCLUSIVE
-        } else {
-            COMMAND_TABLE_SLOTS
-        };
+        let general_slot_limit =
+            if policy.allow_commands[..policy.allow_command_count].contains(&0xc5) {
+                LAST_GENERAL_COMMAND_SLOT_EXCLUSIVE
+            } else {
+                COMMAND_TABLE_SLOTS
+            };
         let mut general_command_count = 0usize;
         for opcode in policy.allow_commands[..policy.allow_command_count]
             .iter()
@@ -165,11 +164,9 @@ impl SpiMonitor<Uninitialized> {
 
     /// Pulse the SPIPF software-reset bit for at least 5 microseconds.
     pub fn software_reset(&self) {
-        self.regs
-            .modify_ctrl(|bits| *bits |= CTRL_SW_RESET_BIT);
+        self.regs.modify_ctrl(|bits| *bits |= CTRL_SW_RESET_BIT);
         delay_cycles(SW_RESET_DELAY_CYCLES);
-        self.regs
-            .modify_ctrl(|bits| *bits &= !CTRL_SW_RESET_BIT);
+        self.regs.modify_ctrl(|bits| *bits &= !CTRL_SW_RESET_BIT);
     }
 }
 
@@ -414,8 +411,7 @@ impl SpiMonitor<Configured> {
     pub fn acknowledge_violations(&self) -> u32 {
         let pending = self.pending_violations();
         if pending != 0 {
-            self.regs
-                .modify_ctrl2(|bits| *bits |= pending);
+            self.regs.modify_ctrl2(|bits| *bits |= pending);
         }
         pending
     }
@@ -430,8 +426,7 @@ impl SpiMonitor<Configured> {
     pub fn lock(self) -> Result<SpiMonitor<Locked>> {
         for slot in 0..COMMAND_TABLE_SLOTS {
             let value = self.regs.read_allow_cmd_slot(slot);
-            self.regs
-                .write_allow_cmd_slot(slot, value | COMMAND_LOCKED);
+            self.regs.write_allow_cmd_slot(slot, value | COMMAND_LOCKED);
         }
 
         self.regs
@@ -592,11 +587,7 @@ fn select_privilege_table(regs: &SpiMonitorRegisters, direction: PrivilegeDirect
     regs.modify_ctrl(|bits| *bits = (*bits & 0x00ff_ffff) | selection);
 }
 
-fn verify_command_slot(
-    regs: &SpiMonitorRegisters,
-    slot: usize,
-    expected: u32,
-) -> Result<usize> {
+fn verify_command_slot(regs: &SpiMonitorRegisters, slot: usize, expected: u32) -> Result<usize> {
     if regs.read_allow_cmd_slot(slot) != expected {
         return Err(SpiMonitorError::VerificationFailed);
     }

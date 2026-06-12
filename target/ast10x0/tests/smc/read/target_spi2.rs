@@ -8,9 +8,7 @@
 use ast10x0_board::{apply_spim_external_mux, enable_flash_power};
 #[allow(unused_imports)]
 use ast10x0_peripherals::scu::{
-    pinctrl::{
-        PINCTRL_SPI2_QUAD, PINCTRL_SPIM3_DEFAULT, PINCTRL_SPIM4_DEFAULT,
-    },
+    pinctrl::{PINCTRL_SPI2_QUAD, PINCTRL_SPIM3_DEFAULT, PINCTRL_SPIM4_DEFAULT},
     ScuExtMuxSelect, ScuRegisters, SpiMonitorInstance, SpiMonitorPassthrough, SpiMonitorSource,
 };
 use ast10x0_peripherals::smc::{

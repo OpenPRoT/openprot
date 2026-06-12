@@ -7,9 +7,7 @@
 
 use core::cell::UnsafeCell;
 
-use ast10x0_board::{
-    apply_spim_external_mux, apply_spim_pinctrl, delay_us, spim_external_mux_state,
-};
+use ast10x0_board::{apply_spim_external_mux, apply_spim_pinctrl, spim_external_mux_state};
 use ast10x0_peripherals::scu::{
     ScuError, ScuExtMuxSelect, ScuRegisters, SpiMonitorInstance, SpiMonitorPassthrough,
     SpiMonitorSource,
@@ -139,14 +137,6 @@ pub fn initialize_monitor_with_policy<C: TestConfig>(
         "FAIL: software reset did not deassert"
     );
 
-    let scu = unsafe { ScuRegisters::new_global_unlocked() };
-    scu.configure_spim_external_flash_reset(C::INSTANCE);
-    test_check!(
-        scu.is_spim_external_flash_reset_configured(C::INSTANCE),
-        "FAIL: SPIPF external flash reset routing readback"
-    );
-    delay_us(5_000);
-
     let configured = monitor.apply_policy(policy)?;
     test_check!(
         configured.state() == MonitorState::Configured,
@@ -200,21 +190,36 @@ pub fn dump_policy(
 }
 
 #[allow(dead_code)]
-pub fn configure_passthrough<C: TestConfig>(
+pub fn validate_filtering(configured: &ConfiguredSpiMonitor) -> Result<(), TestError> {
+    test_check!(
+        configured.regs().read_ctrl() & 0x7 == 0x4,
+        "FAIL: SPIPF filtering mode readback"
+    );
+    pw_log::info!("PASS: SPIPF filtering mode");
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub fn validate_one_mib_write_protection(
     configured: &ConfiguredSpiMonitor,
 ) -> Result<(), TestError> {
-    configured.disable();
-    configured.set_passthrough(PassthroughMode::Enabled);
-
-    let scu = unsafe { ScuRegisters::new_global_unlocked() };
-    scu.set_spim_passthrough(C::INSTANCE, SpiMonitorPassthrough::Enabled);
-    scu.set_spim_miso_multi_func(C::INSTANCE, false);
-
     test_check!(
-        configured.regs().read_ctrl() & 0x7 == 0x1,
-        "FAIL: SPIPF passthrough mode readback"
+        configured.privilege_word(PrivilegeDirection::Read, 0)? == u32::MAX
+            && configured.privilege_word(PrivilegeDirection::Read, 1)? == u32::MAX
+            && configured.privilege_word(PrivilegeDirection::Read, 2)? == u32::MAX,
+        "FAIL: read privilege table is not unrestricted"
     );
-    pw_log::info!("PASS: SPIPF single-bit passthrough mode");
+    test_check!(
+        configured.privilege_word(PrivilegeDirection::Write, 0)? == 0
+            && configured.privilege_word(PrivilegeDirection::Write, 1)? == 0,
+        "FAIL: first 1 MiB is not write protected"
+    );
+    test_check!(
+        configured.privilege_word(PrivilegeDirection::Write, 2)? == u32::MAX,
+        "FAIL: writes at and above 0x00100000 are not enabled"
+    );
+    pw_log::info!("PASS: reads allowed; writes below 0x00100000 blocked");
+    pw_log::info!("PASS: writes at 0x00110000 allowed");
     Ok(())
 }
 
