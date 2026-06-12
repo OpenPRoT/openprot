@@ -11,16 +11,15 @@ use core::cell::UnsafeCell;
 #[path = "test_common.rs"]
 mod test_common;
 
-use test_common::TestConfig;
 use ast10x0_board::{
-    apply_spim_external_mux, delay_us, enable_flash_power, set_bmc_resets,
-    spim_external_mux_state,
+    apply_spim_external_mux, delay_us, enable_flash_power, set_bmc_resets, spim_external_mux_state,
 };
 use ast10x0_peripherals::scu::{ScuExtMuxSelect, ScuRegisters, SpiMonitorInstance};
 use ast10x0_peripherals::spimonitor::{
     MonitorPolicy, PrivilegeDirection, PrivilegeOp, SpiMonitorController,
 };
 use target_common::{declare_target, TargetInterface};
+use test_common::TestConfig;
 use {console_backend as _, entry as _};
 
 struct Spim1Config;
@@ -61,9 +60,8 @@ static SPIM4_LOG: LogRam = LogRam(UnsafeCell::new([0; test_common::LOG_RAM_WORDS
 
 const WRITE_PROTECTED_LENGTH: u32 = 0x0010_0000;
 const ALLOW_COMMANDS: [u8; 32] = [
-    0x03, 0x13, 0x0b, 0x0c, 0x6b, 0x6c, 0x01, 0x05, 0x35, 0x06, 0x04, 0x20, 0x21, 0x9f, 0x5a,
-    0xb7, 0xe9, 0x32, 0x34, 0xd8, 0xdc, 0x02, 0x12, 0x3b, 0x3c, 0x70, 0xbb, 0xbc, 0x50, 0xeb,
-    0xec, 0xc2,
+    0x03, 0x13, 0x0b, 0x0c, 0x6b, 0x6c, 0x01, 0x05, 0x35, 0x06, 0x04, 0x20, 0x21, 0x9f, 0x5a, 0xb7,
+    0xe9, 0x32, 0x34, 0xd8, 0xdc, 0x02, 0x12, 0x3b, 0x3c, 0x70, 0xbb, 0xbc, 0x50, 0xeb, 0xec, 0xc2,
 ];
 
 fn log_buffer(log: &'static LogRam) -> &'static mut [u32] {
@@ -110,7 +108,8 @@ fn setup_all_spim() -> Result<(), test_common::TestError> {
         &policy,
     )?;
     test_common::dump_policy(&spim1, WRITE_PROTECTED_LENGTH)?;
-    test_common::configure_passthrough::<Spim1Config>(&spim1)?;
+    test_common::validate_one_mib_write_protection(&spim1)?;
+    test_common::validate_filtering(&spim1)?;
     let _spim1 = test_common::lock_monitor(spim1)?;
 
     pw_log::info!("=== SPIM2 ===");
@@ -120,7 +119,8 @@ fn setup_all_spim() -> Result<(), test_common::TestError> {
         &policy,
     )?;
     test_common::dump_policy(&spim2, WRITE_PROTECTED_LENGTH)?;
-    test_common::configure_passthrough::<Spim2Config>(&spim2)?;
+    test_common::validate_one_mib_write_protection(&spim2)?;
+    test_common::validate_filtering(&spim2)?;
     let _spim2 = test_common::lock_monitor(spim2)?;
 
     pw_log::info!("=== SPIM3 ===");
@@ -130,7 +130,8 @@ fn setup_all_spim() -> Result<(), test_common::TestError> {
         &policy,
     )?;
     test_common::dump_policy(&spim3, WRITE_PROTECTED_LENGTH)?;
-    test_common::configure_passthrough::<Spim3Config>(&spim3)?;
+    test_common::validate_one_mib_write_protection(&spim3)?;
+    test_common::validate_filtering(&spim3)?;
     let _spim3 = test_common::lock_monitor(spim3)?;
 
     pw_log::info!("=== SPIM4 ===");
@@ -140,18 +141,18 @@ fn setup_all_spim() -> Result<(), test_common::TestError> {
         &policy,
     )?;
     test_common::dump_policy(&spim4, WRITE_PROTECTED_LENGTH)?;
-    test_common::configure_passthrough::<Spim4Config>(&spim4)?;
+    test_common::validate_one_mib_write_protection(&spim4)?;
+    test_common::validate_filtering(&spim4)?;
     let _spim4 = test_common::lock_monitor(spim4)?;
 
-    if scu.route_control_raw() & 0x0fff_0000 != 0x0f00_0000 {
+    if scu.route_control_raw() & 0x0fff_0000 != 0 {
         pw_log::info!(
-            "FAIL: final SPIPF reset routing: 0x{:08x}",
+            "FAIL: unexpected SCU flash-reset routing: 0x{:08x}",
             scu.route_control_raw() as u32
         );
         return Err(test_common::TestError::Check);
     }
-    pw_log::info!("All SPIM1-4 paths are configured in passthrough mode and locked");
-    pw_log::info!("SPI clock frequency must be configured to 25 MHz by the external master");
+    pw_log::info!("All SPIM1-4 monitors are filtering traffic and locked");
     pw_log::info!(
         "SCU0F0 after SPIM setup: 0x{:08x}",
         scu.route_control_raw() as u32

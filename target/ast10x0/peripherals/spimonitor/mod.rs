@@ -11,11 +11,11 @@ pub mod registers;
 pub mod traits;
 pub mod types;
 
+pub use commands::{descriptor as command_descriptor, table_value as command_table_value};
 pub use controller::{
     Configured, ConfiguredSpiMonitor, Locked, LockedSpiMonitor, SpiMonitor, UninitSpiMonitor,
     Uninitialized,
 };
-pub use commands::{descriptor as command_descriptor, table_value as command_table_value};
 pub use policy::{MonitorPolicy, MAX_CMD_SLOTS, MAX_REGION_SLOTS};
 pub use registers::{
     SpiMonitorController, SpiMonitorRegisters, SPIPF1_BASE, SPIPF2_BASE, SPIPF3_BASE, SPIPF4_BASE,

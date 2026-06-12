@@ -10,6 +10,7 @@
 //! (`peripherals/spimonitor/planning/overview-and-usage-model.md`) calls for
 //! "configure early, validate, lock, and operate under that locked policy."
 
+use ast1060_pac as device;
 use ast10x0_peripherals::scu::{
     pinctrl::{
         PINCTRL_GPIOL2, PINCTRL_GPIOL3, PINCTRL_SPIM1_DEFAULT, PINCTRL_SPIM2_DEFAULT,
@@ -23,7 +24,6 @@ use ast10x0_peripherals::spimonitor::{
     LockedSpiMonitor, MonitorPolicy, PassthroughMode, SpiMonitor, SpiMonitorController,
     SpiMonitorError, Uninitialized,
 };
-use ast1060_pac as device;
 
 /// Static wiring for one external SPI monitor path.
 ///
@@ -118,22 +118,10 @@ pub fn apply_spim_external_mux(instance: SpiMonitorInstance, mux: ScuExtMuxSelec
     let high = matches!(mux, ScuExtMuxSelect::Mux1);
     let (gpio_group, gpio_mask, sgpio_select, sgpio_oe_n, sgpio_reset_n) = match instance {
         SpiMonitorInstance::Spim0 | SpiMonitorInstance::Spim1 => {
-            (
-                ExternalMuxGpioGroup::Abcd,
-                1 << 12,
-                1 << 0,
-                1 << 1,
-                1 << 7,
-            )
+            (ExternalMuxGpioGroup::Abcd, 1 << 12, 1 << 0, 1 << 1, 1 << 7)
         }
         SpiMonitorInstance::Spim2 | SpiMonitorInstance::Spim3 => {
-            (
-                ExternalMuxGpioGroup::Efgh,
-                1 << 8,
-                1 << 2,
-                1 << 3,
-                1 << 6,
-            )
+            (ExternalMuxGpioGroup::Efgh, 1 << 8, 1 << 2, 1 << 3, 1 << 6)
         }
     };
 
@@ -151,20 +139,16 @@ pub fn apply_spim_external_mux(instance: SpiMonitorInstance, mux: ScuExtMuxSelec
     });
     match gpio_group {
         ExternalMuxGpioGroup::Abcd => {
-            gpio.gpio000().modify(|r, w| unsafe {
-                w.bits(update_bit(r.bits(), gpio_mask, high))
-            });
-            gpio.gpio004().modify(|r, w| unsafe {
-                w.bits(r.bits() | gpio_mask)
-            });
+            gpio.gpio000()
+                .modify(|r, w| unsafe { w.bits(update_bit(r.bits(), gpio_mask, high)) });
+            gpio.gpio004()
+                .modify(|r, w| unsafe { w.bits(r.bits() | gpio_mask) });
         }
         ExternalMuxGpioGroup::Efgh => {
-            gpio.gpio020().modify(|r, w| unsafe {
-                w.bits(update_bit(r.bits(), gpio_mask, high))
-            });
-            gpio.gpio024().modify(|r, w| unsafe {
-                w.bits(r.bits() | gpio_mask)
-            });
+            gpio.gpio020()
+                .modify(|r, w| unsafe { w.bits(update_bit(r.bits(), gpio_mask, high)) });
+            gpio.gpio024()
+                .modify(|r, w| unsafe { w.bits(r.bits() | gpio_mask) });
         }
     }
 
@@ -189,27 +173,13 @@ pub fn apply_spim_external_mux(instance: SpiMonitorInstance, mux: ScuExtMuxSelec
 
 /// Read back the board-level mux selection, output enable, and flash reset.
 #[must_use]
-pub fn spim_external_mux_state(
-    instance: SpiMonitorInstance,
-) -> Option<ScuExtMuxSelect> {
+pub fn spim_external_mux_state(instance: SpiMonitorInstance) -> Option<ScuExtMuxSelect> {
     let (gpio_group, gpio_mask, sgpio_select, sgpio_oe_n, sgpio_reset_n) = match instance {
         SpiMonitorInstance::Spim0 | SpiMonitorInstance::Spim1 => {
-            (
-                ExternalMuxGpioGroup::Abcd,
-                1 << 12,
-                1 << 0,
-                1 << 1,
-                1 << 7,
-            )
+            (ExternalMuxGpioGroup::Abcd, 1 << 12, 1 << 0, 1 << 1, 1 << 7)
         }
         SpiMonitorInstance::Spim2 | SpiMonitorInstance::Spim3 => {
-            (
-                ExternalMuxGpioGroup::Efgh,
-                1 << 8,
-                1 << 2,
-                1 << 3,
-                1 << 6,
-            )
+            (ExternalMuxGpioGroup::Efgh, 1 << 8, 1 << 2, 1 << 3, 1 << 6)
         }
     };
     let gpio = unsafe { &*device::Gpio::ptr() };
@@ -242,12 +212,10 @@ pub fn enable_flash_power(scu: &ScuRegisters) -> bool {
 
     const FLASH_POWER_MASK: u32 = (1 << 26) | (1 << 27);
     let gpio = unsafe { &*device::Gpio::ptr() };
-    gpio.gpio070().modify(|r, w| unsafe {
-        w.bits(r.bits() | FLASH_POWER_MASK)
-    });
-    gpio.gpio074().modify(|r, w| unsafe {
-        w.bits(r.bits() | FLASH_POWER_MASK)
-    });
+    gpio.gpio070()
+        .modify(|r, w| unsafe { w.bits(r.bits() | FLASH_POWER_MASK) });
+    gpio.gpio074()
+        .modify(|r, w| unsafe { w.bits(r.bits() | FLASH_POWER_MASK) });
     crate::delay_us(1_000);
 
     gpio.gpio0c8().read().bits() & FLASH_POWER_MASK == FLASH_POWER_MASK
