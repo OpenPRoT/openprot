@@ -7,7 +7,8 @@
 
 use super::config::I3cConfig;
 use super::constants::{
-    I3C_CCC_GETBCR, I3C_CCC_GETPID, I3C_CCC_GETSTATUS, I3C_CCC_RSTDAA, I3C_CCC_SETNEWDA,
+    I3C_CCC_GETBCR, I3C_CCC_GETDCR, I3C_CCC_GETPID, I3C_CCC_GETSTATUS, I3C_CCC_RSTDAA,
+    I3C_CCC_SETNEWDA,
 };
 use super::error::{CccErrorKind, I3cError};
 use super::hardware::HardwareInterface;
@@ -284,8 +285,48 @@ where
     Ok(bcr_buf[0])
 }
 
-/// Set new dynamic address for a device
-pub fn ccc_setnewda<H>(
+/// Get DCR (Device Characteristics Register) from a device
+pub fn ccc_getdcr<H>(hw: &mut H, config: &mut I3cConfig, dyn_addr: u8) -> Result<u8, I3cError>
+where
+    H: HardwareInterface,
+{
+    if dyn_addr == 0 {
+        return Err(I3cError::CccError(CccErrorKind::InvalidParam));
+    }
+
+    let mut dcr_buf = [0u8; 1];
+
+    let tgt = CccTargetPayload {
+        addr: dyn_addr,
+        rnw: true,
+        data: Some(&mut dcr_buf[..]),
+        num_xfer: 0,
+    };
+    let mut tgts = [tgt];
+
+    let ccc = Ccc {
+        id: I3C_CCC_GETDCR,
+        data: None,
+        num_xfer: 0,
+    };
+    let mut payload = CccPayload {
+        ccc: Some(ccc),
+        targets: Some(&mut tgts[..]),
+    };
+
+    hw.do_ccc(config, &mut payload)
+        .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))?;
+
+    Ok(dcr_buf[0])
+}
+
+/// Bus-only SETNEWDA: send the CCC, touch **no** bookkeeping or DAT state.
+///
+/// For the DAA engine (`I3cController::bus_daa`), which addresses a device
+/// that answered on a *different* entry's address (mis-assignment /
+/// unsolicited cases) and manages the tables itself. Everyone else should use
+/// [`ccc_setnewda`].
+pub(crate) fn ccc_setnewda_bus_only<H>(
     hw: &mut H,
     config: &mut I3cConfig,
     curr_da: u8,
@@ -296,15 +337,6 @@ where
 {
     if curr_da == 0 || new_da == 0 {
         return Err(I3cError::CccError(CccErrorKind::InvalidParam));
-    }
-
-    let pos = config.attached.pos_of_addr(curr_da);
-    if pos.is_none() {
-        return Err(I3cError::CccError(CccErrorKind::NotFound));
-    }
-
-    if !config.addrbook.is_free(new_da) {
-        return Err(I3cError::CccError(CccErrorKind::NoFreeSlot));
     }
 
     let mut new_dyn_addr = (new_da & 0x7F) << 1;
@@ -326,6 +358,38 @@ where
     };
 
     hw.do_ccc(config, &mut payload)
+        .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))
+}
+
+/// Set new dynamic address for a device
+pub fn ccc_setnewda<H>(
+    hw: &mut H,
+    config: &mut I3cConfig,
+    curr_da: u8,
+    new_da: u8,
+) -> Result<(), I3cError>
+where
+    H: HardwareInterface,
+{
+    let Some(pos) = config.attached.pos_of_addr(curr_da) else {
+        return Err(I3cError::CccError(CccErrorKind::NotFound));
+    };
+
+    if !config.addrbook.is_free(new_da) {
+        return Err(I3cError::CccError(CccErrorKind::NoFreeSlot));
+    }
+
+    ccc_setnewda_bus_only(hw, config, curr_da, new_da)?;
+
+    // The device now answers on `new_da`: mirror the move into the address
+    // book / attached table and reprogram the DAT slot, or every subsequent
+    // private transfer would still address the device through the stale entry.
+    // The fresh DAT write restores the SIR/MR-reject defaults — call
+    // `ibi_enable` again afterwards if the device had IBIs enabled.
+    config
+        .reassign_da(curr_da, new_da)
+        .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))?;
+    hw.attach_i3c_dev(pos.into(), new_da)
         .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))
 }
 

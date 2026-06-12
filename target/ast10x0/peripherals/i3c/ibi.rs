@@ -33,6 +33,22 @@ use critical_section::Mutex;
 const IBIQ_DEPTH: usize = 16;
 /// Maximum IBI payload data size
 const IBI_DATA_MAX: u8 = 16;
+/// Maximum private-write payload captured per [`IbiWork::TargetMasterWrite`].
+///
+/// The vendor C driver delivers the full write (heap-allocated per response);
+/// this port has no heap, so the work item carries an inline buffer instead.
+/// Writes longer than this are truncated (`len` reports the captured length);
+/// the ISR drains the excess so the FIFO stays aligned.
+///
+/// **Sizing is ISR-stack-bound, not RAM-bound.** `IbiWork` is passed by value
+/// through the enqueue path, so the ISR transiently stacks roughly
+/// `2 * (IBI_MWR_DATA_MAX + 8)` bytes per enqueue on top of the ISR's own
+/// bounce buffer (also this size, see `isr_target_responses`). 128 was
+/// empirically enough to HardFault the kernel handler stack on AST1060; 64
+/// keeps the total below the original 256-byte-bounce-buffer footprint while
+/// quadrupling the old 16-byte payload cap. Static cost of the rings is
+/// `(IBI_MWR_DATA_MAX + 8) * IBIQ_DEPTH * 4 buses` (~4.6 KiB at 64).
+pub const IBI_MWR_DATA_MAX: usize = 64;
 
 // =============================================================================
 // IBI Work Item
@@ -58,8 +74,8 @@ pub enum IbiWork {
     TargetMasterWrite {
         /// Number of received bytes captured in `data`.
         len: u8,
-        /// Received data, truncated to `IBI_DATA_MAX`.
-        data: [u8; IBI_DATA_MAX as usize],
+        /// Received data, truncated to [`IBI_MWR_DATA_MAX`].
+        data: [u8; IBI_MWR_DATA_MAX],
     },
 }
 
@@ -225,11 +241,11 @@ pub fn i3c_ibi_work_enqueue_target_irq(bus: usize, addr: u8, data: &[u8]) -> boo
 /// Enqueue a private write received by this target from the controller.
 #[must_use]
 pub fn i3c_ibi_work_enqueue_target_master_write(bus: usize, data: &[u8]) -> bool {
-    let mut buf = [0u8; IBI_DATA_MAX as usize];
-    let take = core::cmp::min(IBI_DATA_MAX as usize, data.len());
+    let mut buf = [0u8; IBI_MWR_DATA_MAX];
+    let take = core::cmp::min(IBI_MWR_DATA_MAX, data.len());
     buf[..take].copy_from_slice(&data[..take]);
     let work = IbiWork::TargetMasterWrite {
-        len: u8::try_from(take).unwrap_or(IBI_DATA_MAX),
+        len: u8::try_from(take).unwrap_or(u8::MAX),
         data: buf,
     };
     ring_push(bus, work)

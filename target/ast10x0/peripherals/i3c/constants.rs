@@ -305,6 +305,7 @@ pub const I3C_CCC_SETDASA: u8 = 0x87;
 pub const I3C_CCC_SETNEWDA: u8 = 0x88;
 pub const I3C_CCC_GETPID: u8 = 0x8D;
 pub const I3C_CCC_GETBCR: u8 = 0x8E;
+pub const I3C_CCC_GETDCR: u8 = 0x8F;
 pub const I3C_CCC_GETSTATUS: u8 = 0x90;
 
 // CCC event bits

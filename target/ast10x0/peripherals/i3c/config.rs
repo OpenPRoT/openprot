@@ -168,6 +168,10 @@ pub struct DeviceEntry {
     pub ibi_en: bool,
     /// Position in DAT (Device Address Table)
     pub pos: Option<u8>,
+    /// Dynamic address verified on the bus (set by DAA once the device's PID
+    /// was read back at its address). Cleared state means the entry is only a
+    /// reservation.
+    pub da_assigned: bool,
 }
 
 impl DeviceEntry {
@@ -189,6 +193,7 @@ impl DeviceEntry {
             max_ibi: 0,
             ibi_en: false,
             pos: None,
+            da_assigned: false,
         }
     }
 
@@ -210,6 +215,7 @@ impl DeviceEntry {
             max_ibi: 0,
             ibi_en: false,
             pos: None,
+            da_assigned: false,
         }
     }
 }
@@ -410,8 +416,6 @@ pub struct I3cConfig {
     pub free_pos: u32,
     /// Bitmap of devices needing dynamic address
     pub need_da: u32,
-    /// Address array for DAT
-    pub addrs: [u8; 8],
     /// DCR value
     pub dcr: u32,
 
@@ -448,7 +452,6 @@ impl I3cConfig {
             maxdevs: 8,
             free_pos: 0,
             need_da: 0,
-            addrs: [0; 8],
             dcr: 0,
             sir_allowed_by_sw: false,
         }
@@ -473,7 +476,11 @@ impl I3cConfig {
             self.addrbook.mark_use(static_addr, true);
             return Some(static_addr);
         }
-        self.addrbook.alloc_from(8)
+        // Mark the fallback allocation too (`alloc_from` is a pure scan), or
+        // the next caller would be handed the same "initial" address.
+        let addr = self.addrbook.alloc_from(8)?;
+        self.addrbook.mark_use(addr, true);
+        Some(addr)
     }
 
     /// Reassign a device's dynamic address
@@ -661,13 +668,15 @@ impl I3cConfig {
                 return Err(I3cError::InvalidParam);
             }
 
-            // Check I3C SCL achievability (need ~4x core clock for timing resolution)
-            if self.i3c_scl_hz > 0 && core_hz < self.i3c_scl_hz * 4 {
+            // Check I3C SCL achievability (need ~4x core clock for timing
+            // resolution). `saturating_mul`: an absurd SCL must fail
+            // validation, not overflow-panic inside the validator.
+            if self.i3c_scl_hz > 0 && core_hz < self.i3c_scl_hz.saturating_mul(4) {
                 return Err(I3cError::InvalidParam);
             }
 
             // Check I2C SCL achievability
-            if self.i2c_scl_hz > 0 && core_hz < self.i2c_scl_hz * 4 {
+            if self.i2c_scl_hz > 0 && core_hz < self.i2c_scl_hz.saturating_mul(4) {
                 return Err(I3cError::InvalidParam);
             }
         }
