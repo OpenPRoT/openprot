@@ -11,8 +11,12 @@ use core::cell::UnsafeCell;
 #[path = "test_common.rs"]
 mod test_common;
 
-use ast10x0_board::{delay_us, enable_flash_power, set_bmc_resets};
-use ast10x0_peripherals::scu::{ScuRegisters, SpiMonitorInstance};
+use test_common::TestConfig;
+use ast10x0_board::{
+    apply_spim_external_mux, delay_us, enable_flash_power, set_bmc_resets,
+    spim_external_mux_state,
+};
+use ast10x0_peripherals::scu::{ScuExtMuxSelect, ScuRegisters, SpiMonitorInstance};
 use ast10x0_peripherals::spimonitor::{
     MonitorPolicy, PrivilegeDirection, PrivilegeOp, SpiMonitorController,
 };
@@ -61,9 +65,6 @@ const ALLOW_COMMANDS: [u8; 32] = [
     0xb7, 0xe9, 0x32, 0x34, 0xd8, 0xdc, 0x02, 0x12, 0x3b, 0x3c, 0x70, 0xbb, 0xbc, 0x50, 0xeb,
     0xec, 0xc2,
 ];
-const SPIM4_ALLOW_COMMANDS: [u8; 15] = [
-    0x01, 0x06, 0x04, 0x20, 0x21, 0xb7, 0xe9, 0x32, 0x34, 0xd8, 0xdc, 0x02, 0x12, 0x50, 0xc2,
-];
 
 fn log_buffer(log: &'static LogRam) -> &'static mut [u32] {
     // SAFETY: The caller assigns each static buffer to exactly one monitor.
@@ -83,24 +84,10 @@ fn production_policy() -> MonitorPolicy {
     policy
 }
 
-fn spim4_test_policy() -> MonitorPolicy {
-    let mut policy = MonitorPolicy::empty();
-    policy.allow_commands[..SPIM4_ALLOW_COMMANDS.len()]
-        .copy_from_slice(&SPIM4_ALLOW_COMMANDS);
-    policy.allow_command_count = SPIM4_ALLOW_COMMANDS.len();
-    let _ = policy.add_region(
-        0,
-        WRITE_PROTECTED_LENGTH,
-        PrivilegeDirection::Write,
-        PrivilegeOp::Disable,
-    );
-    policy
-}
-
 fn setup_all_spim() -> Result<(), test_common::TestError> {
     let scu = unsafe { ScuRegisters::new_global_unlocked() };
     let policy = production_policy();
-    let spim4_policy = spim4_test_policy();
+    //let spim4_policy = spim4_test_policy();
 
     pw_log::info!("=== GPIO flash power ===");
     if !enable_flash_power(&scu) {
@@ -123,6 +110,7 @@ fn setup_all_spim() -> Result<(), test_common::TestError> {
         &policy,
     )?;
     test_common::dump_policy(&spim1, WRITE_PROTECTED_LENGTH)?;
+    test_common::configure_passthrough::<Spim1Config>(&spim1)?;
     let _spim1 = test_common::lock_monitor(spim1)?;
 
     pw_log::info!("=== SPIM2 ===");
@@ -132,6 +120,7 @@ fn setup_all_spim() -> Result<(), test_common::TestError> {
         &policy,
     )?;
     test_common::dump_policy(&spim2, WRITE_PROTECTED_LENGTH)?;
+    test_common::configure_passthrough::<Spim2Config>(&spim2)?;
     let _spim2 = test_common::lock_monitor(spim2)?;
 
     pw_log::info!("=== SPIM3 ===");
@@ -141,23 +130,40 @@ fn setup_all_spim() -> Result<(), test_common::TestError> {
         &policy,
     )?;
     test_common::dump_policy(&spim3, WRITE_PROTECTED_LENGTH)?;
+    test_common::configure_passthrough::<Spim3Config>(&spim3)?;
     let _spim3 = test_common::lock_monitor(spim3)?;
 
     pw_log::info!("=== SPIM4 ===");
-    pw_log::info!("SPIM4 test policy blocks all read commands");
     test_common::configure_wiring::<Spim4Config>(&scu)?;
     let spim4 = test_common::initialize_monitor_with_policy::<Spim4Config>(
         log_buffer(&SPIM4_LOG),
-        &spim4_policy,
+        &policy,
     )?;
     test_common::dump_policy(&spim4, WRITE_PROTECTED_LENGTH)?;
+    test_common::configure_passthrough::<Spim4Config>(&spim4)?;
     let _spim4 = test_common::lock_monitor(spim4)?;
 
-    pw_log::info!("All SPIM1-4 monitors are configured and locked");
+    if scu.route_control_raw() & 0x0fff_0000 != 0x0f00_0000 {
+        pw_log::info!(
+            "FAIL: final SPIPF reset routing: 0x{:08x}",
+            scu.route_control_raw() as u32
+        );
+        return Err(test_common::TestError::Check);
+    }
+    pw_log::info!("All SPIM1-4 paths are configured in passthrough mode and locked");
+    pw_log::info!("SPI clock frequency must be configured to 25 MHz by the external master");
     pw_log::info!(
         "SCU0F0 after SPIM setup: 0x{:08x}",
         scu.route_control_raw() as u32
     );
+
+    pw_log::info!("=== Hand BMC flash mux to external BMC master ===");
+    apply_spim_external_mux(Spim1Config::INSTANCE, ScuExtMuxSelect::Mux0);
+    if spim_external_mux_state(Spim1Config::INSTANCE) != Some(ScuExtMuxSelect::Mux0) {
+        pw_log::info!("FAIL: SPIM1/2 external BMC mux handoff");
+        return Err(test_common::TestError::Check);
+    }
+    pw_log::info!("PASS: SPIM1/2 mux switched from RoT=1 to BMC=0");
 
     pw_log::info!("Waiting 60 ms for flash routing to settle");
     delay_us(60_000);
