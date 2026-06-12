@@ -144,3 +144,11 @@ pip.parse(
     requirements_lock = "//third_party/qemu:requirements.txt",
 )
 use_repo(pip, "openprot_python_deps")
+
+# ── zfmt Event Logging standalone module ──
+bazel_dep(name = "zfmt", version = "0.1.0")
+git_override(
+    module_name = "zfmt",
+    commit = "bd04dd9883af777d89a686f7ccd95c2f8a67e38a",
+    remote = "https://github.com/cfrantz/zfmt.git",
+)
