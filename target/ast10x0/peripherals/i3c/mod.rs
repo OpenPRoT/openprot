@@ -62,8 +62,8 @@ pub use config::{
 
 // Core types
 pub use types::{
-    Completion, DevKind, I3cCmd, I3cDeviceId, I3cIbi, I3cIbiType, I3cMsg, I3cPid, I3cStatus,
-    I3cXfer, SpeedI2c, SpeedI3c, Tid,
+    Completion, DevKind, I2cOp, I3cCmd, I3cDeviceId, I3cIbi, I3cIbiType, I3cMsg, I3cPid,
+    I3cStatus, I3cXfer, SpeedI2c, SpeedI3c, Tid,
 };
 
 // Hardware interface
@@ -77,8 +77,9 @@ pub use registers::I3cRegisters;
 
 // CCC operations
 pub use ccc::{
-    ccc_events_all_set, ccc_events_set, ccc_getbcr, ccc_getdcr, ccc_getpid, ccc_getstatus,
-    ccc_getstatus_fmt1, ccc_rstact_all, ccc_rstdaa_all, ccc_setnewda, Ccc, CccPayload,
+    ccc_events_all_set, ccc_events_set, ccc_getbcr, ccc_getdcr, ccc_getmrl, ccc_getmwl,
+    ccc_getmxds, ccc_getpid, ccc_getstatus, ccc_getstatus_fmt1, ccc_rstact_all, ccc_rstdaa_all,
+    ccc_setmrl, ccc_setmrl_all, ccc_setmwl, ccc_setmwl_all, ccc_setnewda, Ccc, CccPayload,
     CccRstActDefByte, CccTargetPayload, GetStatusDefByte, GetStatusFormat, GetStatusResp,
 };
 

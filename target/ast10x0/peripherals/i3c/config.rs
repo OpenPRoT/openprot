@@ -321,6 +321,22 @@ impl Attached {
         self.pos_of(dev_idx)
     }
 
+    /// Find device index by static address (legacy I2C devices)
+    #[must_use]
+    pub fn find_dev_idx_by_static_addr(&self, addr: u8) -> Option<usize> {
+        self.devices
+            .iter()
+            .position(|d| d.kind == DevKind::I2c && d.static_addr == addr)
+    }
+
+    /// Get DAT position by static address (legacy I2C devices)
+    #[must_use]
+    pub fn pos_of_static_addr(&self, addr: u8) -> Option<u8> {
+        let dev_idx = self.find_dev_idx_by_static_addr(addr)?;
+        self.pos_of(dev_idx)
+            .or_else(|| self.devices.get(dev_idx).and_then(|d| d.pos))
+    }
+
     /// Map a DAT position to a device index
     #[inline]
     pub fn map_pos(&mut self, pos: u8, idx: u8) -> bool {

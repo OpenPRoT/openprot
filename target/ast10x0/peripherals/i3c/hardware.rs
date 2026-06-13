@@ -37,6 +37,7 @@ use super::constants::{
     COMMAND_PORT_CMD, COMMAND_PORT_CP, COMMAND_PORT_DBP, COMMAND_PORT_DEV_COUNT,
     COMMAND_PORT_DEV_INDEX, COMMAND_PORT_READ_TRANSFER, COMMAND_PORT_ROC, COMMAND_PORT_SPEED,
     COMMAND_PORT_TID, COMMAND_PORT_TOC, DEV_ADDR_TABLE_IBI_MDB, DEV_ADDR_TABLE_IBI_PEC,
+    DEV_ADDR_TABLE_LEGACY_I2C_DEV, DEV_ADDR_TABLE_MR_REJECT, DEV_ADDR_TABLE_STATIC_ADDR,
     DEV_ADDR_TABLE_SIR_REJECT, I3CG_REG1_SCL_IN_SW_MODE_EN, I3CG_REG1_SCL_IN_SW_MODE_VAL,
     I3CG_REG1_SDA_IN_SW_MODE_EN, I3CG_REG1_SDA_IN_SW_MODE_VAL, I3C_AST10X0_MIPI_MANUF_ID,
     I3C_BCR_IBI_PAYLOAD_HAS_DATA_BYTE, I3C_BUS_FREE_TIMING_RESET, I3C_BUS_I2C_FMP_TF_MAX_NS,
@@ -48,6 +49,7 @@ use super::constants::{
     I3C_DEFAULT_STATIC_ADDR, I3C_GLOBAL_RESET_DEASSERT_MASK, I3C_IBI_DATA_THRESHOLD_MAX,
     I3C_INIT_POLL_DELAY_NS, I3C_INTR_STATUS_ALL_BITS, I3C_MSG_READ, I3C_OP_TIMEOUT_US,
     I3C_POLL_MAX_ITERS, IBIQ_STATUS_IBI_DATA_LEN, IBIQ_STATUS_IBI_DATA_LEN_SHIFT,
+    SLV_EVENT_CTRL_MRL_UPD, SLV_EVENT_CTRL_MWL_UPD,
     IBIQ_STATUS_IBI_ID, IBIQ_STATUS_IBI_ID_SHIFT, INTR_CCC_UPDATED_STAT, INTR_DYN_ADDR_ASSGN_STAT,
     INTR_IBI_THLD_STAT, INTR_RESP_READY_STAT, INTR_TRANSFER_ABORT_STAT, INTR_TRANSFER_ERR_STAT,
     MAX_CMDS, MAX_PRIV_XFER_CMDS, MAX_XFER_DATA_LEN, NSEC_PER_SEC, RESET_CTRL_ALL,
@@ -59,7 +61,7 @@ use super::constants::{
 use super::error::I3cError as I3cDrvError;
 use super::error::I3cError;
 use super::ibi as ibi_workq;
-use super::types::{Completion, I3cCmd, I3cIbi, I3cMsg, I3cXfer, SpeedI3c, Tid};
+use super::types::{Completion, I2cOp, I3cCmd, I3cIbi, I3cMsg, I3cXfer, SpeedI2c, SpeedI3c, Tid};
 
 use super::registers::I3cRegisters;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -125,6 +127,11 @@ pub(crate) struct IsrEvents {
     pending: AtomicU32,
     /// Dynamic address assigned by the bus master; bit 8 = valid.
     dyn_addr: AtomicU32,
+    /// Raw `SLV_MAX_LEN` (MRL in bits 31:16, MWL in bits 15:0) latched by the
+    /// ISR when the bus master updates it via SETMRL/SETMWL.
+    slv_max_len: AtomicU32,
+    /// `slv_max_len` holds a master-written value (not reset state).
+    slv_max_len_valid: AtomicBool,
     /// A deferred fault: the ISR observed a halted/errored engine and left
     /// recovery (halt/resume sequencing needs the wait policy) to the thread.
     fault: AtomicBool,
@@ -139,6 +146,8 @@ impl IsrEvents {
         Self {
             pending: AtomicU32::new(0),
             dyn_addr: AtomicU32::new(0),
+            slv_max_len: AtomicU32::new(0),
+            slv_max_len_valid: AtomicBool::new(false),
             fault: AtomicBool::new(false),
             target_ibi_done: Completion::new(),
             target_data_done: Completion::new(),
@@ -163,6 +172,16 @@ impl IsrEvents {
         } else {
             None
         }
+    }
+
+    /// Max read/write lengths `(mrl, mwl)` the bus master set via
+    /// SETMRL/SETMWL, if any update was observed.
+    pub(crate) fn max_len(&self) -> Option<(u16, u16)> {
+        if !self.slv_max_len_valid.load(Ordering::Acquire) {
+            return None;
+        }
+        let v = self.slv_max_len.load(Ordering::Acquire);
+        Some(((v >> 16) as u16, (v & 0xffff) as u16))
     }
 }
 
@@ -293,6 +312,14 @@ fn isr_service(ctx: &IsrCtx) {
             // Read-and-clear the event; if the engine halted, defer the
             // resume sequencing (it needs the wait policy) to the thread.
             let event = regs.read_slv_event_ctrl();
+            // Latch SETMRL/SETMWL updates before the write-back clears the
+            // update flags (the thread reads them via `max_len`).
+            if event & (SLV_EVENT_CTRL_MRL_UPD | SLV_EVENT_CTRL_MWL_UPD) != 0 {
+                events
+                    .slv_max_len
+                    .store(regs.read_slv_max_len(), Ordering::Release);
+                events.slv_max_len_valid.store(true, Ordering::Release);
+            }
             regs.write_slv_event_ctrl(event);
             if regs.xfer_status() == CM_TFR_STS_TARGET_HALT {
                 events.fault.store(true, Ordering::Release);
@@ -552,6 +579,23 @@ pub trait HardwareTransfer {
 
     /// Attach a device to a DAT position
     fn attach_i3c_dev(&mut self, pos: usize, addr: u8) -> Result<(), I3cError>;
+
+    /// Attach a legacy I2C device to a DAT position (static address,
+    /// `LEGACY_I2C_DEV` marked, SIR/MR rejected).
+    fn attach_i2c_dev(&mut self, pos: usize, static_addr: u8) -> Result<(), I3cError>;
+
+    /// Execute a legacy-I2C transaction against the device at DAT `pos`.
+    ///
+    /// Consecutive operations are joined by repeated START; the last ends
+    /// with STOP. **Consumes each `Read` buffer** (left empty in the slice,
+    /// same contract as [`priv_xfer`](HardwareTransfer::priv_xfer)); the data
+    /// lands in the caller-owned memory the reborrow came from.
+    fn i2c_priv_xfer<'a>(
+        &mut self,
+        config: &mut I3cConfig,
+        pos: u8,
+        ops: &mut [I2cOp<'a>],
+    ) -> Result<(), I3cError>;
 
     /// Execute a CCC
     fn do_ccc(&mut self, config: &mut I3cConfig, ccc: &mut CccPayload) -> Result<(), I3cError>;
@@ -1497,6 +1541,106 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
         self.regs.dat_program_addr(pos, da_with_parity);
 
         Ok(())
+    }
+
+    fn attach_i2c_dev(&mut self, pos: usize, static_addr: u8) -> Result<(), I3cDrvError> {
+        // Legacy I2C entry: static address in the low field, the LEGACY bit
+        // routes transfers through the controller's I2C engine; SIR/MR stay
+        // rejected (an I2C device cannot raise them).
+        let raw = DEV_ADDR_TABLE_LEGACY_I2C_DEV
+            | DEV_ADDR_TABLE_SIR_REJECT
+            | DEV_ADDR_TABLE_MR_REJECT
+            | field_prep(DEV_ADDR_TABLE_STATIC_ADDR, u32::from(static_addr));
+        self.regs.dat_write_raw(pos, raw);
+        Ok(())
+    }
+
+    fn i2c_priv_xfer<'a>(
+        &mut self,
+        config: &mut I3cConfig,
+        pos: u8,
+        ops: &mut [I2cOp<'a>],
+    ) -> Result<(), I3cDrvError> {
+        if ops.is_empty() {
+            return Ok(());
+        }
+        // Same TID-width bound as private I3C transfers.
+        if ops.len() > MAX_PRIV_XFER_CMDS {
+            return Err(I3cDrvError::TooManyMsgs);
+        }
+        // Pre-validate every length before consuming any buffer
+        // (all-or-nothing, mirroring priv_xfer_build_cmds).
+        for op in ops.iter() {
+            let len = match op {
+                I2cOp::Write(b) => b.len(),
+                I2cOp::Read(b) => b.len(),
+            };
+            if len == 0 || len > MAX_XFER_DATA_LEN {
+                return Err(I3cDrvError::Invalid);
+            }
+        }
+
+        // The DAT entry marks the device as legacy I2C, so the SPEED field
+        // selects between the I2C timing sets programmed by init_clock.
+        let speed = if config.i2c_scl_hz > 400_000 {
+            SpeedI2c::Fmp
+        } else {
+            SpeedI2c::Fm
+        } as u32;
+
+        let mut cmds: heapless::Vec<I3cCmd<'a>, MAX_CMDS> = heapless::Vec::new();
+        let nops = ops.len();
+        for (i, op) in ops.iter_mut().enumerate() {
+            let mut cmd = I3cCmd::new();
+            let len = match op {
+                I2cOp::Write(b) => b.len(),
+                I2cOp::Read(b) => b.len(),
+            };
+            cmd.cmd_hi = field_prep(COMMAND_PORT_ATTR, COMMAND_ATTR_XFER_ARG)
+                | field_prep(
+                    COMMAND_PORT_ARG_DATA_LEN,
+                    u32::try_from(len).map_err(|_| I3cDrvError::Invalid)?,
+                );
+            cmd.cmd_lo = field_prep(
+                COMMAND_PORT_TID,
+                u32::try_from(i).map_err(|_| I3cDrvError::Invalid)?,
+            ) | field_prep(COMMAND_PORT_DEV_INDEX, u32::from(pos))
+                | field_prep(COMMAND_PORT_SPEED, speed)
+                | COMMAND_PORT_ROC;
+
+            match op {
+                I2cOp::Write(b) => {
+                    cmd.tx = Some(*b);
+                    cmd.tx_len = u32::try_from(len).map_err(|_| I3cDrvError::Invalid)?;
+                }
+                I2cOp::Read(b) => {
+                    // Move the caller's reborrow into the command (same
+                    // consume contract as priv_xfer); `take` leaves an empty
+                    // slice behind.
+                    let buf: &'a mut [u8] = core::mem::take(b);
+                    cmd.rx = Some(buf);
+                    cmd.rx_len = u32::try_from(len).map_err(|_| I3cDrvError::Invalid)?;
+                    cmd.cmd_lo |= COMMAND_PORT_READ_TRANSFER;
+                }
+            }
+
+            if i + 1 == nops {
+                cmd.cmd_lo |= COMMAND_PORT_TOC;
+            }
+            cmds.push(cmd).map_err(|_| I3cDrvError::TooManyMsgs)?;
+        }
+
+        let mut xfer = I3cXfer::new(cmds.as_mut_slice());
+        self.start_xfer(config, &mut xfer);
+
+        if !self.wait_xfer_complete(config, &mut xfer, I3C_OP_TIMEOUT_US) {
+            return Err(I3cDrvError::Timeout);
+        }
+
+        match xfer.ret {
+            0 => Ok(()),
+            _ => Err(I3cDrvError::IoError),
+        }
     }
 
     #[allow(clippy::too_many_lines)]

@@ -764,6 +764,12 @@ impl I3cRegisters {
         self.i3c().i3cd078().read().bits()
     }
 
+    /// I3CD07C: read the max write/read length register (MRL in bits 31:16,
+    /// MWL in bits 15:0; updated by the bus master via SETMRL/SETMWL).
+    pub(crate) fn read_slv_max_len(&self) -> u32 {
+        self.i3c().i3cd07c().read().bits()
+    }
+
     /// I3CD078: write the slave characteristics register.
     pub(crate) fn write_slv_char_ctrl(&self, val: u32) {
         self.i3c().i3cd078().write(|w| unsafe { w.bits(val) });

@@ -7,8 +7,9 @@
 
 use super::config::I3cConfig;
 use super::constants::{
-    I3C_CCC_GETBCR, I3C_CCC_GETDCR, I3C_CCC_GETPID, I3C_CCC_GETSTATUS, I3C_CCC_RSTDAA,
-    I3C_CCC_SETNEWDA,
+    I3C_BCR_IBI_PAYLOAD_HAS_DATA_BYTE, I3C_CCC_GETBCR, I3C_CCC_GETDCR, I3C_CCC_GETMRL,
+    I3C_CCC_GETMWL, I3C_CCC_GETMXDS, I3C_CCC_GETPID, I3C_CCC_GETSTATUS, I3C_CCC_RSTDAA,
+    I3C_CCC_SETMRL, I3C_CCC_SETMRL_BC, I3C_CCC_SETMWL, I3C_CCC_SETMWL_BC, I3C_CCC_SETNEWDA,
 };
 use super::error::{CccErrorKind, I3cError};
 use super::hardware::HardwareInterface;
@@ -391,6 +392,253 @@ where
         .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))?;
     hw.attach_i3c_dev(pos.into(), new_da)
         .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))
+}
+
+/// Send a direct write CCC with a small fixed payload.
+fn ccc_direct_write<H>(
+    hw: &mut H,
+    config: &mut I3cConfig,
+    id: u8,
+    da: u8,
+    payload: &mut [u8],
+) -> Result<(), I3cError>
+where
+    H: HardwareInterface,
+{
+    if da == 0 {
+        return Err(I3cError::CccError(CccErrorKind::InvalidParam));
+    }
+    let tgt = CccTargetPayload {
+        addr: da,
+        rnw: false,
+        data: Some(payload),
+        num_xfer: 0,
+    };
+    let mut tgts = [tgt];
+    let mut p = CccPayload {
+        ccc: Some(Ccc {
+            id,
+            data: None,
+            num_xfer: 0,
+        }),
+        targets: Some(&mut tgts[..]),
+    };
+    hw.do_ccc(config, &mut p)
+        .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))
+}
+
+/// Send a direct read CCC into a small fixed buffer.
+fn ccc_direct_read<H>(
+    hw: &mut H,
+    config: &mut I3cConfig,
+    id: u8,
+    da: u8,
+    out: &mut [u8],
+) -> Result<(), I3cError>
+where
+    H: HardwareInterface,
+{
+    if da == 0 {
+        return Err(I3cError::CccError(CccErrorKind::InvalidParam));
+    }
+    let tgt = CccTargetPayload {
+        addr: da,
+        rnw: true,
+        data: Some(out),
+        num_xfer: 0,
+    };
+    let mut tgts = [tgt];
+    let mut p = CccPayload {
+        ccc: Some(Ccc {
+            id,
+            data: None,
+            num_xfer: 0,
+        }),
+        targets: Some(&mut tgts[..]),
+    };
+    hw.do_ccc(config, &mut p)
+        .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))
+}
+
+/// Set Maximum Write Length for a device (direct SETMWL); mirrors the value
+/// into the attached-device entry on success.
+pub fn ccc_setmwl<H>(hw: &mut H, config: &mut I3cConfig, da: u8, mwl: u16) -> Result<(), I3cError>
+where
+    H: HardwareInterface,
+{
+    let mut payload = mwl.to_be_bytes();
+    ccc_direct_write(hw, config, I3C_CCC_SETMWL, da, &mut payload)?;
+    if let Some(idx) = config.attached.find_dev_idx_by_addr(da)
+        && let Some(dev) = config.attached.devices.get_mut(idx)
+    {
+        dev.mwl = mwl;
+    }
+    Ok(())
+}
+
+/// Set Maximum Read Length for a device (direct SETMRL). `ibi_len` adds the
+/// optional third byte (max IBI payload size) for targets whose BCR
+/// advertises an IBI payload. Mirrors the values into the attached-device
+/// entry on success.
+pub fn ccc_setmrl<H>(
+    hw: &mut H,
+    config: &mut I3cConfig,
+    da: u8,
+    mrl: u16,
+    ibi_len: Option<u8>,
+) -> Result<(), I3cError>
+where
+    H: HardwareInterface,
+{
+    let be = mrl.to_be_bytes();
+    let mut buf3 = [be[0], be[1], 0];
+    let payload: &mut [u8] = match ibi_len {
+        Some(n) => {
+            buf3[2] = n;
+            &mut buf3[..3]
+        }
+        None => &mut buf3[..2],
+    };
+    ccc_direct_write(hw, config, I3C_CCC_SETMRL, da, payload)?;
+    if let Some(idx) = config.attached.find_dev_idx_by_addr(da)
+        && let Some(dev) = config.attached.devices.get_mut(idx)
+    {
+        dev.mrl = mrl;
+        if let Some(n) = ibi_len {
+            dev.max_ibi = n;
+        }
+    }
+    Ok(())
+}
+
+/// Broadcast SETMWL to all devices.
+pub fn ccc_setmwl_all<H>(hw: &mut H, config: &mut I3cConfig, mwl: u16) -> Result<(), I3cError>
+where
+    H: HardwareInterface,
+{
+    let mut payload = mwl.to_be_bytes();
+    hw.do_ccc(
+        config,
+        &mut CccPayload {
+            ccc: Some(Ccc {
+                id: I3C_CCC_SETMWL_BC,
+                data: Some(&mut payload[..]),
+                num_xfer: 0,
+            }),
+            targets: None,
+        },
+    )
+    .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))
+}
+
+/// Broadcast SETMRL to all devices.
+pub fn ccc_setmrl_all<H>(
+    hw: &mut H,
+    config: &mut I3cConfig,
+    mrl: u16,
+    ibi_len: Option<u8>,
+) -> Result<(), I3cError>
+where
+    H: HardwareInterface,
+{
+    let be = mrl.to_be_bytes();
+    let mut buf3 = [be[0], be[1], 0];
+    let payload: &mut [u8] = match ibi_len {
+        Some(n) => {
+            buf3[2] = n;
+            &mut buf3[..3]
+        }
+        None => &mut buf3[..2],
+    };
+    hw.do_ccc(
+        config,
+        &mut CccPayload {
+            ccc: Some(Ccc {
+                id: I3C_CCC_SETMRL_BC,
+                data: Some(payload),
+                num_xfer: 0,
+            }),
+            targets: None,
+        },
+    )
+    .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))
+}
+
+/// Get Maximum Write Length from a device (GETMWL); mirrors the value into
+/// the attached-device entry.
+pub fn ccc_getmwl<H>(hw: &mut H, config: &mut I3cConfig, da: u8) -> Result<u16, I3cError>
+where
+    H: HardwareInterface,
+{
+    let mut buf = [0u8; 2];
+    ccc_direct_read(hw, config, I3C_CCC_GETMWL, da, &mut buf)?;
+    let mwl = u16::from_be_bytes(buf);
+    if let Some(idx) = config.attached.find_dev_idx_by_addr(da)
+        && let Some(dev) = config.attached.devices.get_mut(idx)
+    {
+        dev.mwl = mwl;
+    }
+    Ok(mwl)
+}
+
+/// Get Maximum Read Length from a device (GETMRL).
+///
+/// Returns `(mrl, max_ibi_len)`; the third response byte is present only for
+/// targets whose BCR advertises an IBI payload (the attached entry's BCR
+/// decides how many bytes are requested). Mirrors the values into the
+/// attached-device entry.
+pub fn ccc_getmrl<H>(
+    hw: &mut H,
+    config: &mut I3cConfig,
+    da: u8,
+) -> Result<(u16, Option<u8>), I3cError>
+where
+    H: HardwareInterface,
+{
+    let has_ibi_byte = config
+        .attached
+        .find_dev_idx_by_addr(da)
+        .and_then(|idx| config.attached.devices.get(idx))
+        .map(|d| u32::from(d.bcr) & I3C_BCR_IBI_PAYLOAD_HAS_DATA_BYTE != 0)
+        .unwrap_or(false);
+
+    let mut buf = [0u8; 3];
+    let want = if has_ibi_byte { 3 } else { 2 };
+    // `want` is 2 or 3, always within the buffer.
+    let out = buf.get_mut(..want).ok_or(I3cError::Invalid)?;
+    ccc_direct_read(hw, config, I3C_CCC_GETMRL, da, out)?;
+
+    let mrl = u16::from_be_bytes([buf[0], buf[1]]);
+    let ibi_len = has_ibi_byte.then_some(buf[2]);
+    if let Some(idx) = config.attached.find_dev_idx_by_addr(da)
+        && let Some(dev) = config.attached.devices.get_mut(idx)
+    {
+        dev.mrl = mrl;
+        if let Some(n) = ibi_len {
+            dev.max_ibi = n;
+        }
+    }
+    Ok((mrl, ibi_len))
+}
+
+/// Get Max Data Speed from a device (GETMXDS format 1).
+///
+/// Returns `(max_wr, max_rd)` raw speed bytes; mirrored into the
+/// attached-device entry.
+pub fn ccc_getmxds<H>(hw: &mut H, config: &mut I3cConfig, da: u8) -> Result<(u8, u8), I3cError>
+where
+    H: HardwareInterface,
+{
+    let mut buf = [0u8; 2];
+    ccc_direct_read(hw, config, I3C_CCC_GETMXDS, da, &mut buf)?;
+    let (max_wr, max_rd) = (buf[0], buf[1]);
+    if let Some(idx) = config.attached.find_dev_idx_by_addr(da)
+        && let Some(dev) = config.attached.devices.get_mut(idx)
+    {
+        dev.maxwr = max_wr;
+        dev.maxrd = max_rd;
+    }
+    Ok((max_wr, max_rd))
 }
 
 fn bytes_to_pid(bytes: &[u8]) -> u64 {

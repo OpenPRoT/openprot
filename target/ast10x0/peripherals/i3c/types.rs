@@ -205,6 +205,22 @@ impl<'cmds, 'buf> I3cXfer<'cmds, 'buf> {
 }
 
 // =============================================================================
+// Legacy I2C Operations
+// =============================================================================
+
+/// One leg of a legacy-I2C transaction on the I3C bus.
+///
+/// Mirrors `embedded_hal::i2c::Operation` without pulling that type into the
+/// hardware trait. Consecutive operations are joined by repeated START; the
+/// last one ends with STOP.
+pub enum I2cOp<'a> {
+    /// Write the bytes to the device.
+    Write(&'a [u8]),
+    /// Read into the buffer (filled completely on success).
+    Read(&'a mut [u8]),
+}
+
+// =============================================================================
 // Device Identification
 // =============================================================================
 

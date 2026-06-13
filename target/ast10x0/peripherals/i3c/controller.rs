@@ -54,7 +54,7 @@ use super::config::{DeviceEntry, I3cConfig, I3cTargetConfig};
 use super::constants::I3C_BROADCAST_ADDR;
 use super::error::I3cError;
 use super::hardware::HardwareInterface;
-use super::types::{DevKind, I3cIbi, I3cIbiType, I3cMsg};
+use super::types::{DevKind, I2cOp, I3cIbi, I3cIbiType, I3cMsg};
 use embedded_hal::i2c::SevenBitAddress;
 
 // =============================================================================
@@ -219,6 +219,88 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
             .map_err(|_| I3cError::AddrInUse)
     }
 
+    /// Attach a legacy I2C device to the bus.
+    ///
+    /// The DAT slot is programmed with the device's static address and the
+    /// legacy-I2C marker; transfers then go through
+    /// [`i2c_write`](Self::i2c_write)/[`i2c_read`](Self::i2c_read)/
+    /// [`i2c_write_read`](Self::i2c_write_read) or the
+    /// `embedded_hal::i2c::I2c` impl. Detach with
+    /// [`detach_i3c_dev`](Self::detach_i3c_dev) (by slot) or
+    /// [`detach_i3c_dev_by_idx`](Self::detach_i3c_dev_by_idx).
+    pub fn attach_i2c_dev(&mut self, static_addr: u8, slot: u8) -> Result<(), I3cError> {
+        let (hw, config) = self.parts();
+        if static_addr == 0 || static_addr >= I3C_BROADCAST_ADDR {
+            return Err(I3cError::InvalidArgs);
+        }
+        if usize::from(slot) >= super::constants::MAX_DEVICES_PER_BUS {
+            return Err(I3cError::InvalidArgs);
+        }
+        if config
+            .attached
+            .by_pos
+            .get(usize::from(slot))
+            .copied()
+            .flatten()
+            .is_some()
+        {
+            return Err(I3cError::DevAlreadyAttached);
+        }
+
+        let mut dev = DeviceEntry::new_i2c(static_addr);
+        dev.pos = Some(slot);
+        let idx = config
+            .attached
+            .attach(dev)
+            .map_err(|_| I3cError::NoFreeSlot)?;
+        config
+            .attached
+            .map_pos(slot, u8::try_from(idx).map_err(|_| I3cError::InvalidArgs)?);
+        // The static address occupies the same 7-bit space as dynamic ones.
+        config.addrbook.mark_use(static_addr, true);
+
+        hw.attach_i2c_dev(slot.into(), static_addr)
+    }
+
+    /// Write to a legacy I2C device (by static address).
+    pub fn i2c_write(&mut self, static_addr: u8, data: &[u8]) -> Result<(), I3cError> {
+        let (hw, config) = self.parts();
+        let pos = config
+            .attached
+            .pos_of_static_addr(static_addr)
+            .ok_or(I3cError::NoSuchDev)?;
+        let mut ops = [I2cOp::Write(data)];
+        hw.i2c_priv_xfer(config, pos, &mut ops)
+    }
+
+    /// Read from a legacy I2C device (by static address). `out` is filled
+    /// completely on success.
+    pub fn i2c_read(&mut self, static_addr: u8, out: &mut [u8]) -> Result<(), I3cError> {
+        let (hw, config) = self.parts();
+        let pos = config
+            .attached
+            .pos_of_static_addr(static_addr)
+            .ok_or(I3cError::NoSuchDev)?;
+        let mut ops = [I2cOp::Read(out)];
+        hw.i2c_priv_xfer(config, pos, &mut ops)
+    }
+
+    /// Write then read (repeated START between) on a legacy I2C device.
+    pub fn i2c_write_read(
+        &mut self,
+        static_addr: u8,
+        data: &[u8],
+        out: &mut [u8],
+    ) -> Result<(), I3cError> {
+        let (hw, config) = self.parts();
+        let pos = config
+            .attached
+            .pos_of_static_addr(static_addr)
+            .ok_or(I3cError::NoSuchDev)?;
+        let mut ops = [I2cOp::Write(data), I2cOp::Read(out)];
+        hw.i2c_priv_xfer(config, pos, &mut ops)
+    }
+
     /// Detach an I3C device by DAT position
     pub fn detach_i3c_dev(&mut self, pos: usize) {
         let (hw, config) = self.parts();
@@ -353,6 +435,15 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
         super::hardware::isr_events(self.hw.bus_num() as usize)
             .dyn_addr()
             .or_else(|| self.config.target_config.as_ref().and_then(|t| t.addr))
+    }
+
+    /// Max read/write lengths `(mrl, mwl)` the bus master pushed to this
+    /// target via SETMRL/SETMWL, if any update was observed (latched by the
+    /// ISR from `SLV_MAX_LEN`). Target mode only.
+    #[inline]
+    #[must_use]
+    pub fn target_max_lengths(&self) -> Option<(u16, u16)> {
+        super::hardware::isr_events(self.hw.bus_num() as usize).max_len()
     }
 
     /// Set the device's IBI mandatory data byte and enable IBI delivery for `addr`.
@@ -774,6 +865,50 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
             Ok(()) => Ok(buffer.len() + payload.len()),
             _ => Ok(0),
         }
+    }
+}
+
+// =============================================================================
+// embedded-hal I2C bus implementation (legacy I2C devices on the I3C bus)
+// =============================================================================
+
+impl<'c, H: HardwareInterface> embedded_hal::i2c::ErrorType for I3cController<'c, H, Ready> {
+    type Error = I3cError;
+}
+
+impl<'c, H: HardwareInterface> embedded_hal::i2c::I2c for I3cController<'c, H, Ready> {
+    /// Execute an I2C transaction against an attached legacy I2C device.
+    ///
+    /// The device must have been attached with
+    /// [`attach_i2c_dev`](Self::attach_i2c_dev) first (the controller
+    /// addresses devices through DAT slots, not free-form). Consecutive
+    /// operations are joined by repeated START; the last one ends with STOP.
+    fn transaction(
+        &mut self,
+        address: SevenBitAddress,
+        operations: &mut [embedded_hal::i2c::Operation<'_>],
+    ) -> Result<(), I3cError> {
+        let (hw, config) = self.parts();
+        let pos = config
+            .attached
+            .pos_of_static_addr(address)
+            .ok_or(I3cError::NoSuchDev)?;
+
+        if operations.is_empty() {
+            return Ok(());
+        }
+
+        let mut ops: heapless::Vec<I2cOp<'_>, { super::constants::MAX_PRIV_XFER_CMDS }> =
+            heapless::Vec::new();
+        for op in operations.iter_mut() {
+            let mapped = match op {
+                embedded_hal::i2c::Operation::Write(b) => I2cOp::Write(b),
+                embedded_hal::i2c::Operation::Read(b) => I2cOp::Read(core::mem::take(b)),
+            };
+            ops.push(mapped).map_err(|_| I3cError::TooManyMsgs)?;
+        }
+
+        hw.i2c_priv_xfer(config, pos, ops.as_mut_slice())
     }
 }
 
