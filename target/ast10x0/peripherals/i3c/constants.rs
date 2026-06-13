@@ -299,14 +299,25 @@ pub const I3C_AST10X0_MIPI_MANUF_ID: u16 = 0x03f6;
 
 pub const I3C_CCC_RSTDAA: u8 = 0x06;
 pub const I3C_CCC_ENTDAA: u8 = 0x07;
+/// SETMWL broadcast form.
+pub const I3C_CCC_SETMWL_BC: u8 = 0x09;
+/// SETMRL broadcast form.
+pub const I3C_CCC_SETMRL_BC: u8 = 0x0A;
 pub const I3C_CCC_SETHID: u8 = 0x61;
 pub const I3C_CCC_DEVCTRL: u8 = 0x62;
 pub const I3C_CCC_SETDASA: u8 = 0x87;
 pub const I3C_CCC_SETNEWDA: u8 = 0x88;
+/// SETMWL direct form.
+pub const I3C_CCC_SETMWL: u8 = 0x89;
+/// SETMRL direct form.
+pub const I3C_CCC_SETMRL: u8 = 0x8A;
+pub const I3C_CCC_GETMWL: u8 = 0x8B;
+pub const I3C_CCC_GETMRL: u8 = 0x8C;
 pub const I3C_CCC_GETPID: u8 = 0x8D;
 pub const I3C_CCC_GETBCR: u8 = 0x8E;
 pub const I3C_CCC_GETDCR: u8 = 0x8F;
 pub const I3C_CCC_GETSTATUS: u8 = 0x90;
+pub const I3C_CCC_GETMXDS: u8 = 0x94;
 
 // CCC event bits
 pub const I3C_CCC_EVT_INTR: u8 = 1 << 0;
