@@ -10,20 +10,20 @@
 //! (`peripherals/spimonitor/planning/overview-and-usage-model.md`) calls for
 //! "configure early, validate, lock, and operate under that locked policy."
 
-use ast1060_pac as device;
 use ast10x0_peripherals::scu::{
+    ScuError, ScuExtMuxSelect, ScuRegisters, SpiMonitorInstance, SpiMonitorPassthrough,
+    SpiMonitorSource,
     pinctrl::{
         PINCTRL_GPIOL2, PINCTRL_GPIOL3, PINCTRL_SPIM1_DEFAULT, PINCTRL_SPIM2_DEFAULT,
         PINCTRL_SPIM3_DEFAULT, PINCTRL_SPIM4_DEFAULT,
     },
-    ScuError, ScuExtMuxSelect, ScuRegisters, SpiMonitorInstance, SpiMonitorPassthrough,
-    SpiMonitorSource,
 };
 use ast10x0_peripherals::smc::SmcController;
 use ast10x0_peripherals::spimonitor::{
     LockedSpiMonitor, MonitorPolicy, PassthroughMode, SpiMonitor, SpiMonitorController,
     SpiMonitorError, Uninitialized,
 };
+use ast1060_pac as device;
 
 /// Static wiring for one external SPI monitor path.
 ///
@@ -112,16 +112,16 @@ pub fn apply_spim_pinctrl(scu: &ScuRegisters, instance: SpiMonitorInstance) {
 
 /// Configure the external flash mux controls described by the board schematic.
 ///
-/// SPIM1/2 use GPIO A-D pin 12 plus SGPIOM select/OE/reset bits 0/1/7.
-/// SPIM3/4 use GPIO E-H pin 8 plus SGPIOM select/OE/reset bits 2/3/6.
+/// SPIM1/2 use GPIO A-D pin 12 plus SGPIOM output 0.
+/// SPIM3/4 use GPIO E-H pin 8 plus SGPIOM output 2.
 pub fn apply_spim_external_mux(instance: SpiMonitorInstance, mux: ScuExtMuxSelect) {
     let high = matches!(mux, ScuExtMuxSelect::Mux1);
-    let (gpio_group, gpio_mask, sgpio_select, sgpio_oe_n, sgpio_reset_n) = match instance {
+    let (gpio_group, gpio_mask, sgpio_select) = match instance {
         SpiMonitorInstance::Spim0 | SpiMonitorInstance::Spim1 => {
-            (ExternalMuxGpioGroup::Abcd, 1 << 12, 1 << 0, 1 << 1, 1 << 7)
+            (ExternalMuxGpioGroup::Abcd, 1 << 12, 1 << 0)
         }
         SpiMonitorInstance::Spim2 | SpiMonitorInstance::Spim3 => {
-            (ExternalMuxGpioGroup::Efgh, 1 << 8, 1 << 2, 1 << 3, 1 << 6)
+            (ExternalMuxGpioGroup::Efgh, 1 << 8, 1 << 2)
         }
     };
 
@@ -162,24 +162,22 @@ pub fn apply_spim_external_mux(instance: SpiMonitorInstance, mux: ScuExtMuxSelec
             .bits(24)
     });
     let latch = sgpio.gpio570().read().bits();
-    let control_mask = sgpio_select | sgpio_oe_n | sgpio_reset_n;
-    let control_value = if high { sgpio_select } else { 0 } | sgpio_reset_n;
     sgpio
         .gpio500()
-        .write(|w| unsafe { w.bits((latch & !control_mask) | control_value) });
+        .write(|w| unsafe { w.bits(update_bit(latch, sgpio_select, high)) });
 
     crate::delay_us(1_000);
 }
 
-/// Read back the board-level mux selection, output enable, and flash reset.
+/// Read back the board-level external mux selection.
 #[must_use]
 pub fn spim_external_mux_state(instance: SpiMonitorInstance) -> Option<ScuExtMuxSelect> {
-    let (gpio_group, gpio_mask, sgpio_select, sgpio_oe_n, sgpio_reset_n) = match instance {
+    let (gpio_group, gpio_mask, sgpio_select) = match instance {
         SpiMonitorInstance::Spim0 | SpiMonitorInstance::Spim1 => {
-            (ExternalMuxGpioGroup::Abcd, 1 << 12, 1 << 0, 1 << 1, 1 << 7)
+            (ExternalMuxGpioGroup::Abcd, 1 << 12, 1 << 0)
         }
         SpiMonitorInstance::Spim2 | SpiMonitorInstance::Spim3 => {
-            (ExternalMuxGpioGroup::Efgh, 1 << 8, 1 << 2, 1 << 3, 1 << 6)
+            (ExternalMuxGpioGroup::Efgh, 1 << 8, 1 << 2)
         }
     };
     let gpio = unsafe { &*device::Gpio::ptr() };
@@ -190,11 +188,6 @@ pub fn spim_external_mux_state(instance: SpiMonitorInstance) -> Option<ScuExtMux
     let sgpio = unsafe { &*device::Sgpiom::ptr() };
     let latch = sgpio.gpio570().read().bits();
     let sgpio_high = latch & sgpio_select != 0;
-    let mux_enabled = latch & sgpio_oe_n == 0;
-    let flash_reset_released = latch & sgpio_reset_n != 0;
-    if !mux_enabled || !flash_reset_released {
-        return None;
-    }
     if gpio_high != sgpio_high {
         None
     } else if gpio_high {
@@ -202,6 +195,72 @@ pub fn spim_external_mux_state(instance: SpiMonitorInstance) -> Option<ScuExtMux
     } else {
         Some(ScuExtMuxSelect::Mux0)
     }
+}
+
+/// Release the active-low CPU and BMC SPI flash reset outputs.
+///
+/// This mirrors `ast1060_prot_gpio_post_init()` in the Zephyr board support.
+#[must_use]
+pub fn release_spi_flash_resets() -> bool {
+    const CPU_SPI_RESET_N: u32 = 1 << 6;
+    const BMC_SPI_RESET_N: u32 = 1 << 7;
+    const RESET_MASK: u32 = CPU_SPI_RESET_N | BMC_SPI_RESET_N;
+
+    let sgpio = unsafe { &*device::Sgpiom::ptr() };
+    let latch = sgpio.gpio570().read().bits();
+    sgpio
+        .gpio500()
+        .write(|w| unsafe { w.bits(latch | RESET_MASK) });
+    crate::delay_us(1_000);
+
+    sgpio.gpio570().read().bits() & RESET_MASK == RESET_MASK
+}
+
+/// Raw board routing state for the external BMC SPI1/2 paths.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct BmcSpimPathDebug {
+    pub scu410: u32,
+    pub scu4b0: u32,
+    pub scu690: u32,
+    pub scu610: u32,
+    pub gpio_data: u32,
+    pub gpio_direction: u32,
+    pub sgpio_latch: u32,
+    pub sgpio_config: u32,
+}
+
+/// Capture the pinmux and external-mux state used by BMC SPI1/2.
+#[must_use]
+pub fn bmc_spim_path_debug() -> BmcSpimPathDebug {
+    let scu = unsafe { &*device::Scu::ptr() };
+    let gpio = unsafe { &*device::Gpio::ptr() };
+    let sgpio = unsafe { &*device::Sgpiom::ptr() };
+
+    BmcSpimPathDebug {
+        scu410: scu.scu410().read().bits(),
+        scu4b0: scu.scu4b0().read().bits(),
+        scu690: scu.scu690().read().bits(),
+        scu610: scu.scu610().read().bits(),
+        gpio_data: gpio.gpio000().read().bits(),
+        gpio_direction: gpio.gpio004().read().bits(),
+        sgpio_latch: sgpio.gpio570().read().bits(),
+        sgpio_config: sgpio.gpio554().read().bits(),
+    }
+}
+
+/// Sample the active-low BMC SPI chip-select inputs.
+///
+/// SPIM1 CSIN is GPIOA0 and SPIM2 CSIN is GPIOB6. The GPIO data-read
+/// value register reflects the physical input levels while the pins are
+/// assigned to their SPIM alternate functions. GPIO0C0 is the output-latch
+/// readback and must not be used for these input signals.
+#[must_use]
+pub fn bmc_spim_csin_levels() -> u32 {
+    const SPIM1_CSIN: u32 = 1 << 0;
+    const SPIM2_CSIN: u32 = 1 << 14;
+
+    let gpio = unsafe { &*device::Gpio::ptr() };
+    gpio.gpio000().read().bits() & (SPIM1_CSIN | SPIM2_CSIN)
 }
 
 /// Enable the flash-power outputs required by older AST1060 demo boards.
@@ -285,11 +344,7 @@ enum ExternalMuxGpioGroup {
 }
 
 const fn update_bit(value: u32, mask: u32, set: bool) -> u32 {
-    if set {
-        value | mask
-    } else {
-        value & !mask
-    }
+    if set { value | mask } else { value & !mask }
 }
 
 /// Apply static SPIM wiring at controller-init time.
@@ -375,7 +430,7 @@ fn validate_controller_for_source(
 /// Built-in `MonitorPolicy` presets vetted against the BMC's flash opcode set.
 pub mod presets {
     use ast10x0_peripherals::spimonitor::{
-        profile, MonitorPolicy, PrivilegeDirection, PrivilegeOp,
+        MonitorPolicy, PrivilegeDirection, PrivilegeOp, profile,
     };
 
     /// Allow-list for the BMC's normal flash opcodes covering both 3-byte and
