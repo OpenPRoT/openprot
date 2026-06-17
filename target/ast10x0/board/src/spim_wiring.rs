@@ -10,20 +10,20 @@
 //! (`peripherals/spimonitor/planning/overview-and-usage-model.md`) calls for
 //! "configure early, validate, lock, and operate under that locked policy."
 
+use ast1060_pac as device;
 use ast10x0_peripherals::scu::{
-    ScuError, ScuExtMuxSelect, ScuRegisters, SpiMonitorInstance, SpiMonitorPassthrough,
-    SpiMonitorSource,
     pinctrl::{
         PINCTRL_GPIOL2, PINCTRL_GPIOL3, PINCTRL_SPIM1_DEFAULT, PINCTRL_SPIM2_DEFAULT,
         PINCTRL_SPIM3_DEFAULT, PINCTRL_SPIM4_DEFAULT,
     },
+    ScuError, ScuExtMuxSelect, ScuRegisters, SpiMonitorInstance, SpiMonitorPassthrough,
+    SpiMonitorSource,
 };
 use ast10x0_peripherals::smc::SmcController;
 use ast10x0_peripherals::spimonitor::{
     LockedSpiMonitor, MonitorPolicy, PassthroughMode, SpiMonitor, SpiMonitorController,
     SpiMonitorError, Uninitialized,
 };
-use ast1060_pac as device;
 
 /// Static wiring for one external SPI monitor path.
 ///
@@ -344,7 +344,11 @@ enum ExternalMuxGpioGroup {
 }
 
 const fn update_bit(value: u32, mask: u32, set: bool) -> u32 {
-    if set { value | mask } else { value & !mask }
+    if set {
+        value | mask
+    } else {
+        value & !mask
+    }
 }
 
 /// Apply static SPIM wiring at controller-init time.
@@ -430,7 +434,7 @@ fn validate_controller_for_source(
 /// Built-in `MonitorPolicy` presets vetted against the BMC's flash opcode set.
 pub mod presets {
     use ast10x0_peripherals::spimonitor::{
-        MonitorPolicy, PrivilegeDirection, PrivilegeOp, profile,
+        profile, MonitorPolicy, PrivilegeDirection, PrivilegeOp,
     };
 
     /// Allow-list for the BMC's normal flash opcodes covering both 3-byte and

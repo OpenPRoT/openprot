@@ -16,7 +16,7 @@ use ast10x0_board::{
     enable_flash_power, release_spi_flash_resets, set_bmc_resets, spim_external_mux_state,
 };
 use ast10x0_peripherals::scu::{
-    ScuExtMuxSelect, ScuRegisters, SpiMonitorInstance, SpiMonitorSource, pinctrl::PINCTRL_SPI1_QUAD,
+    pinctrl::PINCTRL_SPI1_QUAD, ScuExtMuxSelect, ScuRegisters, SpiMonitorInstance, SpiMonitorSource,
 };
 use ast10x0_peripherals::smc::{
     ChipSelect, FlashConfig, SmcConfig, SmcController, SmcError, SmcTopology, SpiReady, SpiUninit,
@@ -27,7 +27,7 @@ use ast10x0_peripherals::spimonitor::{
     ConfiguredSpiMonitor, LockedSpiMonitor, MonitorPolicy, PrivilegeDirection, PrivilegeOp,
     SpiMonitorController, ViolationLogEntry,
 };
-use target_common::{TargetInterface, declare_target};
+use target_common::{declare_target, TargetInterface};
 use test_common::TestConfig;
 use {console_backend as _, entry as _};
 
