@@ -19,9 +19,10 @@ pub mod spim_wiring;
 
 pub use monitor::Ast1060Monitor;
 pub use spim_wiring::{
-    BmcSpimPathDebug, SpimWiring, SpimWiringError, apply_spim_external_mux, apply_spim_pinctrl,
-    apply_spim_wiring, apply_spim_wiring_with_log, bmc_spim_csin_levels, bmc_spim_path_debug,
-    enable_flash_power, presets, release_spi_flash_resets, set_bmc_resets, spim_external_mux_state,
+    apply_spim_external_mux, apply_spim_pinctrl, apply_spim_wiring, apply_spim_wiring_with_log,
+    bmc_spim_csin_levels, bmc_spim_path_debug, enable_flash_power, presets,
+    release_spi_flash_resets, set_bmc_resets, spim_external_mux_state, BmcSpimPathDebug,
+    SpimWiring, SpimWiringError,
 };
 
 pub use ast10x0_peripherals::i2c::{I2cConfig, I2cError};

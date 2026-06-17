@@ -7,8 +7,8 @@ use core::marker::PhantomData;
 
 use crate::scu::registers::ScuRegisters;
 use crate::scu::types::{ScuExtMuxSelect, SpiMonitorInstance};
-use crate::spimonitor::commands::{LOCKED as COMMAND_LOCKED, fixed_slot, table_value};
-use crate::spimonitor::policy::{MAX_REGION_SLOTS, MonitorPolicy};
+use crate::spimonitor::commands::{fixed_slot, table_value, LOCKED as COMMAND_LOCKED};
+use crate::spimonitor::policy::{MonitorPolicy, MAX_REGION_SLOTS};
 use crate::spimonitor::registers::{SpiMonitorController, SpiMonitorRegisters};
 use crate::spimonitor::types::{
     ExtMuxSel, LockState, MonitorState, PassthroughMode, PrivilegeDirection, PrivilegeOp, Result,
