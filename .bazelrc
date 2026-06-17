@@ -53,6 +53,17 @@ common:remote_cache --experimental_inprocess_symlink_creation=false
 common --@rules_rust//:extra_rustc_flags=-Cembed-bitcode=yes
 common --@rules_rust//:extra_exec_rustc_flags=-Cembed-bitcode=yes
 
+# Deny lints scoped to //services/... — uses rules_rust's per-crate flag injection,
+# the Rust equivalent of --per_file_copt. Format: prefix_filter@flag, matched
+# against each crate's label or source path.
+common --@rules_rust//rust/settings:experimental_per_crate_rustc_flag=services/@--deny=unsafe_code
+common --@rules_rust//rust/settings:experimental_per_crate_rustc_flag=services/@--deny=clippy::unwrap_used
+common --@rules_rust//rust/settings:experimental_per_crate_rustc_flag=services/@--deny=clippy::expect_used
+common --@rules_rust//rust/settings:experimental_per_crate_rustc_flag=services/@--deny=clippy::panic
+common --@rules_rust//rust/settings:experimental_per_crate_rustc_flag=services/@--deny=clippy::indexing_slicing
+common --@rules_rust//rust/settings:experimental_per_crate_rustc_flag=services/@--deny=clippy::missing_safety_doc
+common --@rules_rust//rust/settings:experimental_per_crate_rustc_flag=services/@--deny=clippy::undocumented_unsafe_blocks
+
 # ── AST10x0 QEMU virtual target ──
 # Shared kernel build/test tag filters (mirrors openprot's k_common).
 build:k_common --build_tag_filters=-do_not_build,-kernel_doc_test
