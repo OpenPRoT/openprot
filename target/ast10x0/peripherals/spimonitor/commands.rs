@@ -34,12 +34,60 @@ impl CommandDescriptor {
     }
 }
 
-const fn command(
-    opcode: u8,
+#[derive(Clone, Copy)]
+struct CommandFlags {
     generic: bool,
     write: bool,
     read: bool,
     memory: bool,
+}
+
+const GENERIC_READ_MEMORY: CommandFlags = CommandFlags {
+    generic: true,
+    write: false,
+    read: true,
+    memory: true,
+};
+const GENERIC_WRITE_MEMORY: CommandFlags = CommandFlags {
+    generic: true,
+    write: true,
+    read: false,
+    memory: true,
+};
+const GENERIC_NONE: CommandFlags = CommandFlags {
+    generic: true,
+    write: false,
+    read: false,
+    memory: false,
+};
+const GENERIC_READ: CommandFlags = CommandFlags {
+    generic: true,
+    write: false,
+    read: true,
+    memory: false,
+};
+const GENERIC_WRITE: CommandFlags = CommandFlags {
+    generic: true,
+    write: true,
+    read: false,
+    memory: false,
+};
+const RESERVED_NONE: CommandFlags = CommandFlags {
+    generic: false,
+    write: false,
+    read: false,
+    memory: false,
+};
+const RESERVED_WRITE: CommandFlags = CommandFlags {
+    generic: false,
+    write: true,
+    read: false,
+    memory: false,
+};
+
+const fn command(
+    opcode: u8,
+    flags: CommandFlags,
     data_width: u8,
     dummy_cycles: u8,
     program_size: u8,
@@ -48,10 +96,10 @@ const fn command(
 ) -> CommandDescriptor {
     CommandDescriptor {
         opcode,
-        generic,
-        write,
-        read,
-        memory,
+        generic: flags.generic,
+        write: flags.write,
+        read: flags.read,
+        memory: flags.memory,
         data_width,
         dummy_cycles,
         program_size,
@@ -64,37 +112,33 @@ const fn command(
 #[must_use]
 pub const fn descriptor(opcode: u8) -> Option<CommandDescriptor> {
     let entry = match opcode {
-        0x03 => command(opcode, true, false, true, true, 1, 0, 0, 3, 1),
-        0x13 => command(opcode, true, false, true, true, 1, 0, 0, 4, 1),
-        0x0b => command(opcode, true, false, true, true, 1, 8, 0, 3, 1),
-        0x0c => command(opcode, true, false, true, true, 1, 8, 0, 4, 1),
-        0x3b => command(opcode, true, false, true, true, 2, 8, 0, 3, 1),
-        0x3c => command(opcode, true, false, true, true, 2, 8, 0, 4, 1),
-        0xbb => command(opcode, true, false, true, true, 2, 4, 0, 3, 2),
-        0xbc => command(opcode, true, false, true, true, 2, 4, 0, 4, 2),
-        0x6b => command(opcode, true, false, true, true, 3, 8, 0, 3, 1),
-        0x6c => command(opcode, true, false, true, true, 3, 8, 0, 4, 1),
-        0xeb => command(opcode, true, false, true, true, 3, 6, 0, 3, 3),
-        0xec => command(opcode, true, false, true, true, 3, 6, 0, 4, 3),
-        0x02 => command(opcode, true, true, false, true, 1, 0, 1, 3, 1),
-        0x12 => command(opcode, true, true, false, true, 1, 0, 1, 4, 1),
-        0x32 => command(opcode, true, true, false, true, 3, 0, 1, 3, 1),
-        0x34 => command(opcode, true, true, false, true, 3, 0, 1, 4, 1),
-        0x20 => command(opcode, true, true, false, true, 0, 0, 1, 3, 1),
-        0x21 => command(opcode, true, true, false, true, 0, 0, 1, 4, 1),
-        0xd8 => command(opcode, true, true, false, true, 0, 0, 5, 3, 1),
-        0xdc => command(opcode, true, true, false, true, 0, 0, 5, 4, 1),
-        0x06 | 0x04 | 0x50 | 0x66 | 0x99 => {
-            command(opcode, true, false, false, false, 0, 0, 0, 0, 0)
-        }
-        0x05 | 0x35 | 0x15 | 0x70 | 0x9f => {
-            command(opcode, true, false, true, false, 1, 0, 0, 0, 0)
-        }
-        0x01 | 0x31 => command(opcode, true, true, false, false, 1, 0, 0, 0, 0),
-        0x5a => command(opcode, true, false, true, false, 1, 8, 0, 3, 1),
-        0xb7 | 0xe9 => command(opcode, false, false, false, false, 0, 0, 0, 0, 0),
-        0xc5 => command(opcode, false, true, false, false, 1, 0, 0, 0, 0),
-        0xc2 => command(opcode, true, true, false, false, 1, 0, 0, 0, 0),
+        0x03 => command(opcode, GENERIC_READ_MEMORY, 1, 0, 0, 3, 1),
+        0x13 => command(opcode, GENERIC_READ_MEMORY, 1, 0, 0, 4, 1),
+        0x0b => command(opcode, GENERIC_READ_MEMORY, 1, 8, 0, 3, 1),
+        0x0c => command(opcode, GENERIC_READ_MEMORY, 1, 8, 0, 4, 1),
+        0x3b => command(opcode, GENERIC_READ_MEMORY, 2, 8, 0, 3, 1),
+        0x3c => command(opcode, GENERIC_READ_MEMORY, 2, 8, 0, 4, 1),
+        0xbb => command(opcode, GENERIC_READ_MEMORY, 2, 4, 0, 3, 2),
+        0xbc => command(opcode, GENERIC_READ_MEMORY, 2, 4, 0, 4, 2),
+        0x6b => command(opcode, GENERIC_READ_MEMORY, 3, 8, 0, 3, 1),
+        0x6c => command(opcode, GENERIC_READ_MEMORY, 3, 8, 0, 4, 1),
+        0xeb => command(opcode, GENERIC_READ_MEMORY, 3, 6, 0, 3, 3),
+        0xec => command(opcode, GENERIC_READ_MEMORY, 3, 6, 0, 4, 3),
+        0x02 => command(opcode, GENERIC_WRITE_MEMORY, 1, 0, 1, 3, 1),
+        0x12 => command(opcode, GENERIC_WRITE_MEMORY, 1, 0, 1, 4, 1),
+        0x32 => command(opcode, GENERIC_WRITE_MEMORY, 3, 0, 1, 3, 1),
+        0x34 => command(opcode, GENERIC_WRITE_MEMORY, 3, 0, 1, 4, 1),
+        0x20 => command(opcode, GENERIC_WRITE_MEMORY, 0, 0, 1, 3, 1),
+        0x21 => command(opcode, GENERIC_WRITE_MEMORY, 0, 0, 1, 4, 1),
+        0xd8 => command(opcode, GENERIC_WRITE_MEMORY, 0, 0, 5, 3, 1),
+        0xdc => command(opcode, GENERIC_WRITE_MEMORY, 0, 0, 5, 4, 1),
+        0x06 | 0x04 | 0x50 | 0x66 | 0x99 => command(opcode, GENERIC_NONE, 0, 0, 0, 0, 0),
+        0x05 | 0x35 | 0x15 | 0x70 | 0x9f => command(opcode, GENERIC_READ, 1, 0, 0, 0, 0),
+        0x01 | 0x31 => command(opcode, GENERIC_WRITE, 1, 0, 0, 0, 0),
+        0x5a => command(opcode, GENERIC_READ, 1, 8, 0, 3, 1),
+        0xb7 | 0xe9 => command(opcode, RESERVED_NONE, 0, 0, 0, 0, 0),
+        0xc5 => command(opcode, RESERVED_WRITE, 1, 0, 0, 0, 0),
+        0xc2 => command(opcode, GENERIC_WRITE, 1, 0, 0, 0, 0),
         _ => return None,
     };
     Some(entry)

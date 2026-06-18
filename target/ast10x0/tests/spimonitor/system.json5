@@ -12,6 +12,6 @@
         flash_start_address: 0x00000500,
         flash_size_bytes: 262144,
         ram_start_address: 0x00040500,
-        ram_size_bytes: 393216,
+        ram_size_bytes: 391936,
     },
 }

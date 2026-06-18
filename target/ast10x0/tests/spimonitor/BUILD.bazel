@@ -27,9 +27,13 @@ target_linker_script(
 )
 
 spimonitor_test(1, TARGET_COMPATIBLE_WITH)
+
 spimonitor_test(2, TARGET_COMPATIBLE_WITH)
+
 spimonitor_test(3, TARGET_COMPATIBLE_WITH)
+
 spimonitor_test(4, TARGET_COMPATIBLE_WITH)
+
 spimonitor_setup_all(TARGET_COMPATIBLE_WITH)
 
 alias(

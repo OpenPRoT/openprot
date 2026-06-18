@@ -255,15 +255,20 @@ fn test_command_policy(configured: &ConfiguredSpiMonitor) -> Result<(), TestErro
     pw_log::info!("START: command table add and remove");
     configured.remove_command(0x05)?;
     let status_slot = configured.add_command(0x05, false)?;
+    let status_value = configured
+        .regs()
+        .read_allow_cmd_slot_checked(status_slot)
+        .ok_or(TestError::Check)?;
     test_check!(
-        configured.regs().read_allow_cmd_slot(status_slot) & COMMAND_VALID_MASK != 0,
+        status_value & COMMAND_VALID_MASK != 0,
         "FAIL: command add readback"
     );
     configured.remove_command(0x05)?;
-    test_check!(
-        configured.regs().read_allow_cmd_slot(status_slot) == 0,
-        "FAIL: command remove did not clear slot"
-    );
+    let status_value = configured
+        .regs()
+        .read_allow_cmd_slot_checked(status_slot)
+        .ok_or(TestError::Check)?;
+    test_check!(status_value == 0, "FAIL: command remove did not clear slot");
     configured.add_command(0x05, false)?;
     pw_log::info!("PASS: command table add and remove");
     Ok(())
