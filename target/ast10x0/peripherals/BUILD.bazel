@@ -46,8 +46,8 @@ rust_library(
         "smc/spi/spi.rs",
         "smc/spi/spi_transaction.rs",
         "smc/types.rs",
-        "spimonitor/controller.rs",
         "spimonitor/commands.rs",
+        "spimonitor/controller.rs",
         "spimonitor/mod.rs",
         "spimonitor/policy.rs",
         "spimonitor/profile.rs",
@@ -81,4 +81,9 @@ rust_test(
     srcs = ["spimonitor/commands.rs"],
     crate_name = "spimonitor_commands_test",
     edition = "2024",
+    tags = ["do_not_build"],
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
 )

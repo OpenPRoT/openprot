@@ -160,6 +160,14 @@ impl SpiMonitorRegisters {
             .write(|w| unsafe { w.bits(value) });
     }
 
+    /// Read an allow-command slot without panicking for an invalid index.
+    pub fn read_allow_cmd_slot_checked(&self, index: usize) -> Option<u32> {
+        self.regs()
+            .spipfwt_iter()
+            .nth(index)
+            .map(|register| register.read().bits())
+    }
+
     /// SPIPFWA[n]: Address filter table entry.
     pub fn read_addr_filter_slot(&self, index: usize) -> u32 {
         self.regs().spipfwa(index).read().bits()
@@ -169,6 +177,24 @@ impl SpiMonitorRegisters {
         self.regs()
             .spipfwa(index)
             .write(|w| unsafe { w.bits(value) });
+    }
+
+    /// Read an address-filter slot without panicking for an invalid index.
+    pub fn read_addr_filter_slot_checked(&self, index: usize) -> Option<u32> {
+        self.regs()
+            .spipfwa_iter()
+            .nth(index)
+            .map(|register| register.read().bits())
+    }
+
+    /// Write an address-filter slot, returning false for an invalid index.
+    #[must_use]
+    pub fn write_addr_filter_slot_checked(&self, index: usize, value: u32) -> bool {
+        let Some(register) = self.regs().spipfwa_iter().nth(index) else {
+            return false;
+        };
+        register.write(|w| unsafe { w.bits(value) });
+        true
     }
 
     // -----------------------------------------------------------------------

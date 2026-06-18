@@ -656,14 +656,18 @@ fn configure_privilege_region(
             }
         } else {
             block += 1;
-            let value = regs.read_addr_filter_slot(word_index);
+            let value = regs
+                .read_addr_filter_slot_checked(word_index)
+                .ok_or(SpiMonitorError::InvalidAddress)?;
             match op {
                 PrivilegeOp::Enable => value | (1 << bit_index),
                 PrivilegeOp::Disable => value & !(1 << bit_index),
             }
         };
-        regs.write_addr_filter_slot(word_index, updated);
-        if regs.read_addr_filter_slot(word_index) != updated {
+        if !regs.write_addr_filter_slot_checked(word_index, updated) {
+            return Err(SpiMonitorError::InvalidAddress);
+        }
+        if regs.read_addr_filter_slot_checked(word_index) != Some(updated) {
             return Err(SpiMonitorError::VerificationFailed);
         }
     }

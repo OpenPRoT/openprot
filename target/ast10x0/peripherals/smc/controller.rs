@@ -618,8 +618,7 @@ impl Smc<Ready> {
         let reg = self.regs.read_cs_ctrl(cs);
         self.regs
             .write_cs_ctrl(cs, (reg & !SPI_CTRL_FREQ_MASK) | encoded_div);
-        self.normal_read_ctrl[cs_idx] = self.regs.read_cs_ctrl(cs);
-
+        self.set_normal_read_ctrl(cs, self.regs.read_cs_ctrl(cs));
         Ok(())
     }
 
