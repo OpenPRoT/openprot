@@ -174,11 +174,6 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
 
     /// Configure the controller for slave mode
     pub fn configure_slave(&mut self, config: &SlaveConfig) -> Result<(), I2cError> {
-        // Ensure master mode is disabled first
-        self.regs()
-            .i2cc00()
-            .modify(|_, w| w.enbl_master_fn().clear_bit());
-
         // Set slave address
         self.regs().i2cs40().write(|w| unsafe {
             w.slave_dev_addr1()
