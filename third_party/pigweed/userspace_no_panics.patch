@@ -1,0 +1,135 @@
+diff --git a/pw_kernel/tooling/multi_process_app.bzl b/pw_kernel/tooling/multi_process_app.bzl
+index d017e4986..421363c7c 100644
+--- a/pw_kernel/tooling/multi_process_app.bzl
++++ b/pw_kernel/tooling/multi_process_app.bzl
+@@ -72,24 +72,31 @@ multi_process_app_src = rule(
+     doc = "Generate the wrapper application source based on the system config.",
+ )
+ 
+-def multi_process_app(name, processes, system_config = None, **kwargs):
++def multi_process_app(name, processes, system_config = None, template = None, **kwargs):
+     """Builds a userspace multi-process Rust binary.
+ 
+     Args:
+         name: The name of the target.
+         system_config: System config file which defines the system.
+         processes: A list of process targets to include in the app.
++        template: An optional application template file.
+         **kwargs: Other attributes passed to the underlying `rust_binary` and internal rules.
+     """
+     tags = kwargs.get("tags", [])
+     deps = kwargs.pop("deps", [])
+     deps = deps + processes
+ 
++    if template:
++        template = {"template": template}
++    else:
++        template = {}
++
+     multi_process_app_src(
+         name = name + ".src",
+         system_config = system_config,
+         app_name = name,
+         tags = tags,
++        **template
+     )
+ 
+     app_linker_script(
+diff --git a/pw_kernel/tooling/panic_detector/rust_binary_no_panics_test.bzl b/pw_kernel/tooling/panic_detector/rust_binary_no_panics_test.bzl
+index 23be1cb4f..ce269fb03 100644
+--- a/pw_kernel/tooling/panic_detector/rust_binary_no_panics_test.bzl
++++ b/pw_kernel/tooling/panic_detector/rust_binary_no_panics_test.bzl
+@@ -14,8 +14,17 @@
+ """Rule to validate a rust binary contains no panics.
+ """
+ 
++load("//pw_kernel/tooling:system_image.bzl", "SystemImageInfo")
++
+ def _rust_binary_no_panics_test_impl(ctx):
+-    binary = ctx.files.binary[0]
++    info = ctx.attr.binary[SystemImageInfo]
++    if info:
++        if ctx.attr.app:
++            binary = info.apps[ctx.attr.app]
++        else:
++            binary = info.elf
++    else:
++        binary = ctx.files.binary[0]
+     run_script = ctx.actions.declare_file("%s.sh" % ctx.label.name)
+ 
+     ctx.actions.write(run_script, "#!/bin/bash\n{panic_detector} --image {image}\n".format(
+@@ -48,8 +57,13 @@ _rust_binary_no_panics_test = rule(
+     implementation = _rust_binary_no_panics_test_impl,
+     test = True,
+     attrs = {
++        "app": attr.string(
++            default = "",
++            doc = "Check an alternate binary from the system image",
++        ),
+         "binary": attr.label(
+             mandatory = True,
++            providers = [[DefaultInfo], [SystemImageInfo]],
+         ),
+         "env": attr.string_dict(
+             doc = "Environment variables to set for the test",
+@@ -64,12 +78,13 @@ _rust_binary_no_panics_test = rule(
+     doc = "Check whether the rust binary contains any panics.",
+ )
+ 
+-def rust_binary_no_panics_test(name, binary, **kwargs):
++def rust_binary_no_panics_test(name, binary, apps = [], **kwargs):
+     """Check whether the rust binary contains any panics.
+ 
+     Args:
+         name: Name of the target
+         binary: Target to check for panics
++        apps: Alternate binaries to check in a system image binary.
+         **kwargs: Args to pass through to the underlying rule.
+     """
+     _rust_binary_no_panics_test(
+@@ -77,3 +92,11 @@ def rust_binary_no_panics_test(name, binary, **kwargs):
+         binary = binary,
+         **kwargs
+     )
++
++    for app in apps:
++        _rust_binary_no_panics_test(
++            name = "{}_{}".format(name, app),
++            binary = binary,
++            app = app,
++            **kwargs
++        )
+diff --git a/pw_kernel/tooling/system_image.bzl b/pw_kernel/tooling/system_image.bzl
+index 585bd4b9f..5e83be277 100644
+--- a/pw_kernel/tooling/system_image.bzl
++++ b/pw_kernel/tooling/system_image.bzl
+@@ -72,6 +72,7 @@ _app_target_transition = transition(
+ SystemImageInfo = provider(
+     "Metadata about a system image",
+     fields = {
++        "apps": "Dict[str, File] Path to the apps in the image",
+         "bin": "[File] Path to the bin file",
+         "elf": "[File] Path to the compiled elf file",
+     },
+@@ -86,9 +87,11 @@ def _system_image_impl(ctx):
+         "--output",
+         output_elf.path,
+     ]
+-    for f in ctx.files.apps:
++    apps = {}
++    for attr, f in zip(ctx.attr.apps, ctx.files.apps):
+         args.append("--app")
+         args.append(f.path)
++        apps[attr.label.name] = f
+ 
+     ctx.actions.run(
+         inputs = ctx.files.kernel + ctx.files.apps,
+@@ -117,7 +120,7 @@ def _system_image_impl(ctx):
+ 
+     return [
+         DefaultInfo(executable = output_elf, files = depset([output_elf, output_bin])),
+-        SystemImageInfo(bin = output_bin, elf = output_elf),
++        SystemImageInfo(bin = output_bin, elf = output_elf, apps = apps),
+     ]
+ 
+ _system_image = rule(
