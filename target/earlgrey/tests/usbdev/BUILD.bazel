@@ -5,6 +5,7 @@ load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app")
 load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
 load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
 load("//target/earlgrey/signing/keys:defs.bzl", "FPGA_ECDSA_KEY", "SILICON_ECDSA_KEY")
@@ -27,6 +28,7 @@ rust_app(
         "//target/earlgrey/registers:pinmux",
         "//target/earlgrey/registers:top_earlgrey",
         "//target/earlgrey/registers:usbdev",
+        "//util/panic",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
@@ -43,6 +45,13 @@ system_image(
     platform = "//target/earlgrey",
     system_config = ":system_config",
     tags = ["kernel"],
+)
+
+rust_binary_no_panics_test(
+    name = "no_panics",
+    apps = ["test_usb"],
+    binary = ":usb",
+    tags = ["no_panics"],
 )
 
 target_linker_script(

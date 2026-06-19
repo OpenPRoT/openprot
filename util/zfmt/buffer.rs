@@ -108,12 +108,17 @@ impl<const N: usize> LogBuffer<N> {
     ///
     /// Returns `Some((tag, slice1, slice2))` where the frame content is the concatenation
     /// of `slice1` and `slice2`. If there is no wrap-around, `slice2` will be empty.
+    #[inline]
     pub fn next_frame_slice(&self, at: u64) -> Option<(u32, &[u8], &[u8])> {
         let (tag, len) = self.next_frame_size(at)?;
+        if len > N {
+            // TODO: If this ever happens, the buffer is corrupt.
+            return None;
+        }
         let start = at as usize % N;
         let end = start + len;
         if end > N {
-            let end = end % N;
+            let end = end - N;
             Some((tag, &self.buf[start..N], &self.buf[0..end]))
         } else {
             const EMPTY: [u8; 0] = [];
