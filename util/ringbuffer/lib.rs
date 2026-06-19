@@ -9,6 +9,9 @@
 ///
 /// If producer == consumer, the queue is empty.
 /// If (producer + 1) % N == consumer, the queue is full.
+///
+/// Invariants:
+///     The producer and consumer indicies are maintained to be less than `N`.
 pub struct RingBuffer<T: Copy + Default, const N: usize> {
     producer: usize,
     consumer: usize,
@@ -40,6 +43,11 @@ impl<T: Copy + Default, const N: usize> RingBuffer<T, N> {
     pub fn push(&mut self, item: T) -> Result<(), T> {
         let next = (self.producer + 1) % N;
         if next != self.consumer {
+            // nosemgrep
+            unsafe {
+                // SAFETY: the producer is always less than N.
+                core::hint::assert_unchecked(self.producer < N);
+            }
             self.data[self.producer] = item;
             self.producer = next;
             Ok(())
@@ -53,6 +61,11 @@ impl<T: Copy + Default, const N: usize> RingBuffer<T, N> {
     /// Returns `Some(item)` if the buffer is not empty, or `None` if it is.
     pub fn pop(&mut self) -> Option<T> {
         if self.consumer != self.producer {
+            // nosemgrep
+            unsafe {
+                // SAFETY: the consumer is always less than N.
+                core::hint::assert_unchecked(self.consumer < N)
+            };
             let item = self.data[self.consumer];
             self.consumer = (self.consumer + 1) % N;
             Some(item)
@@ -94,6 +107,13 @@ impl<T: Copy + Default, const N: usize> RingBuffer<T, N> {
 
         let chunk1 = core::cmp::min(remaining, N - self.producer);
         if chunk1 > 0 {
+            // nosemgrep
+            unsafe {
+                // SAFETY: the producer is less than N, and chunk1 is calculated
+                // to not exceed the remaining space in the buffer.
+                core::hint::assert_unchecked(self.producer < N);
+                core::hint::assert_unchecked(self.producer + chunk1 <= N);
+            }
             self.data[self.producer..self.producer + chunk1]
                 .copy_from_slice(&s[src_idx..src_idx + chunk1]);
             self.producer = (self.producer + chunk1) % N;
@@ -102,6 +122,13 @@ impl<T: Copy + Default, const N: usize> RingBuffer<T, N> {
         }
 
         if remaining > 0 {
+            // nosemgrep
+            unsafe {
+                // SAFETY: remaining is the wrapped portion, which is less than N.
+                // src_idx + remaining is exactly n, which is <= s.len().
+                core::hint::assert_unchecked(remaining <= N);
+                core::hint::assert_unchecked(src_idx + remaining <= s.len());
+            }
             self.data[0..remaining].copy_from_slice(&s[src_idx..src_idx + remaining]);
             self.producer = remaining;
         }
@@ -119,6 +146,12 @@ impl<T: Copy + Default, const N: usize> RingBuffer<T, N> {
     /// the first part. Callers should use `consume()` and `as_slice()` again to
     /// retrieve the wrapped portion.
     pub fn as_slice(&self) -> &[T] {
+        // nosemgrep
+        unsafe {
+            // SAFETY: producer and consumer indices are always less than or equal to N.
+            core::hint::assert_unchecked(self.consumer <= N);
+            core::hint::assert_unchecked(self.producer <= N);
+        }
         if self.consumer <= self.producer {
             // The available slice is contiguous in the array.
             &self.data[self.consumer..self.producer]

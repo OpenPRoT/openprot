@@ -27,9 +27,8 @@ rust_binary_no_panics_test(
     name = "no_panics_test",
     binary = ":threads",
     tags = [
-        # TODO(cfrantz): Fix this test.
-        "disabled",
         "kernel",
+        "no_panics",
     ],
 )
 

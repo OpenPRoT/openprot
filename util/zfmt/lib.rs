@@ -79,6 +79,7 @@ impl<IPC: IpcChannel> IpcLogger<IPC> {
             .map_err(ErrorCode::kernel_error)?;
         ErrorCode::check_status(status)?;
         n = n.saturating_sub(core::mem::size_of_val(&status) + core::mem::size_of_val(&log_cursor));
+        let n = n.min(eventbuf.len());
         Ok((log_cursor, &eventbuf[..n]))
     }
 

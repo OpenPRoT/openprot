@@ -163,8 +163,4 @@ fn entry() -> Result<()> {
     Ok(())
 }
 
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    pw_log::error!("FAIL: panic in demo_task");
-    loop {}
-}
+util_panic::make_panic_handler!();

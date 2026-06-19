@@ -81,8 +81,4 @@ fn entry() -> Result<()> {
     wait_for_interrupts()
 }
 
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    pw_log::error!("FAIL: panic in {}", module_path!() as &str);
-    loop {}
-}
+util_panic::make_panic_handler!();

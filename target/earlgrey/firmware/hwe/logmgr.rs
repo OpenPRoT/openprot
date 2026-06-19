@@ -72,7 +72,15 @@ fn service_uart_tx<const N: usize>(
         // 1. Transmit current buffer (body or newline)
         if active_log.state == TxState::Body || active_log.state == TxState::Newline {
             let data = active_log.buf.as_slice();
-            let remaining = &data[active_log.sent..];
+            // We maintain the invariant that active_log.sent <= data.len() and
+            // should never get None. If we do, we halt transmission.
+            let remaining = match data.get(active_log.sent..) {
+                Some(r) if !r.is_empty() => r,
+                _ => {
+                    active_log.state = TxState::Idle;
+                    break;
+                }
+            };
             match uart.write(remaining) {
                 Ok(n) => {
                     active_log.sent += n;
@@ -197,6 +205,7 @@ fn logmgr_server() -> Result<(), Error> {
             // IPC request
             let channel = IpcHandle::new(active_handle);
             let n = channel.read(0, &mut req)?;
+            let n = n.min(req.len());
             let raise = match server.handle_request(&channel, &mut req[..n]) {
                 Ok(processed) => processed,
                 Err(e) => {

@@ -51,7 +51,7 @@ fn next_frame<'a>(buf: &mut &'a [u8]) -> Option<Frame<'a>> {
     *buf = &buf[4..];
 
     let (len, consumed) = leb128::decode(buf)?;
-    *buf = &buf[consumed..];
+    *buf = buf.get(consumed..)?;
 
     let len = len as usize;
     if buf.len() < len {
@@ -84,14 +84,16 @@ fn parse_and_log_binary_stream(mut data: &[u8]) {
                 if let Some(header_buf) = pending_header.take() {
                     let payload = frame.payload;
                     if let Some((msg_len, consumed)) = leb128::decode(payload) {
-                        let msg_bytes = &payload[consumed..consumed + msg_len as usize];
-                        if let Ok(msg_str) = core::str::from_utf8(msg_bytes) {
-                            let mut final_buf = FixedBuf::<256>::new();
-                            let _ = final_buf.write_str(header_buf.as_str());
-                            let _ = final_buf.write_str(" ");
-                            let _ = final_buf.write_str(msg_str);
-                            let _ = final_buf.write_str("\n");
-                            let _ = syscall::debug_log(final_buf.as_str().as_bytes());
+                        let msg_len = msg_len as usize;
+                        if let Some(msg_bytes) = payload.get(consumed..consumed + msg_len) {
+                            if let Ok(msg_str) = core::str::from_utf8(msg_bytes) {
+                                let mut final_buf = FixedBuf::<256>::new();
+                                let _ = final_buf.write_str(header_buf.as_str());
+                                let _ = final_buf.write_str(" ");
+                                let _ = final_buf.write_str(msg_str);
+                                let _ = final_buf.write_str("\n");
+                                let _ = syscall::debug_log(final_buf.as_str().as_bytes());
+                            }
                         }
                     }
                 }
@@ -153,6 +155,7 @@ fn entry() -> Result<()> {
                 if wait_return.pending_signals.contains(Signals::READABLE) {
                     match syscall::channel_read(handle::IPC, 0, &mut ipc_buffer) {
                         Ok(len) => {
+                            let len = len.min(ipc_buffer.len());
                             parse_and_log_binary_stream(&ipc_buffer[..len]);
                             ipc_events_received += 1;
                         }
@@ -183,8 +186,4 @@ fn entry() -> Result<()> {
     Ok(())
 }
 
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo) -> ! {
-    pw_log::error!("FAIL: panic in main_logging_task");
-    loop {}
-}
+util_panic::make_panic_handler!();
