@@ -39,7 +39,7 @@ use spdm_lib::commands::capabilities::request::generate_capabilities_request_loc
 use spdm_lib::commands::version::request::generate_get_version;
 use spdm_lib::commands::version::VersionReqPayload;
 use spdm_lib::platform::transport::SpdmTransport;
-use spdm_responder::{ResponderConfig, SpdmResponder};
+use openprot_spdm_responder::{ResponderConfig, SpdmResponder};
 
 use common::{
     transfer, BufferSender, DemoPeerCertStore, DirectClient, MockCertStore, MockEvidence, MockHash,
