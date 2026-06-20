@@ -25,14 +25,17 @@ rust_app(
         "//hal/blocking/usb:hal_usb",
         "//protocol/usb/stack",
         "//target/earlgrey/drivers:usb_driver",
+        "//target/earlgrey/registers:lc_ctrl",
         "//target/earlgrey/registers:pinmux",
         "//target/earlgrey/registers:top_earlgrey",
         "//target/earlgrey/registers:usbdev",
+        "//target/earlgrey/util",
         "//util/panic",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
         "@rust_crates//:aligned",
+        "@rust_crates//:zerocopy",
     ],
 )
 
@@ -116,6 +119,8 @@ opentitan_test(
         "hyper310",
     ],
     target = ":usb",
+    test_cmd = "--logging=info --wait-for-firmware=false",
+    test_harness = ":host_usb_check",
 )
 
 opentitan_test(
@@ -128,6 +133,8 @@ opentitan_test(
         "hyper340",
     ],
     target = ":usb",
+    test_cmd = "--logging=info --wait-for-firmware=false",
+    test_harness = ":host_usb_check",
 )
 
 opentitan_test(
@@ -140,4 +147,26 @@ opentitan_test(
         "hardware",
     ],
     target = ":usb",
+    test_cmd = "--logging=info --wait-for-firmware=false",
+    test_harness = ":host_usb_check",
+)
+
+rust_binary(
+    name = "host_usb_check",
+    srcs = [
+        "host_usb_check.rs",
+    ],
+    edition = "2024",
+    rustc_flags = [
+        "-C",
+        "link-arg=-Wl,--allow-shlib-undefined",
+    ],
+    deps = [
+        "//third_party/lowrisc_opentitan:opentitanlib",
+        "//third_party/lowrisc_opentitan:usb_test_helper",
+        "@ot_crate_index//:anyhow",
+        "@ot_crate_index//:clap",
+        "@ot_crate_index//:humantime",
+        "@ot_crate_index//:log",
+    ],
 )
