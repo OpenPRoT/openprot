@@ -85,17 +85,7 @@ impl<const N: usize> AsSyscallBuffer for [&mut [u8]; N] {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct HostClock;
-
-impl time::Clock for HostClock {
-    const TICKS_PER_SEC: u64 = 1_000_000;
-    fn now() -> time::Instant<Self> {
-        time::Instant::from_ticks(0)
-    }
-}
-
-pub type Instant = time::Instant<HostClock>;
+pub type Instant = pw_time::Instant<pw_time::SystemClock>;
 
 impl IpcChannel for IpcHandle {
     fn transact<BufSend, BufRecv>(
