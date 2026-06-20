@@ -124,6 +124,7 @@ rust_binary(
 opentitan_test(
     name = "usb_verilator_test",
     timeout = "eternal",
+    environment = "//target/earlgrey/env:verilator",
     interface = "verilator",
     tags = [
         "nightly_test",
@@ -135,6 +136,7 @@ opentitan_test(
 opentitan_test(
     name = "usb_hyper310_test",
     ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper310",
     interface = "hyper310",
     tags = [
         "hardware",
@@ -146,6 +148,7 @@ opentitan_test(
 opentitan_test(
     name = "usb_hyper340_test",
     ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper340",
     interface = "hyper340",
     tags = [
         "hardware",
@@ -157,6 +160,7 @@ opentitan_test(
 opentitan_test(
     name = "usb_silicon_test",
     ecdsa_key = SILICON_ECDSA_KEY,
+    environment = "//target/earlgrey/env:teacup",
     interface = "teacup",
     tags = [
         "earlgrey_silicon",

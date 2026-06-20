@@ -92,6 +92,7 @@ rust_binary(
 opentitan_test(
     name = "gpio_verilator_test",
     timeout = "eternal",
+    environment = "//target/earlgrey/env:verilator",
     interface = "verilator",
     tags = [
         "verilator",
@@ -102,6 +103,7 @@ opentitan_test(
 opentitan_test(
     name = "gpio_qemu_test",
     timeout = "moderate",
+    environment = "//target/earlgrey/env:qemu",
     interface = "qemu",
     tags = ["qemu"],
     target = ":gpio",
