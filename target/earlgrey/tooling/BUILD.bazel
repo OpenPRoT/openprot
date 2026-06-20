@@ -6,6 +6,8 @@ load("@pigweed//pw_build:pw_py_importable_runfile.bzl", "pw_py_importable_runfil
 load("@rules_python//python:defs.bzl", "py_binary")
 load("//target/earlgrey/tooling:qemu.bzl", "qemu_cfg", "qemu_otp")
 
+package(default_visibility = ["//target/earlgrey:__subpackages__"])
+
 pw_py_importable_runfile(
     name = "opentitantool-runfiles",
     src = "//third_party/lowrisc_opentitan:opentitantool",
