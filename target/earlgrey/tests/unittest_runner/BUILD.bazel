@@ -25,6 +25,7 @@ target_linker_script(
 opentitan_test(
     name = "hyper310_test",
     ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper310",
     interface = "hyper310",
     tags = [
         "hardware",
@@ -36,6 +37,7 @@ opentitan_test(
 opentitan_test(
     name = "hyper340_test",
     ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper340",
     interface = "hyper340",
     tags = [
         "hardware",

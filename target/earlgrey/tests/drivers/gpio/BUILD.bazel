@@ -92,6 +92,7 @@ rust_binary(
 opentitan_test(
     name = "gpio_verilator_test",
     timeout = "eternal",
+    environment = "//target/earlgrey/env:verilator",
     interface = "verilator",
     tags = [
         "verilator",

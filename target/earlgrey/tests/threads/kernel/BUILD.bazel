@@ -35,6 +35,7 @@ rust_binary_no_panics_test(
 opentitan_test(
     name = "threads_runner_hyper310_test",
     ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper310",
     interface = "hyper310",
     tags = [
         "hardware",
@@ -46,6 +47,7 @@ opentitan_test(
 opentitan_test(
     name = "threads_runner_hyper340_test",
     ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper340",
     interface = "hyper340",
     tags = [
         "hardware",
@@ -58,6 +60,7 @@ opentitan_test(
     name = "threads_runner_verilator_test",
     timeout = "eternal",
     ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:verilator",
     interface = "verilator",
     tags = [
         "nightly_test",
@@ -69,6 +72,7 @@ opentitan_test(
 opentitan_test(
     name = "threads_runner_silicon_test",
     ecdsa_key = SILICON_ECDSA_KEY,
+    environment = "//target/earlgrey/env:teacup",
     interface = "teacup",
     tags = [
         "earlgrey_silicon",
@@ -80,6 +84,7 @@ opentitan_test(
 opentitan_test(
     name = "threads_runner_qemu_test",
     timeout = "moderate",
+    environment = "//target/earlgrey/env:qemu",
     interface = "qemu",
     tags = ["qemu"],
     target = ":threads",
