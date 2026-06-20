@@ -148,7 +148,6 @@ fn handle_usb() -> Result<()> {
             return Err(Error::Unknown);
         }
 
-        let _ = syscall::interrupt_ack(handle::USBDEV_INTERRUPTS, wait_return.pending_signals);
         while let Some(event) = usb.poll() {
             let mut action = match cdc_acm.handle_event(event) {
                 Ok(a) => a,
@@ -156,6 +155,7 @@ fn handle_usb() -> Result<()> {
             };
             action.run(&mut usb);
         }
+        let _ = syscall::interrupt_ack(handle::USBDEV_INTERRUPTS, wait_return.pending_signals);
 
         // Loopback received data to send buffer
         while let Some(byte) = cdc_acm.rx_queue.pop() {
