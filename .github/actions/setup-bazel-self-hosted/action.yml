@@ -1,0 +1,17 @@
+# Licensed under the Apache-2.0 license
+
+name: 'Setup Bazel (Self-Hosted)'
+description: 'Configure Bazel for self-hosted runners with local persistent caching'
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Bazel
+      uses: bazel-contrib/setup-bazel@0.19.0
+      with:
+        bazelisk-cache: false
+        disk-cache: false
+        repository-cache: false
+        output-base: ${{ runner.workspace }}/.bazel
+        bazelrc: |
+          build --disk_cache=/home/github-runner/.cache/bazel-disk
+          common --repository_cache=/home/github-runner/.cache/bazel-repo
