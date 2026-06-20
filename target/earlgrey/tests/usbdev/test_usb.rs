@@ -163,7 +163,6 @@ fn handle_usb() -> Result<()> {
             pw_log::error!("Incorrect WaitReturn values");
             return Err(Error::Unknown);
         }
-        let _ = syscall::interrupt_ack(handle::USBDEV_INTERRUPTS, wait_return.pending_signals);
         while let Some(event) = usb.poll() {
             match event {
                 UsbEvent::SetupPacket { pkt, endpoint } => {
@@ -214,6 +213,7 @@ fn handle_usb() -> Result<()> {
             }
             ep0_action.run(&mut usb);
         }
+        let _ = syscall::interrupt_ack(handle::USBDEV_INTERRUPTS, wait_return.pending_signals);
     }
 }
 
