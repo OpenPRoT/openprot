@@ -17,7 +17,8 @@ where
             buf[7 - j] = HEX[offset & 15];
             offset >>= 4;
         }
-        for (j, &byte) in d.iter().enumerate() {
+        for j in 0..d.len() {
+            let byte = d[j];
             buf[10 + j * 3] = HEX[(byte >> 4) as usize];
             buf[11 + j * 3] = HEX[(byte & 15) as usize];
             buf[60 + j] = if (0x20..0x7f).contains(&byte) {
