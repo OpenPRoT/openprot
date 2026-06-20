@@ -108,7 +108,13 @@ crate.from_cargo(
         "thumbv7em-none-eabi",
     ],
 )
-use_repo(crate, "rust_caliptra_crates", "rust_caliptra_crates_host", "rust_crates")
+use_repo(
+    crate,
+    "rust_caliptra_crates",
+    "rust_caliptra_crates_host",
+    "rust_crates",
+    ot_crate_index = "crate_index",
+)
 
 pw_rust_crates_ext = use_extension("@pigweed//pw_build:pw_rust_crates_extension.bzl", "pw_rust_crates_extension")
 
