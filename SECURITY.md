@@ -1,0 +1,217 @@
+# OpenPRoT Project Security Incident Response
+
+## Security communication
+
+Security information about each release is included in the release notes of each of the
+[OpenPRoT releases](https://github.com/OpenPRoT/releases) on GitHub.
+
+Vulnerability notifications pre-release or during embargo periods are available to product creators that have registered for vulnerability alerts. Further
+details can be found in [Embargo policy](#embargo-policy).
+
+## Report a vulnerability
+
+If you believe you have found a security vulnerability in any OpenPRoT repository, please report it to us through coordinated disclosure. If you believe you have found a vulnerability in a OpenPRoT dependency, please report it to us AND the upstream project.
+
+Please do not report security vulnerabilities through public GitHub issues, discussions, or pull requests.
+
+All reports are thoroughly investigated by the OpenPRoT Technical Committee (TC) members who form the OpenPRoT Project Security Incident Response Team (OpenPRoT
+PSIRT) and may get assigned a Common Vulnerabilities and Exposures number (CVE) if appropriate.
+
+Vulnerabities can be reported by opening an issue on the [OpenPRoT Security](https://github.com/OpenPRoT/openprot/security) page.
+
+More details of how vulnerabilities are handled can be found in the section
+[Security vulnerability response](#security-vulnerability-response).
+
+### When should I report a vulnerability?
+
+- You think you discovered a potential security vulnerability in OpenPRoT.
+- You are unsure how a vulnerability affects OpenPRoT.
+- You think you discovered a vulnerability in another project that OpenPRoT depends upon.
+  - For projects with their own vulnerability reporting and disclosure process, please report it directly there.
+
+### When should I *NOT* report a vulnerability?
+
+- You need help tuning OpenPRoT components for security.
+  - Instead, file an Issue labeled as "feature request".
+- You need help with a previously announced OpenPRoT Security Advisory.
+  - Instead, file an Issue labeled as "question"".
+- Your issue is not security related. Instead, file an issue as appropriate.
+
+Issues can be filed at the following locations:
+
+&lt;Indicate where issues can be filed&gt;
+
+## Security vulnerability response
+
+Each report is acknowledged by OpenPRoT Project Security Incident Response Team members within 2 working days. If the report is accepted, a CVE score is
+entered, and the issue is assigned to &lt;Relevant OpenPRoT Entity&gt; to begin further debug and analysis within 7 calendar days. This will trigger the
+[Security incident management process](#security-incident-management-process) outlined below.
+
+Any vulnerability information shared with the OpenPRoT Technical Committee stays within the OpenPRoT project and will not be disseminated to other projects
+unless it is necessary to get the issue fixed.
+
+As the security issue moves from triage, to identified fix, to release planning, we will keep the reporter updated.
+
+## Embargo policy
+
+The information members receive during embargo periods may be received from the OpenPRoT Vulnerability Alerts mailing list:
+[tbd](tbd). To sign up, visit
+[tbd](tbd). Any
+information regarding embargoed vulnerabilities must not be made public, shared, nor even hinted at anywhere beyond the need-to-know within your specific team
+except with the list’s explicit approval. This holds true until the public disclosure date/time that was agreed upon by the list. Members of the list and others
+may not use the information for anything other than getting the issue fixed for your respective product’s users.
+
+Before any embargoed information from the list is shared with respective members of your team required to fix said issue, they must agree to the same terms and
+only find out information on a need-to-know basis.
+
+In the unfortunate event that a member shares the information beyond what is allowed by this policy, that member ***must*** urgently inform the OpenPRoT
+workgroup at the [tbd](tbd) mailing list of
+exactly what information leaked and to whom. A retrospective will take place after the leak so we can assess how to not make the same mistake in the future.
+
+If the member continues to leak information and break this policy, the member is removed from the list.
+
+More details of how vulnerabilities are handled can be found in our [Security incident management process](#security-incident-management-process)
+section.
+
+## Product integrator notification process
+
+Companies or individuals building products that integrate OpenPRoT and are trademark recipients may be eligible to participate in the
+[tbd](tbd) mail list and receive
+advanced notification of the vulnerabilities and mitigations before public disclosure by applying to participate. For more information, refer to the
+[Vulnerability notification process](#vulnerability-notification-process) section of this document.
+
+Criteria for participation includes:
+
+1. Complete the *to be defined* OpenPRoT trademark license grant process to be recognized as a product integrator.
+1. Register for [OpenPRoT vulnerability alerts](tbd).
+1. Have a contact who will respond to emails within a week and understands how OpenPRoT is being used in the product.
+1. Have a publicly listed product based on some release of OpenPRoT.
+1. Have an actively monitored security email alias.
+1. Accept the OpenPRoT Embargo Policy that is outlined above.
+
+Removal:
+
+1. If a member stops adhering to these criteria after joining the list, then the member is unsubscribed.
+
+## Security incident management process
+
+Issues within this bug tracking system will transition through a number of states according to this diagram:
+
+<center>
+
+```mermaid
+flowchart TB
+    Triage -->|2 business days| Draft_New
+    Triage --> Closed_Rejected
+    Draft_New -->|7 calendar days| Draft_Assigned
+    Draft_New <--> Closed_Rejected
+    Draft_Assigned <--> Draft_Review
+    Draft_Review ---> Closed_Rejected
+    Draft_Review --> Draft_Accepted
+    Draft_Accepted -->|90 calendar days <br> from initial report| Closed_Published
+```
+
+</center>
+
+- **Triage:** This state represents new reports that have been entered directly by a reporter. The security team will triage these reports and move them to
+either *Draft_New* or *Closed_Rejected*. When reports are entered by the security team in response to an email, the issue shall be transitioned directly to
+*Draft_New*.
+
+- **Draft_New:** This issue is awaiting disposition by the security team. The security team will analyze the issue, determine a responsible entity, assign
+it to that individual, and move the issue to the *Draft_Assigned* state. Part of triage is to set the issue’s priority.
+
+- **Draft_Assigned:** The issue was assigned, a CVE score was entered, and the issue is awaiting a fix by the assignee. At this time, collaborators are
+designated, and a private fork of the affected repository is created. The original reporter of the vulnerability is included as a collaborator. Only
+collaborators are able to view details of the vulnerability and participate in discussions and code reviews until the final security advisory is published
+publicly.
+
+- **Draft_Review:** Once there is a GitHub pull request (PR) for the issue, the PR link is added to a comment in the issue, and the issue moved to the
+*Draft_Review* state.
+
+- **Draft_Accepted:** Indicates that this issue was merged into the appropriate public branch within OpenPRoT.
+
+- **Closed_Published:** The embargo period has ended. The issue is made publicly visible, the associated CVE is updated, and the security advisories page in the
+repository is updated to include the detailed information.
+
+- **Closed_Rejected:** The OpenPRoT PSIRT has rejected the reported security vulnerability. It may have been deemed a non-issue, or it may have been converted
+into a standard GitHub Issue report. The PSIRT may also re-open the issue from here.
+
+The security advisories created are kept private, due to the sensitive nature of security reports. The issues are only visible to certain parties:
+
+- Members of the PSIRT mailing list
+- The reporter
+- Others, as proposed and ratified by the OpenPRoT PSIRT. In the general case, this will include:
+  - The code owner responsible for the fix.
+  - The OpenPRoT release owners for the relevant releases affected by this vulnerability.
+
+The OpenPRoT TC shall review the reported vulnerabilities during any meeting with more than three people in attendance. During this review, they
+shall determine if new issues need to be embargoed.
+
+The guideline for embargo is based on:
+
+1. Severity of the issue, and
+2. Exploitability of the issue.
+
+Issues that the OpenPRoT TC decides do not need an embargo are reproduced in the regular OpenPRoT project bug tracking system.
+
+Security sensitive vulnerabilities shall be made public after an embargo period of at most 90 days. The intent is to allow 30 days within the
+OpenPRoT project to fix the issues, and 60 days for product creators building products using OpenPRoT to be able to apply and distribute these
+fixes.
+
+Fixes to the code shall be made through PRs in the OpenPRoT project GitHub repositories. Developers must not reveal the sensitive nature of what is being fixed,
+and shall not refer to CVE numbers that have been assigned to the issue. The developer instead should describe what was fixed, without revealing how the issue
+was discovered or its possible impact.
+
+The OpenPRoT TC shall maintain information that maps embargoed CVEs to these PRs (this information is within the Github security advisories), and
+produce regular reports of the state of security issues.
+
+Each issue that is considered a security vulnerability shall be assigned a CVE number. As fixes are created, it may be necessary to allocate
+additional CVE numbers, or to retire numbers that were assigned.
+
+## Vulnerability notification process
+
+Each OpenPRoT release shall contain a report of CVEs that were fixed in that release. Because of the sensitive nature of these vulnerabilities,
+the release shall merely include a list of CVEs that have been fixed. After the embargo period, the vulnerabilities page shall be updated to include
+additional details of these vulnerabilities. The vulnerability page shall give credit to the reporter(s) unless a reporter specifically requests
+anonymity.
+
+The OpenPRoT project shall maintain a vulnerability-alerts mailing list. This list is seeded initially with a contact from each project member.
+
+Additional parties can request to join this list by visiting
+[tbd](tbd). These parties are vetted by
+the OpenPRoT PSIRT to determine that they have a legitimate interest in knowing about security vulnerabilities during the embargo period.
+
+Periodically, the OpenPRoT PSIRT will send information to this mailing list describing known embargoed issues and their backport status within the
+project. This information is intended to allow them to determine if they need to backport these changes to any internal trees.
+
+When issues have been triaged, this list is informed of:
+
+- The OpenPRoT Project security advisory link (GitHub).
+- The CVE number assigned.
+- The subsystem involved.
+- The severity of the issue.
+
+After acceptance of a PR fixing the issue (merged), in addition to the above, the list is informed of:
+
+- The association between the CVE number and the PR fixing it.
+- Backport plans within the OpenPRoT project.
+
+## Backporting of security vulnerabilities
+
+Each security issue fixed within OpenPRoT Firmware shall be backported to the following releases:
+
+- The current Long Term Stable (LTS) release.
+- The most recent two releases.
+
+Backports are tracked in the security advisory and are completed during the 90 day embargo period.
+
+## Need to know
+
+Due to the sensitive nature of security vulnerabilities, it is important to share details and fixes only with those parties that have a need to
+know. The following parties will need to know details about security vulnerabilities before the embargo period ends:
+
+- Maintainers will have access to all information within their domain area only.
+- The current release manager, and the release manager for historical releases affected by the vulnerability (see backporting above).
+- The Project Security Incident Response Team will have full access to information.
+- The PSIRT is made up of representatives from OpenPRoT integrators and contributors.
+- As needed, release managers and maintainers may be invited to attend additional security meetings to discuss vulnerabilities.
