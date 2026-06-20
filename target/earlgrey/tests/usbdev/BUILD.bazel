@@ -25,14 +25,17 @@ rust_app(
         "//hal/blocking/usb:hal_usb",
         "//protocol/usb/stack",
         "//target/earlgrey/drivers:usb_driver",
+        "//target/earlgrey/registers:lc_ctrl",
         "//target/earlgrey/registers:pinmux",
         "//target/earlgrey/registers:top_earlgrey",
         "//target/earlgrey/registers:usbdev",
+        "//target/earlgrey/util",
         "//util/panic",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
         "@rust_crates//:aligned",
+        "@rust_crates//:zerocopy",
     ],
 )
 
@@ -96,6 +99,7 @@ rust_binary(
 opentitan_test(
     name = "usb_verilator_test",
     timeout = "eternal",
+    environment = "//target/earlgrey/env:verilator",
     interface = "verilator",
     tags = [
         "nightly_test",
@@ -108,32 +112,60 @@ opentitan_test(
 opentitan_test(
     name = "usb_hyper310_test",
     ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper310",
     interface = "hyper310",
     tags = [
         "hardware",
         "hyper310",
     ],
     target = ":usb",
+    test_cmd = "--logging=info --wait-for-firmware=false",
+    test_harness = ":host_usb_check",
 )
 
 opentitan_test(
     name = "usb_hyper340_test",
     ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper340",
     interface = "hyper340",
     tags = [
         "hardware",
         "hyper340",
     ],
     target = ":usb",
+    test_cmd = "--logging=info --wait-for-firmware=false",
+    test_harness = ":host_usb_check",
 )
 
 opentitan_test(
     name = "usb_silicon_test",
     ecdsa_key = SILICON_ECDSA_KEY,
+    environment = "//target/earlgrey/env:teacup",
     interface = "teacup",
     tags = [
         "earlgrey_silicon",
         "hardware",
     ],
     target = ":usb",
+    test_harness = ":host_usb_check",
+)
+
+rust_binary(
+    name = "host_usb_check",
+    srcs = [
+        "host_usb_check.rs",
+    ],
+    edition = "2024",
+    rustc_flags = [
+        "-C",
+        "link-arg=-Wl,--allow-shlib-undefined",
+    ],
+    deps = [
+        "//third_party/lowrisc_opentitan:opentitanlib",
+        "//third_party/lowrisc_opentitan:usb_test_helper",
+        "@ot_crate_index//:anyhow",
+        "@ot_crate_index//:clap",
+        "@ot_crate_index//:humantime",
+        "@ot_crate_index//:log",
+    ],
 )

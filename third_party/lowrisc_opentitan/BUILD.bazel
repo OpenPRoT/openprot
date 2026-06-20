@@ -12,3 +12,21 @@ opentitan_rust_library(
     name = "opentitanlib",
     actual = "@lowrisc_opentitan//sw/host/opentitanlib",
 )
+
+rust_library(
+    name = "usb_test_helper",
+    srcs = [
+        "@lowrisc_opentitan//sw/host/tests/chip/usb:mod.rs",
+        "@lowrisc_opentitan//sw/host/tests/chip/usb:usb.rs",
+    ],
+    crate_name = "usb",
+    crate_root = "@lowrisc_opentitan//sw/host/tests/chip/usb:usb.rs",
+    deps = [
+        "//third_party/lowrisc_opentitan:opentitanlib",
+        "@ot_crate_index//:anyhow",
+        "@ot_crate_index//:clap",
+        "@ot_crate_index//:humantime",
+        "@ot_crate_index//:log",
+        "@ot_crate_index//:rusb",
+    ],
+)
