@@ -5,24 +5,22 @@
 
 use core::fmt::Debug;
 use earlgrey_pinmux::{EarlGreyPinmux, Pad, PadConfig, Pull};
+use earlgrey_util_error::gpio::{EG_GPIO, EG_GPIO_INVALID_CONFIGURATION};
 use openprot_hal_blocking::gpio_port::{
     EdgeSensitivity, GpioError, GpioErrorKind, GpioErrorType, GpioInterrupt, GpioPort,
     InterruptOperation, PinMask,
 };
 use registers::gpio;
+use util_error::error_wrapper;
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum EarlGreyGpioError {
-    HardwareFailure,
-    InvalidConfiguration,
-}
+error_wrapper!(EarlGreyGpioError);
 
-// TODO: figure out what we're doing with precise errors.
 impl GpioError for EarlGreyGpioError {
     fn kind(&self) -> GpioErrorKind {
-        match self {
-            EarlGreyGpioError::HardwareFailure => GpioErrorKind::HardwareFailure,
-            EarlGreyGpioError::InvalidConfiguration => GpioErrorKind::UnsupportedConfiguration,
+        if self.module() == EG_GPIO {
+            self.as_kind::<GpioErrorKind>()
+        } else {
+            GpioErrorKind::Unknown
         }
     }
 }
@@ -170,7 +168,7 @@ impl GpioPort for EarlGreyGpio {
     fn configure(&mut self, pins: Self::Mask, config: Self::Config) -> Result<(), Self::Error> {
         // If a pad is provided, ensure only one pin is being configured
         if config.pad.is_some() && (pins.0.count_ones() != 1) {
-            return Err(EarlGreyGpioError::InvalidConfiguration);
+            return Err(EarlGreyGpioError(EG_GPIO_INVALID_CONFIGURATION));
         }
 
         // Configure Output Enable
@@ -348,6 +346,6 @@ impl GpioInterrupt for EarlGreyGpio {
     {
         // In the OpenPRoT microkernel architecture, interrupts are handled
         // via syscalls (wait on object) rather than registered callbacks.
-        Err(EarlGreyGpioError::InvalidConfiguration)
+        Err(EarlGreyGpioError(EG_GPIO_INVALID_CONFIGURATION))
     }
 }

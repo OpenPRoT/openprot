@@ -161,13 +161,13 @@ impl FwUpdate {
             .rom_ext
             .boot_slot
             .opposite()
-            .ok_or(earlgrey_util::error::EG_ERROR_BOOT_SLOT_UNKNOWN)?;
+            .ok_or(earlgrey_util_error::EG_ERROR_BOOT_SLOT_UNKNOWN)?;
         let rom_ext_start = FwUpdate::addr(rom_ext);
         let app = info
             .app
             .boot_slot
             .opposite()
-            .ok_or(earlgrey_util::error::EG_ERROR_BOOT_SLOT_UNKNOWN)?;
+            .ok_or(earlgrey_util_error::EG_ERROR_BOOT_SLOT_UNKNOWN)?;
         let app_start = FwUpdate::addr(app) + info.rom_ext.size;
 
         Ok(FwUpdate {

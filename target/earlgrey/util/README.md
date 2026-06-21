@@ -32,9 +32,9 @@ This package provides hardware-specific utility drivers, memory-mapped data stru
 *   **`ManifestIdentifier`, `OwnershipState`, `BootSlot`, `UnlockMode`, `BootSvcKind`, `OwnershipKeyAlg`**: Type-safe wrappers around `u32` constant magic tags used in the boot protocol.
 *   **`HardenedBool` & `AsMubi`**: Support for Multi-bit Booleans (MuBi). Earlgrey hardware uses specific 4-bit sequences (`0x6` for True, `0x9` for False) to protect critical boolean choices against single-bit fault injection attacks.
 
-### 6. Diagnostics & Errors (`rom_error.rs`, `error.rs`)
+### 6. Diagnostics & Errors (`rom_error.rs`, `earlgrey_util_error` crate)
 *   **`RomError`**: Strongly-typed mapping of raw `u32` bootloader error codes (e.g. signature verification failures, key manager faults, flash controller errors).
-*   **`EG_ERROR`**: Target-specific userspace error module (ASCII `'FL'`) for logging utilities.
+*   **`earlgrey_util_error`**: A separate crate containing target-specific userspace error module `EG_ERROR` (ASCII `'EG'`) and associated error codes for logging utilities.
 
 ### 7. Flash Address Mapping (`flash.rs`)
 *   **`EarlgreyFlashAddress`**: An extension trait for `FlashAddress` that implements Earlgrey-specific partition mapping.

@@ -15,6 +15,8 @@ rust_library(
         ":pinmux",
         "//hal/blocking",
         "//target/earlgrey/registers",
+        "//target/earlgrey/util/error",
+        "//util/error",
         "@ureg",
     ],
 )
@@ -41,6 +43,7 @@ rust_library(
         "//hal/blocking/flash:driver",
         "//target/earlgrey/registers:flash_ctrl_core",
         "//target/earlgrey/util",
+        "//target/earlgrey/util/error",
         "//util/error",
         "//util/regcpy",
         "//util/types",

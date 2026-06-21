@@ -63,6 +63,7 @@ rust_process(
         "//target/earlgrey/registers:usbdev",
         "//target/earlgrey/services/sysmgr:client",
         "//target/earlgrey/util",
+        "//target/earlgrey/util/error",
         "//util/error",
         "//util/ipc",
         "//util/types",

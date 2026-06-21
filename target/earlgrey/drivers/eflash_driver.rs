@@ -6,6 +6,7 @@
 use core::num::NonZero;
 
 use earlgrey_util::{AsMubi, EarlgreyFlashAddress};
+use earlgrey_util_error::EG_FLASH;
 use flash_ctrl_core::{self, regs::ControlWriteVal};
 use hal_flash_driver::{FlashAddress, FlashDriver};
 use util_error::{self as error, ErrorCode};
@@ -240,7 +241,7 @@ impl FlashDriver for EmbeddedFlash {
         let status = self.mmio.regs().op_status().read();
         if status.err() {
             let err_code = u32::from(self.mmio.regs().err_code().read());
-            Err(error::FLASH_OPENTITAN.error(err_code as u16))
+            Err(EG_FLASH.error(err_code as u16))
         } else {
             Ok(())
         }

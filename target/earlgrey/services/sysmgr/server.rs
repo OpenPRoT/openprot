@@ -7,10 +7,10 @@ use zerocopy::{FromBytes, IntoBytes};
 
 use earlgrey_sysmgr_client::*;
 use earlgrey_util::boot_svc::NextBl0SlotRequest;
-use earlgrey_util::error as eg_error;
 use earlgrey_util::ret_ram::RetRam;
 use earlgrey_util::CheckDigest;
 use earlgrey_util::GetData;
+use earlgrey_util_error as eg_error;
 use util_error::{self as error, ErrorCode};
 use util_ipc::IpcChannel;
 use util_types::Opcode;

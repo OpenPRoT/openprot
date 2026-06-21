@@ -13,7 +13,7 @@
 //! * Value (raw bytes of length `value_size`).
 //! * Padded to 8-byte boundary.
 
-use crate::error::*;
+use earlgrey_util_error::*;
 use util_error::ErrorCode;
 
 /// The type identifier for a personalization TLV object.
