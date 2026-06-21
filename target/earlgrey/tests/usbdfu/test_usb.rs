@@ -18,7 +18,10 @@ use usb_driver::UsbConfig;
 use usb_stack::{DescriptorSource, UsbAction, UsbClass};
 
 use earlgrey_util::{EarlgreyFlashAddress, PersoCertificate};
+use earlgrey_util::device_id::format_device_id;
 use hal_flash::{Flash, FlashAddress};
+use lc_ctrl::LcCtrl;
+use zerocopy::IntoBytes;
 use services_flash_client::FlashIpcClient;
 use util_error::{self as error, ErrorCode};
 use util_ipc::IpcHandle;
@@ -161,8 +164,12 @@ fn get_certificate(flash: &mut FlashIpcClient, n: u8, data: &mut [u8]) -> Result
     Err(DfuStatus::ErrUnknown)
 }
 
+const TEST_FLASH_START: u32 = 0xA0000;
+const TEST_FLASH_SIZE: u32 = 0x10000; // 64KB for test
+
 struct MyDfuHandler {
     flash: FlashIpcClient,
+    written_bytes: usize,
 }
 
 impl DfuHandler for MyDfuHandler {
@@ -173,6 +180,38 @@ impl DfuHandler for MyDfuHandler {
             block_num,
             data.len()
         );
+        if alt != 0 {
+            return Err(DfuStatus::ErrFile);
+        }
+
+        let block_size = 2048; // matching DFU_BUILDER transfer_size
+        let offset = block_num as u32 * block_size;
+
+        if offset + data.len() as u32 > TEST_FLASH_SIZE {
+            return Err(DfuStatus::ErrAddress);
+        }
+
+        if block_num == 0 {
+            pw_log::info!("Erasing test flash area at 0x{:08x}...", TEST_FLASH_START);
+            let mut addr = TEST_FLASH_START;
+            let end = TEST_FLASH_START + TEST_FLASH_SIZE;
+            let (_, pg_sz, _) = self.flash.geometry().map_err(|_| DfuStatus::ErrUnknown)?;
+            while addr < end {
+                self.flash
+                    .erase(FlashAddress::data(addr), pg_sz)
+                    .map_err(|_| DfuStatus::ErrErase)?;
+                addr += pg_sz.get() as u32;
+            }
+            self.written_bytes = 0;
+        }
+
+        if !data.is_empty() {
+            self.flash
+                .program(FlashAddress::data(TEST_FLASH_START + offset), data)
+                .map_err(|_| DfuStatus::ErrProg)?;
+            self.written_bytes = offset as usize + data.len();
+        }
+
         Ok(())
     }
 
@@ -184,6 +223,21 @@ impl DfuHandler for MyDfuHandler {
             data.len()
         );
         match alt {
+            0 => {
+                let block_size = data.len();
+                let offset = block_num as usize * block_size;
+                if offset >= self.written_bytes {
+                    return Ok(0);
+                }
+                let len = core::cmp::min(self.written_bytes - offset, block_size);
+                self.flash
+                    .read(
+                        FlashAddress::data(TEST_FLASH_START + offset as u32),
+                        &mut data[..len],
+                    )
+                    .map_err(|_| DfuStatus::ErrUnknown)?;
+                Ok(len)
+            }
             1 | 2 | 3 => get_certificate(&mut self.flash, alt - 1, data),
             _ => Err(DfuStatus::ErrFile),
         }
@@ -200,11 +254,17 @@ impl DfuHandler for MyDfuHandler {
 }
 
 fn handle_usb() -> Result<(), ErrorCode> {
+    let lc_ctrl = unsafe { LcCtrl::new() };
+    let device_id: [u32; 8] = lc_ctrl.regs().device_id().read().into();
+    let mut hex_buf = [0u8; 64];
+    let serial_num = format_device_id(&device_id, &mut hex_buf).unwrap_or("DFU-ERR");
+    pw_log::info!("Serial Number: {}", serial_num);
+
     let mut serial_num_buffer = Aligned::<A4, _>([0_u8; 130]);
     let descriptors = MyDescriptors {
         serial_desc_bytes: hal_usb::hex_utf16_descriptor_aligned(
             &mut serial_num_buffer,
-            b"DFU-12345",
+            device_id.as_bytes(),
         )
         .unwrap_or(PRODUCT_ID_DEFAULT),
         product_desc_bytes: PRODUCT_ID_DEFAULT,
@@ -218,6 +278,7 @@ fn handle_usb() -> Result<(), ErrorCode> {
         DFU_BUILDER,
         MyDfuHandler {
             flash: FlashIpcClient::new(IpcHandle::new(handle::FLASH_SERVICE))?,
+            written_bytes: 0,
         },
     );
 
