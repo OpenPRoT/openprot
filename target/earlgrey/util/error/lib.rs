@@ -3,11 +3,16 @@
 
 //! Error module and codes for Earlgrey target utilities.
 
-use pw_status::Error;
-use util_error::{ErrorCode, ErrorModule};
+#![no_std]
 
-/// The Earlgrey utility error module (ASCII `'FL'`).
-pub const EG_ERROR: ErrorModule = ErrorModule::new(0x464c);
+use pw_status::Error;
+pub use util_error::{AsStatus, ErrorCode, ErrorModule};
+
+pub mod gpio;
+pub use gpio::*;
+
+/// The Earlgrey utility error module (ASCII `'EG'`).
+pub const EG_ERROR: ErrorModule = ErrorModule::new(0x4547);
 
 /// Certificate was not found in personalization data.
 pub const EG_ERROR_CERT_NOT_FOUND: ErrorCode = EG_ERROR.from_pw(1, Error::NotFound);
@@ -17,3 +22,6 @@ pub const EG_ERROR_CERT_BAD_NAME: ErrorCode = EG_ERROR.from_pw(2, Error::Invalid
 pub const EG_ERROR_BAD_BOOT_LOG: ErrorCode = EG_ERROR.from_pw(3, Error::Unknown);
 /// The boot slot is unknown or invalid.
 pub const EG_ERROR_BOOT_SLOT_UNKNOWN: ErrorCode = EG_ERROR.from_pw(4, Error::Unknown);
+
+/// The Earlgrey flash error module (ASCII `'EF'`).
+pub const EG_FLASH: ErrorModule = ErrorModule::new(0x4546);

@@ -1,0 +1,22 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
+
+rust_library(
+    name = "error",
+    srcs = [
+        "gpio.rs",
+        "lib.rs",
+    ],
+    crate_name = "earlgrey_util_error",
+    edition = "2024",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking",
+        "//util/error",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)

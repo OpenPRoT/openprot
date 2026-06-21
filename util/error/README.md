@@ -25,7 +25,7 @@ An `ErrorCode` is a 32-bit value composed of:
 
 `ErrorCode` implements `core::error::Error`, `Display`, and `Debug`. It formats as a hex representation of the 32-bit value (e.g., `0x4b450001`).
 
-You can extract the module ID using the [`module()`](lib.rs#L89) method.
+You can extract the module ID using the [`module()`](lib.rs) method.
 
 ```rust
 use util_error::ErrorCode;
@@ -39,7 +39,7 @@ let module_id = MY_ERROR.module();
 
 ### Pigweed Integration and Error Kinds
 
-`ErrorCode` supports integration with `pw_status::Error` and custom error kind enums. You can embed a Pigweed status and a module-specific error kind into the lower 16 bits of the error code using [`from_pw`](lib.rs#L52).
+`ErrorCode` supports integration with `pw_status::Error` and custom error kind enums. You can embed a Pigweed status and a module-specific error kind into the lower 16 bits of the error code using [`from_pw`](lib.rs).
 
 The lower 16 bits are partitioned as:
 *   Bits 8-15: Module-specific error kind code (8-bit value, must be non-zero).
@@ -56,8 +56,8 @@ pub const MY_INVALID_ARG_ERROR: ErrorCode = MY_MODULE.from_pw(1, Error::InvalidA
 ```
 
 You can extract these components back from an `ErrorCode` using:
-*   [`as_pwerr()`](lib.rs#L109): Extracts the `pw_status::Error`.
-*   [`as_kind::<KIND>()`](lib.rs#L115): Extracts the module-specific error kind and converts it to `KIND` (which must implement `From<u32>`).
+*   [`as_pwerr()`](lib.rs): Extracts the `pw_status::Error`.
+*   [`as_kind::<KIND>()`](lib.rs): Extracts the module-specific error kind and converts it to `KIND` (which must implement `From<u32>`).
 
 ## Defined Modules
 
@@ -67,5 +67,4 @@ The following modules are defined in this crate:
 | :--- | :--- | :--- | :--- |
 | `KERNEL_ERROR` | `0x4b45` | `KE` | Kernel-specific error codes (see [kernel.rs](kernel.rs)). |
 | `FLASH_GENERIC` | `0x464c` | `FL` | Generic flash and SFDP errors (see [flash.rs](flash.rs)). |
-| `FLASH_OPENTITAN`| `0x464f` | `FO` | OpenTitan-specific flash errors (see [flash.rs](flash.rs)). |
 | `IPC_ERROR` | `0x4943` | `IC` | IPC-specific error codes (see [ipc.rs](ipc.rs)). |

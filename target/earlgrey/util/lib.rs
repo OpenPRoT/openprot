@@ -7,7 +7,6 @@ pub mod boot_log;
 pub mod boot_svc;
 pub mod clock;
 pub mod device_id;
-pub mod error;
 pub mod flash;
 pub mod manifest;
 mod misc;

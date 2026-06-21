@@ -36,6 +36,7 @@ rust_library(
         "//target/earlgrey/registers:lc_ctrl",
         "//target/earlgrey/registers:rstmgr",
         "//target/earlgrey/util",
+        "//target/earlgrey/util/error",
         "//util/error",
         "//util/ipc",
         "//util/types",
