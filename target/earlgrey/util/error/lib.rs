@@ -10,6 +10,8 @@ pub use util_error::{AsStatus, ErrorCode, ErrorModule};
 
 pub mod gpio;
 pub use gpio::*;
+pub mod pinmux;
+pub use pinmux::*;
 
 /// The Earlgrey utility error module (ASCII `'EG'`).
 pub const EG_ERROR: ErrorModule = ErrorModule::new(0x4547);

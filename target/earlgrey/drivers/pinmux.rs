@@ -3,11 +3,20 @@
 
 #![no_std]
 
+use earlgrey_util_error::pinmux::{
+    EG_PINMUX_INVALID_INPUT, EG_PINMUX_INVALID_OUTPUT, EG_PINMUX_INVALID_PAD,
+};
 use registers::pinmux;
+pub use top_earlgrey::{PinmuxOutsel as Outsel, PinmuxPeripheralIn as PeriphIn};
+use util_error::ErrorCode;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u32)]
+#[repr(i32)]
+#[rustfmt::skip]
 pub enum Pad {
+    // Constant Values
+    ConstantZero = -2,
+    ConstantOne = -1,
     // MIO Pads (0-46)
     IOA0 = 0,
     IOA1 = 1,
@@ -76,14 +85,39 @@ pub enum Pad {
 }
 
 impl Pad {
+    const NUM_MIO_PADS: i32 = top_earlgrey::NUM_MIO_PADS as i32;
+
+    /// Is this a direct IO pad?
     pub fn is_dio(&self) -> bool {
-        (*self as u32) >= 47
+        (*self as i32) >= Self::NUM_MIO_PADS
     }
 
+    /// Get the direct IO index of this pad.
     pub fn dio_index(self) -> Option<usize> {
-        let index = self as usize;
-        if index >= 47 {
-            Some(index - 47)
+        let index = self as i32;
+        if index >= Self::NUM_MIO_PADS {
+            Some((index - Self::NUM_MIO_PADS) as usize)
+        } else {
+            None
+        }
+    }
+
+    /// Get the muxed IO index of this pad.
+    pub fn mio_index(self) -> Option<usize> {
+        let index = self as i32;
+        if (0..Self::NUM_MIO_PADS).contains(&index) {
+            Some(index as usize)
+        } else {
+            None
+        }
+    }
+
+    /// Get the input selector index of this pad.
+    pub fn as_insel(self) -> Option<u32> {
+        let idx = self as i32;
+        if idx < Self::NUM_MIO_PADS {
+            // The InSel selector is the index + 2.
+            Some((idx + 2) as u32)
         } else {
             None
         }
@@ -130,26 +164,32 @@ impl EarlGreyPinmux {
     }
 
     /// Connects a peripheral input to an MIO pad.
-    pub fn connect_input(&mut self, periph_input_idx: usize, pad: Pad) {
-        // MIO pads start at index 2 in periph_insel (0=Low, 1=High)
-        let periph_source = 2 + (pad as u32);
-        self.registers
-            .mio_periph_insel()
-            .at(periph_input_idx)
-            .write(|w| w.in_(periph_source));
+    pub fn connect_input(&mut self, input: PeriphIn, pad: Pad) -> Result<(), ErrorCode> {
+        if let Some(sel) = pad.as_insel() {
+            self.registers
+                .mio_periph_insel()
+                .at(input as usize)
+                .write(|w| w.in_(sel));
+            Ok(())
+        } else {
+            Err(EG_PINMUX_INVALID_INPUT)
+        }
     }
 
     /// Connects an MIO pad to a peripheral output.
-    pub fn connect_output(&mut self, pad: Pad, periph_output_idx: usize) {
-        // Peripheral outputs start at index 3 in outsel (0=Low, 1=High, 2=HighZ)
-        let pad_source = 3 + (periph_output_idx as u32);
-        self.registers
-            .mio_outsel()
-            .at(pad as usize)
-            .write(|w| w.out(pad_source));
+    pub fn connect_output(&mut self, pad: Pad, output: Outsel) -> Result<(), ErrorCode> {
+        if let Some(idx) = pad.mio_index() {
+            self.registers
+                .mio_outsel()
+                .at(idx)
+                .write(|w| w.out(output as u32));
+            Ok(())
+        } else {
+            Err(EG_PINMUX_INVALID_OUTPUT)
+        }
     }
 
-    pub fn configure_pad(&mut self, pad: Pad, config: &PadConfig) {
+    pub fn configure_pad(&mut self, pad: Pad, config: &PadConfig) -> Result<(), ErrorCode> {
         if let Some(dio_idx) = pad.dio_index() {
             self.registers.dio_pad_attr().at(dio_idx).modify(|w| {
                 w.pull_en(config.pull != Pull::None)
@@ -163,8 +203,9 @@ impl EarlGreyPinmux {
                     .od_en(config.open_drain)
                     .invert(config.invert)
             });
-        } else {
-            self.registers.mio_pad_attr().at(pad as usize).modify(|w| {
+            Ok(())
+        } else if let Some(mio_idx) = pad.mio_index() {
+            self.registers.mio_pad_attr().at(mio_idx).modify(|w| {
                 w.pull_en(config.pull != Pull::None)
                     .pull_select(|w| {
                         if config.pull == Pull::Up {
@@ -176,6 +217,13 @@ impl EarlGreyPinmux {
                     .od_en(config.open_drain)
                     .invert(config.invert)
             });
+            Ok(())
+        } else if pad.as_insel().is_some() {
+            // Constant pads (ConstantZero, ConstantOne) have valid input selectors
+            // but no physical pad attributes to configure.
+            Ok(())
+        } else {
+            Err(EG_PINMUX_INVALID_PAD)
         }
     }
 }

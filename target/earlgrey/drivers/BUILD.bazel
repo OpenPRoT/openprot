@@ -30,6 +30,9 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         "//target/earlgrey/registers",
+        "//target/earlgrey/registers:top_earlgrey",
+        "//target/earlgrey/util/error",
+        "//util/error",
         "@ureg",
     ],
 )
