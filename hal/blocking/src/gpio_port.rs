@@ -7,29 +7,50 @@
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[non_exhaustive]
 pub enum GpioErrorKind {
+    /// The underlying error is not one of the common errors
+    Unknown = 0,
     /// The specified GPIO port does not exist
-    InvalidPort,
+    InvalidPort = 1,
     /// The specified pin(s) do not exist on this port
-    InvalidPin,
+    InvalidPin = 2,
     /// The requested configuration is not supported
-    UnsupportedConfiguration,
+    UnsupportedConfiguration = 3,
     /// The pins cannot be configured as requested (e.g., reserved pins)
-    ConfigurationFailed,
+    ConfigurationFailed = 4,
     /// Cannot change pins currently used by another peripheral
-    PinInUse,
+    PinInUse = 5,
     /// The interrupt requested cannot be configured
-    InterruptConfigurationFailed,
+    InterruptConfigurationFailed = 6,
     /// The requested operation is not allowed in the current state
-    PermissionDenied,
+    PermissionDenied = 7,
     /// Hardware failure during operation
-    HardwareFailure,
+    HardwareFailure = 8,
     /// Operation timed out
-    Timeout,
+    Timeout = 9,
     /// The pin is not configured for the requested operation
     /// (e.g., reading output value from input pin)
-    InvalidMode,
+    InvalidMode = 10,
     /// The pin is reserved and cannot be configured or driven
-    ReservedPin,
+    ReservedPin = 11,
+}
+
+impl From<u32> for GpioErrorKind {
+    fn from(val: u32) -> Self {
+        match val {
+            1 => GpioErrorKind::InvalidPort,
+            2 => GpioErrorKind::InvalidPin,
+            3 => GpioErrorKind::UnsupportedConfiguration,
+            4 => GpioErrorKind::ConfigurationFailed,
+            5 => GpioErrorKind::PinInUse,
+            6 => GpioErrorKind::InterruptConfigurationFailed,
+            7 => GpioErrorKind::PermissionDenied,
+            8 => GpioErrorKind::HardwareFailure,
+            9 => GpioErrorKind::Timeout,
+            10 => GpioErrorKind::InvalidMode,
+            11 => GpioErrorKind::ReservedPin,
+            _ => GpioErrorKind::Unknown,
+        }
+    }
 }
 
 /// Trait for GPIO errors
