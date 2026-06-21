@@ -10,6 +10,7 @@ load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
 load("//target/earlgrey/signing/keys:defs.bzl", "FPGA_ECDSA_KEY", "SILICON_ECDSA_KEY")
 load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_test")
+load("//third_party/lowrisc_opentitan:defs.bzl", "opentitan_rust_binary")
 
 rust_app(
     name = "test_usb",
@@ -26,14 +27,17 @@ rust_app(
         "//protocol/usb/cdc_acm",
         "//protocol/usb/stack",
         "//target/earlgrey/drivers:usb_driver",
+        "//target/earlgrey/registers:lc_ctrl",
         "//target/earlgrey/registers:pinmux",
         "//target/earlgrey/registers:top_earlgrey",
         "//target/earlgrey/registers:usbdev",
+        "//target/earlgrey/util",
         "//util/panic",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
         "@rust_crates//:aligned",
+        "@rust_crates//:zerocopy",
     ],
 )
 
@@ -95,18 +99,6 @@ rust_binary(
 )
 
 opentitan_test(
-    name = "usb_verilator_test",
-    timeout = "eternal",
-    environment = "//target/earlgrey/env:verilator",
-    interface = "verilator",
-    tags = [
-        "nightly_test",
-        "verilator",
-    ],
-    target = ":usb",
-)
-
-opentitan_test(
     name = "usb_hyper310_test",
     ecdsa_key = FPGA_ECDSA_KEY,
     environment = "//target/earlgrey/env:hyper310",
@@ -116,6 +108,26 @@ opentitan_test(
         "hyper310",
     ],
     target = ":usb",
+    test_harness = ":host_usb_serial_check",
+)
+
+opentitan_rust_binary(
+    name = "host_usb_serial_check",
+    srcs = ["host_usb_serial_check.rs"],
+    edition = "2024",
+    rustc_flags = [
+        "-C",
+        "link-arg=-Wl,--allow-shlib-undefined",
+    ],
+    deps = [
+        "//third_party/lowrisc_opentitan:opentitanlib",
+        "//third_party/lowrisc_opentitan:usb_test_helper",
+        "@ot_crate_index//:anyhow",
+        "@ot_crate_index//:clap",
+        "@ot_crate_index//:humantime",
+        "@ot_crate_index//:log",
+        "@ot_crate_index//:serialport",
+    ],
 )
 
 opentitan_test(
@@ -128,6 +140,7 @@ opentitan_test(
         "hyper340",
     ],
     target = ":usb",
+    test_harness = ":host_usb_serial_check",
 )
 
 opentitan_test(
@@ -140,4 +153,5 @@ opentitan_test(
         "hardware",
     ],
     target = ":usb",
+    test_harness = ":host_usb_serial_check",
 )

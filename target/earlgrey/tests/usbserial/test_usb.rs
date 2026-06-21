@@ -5,10 +5,14 @@
 #![no_main]
 #![allow(dead_code)]
 
+use earlgrey_util::device_id::format_device_id;
+use lc_ctrl::LcCtrl;
 use pw_status::{Error, Result, StatusCode};
 use test_usb_codegen::{handle, signals};
 use userspace::time::Instant;
 use userspace::{entry, syscall};
+
+use zerocopy::IntoBytes;
 
 use aligned::{Aligned, A4};
 use hal_usb::{ConfigDescriptor, DeviceDescriptor, StringDescriptorRef};
@@ -106,11 +110,19 @@ impl DescriptorSource for MyDescriptors<'_> {
 }
 
 fn handle_usb() -> Result<()> {
+    let lc_ctrl = unsafe { LcCtrl::new() };
+    let device_id: [u32; 8] = lc_ctrl.regs().device_id().read().into();
+    let mut dev_id_buf = [0_u8; 64];
+    let serial_str = format_device_id(&device_id, &mut dev_id_buf).map_err(|_| Error::Internal)?;
+    pw_log::info!("Serial Number: {}", serial_str);
+
+    let device_id_bytes = device_id.as_bytes();
+
     let mut serial_num_buffer = Aligned::<A4, _>([0_u8; 130]);
     let descriptors = MyDescriptors {
         serial_desc_bytes: hal_usb::hex_utf16_descriptor_aligned(
             &mut serial_num_buffer,
-            b"12345678",
+            device_id_bytes,
         )
         .unwrap(),
         product_desc_bytes: PRODUCT_ID_DEFAULT,
