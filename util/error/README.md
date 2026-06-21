@@ -21,24 +21,29 @@ pub const MY_MODULE: ErrorModule = ErrorModule::new(0x4d59);
 
 An `ErrorCode` is a 32-bit value composed of:
 *   Upper 16 bits: The `ErrorModule` ID.
-*   Lower 16 bits: A module-specific error value.
+*   Lower 16 bits: A module-specific error value (which may be further partitioned).
 
 `ErrorCode` implements `core::error::Error`, `Display`, and `Debug`. It formats as a hex representation of the 32-bit value (e.g., `0x4b450001`).
+
+You can extract the module ID using the [`module()`](lib.rs#L89) method.
 
 ```rust
 use util_error::ErrorCode;
 
 // Create an error code under MY_MODULE
 pub const MY_ERROR: ErrorCode = MY_MODULE.error(1);
+
+// Get the module ID (returns 0x4d59)
+let module_id = MY_ERROR.module();
 ```
 
-### Pigweed Integration
+### Pigweed Integration and Error Kinds
 
-`ErrorCode` supports integration with `pw_status::Error`. You can embed a Pigweed status into the lower 16 bits of the error code using `from_pw`.
+`ErrorCode` supports integration with `pw_status::Error` and custom error kind enums. You can embed a Pigweed status and a module-specific error kind into the lower 16 bits of the error code using [`from_pw`](lib.rs#L52).
 
 The lower 16 bits are partitioned as:
-*   Bits 5-15: Module-specific error code.
-*   Bits 0-4: Pigweed `pw_status::Error` (which is 5 bits).
+*   Bits 8-15: Module-specific error kind code (8-bit value, must be non-zero).
+*   Bits 0-7: Pigweed `pw_status::Error` (which is 5 bits, stored in the lowest bits).
 
 ```rust
 use util_error::ErrorModule;
@@ -46,9 +51,13 @@ use pw_status::Error;
 
 pub const MY_MODULE: ErrorModule = ErrorModule::new(0x4d59);
 
-// Create an error code that embeds pw_status::Error::InvalidArgument
+// Create an error code that embeds pw_status::Error::InvalidArgument and error kind 1
 pub const MY_INVALID_ARG_ERROR: ErrorCode = MY_MODULE.from_pw(1, Error::InvalidArgument);
 ```
+
+You can extract these components back from an `ErrorCode` using:
+*   [`as_pwerr()`](lib.rs#L109): Extracts the `pw_status::Error`.
+*   [`as_kind::<KIND>()`](lib.rs#L115): Extracts the module-specific error kind and converts it to `KIND` (which must implement `From<u32>`).
 
 ## Defined Modules
 

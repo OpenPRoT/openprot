@@ -10,8 +10,6 @@ use pw_status::Error;
 
 /// The generic flash error module.
 pub const FLASH_GENERIC: ErrorModule = ErrorModule::new(0x464c); //ascii `FL`.
-/// The flash device is busy.
-pub const FLASH_GENERIC_BUSY: ErrorCode = FLASH_GENERIC.from_pw(0, Error::Unavailable);
 /// The erase address is invalid (e.g., not page-aligned).
 pub const FLASH_GENERIC_ERASE_INVALID_ADDR: ErrorCode =
     FLASH_GENERIC.from_pw(1, Error::InvalidArgument);
@@ -39,28 +37,27 @@ pub const FLASH_GENERIC_ERASE_INVALID_SIZE: ErrorCode =
 /// The flash device is not initialized.
 pub const FLASH_GENERIC_NOT_INITIALIZED: ErrorCode =
     FLASH_GENERIC.from_pw(10, Error::FailedPrecondition);
+/// The flash device is busy.
+pub const FLASH_GENERIC_BUSY: ErrorCode = FLASH_GENERIC.from_pw(11, Error::Unavailable);
 
 /// SFDP: Invalid memory density.
 pub const FLASH_GENERIC_SFDP_INVALID_MEMORY_DENSITY: ErrorCode =
-    FLASH_GENERIC.from_pw(1024, Error::InvalidArgument);
+    FLASH_GENERIC.from_pw(128, Error::InvalidArgument);
 /// SFDP: Invalid signature.
 pub const FLASH_GENERIC_SFDP_INVALID_SIGNATURE: ErrorCode =
-    FLASH_GENERIC.from_pw(1025, Error::InvalidArgument);
+    FLASH_GENERIC.from_pw(129, Error::InvalidArgument);
 /// SFDP: No valid parameter header found.
 pub const FLASH_GENERIC_SFDP_NO_VALID_PARAMETER_HEADER_FOUND: ErrorCode =
-    FLASH_GENERIC.from_pw(1026, Error::InvalidArgument);
+    FLASH_GENERIC.from_pw(130, Error::InvalidArgument);
 /// SFDP: Parameters are too short.
 pub const FLASH_GENERIC_SFDP_PARAMETERS_TOO_SHORT: ErrorCode =
-    FLASH_GENERIC.from_pw(1027, Error::InvalidArgument);
+    FLASH_GENERIC.from_pw(131, Error::InvalidArgument);
 /// SFDP: Unsupported header major revision.
 pub const FLASH_GENERIC_SFDP_UNSUPPORTED_HEADER_MAJOR_REV: ErrorCode =
-    FLASH_GENERIC.from_pw(1028, Error::InvalidArgument);
+    FLASH_GENERIC.from_pw(132, Error::InvalidArgument);
 /// SFDP: Unsupported parameters major revision.
 pub const FLASH_GENERIC_SFDP_UNSUPPORTED_PARAMS_MAJOR_REV: ErrorCode =
-    FLASH_GENERIC.from_pw(1029, Error::InvalidArgument);
+    FLASH_GENERIC.from_pw(133, Error::InvalidArgument);
 /// SFDP: Parameters are too long.
 pub const FLASH_GENERIC_SFDP_PARAMETERS_TOO_LONG: ErrorCode =
-    FLASH_GENERIC.from_pw(1030, Error::InvalidArgument);
-
-/// The OpenTitan flash error module.
-pub const FLASH_OPENTITAN: ErrorModule = ErrorModule::new(0x464f); //ascii `FO`.
+    FLASH_GENERIC.from_pw(134, Error::InvalidArgument);
