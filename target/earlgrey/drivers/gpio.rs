@@ -4,7 +4,7 @@
 #![no_std]
 
 use core::fmt::Debug;
-use earlgrey_pinmux::{EarlGreyPinmux, Pad, PadConfig, Pull};
+use earlgrey_pinmux::{EarlGreyPinmux, Outsel, Pad, PadConfig, PeriphIn, Pull};
 use earlgrey_util_error::gpio::{EG_GPIO, EG_GPIO_INVALID_CONFIGURATION};
 use openprot_hal_blocking::gpio_port::{
     EdgeSensitivity, GpioError, GpioErrorKind, GpioErrorType, GpioInterrupt, GpioPort,
@@ -27,7 +27,7 @@ impl GpioError for EarlGreyGpioError {
 
 pub struct EarlGreyGpio {
     registers: gpio::RegisterBlock<ureg::RealMmioMut<'static>>,
-    pinmux: EarlGreyPinmux,
+    pub pinmux: EarlGreyPinmux,
 }
 
 impl EarlGreyGpio {
@@ -94,6 +94,8 @@ impl PinMask for GpioMask {
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[repr(u32)]
+#[rustfmt::skip]
 pub enum GpioPin {
     Pin0 = 0,
     Pin1 = 1,
@@ -127,6 +129,60 @@ pub enum GpioPin {
     Pin29 = 29,
     Pin30 = 30,
     Pin31 = 31,
+}
+
+impl GpioPin {
+    /// Convert a GpioPin to its PeriphIn value.
+    pub const fn as_periph(self) -> PeriphIn {
+        // This should really be a trait, but rust currently doesn't have const functions in traits.
+        // Gpios for PeriphIn are [0..31].
+        // nosemgrep
+        unsafe {
+            // SAFETY: The Gpio value range is [0..31] and is valid as PeriphIn.
+            // We should really use PeriphIn::try_from, but that isn't available in const context.
+            core::mem::transmute::<u32, PeriphIn>(self as u32)
+        }
+    }
+
+    /// Convert a GpioPin to its OutSel selector value.
+    pub const fn as_outsel(self) -> Outsel {
+        // This should really be a trait, but rust currently doesn't have const functions in traits.
+        // Gpios for Outsel are [3..34].
+        // nosemgrep
+        unsafe {
+            // SAFETY: The Gpio value range is [0..31] and is valid (plus 3) as Outsel.
+            // We should really use Outsel::try_from, but that isn't available in const context.
+            core::mem::transmute::<u32, Outsel>(self as u32 + 3)
+        }
+    }
+}
+
+impl From<GpioPin> for PeriphIn {
+    fn from(pin: GpioPin) -> PeriphIn {
+        pin.as_periph()
+    }
+}
+
+impl From<GpioPin> for Outsel {
+    fn from(pin: GpioPin) -> Outsel {
+        pin.as_outsel()
+    }
+}
+
+impl TryFrom<u32> for GpioPin {
+    type Error = ();
+    fn try_from(p: u32) -> Result<Self, Self::Error> {
+        if (0..32).contains(&p) {
+            Ok(unsafe { core::mem::transmute::<u32, GpioPin>(p) })
+        } else {
+            Err(())
+        }
+    }
+}
+impl From<GpioPin> for u32 {
+    fn from(pin: GpioPin) -> Self {
+        pin as u32
+    }
 }
 
 impl From<GpioPin> for GpioMask {
@@ -200,16 +256,18 @@ impl GpioPort for EarlGreyGpio {
 
         // Handle Pinmux and Pad attributes
         if let Some(pad) = config.pad {
-            let pin_idx = pins.0.trailing_zeros() as usize;
+            let pin_idx = pins.0.trailing_zeros();
+            let gpio_pin = GpioPin::try_from(pin_idx).map_err(|_| EG_GPIO_INVALID_CONFIGURATION)?;
 
             // DIO pads are dedicated and don't require routing,
             // only attribute configuration.
             if !pad.is_dio() {
                 if config.is_input {
-                    self.pinmux.connect_input(pin_idx, pad);
+                    self.pinmux.connect_input(gpio_pin.into(), pad)?;
                 }
                 if config.is_output {
-                    self.pinmux.connect_output(pad, pin_idx);
+                    // The output selector for GPIO pins starts at index 3.
+                    self.pinmux.connect_output(pad, gpio_pin.into())?;
                 }
             }
 
@@ -219,7 +277,7 @@ impl GpioPort for EarlGreyGpio {
                     pull: config.pull,
                     ..Default::default()
                 },
-            );
+            )?;
         }
 
         Ok(())

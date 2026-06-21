@@ -9,6 +9,7 @@ rust_library(
     srcs = [
         "gpio.rs",
         "lib.rs",
+        "pinmux.rs",
     ],
     crate_name = "earlgrey_util_error",
     edition = "2024",
