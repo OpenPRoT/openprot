@@ -17,16 +17,39 @@ use util_zfmt::messages::{ProcessExit, ProcessStart};
 fn sysmgr_server() -> Result<(), ErrorCode> {
     // SysmgrServer::new() will read boot log from retram and log boot info.
     let mut server = SysmgrServer::new()?;
-    let service_channel = IpcHandle::new(handle::SYSMGR_SERVICE);
+
+    syscall::wait_group_add(
+        handle::SYSMGR_WAIT_GROUP,
+        handle::SYSMGR_UPDATER_SERVICE,
+        Signals::READABLE,
+        1, // token 1 = Updater
+    )
+    .map_err(ErrorCode::kernel_error)?;
+
+    syscall::wait_group_add(
+        handle::SYSMGR_WAIT_GROUP,
+        handle::SYSMGR_USB_SERVICE,
+        Signals::READABLE,
+        2, // token 2 = USB
+    )
+    .map_err(ErrorCode::kernel_error)?;
+
+    let updater_channel = IpcHandle::new(handle::SYSMGR_UPDATER_SERVICE);
+    let usb_channel = IpcHandle::new(handle::SYSMGR_USB_SERVICE);
     let mut buf = [0u8; 1024];
 
     loop {
         // Wait for incoming IPC request.
-        syscall::object_wait(handle::SYSMGR_SERVICE, Signals::READABLE, Instant::MAX)
-            .map_err(ErrorCode::kernel_error)?;
+        let wait_result =
+            syscall::object_wait(handle::SYSMGR_WAIT_GROUP, Signals::READABLE, Instant::MAX)
+                .map_err(ErrorCode::kernel_error)?;
 
-        // Process request.
-        server.handle_one(&service_channel, &mut buf)?;
+        let token = wait_result.user_data;
+        if token == 1 {
+            server.handle_one(&updater_channel, &mut buf)?;
+        } else if token == 2 {
+            server.handle_one(&usb_channel, &mut buf)?;
+        }
     }
 }
 

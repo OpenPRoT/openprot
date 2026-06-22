@@ -83,23 +83,41 @@ fn flash_server() -> Result<(), ErrorCode> {
 
     syscall::wait_group_add(
         handle::FLASH_WAIT_GROUP,
-        handle::EFLASH_SERVICE,
+        handle::EFLASH_UPDATEMGR_SERVICE,
         syscall::Signals::READABLE,
-        1, // token 1 = EFlash
+        1, // token 1 = EFlash updatemgr
     )
     .map_err(ErrorCode::kernel_error)?;
 
     syscall::wait_group_add(
         handle::FLASH_WAIT_GROUP,
-        handle::SPI_FLASH_SERVICE,
+        handle::EFLASH_USB_SERVICE,
         syscall::Signals::READABLE,
-        2, // token 2 = SPI Flash
+        2, // token 2 = EFlash usb
+    )
+    .map_err(ErrorCode::kernel_error)?;
+
+    syscall::wait_group_add(
+        handle::FLASH_WAIT_GROUP,
+        handle::SPI_FLASH_UPDATEMGR_SERVICE,
+        syscall::Signals::READABLE,
+        3, // token 3 = SPI Flash updatemgr
+    )
+    .map_err(ErrorCode::kernel_error)?;
+
+    syscall::wait_group_add(
+        handle::FLASH_WAIT_GROUP,
+        handle::SPI_FLASH_USB_SERVICE,
+        syscall::Signals::READABLE,
+        4, // token 4 = SPI Flash usb
     )
     .map_err(ErrorCode::kernel_error)?;
 
     let mut buf = [0u8; 2064];
-    let eflash_ipc = IpcHandle::new(handle::EFLASH_SERVICE);
-    let spi_flash_ipc = IpcHandle::new(handle::SPI_FLASH_SERVICE);
+    let eflash_updatemgr_ipc = IpcHandle::new(handle::EFLASH_UPDATEMGR_SERVICE);
+    let eflash_usb_ipc = IpcHandle::new(handle::EFLASH_USB_SERVICE);
+    let spi_flash_updatemgr_ipc = IpcHandle::new(handle::SPI_FLASH_UPDATEMGR_SERVICE);
+    let spi_flash_usb_ipc = IpcHandle::new(handle::SPI_FLASH_USB_SERVICE);
 
     loop {
         let wait_result = syscall::object_wait(
@@ -111,9 +129,13 @@ fn flash_server() -> Result<(), ErrorCode> {
 
         let token = wait_result.user_data;
         if token == 1 {
-            eflash_server.handle_one(&eflash_ipc, &mut buf)?;
+            eflash_server.handle_one(&eflash_updatemgr_ipc, &mut buf)?;
         } else if token == 2 {
-            spi_flash_server.handle_one(&spi_flash_ipc, &mut buf)?;
+            eflash_server.handle_one(&eflash_usb_ipc, &mut buf)?;
+        } else if token == 3 {
+            spi_flash_server.handle_one(&spi_flash_updatemgr_ipc, &mut buf)?;
+        } else if token == 4 {
+            spi_flash_server.handle_one(&spi_flash_usb_ipc, &mut buf)?;
         }
     }
 }

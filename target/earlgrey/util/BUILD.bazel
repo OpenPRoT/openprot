@@ -55,6 +55,8 @@ rust_library(
         ":util",
         "//target/earlgrey/services/sysmgr:client",
         "//util/error",
+        "//util/io",
+        "@rust_crates//:zerocopy",
     ],
 )
 
@@ -66,8 +68,8 @@ rust_library(
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],
     deps = [
-        ":util",
         ":fw_update",
+        ":util",
         "//hal/blocking/flash",
         "//hal/blocking/usb:hal_usb",
         "//protocol/usb/dfu",

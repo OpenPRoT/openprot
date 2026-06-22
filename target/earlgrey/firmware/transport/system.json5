@@ -17,7 +17,7 @@
   apps: [
     {
       name: "transport",
-      flash_size_bytes: 49152,
+      flash_size_bytes: 65536,
       processes: [
         {
           name: "logmgr",
@@ -41,6 +41,10 @@
             },
             {
               name: "logger_usb",
+              type: "channel_handler"
+            },
+            {
+              name: "logger_updatemgr",
               type: "channel_handler"
             },
             {
@@ -82,13 +86,21 @@
               handler_object_name: "logger_sysmgr"
             },
             {
-              name: "sysmgr_service",
+              name: "sysmgr_updater_service",
               type: "channel_handler"
             },
             {
+              name: "sysmgr_usb_service",
+              type: "channel_handler"
+            },
+            {
+              name: "sysmgr_wait_group",
+              type: "wait_group"
+            },
+            {
               name: "sysmgr_thread",
+              type: "thread",
               kernel_stack_size_bytes: 2048,
-              type: "thread"
             }
           ],
           memory_mappings: [
@@ -109,6 +121,35 @@
               type: "device",
               start_address: 0x40140000,
               size_bytes: 0x100
+            },
+          ]
+        },
+        {
+          name: "updatemgr",
+          ram_size_bytes: 8192,
+          objects: [
+            {
+              name: "logger_updatemgr",
+              type: "channel_initiator",
+              handler_process: "logmgr",
+              handler_object_name: "logger_updatemgr"
+            },
+            {
+              name: "sysmgr_updater_client",
+              type: "channel_initiator",
+              handler_process: "sysmgr",
+              handler_object_name: "sysmgr_updater_service"
+            },
+            {
+              name: "spi_flash_updatemgr",
+              type: "channel_initiator",
+              handler_process: "flash_server",
+              handler_object_name: "spi_flash_updatemgr_service"
+            },
+            {
+              name: "updatemgr_thread",
+              kernel_stack_size_bytes: 4096,
+              type: "thread"
             }
           ]
         },
@@ -142,11 +183,19 @@
               handler_object_name: "logger_flash"
             },
             {
-              name: "eflash_service",
+              name: "eflash_updatemgr_service",
               type: "channel_handler"
             },
             {
-              name: "spi_flash_service",
+              name: "eflash_usb_service",
+              type: "channel_handler"
+            },
+            {
+              name: "spi_flash_updatemgr_service",
+              type: "channel_handler"
+            },
+            {
+              name: "spi_flash_usb_service",
               type: "channel_handler"
             },
             {
@@ -229,19 +278,19 @@
               name: "flash_usb",
               type: "channel_initiator",
               handler_process: "flash_server",
-              handler_object_name: "eflash_service"
+              handler_object_name: "eflash_usb_service"
             },
             {
               name: "spi_flash_usb",
               type: "channel_initiator",
               handler_process: "flash_server",
-              handler_object_name: "spi_flash_service"
+              handler_object_name: "spi_flash_usb_service"
             },
             {
               name: "sysmgr_usb",
               type: "channel_initiator",
               handler_process: "sysmgr",
-              handler_object_name: "sysmgr_service"
+              handler_object_name: "sysmgr_usb_service"
             },
             {
               name: "usbmgr_thread",
