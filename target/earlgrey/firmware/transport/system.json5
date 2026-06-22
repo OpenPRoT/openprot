@@ -147,6 +147,12 @@
               handler_object_name: "spi_flash_updatemgr_service"
             },
             {
+              name: "flash_updatemgr",
+              type: "channel_initiator",
+              handler_process: "flash_server",
+              handler_object_name: "eflash_updatemgr_service"
+            },
+            {
               name: "updatemgr_thread",
               kernel_stack_size_bytes: 4096,
               type: "thread"
