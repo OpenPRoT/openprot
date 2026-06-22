@@ -6,7 +6,7 @@
 #![no_std]
 
 use earlgrey_sysmgr_client::BootInfo;
-use earlgrey_util::manifest::Manifest;
+use earlgrey_util::manifest::{Manifest, ManifestExtHeader, MANIFEST_EXT_ID_OWNER_TRANSFER_BLOB};
 use earlgrey_util::tags::{BootSlot, ManifestIdentifier};
 use util_error::ErrorCode;
 use util_io::RandomRead;
@@ -141,6 +141,7 @@ impl FwUpdate {
                 app_src_offset: offset,
                 app_len: app.app_len,
                 app_target_addr: app.app_target_addr,
+                owner_block_offset: app.owner_block_offset,
             }));
         }
 
@@ -169,6 +170,7 @@ impl FwUpdate {
                         app_src_offset: app_abs_offset,
                         app_len: app.app_len,
                         app_target_addr: app.app_target_addr,
+                        owner_block_offset: app.owner_block_offset,
                     }));
                 }
             }
@@ -250,16 +252,34 @@ impl FwUpdate {
             return None;
         }
 
+        let owner_block_offset = Self::find_owner_block_offset(hdr, abs_offset);
+
         Some(AppManifestInfo {
             app_len,
             app_target_addr,
+            owner_block_offset,
         })
+    }
+
+    fn find_owner_block_offset(hdr: &Manifest, base_offset: usize) -> Option<usize> {
+        for entry in &hdr.extensions.entries {
+            if entry.identifier == MANIFEST_EXT_ID_OWNER_TRANSFER_BLOB {
+                let ext_offset = entry.offset as usize;
+                if ext_offset > 0 {
+                    return Some(
+                        base_offset + ext_offset + core::mem::size_of::<ManifestExtHeader>(),
+                    );
+                }
+            }
+        }
+        None
     }
 }
 
 struct AppManifestInfo {
     app_len: usize,
     app_target_addr: usize,
+    owner_block_offset: Option<usize>,
 }
 
 pub struct FirmwareBundle {
@@ -268,4 +288,5 @@ pub struct FirmwareBundle {
     pub app_src_offset: usize,
     pub app_len: usize,
     pub app_target_addr: usize,
+    pub owner_block_offset: Option<usize>,
 }
