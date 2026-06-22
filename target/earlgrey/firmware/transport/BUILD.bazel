@@ -120,6 +120,7 @@ rust_process(
         "//hal/blocking/flash",
         "//services/flash:client",
         "//target/earlgrey/services/sysmgr:server",
+        "//target/earlgrey/util",
         "//util/error",
         "//util/io",
         "//util/ipc",
