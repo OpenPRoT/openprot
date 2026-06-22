@@ -54,7 +54,10 @@ rust_library(
     deps = [
         ":util",
         "//target/earlgrey/services/sysmgr:client",
+        "//target/earlgrey/util/error",
         "//util/error",
+        "//util/io",
+        "@rust_crates//:zerocopy",
     ],
 )
 

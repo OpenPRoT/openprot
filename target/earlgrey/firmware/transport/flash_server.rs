@@ -85,23 +85,41 @@ fn flash_server() -> Result<(), ErrorCode> {
 
     syscall::wait_group_add(
         handle::FLASH_WAIT_GROUP,
-        handle::EFLASH_SERVICE,
+        handle::EFLASH_UPDATEMGR_SERVICE,
         syscall::Signals::READABLE,
-        handle::EFLASH_SERVICE as usize,
+        handle::EFLASH_UPDATEMGR_SERVICE as usize,
     )
     .map_err(ErrorCode::kernel_error)?;
 
     syscall::wait_group_add(
         handle::FLASH_WAIT_GROUP,
-        handle::SPI_FLASH_SERVICE,
+        handle::EFLASH_USB_SERVICE,
         syscall::Signals::READABLE,
-        handle::SPI_FLASH_SERVICE as usize,
+        handle::EFLASH_USB_SERVICE as usize,
+    )
+    .map_err(ErrorCode::kernel_error)?;
+
+    syscall::wait_group_add(
+        handle::FLASH_WAIT_GROUP,
+        handle::SPI_FLASH_UPDATEMGR_SERVICE,
+        syscall::Signals::READABLE,
+        handle::SPI_FLASH_UPDATEMGR_SERVICE as usize,
+    )
+    .map_err(ErrorCode::kernel_error)?;
+
+    syscall::wait_group_add(
+        handle::FLASH_WAIT_GROUP,
+        handle::SPI_FLASH_USB_SERVICE,
+        syscall::Signals::READABLE,
+        handle::SPI_FLASH_USB_SERVICE as usize,
     )
     .map_err(ErrorCode::kernel_error)?;
 
     let mut buf = [0u8; 2064];
-    let eflash_ipc = IpcHandle::new(handle::EFLASH_SERVICE);
-    let spi_flash_ipc = IpcHandle::new(handle::SPI_FLASH_SERVICE);
+    let eflash_updatemgr_ipc = IpcHandle::new(handle::EFLASH_UPDATEMGR_SERVICE);
+    let eflash_usb_ipc = IpcHandle::new(handle::EFLASH_USB_SERVICE);
+    let spi_flash_updatemgr_ipc = IpcHandle::new(handle::SPI_FLASH_UPDATEMGR_SERVICE);
+    let spi_flash_usb_ipc = IpcHandle::new(handle::SPI_FLASH_USB_SERVICE);
 
     loop {
         let wait_result = syscall::object_wait(
@@ -112,10 +130,14 @@ fn flash_server() -> Result<(), ErrorCode> {
         .map_err(ErrorCode::kernel_error)?;
 
         let channel = wait_result.user_data as u32;
-        if channel == handle::EFLASH_SERVICE {
-            eflash_server.handle_one(&eflash_ipc, &mut buf)?;
-        } else if channel == handle::SPI_FLASH_SERVICE {
-            spi_flash_server.handle_one(&spi_flash_ipc, &mut buf)?;
+        if channel == handle::EFLASH_UPDATEMGR_SERVICE {
+            eflash_server.handle_one(&eflash_updatemgr_ipc, &mut buf)?;
+        } else if channel == handle::EFLASH_USB_SERVICE {
+            eflash_server.handle_one(&eflash_usb_ipc, &mut buf)?;
+        } else if channel == handle::SPI_FLASH_UPDATEMGR_SERVICE {
+            spi_flash_server.handle_one(&spi_flash_updatemgr_ipc, &mut buf)?;
+        } else if channel == handle::SPI_FLASH_USB_SERVICE {
+            spi_flash_server.handle_one(&spi_flash_usb_ipc, &mut buf)?;
         }
     }
 }
