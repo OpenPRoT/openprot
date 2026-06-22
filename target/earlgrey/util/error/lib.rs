@@ -22,6 +22,8 @@ pub const EG_ERROR_CERT_BAD_NAME: ErrorCode = EG_ERROR.from_pw(2, Error::Invalid
 pub const EG_ERROR_BAD_BOOT_LOG: ErrorCode = EG_ERROR.from_pw(3, Error::Unknown);
 /// The boot slot is unknown or invalid.
 pub const EG_ERROR_BOOT_SLOT_UNKNOWN: ErrorCode = EG_ERROR.from_pw(4, Error::Unknown);
+/// The firmware update bundle was not found on external flash.
+pub const EG_ERROR_UPDATE_NOT_FOUND: ErrorCode = EG_ERROR.from_pw(5, Error::NotFound);
 
 /// The Earlgrey flash error module (ASCII `'EF'`).
 pub const EG_FLASH: ErrorModule = ErrorModule::new(0x4546);

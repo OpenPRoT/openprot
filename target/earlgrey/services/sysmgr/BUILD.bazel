@@ -38,6 +38,7 @@ rust_library(
         "//target/earlgrey/util",
         "//target/earlgrey/util/error",
         "//util/error",
+        "//util/io",
         "//util/ipc",
         "//util/types",
         "//util/zfmt",
