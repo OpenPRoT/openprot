@@ -129,6 +129,9 @@ pub fn logger() -> &'static IpcLogger<IpcHandle> {
 #[cfg(not(test))]
 #[macro_export]
 macro_rules! trace {
+    ($fmt:literal $(, $name:ident = $val:expr)* $(,)?) => {
+        zfmt::log_trace!(*$crate::logger(), $fmt $(, $name = $val)*);
+    };
     ($event:expr) => {
         zfmt::log_trace!(*$crate::logger(), $event);
     };
@@ -137,6 +140,9 @@ macro_rules! trace {
 #[cfg(not(test))]
 #[macro_export]
 macro_rules! debug {
+    ($fmt:literal $(, $name:ident = $val:expr)* $(,)?) => {
+        zfmt::log_debug!(*$crate::logger(), $fmt $(, $name = $val)*);
+    };
     ($event:expr) => {
         zfmt::log_debug!(*$crate::logger(), $event);
     };
