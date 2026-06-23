@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Ported from opentitan/third_party/qemu/extensions.bzl.
-# Pinned to QEMU tag v10.2.0-2026-01-15.
+# Pinned to QEMU tag v10.2.0-2026-06-14.
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
@@ -84,7 +84,7 @@ qemu_bazel_build_or_forward = repository_rule(
 )
 
 def _qemu_opentitan_repos():
-    QEMU_VERSION = "v10.2.0-2026-01-15"
+    QEMU_VERSION = "v10.2.0-2026-06-14"
 
     url = "/".join([
         "https://github.com/lowRISC/qemu/releases/download",
@@ -96,7 +96,7 @@ def _qemu_opentitan_repos():
         name = "qemu_opentitan_src",
         url = url,
         build_file = Label(":BUILD.qemu_opentitan.bazel"),
-        sha256 = "9e97f93b09912c904e84f06571e7b49023ccb405dd3caa232ad1e82a3f7b381c",
+        sha256 = "0162acd6a5d262669910592304cd7771a4b4944889305357a22dcf10706dab36",
         patch_cmds = ["touch {}".format(_ARCHIVE_MARKER_FILE)],
     )
 

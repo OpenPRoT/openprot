@@ -1,0 +1,50 @@
+--- a/pw_kernel/syscall/BUILD.bazel
++++ b/pw_kernel/syscall/BUILD.bazel
+@@ -15,4 +15,3 @@
+ load("@bazel_skylib//lib:selects.bzl", "selects")
+ load("@rules_rust//rust:defs.bzl", "rust_library")
+-load("//pw_kernel:flags.bzl", "KERNEL_TEST_DEPS", "KERNEL_TEST_RUSTC_FLAGS")
+ load("//pw_kernel/arch/arm_cortex_m:defs.bzl", "SUPPORTED_CORTEX_M_CPUS")
+@@ -22,10 +21,8 @@
+ rust_library(
+     name = "exit_status",
+     srcs = [
+         "exit_status.rs",
+     ],
+     edition = "2024",
+-    rustc_flags = KERNEL_TEST_RUSTC_FLAGS,
+     tags = ["kernel"],
+-    deps = KERNEL_TEST_DEPS,
+ )
+@@ -33,18 +30,13 @@
+ rust_library(
+     name = "syscall_defs",
+     srcs = [
+         "syscall_defs.rs",
+     ],
+     edition = "2024",
+-    rustc_flags = KERNEL_TEST_RUSTC_FLAGS,
+     tags = ["kernel"],
+-    target_compatible_with = select({
+-        "//pw_kernel/userspace:userspace_build_enabled": [],
+-        "//conditions:default": ["@platforms//:incompatible"],
+-    }),
+     deps = [
+         ":exit_status",
+         "//pw_status/rust:pw_status",
+         "@rust_crates//:bitflags",
+-    ] + KERNEL_TEST_DEPS,
++    ],
+ )
+@@ -64,11 +56,7 @@
+     edition = "2024",
+     tags = ["kernel"],
+-    target_compatible_with = select({
+-        "//pw_kernel/userspace:userspace_build_enabled": [],
+-        "//conditions:default": ["@platforms//:incompatible"],
+-    }),
+     deps = [
+         ":syscall_defs",
+         "//pw_status/rust:pw_status",
+     ],
+ )

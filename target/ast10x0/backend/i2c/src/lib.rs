@@ -41,7 +41,8 @@
 
 use ast1060_pac::{i2c::RegisterBlock, i2cbuff::RegisterBlock as BuffRegisterBlock};
 use embedded_hal::i2c::{ErrorType, I2c, Operation, SevenBitAddress};
-use openprot_hal_blocking::i2c_hardware::slave::{I2cSlaveBuffer, I2cSlaveCore};
+use i2c_api::seam::I2cSlaveEvent;
+use openprot_hal_blocking::i2c_hardware::slave::{I2cIsrEvent, I2cSlaveBuffer, I2cSlaveCore};
 use openprot_hal_blocking::i2c_hardware::I2cBusRecovery;
 
 pub use ast10x0_peripherals::i2c::{
@@ -195,6 +196,17 @@ impl I2cSlaveBuffer<SevenBitAddress> for Ast1060I2cBackend {
 impl I2cBusRecovery for Ast1060I2cBackend {
     fn recover_bus(&mut self) -> Result<(), Self::Error> {
         self.make_driver().recover_bus()
+    }
+}
+
+/// Explicit impl so the server-runtime receives the actual hardware event kind
+/// (ReadRequest, Stop, etc.) rather than the default DataReceived from
+/// `poll_slave_data()`. The inner `Ast1060I2c::try_next_slave_event` is an
+/// inherent method; routing through this explicit trait impl is the only way
+/// to reach it via trait dispatch (a blanket on I2cSlaveBuffer would shadow it).
+impl I2cSlaveEvent for Ast1060I2cBackend {
+    fn try_next_slave_event(&mut self) -> Result<Option<(I2cIsrEvent, usize)>, Self::Error> {
+        self.make_driver().try_next_slave_event()
     }
 }
 

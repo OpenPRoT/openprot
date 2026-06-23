@@ -134,7 +134,7 @@ mod tests {
         let n = dispatch_slave(&mut s, &req(I2cOp::SlaveReceive, 0), &mut r);
         let h = zerocopy::Ref::<_, I2cResponseHeader>::from_bytes(&r[..I2cResponseHeader::SIZE])
             .unwrap();
-        assert_eq!(h.error_code(), I2cError::InvalidOperation);
+        assert_eq!(h.error_code(), Some(I2cError::InvalidOperation));
         let _ = n;
 
         // Too-short request: rejected, no panic.

@@ -128,13 +128,13 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
             self.regs().i2cs4c().read().dmarx_actual_len_byte().bits() as usize
         } else {
             // Hardware includes the I2C address byte in the buffer count (packet mode,
-            // I2CC00 bit 20). Subtract 1 to report only the payload byte count.
+            // I2CC00 bit 20). Report the full count including that byte, consistent
+            // with what slave_read returns.
             self.regs()
                 .i2cc0c()
                 .read()
                 .actual_rxd_pool_buffer_size()
-                .bits()
-                .saturating_sub(1) as usize
+                .bits() as usize
         }
     }
 
@@ -174,11 +174,6 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
 
     /// Configure the controller for slave mode
     pub fn configure_slave(&mut self, config: &SlaveConfig) -> Result<(), I2cError> {
-        // Ensure master mode is disabled first
-        self.regs()
-            .i2cc00()
-            .modify(|_, w| w.enbl_master_fn().clear_bit());
-
         // Set slave address
         self.regs().i2cs40().write(|w| unsafe {
             w.slave_dev_addr1()
@@ -318,20 +313,20 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
         // Get receive length from buffer length register
         if self.xfer_mode == I2cXferMode::BufferMode {
             // AST_I2CC_SLAVE_PKT_SAVE_ADDR (I2CC00 bit 20) deposits the I2C
-            // address byte at buffer offset 0. Read the raw count once, subtract
-            // 1 for that byte, then copy only the payload (skipping offset 0).
+            // address byte at buffer offset 0. Include it in the returned data;
+            // callers that need the full SMBus frame (e.g. MctpI2cEncap::decode)
+            // depend on it being present.
             let raw = self
                 .regs()
                 .i2cc0c()
                 .read()
                 .actual_rxd_pool_buffer_size()
                 .bits() as usize;
-            let data_len = raw.saturating_sub(1);
-            let to_read = data_len.min(buffer.len()).min(BUFFER_SIZE - 1);
+            let to_read = raw.min(buffer.len()).min(BUFFER_SIZE);
 
             let mut tmp = [0u8; BUFFER_SIZE];
-            self.copy_from_buffer(&mut tmp[..1 + to_read])?;
-            buffer[..to_read].copy_from_slice(&tmp[1..1 + to_read]);
+            self.copy_from_buffer(&mut tmp[..to_read])?;
+            buffer[..to_read].copy_from_slice(&tmp[..to_read]);
 
             // Re-enable RX buffer
             let mut cmd = constants::AST_I2CS_ACTIVE_ALL | constants::AST_I2CS_PKT_MODE_EN;
@@ -344,15 +339,13 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
         } else if self.xfer_mode == I2cXferMode::DmaMode {
             // DMA mode: the hardware has already DMA'd into `self.dma_buf`.
             // AST_I2CC_SLAVE_PKT_SAVE_ADDR deposits the address byte at dma_buf[0];
-            // subtract 1 and skip it, matching the buffer-mode treatment above.
+            // include it in the returned data (matches buffer-mode treatment above).
             let hw_len = self.regs().i2cs4c().read().dmarx_actual_len_byte().bits() as usize;
-            let data_len = hw_len.saturating_sub(1);
-            let to_read = data_len.min(buffer.len());
+            let to_read = hw_len.min(buffer.len());
 
             if let Some(dma_buf) = self.slave_dma_buf.as_deref() {
-                let src_len = to_read.min(dma_buf.len().saturating_sub(1));
-                if let (Some(src), Some(dst)) =
-                    (dma_buf.get(1..1 + src_len), buffer.get_mut(..src_len))
+                let src_len = to_read.min(dma_buf.len());
+                if let (Some(src), Some(dst)) = (dma_buf.get(..src_len), buffer.get_mut(..src_len))
                 {
                     dst.copy_from_slice(src);
                 }
@@ -464,6 +457,14 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
         let status = self.regs().i2cs24().read().bits();
 
         if status == 0 {
+            // Master status register i2cm14 retains bits after a master operation
+            // and keeps the shared IRQ line asserted. Clear it here to stop the storm.
+            let m14 = self.regs().i2cm14().read().bits();
+            if m14 != 0 {
+                unsafe {
+                    self.regs().i2cm14().write(|w| w.bits(m14));
+                }
+            }
             return None;
         }
 
