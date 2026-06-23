@@ -20,7 +20,7 @@ rust_library(
             "@pigweed//pw_kernel/userspace",
         ],
         "//conditions:default": [
-            "@pigweed//pw_kernel/lib/time",
+            "@pigweed//pw_time/rust:pw_time",
         ],
     }),
 )

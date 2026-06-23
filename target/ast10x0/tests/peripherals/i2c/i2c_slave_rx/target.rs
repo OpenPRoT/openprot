@@ -18,8 +18,9 @@ pub struct Target {}
 /// Slave address the test binary listens on.
 const SLAVE_ADDR: u8 = 0x42;
 
-/// Payload the master binary sends.
-const EXPECTED_PAYLOAD: &[u8] = &[0xDE, 0xAD, 0xBE, 0xEF];
+/// Expected buffer contents: SLAVE_PKT_SAVE_ADDR prepends dest address byte
+/// (SLAVE_ADDR << 1) at offset 0, followed by the master's payload [0xDE, 0xAD, 0xBE, 0xEF].
+const EXPECTED_PAYLOAD: &[u8] = &[SLAVE_ADDR << 1, 0xDE, 0xAD, 0xBE, 0xEF];
 
 /// Bus 2 config: standard-speed buffer-mode, no SMBus timeout.
 const SLAVE_CFG: I2cConfig = I2cConfig {
@@ -119,15 +120,17 @@ fn run_slave_rx_test() -> Result<(), &'static str> {
     let received = &rx[..n];
     if received != EXPECTED_PAYLOAD {
         pw_log::error!(
-            "payload mismatch: got [{:02x} {:02x} {:02x} {:02x}] expected [{:02x} {:02x} {:02x} {:02x}]",
+            "payload mismatch: got [{:02x} {:02x} {:02x} {:02x} {:02x}] expected [{:02x} {:02x} {:02x} {:02x} {:02x}]",
             received[0] as u32,
             received[1] as u32,
             received[2] as u32,
             received[3] as u32,
+            received[4] as u32,
             EXPECTED_PAYLOAD[0] as u32,
             EXPECTED_PAYLOAD[1] as u32,
             EXPECTED_PAYLOAD[2] as u32,
             EXPECTED_PAYLOAD[3] as u32,
+            EXPECTED_PAYLOAD[4] as u32,
         );
         return Err("payload content mismatch");
     }

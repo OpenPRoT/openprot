@@ -207,9 +207,10 @@ pub(crate) fn spi_freq_div(sysclk_mhz: u32, max_freq_mhz: u32) -> Result<u32, Sm
             }
 
             let divisor = (j as u32) + 1 + (i * 16);
-            let freq = sysclk_mhz / divisor;
-            if max_freq_mhz >= freq {
-                return Ok((i << 24) | (div_val << 8));
+            if let Some(prod) = max_freq_mhz.checked_mul(divisor) {
+                if sysclk_mhz <= prod {
+                    return Ok((i << 24) | (div_val << 8));
+                }
             }
         }
     }
@@ -244,9 +245,9 @@ pub(crate) fn get_mid_point_of_longest_one(buf: &[u8]) -> i32 {
     }
 
     if max_cnt < 4 {
-        return -1;
+        -1
     } else {
-        return i32::try_from(mid_point).unwrap();
+        i32::try_from(mid_point).unwrap_or(-1)
     }
 }
 

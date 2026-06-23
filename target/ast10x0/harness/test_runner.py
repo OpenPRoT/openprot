@@ -152,7 +152,7 @@ class UartMonitor:
             for is_token, span in self._token_parser.read_messages(raw):
                 if not is_token:
                     text = span.decode("utf-8", errors="replace")
-                    print(text, end="", flush=True)
+                    os.write(1, text.encode("utf-8", errors="replace"))
                     self._write_log(text)
                     continue
 
@@ -168,21 +168,26 @@ class UartMonitor:
 
                 if result is not None and result.ok():
                     decoded_str = str(result)
-                    print(f"\033[32m{decoded_str}\033[0m", end="", flush=True)
+                    os.write(
+                        1,
+                        f"\033[32m{decoded_str}\033[0m".encode(
+                            "utf-8", errors="replace"
+                        ),
+                    )
                     self._write_log(decoded_str)
                 else:
-                    print(raw_text, end="", flush=True)
+                    os.write(1, raw_text.encode("utf-8", errors="replace"))
                     self._write_log(raw_text)
             return
 
         text = raw.decode("utf-8", errors="replace")
-        print(text, end="", flush=True)
+        os.write(1, text.encode("utf-8", errors="replace"))
         self._write_log(text)
 
     def display_stream(self, pipe) -> None:
         """Read raw bytes from pipe and detokenize for display until EOF."""
         while True:
-            chunk = pipe.read(4096)
+            chunk = pipe.raw.read(4096)
             if not chunk:
                 break
             self.print_uart_data(chunk)
@@ -272,7 +277,6 @@ def _run_remote(
         f" --srst-pin {gpio['srst_pin']}"
         f" --fwspick-pin {gpio['fwspick_pin']}"
         f" --baudrate {baudrate}"
-        f" --timeout {args.timeout}"
     )
     if args.parse_only:
         remote_cmd += " --stream-only"
@@ -333,12 +337,6 @@ def main() -> int:
         help=f"Override baud rate from evb_config.toml (default: {config['uart']['baudrate']})",
     )
     parser.add_argument(
-        "--timeout",
-        type=int,
-        default=600,
-        help="Seconds to wait for a test result sentinel (0 = no timeout, default: 600)",
-    )
-    parser.add_argument(
         "--log-file",
         help="Write detokenized UART output to this file",
     )
@@ -353,7 +351,13 @@ def main() -> int:
         action="store_true",
         help="Skip GPIO and firmware upload; stream and detokenize UART output only",
     )
-    args = parser.parse_args()
+    args, remaining = parser.parse_known_args()
+
+    if os.environ.get("PW_RUNNER_PASSTHROUGH") == "1":
+        import subprocess
+
+        res = subprocess.run([args.firmware] + remaining)
+        return res.returncode
 
     uart_device = os.environ.get("UART_DEVICE") or config["uart"]["serial_port"]
 

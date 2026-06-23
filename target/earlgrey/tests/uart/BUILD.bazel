@@ -43,7 +43,7 @@ rust_app(
     deps = [
         "//target/earlgrey/registers",
         "//util/panic",
-        "@pigweed//pw_kernel/lib/pw_assert",
+        "@pigweed//pw_assert/rust:pw_assert",
         "@pigweed//pw_kernel/syscall:syscall_user",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
@@ -155,6 +155,10 @@ opentitan_test(
     target = ":uart",
 )
 
-# TODO: QEMU ot-earlgrey machine doesn't fire UART1 RX-watermark interrupts —
-# the loopback test hangs waiting for an interrupt that never arrives.
-# Re-enable when lowRISC QEMU validates interrupt-driven UART under ot-earlgrey.
+opentitan_test(
+    name = "uart_qemu_test",
+    timeout = "moderate",
+    interface = "qemu",
+    tags = ["qemu"],
+    target = ":uart",
+)

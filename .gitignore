@@ -1,6 +1,7 @@
 # Build
 rust-project.json
 user.bazelrc
+.bazelrc-site
 /bazel-*
 /out
 target/rust-analyzer/
