@@ -105,9 +105,14 @@ def _acquire_lock(host: str, timeout: int = _LOCK_ACQUIRE_TIMEOUT) -> bool:
         r = _ssh(host, create, capture_output=True)
         if r.returncode == 0:
             return True
+        if r.stderr.strip():
+            print(r.stderr.decode(errors="replace").strip(), file=sys.stderr)
+            return False
         _ssh(host, stale_check, capture_output=True)
         time.sleep(2)
-    print(f"Timeout acquiring Pi lock after {timeout}s", file=sys.stderr)
+    print(
+        f"Timeout acquiring Pi lock after {timeout}s (Pi may be busy)", file=sys.stderr
+    )
     return False
 
 
