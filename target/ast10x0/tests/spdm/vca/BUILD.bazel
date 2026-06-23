@@ -57,14 +57,47 @@ rust_binary(
 )
 
 rust_app(
+    name = "i2c_server",
+    srcs = ["i2c_server_main.rs"],
+    codegen_crate_name = "app_i2c_server",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//services/i2c/server-runtime:i2c_server_runtime",
+        "//target/ast10x0/backend/i2c:i2c_backend_ast10x0",
+        "//target/ast10x0/peripherals",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)
+
+rust_app(
+    name = "i2c_server_peer",
+    srcs = ["i2c_server_main_peer.rs"],
+    codegen_crate_name = "app_i2c_server_peer",
+    edition = "2024",
+    system_config = ":peer_system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//services/i2c/server-runtime:i2c_server_runtime",
+        "//target/ast10x0/backend/i2c:i2c_backend_ast10x0",
+        "//target/ast10x0/peripherals",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)
+
+rust_app(
     name = "mctp_server",
-    srcs = ["main.rs"],
+    srcs = ["mctp_server_main.rs"],
     codegen_crate_name = "app_mctp_server",
     edition = "2024",
     system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
-    visibility = ["//visibility:public"],
     deps = [
         "//services/i2c/api:i2c_api",
         "//services/i2c/client:i2c_client",
@@ -83,13 +116,12 @@ rust_app(
 
 rust_app(
     name = "mctp_server_peer",
-    srcs = ["main_peer.rs"],
+    srcs = ["mctp_server_main_peer.rs"],
     codegen_crate_name = "app_mctp_server_peer",
     edition = "2024",
     system_config = ":peer_system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
-    visibility = ["//visibility:public"],
     deps = [
         "//services/i2c/api:i2c_api",
         "//services/i2c/client:i2c_client",
@@ -107,83 +139,64 @@ rust_app(
 )
 
 rust_app(
-    name = "i2c_server_peer",
-    srcs = ["i2c_server_main_peer.rs"],
-    codegen_crate_name = "app_i2c_server_peer",
-    edition = "2024",
-    system_config = ":peer_system_config",
-    tags = ["kernel"],
-    target_compatible_with = TARGET_COMPATIBLE_WITH,
-    visibility = ["//visibility:public"],
-    deps = [
-        "//services/i2c/server-runtime:i2c_server_runtime",
-        "//target/ast10x0/backend/i2c:i2c_backend_ast10x0",
-        "//target/ast10x0/peripherals",
-        "@pigweed//pw_kernel/userspace",
-        "@pigweed//pw_log/rust:pw_log",
+    name = "spdm_requester",
+    srcs = [
+        "mock_peer_cert_store.rs",
+        "mock_platform.rs",
+        "spdm_requester_main.rs",
     ],
-)
-
-rust_app(
-    name = "mctp_echo_client_peer",
-    srcs = ["echo_main_peer.rs"],
-    codegen_crate_name = "app_mctp_echo_client_peer",
-    edition = "2024",
-    system_config = ":peer_system_config",
-    tags = ["kernel"],
-    target_compatible_with = TARGET_COMPATIBLE_WITH,
-    visibility = ["//visibility:public"],
-    deps = [
-        "//services/mctp/api:mctp_api",
-        "//services/mctp/client-ipc:mctp_client_ipc",
-        "//services/mctp/echo:mctp_echo",
-        "@pigweed//pw_kernel/userspace",
-        "@pigweed//pw_log/rust:pw_log",
-    ],
-)
-
-rust_app(
-    name = "i2c_server",
-    srcs = ["i2c_server_main.rs"],
-    codegen_crate_name = "app_i2c_server",
+    codegen_crate_name = "app_spdm_requester",
+    crate_root = "spdm_requester_main.rs",
     edition = "2024",
     system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
-    visibility = ["//visibility:public"],
     deps = [
-        "//services/i2c/server-runtime:i2c_server_runtime",
-        "//target/ast10x0/backend/i2c:i2c_backend_ast10x0",
-        "//target/ast10x0/peripherals",
+        "//services/mctp/api:mctp_api",
+        "//services/mctp/client-ipc:mctp_client_ipc",
+        "//services/spdm/requester:spdm_requester_lib",
+        "//services/spdm/transport-mctp:spdm_transport_mctp",
+        "@pigweed//pw_kernel/syscall:syscall_user",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:spdm-lib",
+        "@rust_crates//:zerocopy",
     ],
 )
 
 rust_app(
-    name = "mctp_echo_client",
-    srcs = ["echo_main.rs"],
-    codegen_crate_name = "app_mctp_echo_client",
+    name = "spdm_responder",
+    srcs = [
+        "mock_platform.rs",
+        "spdm_responder_main.rs",
+    ],
+    codegen_crate_name = "app_spdm_responder",
+    crate_root = "spdm_responder_main.rs",
     edition = "2024",
-    system_config = ":system_config",
+    system_config = ":peer_system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
-    visibility = ["//visibility:public"],
     deps = [
         "//services/mctp/api:mctp_api",
         "//services/mctp/client-ipc:mctp_client_ipc",
-        "//services/mctp/echo:mctp_echo",
+        "//services/spdm/responder:spdm_responder_lib",
+        "//services/spdm/transport-mctp:spdm_transport_mctp",
+        "@pigweed//pw_kernel/syscall:syscall_user",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:spdm-lib",
+        "@rust_crates//:zerocopy",
     ],
 )
 
 system_image(
-    name = "mctp_server_image",
+    name = "spdm_vca_image",
     apps = [
         ":i2c_server",
         ":mctp_server",
-        ":mctp_echo_client",
+        ":spdm_requester",
     ],
     kernel = ":target",
     platform = "//target/ast10x0",
@@ -194,11 +207,11 @@ system_image(
 )
 
 system_image(
-    name = "mctp_server_peer_image",
+    name = "spdm_vca_peer_image",
     apps = [
         ":i2c_server_peer",
         ":mctp_server_peer",
-        ":mctp_echo_client_peer",
+        ":spdm_responder",
     ],
     kernel = ":target",
     platform = "//target/ast10x0",
@@ -209,10 +222,9 @@ system_image(
 )
 
 system_image_test(
-    name = "mctp_server_test",
-    timeout = "eternal",
-    image = ":mctp_server_image",
-    slave_image = ":mctp_server_peer_image",
+    name = "spdm_vca_test",
+    image = ":spdm_vca_image",
+    slave_image = ":spdm_vca_peer_image",
     tags = [
         "hardware",
         "manual",
