@@ -103,3 +103,8 @@ test:stress_k_ast1060_evb   --local_test_jobs=1
 test:stress_k_ast1060_evb   --run_under="//target/ast10x0/harness:test_runner \
   --timeout 0 "
 test:stress_k_ast1060_evb   --test_env=AST1060_EVB_PI_HOST
+
+# Site-local overrides. Kept last so developer machine-specific settings (e.g. a
+# local QEMU source override via --override_repository) take precedence. This
+# file is not checked in; see third_party/qemu/setup.md.
+try-import %workspace%/.bazelrc-site

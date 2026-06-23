@@ -22,9 +22,9 @@ jobs:
     - name: Setup Bazel
       uses: bazel-contrib/setup-bazel@0.19.0
       with:
-        bazelisk-cache: true
-        disk-cache: true
-        repository-cache: true
+        bazelisk-cache: false
+        disk-cache: false
+        repository-cache: false
 
     - name: Presubmit Checks
       # The presubmit workflow performs formatting checks, license checks
@@ -42,9 +42,9 @@ jobs:
     - name: Setup Bazel
       uses: bazel-contrib/setup-bazel@0.19.0
       with:
-        bazelisk-cache: true
-        disk-cache: true
-        repository-cache: true
+        bazelisk-cache: false
+        disk-cache: false
+        repository-cache: false
 
     - name: Run tests
       # See workflows.json for the `ci` definition.
@@ -61,9 +61,9 @@ jobs:
     - name: Setup Bazel
       uses: bazel-contrib/setup-bazel@0.19.0
       with:
-        bazelisk-cache: true
-        disk-cache: true
-        repository-cache: true
+        bazelisk-cache: false
+        disk-cache: false
+        repository-cache: false
 
     - name: Build
       # See workflows.json for the `default` definition.

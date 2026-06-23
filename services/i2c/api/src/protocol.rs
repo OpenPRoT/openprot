@@ -53,8 +53,17 @@ pub enum I2cOp {
     /// Disarm slave-RX notification for this bus. No args.
     DisableSlaveNotification = 0x06,
     /// Fetch the latched slave-RX buffer (non-blocking). `op_count` = caller's
-    /// max byte count. Response payload = received bytes; status `NoData` if
-    /// nothing is latched.
+    /// max byte count. Status `NoData` if nothing is latched.
+    ///
+    /// **Response payload layout** (on success):
+    /// ```text
+    /// [ kind (1) | source_addr (1) | data (0..max_len) ]
+    /// ```
+    /// - `kind`: [`SlaveEvent`] discriminant — what triggered the latch
+    ///   (DataReceived, ReadRequest, Stop).
+    /// - `source_addr`: 7-bit address of the sending master (`0x00..=0x7F`),
+    ///   or `0xFF` if unavailable (message too short to extract it).
+    /// - `data`: the received bytes, up to `op_count` (caller's max).
     SlaveReceive = 0x07,
     /// Pre-load the slave TX buffer for the next master read.
     /// `write_len` bytes from the request payload are written into the
@@ -303,8 +312,12 @@ impl I2cResponseHeader {
         self.status == 0
     }
 
-    pub fn error_code(&self) -> I2cError {
-        I2cError::from(self.status)
+    pub fn error_code(&self) -> Option<I2cError> {
+        if self.is_success() {
+            None
+        } else {
+            Some(I2cError::from(self.status))
+        }
     }
 
     pub fn payload_length(&self) -> usize {
@@ -352,7 +365,7 @@ mod tests {
         let err = I2cResponseHeader::error(I2cError::AddressNack);
         let err = I2cResponseHeader::ref_from_bytes(err.as_bytes()).unwrap();
         assert!(!err.is_success());
-        assert_eq!(err.error_code(), I2cError::AddressNack);
+        assert_eq!(err.error_code(), Some(I2cError::AddressNack));
         assert_eq!(err.payload_length(), 0);
     }
 
@@ -421,6 +434,6 @@ mod tests {
         let nd = I2cResponseHeader::error(I2cError::NoData);
         let nd = I2cResponseHeader::ref_from_bytes(nd.as_bytes()).unwrap();
         assert!(!nd.is_success());
-        assert_eq!(nd.error_code(), I2cError::NoData);
+        assert_eq!(nd.error_code(), Some(I2cError::NoData));
     }
 }

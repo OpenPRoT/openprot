@@ -83,14 +83,10 @@ _SUCCESS_SENTINEL = b"TEST_RESULT:PASS"
 _FAILURE_SENTINELS = [b"TEST_RESULT:FAIL", b"panic"]
 
 
-def _stream_uart(port: serial.Serial, timeout: int, lock=None) -> bool:
+def _stream_uart(port: serial.Serial, lock=None) -> bool:
     port.timeout = 1.0
-    deadline = time.time() + timeout if timeout else None
     buf = b""
     while True:
-        if deadline and time.time() >= deadline:
-            print("Timeout waiting for test result sentinel", file=sys.stderr)
-            return False
         data = port.read(1024)
         if data:
             try:
@@ -146,7 +142,7 @@ def _run_paired(args, firmware_path: Path, slave_firmware_path: Path) -> bool:
         results = [None, None]
 
         def _monitor(idx, port):
-            results[idx] = _stream_uart(port, args.timeout, _stdout_lock)
+            results[idx] = _stream_uart(port, _stdout_lock)
 
         threads = [
             threading.Thread(target=_monitor, args=(0, port_a)),
@@ -195,12 +191,6 @@ def main() -> int:
         type=int,
         required=True,
         help="Serial port baud rate, must match firmware UART initialisation",
-    )
-    parser.add_argument(
-        "--timeout",
-        type=int,
-        default=600,
-        help="Seconds to wait for a result sentinel (0 = no timeout, default: 600)",
     )
     parser.add_argument(
         "--stream-only",
@@ -280,7 +270,7 @@ def main() -> int:
             if not _wait_for_uart_ready(port):
                 return 1
             _upload_firmware(port, firmware_path)
-        result = _stream_uart(port, args.timeout)
+        result = _stream_uart(port)
     except KeyboardInterrupt:
         pass
     finally:
