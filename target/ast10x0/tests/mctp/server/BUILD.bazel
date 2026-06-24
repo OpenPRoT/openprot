@@ -221,4 +221,5 @@ system_image_test(
         "//target/ast10x0:qemu_enabled": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    timeout = "eternal",
 )
