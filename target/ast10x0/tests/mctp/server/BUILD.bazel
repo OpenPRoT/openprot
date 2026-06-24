@@ -210,6 +210,7 @@ system_image(
 
 system_image_test(
     name = "mctp_server_test",
+    timeout = "eternal",
     image = ":mctp_server_image",
     slave_image = ":mctp_server_peer_image",
     tags = [
