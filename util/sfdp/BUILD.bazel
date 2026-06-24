@@ -4,23 +4,23 @@
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
 rust_library(
-    name = "types",
-    srcs = [
-        "lib.rs",
-        "opcode.rs",
-        "power_of_2.rs",
-        "time.rs",
-    ],
-    crate_name = "util_types",
+    name = "sfdp",
+    srcs = ["mod.rs"],
+    crate_name = "util_sfdp",
     edition = "2024",
+    proc_macro_deps = [
+        "@rust_crates//:bitfield-struct",
+    ],
     visibility = ["//visibility:public"],
     deps = [
-        "@pigweed//pw_time/rust:pw_time",
+        "//util/error",
+        "//util/io",
+        "//util/types",
         "@rust_crates//:zerocopy",
     ],
 )
 
 rust_test(
-    name = "types_test",
-    crate = ":types",
+    name = "sfdp_test",
+    crate = ":sfdp",
 )
