@@ -28,7 +28,10 @@ pub enum PrivilegeOp {
 /// Mirrors Zephyr's `spim_passthrough_config`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PassthroughMode {
+    /// Enable single-bit passthrough.
     Enabled,
+    /// Enable multi-bit passthrough.
+    MultiEnabled,
     Disabled,
 }
 
@@ -127,8 +130,15 @@ impl ViolationLogEntry {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SpiMonitorError {
     InvalidRegion,
+    InvalidAddress,
+    InvalidLength,
     InvalidSlot,
+    InvalidLogBuffer,
+    UnsupportedCommand(u8),
+    NoCommandSlot,
     Locked,
+    LockFailed,
+    VerificationFailed,
     InvalidTransition,
 }
 

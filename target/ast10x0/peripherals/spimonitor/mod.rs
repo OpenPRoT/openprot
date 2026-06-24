@@ -3,6 +3,7 @@
 
 //! AST10x0 SPI monitor (SPIPF) module.
 
+pub mod commands;
 pub mod controller;
 pub mod policy;
 pub mod profile;
@@ -10,6 +11,7 @@ pub mod registers;
 pub mod traits;
 pub mod types;
 
+pub use commands::{descriptor as command_descriptor, table_value as command_table_value};
 pub use controller::{
     Configured, ConfiguredSpiMonitor, Locked, LockedSpiMonitor, SpiMonitor, UninitSpiMonitor,
     Uninitialized,

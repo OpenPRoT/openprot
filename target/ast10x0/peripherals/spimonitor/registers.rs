@@ -118,6 +118,17 @@ impl SpiMonitorRegisters {
         self.regs().spipf004().write(|w| unsafe { w.bits(value) });
     }
 
+    pub fn modify_ctrl2<F>(&self, f: F)
+    where
+        F: FnOnce(&mut u32),
+    {
+        self.regs().spipf004().modify(|r, w| {
+            let mut bits = r.bits();
+            f(&mut bits);
+            unsafe { w.bits(bits) }
+        });
+    }
+
     /// SPIPF07C: Lock/status register.
     pub fn read_lock_status(&self) -> u32 {
         self.regs().spipf07c().read().bits()
@@ -125,6 +136,17 @@ impl SpiMonitorRegisters {
 
     pub fn write_lock_status(&self, value: u32) {
         self.regs().spipf07c().write(|w| unsafe { w.bits(value) });
+    }
+
+    pub fn modify_lock_status<F>(&self, f: F)
+    where
+        F: FnOnce(&mut u32),
+    {
+        self.regs().spipf07c().modify(|r, w| {
+            let mut bits = r.bits();
+            f(&mut bits);
+            unsafe { w.bits(bits) }
+        });
     }
 
     /// SPIPFWT[n]: Allow-command table entry.
@@ -138,6 +160,14 @@ impl SpiMonitorRegisters {
             .write(|w| unsafe { w.bits(value) });
     }
 
+    /// Read an allow-command slot without panicking for an invalid index.
+    pub fn read_allow_cmd_slot_checked(&self, index: usize) -> Option<u32> {
+        self.regs()
+            .spipfwt_iter()
+            .nth(index)
+            .map(|register| register.read().bits())
+    }
+
     /// SPIPFWA[n]: Address filter table entry.
     pub fn read_addr_filter_slot(&self, index: usize) -> u32 {
         self.regs().spipfwa(index).read().bits()
@@ -149,45 +179,60 @@ impl SpiMonitorRegisters {
             .write(|w| unsafe { w.bits(value) });
     }
 
-    // -----------------------------------------------------------------------
-    // Violation log registers
-    //
-    // TODO: confirm SPIPF register offsets for log control from the AST10x0
-    // datasheet once available. Offsets below are placeholders consistent with
-    // known Aspeed SPIPF register map patterns.
-    // -----------------------------------------------------------------------
-
-    /// Current violation log write index (number of entries written so far).
-    ///
-    /// Maps to the SPIPF log index register (placeholder offset 0x080).
-    pub fn read_log_idx_reg(&self) -> u32 {
-        // SAFETY: raw offset read within the known SPIPF register block page.
-        unsafe {
-            let ptr = (self.base as *const u8).add(0x080) as *const u32;
-            core::ptr::read_volatile(ptr)
-        }
+    /// Read an address-filter slot without panicking for an invalid index.
+    pub fn read_addr_filter_slot_checked(&self, index: usize) -> Option<u32> {
+        self.regs()
+            .spipfwa_iter()
+            .nth(index)
+            .map(|register| register.read().bits())
     }
 
-    /// Maximum violation log capacity in bytes.
-    ///
-    /// Maps to the SPIPF log size register (placeholder offset 0x084).
-    pub fn read_log_max_sz(&self) -> u32 {
-        // SAFETY: same as above.
-        unsafe {
-            let ptr = (self.base as *const u8).add(0x084) as *const u32;
-            core::ptr::read_volatile(ptr)
-        }
+    /// Write an address-filter slot, returning false for an invalid index.
+    #[must_use]
+    pub fn write_addr_filter_slot_checked(&self, index: usize, value: u32) -> bool {
+        let Some(register) = self.regs().spipfwa_iter().nth(index) else {
+            return false;
+        };
+        register.write(|w| unsafe { w.bits(value) });
+        true
+    }
+
+    // -----------------------------------------------------------------------
+    // Violation log registers
+    // -----------------------------------------------------------------------
+
+    /// Current violation log write index (number of 32-bit entries written).
+    pub fn read_log_idx_reg(&self) -> u32 {
+        self.regs()
+            .spipf018()
+            .read()
+            .block_log_dmawr_pointer()
+            .bits()
+    }
+
+    /// Maximum violation log capacity in 32-bit entries.
+    pub fn read_log_capacity_entries(&self) -> u32 {
+        self.regs()
+            .spipf014()
+            .read()
+            .size_of_block_log_dmabuffer()
+            .bits()
     }
 
     /// Base address of the violation log RAM region.
-    ///
-    /// Returns a `usize` suitable for casting to `*const u32` by the caller.
-    /// Maps to the SPIPF log RAM address register (placeholder offset 0x088).
     pub fn log_ram_base_addr(&self) -> usize {
-        // SAFETY: same as above.
-        unsafe {
-            let ptr = (self.base as *const u8).add(0x088) as *const u32;
-            core::ptr::read_volatile(ptr) as usize
-        }
+        (self.regs().spipf010().read().bits() & !0x3) as usize
+    }
+
+    /// Configure the violation-log DMA buffer.
+    pub fn write_log_config(&self, base_addr: u32, entries: u32) {
+        self.regs()
+            .spipf010()
+            .write(|w| unsafe { w.bits(base_addr & !0x3) });
+        self.regs()
+            .spipf014()
+            .write(|w| unsafe { w.bits(LOG_DMA_ENABLE | entries) });
     }
 }
+
+const LOG_DMA_ENABLE: u32 = 1 << 31;

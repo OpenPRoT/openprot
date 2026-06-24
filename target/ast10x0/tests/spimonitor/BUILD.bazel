@@ -1,0 +1,49 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load(":spimonitor_test.bzl", "spimonitor_setup_all", "spimonitor_test")
+
+filegroup(
+    name = "system_config",
+    srcs = ["system.json5"],
+)
+
+target_codegen(
+    name = "codegen",
+    arch = "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+    system_config = ":system_config",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    template = "//target/ast10x0:linker_script_template",
+)
+
+spimonitor_test(1, TARGET_COMPATIBLE_WITH)
+
+spimonitor_test(2, TARGET_COMPATIBLE_WITH)
+
+spimonitor_test(3, TARGET_COMPATIBLE_WITH)
+
+spimonitor_test(4, TARGET_COMPATIBLE_WITH)
+
+spimonitor_setup_all(TARGET_COMPATIBLE_WITH)
+
+alias(
+    name = "target",
+    actual = ":target_spim1",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "spimonitor_test",
+    actual = ":spimonitor1_test",
+    visibility = ["//visibility:public"],
+)
