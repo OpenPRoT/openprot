@@ -330,10 +330,10 @@ ctrl.send_stop(0)?;
 
 ```sh
 # Build the (target-only) library
-bazel build //target/ast10x0/pfr:pfr
+bazel build //target/ast10x0/platform:ast10x0_platform
 
 # Run the host unit tests
-bazel test //target/ast10x0/pfr:swmbx_ctrl_host_test
+bazel test //target/ast10x0/platform:swmbx_ctrl_host_test
 ```
 
 ---

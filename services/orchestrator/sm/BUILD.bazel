@@ -1,0 +1,31 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "resiliency_sm",
+    srcs = glob([
+        "src/*.rs",
+        "src/**/*.rs",
+    ]),
+    crate_name = "openprot_resiliency_sm",
+    edition = "2024",
+    deps = [
+        "@rust_crates//:heapless",
+        "@rust_crates//:statig",
+    ],
+)
+
+rust_test(
+    name = "resiliency_sm_test",
+    crate = ":resiliency_sm",
+    edition = "2024",
+)
+
+rust_doc(
+    name = "resiliency_sm_doc",
+    crate = ":resiliency_sm",
+)

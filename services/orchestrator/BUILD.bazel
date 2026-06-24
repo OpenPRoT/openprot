@@ -1,0 +1,10 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# Orchestrator service — top-level build file.
+#
+# The resiliency state machine component lives under //services/orchestrator/sm.
+# This file will contain the runner and platform-integration targets once they
+# are implemented.
+
+package(default_visibility = ["//visibility:public"])

@@ -32,6 +32,7 @@ riscv-semihosting = "0.1.3"
 serde = { version = "1.0.219", default-features = false, features = ["derive"] }
 serde_derive = "1.0.228"
 smlang = { version = "0.8.0", default-features = false }
+statig = "0.4.1"
 syn = { version = "2.0.104", features = ["full", "extra-traits"] }
 syn1 = { package = "syn", version = "1.0.109", features = ["full", "extra-traits"] }
 tock-registers = "0.9.0"

@@ -7,12 +7,12 @@ load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
 package(default_visibility = ["//visibility:public"])
 
 rust_library(
-    name = "pfr",
+    name = "ast10x0_platform",
     srcs = [
         "lib.rs",
         "swmbx_ctrl.rs",
     ],
-    crate_name = "ast10x0_pfr",
+    crate_name = "ast10x0_platform",
     crate_root = "lib.rs",
     edition = "2024",
     target_compatible_with = TARGET_COMPATIBLE_WITH,
