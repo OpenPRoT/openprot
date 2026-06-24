@@ -7,9 +7,12 @@
 
 mod opcode;
 mod power_of_2;
+mod time;
 
 pub use opcode::Opcode;
 pub use power_of_2::PowerOf2Usize;
+pub use time::MultiplyDuration;
+pub use time::Nanoseconds;
 
 /// A trait for blocking on notifications.
 ///
