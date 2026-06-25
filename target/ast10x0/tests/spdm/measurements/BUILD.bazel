@@ -1,0 +1,237 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app")
+load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
+load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH", "system_image_test")
+
+filegroup(
+    name = "system_config",
+    srcs = ["system.json5"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "peer_system_config",
+    srcs = ["peer_system.json5"],
+    visibility = ["//visibility:public"],
+)
+
+target_codegen(
+    name = "codegen",
+    arch = "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+    system_config = ":system_config",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    template = "//target/ast10x0:linker_script_template",
+)
+
+rust_binary(
+    name = "target",
+    srcs = ["target.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":codegen",
+        ":linker_script",
+        "//target/ast10x0:entry",
+        "//target/ast10x0/board:ast10x0_board",
+        "//target/ast10x0/peripherals",
+        "@ast1060_pac",
+        "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/subsys/console:console_backend",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_kernel/userspace",
+    ],
+)
+
+rust_app(
+    name = "i2c_server",
+    srcs = ["i2c_server_main.rs"],
+    codegen_crate_name = "app_i2c_server",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//services/i2c/server-runtime:i2c_server_runtime",
+        "//target/ast10x0/backend/i2c:i2c_backend_ast10x0",
+        "//target/ast10x0/peripherals",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)
+
+rust_app(
+    name = "i2c_server_peer",
+    srcs = ["i2c_server_main_peer.rs"],
+    codegen_crate_name = "app_i2c_server_peer",
+    edition = "2024",
+    system_config = ":peer_system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//services/i2c/server-runtime:i2c_server_runtime",
+        "//target/ast10x0/backend/i2c:i2c_backend_ast10x0",
+        "//target/ast10x0/peripherals",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)
+
+rust_app(
+    name = "mctp_server",
+    srcs = ["mctp_server_main.rs"],
+    codegen_crate_name = "app_mctp_server",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//services/i2c/api:i2c_api",
+        "//services/i2c/client:i2c_client",
+        "//services/i2c/client-ipc:i2c_client_ipc",
+        "//services/mctp/api:mctp_api",
+        "//services/mctp/server:mctp_server_lib",
+        "//services/mctp/transport-i2c:mctp_transport_i2c",
+        "@pigweed//pw_kernel/syscall:syscall_user",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:mctp",
+        "@rust_crates//:mctp-lib",
+    ],
+)
+
+rust_app(
+    name = "mctp_server_peer",
+    srcs = ["mctp_server_main_peer.rs"],
+    codegen_crate_name = "app_mctp_server_peer",
+    edition = "2024",
+    system_config = ":peer_system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//services/i2c/api:i2c_api",
+        "//services/i2c/client:i2c_client",
+        "//services/i2c/client-ipc:i2c_client_ipc",
+        "//services/mctp/api:mctp_api",
+        "//services/mctp/server:mctp_server_lib",
+        "//services/mctp/transport-i2c:mctp_transport_i2c",
+        "@pigweed//pw_kernel/syscall:syscall_user",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:mctp",
+        "@rust_crates//:mctp-lib",
+    ],
+)
+
+rust_app(
+    name = "spdm_requester",
+    srcs = [
+        "mock_peer_cert_store.rs",
+        "mock_platform.rs",
+        "spdm_requester_main.rs",
+    ],
+    codegen_crate_name = "app_spdm_requester",
+    crate_root = "spdm_requester_main.rs",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//services/mctp/api:mctp_api",
+        "//services/mctp/client-ipc:mctp_client_ipc",
+        "//services/spdm/requester:spdm_requester_lib",
+        "//services/spdm/transport-mctp:spdm_transport_mctp",
+        "@pigweed//pw_kernel/syscall:syscall_user",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:spdm-lib",
+        "@rust_crates//:zerocopy",
+    ],
+)
+
+rust_app(
+    name = "spdm_responder",
+    srcs = [
+        "mock_platform.rs",
+        "spdm_responder_main.rs",
+    ],
+    codegen_crate_name = "app_spdm_responder",
+    crate_root = "spdm_responder_main.rs",
+    edition = "2024",
+    system_config = ":peer_system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//services/mctp/api:mctp_api",
+        "//services/mctp/client-ipc:mctp_client_ipc",
+        "//services/spdm/responder:spdm_responder_lib",
+        "//services/spdm/transport-mctp:spdm_transport_mctp",
+        "@pigweed//pw_kernel/syscall:syscall_user",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:spdm-lib",
+        "@rust_crates//:zerocopy",
+    ],
+)
+
+system_image(
+    name = "spdm_measurements_image",
+    apps = [
+        ":i2c_server",
+        ":mctp_server",
+        ":spdm_requester",
+    ],
+    kernel = ":target",
+    platform = "//target/ast10x0",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+)
+
+system_image(
+    name = "spdm_measurements_peer_image",
+    apps = [
+        ":i2c_server_peer",
+        ":mctp_server_peer",
+        ":spdm_responder",
+    ],
+    kernel = ":target",
+    platform = "//target/ast10x0",
+    system_config = ":peer_system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+)
+
+system_image_test(
+    name = "spdm_measurements_test",
+    timeout = "eternal",
+    image = ":spdm_measurements_image",
+    slave_image = ":spdm_measurements_peer_image",
+    tags = [
+        "hardware",
+        "manual",
+    ],
+    target_compatible_with = select({
+        "//target/ast10x0:qemu_enabled": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)

@@ -1,15 +1,15 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! SPDM auth stress test — requester side.
+//! SPDM measurements stress test — requester side.
 //!
 //! Repeatedly performs the full SPDM handshake sequence:
 //!   VCA (GET_VERSION → GET_CAPABILITIES → NEGOTIATE_ALGORITHMS)
 //!   Auth (GET_DIGESTS → GET_CERTIFICATE → CHALLENGE → CHALLENGE_AUTH)
+//!   Measurements (GET_MEASUREMENTS → MEASUREMENTS)
 //!
-//! The mock cert store returns a fixed signature; the requester accepts it
-//! without cryptographic verification, making this a protocol-layer stress
-//! test rather than a crypto correctness test.
+//! Measurements are requested unsigned (no slot_id) — this is a protocol-layer
+//! stress test, not a crypto correctness test.
 
 #![no_main]
 #![no_std]
@@ -32,6 +32,8 @@ use spdm_lib::commands::certificate::request::generate_get_certificate;
 use spdm_lib::commands::challenge::MeasurementSummaryHashType;
 use spdm_lib::commands::challenge::request::generate_challenge_request;
 use spdm_lib::commands::digests::request::generate_digest_request;
+use spdm_lib::commands::measurements::MeasurementOperation;
+use spdm_lib::commands::measurements::request::generate_get_measurements;
 use spdm_lib::commands::version::VersionReqPayload;
 use spdm_lib::commands::version::request::generate_get_version;
 use spdm_lib::platform::transport::SpdmTransport as _;
@@ -46,11 +48,11 @@ const MAX_CERT_SIZE: u16 = 512;
 fn entry() {
     match run() {
         Ok(()) => {
-            pw_log::info!("SPDM auth stress test completed");
+            pw_log::info!("SPDM measurements stress test completed");
             let _ = syscall::debug_shutdown(Ok(()));
         }
         Err(e) => {
-            pw_log::error!("SPDM auth stress test FAILED: {}", e as u32);
+            pw_log::error!("SPDM measurements stress test FAILED: {}", e as u32);
             let _ = syscall::debug_shutdown(Err(Error::Internal));
         }
     }
@@ -58,7 +60,7 @@ fn entry() {
 }
 
 fn run() -> Result<(), u32> {
-    pw_log::info!("SPDM auth stress test starting (requester)");
+    pw_log::info!("SPDM measurements stress test starting (requester)");
 
     let mctp_client = IpcMctpClient::new(handle::MCTP);
     let stack = Stack::new(mctp_client);
@@ -210,7 +212,6 @@ fn run() -> Result<(), u32> {
             })?;
 
         // ── GET_CERTIFICATE → CERTIFICATE ────────────────────────────────
-        // Request the full certificate chain in one shot (offset=0, length=MAX_CERT_SIZE).
 
         buf.reset();
         generate_get_certificate(
@@ -241,8 +242,6 @@ fn run() -> Result<(), u32> {
             })?;
 
         // ── CHALLENGE → CHALLENGE_AUTH ────────────────────────────────────
-        // The mock responder signs with a fixed value; we accept without
-        // cryptographic verification (protocol-layer stress test only).
 
         let mut nonce = [0u8; 32];
         requester
@@ -284,12 +283,43 @@ fn run() -> Result<(), u32> {
                 22u32
             })?;
 
-        // The signature bytes remain in buf; we accept them without cryptographic
-        // verification — this is a protocol-layer stress test, not a crypto test.
+        // Signature bytes remain in buf; accepted without cryptographic verification.
         requester.context_mut().set_authenticated();
 
+        // ── GET_MEASUREMENTS → MEASUREMENTS ──────────────────────────────
+        // Request all measurement blocks, unsigned.
+
+        buf.reset();
+        generate_get_measurements(
+            requester.context_mut(),
+            &mut buf,
+            false,
+            false,
+            MeasurementOperation::RequestAllMeasBlocks,
+            None,
+            None,
+        )
+        .map_err(|_| {
+            pw_log::error!("generate_get_measurements failed on round {}", round as u32);
+            23u32
+        })?;
+        requester
+            .context_mut()
+            .requester_send_request(&mut buf, RESPONDER_EID)
+            .map_err(|_| {
+                pw_log::error!("send GET_MEASUREMENTS failed on round {}", round as u32);
+                24u32
+            })?;
+        requester
+            .context_mut()
+            .requester_process_message(&mut buf)
+            .map_err(|_| {
+                pw_log::error!("process MEASUREMENTS failed on round {}", round as u32);
+                25u32
+            })?;
+
         round += 1;
-        pw_log::info!("auth round {} complete", round as u32);
+        pw_log::info!("measurements round {} complete", round as u32);
     }
 }
 
