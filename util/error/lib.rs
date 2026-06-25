@@ -11,10 +11,12 @@ use zerocopy::{Immutable, IntoBytes};
 mod flash;
 mod ipc;
 mod kernel;
+mod spi;
 
 pub use flash::*;
 pub use ipc::*;
 pub use kernel::*;
+pub use spi::*;
 
 /// Represents an error module.
 ///
