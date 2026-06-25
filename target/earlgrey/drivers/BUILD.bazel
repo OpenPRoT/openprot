@@ -86,3 +86,18 @@ rust_library(
         "@ureg",
     ],
 )
+
+rust_library(
+    name = "spi_host",
+    srcs = ["spi_host.rs"],
+    crate_name = "earlgrey_spi_host",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//target/earlgrey/registers:spi_host",
+        "//util/error",
+        "//util/regcpy",
+        "@rust_crates//:embedded-hal",
+        "@ureg",
+    ],
+)
