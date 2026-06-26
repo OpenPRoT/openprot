@@ -44,8 +44,8 @@ impl MacError for HaceError {
 impl CipherError for HaceError {
     fn kind(&self) -> CipherErrorKind {
         match self {
-            HaceError::Busy => CipherErrorKind::HardwareFailure,
-            HaceError::Timeout => CipherErrorKind::HardwareFailure,
+            HaceError::Busy => CipherErrorKind::Busy,
+            HaceError::Timeout => CipherErrorKind::Timeout,
             HaceError::InvalidInput => CipherErrorKind::InvalidInput,
             HaceError::Internal => CipherErrorKind::HardwareFailure,
         }

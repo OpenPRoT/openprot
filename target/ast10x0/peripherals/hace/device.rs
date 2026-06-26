@@ -4,8 +4,9 @@
 //! HACE device binding with cooperative yield.
 
 use super::constants::DEFAULT_POLL_BUDGET;
-use super::context::{CryptoContext, HashContext, acquire_crypto_ctx, acquire_shared_ctx};
+use super::context::{acquire_crypto_ctx, acquire_shared_ctx, CryptoContext, HashContext};
 use super::registers::HaceRegisters;
+use crate::scu::{ClockRegisterHalf, ScuRegisters};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum HashAlgo {
@@ -95,9 +96,31 @@ impl<Y: FnMut(u32)> HaceDevice<Y> {
     /// Caller must coordinate singleton access globally.
     /// This type is non-reentrant: only one `HaceDevice` may be active at a time.
     pub unsafe fn new_global_with_yield(yield_fn: Y) -> Self {
+        // SCU080 bit 13 = StopYCLKForHACE. Write bit 13 to SCU084 to clear the
+        // clock-stop bit and enable the HACE YCLK before touching any HACE registers.
+        // SAFETY: SCU is a singleton; this is called under the same single-instance
+        // contract as HaceRegisters::new_global — the caller guarantees exclusivity.
+        let scu = unsafe { ScuRegisters::new_global_unlocked() };
+        scu.ungate_clock_mask(ClockRegisterHalf::Lower, 1 << 13);
+
+        // SAFETY: Caller coordinates singleton access.
+        let regs = unsafe { HaceRegisters::new_global() };
+
+        // Drain any in-progress hash operation left by the bootloader.
+        // On real hardware the engine may be busy when firmware starts; the
+        // HACE W1C clear of `hash_intflag` is ignored while `HashEngStsFlag`
+        // (bit 0) is set, causing the first poll to return a stale flag and the
+        // digest buffer to read back as the IV (never written by the engine).
+        // We stop the engine, then spin until it goes idle, then clear the
+        // stale flag before handing the device to callers.
+        regs.stop_hash_operation();
+        while regs.hash_engine_is_busy() {
+            core::hint::spin_loop();
+        }
+        regs.clear_hash_intflag();
+
         Self {
-            // SAFETY: Caller coordinates singleton access.
-            regs: unsafe { HaceRegisters::new_global() },
+            regs,
             // SAFETY: the `unsafe fn new*` single-instance contract makes this
             // the sole live device, hence the sole holder of these pointers.
             ctx: unsafe { acquire_shared_ctx() },

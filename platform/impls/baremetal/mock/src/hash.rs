@@ -83,13 +83,12 @@ macro_rules! impl_scoped_sha2 {
     ($algo:ident) => {
         impl DigestInit<$algo> for MockDigestDevice {
             type OpContext<'a> = MockHasher<'a, $algo>;
-            type Output = <$algo as DigestAlgorithm>::Digest;
 
-            fn init(&mut self, init_params: $algo) -> Result<Self::OpContext<'_>, Self::Error> {
+            fn init(&mut self, algorithm: $algo) -> Result<Self::OpContext<'_>, Self::Error> {
                 // In a real implementation, we'd configure the hardware here
                 Ok(Self::OpContext {
                     hw: self,
-                    _alg: init_params,
+                    _alg: algorithm,
                     data_processed: 0,
                 })
             }
@@ -183,14 +182,13 @@ pub mod owned {
         ($algo:ident) => {
             impl DigestInit<$algo> for MockDigestController {
                 type Context = MockOwnedContext<$algo>;
-                type Output = <$algo as DigestAlgorithm>::Digest;
 
-                fn init(self, init_params: $algo) -> Result<Self::Context, Self::Error> {
+                fn init(self, algorithm: $algo) -> Result<Self::Context, Self::Error> {
                     // Controller moves into the context
                     // In hardware implementation, this might claim hardware resources
                     Ok(MockOwnedContext {
                         controller: self,
-                        algorithm: init_params,
+                        algorithm,
                         data_processed: 0,
                     })
                 }

@@ -233,7 +233,6 @@ impl CipherInit<Aes256CtrMode> for Aes256CtrCipher {
         &'a mut self,
         key: &Self::Key,
         nonce: &Self::Nonce,
-        _mode: Aes256CtrMode,
     ) -> Result<Self::CipherContext<'a>, Self::Error> {
         // Validate key and nonce lengths (compile-time guaranteed by types)
         // Create new context with the provided key and IV
@@ -409,7 +408,7 @@ mod tests {
     #[test]
     fn test_cipher_init_trait() {
         let mut cipher = Aes256CtrCipher;
-        let result = cipher.init(&TEST_KEY, &TEST_IV, Aes256CtrMode);
+        let result = cipher.init(&TEST_KEY, &TEST_IV);
         assert!(
             result.is_ok(),
             "Failed to create context via CipherInit trait"

@@ -54,7 +54,6 @@
 //! # impl ErrorType for MyDigestImpl { type Error = core::convert::Infallible; }
 //! # impl DigestInit<Sha2_256> for MyDigestImpl {
 //! #     type OpContext<'a> = MyContext<'a> where Self: 'a;
-//! #     type Output = Digest<8>;
 //! #     fn init<'a>(&'a mut self, _: Sha2_256) -> Result<Self::OpContext<'a>, Self::Error> { todo!() }
 //! # }
 //! # struct MyContext<'a>(&'a mut MyDigestImpl);
@@ -81,7 +80,6 @@
 //! # impl ErrorType for MyDigestController { type Error = core::convert::Infallible; }
 //! # impl DigestInit<Sha2_256> for MyDigestController {
 //! #     type Context = MyOwnedContext;
-//! #     type Output = Digest<8>;
 //! #     fn init(self, _: Sha2_256) -> Result<Self::Context, Self::Error> { todo!() }
 //! # }
 //! # struct MyOwnedContext;
@@ -417,9 +415,6 @@ pub enum ErrorKind {
     /// The specified hash algorithm is not supported by the hardware or software implementation.
     UnsupportedAlgorithm,
 
-    /// Failed to allocate memory for the hash computation.
-    MemoryAllocationFailure,
-
     /// Failed to initialize the hash computation context.
     InitializationError,
 
@@ -435,9 +430,6 @@ pub enum ErrorKind {
     /// General hardware failure during hash computation.
     HardwareFailure,
 
-    /// The specified output size is not valid for the hash function.
-    InvalidOutputSize,
-
     /// Insufficient permissions to access the hardware or perform the hash computation.
     PermissionDenied,
 
@@ -450,13 +442,11 @@ impl core::fmt::Display for ErrorKind {
         match self {
             Self::InvalidInputLength => write!(f, "invalid input data length"),
             Self::UnsupportedAlgorithm => write!(f, "unsupported hash algorithm"),
-            Self::MemoryAllocationFailure => write!(f, "memory allocation failed"),
             Self::InitializationError => write!(f, "failed to initialize hash computation"),
             Self::UpdateError => write!(f, "error updating hash computation"),
             Self::FinalizationError => write!(f, "error finalizing hash computation"),
             Self::Busy => write!(f, "hardware accelerator is busy"),
             Self::HardwareFailure => write!(f, "hardware failure during hash computation"),
-            Self::InvalidOutputSize => write!(f, "invalid output size for hash function"),
             Self::PermissionDenied => write!(f, "insufficient permissions to access hardware"),
             Self::NotInitialized => write!(f, "hash computation context not initialized"),
         }
@@ -549,7 +539,6 @@ pub trait ErrorType {
 /// # impl ErrorType for MyDigestImpl { type Error = core::convert::Infallible; }
 /// # impl DigestInit<Sha2_256> for MyDigestImpl {
 /// #     type OpContext<'a> = MyContext<'a> where Self: 'a;
-/// #     type Output = Digest<8>;
 /// #     fn init<'a>(&'a mut self, _: Sha2_256) -> Result<Self::OpContext<'a>, Self::Error> { todo!() }
 /// # }
 /// # struct MyContext<'a>(&'a mut MyDigestImpl);
@@ -571,26 +560,20 @@ pub trait DigestInit<T: DigestAlgorithm>: ErrorType {
     /// This associated type represents the stateful context returned by [`init`](Self::init)
     /// that can be used to perform the actual digest operations via [`DigestOp`].
     /// The lifetime parameter ensures the context cannot outlive the device that created it.
-    type OpContext<'a>: DigestOp<Output = Self::Output>
+    type OpContext<'a>: DigestOp<Output = T::Digest>
     where
         Self: 'a;
-
-    /// The output type produced by this digest implementation.
-    ///
-    /// This type must implement [`IntoBytes`] to allow conversion to byte arrays
-    /// for interoperability with other systems and zero-copy operations.
-    type Output: IntoBytes;
 
     /// Init instance of the crypto function with the given context.
     ///
     /// # Parameters
     ///
-    /// - `init_params`: The context or configuration parameters for the crypto function.
+    /// - `algorithm`: The zero-sized algorithm marker type specifying which hash function to use.
     ///
     /// # Returns
     ///
     /// A new instance of the hash function.
-    fn init(&mut self, init_params: T) -> Result<Self::OpContext<'_>, Self::Error>;
+    fn init(&mut self, algorithm: T) -> Result<Self::OpContext<'_>, Self::Error>;
 }
 
 /// Trait for resetting digest computation contexts.
@@ -748,7 +731,6 @@ pub mod owned {
     /// # }
     /// # impl DigestInit<Sha2_256> for MyController {
     /// #     type Context = MyContext;
-    /// #     type Output = Digest<8>;
     /// #     fn init(self, _: Sha2_256) -> Result<Self::Context, Self::Error> { todo!() }
     /// # }
     /// let controller = MyController;
@@ -761,13 +743,7 @@ pub mod owned {
         ///
         /// This context has no lifetime constraints and can be stored in structs,
         /// moved between functions, and persisted across IPC boundaries.
-        type Context: DigestOp<Output = Self::Output, Controller = Self>;
-
-        /// The output type produced by this digest implementation.
-        ///
-        /// This type must implement [`IntoBytes`] to allow conversion to byte arrays
-        /// for interoperability with other systems and zero-copy operations.
-        type Output: IntoBytes;
+        type Context: DigestOp<Output = T::Digest, Controller = Self>;
 
         /// Initialize a new digest computation context.
         ///
@@ -776,12 +752,12 @@ pub mod owned {
         ///
         /// # Parameters
         ///
-        /// - `init_params`: Algorithm-specific initialization parameters
+        /// - `algorithm`: The zero-sized algorithm marker type specifying which hash function to use.
         ///
         /// # Returns
         ///
         /// An owned context that can be used for digest operations.
-        fn init(self, init_params: T) -> Result<Self::Context, Self::Error>;
+        fn init(self, algorithm: T) -> Result<Self::Context, Self::Error>;
     }
 
     /// Trait for performing digest operations with owned contexts.

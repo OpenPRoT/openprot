@@ -3,18 +3,22 @@
 
 //! Generic HACE Digest HAL adapter for OpenPRoT
 
+use super::constants::{
+    HACE_SG_LAST, POLL_YIELD_NS, SHA256_HASH_CMD, SHA384_HASH_CMD, SHA512_HASH_CMD,
+};
 use super::context::{
-    HACE_BLOCK_SIZE, HACE_BLOCK_SIZE_128, HashContext, SHA256_DIGEST_SIZE, SHA256_IV,
+    HashContext, HACE_BLOCK_SIZE, HACE_BLOCK_SIZE_128, SHA256_DIGEST_SIZE, SHA256_IV,
     SHA384_DIGEST_SIZE, SHA384_IV, SHA512_DIGEST_SIZE, SHA512_IV,
 };
 use super::error::HaceError;
 use super::helpers::{fill_padding, load_iv, ptr_to_u32};
-use super::constants::{HACE_SG_LAST, POLL_YIELD_NS, SHA256_HASH_CMD, SHA384_HASH_CMD, SHA512_HASH_CMD};
 use super::registers::HaceRegisters;
-use openprot_hal_blocking::digest::{Digest, DigestAlgorithm, ErrorType, Sha2_256, Sha2_384, Sha2_512};
-use openprot_hal_blocking::digest::scoped::{DigestCtrlReset, DigestInit, DigestOp};
-use zerocopy::IntoBytes;
 use core::marker::PhantomData;
+use openprot_hal_blocking::digest::scoped::{DigestCtrlReset, DigestInit, DigestOp};
+use openprot_hal_blocking::digest::{
+    Digest, DigestAlgorithm, ErrorType, Sha2_256, Sha2_384, Sha2_512,
+};
+use zerocopy::IntoBytes;
 
 /// Per-algorithm constants required by the HACE driver.
 ///
@@ -116,9 +120,7 @@ impl<'a, T: DigestAlgorithm> HaceDigest<'a, T> {
     /// # Safety
     /// Caller must ensure no concurrent or reentrant HACE access for the
     /// lifetime of the returned [`HaceDigest`].
-    pub unsafe fn from_device<Y: FnMut(u32)>(
-        device: &'a mut super::device::HaceDevice<Y>,
-    ) -> Self {
+    pub unsafe fn from_device<Y: FnMut(u32)>(device: &'a mut super::device::HaceDevice<Y>) -> Self {
         // Borrow split. `regs`/`poll_budget`/`ctx` are `Copy`d out; the
         // retained `&'a mut device.yield_fn` reborrow pins `&'a mut HaceDevice`
         // for the whole life of the returned op — that is the arbiter: a
@@ -140,7 +142,6 @@ impl<'a, T: DigestAlgorithm> HaceDigest<'a, T> {
     }
 }
 
-
 impl<'a, T: DigestAlgorithm> ErrorType for HaceDigest<'a, T> {
     type Error = HaceError;
 }
@@ -149,8 +150,10 @@ impl<'a, T: HaceDigestSpec> DigestInit<T> for HaceDigest<'a, T>
 where
     T::Digest: IntoBytes,
 {
-    type OpContext<'b> = HaceDigest<'b, T> where Self: 'b;
-    type Output = T::Digest;
+    type OpContext<'b>
+        = HaceDigest<'b, T>
+    where
+        Self: 'b;
 
     fn init(&mut self, _algo: T) -> Result<Self::OpContext<'_>, Self::Error> {
         // Mirror aspeed-rust init sequence exactly:
@@ -229,7 +232,8 @@ where
         let method = self.ctx.method;
 
         self.regs.clear_hash_intflag();
-        self.regs.program_hash_operation(sg_addr, digest_addr, total_len, method);
+        self.regs
+            .program_hash_operation(sg_addr, digest_addr, total_len, method);
 
         let mut done = false;
         for _ in 0..self.poll_budget {
@@ -272,7 +276,8 @@ where
         let method = this.ctx.method;
 
         this.regs.clear_hash_intflag();
-        this.regs.program_hash_operation(sg_addr, digest_addr, bufcnt, method);
+        this.regs
+            .program_hash_operation(sg_addr, digest_addr, bufcnt, method);
 
         for _ in 0..this.poll_budget {
             if this.regs.hash_intflag_is_set() {
@@ -303,4 +308,3 @@ impl<'a, T: DigestAlgorithm> DigestCtrlReset for HaceDigest<'a, T> {
         Ok(())
     }
 }
-

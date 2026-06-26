@@ -53,6 +53,13 @@ impl HaceRegisters {
         self.regs().hace1c().read().hash_intflag().bit_is_set()
     }
 
+    /// Returns `true` while the hash engine is actively processing (HACE1C bit 0).
+    /// Used to drain any in-progress bootloader operation before starting our own.
+    #[inline]
+    pub(crate) fn hash_engine_is_busy(&self) -> bool {
+        self.regs().hace1c().read().hash_eng_sts_flag().bit_is_set()
+    }
+
     #[inline]
     pub(crate) fn program_hash_operation(
         &self,
@@ -63,8 +70,12 @@ impl HaceRegisters {
     ) {
         // SAFETY: Callers provide HACE-usable physical addresses and a valid command.
         self.regs().hace20().write(|w| unsafe { w.bits(src_addr) });
-        self.regs().hace24().write(|w| unsafe { w.bits(digest_addr) });
-        self.regs().hace28().write(|w| unsafe { w.bits(digest_addr) });
+        self.regs()
+            .hace24()
+            .write(|w| unsafe { w.bits(digest_addr) });
+        self.regs()
+            .hace28()
+            .write(|w| unsafe { w.bits(digest_addr) });
         self.regs().hace2c().write(|w| unsafe { w.bits(data_len) });
         self.regs().hace30().write(|w| unsafe { w.bits(cmd) });
     }

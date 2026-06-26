@@ -61,9 +61,7 @@ impl<'a> AesCipher<'a> {
     ///
     /// # Safety
     /// No concurrent or reentrant HACE access for the returned lifetime.
-    pub unsafe fn from_device<Y: FnMut(u32)>(
-        device: &'a mut super::device::HaceDevice<Y>,
-    ) -> Self {
+    pub unsafe fn from_device<Y: FnMut(u32)>(device: &'a mut super::device::HaceDevice<Y>) -> Self {
         // Borrow split; retained `yield_fn` keeps the device exclusively borrowed.
         let regs = device.regs;
         let poll_budget = device.poll_budget;
@@ -96,10 +94,7 @@ impl<'a> AesCipher<'a> {
         output: &mut [u8],
     ) -> Result<(), HaceError> {
         // Enforce block-aligned sizing before programming the engine.
-        if input.is_empty()
-            || input.len() % AES_BLOCK != 0
-            || output.len() < input.len()
-        {
+        if input.is_empty() || input.len() % AES_BLOCK != 0 || output.len() < input.len() {
             return Err(HaceError::InvalidInput);
         }
         let kbits = Self::keylen_bits(key)?;
@@ -120,10 +115,7 @@ impl<'a> AesCipher<'a> {
         self.ctx.dst.addr = out_ptr;
         self.ctx.dst.len = len | HACE_SG_LAST;
 
-        let cmd = AES_CMD_BASE
-            | kbits
-            | mode_bits
-            | if encrypt { HACE_CMD_ENCRYPT } else { 0 };
+        let cmd = AES_CMD_BASE | kbits | mode_bits | if encrypt { HACE_CMD_ENCRYPT } else { 0 };
         self.ctx.cmd = cmd;
 
         // Program descriptor addresses, ctx base, and data length.
@@ -198,11 +190,11 @@ impl Drop for AesCipher<'_> {
     }
 }
 
-    // ===== Optional openprot cipher-trait skin (ADR-A1) =====================
-    //
-    // Thin fixed-`N` wrapper over `AesCipher`. Kept separate because
-    // `SymmetricCipher` uses fixed associated buffer types and cannot express
-    // large streaming DMA paths.
+// ===== Optional openprot cipher-trait skin (ADR-A1) =====================
+//
+// Thin fixed-`N` wrapper over `AesCipher`. Kept separate because
+// `SymmetricCipher` uses fixed associated buffer types and cannot express
+// large streaming DMA paths.
 
 /// AES-ECB mode marker (port-defined; the hal declares no concrete modes).
 #[derive(Debug, Clone, Copy)]
@@ -219,6 +211,8 @@ impl BlockCipherMode for Cbc {}
 /// Owned AES key for the trait skin (raw-key path only).
 ///
 /// Size selects variant: 16 => AES-128, 32 => AES-256.
+///
+/// The key bytes are zeroized when this value is dropped.
 #[derive(Clone)]
 pub enum AesKey {
     Aes128([u8; 16]),
@@ -232,6 +226,19 @@ impl AesKey {
             AesKey::Aes128(k) => k,
             AesKey::Aes256(k) => k,
         }
+    }
+
+    fn zeroize(&mut self) {
+        match self {
+            AesKey::Aes128(k) => k.fill(0),
+            AesKey::Aes256(k) => k.fill(0),
+        }
+    }
+}
+
+impl Drop for AesKey {
+    fn drop(&mut self) {
+        self.zeroize();
     }
 }
 
@@ -295,7 +302,6 @@ macro_rules! cipher_init {
                 &'a mut self,
                 key: &Self::Key,
                 nonce: &Self::Nonce,
-                _mode: $mode,
             ) -> Result<Self::CipherContext<'a>, Self::Error> {
                 // SAFETY: `AesSkin::new` guarantees non-reentrancy; reborrow is exclusive.
                 let core = unsafe { AesCipher::from_device(&mut *self.dev) };
@@ -314,6 +320,7 @@ cipher_init!(Cbc);
 
 impl<'a, const N: usize> CipherOp<Ecb> for AesOp<'a, N, Ecb> {
     fn encrypt(&mut self, plaintext: [u8; N]) -> Result<[u8; N], HaceError> {
+        const { assert!(N % AES_BLOCK == 0, "AesSkin<N>: N must be a multiple of 16") };
         let mut ct = [0u8; N];
         self.core
             .ecb_encrypt(self.key.as_slice(), &plaintext, &mut ct)?;
@@ -321,6 +328,7 @@ impl<'a, const N: usize> CipherOp<Ecb> for AesOp<'a, N, Ecb> {
     }
 
     fn decrypt(&mut self, ciphertext: [u8; N]) -> Result<[u8; N], HaceError> {
+        const { assert!(N % AES_BLOCK == 0, "AesSkin<N>: N must be a multiple of 16") };
         let mut pt = [0u8; N];
         self.core
             .ecb_decrypt(self.key.as_slice(), &ciphertext, &mut pt)?;
@@ -330,16 +338,27 @@ impl<'a, const N: usize> CipherOp<Ecb> for AesOp<'a, N, Ecb> {
 
 impl<'a, const N: usize> CipherOp<Cbc> for AesOp<'a, N, Cbc> {
     fn encrypt(&mut self, plaintext: [u8; N]) -> Result<[u8; N], HaceError> {
+        const { assert!(N % AES_BLOCK == 0, "AesSkin<N>: N must be a multiple of 16") };
         let mut ct = [0u8; N];
         self.core
             .cbc_encrypt(self.key.as_slice(), &self.iv, &plaintext, &mut ct)?;
+        // Advance IV to last ciphertext block so sequential encrypt() calls
+        // form a correct CBC chain instead of reusing the original IV.
+        if let Some(last) = ct.get(N - AES_BLOCK..) {
+            self.iv.copy_from_slice(last);
+        }
         Ok(ct)
     }
 
     fn decrypt(&mut self, ciphertext: [u8; N]) -> Result<[u8; N], HaceError> {
+        const { assert!(N % AES_BLOCK == 0, "AesSkin<N>: N must be a multiple of 16") };
         let mut pt = [0u8; N];
         self.core
             .cbc_decrypt(self.key.as_slice(), &self.iv, &ciphertext, &mut pt)?;
+        // Advance IV to last ciphertext block (CBC decrypt chaining).
+        if let Some(last) = ciphertext.get(N - AES_BLOCK..) {
+            self.iv.copy_from_slice(last);
+        }
         Ok(pt)
     }
 }

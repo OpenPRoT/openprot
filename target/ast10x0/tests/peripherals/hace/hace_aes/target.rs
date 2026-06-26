@@ -15,7 +15,7 @@ use ast10x0_peripherals::hace::{AesCipher, HaceDevice, HaceError};
 use codegen as _;
 use console_backend::console_backend_write_all;
 use entry as _;
-use target_common::{TargetInterface, declare_target};
+use target_common::{declare_target, TargetInterface};
 
 pub struct Target {}
 
@@ -93,19 +93,78 @@ fn run_hace_aes_kats() -> Result<(), &'static str> {
 
     let board = Ast10x0Board::new(Ast10x0BoardDescriptor {
         pinctrl_groups: &[],
+        i2c_buses: &[],
     });
     // SAFETY: test runs once at boot with exclusive access to the board.
-    unsafe { board.init() };
+    unsafe {
+        let _ = board.init();
+    };
 
     // NIST SP 800-38A KATs.
-    kat!("ecb-128 encrypt", ecb_encrypt, &AES128_KEY, &CBC_IV, &PT64, &ECB128_CT);
-    kat!("ecb-128 decrypt", ecb_decrypt, &AES128_KEY, &CBC_IV, &ECB128_CT, &PT64);
-    kat!("ecb-256 encrypt", ecb_encrypt, &AES256_KEY, &CBC_IV, &PT64, &ECB256_CT);
-    kat!("ecb-256 decrypt", ecb_decrypt, &AES256_KEY, &CBC_IV, &ECB256_CT, &PT64);
-    kat!("cbc-128 encrypt", cbc_encrypt, &AES128_KEY, &CBC_IV, &PT64, &CBC128_CT);
-    kat!("cbc-128 decrypt", cbc_decrypt, &AES128_KEY, &CBC_IV, &CBC128_CT, &PT64);
-    kat!("cbc-256 encrypt", cbc_encrypt, &AES256_KEY, &CBC_IV, &PT64, &CBC256_CT);
-    kat!("cbc-256 decrypt", cbc_decrypt, &AES256_KEY, &CBC_IV, &CBC256_CT, &PT64);
+    kat!(
+        "ecb-128 encrypt",
+        ecb_encrypt,
+        &AES128_KEY,
+        &CBC_IV,
+        &PT64,
+        &ECB128_CT
+    );
+    kat!(
+        "ecb-128 decrypt",
+        ecb_decrypt,
+        &AES128_KEY,
+        &CBC_IV,
+        &ECB128_CT,
+        &PT64
+    );
+    kat!(
+        "ecb-256 encrypt",
+        ecb_encrypt,
+        &AES256_KEY,
+        &CBC_IV,
+        &PT64,
+        &ECB256_CT
+    );
+    kat!(
+        "ecb-256 decrypt",
+        ecb_decrypt,
+        &AES256_KEY,
+        &CBC_IV,
+        &ECB256_CT,
+        &PT64
+    );
+    kat!(
+        "cbc-128 encrypt",
+        cbc_encrypt,
+        &AES128_KEY,
+        &CBC_IV,
+        &PT64,
+        &CBC128_CT
+    );
+    kat!(
+        "cbc-128 decrypt",
+        cbc_decrypt,
+        &AES128_KEY,
+        &CBC_IV,
+        &CBC128_CT,
+        &PT64
+    );
+    kat!(
+        "cbc-256 encrypt",
+        cbc_encrypt,
+        &AES256_KEY,
+        &CBC_IV,
+        &PT64,
+        &CBC256_CT
+    );
+    kat!(
+        "cbc-256 decrypt",
+        cbc_decrypt,
+        &AES256_KEY,
+        &CBC_IV,
+        &CBC256_CT,
+        &PT64
+    );
 
     // Non-block-size input must return InvalidInput.
     {

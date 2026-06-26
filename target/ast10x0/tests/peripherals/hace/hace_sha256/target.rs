@@ -13,7 +13,7 @@ use openprot_hal_blocking::digest::scoped::{DigestInit, DigestOp};
 use openprot_hal_blocking::digest::{Sha2_256, Sha2_384, Sha2_512};
 use openprot_hal_blocking::mac::scoped::{MacInit, MacOp};
 use openprot_hal_blocking::mac::{HmacSha2_256, HmacSha2_384, HmacSha2_512};
-use target_common::{TargetInterface, declare_target};
+use target_common::{declare_target, TargetInterface};
 
 pub struct Target {}
 
@@ -138,9 +138,12 @@ fn run_hace_sha2_kats() -> Result<(), &'static str> {
 
     let board = Ast10x0Board::new(Ast10x0BoardDescriptor {
         pinctrl_groups: &[],
+        i2c_buses: &[],
     });
     // SAFETY: test runs once at boot with exclusive access to the board.
-    unsafe { board.init() };
+    unsafe {
+        let _ = board.init();
+    };
 
     // --- SHA-256 ---
     oneshot_case!("sha256 empty", Sha2_256, Sha2_256, b"", EMPTY_256);
@@ -158,9 +161,30 @@ fn run_hace_sha2_kats() -> Result<(), &'static str> {
     // --- Production streaming path: 9000 B fed as 4096 + 4096 + 808 ---
     // 4096 is a multiple of both 64 and 128, so every full chunk lands on an
     // exact block boundary: this is the dominant PFR workload (goal.md §3.5).
-    stream_case!("sha256 stream-9000", Sha2_256, Sha2_256, 9000usize, 4096usize, STREAM9000_256);
-    stream_case!("sha384 stream-9000", Sha2_384, Sha2_384, 9000usize, 4096usize, STREAM9000_384);
-    stream_case!("sha512 stream-9000", Sha2_512, Sha2_512, 9000usize, 4096usize, STREAM9000_512);
+    stream_case!(
+        "sha256 stream-9000",
+        Sha2_256,
+        Sha2_256,
+        9000usize,
+        4096usize,
+        STREAM9000_256
+    );
+    stream_case!(
+        "sha384 stream-9000",
+        Sha2_384,
+        Sha2_384,
+        9000usize,
+        4096usize,
+        STREAM9000_384
+    );
+    stream_case!(
+        "sha512 stream-9000",
+        Sha2_512,
+        Sha2_512,
+        9000usize,
+        4096usize,
+        STREAM9000_512
+    );
 
     // --- D2 delta case (goal.md D2) ---
     // SHA-256, block 64. update(100): buffers a 36-byte remainder. update(28):
@@ -242,30 +266,126 @@ fn run_hace_sha2_kats() -> Result<(), &'static str> {
     // --- HMAC (software RFC-2104 over the HACE hasher), RFC-4231 vectors ---
     // Cases 1-4,6,7. Case 6/7 use a 131-byte key (> block size) exercising the
     // RFC-2104-correct `key_len > block_size` reduction path.
-    hmac_case!("hmac-sha256 rfc4231-1", HmacSha2_256, &HMAC_K1, b"Hi There", HMAC_C1_256);
-    hmac_case!("hmac-sha256 rfc4231-2", HmacSha2_256, b"Jefe", b"what do ya want for nothing?", HMAC_C2_256);
-    hmac_case!("hmac-sha256 rfc4231-3", HmacSha2_256, &HMAC_K3, &HMAC_D3, HMAC_C3_256);
-    hmac_case!("hmac-sha256 rfc4231-4", HmacSha2_256, &HMAC_K4, &HMAC_D4, HMAC_C4_256);
-    hmac_case!("hmac-sha256 rfc4231-6", HmacSha2_256, &HMAC_K6, b"Test Using Larger Than Block-Size Key - Hash Key First", HMAC_C6_256);
+    hmac_case!(
+        "hmac-sha256 rfc4231-1",
+        HmacSha2_256,
+        &HMAC_K1,
+        b"Hi There",
+        HMAC_C1_256
+    );
+    hmac_case!(
+        "hmac-sha256 rfc4231-2",
+        HmacSha2_256,
+        b"Jefe",
+        b"what do ya want for nothing?",
+        HMAC_C2_256
+    );
+    hmac_case!(
+        "hmac-sha256 rfc4231-3",
+        HmacSha2_256,
+        &HMAC_K3,
+        &HMAC_D3,
+        HMAC_C3_256
+    );
+    hmac_case!(
+        "hmac-sha256 rfc4231-4",
+        HmacSha2_256,
+        &HMAC_K4,
+        &HMAC_D4,
+        HMAC_C4_256
+    );
+    hmac_case!(
+        "hmac-sha256 rfc4231-6",
+        HmacSha2_256,
+        &HMAC_K6,
+        b"Test Using Larger Than Block-Size Key - Hash Key First",
+        HMAC_C6_256
+    );
     hmac_case!("hmac-sha256 rfc4231-7", HmacSha2_256, &HMAC_K7, b"This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm.", HMAC_C7_256);
 
-    hmac_case!("hmac-sha384 rfc4231-1", HmacSha2_384, &HMAC_K1, b"Hi There", HMAC_C1_384);
-    hmac_case!("hmac-sha384 rfc4231-2", HmacSha2_384, b"Jefe", b"what do ya want for nothing?", HMAC_C2_384);
-    hmac_case!("hmac-sha384 rfc4231-3", HmacSha2_384, &HMAC_K3, &HMAC_D3, HMAC_C3_384);
-    hmac_case!("hmac-sha384 rfc4231-4", HmacSha2_384, &HMAC_K4, &HMAC_D4, HMAC_C4_384);
-    hmac_case!("hmac-sha384 rfc4231-6", HmacSha2_384, &HMAC_K6, b"Test Using Larger Than Block-Size Key - Hash Key First", HMAC_C6_384);
+    hmac_case!(
+        "hmac-sha384 rfc4231-1",
+        HmacSha2_384,
+        &HMAC_K1,
+        b"Hi There",
+        HMAC_C1_384
+    );
+    hmac_case!(
+        "hmac-sha384 rfc4231-2",
+        HmacSha2_384,
+        b"Jefe",
+        b"what do ya want for nothing?",
+        HMAC_C2_384
+    );
+    hmac_case!(
+        "hmac-sha384 rfc4231-3",
+        HmacSha2_384,
+        &HMAC_K3,
+        &HMAC_D3,
+        HMAC_C3_384
+    );
+    hmac_case!(
+        "hmac-sha384 rfc4231-4",
+        HmacSha2_384,
+        &HMAC_K4,
+        &HMAC_D4,
+        HMAC_C4_384
+    );
+    hmac_case!(
+        "hmac-sha384 rfc4231-6",
+        HmacSha2_384,
+        &HMAC_K6,
+        b"Test Using Larger Than Block-Size Key - Hash Key First",
+        HMAC_C6_384
+    );
     hmac_case!("hmac-sha384 rfc4231-7", HmacSha2_384, &HMAC_K7, b"This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm.", HMAC_C7_384);
 
     // Isolation: K6_512 == SHA512(K6). Feeding it as a 64-byte (<=block) key
     // takes hmac.rs's NON-reduce branch but yields the identical K0, so it must
     // equal HMAC(K6,msg). If this PASSES, the in-init kd reduction is the bug.
-    hmac_case!("hmac-sha512 prereduced6", HmacSha2_512, &K6_512, b"Test Using Larger Than Block-Size Key - Hash Key First", HMAC_C6_512);
+    hmac_case!(
+        "hmac-sha512 prereduced6",
+        HmacSha2_512,
+        &K6_512,
+        b"Test Using Larger Than Block-Size Key - Hash Key First",
+        HMAC_C6_512
+    );
 
-    hmac_case!("hmac-sha512 rfc4231-1", HmacSha2_512, &HMAC_K1, b"Hi There", HMAC_C1_512);
-    hmac_case!("hmac-sha512 rfc4231-2", HmacSha2_512, b"Jefe", b"what do ya want for nothing?", HMAC_C2_512);
-    hmac_case!("hmac-sha512 rfc4231-3", HmacSha2_512, &HMAC_K3, &HMAC_D3, HMAC_C3_512);
-    hmac_case!("hmac-sha512 rfc4231-4", HmacSha2_512, &HMAC_K4, &HMAC_D4, HMAC_C4_512);
-    hmac_case!("hmac-sha512 rfc4231-6", HmacSha2_512, &HMAC_K6, b"Test Using Larger Than Block-Size Key - Hash Key First", HMAC_C6_512);
+    hmac_case!(
+        "hmac-sha512 rfc4231-1",
+        HmacSha2_512,
+        &HMAC_K1,
+        b"Hi There",
+        HMAC_C1_512
+    );
+    hmac_case!(
+        "hmac-sha512 rfc4231-2",
+        HmacSha2_512,
+        b"Jefe",
+        b"what do ya want for nothing?",
+        HMAC_C2_512
+    );
+    hmac_case!(
+        "hmac-sha512 rfc4231-3",
+        HmacSha2_512,
+        &HMAC_K3,
+        &HMAC_D3,
+        HMAC_C3_512
+    );
+    hmac_case!(
+        "hmac-sha512 rfc4231-4",
+        HmacSha2_512,
+        &HMAC_K4,
+        &HMAC_D4,
+        HMAC_C4_512
+    );
+    hmac_case!(
+        "hmac-sha512 rfc4231-6",
+        HmacSha2_512,
+        &HMAC_K6,
+        b"Test Using Larger Than Block-Size Key - Hash Key First",
+        HMAC_C6_512
+    );
     hmac_case!("hmac-sha512 rfc4231-7", HmacSha2_512, &HMAC_K7, b"This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm.", HMAC_C7_512);
 
     // Streaming HMAC: split RFC-4231 case 7 data across multiple `update`s;

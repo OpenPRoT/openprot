@@ -22,7 +22,11 @@ pub(crate) fn fill_padding(ctx: &mut HashContext, remaining: usize) {
 
     let index = (bufcnt + remaining) & (block_size - 1);
     let padlen = if block_size == 64 {
-        if index < 56 { 56 - index } else { 64 + 56 - index }
+        if index < 56 {
+            56 - index
+        } else {
+            64 + 56 - index
+        }
     } else if index < 112 {
         112 - index
     } else {

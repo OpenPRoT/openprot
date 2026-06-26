@@ -77,7 +77,10 @@ impl HmacKey {
         }
         let mut bytes = [0u8; HMAC_KEY_CAP];
         bytes[..key.len()].copy_from_slice(key);
-        Ok(Self { bytes, len: key.len() })
+        Ok(Self {
+            bytes,
+            len: key.len(),
+        })
     }
 
     #[inline]
@@ -104,9 +107,7 @@ impl HaceHmac {
     /// # Safety
     /// Caller must ensure no concurrent or reentrant HACE access for the
     /// lifetime of HMAC operations created from this controller.
-    pub unsafe fn from_device<Y: FnMut(u32)>(
-        device: &mut super::device::HaceDevice<Y>,
-    ) -> Self {
+    pub unsafe fn from_device<Y: FnMut(u32)>(device: &mut super::device::HaceDevice<Y>) -> Self {
         Self::new(device.poll_budget)
     }
 }
