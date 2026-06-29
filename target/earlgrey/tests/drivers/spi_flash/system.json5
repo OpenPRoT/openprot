@@ -1,0 +1,41 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+{
+  arch: {
+    type: "riscv",
+  },
+  kernel: {
+    flash_start_address: 0xA0010000,
+    flash_size_bytes: 65536,
+    ram_start_address: 0x10000000,
+    ram_size_bytes: 32768,
+    interrupt_table: {
+      table: {}
+    },
+  },
+  apps: [
+    {
+      name: "spi_flash",
+      flash_size_bytes: 24576, // Slightly larger because of SFDP parser inclusion
+      processes: [{
+        name: "spi_flash_process",
+        ram_size_bytes: 8192, // Larger stack/heap just in case
+        objects: [
+          {
+            type: "thread",
+            name: "spi_thread",
+            kernel_stack_size_bytes: 2048,
+          },
+        ],
+        memory_mappings: [
+          {
+            name: "spi_host0",
+            type: "device",
+            start_address: 0x40300000,
+            size_bytes: 0x1000,
+          },
+        ],
+      }],
+    },
+  ],
+}

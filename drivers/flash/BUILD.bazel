@@ -1,0 +1,30 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "spi_flash",
+    srcs = ["spi_flash.rs"],
+    crate_name = "spi_flash",
+    edition = "2024",
+    proc_macro_deps = [
+        "@rust_crates//:bitfield-struct",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking/flash",
+        "//hal/blocking/flash:driver",
+        "//util/error",
+        "//util/io",
+        "//util/sfdp",
+        "//util/types",
+        "@rust_crates//:embedded-hal",
+        "@rust_crates//:zerocopy",
+    ],
+)
+
+rust_test(
+    name = "spi_flash_test",
+    crate = ":spi_flash",
+)
