@@ -172,6 +172,14 @@ pub(crate) unsafe fn acquire_shared_ctx() -> *mut HashContext {
 // `#[repr(C, align(64))]`, single-in-flight discipline (and the same
 // layout-sensitivity caution, goal.md §2.2) as `HashContext`.
 
+/// Maximum AES payload (source + destination) that can be staged through the
+/// `.ram_nc` DMA buffers inside [`CryptoContext`]. Operations larger than this
+/// return [`super::error::HaceError::InvalidInput`].
+///
+/// 512 bytes = 32 AES blocks, covering all current use-cases (key-unwrap,
+/// CFI attestation, etc.). Increase here if larger payloads are ever needed.
+pub(crate) const AES_DATA_CAP: usize = 512;
+
 #[repr(C, align(64))]
 pub(crate) struct CryptoContext {
     /// Engine context buffer: `[0..16)` IV (CBC), `[16..16+keylen)` raw key
@@ -184,6 +192,14 @@ pub(crate) struct CryptoContext {
     /// Command word composed per goal.md §1.9.2 (unused as engine input — the
     /// driver writes it to HACE10 directly — kept for parity of layout/debug).
     pub(crate) cmd: u32,
+    /// DMA-safe input staging buffer (`.ram_nc`). The caller's plaintext or
+    /// ciphertext is CPU-copied here before the engine is started, ensuring
+    /// the DMA source is always in non-cacheable SRAM regardless of where the
+    /// caller allocated the slice (flash, stack, cacheable SRAM).
+    pub(crate) data_in: [u8; AES_DATA_CAP],
+    /// DMA-safe output staging buffer (`.ram_nc`). The engine writes here;
+    /// the result is CPU-copied to the caller's output slice after completion.
+    pub(crate) data_out: [u8; AES_DATA_CAP],
 }
 
 impl CryptoContext {
@@ -193,6 +209,8 @@ impl CryptoContext {
             src: Sg::new(),
             dst: Sg::new(),
             cmd: 0,
+            data_in: [0; AES_DATA_CAP],
+            data_out: [0; AES_DATA_CAP],
         }
     }
 }

@@ -17,7 +17,7 @@ use super::constants::{
     AES_CMD_BASE, HACE_CMD_AES128, HACE_CMD_AES256, HACE_CMD_CBC, HACE_CMD_ECB, HACE_CMD_ENCRYPT,
     HACE_SG_LAST, POLL_YIELD_NS,
 };
-use super::context::CryptoContext;
+use super::context::{CryptoContext, AES_DATA_CAP};
 use super::device::HaceDevice;
 use super::error::HaceError;
 use super::helpers::ptr_to_u32;
@@ -93,8 +93,11 @@ impl<'a> AesCipher<'a> {
         input: &[u8],
         output: &mut [u8],
     ) -> Result<(), HaceError> {
-        // Enforce block-aligned sizing before programming the engine.
+        // Enforce block-aligned sizing and DMA staging cap before programming.
         if input.is_empty() || input.len() % AES_BLOCK != 0 || output.len() < input.len() {
+            return Err(HaceError::InvalidInput);
+        }
+        if input.len() > AES_DATA_CAP {
             return Err(HaceError::InvalidInput);
         }
         let kbits = Self::keylen_bits(key)?;
@@ -107,9 +110,17 @@ impl<'a> AesCipher<'a> {
         }
         self.ctx.ctx[AES_BLOCK..AES_BLOCK + key.len()].copy_from_slice(key);
 
-        // SG descriptors: addr = data phys, len = bytes | HACE_SG_LAST.
-        let in_ptr = ptr_to_u32(input.as_ptr())?;
-        let out_ptr = ptr_to_u32(output.as_ptr())?;
+        // DMA safety (D3): copy caller input into the .ram_nc staging buffer.
+        // The HACE engine reads/writes by physical address; if the caller's
+        // slice is in flash, rodata, or a cacheable stack frame the engine
+        // would silently read/write stale physical RAM. Staging through
+        // ctx.data_in / ctx.data_out (both inside the .ram_nc CryptoContext)
+        // guarantees the DMA addresses are always in non-cacheable SRAM.
+        self.ctx.data_in[..input.len()].copy_from_slice(input);
+
+        // SG descriptors: addr = .ram_nc staging buffers, len = bytes | HACE_SG_LAST.
+        let in_ptr = ptr_to_u32(self.ctx.data_in.as_ptr())?;
+        let out_ptr = ptr_to_u32(self.ctx.data_out.as_ptr())?;
         self.ctx.src.addr = in_ptr;
         self.ctx.src.len = len | HACE_SG_LAST;
         self.ctx.dst.addr = out_ptr;
@@ -141,8 +152,23 @@ impl<'a> AesCipher<'a> {
         self.ctx.ctx = [0u8; 64];
 
         if done {
+            // Copy result out of .ram_nc staging buffer to caller's output.
+            let n = input.len();
+            output
+                .get_mut(..n)
+                .ok_or(HaceError::InvalidInput)?
+                .copy_from_slice(
+                    self.ctx
+                        .data_out
+                        .get(..n)
+                        .ok_or(HaceError::InvalidInput)?,
+                );
+            // Scrub staging buffers so plaintext/ciphertext doesn't linger.
+            self.ctx.data_in[..n].fill(0);
+            self.ctx.data_out[..n].fill(0);
             Ok(())
         } else {
+            self.ctx.data_in[..input.len()].fill(0);
             Err(HaceError::Timeout)
         }
     }

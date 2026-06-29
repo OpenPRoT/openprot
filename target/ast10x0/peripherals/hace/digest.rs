@@ -140,6 +140,36 @@ impl<'a, T: DigestAlgorithm> HaceDigest<'a, T> {
         let yield_fn: &'a mut dyn FnMut(u32) = &mut device.yield_fn;
         Self::new(regs, ctx, poll_budget, yield_fn)
     }
+
+    /// DMA one full block held in `ctx.buffer` (always `.ram_nc`) to the engine.
+    ///
+    /// Called only when `ctx.bufcnt == ctx.block_size`. Resets `bufcnt` to 0
+    /// on success so the buffer can be reused for the next block.
+    fn flush_block(&mut self) -> Result<(), HaceError> {
+        let buf_ptr = ptr_to_u32(self.ctx.buffer.as_ptr())?;
+        let bufcnt = self.ctx.bufcnt;
+        self.ctx.sg[0].addr = buf_ptr;
+        self.ctx.sg[0].len = bufcnt | HACE_SG_LAST;
+
+        let sg_addr = ptr_to_u32(self.ctx.sg.as_ptr())?;
+        let digest_addr = ptr_to_u32(self.ctx.digest.as_ptr())?;
+        let method = self.ctx.method;
+
+        self.regs.clear_hash_intflag();
+        self.regs
+            .program_hash_operation(sg_addr, digest_addr, bufcnt, method);
+
+        for _ in 0..self.poll_budget {
+            if self.regs.hash_intflag_is_set() {
+                self.ctx.bufcnt = 0;
+                return Ok(());
+            }
+            (self.yield_fn)(POLL_YIELD_NS);
+        }
+
+        self.regs.stop_hash_operation();
+        Err(HaceError::Timeout)
+    }
 }
 
 impl<'a, T: DigestAlgorithm> ErrorType for HaceDigest<'a, T> {
@@ -193,68 +223,45 @@ where
             self.ctx.digcnt[1] += 1;
         }
 
-        // If all input fits without filling a complete block, buffer it.
-        if self.ctx.bufcnt + input_len < self.ctx.block_size {
-            let start = self.ctx.bufcnt as usize;
-            let end = start + input_len as usize;
-            self.ctx.buffer[start..end].copy_from_slice(input);
-            self.ctx.bufcnt += input_len;
-            return Ok(());
-        }
-
-        // Process one or more full blocks via SG.
-        let remaining = (input_len + self.ctx.bufcnt) % self.ctx.block_size;
-        let total_len = (input_len + self.ctx.bufcnt) - remaining;
-        let mut sg_idx = 0usize;
-
-        // Capture pointers before mutating the SG table.
-        let buf_ptr = ptr_to_u32(self.ctx.buffer.as_ptr())?;
-        let input_ptr = ptr_to_u32(input.as_ptr())?;
-
-        if self.ctx.bufcnt != 0 {
-            self.ctx.sg[0].addr = buf_ptr;
-            self.ctx.sg[0].len = self.ctx.bufcnt;
-            if total_len == self.ctx.bufcnt {
-                // Existing buffer is the only SG entry; input becomes the tail.
-                self.ctx.sg[0].addr = input_ptr;
-                self.ctx.sg[0].len |= HACE_SG_LAST;
+        // Copy all input through ctx.buffer (.ram_nc) one block at a time.
+        //
+        // DMA safety (D1/D2): the HACE engine reads data by physical address
+        // via SG descriptors. If the caller's `input` slice is in flash, rodata,
+        // or a cacheable stack buffer, the engine may read stale zeros from
+        // physical RAM. By staging every byte through `ctx.buffer` (which is
+        // placed in `.ram_nc` by the linker) we guarantee the DMA source is
+        // always in non-cacheable SRAM. This also covers HMAC's `scratch`
+        // buffer (D2) since it routes through `update()` via `one_shot!`.
+        let block_size = self.ctx.block_size as usize;
+        let mut offset = 0usize;
+        while offset < input.len() {
+            let bufcnt = self.ctx.bufcnt as usize;
+            let space = block_size.saturating_sub(bufcnt);
+            let chunk_len = core::cmp::min(space, input.len() - offset);
+            // Invariant: block_size is 64 or 128 (set by init()); if somehow
+            // zero, bail rather than infinite-loop.
+            if chunk_len == 0 {
+                return Err(HaceError::InvalidInput);
             }
-            sg_idx += 1;
-        }
 
-        if total_len != self.ctx.bufcnt {
-            self.ctx.sg[sg_idx].addr = input_ptr;
-            self.ctx.sg[sg_idx].len = (total_len - self.ctx.bufcnt) | HACE_SG_LAST;
-        }
+            let dst = self
+                .ctx
+                .buffer
+                .get_mut(bufcnt..bufcnt.saturating_add(chunk_len))
+                .ok_or(HaceError::InvalidInput)?;
+            let src = input
+                .get(offset..offset.saturating_add(chunk_len))
+                .ok_or(HaceError::InvalidInput)?;
+            dst.copy_from_slice(src);
 
-        let sg_addr = ptr_to_u32(self.ctx.sg.as_ptr())?;
-        let digest_addr = ptr_to_u32(self.ctx.digest.as_ptr())?;
-        let method = self.ctx.method;
+            self.ctx.bufcnt += chunk_len as u32;
+            offset += chunk_len;
 
-        self.regs.clear_hash_intflag();
-        self.regs
-            .program_hash_operation(sg_addr, digest_addr, total_len, method);
-
-        let mut done = false;
-        for _ in 0..self.poll_budget {
-            if self.regs.hash_intflag_is_set() {
-                done = true;
-                break;
+            // When the buffer holds exactly one full block, flush it via DMA.
+            if self.ctx.bufcnt == self.ctx.block_size {
+                self.flush_block()?;
             }
-            (self.yield_fn)(POLL_YIELD_NS);
         }
-        if !done {
-            self.regs.stop_hash_operation();
-            return Err(HaceError::Timeout);
-        }
-
-        // Copy remainder of input into the buffer for the next call.
-        if remaining != 0 {
-            let src_start = (total_len - self.ctx.bufcnt) as usize;
-            self.ctx.buffer[..remaining as usize]
-                .copy_from_slice(&input[src_start..src_start + remaining as usize]);
-        }
-        self.ctx.bufcnt = remaining;
 
         Ok(())
     }
