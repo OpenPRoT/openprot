@@ -32,32 +32,45 @@ use openprot_hal_blocking::mac::{
     ErrorType as MacErrorType, HmacSha2_256, HmacSha2_384, HmacSha2_512, KeyHandle,
 };
 
-/// Maximum HMAC key length accepted by [`HmacKey`]. Comfortably covers the
-/// RFC-4231 vectors (longest key 131 B); longer keys are reduced via `H(K)`
-/// anyway when `len > block_size`.
-pub const HMAC_KEY_CAP: usize = 256;
+/// Maximum HMAC key length accepted by [`HmacKey`]. Sized to cover the longest
+/// RFC-4231 vector (131 B, case 6/7); keys longer than the algorithm's block
+/// size are reduced via `H(K)` anyway, so larger values buy nothing except
+/// stack pressure.
+pub const HMAC_KEY_CAP: usize = 131;
 
 /// Largest HMAC message accepted (one-shot, like the authoritative model).
 pub const HMAC_MSG_CAP: usize = 1024;
 
 
-// ----- DMA-safe key staging buffer ------------------------------------
+// ----- DMA-safe HMAC working buffers ----------------------------------------
 //
-// The HACE engine performs DMA from the SG-list source addresses.  When a
-// key arrives from an arbitrary call site (e.g. from a `HmacKey` on the
-// caller's stack, which is in cacheable SRAM), the DMA engine may observe
-// stale zeros from physical RAM instead of the CPU-cached key bytes.
-// Aspeed-rust fixes this in `hash_key()` by always copying the key bytes
-// into `ctx.buffer` (`.ram_nc`) before hashing.  We do the same here: any
-// key that requires reduction (len > block_size) is first CPU-copied into
-// this `.ram_nc` staging buffer, then `one_shot!` reads it from there.
-struct HmacKeyNc(core::cell::UnsafeCell<[u8; HMAC_KEY_CAP]>);
-// SAFETY: single-threaded HACE driver; key-reduction calls are serialised by
-// the single-instance/non-reentrant `HaceDevice` contract.
-unsafe impl Sync for HmacKeyNc {}
+// All large HMAC buffers live in a single `.ram_nc` static so they are never
+// on the stack. This is critical: `run_hace_sha2_kats` runs many back-to-back
+// HMAC operations in a single stack frame; each `HaceHmacCtx` previously
+// carried 256+ bytes of `ipad`/`opad` and 1024 bytes of `msg`, causing stack
+// overflows (HardFault lockup) by rfc4231-3. With all big buffers here,
+// `HaceHmacCtx` is just three scalars (~20 bytes) on the stack.
+//
+// Safety contract: only one HMAC operation is live at a time (the
+// single-instance/non-reentrant `HaceDevice` contract). `init()` zeroes all
+// fields before starting a new operation.
+struct HmacNcBufs {
+    key:  core::cell::UnsafeCell<[u8; HMAC_KEY_CAP]>,
+    ipad: core::cell::UnsafeCell<[u8; 128]>,
+    opad: core::cell::UnsafeCell<[u8; 128]>,
+    msg:  core::cell::UnsafeCell<[u8; HMAC_MSG_CAP]>,
+}
+// SAFETY: single-threaded HACE driver; non-reentrant `HaceDevice` contract
+// serialises all HMAC operations.
+unsafe impl Sync for HmacNcBufs {}
 
 #[unsafe(link_section = ".ram_nc")]
-static HMAC_KEY_NC: HmacKeyNc = HmacKeyNc(core::cell::UnsafeCell::new([0u8; HMAC_KEY_CAP]));
+static HMAC_NC: HmacNcBufs = HmacNcBufs {
+    key:  core::cell::UnsafeCell::new([0u8; HMAC_KEY_CAP]),
+    ipad: core::cell::UnsafeCell::new([0u8; 128]),
+    opad: core::cell::UnsafeCell::new([0u8; 128]),
+    msg:  core::cell::UnsafeCell::new([0u8; HMAC_MSG_CAP]),
+};
 
 /// Run one full digest of `$input` via the verified public path, yielding the
 /// algorithm's `Digest`. Used for all three HMAC sub-hashes so HMAC rides
@@ -93,7 +106,7 @@ impl HmacKey {
         }
         let mut bytes = [0u8; HMAC_KEY_CAP];
         if let Some(dst) = bytes.get_mut(..key.len()) {
-            dst.copy_from_slice(key);
+            for (d, s) in dst.iter_mut().zip(key.iter()) { *d = *s; }
         }
         Ok(Self {
             bytes,
@@ -134,13 +147,10 @@ impl MacErrorType for HaceHmac {
     type Error = HaceError;
 }
 
-/// In-flight HMAC operation: retained `K0^ipad` / `K0^opad` blocks plus the
-/// buffered message. The HMAC is computed entirely at `finalize`.
+/// In-flight HMAC operation. All large buffers (ipad, opad, key, msg) live in
+/// the `.ram_nc` static `HMAC_NC`; this struct holds only the scalars needed
+/// to drive `finalize()` (~20 bytes on the stack).
 pub struct HaceHmacCtx<Inner> {
-    ipad: [u8; 128],
-    opad: [u8; 128],
-    block: usize,
-    msg: [u8; HMAC_MSG_CAP],
     msg_len: usize,
     poll_budget: u32,
     _inner: PhantomData<Inner>,
@@ -173,42 +183,37 @@ macro_rules! hmac_variant {
                 if k.len() > $b {
                     // Copy the raw key into the .ram_nc staging buffer so that
                     // the HACE DMA engine reads from non-cacheable SRAM.
-                    // Passing a stack pointer directly as the DMA source can
-                    // produce wrong results when the CPU cache has not been
-                    // written back (observed: SHA-512 key reduction reads zeros
-                    // from physical RAM while correct bytes are cache-resident).
-                    // This mirrors aspeed-rust's `hash_key()` which always does
-                    // `ctx.buffer[..key_len].copy_from_slice(key_bytes)` first.
                     let key_nc: &[u8] = unsafe {
-                        let buf = &mut *HMAC_KEY_NC.0.get();
+                        let buf = &mut *HMAC_NC.key.get();
                         if let Some(dst) = buf.get_mut(..k.len()) {
-                            dst.copy_from_slice(k);
+                            for (d, s) in dst.iter_mut().zip(k.iter()) { *d = *s; }
                         }
                         buf.get(..k.len()).unwrap_or(&[])
                     };
                     let kh = one_shot!($inner, $algo, pb, key_nc);
                     let hb = kh.as_bytes();
                     if let Some(dst) = k0.get_mut(..hb.len()) {
-                        dst.copy_from_slice(hb);
+                        for (d, s) in dst.iter_mut().zip(hb.iter()) { *d = *s; }
                     }
                 } else {
                     if let Some(dst) = k0.get_mut(..k.len()) {
-                        dst.copy_from_slice(k);
+                        for (d, s) in dst.iter_mut().zip(k.iter()) { *d = *s; }
                     }
                 }
 
-                let mut ipad = [0u8; 128];
-                let mut opad = [0u8; 128];
-                ipad[..$b].copy_from_slice(&k0[..$b]);
-                opad[..$b].copy_from_slice(&k0[..$b]);
-                ipad[..$b].iter_mut().for_each(|b| *b ^= 0x36);
-                opad[..$b].iter_mut().for_each(|b| *b ^= 0x5c);
+                // Build ipad/opad in .ram_nc directly.
+                // SAFETY: non-reentrant contract — exclusive access guaranteed.
+                unsafe {
+                    let ipad = &mut *HMAC_NC.ipad.get();
+                    let opad = &mut *HMAC_NC.opad.get();
+                    ipad.iter_mut().zip(k0.iter()).take($b).for_each(|(d, s)| *d = *s ^ 0x36);
+                    opad.iter_mut().zip(k0.iter()).take($b).for_each(|(d, s)| *d = *s ^ 0x5c);
+                    if let Some(rest) = ipad.get_mut($b..) { rest.fill(0); }
+                    if let Some(rest) = opad.get_mut($b..) { rest.fill(0); }
+                    (*HMAC_NC.msg.get()).fill(0);
+                }
 
                 Ok(HaceHmacCtx {
-                    ipad,
-                    opad,
-                    block: $b,
-                    msg: [0u8; HMAC_MSG_CAP],
                     msg_len: 0,
                     poll_budget: pb,
                     _inner: PhantomData,
@@ -227,52 +232,51 @@ macro_rules! hmac_variant {
                 if end > HMAC_MSG_CAP {
                     return Err(HaceError::InvalidInput);
                 }
-                let dst = self
-                    .msg
-                    .get_mut(self.msg_len..end)
-                    .ok_or(HaceError::InvalidInput)?;
-                // Element-wise copy: `dst` is `end - self.msg_len == input.len()`
-                // long, but the optimizer cannot prove that through the range
-                // slice, so `copy_from_slice` would retain its length-mismatch
-                // panic branch. The zip-copy is provably panic-free.
-                for (d, s) in dst.iter_mut().zip(input.iter()) {
-                    *d = *s;
+                // SAFETY: non-reentrant HMAC contract guarantees exclusive
+                // access to HMAC_NC.msg for the lifetime of this operation.
+                let buf = unsafe { &mut *HMAC_NC.msg.get() };
+                // zip-copy: dst.len() == input.len() holds because the range is
+                // [msg_len..end] where end = msg_len + input.len(), but the
+                // compiler cannot prove that through get_mut, so copy_from_slice
+                // would retain a len_mismatch_fail branch. zip stops at the
+                // shorter side, making this provably panic-free.
+                if let Some(dst) = buf.get_mut(self.msg_len..end) {
+                    for (d, s) in dst.iter_mut().zip(input.iter()) {
+                        *d = *s;
+                    }
                 }
                 self.msg_len = end;
                 Ok(())
             }
 
             fn finalize(self) -> Result<Self::Output, HaceError> {
-                let b = self.block;
                 let pb = self.poll_budget;
 
                 // inner = H(K0^ipad ‖ msg)
-                //
-                // Feed ipad and msg via two update() calls — no contiguous scratch
-                // buffer needed on the stack. update() copies each slice through
-                // ctx.buffer (.ram_nc) before DMA, so stack-resident sources
-                // (ipad, msg) are DMA-safe (D1/D2 guarantee).
+                // Feed ipad and msg via two update() calls — both sourced from
+                // HMAC_NC (.ram_nc), so DMA-safe without any extra copy.
                 let inner = {
-                    // SAFETY: single-threaded HMAC controller upholds non-reentrant contract.
                     let dev = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
                     let mut dev = dev.with_timeout_polls(pb);
-                    // SAFETY: same single-threaded exclusivity contract.
                     let mut dd = unsafe { HaceDigest::<$inner>::from_device(&mut dev) };
                     let mut op = dd.init($algo)?;
-                    op.update(self.ipad.get(..b).unwrap_or(&[]))?;
-                    op.update(self.msg.get(..self.msg_len).unwrap_or(&[]))?;
+                    // SAFETY: HMAC_NC is exclusively owned by this operation.
+                    let ipad = unsafe { &*HMAC_NC.ipad.get() };
+                    op.update(ipad.get(..$b).unwrap_or(&[]))?;
+                    let msg = unsafe { &*HMAC_NC.msg.get() };
+                    op.update(msg.get(..self.msg_len).ok_or(HaceError::InvalidInput)?)?;
                     op.finalize()?
                 };
                 let inner_bytes = inner.as_bytes();
 
                 // outer = H(K0^opad ‖ inner)
-                // SAFETY: same single-threaded exclusivity contract.
                 let dev = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
                 let mut dev = dev.with_timeout_polls(pb);
-                // SAFETY: same contract.
                 let mut dd = unsafe { HaceDigest::<$inner>::from_device(&mut dev) };
                 let mut op = dd.init($algo)?;
-                op.update(self.opad.get(..b).unwrap_or(&[]))?;
+                // SAFETY: HMAC_NC is exclusively owned by this operation.
+                let opad = unsafe { &*HMAC_NC.opad.get() };
+                op.update(opad.get(..$b).unwrap_or(&[]))?;
                 op.update(inner_bytes)?;
                 op.finalize()
             }
