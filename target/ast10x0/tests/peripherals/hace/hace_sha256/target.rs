@@ -351,6 +351,23 @@ fn run_hace_sha2_kats() -> Result<(), &'static str> {
         HMAC_C6_512
     );
 
+    // --- Trace: replicate hmac.rs::init() reduce branch exactly for SHA-512 ---
+    // hmac.rs copies K6 into HMAC_KEY_NC (.ram_nc) then calls one_shot!(Sha2_512).
+    // Here we do the same copy via INPUT_BUF (.bss, also DMA-safe after D1 fix)
+    // and hash it. If this gives K6_512, the reduce one_shot! is correct and the
+    // bug is in finalize(). If it gives something else, the reduce path is broken.
+    {
+        pw_log::info!("case: {}", "dbg sha512 reduce-k6-via-bss" as &str);
+        let buf = unsafe { &mut *core::ptr::addr_of_mut!(INPUT_BUF) };
+        buf[..HMAC_K6.len()].copy_from_slice(&HMAC_K6);
+        let mut device = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
+        let mut dd = unsafe { HaceDigest::<Sha2_512>::from_device(&mut device) };
+        let mut op = dd.init(Sha2_512).map_err(|_| ERR_HASH_FAILED)?;
+        op.update(&buf[..HMAC_K6.len()]).map_err(|_| ERR_HASH_FAILED)?;
+        let kh = op.finalize().map_err(|_| ERR_HASH_FAILED)?;
+        check("dbg sha512 reduce-k6-via-bss", kh.as_bytes(), &K6_512)?;
+    }
+
     hmac_case!(
         "hmac-sha512 rfc4231-1",
         HmacSha2_512,

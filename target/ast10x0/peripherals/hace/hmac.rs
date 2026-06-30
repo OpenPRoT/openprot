@@ -14,11 +14,10 @@
 //! streaming"). Each sub-hash runs through the verified public [`HaceDigest`]
 //! path (`HaceDevice` → `from_device` → `DigestInit`).
 //!
-//! KNOWN ISSUE (tracked, see plans/goal.md): HMAC-SHA512 with a key longer
-//! than the 128-byte block (RFC-4231 #6/#7) currently yields a wrong tag — a
-//! deterministic, clean mismatch (no crash). All SHA-2 digests, HMAC-SHA256
-//! (all RFC-4231 cases), HMAC-SHA384 (all cases incl. long-key reduction), and
-//! HMAC-SHA512 with keys <= block size are byte-correct against RFC-4231.
+//! Key reduction always copies the raw key bytes through a `.ram_nc` staging
+//! buffer before DMA, ensuring the HACE engine reads from non-cacheable SRAM
+//! regardless of where the caller allocated the `HmacKey` (mirrors
+//! aspeed-rust's `hash_key` strategy).
 //!
 //! Correctness authority: published RFC-4231 known-answer vectors (§2.1).
 
@@ -41,7 +40,24 @@ pub const HMAC_KEY_CAP: usize = 256;
 /// Largest HMAC message accepted (one-shot, like the authoritative model).
 pub const HMAC_MSG_CAP: usize = 1024;
 
-const SCRATCH: usize = 128 + HMAC_MSG_CAP; // ipad/opad block + message/inner
+
+// ----- DMA-safe key staging buffer ------------------------------------
+//
+// The HACE engine performs DMA from the SG-list source addresses.  When a
+// key arrives from an arbitrary call site (e.g. from a `HmacKey` on the
+// caller's stack, which is in cacheable SRAM), the DMA engine may observe
+// stale zeros from physical RAM instead of the CPU-cached key bytes.
+// Aspeed-rust fixes this in `hash_key()` by always copying the key bytes
+// into `ctx.buffer` (`.ram_nc`) before hashing.  We do the same here: any
+// key that requires reduction (len > block_size) is first CPU-copied into
+// this `.ram_nc` staging buffer, then `one_shot!` reads it from there.
+struct HmacKeyNc(core::cell::UnsafeCell<[u8; HMAC_KEY_CAP]>);
+// SAFETY: single-threaded HACE driver; key-reduction calls are serialised by
+// the single-instance/non-reentrant `HaceDevice` contract.
+unsafe impl Sync for HmacKeyNc {}
+
+#[unsafe(link_section = ".ram_nc")]
+static HMAC_KEY_NC: HmacKeyNc = HmacKeyNc(core::cell::UnsafeCell::new([0u8; HMAC_KEY_CAP]));
 
 /// Run one full digest of `$input` via the verified public path, yielding the
 /// algorithm's `Digest`. Used for all three HMAC sub-hashes so HMAC rides
@@ -153,7 +169,20 @@ macro_rules! hmac_variant {
                 // RFC-2104-correct threshold: reduce only when len > block_size.
                 let mut k0 = [0u8; 128];
                 if k.len() > $b {
-                    let kh = one_shot!($inner, $algo, pb, k);
+                    // Copy the raw key into the .ram_nc staging buffer so that
+                    // the HACE DMA engine reads from non-cacheable SRAM.
+                    // Passing a stack pointer directly as the DMA source can
+                    // produce wrong results when the CPU cache has not been
+                    // written back (observed: SHA-512 key reduction reads zeros
+                    // from physical RAM while correct bytes are cache-resident).
+                    // This mirrors aspeed-rust's `hash_key()` which always does
+                    // `ctx.buffer[..key_len].copy_from_slice(key_bytes)` first.
+                    let key_nc: &[u8] = unsafe {
+                        let buf = &mut *HMAC_KEY_NC.0.get();
+                        buf[..k.len()].copy_from_slice(k);
+                        &buf[..k.len()]
+                    };
+                    let kh = one_shot!($inner, $algo, pb, key_nc);
                     let hb = kh.as_bytes();
                     k0[..hb.len()].copy_from_slice(hb);
                 } else {
@@ -201,22 +230,35 @@ macro_rules! hmac_variant {
                 let b = self.block;
                 let pb = self.poll_budget;
 
-                // inner = H(K0^ipad ‖ msg) as one contiguous multi-block hash.
-                let mut scratch = [0u8; SCRATCH];
-                scratch[..b].copy_from_slice(&self.ipad[..b]);
-                scratch[b..b + self.msg_len].copy_from_slice(&self.msg[..self.msg_len]);
-                let inner = one_shot!($inner, $algo, pb, &scratch[..b + self.msg_len]);
+                // inner = H(K0^ipad ‖ msg)
+                //
+                // Feed ipad and msg via two update() calls — no contiguous scratch
+                // buffer needed on the stack. update() copies each slice through
+                // ctx.buffer (.ram_nc) before DMA, so stack-resident sources
+                // (ipad, msg) are DMA-safe (D1/D2 guarantee).
+                let inner = {
+                    // SAFETY: single-threaded HMAC controller upholds non-reentrant contract.
+                    let dev = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
+                    let mut dev = dev.with_timeout_polls(pb);
+                    // SAFETY: same single-threaded exclusivity contract.
+                    let mut dd = unsafe { HaceDigest::<$inner>::from_device(&mut dev) };
+                    let mut op = dd.init($algo)?;
+                    op.update(&self.ipad[..b])?;
+                    op.update(&self.msg[..self.msg_len])?;
+                    op.finalize()?
+                };
                 let inner_bytes = inner.as_bytes();
 
-                // outer = H(K0^opad ‖ inner).
-                scratch[..b].copy_from_slice(&self.opad[..b]);
-                scratch[b..b + inner_bytes.len()].copy_from_slice(inner_bytes);
-                Ok(one_shot!(
-                    $inner,
-                    $algo,
-                    pb,
-                    &scratch[..b + inner_bytes.len()]
-                ))
+                // outer = H(K0^opad ‖ inner)
+                // SAFETY: same single-threaded exclusivity contract.
+                let dev = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
+                let mut dev = dev.with_timeout_polls(pb);
+                // SAFETY: same contract.
+                let mut dd = unsafe { HaceDigest::<$inner>::from_device(&mut dev) };
+                let mut op = dd.init($algo)?;
+                op.update(&self.opad[..b])?;
+                op.update(inner_bytes)?;
+                op.finalize()
             }
         }
     };
