@@ -40,6 +40,12 @@ pub enum ErrorKind {
 
     /// Key or IV is invalid or missing.
     KeyError,
+
+    /// The hardware accelerator is busy and cannot process the cipher operation.
+    Busy,
+
+    /// The operation did not complete within the expected time.
+    Timeout,
 }
 
 /// Trait for converting implementation-specific errors into a generic [`ErrorKind`].
@@ -183,7 +189,6 @@ pub trait CipherInit<M: CipherMode>: SymmetricCipher {
     ///
     /// - `key`: A reference to the key used for the cipher.
     /// - `nonce`: A reference to the nonce or IV used for the cipher.
-    /// - `mode`: The cipher mode to use.
     ///
     /// # Returns
     ///
@@ -192,7 +197,6 @@ pub trait CipherInit<M: CipherMode>: SymmetricCipher {
         &'a mut self,
         key: &Self::Key,
         nonce: &Self::Nonce,
-        mode: M,
     ) -> Result<Self::CipherContext<'a>, Self::Error>;
 }
 
@@ -232,7 +236,7 @@ pub trait ResettableCipherOp: ErrorType {
 }
 
 /// Optional trait for cipher contexts that support rekeying.
-pub trait CipherRekey<K>: ErrorType {
+pub trait CipherRekey: SymmetricCipher {
     /// Rekeys the cipher context with a new key.
     ///
     /// # Parameters
@@ -242,7 +246,7 @@ pub trait CipherRekey<K>: ErrorType {
     /// # Returns
     ///
     /// A result indicating success or failure.
-    fn rekey(&mut self, new_key: &K) -> Result<(), Self::Error>;
+    fn rekey(&mut self, new_key: &Self::Key) -> Result<(), Self::Error>;
 }
 
 /// Error type for block-aligned container operations.
@@ -410,7 +414,7 @@ impl<const BLOCK_SIZE: usize, const MAX_BLOCKS: usize> BlockAligned<BLOCK_SIZE, 
 /// - Security managers that don't perform encryption/decryption
 /// - Key stores and vaults with secure cleanup
 /// - Flexible composition with other cipher traits
-pub trait SecureCipherOp: ErrorType {
+pub trait SecureCipherOp {
     /// Securely clear internal state and zeroize sensitive data.
     ///
     /// This method performs a secure cleanup of all internal state, including:
@@ -441,9 +445,9 @@ pub trait SecureCipherOp: ErrorType {
     /// ```ignore
     /// let mut cipher = SecureAesCipher::new();
     /// // ... perform cipher operations ...
-    /// cipher.clear_state()?; // Secure cleanup before dropping
+    /// cipher.clear_state(); // Secure cleanup before dropping
     /// ```
-    fn clear_state(&mut self) -> Result<(), Self::Error>;
+    fn clear_state(&mut self);
 }
 
 /// Trait for querying cipher status and hardware state.
@@ -586,11 +590,6 @@ pub trait AeadCipherOp: SymmetricCipher + ErrorType {
     ///
     /// # Common Types
     ///
-    /// - `&[u8]` for read-only associated data
-    /// - `[u8; N]` for fixed-size owned associated data
-    /// - `()` or empty slice if no associated data is needed
-    type AssociatedData: FromBytes + IntoBytes;
-
     /// The authentication tag type for AEAD operations.
     ///
     /// The authentication tag is a cryptographic checksum that provides
@@ -634,7 +633,7 @@ pub trait AeadCipherOp: SymmetricCipher + ErrorType {
     fn encrypt_aead(
         &mut self,
         plaintext: Self::PlainText,
-        associated_data: Self::AssociatedData,
+        associated_data: &[u8],
     ) -> Result<(Self::CipherText, Self::Tag), Self::Error>;
 
     /// Decrypts the given ciphertext with associated data and authentication tag.
@@ -651,7 +650,7 @@ pub trait AeadCipherOp: SymmetricCipher + ErrorType {
     fn decrypt_aead(
         &mut self,
         ciphertext: Self::CipherText,
-        associated_data: Self::AssociatedData,
+        associated_data: &[u8],
         tag: Self::Tag,
     ) -> Result<Self::PlainText, Self::Error>;
 }

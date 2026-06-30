@@ -24,6 +24,17 @@ impl CortexMKernelConfigInterface for KernelConfig {
 
 impl KernelConfigInterface for KernelConfig {
     const SYSTEM_CLOCK_HZ: u64 = KernelConfig::SYS_TICK_HZ as u64;
+
+    // The pigweed default kernel stack is 2 KiB, which is too small for the
+    // bootstrap thread that runs the peripheral KAT suites. The HACE SHA-2/HMAC
+    // test in particular builds a single large stack frame (~3.6 KiB) plus a
+    // ~1.3 KiB `HaceHmacCtx` (1 KiB message buffer) and nested device locals,
+    // overflowing a 2 KiB stack into adjacent `.bss` (`INPUT_BUF`) and faulting
+    // with an unaligned access on the first case that writes that buffer
+    // (`sha256 stream-9000`). 16 KiB gives comfortable headroom for these
+    // crypto workloads. The AST10x0 has 768 KiB SRAM, so the extra kernel-stack
+    // RAM is negligible.
+    const KERNEL_STACK_SIZE_BYTES: usize = 16384;
 }
 
 pub struct NvicConfig;

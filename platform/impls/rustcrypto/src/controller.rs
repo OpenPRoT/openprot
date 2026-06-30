@@ -69,7 +69,7 @@ impl DigestError for CryptoError {
     fn kind(&self) -> DigestErrorKind {
         match self {
             CryptoError::InvalidKeyLength => DigestErrorKind::InvalidInputLength,
-            CryptoError::InvalidOutputLength => DigestErrorKind::InvalidOutputSize,
+            CryptoError::InvalidOutputLength => DigestErrorKind::FinalizationError,
             CryptoError::OperationFailed => DigestErrorKind::HardwareFailure,
         }
     }
@@ -218,7 +218,6 @@ impl MacErrorType for RustCryptoController {
 // Digest initialization - creates SHA-256 context
 impl DigestInit<Sha2_256> for RustCryptoController {
     type Context = DigestContext256;
-    type Output = Digest<8>; // SHA-256 output as 8 words of 32 bits
 
     fn init(self, _algorithm: Sha2_256) -> Result<Self::Context, Self::Error> {
         Ok(DigestContext256(Sha256::new()))
@@ -228,7 +227,6 @@ impl DigestInit<Sha2_256> for RustCryptoController {
 // Digest initialization - creates SHA-384 context
 impl DigestInit<Sha2_384> for RustCryptoController {
     type Context = DigestContext384;
-    type Output = Digest<12>; // SHA-384 output as 12 words of 32 bits
 
     fn init(self, _algorithm: Sha2_384) -> Result<Self::Context, Self::Error> {
         Ok(DigestContext384(Sha384::new()))
@@ -238,7 +236,6 @@ impl DigestInit<Sha2_384> for RustCryptoController {
 // Digest initialization - creates SHA-512 context
 impl DigestInit<Sha2_512> for RustCryptoController {
     type Context = DigestContext512;
-    type Output = Digest<16>; // SHA-512 output as 16 words of 32 bits
 
     fn init(self, _algorithm: Sha2_512) -> Result<Self::Context, Self::Error> {
         Ok(DigestContext512(Sha512::new()))
