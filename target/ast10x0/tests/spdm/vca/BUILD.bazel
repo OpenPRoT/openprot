@@ -222,7 +222,7 @@ system_image(
 )
 
 system_image_test(
-    name = "spdm_vca_test",
+    name = "vca",
     image = ":spdm_vca_image",
     slave_image = ":spdm_vca_peer_image",
     tags = [
