@@ -106,9 +106,18 @@ impl<'a> AesCipher<'a> {
         // Engine context: IV at [0..16) for CBC, key at [16..16+keylen).
         self.ctx.ctx = [0u8; 64];
         if let Some(iv) = iv {
-            self.ctx.ctx[..AES_BLOCK].copy_from_slice(iv);
+            // Length-proven array assignment: `iv` is `&[u8; AES_BLOCK]`, so cast
+            // the destination prefix to `&mut [u8; AES_BLOCK]` and copy as fixed
+            // arrays. `copy_from_slice` would keep a length-mismatch panic branch.
+            if let Some(dst) = self.ctx.ctx.get_mut(..AES_BLOCK) {
+                if let Ok(dst) = <&mut [u8; AES_BLOCK]>::try_from(dst) {
+                    *dst = *iv;
+                }
+            }
         }
-        self.ctx.ctx[AES_BLOCK..AES_BLOCK + key.len()].copy_from_slice(key);
+        if let Some(dst) = self.ctx.ctx.get_mut(AES_BLOCK..AES_BLOCK + key.len()) {
+            dst.copy_from_slice(key);
+        }
 
         // DMA safety (D3): copy caller input into the .ram_nc staging buffer.
         // The HACE engine reads/writes by physical address; if the caller's
@@ -116,7 +125,9 @@ impl<'a> AesCipher<'a> {
         // would silently read/write stale physical RAM. Staging through
         // ctx.data_in / ctx.data_out (both inside the .ram_nc CryptoContext)
         // guarantees the DMA addresses are always in non-cacheable SRAM.
-        self.ctx.data_in[..input.len()].copy_from_slice(input);
+        if let Some(dst) = self.ctx.data_in.get_mut(..input.len()) {
+            dst.copy_from_slice(input);
+        }
 
         // SG descriptors: addr = .ram_nc staging buffers, len = bytes | HACE_SG_LAST.
         let in_ptr = ptr_to_u32(self.ctx.data_in.as_ptr())?;
@@ -164,11 +175,11 @@ impl<'a> AesCipher<'a> {
                         .ok_or(HaceError::InvalidInput)?,
                 );
             // Scrub staging buffers so plaintext/ciphertext doesn't linger.
-            self.ctx.data_in[..n].fill(0);
-            self.ctx.data_out[..n].fill(0);
+            if let Some(s) = self.ctx.data_in.get_mut(..n) { s.fill(0); }
+            if let Some(s) = self.ctx.data_out.get_mut(..n) { s.fill(0); }
             Ok(())
         } else {
-            self.ctx.data_in[..input.len()].fill(0);
+            if let Some(s) = self.ctx.data_in.get_mut(..input.len()) { s.fill(0); }
             Err(HaceError::Timeout)
         }
     }
@@ -371,7 +382,9 @@ impl<'a, const N: usize> CipherOp<Cbc> for AesOp<'a, N, Cbc> {
         // Advance IV to last ciphertext block so sequential encrypt() calls
         // form a correct CBC chain instead of reusing the original IV.
         if let Some(last) = ct.get(N - AES_BLOCK..) {
-            self.iv.copy_from_slice(last);
+            if let Ok(last) = <[u8; AES_BLOCK]>::try_from(last) {
+                self.iv = last;
+            }
         }
         Ok(ct)
     }
@@ -383,7 +396,9 @@ impl<'a, const N: usize> CipherOp<Cbc> for AesOp<'a, N, Cbc> {
             .cbc_decrypt(self.key.as_slice(), &self.iv, &ciphertext, &mut pt)?;
         // Advance IV to last ciphertext block (CBC decrypt chaining).
         if let Some(last) = ciphertext.get(N - AES_BLOCK..) {
-            self.iv.copy_from_slice(last);
+            if let Ok(last) = <[u8; AES_BLOCK]>::try_from(last) {
+                self.iv = last;
+            }
         }
         Ok(pt)
     }

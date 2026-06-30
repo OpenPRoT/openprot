@@ -92,7 +92,9 @@ impl HmacKey {
             return Err(HaceError::InvalidInput);
         }
         let mut bytes = [0u8; HMAC_KEY_CAP];
-        bytes[..key.len()].copy_from_slice(key);
+        if let Some(dst) = bytes.get_mut(..key.len()) {
+            dst.copy_from_slice(key);
+        }
         Ok(Self {
             bytes,
             len: key.len(),
@@ -101,7 +103,7 @@ impl HmacKey {
 
     #[inline]
     fn as_slice(&self) -> &[u8] {
-        &self.bytes[..self.len]
+        self.bytes.get(..self.len).unwrap_or(&[])
     }
 }
 
@@ -179,24 +181,28 @@ macro_rules! hmac_variant {
                     // `ctx.buffer[..key_len].copy_from_slice(key_bytes)` first.
                     let key_nc: &[u8] = unsafe {
                         let buf = &mut *HMAC_KEY_NC.0.get();
-                        buf[..k.len()].copy_from_slice(k);
-                        &buf[..k.len()]
+                        if let Some(dst) = buf.get_mut(..k.len()) {
+                            dst.copy_from_slice(k);
+                        }
+                        buf.get(..k.len()).unwrap_or(&[])
                     };
                     let kh = one_shot!($inner, $algo, pb, key_nc);
                     let hb = kh.as_bytes();
-                    k0[..hb.len()].copy_from_slice(hb);
+                    if let Some(dst) = k0.get_mut(..hb.len()) {
+                        dst.copy_from_slice(hb);
+                    }
                 } else {
-                    k0[..k.len()].copy_from_slice(k);
+                    if let Some(dst) = k0.get_mut(..k.len()) {
+                        dst.copy_from_slice(k);
+                    }
                 }
 
                 let mut ipad = [0u8; 128];
                 let mut opad = [0u8; 128];
                 ipad[..$b].copy_from_slice(&k0[..$b]);
                 opad[..$b].copy_from_slice(&k0[..$b]);
-                for i in 0..$b {
-                    ipad[i] ^= 0x36;
-                    opad[i] ^= 0x5c;
-                }
+                ipad[..$b].iter_mut().for_each(|b| *b ^= 0x36);
+                opad[..$b].iter_mut().for_each(|b| *b ^= 0x5c);
 
                 Ok(HaceHmacCtx {
                     ipad,
@@ -221,7 +227,17 @@ macro_rules! hmac_variant {
                 if end > HMAC_MSG_CAP {
                     return Err(HaceError::InvalidInput);
                 }
-                self.msg[self.msg_len..end].copy_from_slice(input);
+                let dst = self
+                    .msg
+                    .get_mut(self.msg_len..end)
+                    .ok_or(HaceError::InvalidInput)?;
+                // Element-wise copy: `dst` is `end - self.msg_len == input.len()`
+                // long, but the optimizer cannot prove that through the range
+                // slice, so `copy_from_slice` would retain its length-mismatch
+                // panic branch. The zip-copy is provably panic-free.
+                for (d, s) in dst.iter_mut().zip(input.iter()) {
+                    *d = *s;
+                }
                 self.msg_len = end;
                 Ok(())
             }
@@ -243,8 +259,8 @@ macro_rules! hmac_variant {
                     // SAFETY: same single-threaded exclusivity contract.
                     let mut dd = unsafe { HaceDigest::<$inner>::from_device(&mut dev) };
                     let mut op = dd.init($algo)?;
-                    op.update(&self.ipad[..b])?;
-                    op.update(&self.msg[..self.msg_len])?;
+                    op.update(self.ipad.get(..b).unwrap_or(&[]))?;
+                    op.update(self.msg.get(..self.msg_len).unwrap_or(&[]))?;
                     op.finalize()?
                 };
                 let inner_bytes = inner.as_bytes();
@@ -256,7 +272,7 @@ macro_rules! hmac_variant {
                 // SAFETY: same contract.
                 let mut dd = unsafe { HaceDigest::<$inner>::from_device(&mut dev) };
                 let mut op = dd.init($algo)?;
-                op.update(&self.opad[..b])?;
+                op.update(self.opad.get(..b).unwrap_or(&[]))?;
                 op.update(inner_bytes)?;
                 op.finalize()
             }

@@ -33,18 +33,30 @@ pub(crate) fn fill_padding(ctx: &mut HashContext, remaining: usize) {
         128 + 112 - index
     };
 
-    ctx.buffer[bufcnt] = 0x80;
-    ctx.buffer[bufcnt + 1..bufcnt + padlen].fill(0);
+    ctx.buffer
+        .get_mut(bufcnt)
+        .map(|b| *b = 0x80)
+        .unwrap_or(());
+    ctx.buffer
+        .get_mut(bufcnt + 1..bufcnt + padlen)
+        .map(|s| s.fill(0))
+        .unwrap_or(());
 
     if block_size == 64 {
         let bits = (ctx.digcnt[0] << 3).to_be_bytes();
-        ctx.buffer[bufcnt + padlen..bufcnt + padlen + 8].copy_from_slice(&bits);
+        if let Some(dst) = ctx.buffer.get_mut(bufcnt + padlen..bufcnt + padlen + 8) {
+            dst.copy_from_slice(&bits);
+        }
         ctx.bufcnt += (padlen + 8) as u32;
     } else {
         let low = (ctx.digcnt[0] << 3).to_be_bytes();
         let high = ((ctx.digcnt[1] << 3) | (ctx.digcnt[0] >> 61)).to_be_bytes();
-        ctx.buffer[bufcnt + padlen..bufcnt + padlen + 8].copy_from_slice(&high);
-        ctx.buffer[bufcnt + padlen + 8..bufcnt + padlen + 16].copy_from_slice(&low);
+        if let Some(dst) = ctx.buffer.get_mut(bufcnt + padlen..bufcnt + padlen + 8) {
+            dst.copy_from_slice(&high);
+        }
+        if let Some(dst) = ctx.buffer.get_mut(bufcnt + padlen + 8..bufcnt + padlen + 16) {
+            dst.copy_from_slice(&low);
+        }
         ctx.bufcnt += (padlen + 16) as u32;
     }
 }
@@ -58,10 +70,18 @@ pub(crate) fn load_iv(digest: &mut [u8], iv_words: &[u32]) -> Result<(), HaceErr
         return Err(HaceError::InvalidInput);
     }
 
+    // Index-based copy (no `chunks_exact`): the `ChunksExact` iterator stores its
+    // chunk size as a runtime field, so zipping it makes the optimizer emit a
+    // `len / chunk_size` division it cannot prove is non-zero (a `div_by_zero`
+    // panic path). Iterating word-by-word with a const stride and a length-proven
+    // `&mut [u8; 4]` keeps the copy panic-free.
     for (i, word) in iv_words.iter().enumerate() {
-        let bytes = word.to_ne_bytes();
         let off = i * 4;
-        digest[off..off + 4].copy_from_slice(&bytes);
+        if let Some(dst) = digest.get_mut(off..off + 4) {
+            if let Ok(dst) = <&mut [u8; 4]>::try_from(dst) {
+                *dst = word.to_ne_bytes();
+            }
+        }
     }
 
     Ok(())

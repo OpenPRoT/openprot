@@ -45,8 +45,11 @@ impl HaceDigestSpec for Sha2_256 {
 
     fn digest_from_context(ctx: &HashContext) -> Self::Digest {
         let mut out = [0u32; SHA256_DIGEST_SIZE / 4];
-        for (i, chunk) in ctx.digest[..SHA256_DIGEST_SIZE].chunks_exact(4).enumerate() {
-            out[i] = u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        for (i, dst) in out.iter_mut().enumerate() {
+            let off = i * 4;
+            if let Some(chunk) = ctx.digest.get(off..off + 4) {
+                *dst = u32::from_ne_bytes(<[u8; 4]>::try_from(chunk).unwrap_or([0u8; 4]));
+            }
         }
         Digest::new(out)
     }
@@ -62,8 +65,11 @@ impl HaceDigestSpec for Sha2_384 {
 
     fn digest_from_context(ctx: &HashContext) -> Self::Digest {
         let mut out = [0u32; SHA384_DIGEST_SIZE / 4];
-        for (i, chunk) in ctx.digest[..SHA384_DIGEST_SIZE].chunks_exact(4).enumerate() {
-            out[i] = u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        for (i, dst) in out.iter_mut().enumerate() {
+            let off = i * 4;
+            if let Some(chunk) = ctx.digest.get(off..off + 4) {
+                *dst = u32::from_ne_bytes(<[u8; 4]>::try_from(chunk).unwrap_or([0u8; 4]));
+            }
         }
         Digest::new(out)
     }
@@ -79,8 +85,11 @@ impl HaceDigestSpec for Sha2_512 {
 
     fn digest_from_context(ctx: &HashContext) -> Self::Digest {
         let mut out = [0u32; SHA512_DIGEST_SIZE / 4];
-        for (i, chunk) in ctx.digest[..SHA512_DIGEST_SIZE].chunks_exact(4).enumerate() {
-            out[i] = u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        for (i, dst) in out.iter_mut().enumerate() {
+            let off = i * 4;
+            if let Some(chunk) = ctx.digest.get(off..off + 4) {
+                *dst = u32::from_ne_bytes(<[u8; 4]>::try_from(chunk).unwrap_or([0u8; 4]));
+            }
         }
         Digest::new(out)
     }
@@ -193,7 +202,11 @@ where
         // 4. Zero bufcnt and digcnt
         let iv = T::iv();
         self.ctx.method = T::HASH_CMD;
-        load_iv(&mut self.ctx.digest[..iv.len() * 4], iv)?;
+        let iv_bytes = iv.len().saturating_mul(4);
+        match self.ctx.digest.get_mut(..iv_bytes) {
+            Some(dst) => load_iv(dst, iv)?,
+            None => return Err(HaceError::InvalidInput),
+        }
         self.ctx.block_size = T::BLOCK_SIZE as u32;
         self.ctx.bufcnt = 0;
         self.ctx.digcnt = [0; 2];
@@ -252,7 +265,14 @@ where
             let src = input
                 .get(offset..offset.saturating_add(chunk_len))
                 .ok_or(HaceError::InvalidInput)?;
-            dst.copy_from_slice(src);
+            // Element-wise copy instead of `copy_from_slice`: `dst` and `src` are
+            // both `chunk_len` long by construction, but the optimizer cannot
+            // prove `dst.len() == src.len()` through the two `get`/`get_mut`
+            // range slices, so `copy_from_slice` would keep its length-mismatch
+            // panic branch. The zip-copy is provably panic-free.
+            for (d, s) in dst.iter_mut().zip(src.iter()) {
+                *d = *s;
+            }
 
             self.ctx.bufcnt += chunk_len as u32;
             offset += chunk_len;
