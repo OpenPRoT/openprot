@@ -1,0 +1,121 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 SPDM VCA Stress Test Configuration
+//
+// Multi-app configuration:
+// - i2c_server: owns i2c hardware and runs i2c_server_runtime
+// - mctp_server: uses i2c transport over IPC + serves MCTP control channel
+// - spdm_requester: runs the SPDM requester VCA loop
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1792,
+    },
+    kernel: {
+        flash_start_address: 0x00000700,
+        flash_size_bytes: 129280,
+        ram_start_address: 0x00060000,
+        ram_size_bytes: 131072,
+    },
+    apps: [
+        {
+            name: "i2c_server",
+            flash_size_bytes: 65536,
+            processes: [
+                {
+                    name: "i2c_server_process",
+                    ram_size_bytes: 65536,
+                    objects: [
+                        {
+                            name: "wg",
+                            type: "wait_group",
+                        },
+                        {
+                            name: "i2c",
+                            type: "channel_handler",
+                        },
+                        {
+                            name: "i2c2_irq",
+                            type: "interrupt",
+                            irqs: [
+                                {
+                                    name: "i2c2",
+                                    number: 112,
+                                },
+                            ],
+                        },
+                        {
+                            type: "thread",
+                            name: "i2c_server_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },
+                    ],
+                    memory_mappings: [
+                        {
+                            name: "i2c_regs",
+                            type: "device",
+                            start_address: 0x7e7b0000,
+                            size_bytes: 0x4000,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            name: "mctp_server",
+            flash_size_bytes: 65536,
+            processes: [
+                {
+                    name: "mctp_server_process",
+                    ram_size_bytes: 65536,
+                    objects: [
+                        {
+                            name: "wg",
+                            type: "wait_group",
+                        },
+                        {
+                            name: "mctp",
+                            type: "channel_handler",
+                        },
+                        {
+                            name: "i2c",
+                            type: "channel_initiator",
+                            handler_process: "i2c_server_process",
+                            handler_object_name: "i2c",
+                        },
+                        {
+                            type: "thread",
+                            name: "mctp_server_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            name: "spdm_requester",
+            flash_size_bytes: 131072,
+            processes: [
+                {
+                    name: "spdm_requester_process",
+                    ram_size_bytes: 65536,
+                    objects: [
+                        {
+                            name: "mctp",
+                            type: "channel_initiator",
+                            handler_process: "mctp_server_process",
+                            handler_object_name: "mctp",
+                        },
+                        {
+                            type: "thread",
+                            name: "spdm_requester_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}

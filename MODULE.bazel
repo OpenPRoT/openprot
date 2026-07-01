@@ -144,6 +144,15 @@ use_repo(qemu, "qemu_opentitan", "qemu_opentitan_src")
 # ── Python deps for QEMU tooling scripts (cfggen, flashgen) ──
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
+    # AMD's Zscaler proxy intercepts TLS to pypi.org with its own cert; skip
+    # transport verification. Package integrity is still enforced via the
+    # sha256 hashes in requirements_lock.
+    extra_pip_args = [
+        "--trusted-host",
+        "pypi.org",
+        "--trusted-host",
+        "files.pythonhosted.org",
+    ],
     hub_name = "openprot_python_deps",
     python_version = "3.11",
     requirements_lock = "//third_party/qemu:requirements.txt",

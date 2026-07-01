@@ -21,27 +21,3 @@ rust_test(
     name = "spdm_requester_test",
     crate = ":spdm_requester_lib",
 )
-
-# Host integration test: SPDM VCA flow with in-memory MCTP transport.
-# Uses the same pattern as //services/mctp/server:mctp_server_echo_test.
-# Demonstrates usage of SpdmRequester and SpdmResponder APIs.
-rust_test(
-    name = "spdm_requester_vca_host_test",
-    srcs = [
-        "tests/common/mod.rs",
-        "tests/vca_host.rs",
-    ],
-    crate_root = "tests/vca_host.rs",
-    edition = "2024",
-    deps = [
-        ":spdm_requester_lib",
-        "//services/mctp/api:mctp_api",
-        "//services/mctp/server:mctp_server_lib",
-        "//services/spdm/responder:spdm_responder_lib",
-        "//services/spdm/transport-mctp:spdm_transport_mctp",
-        "@rust_crates//:mctp",
-        "@rust_crates//:mctp-lib",
-        "@rust_crates//:spdm-lib",
-        "@rust_crates//:zerocopy",
-    ],
-)

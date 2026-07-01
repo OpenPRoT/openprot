@@ -79,7 +79,7 @@ aes-gcm = { version = "0.10", default-features = false, features = ["aes"] }
 cipher = { version = "0.4", default-features = false }
 
 # Host tool crates needed by pigweed pw_kernel/tooling
-anyhow = "1.0.98"
+anyhow = "1.0.103"
 clap = { version = "4.5.40", features = ["derive", "env", "wrap_help"] }
 futures = "0.3"
 hex = "0.4.3"
