@@ -10,6 +10,7 @@ bazel_dep(name = "bazel_skylib", version = "1.8.2")
 bazel_dep(name = "pigweed")
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "rules_rust", version = "0.70.0")
+bazel_dep(name = "rules_rust_bindgen", version = "0.70.0")
 bazel_dep(name = "rules_rust_mdbook", version = "0.70.0")
 bazel_dep(name = "rules_platform", version = "0.1.0")
 bazel_dep(name = "rules_python", version = "1.8.3")
@@ -45,6 +46,33 @@ git_override(
     remote = "https://github.com/chipsalliance/caliptra-ureg",
 )
 
+single_version_override(
+    module_name = "toolchains_llvm",
+    patch_strip = 1,
+    patches = [
+        "//third_party/toolchains_llvm:remove_root_check.patch",
+    ],
+    version = "1.1.2",
+)
+
+single_version_override(
+    module_name = "rules_rust",
+    patch_strip = 1,
+    patches = [
+        "//third_party/rules_rust:default_edition.patch",
+    ],
+    version = "0.70.0",
+)
+
+single_version_override(
+    module_name = "rules_rust_bindgen",
+    patch_strip = 1,
+    patches = [
+        "//third_party/rules_rust_bindgen:bindgen_static_lib.patch",
+    ],
+    version = "0.70.0",
+)
+
 pw_rust = use_extension("@pigweed//pw_toolchain/rust:extensions.bzl", "pw_rust")
 pw_rust.toolchain(cipd_tag = "git_revisions:fe5c95d4ae33ec9d7831921e448e2daf8264ea42,7b074fc9362a4a6a5f172dd8936a22fb25eff96b")
 use_repo(pw_rust, "pw_rust_toolchains")
@@ -76,7 +104,13 @@ crate.from_cargo(
         "thumbv7em-none-eabi",
     ],
 )
-use_repo(crate, "rust_caliptra_crates", "rust_caliptra_crates_host", "rust_crates")
+use_repo(
+    crate,
+    "rust_caliptra_crates",
+    "rust_caliptra_crates_host",
+    "rust_crates",
+    ot_crate_index = "crate_index",
+)
 
 pw_rust_crates_ext = use_extension("@pigweed//pw_build:pw_rust_crates_extension.bzl", "pw_rust_crates_extension")
 
@@ -97,6 +131,12 @@ archive_override(
     module_name = "opentitan_devbundle",
     integrity = "sha256-LGKvET6WY+P4kwrZMSnkBrkqxS1f/ES/rmkPBQmfnwg=",
     url = "https://github.com/lowRISC/opentitan/releases/download/devbundle-2026-06-02-1/devbundle.tar.xz",
+)
+
+bazel_dep(name = "lowrisc_opentitan")
+local_path_override(
+    module_name = "lowrisc_opentitan",
+    path = "/usr/local/google/home/cfrantz/opentitan/ottool",
 )
 
 # Caliptra source repositories — declared via a module_extension in

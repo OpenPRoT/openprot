@@ -10,6 +10,7 @@ rust_library(
         "boot_log.rs",
         "boot_svc.rs",
         "clock.rs",
+        "device_id.rs",
         "error.rs",
         "flash.rs",
         "lib.rs",

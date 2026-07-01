@@ -1,0 +1,34 @@
+load("//target/earlgrey/env:environments.bzl", "fpga_environment", "qemu_environment", "silicon_environment", "verilator_environment")
+
+package(
+    default_visibility = ["//visibility:public"],
+)
+
+qemu_environment(
+    name = "qemu",
+    testonly = True,
+)
+
+verilator_environment(
+    name = "verilator",
+)
+
+fpga_environment(
+    name = "hyper310",
+    bitstream = "@opentitan_devbundle//:earlgrey/bitstreams/bitstream_fpga_hyper310.bit",
+    interface = "hyper310",
+    opentitantool_args = ["--cw-usb-port-workaround=3"],
+    rom_ext = "@opentitan_devbundle//:rom_ext/rom_ext_dice_x509_slot_virtual_fpga_cw310.prod_key_0.prod_key_0.signed.bin",
+)
+
+fpga_environment(
+    name = "hyper340",
+    bitstream = "@opentitan_devbundle//:earlgrey/bitstreams/bitstream_fpga_hyper340.bit",
+    interface = "hyper340",
+    rom_ext = "@opentitan_devbundle//:rom_ext/rom_ext_dice_x509_slot_virtual_fpga_cw340.prod_key_0.prod_key_0.signed.bin",
+)
+
+silicon_environment(
+    name = "teacup",
+    interface = "teacup",
+)

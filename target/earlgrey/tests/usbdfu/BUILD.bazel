@@ -10,6 +10,7 @@ load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
 load("//target/earlgrey/signing/keys:defs.bzl", "FPGA_ECDSA_KEY", "SILICON_ECDSA_KEY")
 load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_test")
+load("//third_party/lowrisc_opentitan:defs.bzl", "opentitan_rust_binary")
 
 rust_app(
     name = "test_usb_dfu",
@@ -27,6 +28,7 @@ rust_app(
         "//protocol/usb/dfu",
         "//protocol/usb/stack",
         "//services/flash:client",
+        "//target/earlgrey/registers:lc_ctrl",
         "//target/earlgrey/drivers:usb_driver",
         "//target/earlgrey/registers:pinmux",
         "//target/earlgrey/registers:top_earlgrey",
@@ -39,6 +41,7 @@ rust_app(
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
         "@rust_crates//:aligned",
+        "@rust_crates//:zerocopy",
     ],
 )
 
@@ -119,50 +122,73 @@ rust_binary(
     ],
 )
 
-# TODO: these tests aren't self-contained.  For now, you need to
-# interact with them via the `dfu-util` program.
+opentitan_rust_binary(
+    name = "host_usb_dfu_check",
+    srcs = ["host_usb_dfu_check.rs"],
+    edition = "2024",
+    rustc_flags = [
+        "-C",
+        "link-arg=-Wl,--allow-shlib-undefined",
+    ],
+    deps = [
+        "//third_party/lowrisc_opentitan:opentitanlib",
+        "@ot_crate_index//:anyhow",
+        "@ot_crate_index//:clap",
+        "@ot_crate_index//:log",
+        "@ot_crate_index//:zerocopy",
+    ],
+)
+
 opentitan_test(
     name = "usb_verilator_test",
     timeout = "eternal",
+    environment = "//target/earlgrey/env:verilator",
     interface = "verilator",
     tags = [
         "nightly_test",
         "verilator",
     ],
     target = ":usb",
+    test_harness = ":host_usb_dfu_check",
 )
 
 opentitan_test(
     name = "usb_hyper310_test",
     ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper310",
     interface = "hyper310",
     tags = [
         "hardware",
         "hyper310",
     ],
     target = ":usb",
+    test_harness = ":host_usb_dfu_check",
 )
 
 opentitan_test(
     name = "usb_hyper340_test",
     ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper340",
     interface = "hyper340",
     tags = [
         "hardware",
         "hyper340",
     ],
     target = ":usb",
+    test_harness = ":host_usb_dfu_check",
 )
 
 opentitan_test(
     name = "usb_silicon_test",
     ecdsa_key = SILICON_ECDSA_KEY,
+    environment = "//target/earlgrey/env:teacup",
     interface = "teacup",
     tags = [
         "earlgrey_silicon",
         "hardware",
     ],
     target = ":usb",
+    test_harness = ":host_usb_dfu_check",
 )
 
 rust_binary_no_panics_test(
