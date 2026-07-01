@@ -1,0 +1,35 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+#![no_main]
+#![no_std]
+
+use userspace::entry;
+
+{% for process in app.processes %}
+// Force linking of process crate
+use {{ process.name | to_lower_ident }} as _;
+{% endfor %}
+
+unsafe extern "C" {
+    {% for process in app.processes %}
+    fn _entry_{{ process.name | to_lower_ident }}() -> !;
+    {% endfor %}
+}
+
+static APP_ENTRY_TABLE: [unsafe extern "C" fn() -> !; {{ app.processes | length }}] = [
+    {% for process in app.processes %}
+    _entry_{{ process.name | to_lower_ident }},
+    {% endfor %}
+];
+
+#[entry]
+fn main(index: usize) {
+    if let Some(&entry) = APP_ENTRY_TABLE.get(index) {
+        unsafe {
+            entry();
+        }
+    }
+}
+
+util_panic::make_panic_handler!();
