@@ -1,0 +1,242 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@pigweed//pw_kernel/tooling:multi_process_app.bzl", "multi_process_app")
+load("@pigweed//pw_kernel/tooling:rust_process.bzl", "rust_process")
+load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
+load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//target/earlgrey/signing/keys:defs.bzl", "FPGA_ECDSA_KEY", "SILICON_ECDSA_KEY")
+load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_test")
+
+rust_process(
+    name = "logmgr",
+    srcs = [
+        "logmgr.rs",
+    ],
+    codegen_crate_name = "logmgr_codegen",
+    edition = "2024",
+    system_config = "@pigweed//pw_kernel/target:system_config_file",
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//drivers/usart/api:usart_api",
+        "//target/earlgrey:clock_domain",
+        "//target/earlgrey/drivers:uart_driver",
+        "//target/earlgrey/registers:uart",
+        "//util/error",
+        "//util/ipc",
+        "//util/zfmt",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:zerocopy",
+    ],
+)
+
+rust_process(
+    name = "usbmgr",
+    srcs = [
+        "usbmgr.rs",
+    ],
+    codegen_crate_name = "usbmgr_codegen",
+    edition = "2024",
+    system_config = "@pigweed//pw_kernel/target:system_config_file",
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking/usb:hal_usb",
+        "//protocol/usb/cdc_acm",
+        "//protocol/usb/dfu",
+        "//protocol/usb/stack",
+        "//services/flash:client",
+        "//target/earlgrey/drivers:usb_driver",
+        "//target/earlgrey/registers:pinmux",
+        "//target/earlgrey/registers:top_earlgrey",
+        "//target/earlgrey/registers:usbdev",
+        "//target/earlgrey/services/sysmgr:client",
+        "//target/earlgrey/util",
+        "//target/earlgrey/util:dfu",
+        "//util/error",
+        "//util/ipc",
+        "//util/zfmt",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:aligned",
+        "@rust_crates//:zerocopy",
+        "@zfmt//zfmt",
+    ],
+)
+
+rust_process(
+    name = "flash_server",
+    srcs = [
+        "flash_server.rs",
+    ],
+    codegen_crate_name = "flash_server_codegen",
+    edition = "2024",
+    system_config = "@pigweed//pw_kernel/target:system_config_file",
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking/flash",
+        "//services/flash:server",
+        "//target/earlgrey/drivers:eflash_driver",
+        "//target/earlgrey/registers:flash_ctrl_core",
+        "//target/earlgrey/util",
+        "//util/error",
+        "//util/ipc",
+        "//util/types",
+        "//util/zfmt",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_status/rust:pw_status",
+        "@zfmt//zfmt",
+    ],
+)
+
+rust_process(
+    name = "sysmgr",
+    srcs = [
+        "sysmgr.rs",
+    ],
+    codegen_crate_name = "sysmgr_codegen",
+    edition = "2024",
+    system_config = "@pigweed//pw_kernel/target:system_config_file",
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//target/earlgrey/services/sysmgr:server",
+        "//util/error",
+        "//util/ipc",
+        "//util/zfmt",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_status/rust:pw_status",
+        "@zfmt//zfmt",
+    ],
+)
+
+rust_process(
+    name = "platform",
+    srcs = [
+        "platform.rs",
+    ],
+    codegen_crate_name = "platform_codegen",
+    edition = "2024",
+    system_config = "@pigweed//pw_kernel/target:system_config_file",
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util/error",
+        "//util/zfmt",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_status/rust:pw_status",
+        "@zfmt//zfmt",
+    ],
+)
+
+multi_process_app(
+    name = "transport",
+    processes = [
+        ":logmgr",
+        ":sysmgr",
+        ":platform",
+        ":flash_server",
+        ":usbmgr",
+    ],
+    tags = ["kernel"],
+    template = "app_entry.rs.jinja",
+    visibility = ["//visibility:public"],
+    deps = ["//util/panic"],
+)
+
+system_image(
+    name = "transport_firmware",
+    apps = [
+        ":transport",
+    ],
+    kernel = ":target",
+    platform = "//target/earlgrey",
+    system_config = ":system_config",
+    tags = ["kernel"],
+)
+
+rust_binary_no_panics_test(
+    name = "no_panics",
+    apps = ["transport"],
+    binary = ":transport_firmware",
+    tags = ["no_panics"],
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    template = "//target/earlgrey:linker_script_template",
+)
+
+filegroup(
+    name = "system_config",
+    srcs = ["system.json5"],
+)
+
+target_codegen(
+    name = "codegen",
+    arch = "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+    system_config = ":system_config",
+)
+
+rust_binary(
+    name = "target",
+    srcs = [
+        "target.rs",
+    ],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":codegen",
+        ":linker_script",
+        "//target/earlgrey:entry",
+        "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/subsys/console:console_backend",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)
+
+opentitan_test(
+    name = "transport_hyper310_test",
+    ecdsa_key = FPGA_ECDSA_KEY,
+    interface = "hyper310",
+    tags = [
+        "hardware",
+        "hyper310",
+    ],
+    target = ":transport_firmware",
+)
+
+opentitan_test(
+    name = "transport_hyper340_test",
+    ecdsa_key = FPGA_ECDSA_KEY,
+    interface = "hyper340",
+    tags = [
+        "hardware",
+        "hyper340",
+    ],
+    target = ":transport_firmware",
+)
+
+opentitan_test(
+    name = "transport_silicon_test",
+    ecdsa_key = SILICON_ECDSA_KEY,
+    interface = "teacup",
+    tags = [
+        "earlgrey_silicon",
+        "hardware",
+    ],
+    target = ":transport_firmware",
+)
