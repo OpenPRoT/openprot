@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gpio-port.local/sgpiom/banks.schema.json",
+  "title": "SGPIOM Banks",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": [
+      "name",
+      "pin_offset",
+      "ngpios",
+      "reserved_pins"
+    ],
+    "properties": {
+      "name": {
+        "type": "string",
+        "minLength": 1
+      },
+      "pin_offset": {
+        "type": "integer",
+        "enum": [
+          0,
+          32,
+          64,
+          96
+        ]
+      },
+      "ngpios": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 32
+      },
+      "reserved_pins": {
+        "type": "array",
+        "items": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "additionalProperties": true
+  }
+}

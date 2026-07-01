@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gpio-port.local/sgpiom/signals.schema.json",
+  "title": "SGPIOM Signals",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": [
+      "logical_name",
+      "bank",
+      "pin",
+      "direction",
+      "active_level",
+      "safe_default"
+    ],
+    "properties": {
+      "logical_name": {
+        "type": "string",
+        "minLength": 1
+      },
+      "bank": {
+        "type": "string",
+        "minLength": 1
+      },
+      "pin": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "direction": {
+        "type": "string",
+        "enum": [
+          "in",
+          "out"
+        ]
+      },
+      "active_level": {
+        "type": "string",
+        "enum": [
+          "high",
+          "low"
+        ]
+      },
+      "safe_default": {
+        "oneOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ]
+          }
+        ]
+      }
+    },
+    "additionalProperties": true
+  }
+}

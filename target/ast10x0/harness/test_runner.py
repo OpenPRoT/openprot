@@ -94,20 +94,60 @@ def _ssh_stream(host: str, cmd: str) -> subprocess.Popen:
 def _acquire_lock(host: str, timeout: int = _LOCK_ACQUIRE_TIMEOUT) -> bool:
     """Atomically create lock file on Pi; retry until timeout."""
     deadline = time.time() + timeout
-    create = f"set -o noclobber && echo $$ > {_LOCK_PATH}"
+    local_user = os.environ.get("USER", "unknown")
+    # On noclobber failure, cat outputs the lock file contents so we get
+    # owner info from the same SSH call without a second round-trip.
+    create = (
+        f"set -o noclobber && "
+        f"printf '%s\\t%s\\n' '{local_user}' \"$(date +%s)\" > {_LOCK_PATH} || "
+        f"{{ cat {_LOCK_PATH} 2>/dev/null; false; }}"
+    )
     stale_check = (
         f"mtime=$(stat -c %Y {_LOCK_PATH} 2>/dev/null) && "
         f"now=$(date +%s) && "
         f"[ $(( now - mtime )) -gt {_LOCK_STALE_THRESHOLD} ] && "
         f"rm -f {_LOCK_PATH}"
     )
+    last_printed = 0.0
     while time.time() < deadline:
         r = _ssh(host, create, capture_output=True)
         if r.returncode == 0:
             return True
+        if not r.stdout.strip():
+            if msg := r.stderr.decode(errors="replace").strip():
+                print(f"RUNNER: {msg}", file=sys.stderr)
+                return False
+            continue
+        parts = r.stdout.decode(errors="replace").split()
+        now = time.time()
+        if len(parts) == 2 and now - last_printed >= 30:
+            lock_user, acq_ts = parts[0], int(parts[1])
+            held_s = int(now) - acq_ts
+            mins, secs = divmod(held_s, 60)
+            held = f"{mins}m {secs}s" if mins else f"{secs}s"
+            stat_r = _ssh(
+                host,
+                f"now=$(date +%s); mtime=$(stat -c %Y {_LOCK_PATH} 2>/dev/null); echo $((now - mtime))",
+                capture_output=True,
+            )
+            touch_ago = int(stat_r.stdout.decode().strip() or -1)
+            if touch_ago > _LOCK_STALE_THRESHOLD:
+                print(
+                    f"RUNNER: removing stale lock held by {lock_user} {held} ago, last touched {touch_ago}s ago...",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"RUNNER: Pi locked by {lock_user} {held} ago, last touched {touch_ago}s ago; waiting...",
+                    file=sys.stderr,
+                )
+            last_printed = now
         _ssh(host, stale_check, capture_output=True)
         time.sleep(2)
-    print(f"Timeout acquiring Pi lock after {timeout}s", file=sys.stderr)
+    print(
+        f"RUNNER: timeout acquiring Pi lock after {timeout}s (Pi may be busy)",
+        file=sys.stderr,
+    )
     return False
 
 
@@ -237,6 +277,7 @@ def _run_remote(
 
     if not _acquire_lock(host):
         return False
+    print("RUNNER: lock acquired, starting test", file=sys.stderr)
 
     stop_touch = threading.Event()
     touch_thread = threading.Thread(
@@ -378,13 +419,14 @@ def main() -> int:
     if not image.suffix:
         slave_symlink = image.parent / (image.name + ".slave.elf")
         if slave_symlink.exists():
-            slave_elf = slave_symlink.resolve()
-            slave_elf_path = slave_elf
-            args.slave_firmware = str(slave_elf.with_suffix(".bin"))
+            slave_elf_path = slave_symlink.resolve()
+            args.slave_firmware = str(image.parent / (image.name + ".slave.bin"))
+        args.firmware = str(image.parent / (image.name + ".bin"))
         image = image.resolve()
+    else:
+        args.firmware = str(image.with_suffix(".bin"))
 
     elf_path = image.with_suffix(".elf")
-    args.firmware = str(image.with_suffix(".bin"))
     if not elf_path.exists():
         print(f"Error: ELF not found at {elf_path}", file=sys.stderr)
         return 1

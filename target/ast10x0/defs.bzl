@@ -10,17 +10,24 @@ TARGET_COMPATIBLE_WITH = select({
 })
 
 def _system_image_test_impl(ctx):
-    master_elf = ctx.attr.image[SystemImageInfo].elf
+    image_info = ctx.attr.image[SystemImageInfo]
     executable_symlink = ctx.actions.declare_file(ctx.label.name)
-    ctx.actions.symlink(output = executable_symlink, target_file = master_elf)
+    ctx.actions.symlink(output = executable_symlink, target_file = image_info.elf)
 
-    runfiles = ctx.attr.image[DefaultInfo].default_runfiles
+    bin_symlink = ctx.actions.declare_file(ctx.label.name + ".bin")
+    ctx.actions.symlink(output = bin_symlink, target_file = image_info.bin)
+
+    runfiles = ctx.runfiles(files = [bin_symlink]).merge(
+        ctx.attr.image[DefaultInfo].default_runfiles,
+    )
 
     if ctx.attr.slave_image:
-        slave_elf = ctx.attr.slave_image[SystemImageInfo].elf
-        slave_symlink = ctx.actions.declare_file(ctx.label.name + ".slave.elf")
-        ctx.actions.symlink(output = slave_symlink, target_file = slave_elf)
-        runfiles = ctx.runfiles(files = [slave_symlink]).merge(
+        slave_info = ctx.attr.slave_image[SystemImageInfo]
+        slave_elf_symlink = ctx.actions.declare_file(ctx.label.name + ".slave.elf")
+        ctx.actions.symlink(output = slave_elf_symlink, target_file = slave_info.elf)
+        slave_bin_symlink = ctx.actions.declare_file(ctx.label.name + ".slave.bin")
+        ctx.actions.symlink(output = slave_bin_symlink, target_file = slave_info.bin)
+        runfiles = ctx.runfiles(files = [slave_elf_symlink, slave_bin_symlink]).merge(
             runfiles.merge(ctx.attr.slave_image[DefaultInfo].default_runfiles),
         )
 

@@ -48,6 +48,12 @@ UART, USB serial gadget, or USB networking), so the host-side protocol cannot
 be specified. Omitting `AST1060_EVB_PI_HOST` should default to using a wired
 connection, but currently logs an unimplemented error.
 
+## Hardware Tests
+
+| Test | Description |
+|------|-------------|
+| [`mctp/server`](mctp/server/README.md) | MCTP echo stress test between two AST1060 EVBs over I2C |
+
 ## Test Results (2026-05-12)
 
 | Test | QEMU | Physical board |

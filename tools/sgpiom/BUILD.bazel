@@ -1,0 +1,55 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files([
+    "sgpio_json_tool.py",
+    "examples/common.json",
+    "examples/ast1060_dcscm.json",
+    "examples/ast1060_prot_dice.json",
+    "schema/controller.schema.json",
+    "schema/banks.schema.json",
+    "schema/signals.schema.json",
+])
+
+filegroup(
+    name = "schema_files",
+    srcs = glob(["schema/*.json"]),
+)
+
+filegroup(
+    name = "example_manifests",
+    srcs = glob(["examples/*.json"]),
+)
+
+filegroup(
+    name = "common_json",
+    srcs = ["examples/common.json"],
+)
+
+filegroup(
+    name = "ast1060_dcscm_json",
+    srcs = ["examples/ast1060_dcscm.json"],
+)
+
+filegroup(
+    name = "ast1060_prot_dice_json",
+    srcs = ["examples/ast1060_prot_dice.json"],
+)
+
+filegroup(
+    name = "ast1060_dcscm_inputs",
+    srcs = [
+        "examples/ast1060_dcscm.json",
+        "examples/common.json",
+    ],
+)
+
+filegroup(
+    name = "ast1060_prot_dice_inputs",
+    srcs = [
+        "examples/ast1060_prot_dice.json",
+        "examples/common.json",
+    ],
+)

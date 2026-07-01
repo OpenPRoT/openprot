@@ -28,6 +28,8 @@ pub enum GpioErrorKind {
     /// The pin is not configured for the requested operation
     /// (e.g., reading output value from input pin)
     InvalidMode,
+    /// The pin is reserved and cannot be configured or driven
+    ReservedPin,
 }
 
 /// Trait for GPIO errors
@@ -43,6 +45,64 @@ pub trait GpioError: core::fmt::Debug {
 impl GpioError for core::convert::Infallible {
     fn kind(&self) -> GpioErrorKind {
         match *self {}
+    }
+}
+
+/// Active polarity for a GPIO pin
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum ActivePolarity {
+    /// Pin is active when driven high
+    ActiveHigh,
+    /// Pin is active when driven low
+    ActiveLow,
+}
+
+/// Direction for a GPIO pin
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum PinDirection {
+    /// Pin is configured as an input
+    Input,
+    /// Pin is configured as an output
+    Output,
+}
+
+/// Standard pin configuration combining direction, polarity, and optional initial output level
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct PinConfig {
+    /// Pin direction (input or output)
+    pub direction: PinDirection,
+    /// Active polarity declaration
+    pub polarity: ActivePolarity,
+    /// Initial driven value when direction is Output; ignored for inputs
+    pub initial_output: Option<bool>,
+}
+
+impl PinConfig {
+    /// Convenience constructor for a standard active-high output with a defined initial level
+    pub const fn output_active_high(initial: bool) -> Self {
+        Self {
+            direction: PinDirection::Output,
+            polarity: ActivePolarity::ActiveHigh,
+            initial_output: Some(initial),
+        }
+    }
+
+    /// Convenience constructor for a standard active-low output with a defined initial level
+    pub const fn output_active_low(initial: bool) -> Self {
+        Self {
+            direction: PinDirection::Output,
+            polarity: ActivePolarity::ActiveLow,
+            initial_output: Some(initial),
+        }
+    }
+
+    /// Convenience constructor for an input pin
+    pub const fn input(polarity: ActivePolarity) -> Self {
+        Self {
+            direction: PinDirection::Input,
+            polarity,
+            initial_output: None,
+        }
     }
 }
 
@@ -172,3 +232,13 @@ pub trait GpioController: GpioPort + GpioInterrupt {}
 
 /// Automatically implement GpioController for any type implementing both required traits
 impl<T: GpioPort + GpioInterrupt> GpioController for T {}
+
+/// Trait for SGPIO passthrough: mirrors sampled inputs to output latch under a mask (FR-05)
+pub trait GpioBankPassthrough: GpioPort {
+    /// Set the mask of pins subject to passthrough.
+    /// When active, sampled input state for masked pins is forwarded to the output latch.
+    fn set_passthrough_mask(&mut self, mask: Self::Mask) -> Result<(), Self::Error>;
+
+    /// Disable passthrough for all pins.
+    fn clear_passthrough(&mut self) -> Result<(), Self::Error>;
+}

@@ -112,6 +112,7 @@ system_image(
 system_image_test(
     name = "ipc_client_qemu_test",
     image = ":ipc_client_image",
+    tags = ["qemu_only"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
 )
 

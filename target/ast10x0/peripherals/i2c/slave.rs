@@ -174,6 +174,14 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
 
     /// Configure the controller for slave mode
     pub fn configure_slave(&mut self, config: &SlaveConfig) -> Result<(), I2cError> {
+        // Disable master mode while the slave registers are programmed so the
+        // shared controller is quiescent during setup; its prior state is
+        // restored at the end so slave-only callers keep master off.
+        let master_was_enabled = self.regs().i2cc00().read().enbl_master_fn().bit();
+        self.regs()
+            .i2cc00()
+            .modify(|_, w| w.enbl_master_fn().clear_bit());
+
         // Set slave address
         self.regs().i2cs40().write(|w| unsafe {
             w.slave_dev_addr1()
@@ -244,6 +252,14 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
 
         // Enable slave interrupts
         self.enable_slave_interrupts();
+
+        // Restore master mode to its prior state: dual master+slave callers
+        // (e.g. MCTP) get it back on; slave-only callers keep it off.
+        if master_was_enabled {
+            self.regs()
+                .i2cc00()
+                .modify(|_, w| w.enbl_master_fn().set_bit());
+        }
 
         Ok(())
     }

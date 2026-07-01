@@ -11,6 +11,7 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         "//services/mctp/api:mctp_api",
+        "@pigweed//pw_log/rust:pw_log",
     ],
 )
 

@@ -1,0 +1,29 @@
+{
+  "board": "ast1060_dcscm",
+  "signals": [
+    {
+      "logical_name": "platform_state_out_0",
+      "bank": "sgpiom_a_d",
+      "pin": 0,
+      "direction": "out",
+      "active_level": "high",
+      "safe_default": 0
+    },
+    {
+      "logical_name": "platform_state_out_7",
+      "bank": "sgpiom_a_d",
+      "pin": 7,
+      "direction": "out",
+      "active_level": "high",
+      "safe_default": 0
+    },
+    {
+      "logical_name": "scm_rsu_hide_done_in",
+      "bank": "sgpiom_a_d",
+      "pin": 6,
+      "direction": "in",
+      "active_level": "high",
+      "safe_default": null
+    }
+  ]
+}

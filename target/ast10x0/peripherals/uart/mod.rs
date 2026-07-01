@@ -3,6 +3,7 @@
 
 use ast1060_pac as device;
 use bitflags::bitflags;
+use core::marker::PhantomData;
 use embedded_hal_nb::serial as serial_nb;
 use embedded_io::{Read, Write};
 
@@ -100,6 +101,12 @@ bitflags! {
 }
 pub struct Usart {
     usart: *const device::uart::RegisterBlock,
+    /// Prevent `Send` and `Sync`.
+    ///
+    /// MMIO register blocks must not be transferred across threads or
+    /// shared by reference due to potential side effects and lack of
+    /// synchronization guarantees.
+    _not_send_sync: PhantomData<*const ()>,
 }
 
 impl embedded_io::ErrorType for Usart {
@@ -278,7 +285,10 @@ impl Usart {
     /// - `usart` must be a valid, non-null pointer to the AST1060 UART register block.
     /// - The pointed register block must remain valid for the lifetime of this `Usart`.
     pub const unsafe fn new_uninit(usart: *const device::uart::RegisterBlock) -> Self {
-        Self { usart }
+        Self {
+            usart,
+            _not_send_sync: PhantomData,
+        }
     }
 
     /// Create a new USART instance from a raw register-block pointer.
@@ -293,7 +303,10 @@ impl Usart {
     /// - Caller must enforce global ownership/coordination so concurrent mutable access
     ///   does not occur through other code paths.
     pub unsafe fn new(usart: *const device::uart::RegisterBlock) -> Self {
-        let this = Self { usart };
+        let this = Self {
+            usart,
+            _not_send_sync: PhantomData,
+        };
 
         unsafe {
             this.regs().uartfcr().write(|w| {

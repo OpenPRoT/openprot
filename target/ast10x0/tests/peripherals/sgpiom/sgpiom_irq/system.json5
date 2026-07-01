@@ -1,0 +1,87 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 SGPIOM interrupt bring-up image.
+//
+// Single userspace app (`sgpiom_irq_server`) that:
+//   - owns the SGPIOM device register block (0x7e780500),
+//   - arms both-edge interrupts on a watched SGPIO input mask via the HAL
+//     `GpioInterrupt` trait,
+//   - waits on the SGPIOM interrupt object (IRQ 51) through a wait group, the
+//     OpenPRoT microkernel wait-on-object model (no in-driver ISR callbacks).
+//
+// SGPIO input edges are driven EXTERNALLY (signal source / second board), the
+// same harness model as the I2C IRQ master/slave test — see README.md.
+//
+// PMSAv7-friendly memory layout (mirrors the USART server image):
+//   0x00000000 - 0x00000800: Vector table (2048 bytes, 512 vectors)
+//   0x00000800 - 0x00008800: Kernel code (32KB; ~30KB used)
+//   0x00008800 - 0x00010800: app flash (32KB; app code is ~4KB)
+//   0x00060000 - 0x00080000: Kernel RAM (128KB)
+//   0x00080000 - 0x00090000: App RAM (64KB)
+//
+// The flat boot .bin spans flash 0 to the app code, so the kernel flash budget
+// (not app size) dominates upload size: shrinking kernel flash moves the app
+// down and removes the inter-region zero padding (was 126KB -> ~135KB .bin).
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 2048,  // 0x800 (512 vectors)
+    },
+    kernel: {
+        flash_start_address: 0x00000800,  // After vector table
+        // 0xF800 so the kernel flash ends at 0x10000 — a natural 64KB / PMSAv7
+        // MPU boundary. The hardware (opt) build uses ~30KB; the QEMU fastbuild
+        // grows to ~47KB, so we size for headroom. App starts at 0x10000.
+        flash_size_bytes: 63488,          // 0xF800 (0x800..0x10000)
+        ram_start_address: 0x00060000,
+        ram_size_bytes: 131072,           // 128KB
+    },
+    apps: [
+        {
+            name: "sgpiom_irq_server",
+            flash_size_bytes: 32768,      // 32KB (app code ~4KB)
+            processes: [
+                {
+                    name: "sgpiom_irq_process",
+                    ram_size_bytes: 65536,        // 64KB
+                    objects: [
+                        {
+                            name: "wg",
+                            type: "wait_group",
+                        },
+                        {
+                            // AST1060 SGPIOM interrupt line.
+                            // Source: ast1060_pac::Interrupt::sgpiom = 51
+                            //         (Zephyr INTR_SGPIOM = 51).
+                            name: "sgpiom_irq",
+                            type: "interrupt",
+                            irqs: [
+                                {
+                                    name: "sgpiom",
+                                    number: 51,
+                                },
+                            ],
+                        },
+                        {
+                            type: "thread",
+                            name: "sgpiom_irq_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },
+                    ],
+                    memory_mappings: [
+                        {
+                            // AST1060 GPIO/SGPIO controller block; the SGPIOM
+                            // register file lives at 0x7e780500 (reg 0x100).
+                            name: "sgpiom_regs",
+                            type: "device",
+                            start_address: 0x7e780000,
+                            size_bytes: 0x1000,
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}

@@ -1,0 +1,45 @@
+{
+  "board": "ast1060_prot_dice",
+  "signals": [
+    {
+      "logical_name": "bmc_srst_ctrl_out",
+      "bank": "sgpiom_a_d",
+      "pin": 8,
+      "direction": "out",
+      "active_level": "high",
+      "safe_default": 0
+    },
+    {
+      "logical_name": "bmc_extrst_ctrl_out",
+      "bank": "sgpiom_a_d",
+      "pin": 9,
+      "direction": "out",
+      "active_level": "high",
+      "safe_default": 0
+    },
+    {
+      "logical_name": "bmc_rst_ind_in",
+      "bank": "sgpiom_a_d",
+      "pin": 4,
+      "direction": "in",
+      "active_level": "high",
+      "safe_default": null
+    },
+    {
+      "logical_name": "platform_state_out_0",
+      "bank": "sgpiom_m_p",
+      "pin": 24,
+      "direction": "out",
+      "active_level": "high",
+      "safe_default": 0
+    },
+    {
+      "logical_name": "platform_state_out_7",
+      "bank": "sgpiom_m_p",
+      "pin": 31,
+      "direction": "out",
+      "active_level": "high",
+      "safe_default": 0
+    }
+  ]
+}

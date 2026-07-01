@@ -733,6 +733,19 @@ pub const PINCTRL_SPIM4_DEFAULT: &[PinctrlPin] = &[
 /// I2C communication between the two AST1060 daughter cards.
 pub const PINCTRL_I2C2: &[PinctrlPin] = &[PIN_SCU418_0, PIN_SCU418_1];
 
+/// SGPIOM (Serial GPIO Master) pin group: mux selection on SCU41C[8:11].
+///
+/// Enables the four SGPIOM serial pins:
+///   - bit 8  `sgpmclk` — serial clock out
+///   - bit 9  `sgpmld`  — load/latch out
+///   - bit 10 `sgpmo`   — serial data out
+///   - bit 11 `sgpmi`   — serial data in
+///
+/// Mux bits derived from the AST10x0 datasheet / Zephyr `ast10x0-pinctrl.dtsi`
+/// (`pin_sgpmclk/ld/o/i` = `SIG_DESC_SET(0x41C, 8..11)`).
+pub const PINCTRL_SGPIOM: &[PinctrlPin] =
+    &[PIN_SCU41C_8, PIN_SCU41C_9, PIN_SCU41C_10, PIN_SCU41C_11];
+
 /// Macro to safely modify a register bit (set or clear).
 macro_rules! modify_reg {
     ($reg:expr, $bit:expr, $clear:expr) => {{

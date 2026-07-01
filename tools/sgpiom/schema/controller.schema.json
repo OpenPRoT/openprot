@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gpio-port.local/sgpiom/controller.schema.json",
+  "title": "SGPIOM Controller",
+  "type": "object",
+  "required": [
+    "name",
+    "base_addr",
+    "bus_frequency_hz",
+    "ngpios",
+    "enabled"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "base_addr": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        {
+          "type": "string",
+          "pattern": "^0x[0-9a-fA-F]{1,8}$"
+        }
+      ]
+    },
+    "bus_frequency_hz": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "ngpios": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 128
+    },
+    "enabled": {
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": true
+}
