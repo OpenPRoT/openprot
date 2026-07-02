@@ -66,6 +66,15 @@ struct FlashWriteFailed {
 #[zfmt(format = "Firmware update installation complete! Rebooting into the new slot...")]
 struct UpdateComplete {}
 
+#[derive(Zfmt)]
+#[zfmt(format = "Owner block found at SPI Flash offset: 0x{offset:x}")]
+struct OwnerBlockFound {
+    offset: u32,
+}
+
+#[derive(Zfmt)]
+#[zfmt(format = "Owner block NOT found on SPI Flash!")]
+struct OwnerBlockNotFound {}
 fn flash_write_partition(
     flash_client: &mut FlashIpcClient,
     spi_flash: &mut impl RandomRead<Error = ErrorCode>,
@@ -162,6 +171,14 @@ fn try_update(
         e
     })?;
     util_zfmt::info!(FlashWriteSuccess { region: "Owner" });
+
+    if let Some(offset) = bundle.owner_block_offset {
+        util_zfmt::info!(OwnerBlockFound {
+            offset: offset as u32
+        });
+    } else {
+        util_zfmt::warn!(OwnerBlockNotFound {});
+    }
 
     Ok(())
 }
