@@ -141,7 +141,7 @@ impl FwUpdate {
                 app_src_offset: offset,
                 app_len: app.app_len,
                 app_target_addr: app.app_target_addr,
-                owner_block_offset: app.owner_block_offset,
+                owner_block_src_offset: app.owner_block_src_offset,
             }));
         }
 
@@ -170,7 +170,7 @@ impl FwUpdate {
                         app_src_offset: app_abs_offset,
                         app_len: app.app_len,
                         app_target_addr: app.app_target_addr,
-                        owner_block_offset: app.owner_block_offset,
+                        owner_block_src_offset: app.owner_block_src_offset,
                     }));
                 }
             }
@@ -252,12 +252,12 @@ impl FwUpdate {
             return None;
         }
 
-        let owner_block_offset = Self::find_owner_block_offset(hdr, abs_offset);
+        let owner_block_src_offset = Self::find_owner_block_offset(hdr, abs_offset);
 
         Some(AppManifestInfo {
             app_len,
             app_target_addr,
-            owner_block_offset,
+            owner_block_src_offset,
         })
     }
 
@@ -279,7 +279,7 @@ impl FwUpdate {
 struct AppManifestInfo {
     app_len: usize,
     app_target_addr: usize,
-    owner_block_offset: Option<usize>,
+    owner_block_src_offset: Option<usize>,
 }
 
 pub struct FirmwareBundle {
@@ -288,5 +288,5 @@ pub struct FirmwareBundle {
     pub app_src_offset: usize,
     pub app_len: usize,
     pub app_target_addr: usize,
-    pub owner_block_offset: Option<usize>,
+    pub owner_block_src_offset: Option<usize>,
 }
