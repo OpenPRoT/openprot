@@ -4,6 +4,7 @@
 #![no_std]
 #![no_main]
 
+use earlgrey_util::tags::OwnershipUpdateMode;
 use earlgrey_util::EarlgreyFlashAddress;
 use hal_flash::{Flash, FlashAddress};
 use pw_status::Error;
@@ -74,6 +75,27 @@ struct OwnerBlockFound {
 #[derive(Zfmt)]
 #[zfmt(format = "Owner block NOT found on SPI Flash!")]
 struct OwnerBlockNotFound {}
+#[derive(Zfmt)]
+#[zfmt(format = "Flashing owner block to Info Page 3 (OwnerSlot1)...")]
+struct FlashingOwnerBlock {}
+
+#[derive(Zfmt)]
+#[zfmt(format = "Successfully flashed owner block to Info Page 3!")]
+struct FlashingOwnerBlockSuccess {}
+
+#[derive(Zfmt)]
+#[zfmt(format = "Failed to flash owner block! Status: 0x{status:08x}")]
+struct FlashingOwnerBlockFailed {
+    status: u32,
+}
+
+#[derive(Zfmt)]
+#[zfmt(format = "Owner block update is not allowed in current state (mode = {mode}). Skipping.")]
+struct OwnerBlockUpdateNotAllowed {
+    mode: earlgrey_util::tags::OwnershipUpdateMode,
+}
+
+/// Helper function to erase and write a firmware partition page-by-page.
 fn flash_write_partition(
     flash_client: &mut FlashIpcClient,
     spi_flash: &mut impl RandomRead<Error = ErrorCode>,
@@ -105,6 +127,40 @@ fn flash_write_partition(
         written += chunk_len;
     }
 
+    Ok(())
+}
+
+fn flash_owner_block(
+    flash_client: &mut FlashIpcClient,
+    spi_flash: &mut impl RandomRead<Error = ErrorCode>,
+    src_offset: usize,
+    work_buf: &mut [u8; 2048],
+) -> Result<(), ErrorCode> {
+    // Read the `update_mode` field of the owner config in OWNER_PAGE_0 (bank=1, page=2, offset=20).
+    // TODO: Parse the owner config with a structured type rather than reading raw offsets.
+    let mut update_mode_bytes = [0u8; 4];
+    flash_client.read(FlashAddress::info(1, 2, 20), &mut update_mode_bytes)?;
+    let update_mode = OwnershipUpdateMode(u32::from_le_bytes(update_mode_bytes));
+
+    if update_mode != OwnershipUpdateMode::AnyVersion {
+        util_zfmt::warn!(OwnerBlockUpdateNotAllowed { mode: update_mode });
+        return Ok(());
+    }
+
+    // kFlashCtrlInfoPageOwnerSlot1
+    let dest_addr = FlashAddress::info(1, 3, 0);
+    let (_, page_size, _) = flash_client.geometry()?;
+
+    util_zfmt::info!(FlashingOwnerBlock {});
+
+    flash_client.erase(dest_addr, page_size)?;
+
+    work_buf.fill(0);
+    spi_flash.read(src_offset, work_buf)?;
+
+    flash_client.program(dest_addr, work_buf)?;
+
+    util_zfmt::info!(FlashingOwnerBlockSuccess {});
     Ok(())
 }
 
@@ -177,10 +233,14 @@ fn try_update(
     })?;
     util_zfmt::info!(FlashWriteSuccess { region: "Owner" });
 
-    if let Some(offset) = bundle.owner_block_offset {
+    if let Some(offset) = bundle.owner_block_src_offset {
         util_zfmt::info!(OwnerBlockFound {
             offset: offset as u32
         });
+
+        if let Err(e) = flash_owner_block(flash_client, &mut reader, offset, work_buf) {
+            util_zfmt::error!(FlashingOwnerBlockFailed { status: e.0.get() });
+        }
     } else {
         util_zfmt::warn!(OwnerBlockNotFound {});
     }
