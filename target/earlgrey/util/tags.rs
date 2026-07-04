@@ -177,3 +177,28 @@ impl RetRamVersion {
     /// Retention RAM layout version 4 ('RR04').
     pub const Version4: Self = Self(u32::from_le_bytes(*b"RR04"));
 }
+
+/// The ownership update mode configuration.
+#[derive(Clone, Copy, PartialEq, Eq, FromBytes, IntoBytes, KnownLayout, Immutable, Zfmt)]
+#[zfmt(format = "{0:c}")]
+#[repr(C)]
+pub struct OwnershipUpdateMode(pub u32);
+
+impl OwnershipUpdateMode {
+    /// Update mode open: `OPEN` (unlock key has full power).
+    pub const Open: Self = Self(u32::from_le_bytes(*b"OPEN"));
+    /// Update mode self: `SELF` (unlock key only unlocks to UnlockedSelf).
+    pub const SelfMode: Self = Self(u32::from_le_bytes(*b"SELF"));
+    /// Update mode NewVersion: `NEWV`
+    /// (unlock key can't unlock; accept new owner configs from self-same owner
+    /// if the config_version is newer).
+    pub const NewVersion: Self = Self(u32::from_le_bytes(*b"NEWV"));
+    /// Update mode SelfVersion: `SELV`
+    /// (unlock key only unlocks to UnlockedSelf; accept new owner configs from
+    /// self-same owner if the config_version is newer).
+    pub const SelfVersion: Self = Self(u32::from_le_bytes(*b"SELV"));
+    /// Update mode AnyVersion: `ANYV`
+    /// (accept new owner configs as long as the config_version is newer,
+    /// or any config_version if it is a new owner (transfer)).
+    pub const AnyVersion: Self = Self(u32::from_le_bytes(*b"ANYV"));
+}
