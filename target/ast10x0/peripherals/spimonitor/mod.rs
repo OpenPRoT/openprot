@@ -3,6 +3,8 @@
 
 //! AST10x0 SPI monitor (SPIPF) module.
 
+pub mod addr_priv;
+pub mod cmd_table;
 pub mod controller;
 pub mod policy;
 pub mod profile;

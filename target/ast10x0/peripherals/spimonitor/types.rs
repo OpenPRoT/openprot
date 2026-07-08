@@ -11,8 +11,6 @@ pub enum PrivilegeDirection {
 }
 
 /// Whether a privilege region grants or denies access.
-///
-/// Mirrors Zephyr's `SPI_FILTER_PRIV_ENABLE` / `SPI_FILTER_PRIV_DISABLE`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PrivilegeOp {
     /// Grant access: the region is permitted for the given direction.
@@ -25,7 +23,6 @@ pub enum PrivilegeOp {
 ///
 /// When `Enabled`, SPI traffic bypasses the filter (used during mux ownership
 /// transitions). When `Disabled`, the programmed policy is enforced.
-/// Mirrors Zephyr's `spim_passthrough_config`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PassthroughMode {
     Enabled,
@@ -36,7 +33,6 @@ pub enum PassthroughMode {
 ///
 /// `Sel0` and `Sel1` are hardware-level values. Platform code is responsible
 /// for mapping these to ROT vs BMC/PCH roles (with optional polarity inversion).
-/// Mirrors Zephyr's `spim_ext_mux_sel`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ExtMuxSel {
     Sel0,

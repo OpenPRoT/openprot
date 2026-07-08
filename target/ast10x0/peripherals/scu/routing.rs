@@ -240,6 +240,46 @@ impl ScuRegisters {
         }
     }
 
+    /// Enable or disable the SCU-side SPI monitor block for an instance.
+    ///
+    /// Uses SCU0F0[11:8] (`enbl_filter_of_spipfN`). Required together with
+    /// SPIPF000 single passthrough for push-pull IO.
+    pub fn set_spim_scu_monitor_enable(&self, instance: SpiMonitorInstance, enable: bool) {
+        self.unlock_write_protection();
+        self.regs().scu0f0().modify(|_, w| match instance {
+            SpiMonitorInstance::Spim0 => w.enbl_filter_of_spipf1().bit(enable),
+            SpiMonitorInstance::Spim1 => w.enbl_filter_of_spipf2().bit(enable),
+            SpiMonitorInstance::Spim2 => w.enbl_filter_of_spipf3().bit(enable),
+            SpiMonitorInstance::Spim3 => w.enbl_filter_of_spipf4().bit(enable),
+        });
+    }
+
+    /// Disable the SPI master CS internal pull-down for a monitor instance.
+    ///
+    /// SPI_M1 (SPIM0): GPIOA6 / SCU610[6]; SPI_M2 (SPIM1): GPIOC0 / SCU610[20];
+    /// SPI_M4 (SPIM3): GPIOG0 / SCU614[16]. SPIM2 has no disable bit.
+    pub fn spim_disable_cs_internal_pd(&self, instance: SpiMonitorInstance) {
+        self.unlock_write_protection();
+        match instance {
+            SpiMonitorInstance::Spim0 => {
+                self.regs()
+                    .scu610()
+                    .modify(|_, w| w.dis_gpioa6int_pull_down().bit(true));
+            }
+            SpiMonitorInstance::Spim1 => {
+                self.regs()
+                    .scu610()
+                    .modify(|_, w| w.dis_gpioc0int_pull_down().bit(true));
+            }
+            SpiMonitorInstance::Spim2 => {}
+            SpiMonitorInstance::Spim3 => {
+                self.regs()
+                    .scu614()
+                    .modify(|_, w| w.dis_gpiog0int_pull_down().bit(true));
+            }
+        }
+    }
+
     /// Enable or disable the SCU-controlled MISO multi-function pin for a SPI
     /// monitor instance.
     pub fn set_spim_miso_multi_func(&self, instance: SpiMonitorInstance, enable: bool) {

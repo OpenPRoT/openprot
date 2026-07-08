@@ -53,6 +53,10 @@ pub const SPIPF4_BASE: usize = 0x7E79_4000;
 /// Size of each SPIPF register block.
 pub const SPIPF_REG_SIZE: usize = 0x1000;
 
+/// Spin iterations for the `sw_reset` pulse hold. Targets ~5 us at 200 MHz;
+/// exact timing is uncritical for the reset to latch.
+const SW_RESET_SPIN_COUNT: u32 = 5 * 200;
+
 /// Safe wrapper around a SPI monitor register block.
 pub struct SpiMonitorRegisters {
     base: *const device::spipf::RegisterBlock,
@@ -109,6 +113,37 @@ impl SpiMonitorRegisters {
         });
     }
 
+    /// Enable or disable the monitor filter (SPIPF000 `enbl_filter_fn`, bit 2).
+    pub fn set_filter_enable(&self, enable: bool) {
+        self.regs()
+            .spipf000()
+            .modify(|_, w| w.enbl_filter_fn().bit(enable));
+    }
+
+    /// Enable or disable single-bit passthrough (SPIPF000
+    /// `enbl_single_bit_passthrough`, bit 0); passthrough bypasses the filter.
+    pub fn set_single_passthrough(&self, enable: bool) {
+        self.regs()
+            .spipf000()
+            .modify(|_, w| w.enbl_single_bit_passthrough().bit(enable));
+    }
+
+    /// Software-reset the monitor: pulse SPIPF000 `sweng_rst` (bit 15) high then
+    /// low. Clears status and logs while preserving the programmed policy.
+    /// `sweng_rst` is not self-clearing, so it is driven low explicitly after a
+    /// brief hold.
+    pub fn sw_reset(&self) {
+        self.regs()
+            .spipf000()
+            .modify(|_, w| w.sweng_rst().bit(true));
+        for _ in 0..SW_RESET_SPIN_COUNT {
+            core::hint::spin_loop();
+        }
+        self.regs()
+            .spipf000()
+            .modify(|_, w| w.sweng_rst().bit(false));
+    }
+
     /// SPIPF004: Secondary control/config register.
     pub fn read_ctrl2(&self) -> u32 {
         self.regs().spipf004().read().bits()
@@ -154,7 +189,7 @@ impl SpiMonitorRegisters {
     //
     // TODO: confirm SPIPF register offsets for log control from the AST10x0
     // datasheet once available. Offsets below are placeholders consistent with
-    // known Aspeed SPIPF register map patterns.
+    // known SPIPF register map patterns.
     // -----------------------------------------------------------------------
 
     /// Current violation log write index (number of entries written so far).

@@ -89,29 +89,31 @@ impl<'a> Ast1060Monitor<'a> {
         }
     }
 
-    /// Map MuxSelect to SCU external mux select value.
+    /// Map MuxSelect to SCU external mux select value (board ext-mux polarity).
+    ///
+    /// `Mux1` = RoT SPI master path; `Mux0` = host (BMC) flash access.
     fn mux_to_scu(mux: MuxSelect) -> ScuExtMuxSelect {
         match mux {
-            MuxSelect::RotControl => ScuExtMuxSelect::Mux0,
-            MuxSelect::HostControl => ScuExtMuxSelect::Mux1,
+            MuxSelect::RotControl => ScuExtMuxSelect::Mux1,
+            MuxSelect::HostControl => ScuExtMuxSelect::Mux0,
         }
     }
 
     /// Map SCU external mux select back to MuxSelect.
     fn scu_to_mux(scu_mux: ScuExtMuxSelect) -> MuxSelect {
         match scu_mux {
-            ScuExtMuxSelect::Mux0 => MuxSelect::RotControl,
-            ScuExtMuxSelect::Mux1 => MuxSelect::HostControl,
+            ScuExtMuxSelect::Mux0 => MuxSelect::HostControl,
+            ScuExtMuxSelect::Mux1 => MuxSelect::RotControl,
         }
     }
 
     /// Extract enforcement active flag from CTRL register.
     /// Enforcement is active when passthrough bits are NOT set.
-    /// - SPIPF000[1] = enbl_single_bit_passthrough
-    /// - SPIPF000[2] = enbl_multiple_bit_passthrough
+    /// - SPIPF000[0] = enbl_single_bit_passthrough
+    /// - SPIPF000[1] = enbl_multiple_bit_passthrough
     /// When both bits are 0, enforcement is active and SPI commands are filtered.
     fn is_enforcement_active(ctrl: u32) -> bool {
-        let pass_bits = (ctrl >> 1) & 0x3;
+        let pass_bits = ctrl & 0x3;
         pass_bits == 0 // Enforcement active when passthrough disabled
     }
 
@@ -143,17 +145,9 @@ impl<'a> Monitor for Ast1060Monitor<'a> {
     }
 
     fn soft_reset(&mut self, instance: MonitorInstance) -> BootResult<()> {
-        let regs = self.regs_mut(instance);
-        // Soft reset clears status/logs but preserves policy.
-        // NON-BLOCKING TODO 1: Verify soft reset bit position from AST10x0 datasheet.
-        // Current: uses bit 7 in SPIPF000 as placeholder. May need adjustment.
-        // NON-BLOCKING TODO 2: Implement polling/timeout after write.
-        // Pattern: poll SPIPF000 until reset bit clears or timeout (e.g., 100 microseconds).
-        // In aspeed-rust, hardware self-clears the bit after reset completes.
-        let mut ctrl = regs.read_ctrl();
-        ctrl |= 0x80; // Soft reset bit (placeholder - verify with datasheet)
-        regs.write_ctrl(ctrl);
-        // TODO: Poll until bit 7 clears, with timeout check
+        // Soft reset clears status/logs but preserves policy: pulse SPIPF000
+        // `sweng_rst` (bit 15).
+        self.regs_mut(instance).sw_reset();
         Ok(())
     }
 
@@ -185,7 +179,7 @@ impl<'a> Monitor for Ast1060Monitor<'a> {
 
         let regs = self.regs_mut(instance);
 
-        // Address filtering in AST10x0 uses 16KB blocks (ACCESS_BLOCK_UNIT from aspeed-rust).
+        // Address filtering in AST10x0 uses 16KB blocks (ACCESS_BLOCK_UNIT).
         // Each SPIPFWA register controls 32 blocks per register (32 * 16KB = 512KB per register).
         // NON-BLOCKING TODO: Implement dynamic slot allocation instead of fixed slot 0.
         // Phase C work: currently allocates all regions to slot 0 for simplicity.
@@ -201,8 +195,8 @@ impl<'a> Monitor for Ast1060Monitor<'a> {
     }
 
     fn read_region_count(&self, _instance: MonitorInstance) -> BootResult<u32> {
-        // Region count is tracked in memory (following aspeed-rust pattern).
-        // aspeed-rust stores read_blocked_region_num and write_blocked_region_num as struct fields.
+        // Region count is tracked in memory via the read_blocked_region_count
+        // and write_blocked_region_count struct fields.
         // We return the read-blocked region count for now; write-blocked can be exposed via separate method if needed.
         Ok(self.read_blocked_region_count as u32)
     }
@@ -239,7 +233,7 @@ impl<'a> Monitor for Ast1060Monitor<'a> {
 
         let regs = self.regs_mut(instance);
         // Policy lock is controlled by SPIPF07C register.
-        // From aspeed-rust: bit 0 is `wr_dis_of_spipfwa` (write disable for address tables).
+        // Bit 0 is `wr_dis_of_spipfwa` (write disable for address tables).
         let mut lock_status = regs.read_lock_status();
         lock_status |= 0x1; // Set wr_dis_of_spipfwa bit
         regs.write_lock_status(lock_status);
@@ -264,6 +258,26 @@ impl<'a> Monitor for Ast1060Monitor<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_mux_mapping() {
+        assert_eq!(
+            Ast1060Monitor::mux_to_scu(MuxSelect::RotControl),
+            ScuExtMuxSelect::Mux1
+        );
+        assert_eq!(
+            Ast1060Monitor::mux_to_scu(MuxSelect::HostControl),
+            ScuExtMuxSelect::Mux0
+        );
+        assert_eq!(
+            Ast1060Monitor::scu_to_mux(ScuExtMuxSelect::Mux1),
+            MuxSelect::RotControl
+        );
+        assert_eq!(
+            Ast1060Monitor::scu_to_mux(ScuExtMuxSelect::Mux0),
+            MuxSelect::HostControl
+        );
+    }
 
     #[test]
     fn test_enforcement_flag() {

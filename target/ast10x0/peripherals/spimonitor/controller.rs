@@ -7,10 +7,12 @@ use core::marker::PhantomData;
 
 use crate::scu::registers::ScuRegisters;
 use crate::scu::types::{ScuExtMuxSelect, SpiMonitorInstance};
+use crate::spimonitor::addr_priv;
+use crate::spimonitor::cmd_table;
 use crate::spimonitor::policy::{MonitorPolicy, MAX_REGION_SLOTS};
 use crate::spimonitor::registers::{SpiMonitorController, SpiMonitorRegisters};
 use crate::spimonitor::types::{
-    ExtMuxSel, LockState, MonitorState, PassthroughMode, PrivilegeDirection, PrivilegeOp, Result,
+    ExtMuxSel, LockState, MonitorState, PassthroughMode, Result,
     SpiMonitorError, ViolationLogEntry,
 };
 
@@ -35,38 +37,6 @@ pub type UninitSpiMonitor = SpiMonitor<Uninitialized>;
 pub type ConfiguredSpiMonitor = SpiMonitor<Configured>;
 /// Ergonomic alias for a locked SPI monitor handle.
 pub type LockedSpiMonitor = SpiMonitor<Locked>;
-
-// ---------------------------------------------------------------------------
-// Encoding helpers (hardware-format definitions)
-// ---------------------------------------------------------------------------
-
-/// Encode one address-filter slot word from a region policy entry.
-///
-/// Hardware slot format (pending datasheet confirmation):
-/// - bits[31:14] : region base address >> 14 (18-bit granule)
-/// - bit[13]     : direction (0 = read, 1 = write)
-/// - bit[12]     : op (0 = enable/allow, 1 = disable/block)
-/// - bits[11:0]  : length in 4 KiB units (length >> 12), clamped to 12 bits
-///
-/// TODO: replace with confirmed SPIPF register field encoding once available.
-fn encode_addr_filter_slot(
-    start: u32,
-    length: u32,
-    direction: PrivilegeDirection,
-    op: PrivilegeOp,
-) -> u32 {
-    let addr_field = (start >> 14) & 0x3_FFFF;
-    let dir_bit: u32 = match direction {
-        PrivilegeDirection::Read => 0,
-        PrivilegeDirection::Write => 1,
-    };
-    let op_bit: u32 = match op {
-        PrivilegeOp::Enable => 0,
-        PrivilegeOp::Disable => 1,
-    };
-    let len_field = (length >> 12) & 0xFFF;
-    (addr_field << 14) | (dir_bit << 13) | (op_bit << 12) | len_field
-}
 
 // ---------------------------------------------------------------------------
 // Uninitialized state
@@ -100,22 +70,22 @@ impl SpiMonitor<Uninitialized> {
             return Err(SpiMonitorError::InvalidRegion);
         }
 
-        // Program command allow-list table.
-        for i in 0..policy.allow_command_count {
-            let cmd = policy.allow_commands[i] as u32;
-            self.regs.write_allow_cmd_slot(i, cmd);
-        }
+        // Program command allow-list table (encoded SPIPFWT words + VALID bit).
+        cmd_table::init_allow_cmd_table(
+            &self.regs,
+            &policy.allow_commands[..policy.allow_command_count],
+        );
 
-        // Program address filter table.
+        // Program address privilege tables (bit-per-16KB SPIPFWA entries).
         for i in 0..policy.region_count {
             if let Some(region) = policy.regions[i] {
-                let word = encode_addr_filter_slot(
-                    region.start,
-                    region.length,
+                addr_priv::configure_address_privilege(
+                    &self.regs,
                     region.direction,
                     region.op,
-                );
-                self.regs.write_addr_filter_slot(i, word);
+                    region.start,
+                    region.length,
+                )?;
             }
         }
 
@@ -138,40 +108,43 @@ impl SpiMonitor<Uninitialized> {
 // ---------------------------------------------------------------------------
 
 impl SpiMonitor<Configured> {
-    /// Enable the monitor filter (SPIPF000 bit 0).
-    ///
-    /// Mirrors Zephyr's `spim_monitor_enable(dev, true)`.
-    pub fn enable(&self) {
-        self.regs
-            .modify_ctrl(|bits| *bits |= CTRL_MONITOR_ENABLE_BIT);
+    fn scu_instance(&self) -> SpiMonitorInstance {
+        match self.controller {
+            SpiMonitorController::Spim0 => SpiMonitorInstance::Spim0,
+            SpiMonitorController::Spim1 => SpiMonitorInstance::Spim1,
+            SpiMonitorController::Spim2 => SpiMonitorInstance::Spim2,
+            SpiMonitorController::Spim3 => SpiMonitorInstance::Spim3,
+        }
     }
 
-    /// Disable the monitor filter (SPIPF000 bit 0).
-    ///
-    /// Mirrors Zephyr's `spim_monitor_enable(dev, false)`.
+    /// Enable the monitor filter (SPIPF000 bit 2) and MISO multi-func pin.
+    pub fn enable(&self) {
+        self.scu
+            .set_spim_miso_multi_func(self.scu_instance(), true);
+        self.regs.set_filter_enable(true);
+    }
+
+    /// Disable the monitor filter (SPIPF000 bit 2) and MISO multi-func pin.
     pub fn disable(&self) {
-        self.regs
-            .modify_ctrl(|bits| *bits &= !CTRL_MONITOR_ENABLE_BIT);
+        self.regs.set_filter_enable(false);
+        self.scu
+            .set_spim_miso_multi_func(self.scu_instance(), false);
     }
 
     /// Configure passthrough mode (SPIPF000 passthrough bit).
     ///
     /// When `PassthroughMode::Enabled`, SPI traffic bypasses the filter.
-    /// Mirrors Zephyr's `spim_passthrough_config`.
     pub fn set_passthrough(&self, mode: PassthroughMode) {
-        self.regs.modify_ctrl(|bits| match mode {
-            PassthroughMode::Enabled => *bits |= CTRL_PASSTHROUGH_BIT,
-            PassthroughMode::Disabled => *bits &= !CTRL_PASSTHROUGH_BIT,
-        });
+        self.regs
+            .set_single_passthrough(matches!(mode, PassthroughMode::Enabled));
     }
 
     /// Select the external SPI mux routing.
     ///
-    /// Mirrors Zephyr's `spim_ext_mux_config`. Platform code maps `Sel0`/`Sel1`
-    /// to ROT vs BMC/PCH roles.
+    /// Platform code maps `Sel0`/`Sel1` to ROT vs BMC/PCH roles.
     ///
     /// Correctly uses SCU0F0 register (ext_mux_select_sig_of_spipfN bits)
-    /// for each SPIPF instance, following the aspeed-rust pattern.
+    /// for each SPIPF instance.
     pub fn set_ext_mux(&self, sel: ExtMuxSel) {
         use crate::scu::types::{ScuExtMuxSelect, SpiMonitorInstance};
 
@@ -215,13 +188,13 @@ impl SpiMonitor<Configured> {
     /// Lock monitor policy registers and transition to `Locked`.
     ///
     /// Activates all write-protection bits to prevent further policy changes.
-    /// See aspeed-rust::spim_lock_common() for complete lock sequence:
+    /// Complete lock sequence:
     /// - Write-disable SPIPFWA/SPIPFRA (address filter tables)
     /// - Lock all command table entries
     /// - Write-disable SPIPF000, SPIPF004, SPIPF010, SPIPF014
     pub fn lock(self) -> Result<SpiMonitor<Locked>> {
         // Placeholder: This single bit write is incomplete.
-        // Full lock requires SPIPF07C write-disable bits per aspeed-rust pattern.
+        // Full lock requires SPIPF07C write-disable bits.
         self.regs.modify_ctrl(|bits| *bits |= CTRL_LOCK_BIT);
 
         Ok(SpiMonitor {
@@ -248,16 +221,14 @@ impl SpiMonitor<Locked> {
     /// Passthrough is intentionally available post-lock because it is used
     /// during mux ownership transitions at runtime (e.g., BMC boot-hold/release).
     pub fn set_passthrough(&self, mode: PassthroughMode) {
-        self.regs.modify_ctrl(|bits| match mode {
-            PassthroughMode::Enabled => *bits |= CTRL_PASSTHROUGH_BIT,
-            PassthroughMode::Disabled => *bits &= !CTRL_PASSTHROUGH_BIT,
-        });
+        self.regs
+            .set_single_passthrough(matches!(mode, PassthroughMode::Enabled));
     }
 
     /// Select the external SPI mux routing in locked state.
     ///
     /// Available post-lock for mux ownership transitions at runtime (e.g., BMC boot-hold/release).
-    /// Uses SCU0F0 register following the aspeed-rust pattern.
+    /// Uses SCU0F0 register.
     pub fn set_ext_mux(&self, sel: ExtMuxSel) {
         let mux = match sel {
             ExtMuxSel::Sel0 => ScuExtMuxSelect::Mux0,
@@ -325,14 +296,11 @@ impl<Mode> SpiMonitor<Mode> {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/// SPIPF000 bit positions.
-///
-/// Confirmed from aspeed-rust implementation (src/spimonitor/hardware.rs).
-/// Register field names from ast1060_pac provide safe typed accessors.
-const CTRL_MONITOR_ENABLE_BIT: u32 = 1 << 0; // enbl_filter_fn() in SPIPF000[0]
-const CTRL_PASSTHROUGH_BIT: u32 = 1 << 1; // enbl_single_bit_passthrough() in SPIPF000[1]
+/// SPIPF000 bit positions (from ast1060_pac).
 #[allow(dead_code)]
-const CTRL_SW_RESET_BIT: u32 = 1 << 0; // sweng_rst() in SPIPF000[?] - uses PAC field
+const CTRL_MULTI_PASSTHROUGH_BIT: u32 = 1 << 1; // enbl_multiple_bit_passthrough() in SPIPF000[1]
+#[allow(dead_code)]
+const CTRL_SW_RESET_BIT: u32 = 1 << 15; // sweng_rst() in SPIPF000[15] (SW Engine Reset)
 #[allow(dead_code)]
 const CTRL_EXT_MUX_SEL_BIT: u32 = 1 << 2; // PLACEHOLDER - NOT in SPIPF000! See note below.
 #[allow(dead_code)]
@@ -340,9 +308,8 @@ const CTRL_LOCK_BIT: u32 = 1 << 31; // PLACEHOLDER - NOT in SPIPF000! See note b
                                     //
                                     // NOTE: CTRL_EXT_MUX_SEL and CTRL_LOCK are NOT in SPIPF000 register:
                                     // - ExtMux is controlled via SCU0F0 register (ext_mux_select_sig_of_spipfN bits)
-                                    //   See aspeed-rust: spim_ext_mux_config()
                                     // - Lock is controlled via SPIPF07C write-disable bits and individual command
-                                    //   table entry lock bits. See aspeed-rust: spim_lock_common(), spim_lock_rw_priv_table()
+                                    //   table entry lock bits.
 
 /// Shared drain-log implementation used by both `Configured` and `Locked`.
 fn drain_log_impl<'a>(
