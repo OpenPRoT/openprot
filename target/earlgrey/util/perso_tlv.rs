@@ -19,7 +19,7 @@ use util_error::ErrorCode;
 /// The type identifier for a personalization TLV object.
 #[derive(Clone, Copy, Default)]
 #[repr(transparent)]
-pub struct PersoTlvType(u8);
+pub struct PersoTlvType(pub u8);
 
 #[allow(non_upper_case_globals)]
 impl PersoTlvType {
@@ -95,7 +95,7 @@ impl<'a> PersoCertificate<'a> {
                 name,
                 certificate,
             },
-            &rest[end..],
+            &data[end..],
         ))
     }
 }
