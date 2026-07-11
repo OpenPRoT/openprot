@@ -58,6 +58,7 @@ spdm-lib = { git = "https://github.com/OpenPRoT/spdm-lib.git", branch = "main" }
 rand_core = { version = "0.9", default-features = false }
 sec1 = { version = "0.7.3" }
 subtle = { version = "2", default-features = false }
+base64ct = { version = "1.6.0", default-features = false }
 
 # RustCrypto ECDSA crates
 ecdsa = { version = "0.16.9" }
