@@ -10,7 +10,7 @@ package(default_visibility = ["//target/earlgrey:__subpackages__"])
 
 pw_py_importable_runfile(
     name = "opentitantool-runfiles",
-    src = "//third_party/lowrisc_opentitan:opentitantool",
+    src = "@opentitan_devbundle//:opentitantool/opentitantool",
     executable = True,
     import_location = "opentitan.opentitantool",
 )
@@ -36,13 +36,13 @@ pw_py_importable_runfile(
 
 pw_py_importable_runfile(
     name = "rom_ext_cw310-runfiles",
-    src = "@opentitan_devbundle//:rom_ext/rom_ext_dice_x509_slot_virtual_fpga_cw310.prod_key_0.prod_key_0.signed.bin",
+    src = "@opentitan_devbundle//:rom_ext/rom_ext_usbdfu_anyversion_fpga_cw310.prod_key_0.signed.bin",
     import_location = "opentitan.rom_ext_cw310",
 )
 
 pw_py_importable_runfile(
     name = "rom_ext_cw340-runfiles",
-    src = "@opentitan_devbundle//:rom_ext/rom_ext_dice_x509_slot_virtual_fpga_cw340.prod_key_0.prod_key_0.signed.bin",
+    src = "@opentitan_devbundle//:rom_ext/rom_ext_usbdfu_anyversion_fpga_cw340.prod_key_0.signed.bin",
     import_location = "opentitan.rom_ext_cw340",
 )
 

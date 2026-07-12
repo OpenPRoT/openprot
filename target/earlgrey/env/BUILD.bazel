@@ -21,14 +21,14 @@ fpga_environment(
     bitstream = "@opentitan_devbundle//:earlgrey/bitstreams/bitstream_fpga_hyper310.bit",
     interface = "hyper310",
     opentitantool_args = ["--cw-usb-port-workaround=3"],
-    rom_ext = "@opentitan_devbundle//:rom_ext/rom_ext_dice_x509_slot_virtual_fpga_cw310.prod_key_0.prod_key_0.signed.bin",
+    rom_ext = "@opentitan_devbundle//:rom_ext/rom_ext_usbdfu_anyversion_fpga_cw310.prod_key_0.signed.bin",
 )
 
 fpga_environment(
     name = "hyper340",
     bitstream = "@opentitan_devbundle//:earlgrey/bitstreams/bitstream_fpga_hyper340.bit",
     interface = "hyper340",
-    rom_ext = "@opentitan_devbundle//:rom_ext/rom_ext_dice_x509_slot_virtual_fpga_cw340.prod_key_0.prod_key_0.signed.bin",
+    rom_ext = "@opentitan_devbundle//:rom_ext/rom_ext_usbdfu_anyversion_fpga_cw340.prod_key_0.signed.bin",
 )
 
 silicon_environment(

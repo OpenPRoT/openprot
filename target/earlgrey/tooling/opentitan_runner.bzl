@@ -270,7 +270,8 @@ _BASE_ATTRS = {
         executable = True,
         allow_single_file = True,
         cfg = "exec",
-        default = "//third_party/lowrisc_opentitan:opentitantool",
+        # TODO: update to opentitantool on master when everything is merged over.
+        default = "@opentitan_devbundle//:opentitantool/opentitantool",
         doc = "opentitantool",
     ),
 }
