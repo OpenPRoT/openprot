@@ -12,6 +12,8 @@ load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
 load("//target/earlgrey/signing/keys:defs.bzl", "FPGA_ECDSA_KEY", "SILICON_ECDSA_KEY")
 load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_test")
 
+package(default_visibility = ["//visibility:public"])
+
 rust_process(
     name = "logmgr",
     srcs = [
@@ -40,6 +42,7 @@ rust_process(
 rust_process(
     name = "usbmgr",
     srcs = [
+        "dfu.rs",
         "usbmgr.rs",
     ],
     codegen_crate_name = "usbmgr_codegen",
@@ -48,6 +51,7 @@ rust_process(
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
+        "//hal/blocking/flash",
         "//hal/blocking/usb:hal_usb",
         "//protocol/usb/cdc_acm",
         "//protocol/usb/dfu",
@@ -59,7 +63,6 @@ rust_process(
         "//target/earlgrey/registers:usbdev",
         "//target/earlgrey/services/sysmgr:client",
         "//target/earlgrey/util",
-        "//target/earlgrey/util:dfu",
         "//util/error",
         "//util/ipc",
         "//util/zfmt",
