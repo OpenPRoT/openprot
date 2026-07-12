@@ -9,6 +9,7 @@ pub mod clock;
 pub mod device_id;
 pub mod error;
 pub mod flash;
+pub mod manifest;
 mod misc;
 mod mubi;
 mod perso_tlv;

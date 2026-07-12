@@ -1,7 +1,7 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
-load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
 
 rust_library(
@@ -14,6 +14,7 @@ rust_library(
         "error.rs",
         "flash.rs",
         "lib.rs",
+        "manifest.rs",
         "misc.rs",
         "mubi.rs",
         "perso_tlv.rs",
@@ -24,7 +25,6 @@ rust_library(
     ],
     crate_name = "earlgrey_util",
     edition = "2024",
-    target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],
     deps = [
         "//hal/blocking/flash:driver",
@@ -37,6 +37,11 @@ rust_library(
         "@rust_crates//:zerocopy",
         "@zfmt//zfmt",
     ],
+)
+
+rust_test(
+    name = "util_test",
+    crate = ":util",
 )
 
 rust_library(

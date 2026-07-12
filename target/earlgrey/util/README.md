@@ -18,9 +18,10 @@ This package provides hardware-specific utility drivers, memory-mapped data stru
     *   Owner-specific persistent storage space (2KiB).
 *   **`mut_ref()`**: Unsafely retrieves a mutable reference to the physical Retention RAM address (requires identity mapping in system configuration).
 
-### 3. Boot Stage Structures (`boot_log.rs`, `boot_svc.rs`)
+### 3. Boot Stage Structures (`boot_log.rs`, `boot_svc.rs`, `manifest.rs`)
 *   **`BootLog`**: Populated by ROM/ROM_EXT, providing details about the boot process (selected boot slot, versions, sizes, ownership states, and minimum security versions).
 *   **`BootSvc`**: Structure for the Boot Services protocol. It allows the running application to request actions (like changing the next boot slot, upgrading minimum security versions, or unlocking/transferring ownership) that are executed upon the next reboot.
+*   **`Manifest`**: Structure for flash boot stage images. Placed at the start of ROM_EXT and BL0 images to describe versions, security requirements, code region bounds, and cryptographic signatures (ECDSA-P256 and optional SPHINCS+).
 *   **`CheckDigest`**: Trait implemented by `BootLog` and `BootSvc` to validate SHA256 integrity digests over their contents. OpenTitan uses a reversed-byte order for digests stored in these structures.
 *   **`GetData<T>`**: Trait and helper macros to safely extract typed command and response payloads from the generic `BootSvc` structure's data region.
 
