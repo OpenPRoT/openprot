@@ -28,7 +28,8 @@ use hal_usb::{ConfigDescriptor, DeviceDescriptor, SetupPacket, StringDescriptorR
 use usb_driver::UsbConfig;
 use usb_stack::{DescriptorSource, UsbAction, UsbClass};
 
-use earlgrey_dfu::{EarlgreyDfuHandler, DFU_CDI0_CERT, DFU_CDI1_CERT, DFU_FIRMWARE, DFU_UDS_CERT};
+mod dfu;
+use dfu::{EarlgreyDfuHandler, DFU_CDI0_CERT, DFU_CDI1_CERT, DFU_FIRMWARE, DFU_UDS_CERT};
 use earlgrey_sysmgr_client::SysmgrClient;
 use protocol_usb_cdc_acm::{CdcAcm, CdcAcmBuilder};
 use protocol_usb_dfu::{DfuBuilder, DfuClass};
