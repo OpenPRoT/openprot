@@ -1,0 +1,78 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("//target/earlgrey/tooling/signing:defs.bzl", "keyset", "owner_block_binary", "ownership_detached_signature")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "all_keys",
+    srcs = glob([
+        "*.der",
+        "*.pem",
+    ]),
+)
+
+filegroup(
+    name = "owner_key",
+    srcs = ["owner_ecdsa_p256.der"],
+)
+
+filegroup(
+    name = "owner_key_pub",
+    srcs = ["owner_ecdsa_p256.pub.der"],
+)
+
+filegroup(
+    name = "activate_key",
+    srcs = ["activate_ecdsa_p256.der"],
+)
+
+filegroup(
+    name = "activate_key_pub",
+    srcs = ["activate_ecdsa_p256.pub.der"],
+)
+
+filegroup(
+    name = "unlock_key",
+    srcs = ["unlock_ecdsa_p256.der"],
+)
+
+filegroup(
+    name = "unlock_key_pub",
+    srcs = ["unlock_ecdsa_p256.pub.der"],
+)
+
+filegroup(
+    name = "all_zero_sig",
+    srcs = ["all_zero_sig.bin"],
+)
+
+keyset(
+    name = "ecdsa_keyset",
+    build_setting_default = "",
+    keys = {
+        "activate_ecdsa_p256.der": "activate_0",
+        "app_prod_ecdsa_p256.der": "app_prod_0",
+        "owner_ecdsa_p256.der": "owner_0",
+        "unlock_ecdsa_p256.der": "unlock_0",
+    },
+    profile = "local",
+    tool = "//target/earlgrey/signing/tokens:local",
+)
+
+owner_block_binary(
+    name = "dummy_owner_bin",
+    src = "dummy_owner.json5",
+    keys = [
+        ":all_keys",
+    ],
+)
+
+ownership_detached_signature(
+    name = "dummy_owner_sig",
+    src = ":dummy_owner_bin",
+    command = "Owner",
+    ecdsa_key = ":owner_key",
+    key_alg = "EcdsaP256",
+)
