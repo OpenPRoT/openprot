@@ -61,7 +61,7 @@ def sign_binary(ctx, opentitantool, **kwargs):
         ctx,
         opentitantool,
         get_override(ctx, "file.bin", kwargs),
-        get_override(ctx, "file.manifest", kwargs),
+        get_override(ctx, "attr.manifest", kwargs),
         ecdsa_key,
         rsa_key,
         spx_key,
@@ -98,8 +98,23 @@ def sign_binary(ctx, opentitantool, **kwargs):
     }
 
 def _sign_bin_impl(ctx):
-    system_image_info = ctx.attr.bin[SystemImageInfo]
-    result = sign_binary(ctx, ctx.executable._opentitantool, bin = system_image_info.bin)
+    bin_file = None
+    if SystemImageInfo in ctx.attr.bin:
+        bin_file = ctx.attr.bin[SystemImageInfo].bin
+    else:
+        for f in ctx.files.bin:
+            if f.basename.endswith(".bin"):
+                bin_file = f
+                break
+    if not bin_file:
+        fail("No .bin file found in bin attribute")
+
+    result = sign_binary(
+        ctx,
+        ctx.executable._opentitantool,
+        bin = bin_file,
+        basename = ctx.attr.basename or None,
+    )
     return [
         DefaultInfo(files = depset([result["signed"]]), data_runfiles = ctx.runfiles(files = [result["signed"]])),
     ]
@@ -107,12 +122,13 @@ def _sign_bin_impl(ctx):
 sign_bin = rule(
     implementation = _sign_bin_impl,
     attrs = {
-        "bin": attr.label(providers = [SystemImageInfo]),
+        "basename": attr.string(doc = "Optional output filename basename"),
+        "bin": attr.label(allow_files = True),
         "ecdsa_key": attr.label_keyed_string_dict(
             allow_files = True,
             doc = "ECDSA public key to validate this image",
         ),
-        "manifest": attr.label(allow_single_file = True),
+        "manifest": attr.label(allow_files = True),
         "rsa_key": attr.label_keyed_string_dict(
             allow_files = True,
             doc = "RSA public key to validate this image",

@@ -233,7 +233,7 @@ _BASE_ATTRS = {
         mandatory = True,
     ),
     "manifest": attr.label(
-        allow_single_file = True,
+        allow_files = True,
         doc = "A json manifest to apply to the image being signed",
     ),
     "spx_key": attr.label_keyed_string_dict(
