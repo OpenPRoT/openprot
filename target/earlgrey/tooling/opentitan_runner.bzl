@@ -75,6 +75,8 @@ def _opentitan_runner_impl(ctx):
     boot_image = prep.boot_image
 
     runfiles_list.extend(prep.extra_runfiles)
+    for td in ctx.attr.target_data:
+        runfiles_list.extend(td[DefaultInfo].files.to_list())
     output_groups = dict(prep.output_groups)
 
     # Re-create base_runfiles because runfiles_list was extended by prep.extra_runfiles
@@ -217,6 +219,11 @@ _BASE_ATTRS = {
         doc = "The system_image target to run.",
         mandatory = True,
         providers = [SystemImageInfo],
+        cfg = _target_type_transition,
+    ),
+    "target_data": attr.label_list(
+        doc = "Data files under the target transition",
+        allow_files = True,
         cfg = _target_type_transition,
     ),
     "test_cmd": attr.string(
