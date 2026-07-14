@@ -22,7 +22,7 @@ local_path_override(
 
 git_override(
     module_name = "pigweed",
-    commit = "01465b97384a68fa698392ca5ed15c678738aab6",  # roll:pigweed
+    commit = "e4acf4a3e44b0886fcc2a1c1f64ffccbb810ee6b",  # roll:pigweed
     patch_args = ["-p1"],
     patches = [
         # Allow integration_tests to build for armv7-m / armv7e-m so the
