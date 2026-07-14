@@ -9,6 +9,9 @@ package(default_visibility = ["//visibility:public"])
 rust_library(
     name = "peripherals",
     srcs = [
+        "gpio/mod.rs",
+        "gpio/registers.rs",
+        "gpio/types.rs",
         "hace/aes.rs",
         "hace/constants.rs",
         "hace/context.rs",
