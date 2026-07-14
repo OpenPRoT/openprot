@@ -47,6 +47,11 @@ def _opentitan_runner_impl(ctx):
     if ctx.attr.interface != env.interface:
         fail("interface attribute ({}) does not match environment interface ({})".format(ctx.attr.interface, env.interface))
 
+    clear_bitstream = getattr(ctx.attr, "clear_bitstream", False)
+    is_fpga = env.interface in ["hyper310", "hyper340"]
+    if clear_bitstream and not is_fpga:
+        fail("clear_bitstream is only supported on FPGA platforms (hyper310, hyper340)")
+
     run_script = ctx.actions.declare_file(ctx.attr.name + ".sh")
     runfiles_list = [elf_file, bin_file, opentitantool]
     if is_custom_harness:
@@ -55,13 +60,6 @@ def _opentitan_runner_impl(ctx):
     harness_runfiles = None
     if is_custom_harness:
         harness_runfiles = ctx.attr.test_harness[DefaultInfo].default_runfiles
-
-    base_runfiles = ctx.runfiles(
-        files = runfiles_list,
-        transitive_files = env.runfiles,
-    )
-    if harness_runfiles:
-        base_runfiles = base_runfiles.merge(harness_runfiles)
 
     exit_success = ctx.attr.exit_success if hasattr(ctx.attr, "exit_success") else "PASS\\n"
     exit_failure = ctx.attr.exit_failure if hasattr(ctx.attr, "exit_failure") else "FAIL: .+\\n"
@@ -79,7 +77,7 @@ def _opentitan_runner_impl(ctx):
         runfiles_list.extend(td[DefaultInfo].files.to_list())
     output_groups = dict(prep.output_groups)
 
-    # Re-create base_runfiles because runfiles_list was extended by prep.extra_runfiles
+    # Create base_runfiles once runfiles_list is fully populated
     base_runfiles = ctx.runfiles(
         files = runfiles_list,
         transitive_files = env.runfiles,
@@ -126,8 +124,16 @@ exec {runner} {args}
         ]
 
     else:
+        setup_cmds = list(env.setup_cmds)
+        if clear_bitstream:
+            if "transport init" in setup_cmds:
+                idx = setup_cmds.index("transport init")
+                setup_cmds.insert(idx + 1, "fpga clear-bitstream")
+            else:
+                setup_cmds.insert(0, "fpga clear-bitstream")
+
         setup_args_list = []
-        for c in env.setup_cmds:
+        for c in setup_cmds:
             setup_args_list.append('--exec="{}"'.format(c))
         if boot_cmd:
             setup_args_list.append(boot_cmd)
@@ -168,14 +174,34 @@ echo {opentitantool} --rcfile= --interface={interface} {extra_args} {setup_args}
                 setup_args = setup_args_str,
             )
 
-        script_content += """
+        if clear_bitstream:
+            script_content += """
+echo "=== Running Test ==="
+echo {test_exec} {test_args} "$@"
+set +e
+{test_exec} {test_args} "$@"
+TEST_EXIT_CODE=$?
+set -e
+echo "=== Clearing Bitstream (Post-Test) ==="
+echo {opentitantool} --rcfile= --interface={interface} {extra_args} --exec="fpga clear-bitstream" no-op
+{opentitantool} --rcfile= --interface={interface} {extra_args} --exec="fpga clear-bitstream" no-op
+exit $TEST_EXIT_CODE
+""".format(
+                test_exec = test_exec,
+                test_args = test_args,
+                opentitantool = opentitantool.short_path,
+                interface = env.interface,
+                extra_args = extra_args,
+            )
+        else:
+            script_content += """
 echo "=== Running Test ==="
 echo {test_exec} {test_args} "$@"
 exec {test_exec} {test_args} "$@"
 """.format(
-            test_exec = test_exec,
-            test_args = test_args,
-        )
+                test_exec = test_exec,
+                test_args = test_args,
+            )
 
         ctx.actions.write(
             output = run_script,
@@ -259,6 +285,10 @@ opentitan_test = rule(
     implementation = _opentitan_runner_impl,
     test = True,
     attrs = _BASE_ATTRS | {
+        "clear_bitstream": attr.bool(
+            default = False,
+            doc = "If True, clear the FPGA bitstream before and after test execution.",
+        ),
         "exit_failure": attr.string(
             default = "FAIL: .+\\n",
             doc = "The regex to look for in the output to determine failure.",
