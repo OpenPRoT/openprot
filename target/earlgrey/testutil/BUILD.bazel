@@ -1,0 +1,21 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("//third_party/lowrisc_opentitan:defs.bzl", "opentitan_rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+opentitan_rust_library(
+    name = "testutil",
+    srcs = [
+        "lib.rs",
+    ],
+    crate_name = "earlgrey_testutil",
+    edition = "2024",
+    deps = [
+        "//third_party/lowrisc_opentitan:opentitanlib",
+        "@ot_crate_index//:anyhow",
+        "@ot_crate_index//:log",
+        "@ot_crate_index//:zerocopy",
+    ],
+)
