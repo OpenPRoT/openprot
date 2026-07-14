@@ -1,0 +1,232 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+_SEL_DEVICE_ID = 1
+_SEL_MANUF_STATE_CREATOR = (1 << 8)
+_SEL_MANUF_STATE_OWNER = (1 << 9)
+_SEL_LIFE_CYCLE_STATE = (1 << 10)
+
+DEFAULT_USAGE_CONSTRAINTS = 0xa5a5a5a5
+
+_HEX_MAP = "0123456789abcdef"
+
+def hex_digits(v, width = 32):
+    """Convert an int into a hex string without 0x prefix"""
+    if v >= (1 << width):
+        fail("Int {} too large to convert to string of width {}".format(v, width))
+    hex_digits = [_HEX_MAP[(v >> i) & 0xf] for i in range(0, width, 4)]
+    return "".join(reversed(hex_digits))
+
+def hex(v, width = 32):
+    """Convert an int into a hex string with 0x prefix"""
+    return "0x{}".format(hex_digits(v, width = width))
+
+def _manifest_impl(ctx):
+    mf = {}
+    mf_version = {}
+
+    # All the easy parameters are simple assignments
+    if ctx.attr.signature:
+        mf["signature"] = ctx.attr.signature
+    if ctx.attr.modulus:
+        mf["modulus"] = ctx.attr.modulus
+    if ctx.attr.identifier:
+        mf["identifier"] = ctx.attr.identifier
+    if ctx.attr.length:
+        mf["length"] = ctx.attr.length
+    if ctx.attr.version_major:
+        mf["version_major"] = ctx.attr.version_major
+    if ctx.attr.version_minor:
+        mf["version_minor"] = ctx.attr.version_minor
+    if ctx.attr.security_version:
+        mf["security_version"] = ctx.attr.security_version
+    if ctx.attr.timestamp:
+        mf["timestamp"] = ctx.attr.timestamp
+    if ctx.attr.max_key_version:
+        mf["max_key_version"] = ctx.attr.max_key_version
+    if ctx.attr.code_start:
+        mf["code_start"] = ctx.attr.code_start
+    if ctx.attr.code_end:
+        mf["code_end"] = ctx.attr.code_end
+    if ctx.attr.entry_point:
+        mf["entry_point"] = ctx.attr.entry_point
+
+    if ctx.attr.manifest_version_major:
+        mf_version["major"] = ctx.attr.manifest_version_major
+    if ctx.attr.manifest_version_minor:
+        mf_version["minor"] = ctx.attr.manifest_version_minor
+    if mf_version:
+        mf["manifest_version"] = mf_version
+
+    if ctx.attr.address_translation:
+        mf["address_translation"] = ctx.attr.address_translation
+
+    if ctx.attr.manifest_base_address:
+        mf["manifest_base_address"] = ctx.attr.manifest_base_address
+
+    if ctx.attr.binding_value:
+        if len(ctx.attr.binding_value) != 8:
+            fail("The binding_value must be exactly 8 words.")
+        mf["binding_value"] = [v for v in ctx.attr.binding_value]
+
+    uc = {}
+    selector_bits = 0
+    device_id = list(ctx.attr.device_id)
+    if len(device_id) > 8:
+        fail("The device_id must be 8 words or fewer.")
+
+    if len(device_id) < 8:
+        device_id.extend([hex(DEFAULT_USAGE_CONSTRAINTS)] * (8 - len(device_id)))
+    for i, d in enumerate(device_id):
+        if d != hex(DEFAULT_USAGE_CONSTRAINTS):
+            selector_bits |= _SEL_DEVICE_ID << i
+        device_id[i] = d
+    uc["device_id"] = device_id
+
+    if ctx.attr.manuf_state_creator:
+        uc["manuf_state_creator"] = ctx.attr.manuf_state_creator
+        selector_bits |= _SEL_MANUF_STATE_CREATOR
+    else:
+        uc["manuf_state_creator"] = hex(DEFAULT_USAGE_CONSTRAINTS)
+
+    if ctx.attr.manuf_state_owner:
+        uc["manuf_state_owner"] = ctx.attr.manuf_state_owner
+        selector_bits |= _SEL_MANUF_STATE_OWNER
+    else:
+        uc["manuf_state_owner"] = hex(DEFAULT_USAGE_CONSTRAINTS)
+
+    if ctx.attr.life_cycle_state:
+        uc["life_cycle_state"] = ctx.attr.life_cycle_state
+        selector_bits |= _SEL_LIFE_CYCLE_STATE
+    else:
+        uc["life_cycle_state"] = hex(DEFAULT_USAGE_CONSTRAINTS)
+
+    if ctx.attr.selector_bits:
+        if int(ctx.attr.selector_bits, base = 16) != selector_bits and ctx.attr.selector_mismatch_is_failure:
+            fail("User provided selector_bits ({}) don't match computed selector_bits ({})".format(ctx.attr.selector_bits, selector_bits))
+        uc["selector_bits"] = ctx.attr.selector_bits
+    else:
+        uc["selector_bits"] = selector_bits
+
+    mf["usage_constraints"] = uc
+
+    extensions = [e or None for e in ctx.attr.extensions] if ctx.attr.extensions else [
+        "spx_key",
+        "spx_signature",
+        "secver_write",
+        "isfb",
+        "isfb_erase",
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    ]
+
+    manifest_dependent_files = []
+    if ctx.file.owner_transfer_block:
+        manifest_dependent_files.append(ctx.file.owner_transfer_block)
+        if ctx.file.owner_transfer_detached_signature:
+            manifest_dependent_files.append(ctx.file.owner_transfer_detached_signature)
+
+        if "owner_transfer_blob" not in extensions:
+            if None not in extensions:
+                fail("No free slot in extensions table for owner_transfer_blob.")
+            extensions[extensions.index(None)] = "owner_transfer_blob"
+
+    mf["extensions"] = extensions
+    mf["extension_params"] = []
+
+    if ctx.file.owner_transfer_block:
+        params = {
+            "owner_block": ctx.file.owner_transfer_block.path,
+        }
+        if ctx.file.owner_transfer_detached_signature:
+            params["detached_signature"] = ctx.file.owner_transfer_detached_signature.path
+        mf["extension_params"].append({
+            "owner_transfer_blob": params,
+        })
+
+    if ctx.attr.integrator_specific_firmware_binding:
+        mf["extension_params"].append(
+            {
+                "integrator_specific_firmware_binding": json.decode(ctx.attr.integrator_specific_firmware_binding),
+            },
+        )
+
+    secver_write = ctx.attr.secver_write
+    if secver_write == "none":
+        pass
+    elif secver_write in ("false", "true"):
+        mf["extension_params"].append(
+            {
+                "secver_write": {
+                    "secver_write": json.decode(secver_write),
+                },
+            },
+        )
+    else:
+        fail("Unknown value for secver_write:", secver_write)
+
+    if ctx.attr.isfb_erase_allowed_policy:
+        mf["extension_params"].append(
+            {
+                "isfb_erase_policy": json.decode(ctx.attr.isfb_erase_allowed_policy),
+            },
+        )
+
+    file = ctx.actions.declare_file("{}.json".format(ctx.attr.name))
+    ctx.actions.write(file, json.encode_indent(mf))
+    return [
+        DefaultInfo(
+            files = depset([file]),
+            data_runfiles = ctx.runfiles(files = [file] + manifest_dependent_files),
+        ),
+    ]
+
+_manifest = rule(
+    implementation = _manifest_impl,
+    attrs = {
+        "address_translation": attr.string(doc = "Whether this image uses address translation as a 0x-prefixed hex-encoded string"),
+        "binding_value": attr.string_list(doc = "Binding value used by key manager to derive secrets as a 0x-prefixed hex-encoded string"),
+        "code_end": attr.string(doc = "End offset of the executable region in the image as a 0x-prefixed hex-encoded string"),
+        "code_start": attr.string(doc = "Start offset of the executable region in the image as a 0x-prefixed hex-encoded string"),
+        "device_id": attr.string_list(doc = "Usage constraint device ID as a 0x-prefixed hex-encoded string"),
+        "entry_point": attr.string(doc = "Offset of the first instruction in the image as a 0x-prefixed hex-encoded string"),
+        "extensions": attr.string_list(doc = "Names of the manifest extensions as an array of strings"),
+        "identifier": attr.string(doc = "Manifest identifier as a 0x-prefixed hex-encoded string"),
+        "integrator_specific_firmware_binding": attr.string(doc = "Create an Integrator Specific Firmware Block (ISFB) JSON object"),
+        "isfb_erase_allowed_policy": attr.string(doc = "Create an ISFB Erase Allowed Policy JSON object"),
+        "length": attr.string(doc = "Length of this image as a 0x-prefixed hex-encoded string"),
+        "life_cycle_state": attr.string(doc = "Usage constraint for life cycle status as a 0x-prefixed hex-encoded string"),
+        "manifest_base_address": attr.string(doc = "Manifest base address as a 0x-prefixed hex-encoded string"),
+        "manifest_version_major": attr.string(doc = "Manifest major version as a 0x-prefixed hex-encoded string"),
+        "manifest_version_minor": attr.string(doc = "Manifest minor version as a 0x-prefixed hex-encoded string"),
+        "manuf_state_creator": attr.string(doc = "Usage constraint for silicon creator manufacturing status as a 0x-prefixed hex-encoded string"),
+        "manuf_state_owner": attr.string(doc = "Usage constraint for silicon owner manufacturing status as a 0x-prefixed hex-encoded string"),
+        "max_key_version": attr.string(doc = "Maximum allowed version for keys generated at the next boot stage as a 0x-prefixed hex-encoded string"),
+        "modulus": attr.string(doc = "Signing key modulus as a 0x-prefixed hex-encoded string"),
+        "owner_transfer_block": attr.label(allow_single_file = True, doc = "The owner block file to include for transfer"),
+        "owner_transfer_detached_signature": attr.label(allow_single_file = True, doc = "The detached signature of the owner block"),
+        "security_version": attr.string(doc = "Security version for anti-rollback protection as a 0x-prefixed hex-encoded string"),
+        "secver_write": attr.string(default = "none", values = ["none", "false", "true"], doc = "Add the secver_write extension with the specified value"),
+        "selector_bits": attr.string(doc = "Usage constraint selector bits as a 0x-prefixed hex-encoded string"),
+        "selector_mismatch_is_failure": attr.bool(default = True, doc = "A mismatch in computed selector bits is a failure"),
+        "signature": attr.string(doc = "Image signature as a 0x-prefixed hex-encoded string"),
+        "timestamp": attr.string(doc = "Unix timestamp of the image as a 0x-prefixed hex-encoded string"),
+        "version_major": attr.string(doc = "Image major version as a 0x-prefixed hex-encoded string"),
+        "version_minor": attr.string(doc = "Image minor version as a 0x-prefixed hex-encoded string"),
+    },
+)
+
+def manifest(name, **kwargs):
+    _manifest(
+        name = name,
+        **kwargs
+    )
+    return name

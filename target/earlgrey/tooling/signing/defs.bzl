@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load("//target/earlgrey/tooling/signing:keyset.bzl", _keyset = "keyset")
+load("//target/earlgrey/tooling/signing:manifest.bzl", _manifest = "manifest")
+load("//target/earlgrey/tooling/signing:ownership.bzl", _owner_block_binary = "owner_block_binary", _ownership_detached_signature = "ownership_detached_signature")
 load(
     "//target/earlgrey/tooling/signing:signing.bzl",
     _sign_bin = "sign_bin",
@@ -23,6 +25,9 @@ KeySetInfo = _KeySetInfo
 #   - signing_tool: describe a signing tool and configuration.
 #   - sign_bin: sign a binary with a given key.
 keyset = _keyset
+manifest = _manifest
+owner_block_binary = _owner_block_binary
+ownership_detached_signature = _ownership_detached_signature
 signing_tool = _signing_tool
 sign_bin = _sign_bin
 

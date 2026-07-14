@@ -36,15 +36,26 @@ def presigning_artifacts(ctx, opentitantool, src, manifest, ecdsa_key, rsa_key, 
     else:
         basename = paths.replace_extension(basename, "")
 
+    manifest_dependent_files = []
+    manifest_file = None
+    if manifest:
+        if type(manifest) == "Target":
+            if DefaultInfo in manifest:
+                manifest_dependent_files = manifest[DefaultInfo].data_runfiles.files.to_list()
+            manifest_file = manifest.files.to_list()[0]
+        else:
+            manifest_file = manifest
+
     signing_directives = []
     pre = ctx.actions.declare_file("{}.pre-signing".format(basename))
     inputs = [
         src,
-    ]
+    ] + manifest_dependent_files
     manifest_args = []
-    if manifest:
-        inputs.append(manifest)
-        manifest_args.append("--manifest={}".format(manifest.path))
+    if manifest_file:
+        if manifest_file not in inputs:
+            inputs.append(manifest_file)
+        manifest_args.append("--manifest={}".format(manifest_file.path))
 
     ecdsa_or_rsa_args = []
     if ecdsa_key:
