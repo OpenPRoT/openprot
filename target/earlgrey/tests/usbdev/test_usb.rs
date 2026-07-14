@@ -122,8 +122,7 @@ fn handle_usb() -> Result<()> {
     let device_id: [u32; 8] = lc_ctrl.regs().device_id().read().into();
 
     let mut serial_ascii = [0u8; 64];
-    let serial_str =
-        format_device_id(&device_id, &mut serial_ascii).map_err(|_| Error::Internal)?;
+    let serial_str = format_device_id(&device_id, &mut serial_ascii).ok_or(Error::Internal)?;
     pw_log::info!("Serial Number: {}", serial_str);
 
     let device_id_bytes = device_id.as_bytes();

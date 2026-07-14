@@ -142,7 +142,7 @@ impl FlashDriver for EmbeddedFlash {
         self.start_op(|w| {
             w.op(|s| s.read())
                 .partition_sel(start_addr.is_info())
-                .num((buf.len() as u32 + 3) / 4 - 1)
+                .num((buf.len() as u32).div_ceil(4) - 1)
         });
         copy_from_reg_unaligned(buf, &self.mmio.regs_mut().rd_fifo());
         while self.is_busy() {}
@@ -216,7 +216,7 @@ impl FlashDriver for EmbeddedFlash {
             w.op(|s| s.prog())
                 .prog_sel(|s| s.normal_program())
                 .partition_sel(start_addr.is_info())
-                .num(((data.len() + 3) / 4) as u32 - 1)
+                .num((data.len() as u32).div_ceil(4) - 1)
         });
         copy_to_reg_unaligned(&self.mmio.regs_mut().prog_fifo(), data);
         Ok(())

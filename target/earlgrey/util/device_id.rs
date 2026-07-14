@@ -13,9 +13,9 @@ const HEX_CHARS: [u8; 16] = *b"0123456789abcdef";
 /// via USB string descriptors (little-endian bytes of each word, from word 0 to 7).
 ///
 /// The buffer must be at least 64 bytes long.
-pub fn format_device_id<'a>(device_id: &[u32; 8], buf: &'a mut [u8]) -> Result<&'a str, ()> {
+pub fn format_device_id<'a>(device_id: &[u32; 8], buf: &'a mut [u8]) -> Option<&'a str> {
     if buf.len() < 64 {
-        return Err(());
+        return None;
     }
     let device_id_bytes = device_id.as_bytes();
 
@@ -25,5 +25,5 @@ pub fn format_device_id<'a>(device_id: &[u32; 8], buf: &'a mut [u8]) -> Result<&
         buf[i * 2 + 1] = HEX_CHARS[(byte & 0xf) as usize];
     }
     // SAFETY: buf[..64] was populated entirely with valid ASCII hex characters from HEX_CHARS.
-    Ok(unsafe { core::str::from_utf8_unchecked(&buf[..64]) })
+    Some(unsafe { core::str::from_utf8_unchecked(&buf[..64]) })
 }
