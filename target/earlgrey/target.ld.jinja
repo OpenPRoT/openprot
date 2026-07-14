@@ -77,8 +77,8 @@ SECTIONS
     {
         _manifest = .;
         /* see: sw/device/silicon_creator/lib/manifest.h */
-        . += 384; /* rsa_signature */
-        . += 4;   /* usage_constraints.selector_bits */
+        . += 384;          /* ecdsa p256 signature and padding */
+        . += 4;            /* usage_constraints.selector_bits */
         LONG(0xa5a5a5a5);  /* usage_constraints.device_id (8 words)*/
         LONG(0xa5a5a5a5);
         LONG(0xa5a5a5a5);
@@ -90,11 +90,12 @@ SECTIONS
         LONG(0xa5a5a5a5);  /* usage_constraints.manuf_state_creator */
         LONG(0xa5a5a5a5);  /* usage_constraints.manuf_state_owner */
         LONG(0xa5a5a5a5);  /* usage_constraints.life_cycle_state */
-        . += 384; /* rsa_modulus */
-        LONG(0x739); /* . = . + 4; address_translation (HardenedTrue) */
-        LONG(0x3042544f); /* . = . + 4; identifier (OTB0) */
-        SHORT(0x6c47); /* . = . + 2; manifest_version.minor */
-        SHORT(0x2);    /* . = . + 2; manifest_version.major */
+        . += 380;          /* ecdsa p256 public key and padding */
+        LONG(_manifest);   /* . = . + 4; manifest_base_addr */
+        LONG(0x739);       /* . = . + 4; address_translation (HardenedTrue) */
+        LONG(0x3042544f);  /* . = . + 4; identifier (OTB0) */
+        SHORT(0x6c47);     /* . = . + 2; manifest_version.minor */
+        SHORT(0x2);        /* . = . + 2; manifest_version.major */
         LONG(_signed_region_end - ORIGIN(FLASH)); /* . = . + 4; signed_region_end */
         LONG(_signed_region_end - ORIGIN(FLASH)); /* . = . + 4; length */
         . += 4;   /* version_major */
