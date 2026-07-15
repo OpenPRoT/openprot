@@ -111,10 +111,10 @@ fn flash_server() -> Result<(), ErrorCode> {
         )
         .map_err(ErrorCode::kernel_error)?;
 
-        let token = wait_result.user_data;
-        if token == handle::EFLASH_SERVICE as usize {
+        let channel = wait_result.user_data as u32;
+        if channel == handle::EFLASH_SERVICE {
             eflash_server.handle_one(&eflash_ipc, &mut buf)?;
-        } else if token == handle::SPI_FLASH_SERVICE as usize {
+        } else if channel == handle::SPI_FLASH_SERVICE {
             spi_flash_server.handle_one(&spi_flash_ipc, &mut buf)?;
         }
     }
