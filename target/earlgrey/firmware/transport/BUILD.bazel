@@ -85,10 +85,14 @@ rust_process(
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
+        "//drivers/flash:spi_flash",
         "//hal/blocking/flash",
+        "//hal/blocking/flash:driver",
         "//services/flash:server",
         "//target/earlgrey/drivers:eflash_driver",
+        "//target/earlgrey/drivers:spi_host",
         "//target/earlgrey/registers:flash_ctrl_core",
+        "//target/earlgrey/registers:spi_host",
         "//target/earlgrey/util",
         "//util/error",
         "//util/ipc",
@@ -96,6 +100,7 @@ rust_process(
         "//util/zfmt",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:embedded-hal",
         "@zfmt//zfmt",
     ],
 )
