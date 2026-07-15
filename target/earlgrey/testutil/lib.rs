@@ -165,3 +165,43 @@ pub fn sequence_dfu_download(
     // Removed print_uart(uart) to preserve telemetry for the test harness.
     Ok(())
 }
+
+pub fn sequence_dfu_upload(
+    dfu: &DfuClient,
+    expected_len: usize,
+    transfer_size: u16,
+) -> Result<Vec<u8>> {
+    // Ensure we start from a clean state
+    let status = dfu.get_status()?;
+    if status.state() == DfuState::Error {
+        log::info!("Clearing DFU error status...");
+        dfu.clear_status()?;
+    }
+
+    let mut uploaded_data = Vec::new();
+    let mut block_num = 0;
+    let mut buf = vec![0u8; transfer_size as usize];
+    while uploaded_data.len() < expected_len {
+        let n = dfu.upload(block_num, &mut buf)?;
+        log::info!("Uploaded block {block_num}, size {n}...");
+        if n == 0 {
+            log::warn!("Upload returned 0 bytes early at block {block_num}");
+            break;
+        }
+        let chunk_len = std::cmp::min(n, expected_len - uploaded_data.len());
+        uploaded_data.extend_from_slice(&buf[..chunk_len]);
+        block_num += 1;
+    }
+
+    let status = dfu.get_status()?;
+    if status.state() == DfuState::UpLoadIdle {
+        dfu.abort()?;
+    } else if status.state() != DfuState::Idle {
+        bail!(
+            "DFU upload finished in unexpected state: {:?}",
+            status.state()
+        );
+    }
+
+    Ok(uploaded_data)
+}
