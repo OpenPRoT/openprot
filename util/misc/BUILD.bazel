@@ -9,6 +9,7 @@ rust_library(
     name = "misc",
     srcs = [
         "hexdump.rs",
+        "hexstr.rs",
         "lib.rs",
     ],
     crate_name = "util_misc",

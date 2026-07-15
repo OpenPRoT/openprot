@@ -5,3 +5,5 @@
 
 mod hexdump;
 pub use hexdump::hexdump;
+mod hexstr;
+pub use hexstr::hexstr;
