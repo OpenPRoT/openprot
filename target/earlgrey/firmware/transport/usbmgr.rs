@@ -29,7 +29,11 @@ use usb_driver::UsbConfig;
 use usb_stack::{DescriptorSource, UsbAction, UsbClass};
 
 mod dfu;
-use dfu::{EarlgreyDfuHandler, DFU_CDI0_CERT, DFU_CDI1_CERT, DFU_FIRMWARE, DFU_UDS_CERT};
+use dfu::{
+    EarlgreyDfuHandler, DFU_ALT_CDI0_CERT, DFU_ALT_CDI1_CERT, DFU_ALT_FIRMWARE, DFU_ALT_RESERVED,
+    DFU_ALT_SPI_EEPROM0, DFU_ALT_UDS_CERT, DFU_CDI0_CERT, DFU_CDI1_CERT, DFU_FIRMWARE,
+    DFU_UDS_CERT,
+};
 use earlgrey_sysmgr_client::SysmgrClient;
 use protocol_usb_cdc_acm::{CdcAcm, CdcAcmBuilder};
 use protocol_usb_dfu::{DfuBuilder, DfuClass};
@@ -50,6 +54,8 @@ const DFU_FIRMWARE_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(6);
 const DFU_UDS_CERT_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(7);
 const DFU_CDI0_CERT_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(8);
 const DFU_CDI1_CERT_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(9);
+const DFU_RESERVED_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(10);
+const DFU_SPI_EEPROM_HANDLE: hal_usb::StringHandle = hal_usb::StringHandle(11);
 
 // The serial number size is 2 bytes (USB descriptor header) + 32 bytes of
 // serial number * (2 for hex encoding) * (2 bytes per UTF16 character).
@@ -57,7 +63,7 @@ const USB_SERIAL_SIZE: usize = 2 + 32 * 2 * 2;
 
 const DFU_BUILDER: DfuBuilder = DfuBuilder::new(
     2,    // interface_num (2, after CDC-ACM's 0 and 1)
-    4,    // alt_settings
+    6,    // alt_settings
     2048, // transfer_size
 );
 
@@ -94,12 +100,14 @@ const CONFIG_DESC: ConfigDescriptor = ConfigDescriptor {
             &CDC_BUILDER.comm_endpoints(),
         ),
         CDC_BUILDER.data_interface(USB_CDC_DATA_HANDLE, &CDC_BUILDER.data_endpoints()),
-        DFU_BUILDER.interface(0, DFU_FIRMWARE_HANDLE, &[]),
-        DFU_BUILDER.interface(1, DFU_UDS_CERT_HANDLE, &[]),
-        DFU_BUILDER.interface(2, DFU_CDI0_CERT_HANDLE, &[]),
+        DFU_BUILDER.interface(DFU_ALT_FIRMWARE, DFU_FIRMWARE_HANDLE, &[]),
+        DFU_BUILDER.interface(DFU_ALT_UDS_CERT, DFU_UDS_CERT_HANDLE, &[]),
+        DFU_BUILDER.interface(DFU_ALT_CDI0_CERT, DFU_CDI0_CERT_HANDLE, &[]),
+        DFU_BUILDER.interface(DFU_ALT_CDI1_CERT, DFU_CDI1_CERT_HANDLE, &[]),
+        DFU_BUILDER.interface(DFU_ALT_RESERVED, DFU_RESERVED_HANDLE, &[]),
         DFU_BUILDER.interface(
-            3,
-            DFU_CDI1_CERT_HANDLE,
+            DFU_ALT_SPI_EEPROM0,
+            DFU_SPI_EEPROM_HANDLE,
             &[DFU_BUILDER.functional_descriptor()],
         ),
     ],
@@ -119,6 +127,9 @@ const USB_COMM: hal_usb::StringDescriptorRef =
     hal_usb::string_descriptor!("CDC Comm Interface").as_ref();
 const USB_DATA: hal_usb::StringDescriptorRef =
     hal_usb::string_descriptor!("CDC Data Interface").as_ref();
+const DFU_RESERVED: hal_usb::StringDescriptorRef = hal_usb::string_descriptor!("Reserved").as_ref();
+const DFU_SPI_EEPROM: hal_usb::StringDescriptorRef =
+    hal_usb::string_descriptor!("SPI EEPROM 0").as_ref();
 
 /// Implements `DescriptorSource` to provide USB descriptors.
 ///
@@ -160,6 +171,10 @@ impl DescriptorSource for MyDescriptors<'_> {
             Some(DFU_CDI0_CERT)
         } else if h == DFU_CDI1_CERT_HANDLE.0 {
             Some(DFU_CDI1_CERT)
+        } else if h == DFU_RESERVED_HANDLE.0 {
+            Some(DFU_RESERVED)
+        } else if h == DFU_SPI_EEPROM_HANDLE.0 {
+            Some(DFU_SPI_EEPROM)
         } else {
             None
         }
@@ -229,8 +244,8 @@ fn handle_usb() -> Result<(), ErrorCode> {
     const USB_CONFIG: UsbConfig = UsbConfig::new(&CDC_BUILDER.eps().0, &CDC_BUILDER.eps().1);
 
     let flash = FlashIpcClient::new(IpcHandle::new(handle::FLASH_USB))?;
-    let _spi_flash = FlashIpcClient::new(IpcHandle::new(handle::SPI_FLASH_USB))?;
-    let dfu_handler = EarlgreyDfuHandler::new(flash, sysmgr, &boot_info)?;
+    let spi_flash = FlashIpcClient::new(IpcHandle::new(handle::SPI_FLASH_USB))?;
+    let dfu_handler = EarlgreyDfuHandler::new(flash, spi_flash, sysmgr, &boot_info)?;
     let mut dfu = DfuClass::<_, 2048>::new(DFU_BUILDER, dfu_handler);
 
     let mut usb = usb_driver::Usb::new(unsafe { usbdev::Usbdev::new() }, USB_CONFIG);

@@ -65,6 +65,7 @@ rust_process(
         "//target/earlgrey/util",
         "//util/error",
         "//util/ipc",
+        "//util/types",
         "//util/zfmt",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_status/rust:pw_status",
