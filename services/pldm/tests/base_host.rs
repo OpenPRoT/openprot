@@ -12,19 +12,21 @@ use mctp_lib::fragment::{Fragmenter, SendOutput};
 use mctp_lib::Sender;
 use openprot_mctp_api::{Handle, MctpClient, MctpError, RecvMetadata, ResponseCode};
 use openprot_mctp_server::Server;
-use openprot_pldm_service::firmware_device::{FdUaCmdChannel, FdUaRspChannel, FirmwareDevice, UaFdCmdChannel};
+use openprot_pldm_service::firmware_device::{
+    FdUaCmdChannel, FdUaRspChannel, FirmwareDevice, UaFdCmdChannel,
+};
 use openprot_pldm_service::{MctpPldmTransport, PldmResponder, PldmServiceError};
 use pldm_common::codec::PldmCodec;
-use pldm_common::message::control::{GetTidRequest, SetTidRequest, GetPldmVersionRequest};
-use pldm_common::protocol::base::{PldmMsgType, PldmSupportedType, TransferOperationFlag};
-use pldm_common::protocol::firmware_update::{ComponentResponseCode, Descriptor};
-use pldm_interface::firmware_device::fd_ops::{ComponentOperation, FdOps, FdOpsError};
-use pldm_common::message::firmware_update::get_fw_params::FirmwareParameters;
+use pldm_common::message::control::{GetPldmVersionRequest, GetTidRequest, SetTidRequest};
 use pldm_common::message::firmware_update::apply_complete::ApplyResult;
+use pldm_common::message::firmware_update::get_fw_params::FirmwareParameters;
+use pldm_common::message::firmware_update::get_status::ProgressPercent;
 use pldm_common::message::firmware_update::transfer_complete::TransferResult;
 use pldm_common::message::firmware_update::verify_complete::VerifyResult;
-use pldm_common::message::firmware_update::get_status::ProgressPercent;
+use pldm_common::protocol::base::{PldmMsgType, PldmSupportedType, TransferOperationFlag};
+use pldm_common::protocol::firmware_update::{ComponentResponseCode, Descriptor};
 use pldm_common::util::fw_component::FirmwareComponent;
+use pldm_interface::firmware_device::fd_ops::{ComponentOperation, FdOps, FdOpsError};
 
 const FD_EID: u8 = 42;
 const UA_EID: u8 = 8;
@@ -163,11 +165,17 @@ struct FakeFdOps {
 }
 
 impl FdOps for FakeFdOps {
-    fn get_device_identifiers(&self, _device_identifiers: &mut [Descriptor]) -> Result<usize, FdOpsError> {
+    fn get_device_identifiers(
+        &self,
+        _device_identifiers: &mut [Descriptor],
+    ) -> Result<usize, FdOpsError> {
         Ok(0)
     }
 
-    fn get_firmware_parms(&self, firmware_params: &mut FirmwareParameters) -> Result<(), FdOpsError> {
+    fn get_firmware_parms(
+        &self,
+        firmware_params: &mut FirmwareParameters,
+    ) -> Result<(), FdOpsError> {
         *firmware_params = FirmwareParameters::default();
         Ok(())
     }
@@ -186,7 +194,10 @@ impl FdOps for FakeFdOps {
         Ok(ComponentResponseCode::CompCanBeUpdated)
     }
 
-    fn query_download_offset_and_length(&self, _component: &FirmwareComponent) -> Result<(usize, usize), FdOpsError> {
+    fn query_download_offset_and_length(
+        &self,
+        _component: &FirmwareComponent,
+    ) -> Result<(usize, usize), FdOpsError> {
         Ok((0, 1024))
     }
 
@@ -235,7 +246,11 @@ impl FdOps for FakeFdOps {
         Ok(ApplyResult::ApplySuccess)
     }
 
-    fn activate(&self, _self_contained_activation: u8, _estimated_time: &mut u16) -> Result<u8, FdOpsError> {
+    fn activate(
+        &self,
+        _self_contained_activation: u8,
+        _estimated_time: &mut u16,
+    ) -> Result<u8, FdOpsError> {
         self.activated.set(true);
         Ok(0)
     }
@@ -328,7 +343,10 @@ fn base_full_chain_via_pldm_responder() {
     }
     let fd_to_req_bridge = UnusedFwReq;
 
-    let fd = RefCell::new(FirmwareDevice::init(&fd_ops, &pldm_interface::config::PLDM_PROTOCOL_CAPABILITIES));
+    let fd = RefCell::new(FirmwareDevice::init(
+        &fd_ops,
+        &pldm_interface::config::PLDM_PROTOCOL_CAPABILITIES,
+    ));
     let fd_buf = RefCell::new([0u8; 1024]);
 
     struct ResponderToFdBridge<'a, T: FdUaCmdChannel> {
@@ -341,11 +359,12 @@ fn base_full_chain_via_pldm_responder() {
     impl<T: FdUaCmdChannel> UaFdCmdChannel for ResponderToFdBridge<'_, T> {
         fn transact(&self, req: &[u8], resp: &mut [u8]) -> Result<usize, PldmServiceError> {
             self.chan.load_req(req);
-            match self
-                .fd
-                .borrow_mut()
-                .run_terminus(self.chan, self.fw_req, &mut self.fd_buf.borrow_mut()[..], TIMEOUT_MILLIS)
-            {
+            match self.fd.borrow_mut().run_terminus(
+                self.chan,
+                self.fw_req,
+                &mut self.fd_buf.borrow_mut()[..],
+                TIMEOUT_MILLIS,
+            ) {
                 Ok(()) | Err(PldmServiceError::Ipc) => {}
                 Err(e) => return Err(e),
             }
@@ -390,23 +409,28 @@ fn base_full_chain_via_pldm_responder() {
         .expect("allocate request handle to FD");
     ua_server
         .borrow_mut()
-        .send(Some(req_handle), 0x01, None, None, false, &ua_req_buf[1..req_len])
+        .send(
+            Some(req_handle),
+            0x01,
+            None,
+            None,
+            false,
+            &ua_req_buf[1..req_len],
+        )
         .expect("send request_update payload");
 
     // Runs the responder until its inbound queue is drained. run_responder
     // loops until its listener has nothing left, at which point it returns
     // Mctp(TimedOut); that terminating timeout means "done", not a failure.
-    let run_responder_once = || {
-        match responder.borrow_mut().run_responder(
-            &responder_transport,
-            &responder_bridge,
-            &mut responder_buf.borrow_mut()[..],
-            TIMEOUT_MILLIS,
-        ) {
-            Ok(()) => {}
-            Err(PldmServiceError::Mctp(e)) if e.is_timeout() => {}
-            Err(e) => panic!("responder failed: {e:?}"),
-        }
+    let run_responder_once = || match responder.borrow_mut().run_responder(
+        &responder_transport,
+        &responder_bridge,
+        &mut responder_buf.borrow_mut()[..],
+        TIMEOUT_MILLIS,
+    ) {
+        Ok(()) => {}
+        Err(PldmServiceError::Mctp(e)) if e.is_timeout() => {}
+        Err(e) => panic!("responder failed: {e:?}"),
     };
 
     // The responder's pre-recv pump delivers the queued UA->FD packets into
@@ -444,7 +468,14 @@ fn base_full_chain_via_pldm_responder() {
         .expect("allocate get_tid request handle to FD");
     ua_server
         .borrow_mut()
-        .send(Some(req_handle), 0x01, None, None, false, &ua_req_buf[1..req_len])
+        .send(
+            Some(req_handle),
+            0x01,
+            None,
+            None,
+            false,
+            &ua_req_buf[1..req_len],
+        )
         .expect("send get_tid payload");
 
     run_responder_once();
@@ -469,8 +500,6 @@ fn base_full_chain_via_pldm_responder() {
         ua_resp_payload[4], 0x42,
         "GetTid should return the TID set by SetTid"
     );
-    let tid = ua_resp_payload[4];
-    println!("Base host test completed successfully: GetTid returned the expected TID 0x{:x}", tid);
 
     // ---- GetPldmVersion: query the Base protocol version supported by the FD ----
     let get_version = GetPldmVersionRequest::new(
@@ -491,7 +520,14 @@ fn base_full_chain_via_pldm_responder() {
         .expect("allocate get_pldm_version request handle to FD");
     ua_server
         .borrow_mut()
-        .send(Some(req_handle), 0x01, None, None, false, &ua_req_buf[1..req_len])
+        .send(
+            Some(req_handle),
+            0x01,
+            None,
+            None,
+            false,
+            &ua_req_buf[1..req_len],
+        )
         .expect("send get_pldm_version payload");
 
     run_responder_once();
@@ -509,16 +545,18 @@ fn base_full_chain_via_pldm_responder() {
         resp_meta.payload_size >= 13,
         "GetPldmVersion response should include header, completion code, and version data"
     );
-    let resp_version: u32 = u32::from_le_bytes(ua_resp_payload[9..13].try_into().expect("version data should be 4 bytes"));
+    let resp_version: u32 = u32::from_le_bytes(
+        ua_resp_payload[9..13]
+            .try_into()
+            .expect("version data should be 4 bytes"),
+    );
 
     assert!(
         pldm_interface::config::PLDM_PROTOCOL_CAPABILITIES[0].protocol_version == resp_version,
         "Returned Version is incorrect"
     );
-    println!("Base host test completed successfully: GetPldmVersion returned the expected version 0x{:x}", resp_version);
     assert_eq!(
         ua_resp_payload[3], 0,
         "get_pldm_version completion code should be success"
     );
-
 }
