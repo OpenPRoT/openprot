@@ -142,8 +142,16 @@
               handler_object_name: "logger_flash"
             },
             {
-              name: "flash_service",
+              name: "eflash_service",
               type: "channel_handler"
+            },
+            {
+              name: "spi_flash_service",
+              type: "channel_handler"
+            },
+            {
+              name: "flash_wait_group",
+              type: "wait_group"
             },
             {
               name: "flash_interrupts",
@@ -169,6 +177,12 @@
               type: "device",
               start_address: 0x41000000,
               size_bytes: 0x200
+            },
+            {
+              name: "spi_host0",
+              type: "device",
+              start_address: 0x40300000,
+              size_bytes: 0x1000
             }
           ]
         },
@@ -215,7 +229,13 @@
               name: "flash_usb",
               type: "channel_initiator",
               handler_process: "flash_server",
-              handler_object_name: "flash_service"
+              handler_object_name: "eflash_service"
+            },
+            {
+              name: "spi_flash_usb",
+              type: "channel_initiator",
+              handler_process: "flash_server",
+              handler_object_name: "spi_flash_service"
             },
             {
               name: "sysmgr_usb",

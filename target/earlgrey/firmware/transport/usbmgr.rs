@@ -229,6 +229,7 @@ fn handle_usb() -> Result<(), ErrorCode> {
     const USB_CONFIG: UsbConfig = UsbConfig::new(&CDC_BUILDER.eps().0, &CDC_BUILDER.eps().1);
 
     let flash = FlashIpcClient::new(IpcHandle::new(handle::FLASH_USB))?;
+    let _spi_flash = FlashIpcClient::new(IpcHandle::new(handle::SPI_FLASH_USB))?;
     let dfu_handler = EarlgreyDfuHandler::new(flash, sysmgr, &boot_info)?;
     let mut dfu = DfuClass::<_, 2048>::new(DFU_BUILDER, dfu_handler);
 
