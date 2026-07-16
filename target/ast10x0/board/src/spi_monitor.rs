@@ -3,7 +3,7 @@
 
 //! Board-level SPI Monitor orchestration.
 //!
-//! `Ast1060Monitor` is the concrete implementation of the `Monitor` trait, orchestrating
+//! `Ast1060SpiMonitor` is the concrete implementation of the `Monitor` trait, orchestrating
 //! both SCU (for external mux control) and SPIPF (for enforcement, filtering, and locks).
 //!
 //! This layer ensures no duplication: mux control delegates to SCU routing, and SPIPF
@@ -33,7 +33,7 @@ use ast10x0_peripherals::spimonitor::types::{
 /// monitor.set_address_privilege(/*...*/)?;
 /// monitor.lock_policy(MonitorInstance::Spim0)?;
 /// ```
-pub struct Ast1060Monitor<'a> {
+pub struct Ast1060SpiMonitor<'a> {
     scu: &'a mut ScuRegisters,
     spipf: &'a mut [SpiMonitorRegisters; 4],
     read_blocked_region_count: u8,
@@ -41,7 +41,7 @@ pub struct Ast1060Monitor<'a> {
     write_blocked_region_count: u8,
 }
 
-impl<'a> Ast1060Monitor<'a> {
+impl<'a> Ast1060SpiMonitor<'a> {
     /// Create a new board-level Monitor with access to both SCU and SPIPF.
     pub fn new(
         scu: &'a mut ScuRegisters,
@@ -125,7 +125,7 @@ impl<'a> Ast1060Monitor<'a> {
     }
 }
 
-impl<'a> Monitor for Ast1060Monitor<'a> {
+impl<'a> Monitor for Ast1060SpiMonitor<'a> {
     fn set_mux(&mut self, instance: MonitorInstance, mux: MuxSelect) -> BootResult<()> {
         // External mux selection is controlled via SCU0F0 register.
         // Delegate to SCU routing layer which has the actual register access.
@@ -267,13 +267,13 @@ mod tests {
 
     #[test]
     fn test_enforcement_flag() {
-        assert!(!Ast1060Monitor::is_enforcement_active(0));
-        assert!(Ast1060Monitor::is_enforcement_active(1 << 4));
+        assert!(!Ast1060SpiMonitor::is_enforcement_active(0));
+        assert!(Ast1060SpiMonitor::is_enforcement_active(1 << 4));
     }
 
     #[test]
     fn test_lock_flag() {
-        assert!(!Ast1060Monitor::is_policy_locked(0));
-        assert!(Ast1060Monitor::is_policy_locked(1));
+        assert!(!Ast1060SpiMonitor::is_policy_locked(0));
+        assert!(Ast1060SpiMonitor::is_policy_locked(1));
     }
 }
