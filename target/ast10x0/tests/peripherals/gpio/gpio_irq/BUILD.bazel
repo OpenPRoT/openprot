@@ -1,0 +1,96 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app")
+load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
+load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH", "system_image_test")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "system_config",
+    srcs = ["system.json5"],
+)
+
+target_codegen(
+    name = "codegen",
+    arch = "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+    system_config = ":system_config",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    template = "//target/ast10x0:linker_script_template",
+)
+
+rust_binary(
+    name = "target",
+    srcs = ["target.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":codegen",
+        ":linker_script",
+        "//target/ast10x0:entry",
+        "//target/ast10x0/peripherals",
+        "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/subsys/console:console_backend",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_kernel/userspace",
+    ],
+)
+
+rust_app(
+    name = "gpio_irq_server",
+    srcs = ["gpio_irq_server_main.rs"],
+    codegen_crate_name = "app_gpio_irq_server",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//target/ast10x0/peripherals",
+        "@ast1060_pac",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
+system_image(
+    name = "gpio_irq",
+    apps = [
+        ":gpio_irq_server",
+    ],
+    kernel = ":target",
+    platform = "//target/ast10x0",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+system_image_test(
+    name = "gpio_irq_test",
+    image = ":gpio_irq",
+    tags = ["hardware"],
+    target_compatible_with = select({
+        "//target/ast10x0:qemu_enabled": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)
+
+rust_binary_no_panics_test(
+    name = "no_panics_test",
+    binary = ":gpio_irq",
+    tags = ["kernel"],
+)
