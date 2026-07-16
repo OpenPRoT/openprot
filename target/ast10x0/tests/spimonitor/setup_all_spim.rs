@@ -24,7 +24,7 @@ use ast10x0_peripherals::smc::{
 };
 use ast10x0_peripherals::spimonitor::registers::SpiMonitorRegisters;
 use ast10x0_peripherals::spimonitor::{
-    ConfiguredSpiMonitor, LockedSpiMonitor, MonitorPolicy, PrivilegeDirection, PrivilegeOp,
+    ConfiguredSpiMonitor, LockedSpiMonitor, SpiMonitorPolicy, PrivilegeDirection, PrivilegeOp,
     SpiMonitorController, ViolationLogEntry,
 };
 use target_common::{declare_target, TargetInterface};
@@ -424,8 +424,8 @@ fn reset_bmc_flashes(scu: &ScuRegisters, log_jedec: bool) -> Result<(), SmcError
     Ok(())
 }
 
-fn production_policy() -> MonitorPolicy {
-    let mut policy = MonitorPolicy::empty();
+fn production_policy() -> SpiMonitorPolicy {
+    let mut policy = SpiMonitorPolicy::empty();
     policy.allow_commands.copy_from_slice(&ALLOW_COMMANDS);
     policy.allow_command_count = ALLOW_COMMANDS.len();
     let _ = policy.add_region(

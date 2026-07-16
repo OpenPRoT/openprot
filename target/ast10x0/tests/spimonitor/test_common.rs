@@ -13,7 +13,7 @@ use ast10x0_peripherals::scu::{
     SpiMonitorSource,
 };
 use ast10x0_peripherals::spimonitor::{
-    ConfiguredSpiMonitor, LockState, MonitorPolicy, MonitorState, PassthroughMode,
+    ConfiguredSpiMonitor, LockState, SpiMonitorPolicy, SpiMonitorState, PassthroughMode,
     PrivilegeDirection, PrivilegeOp, SpiMonitor, SpiMonitorController, SpiMonitorError,
     Uninitialized,
 };
@@ -105,8 +105,8 @@ pub fn configure_wiring<C: TestConfig>(scu: &ScuRegisters) -> Result<(), TestErr
     Ok(())
 }
 
-pub fn build_policy() -> MonitorPolicy {
-    let mut policy = MonitorPolicy::empty();
+pub fn build_policy() -> SpiMonitorPolicy {
+    let mut policy = SpiMonitorPolicy::empty();
     policy.allow_commands[..9]
         .copy_from_slice(&[0x9f, 0x05, 0x06, 0x04, 0x02, 0x12, 0x20, 0x21, 0x0c]);
     policy.allow_command_count = 9;
@@ -127,7 +127,7 @@ pub fn initialize_monitor<C: TestConfig>(
 
 pub fn initialize_monitor_with_policy<C: TestConfig>(
     buffer: &'static mut [u32],
-    policy: &MonitorPolicy,
+    policy: &SpiMonitorPolicy,
 ) -> Result<ConfiguredSpiMonitor, TestError> {
     pw_log::info!("START: monitor reset, policy, and log RAM");
     let monitor = unsafe { SpiMonitor::<Uninitialized>::new(C::CONTROLLER) };
@@ -139,7 +139,7 @@ pub fn initialize_monitor_with_policy<C: TestConfig>(
 
     let configured = monitor.apply_policy(policy)?;
     test_check!(
-        configured.state() == MonitorState::Configured,
+        configured.state() == SpiMonitorState::Configured,
         "FAIL: monitor did not enter configured state"
     );
 

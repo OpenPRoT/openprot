@@ -21,8 +21,8 @@ use ast10x0_peripherals::scu::{
 };
 use ast10x0_peripherals::smc::SmcController;
 use ast10x0_peripherals::spimonitor::{
-    LockedSpiMonitor, MonitorPolicy, PassthroughMode, SpiMonitor, SpiMonitorController,
-    SpiMonitorError, Uninitialized,
+    LockedSpiMonitor, PassthroughMode, SpiMonitor, SpiMonitorController, SpiMonitorError,
+    SpiMonitorPolicy, Uninitialized,
 };
 
 /// Static wiring for one external SPI monitor path.
@@ -355,7 +355,7 @@ const fn update_bit(value: u32, mask: u32, set: bool) -> u32 {
 ///
 /// Order: validate → pinctrl → SCU route → passthrough → ext-mux →
 /// MISO multi-func → SPIPF policy → SPIPF lock. The lock is one-way; an empty
-/// `MonitorPolicy::empty()` combined with lock will brick the SPI bus until
+/// `SpiMonitorPolicy::empty()` combined with lock will brick the SPI bus until
 /// reset, so callers should pass a vetted preset (see [`presets`]).
 ///
 /// # Safety
@@ -365,7 +365,7 @@ pub unsafe fn apply_spim_wiring(
     scu: &ScuRegisters,
     controller_id: SmcController,
     wiring: SpimWiring,
-    policy: &MonitorPolicy,
+    policy: &SpiMonitorPolicy,
 ) -> Result<LockedSpiMonitor, SpimWiringError> {
     unsafe { apply_spim_wiring_with_log(scu, controller_id, wiring, policy, None) }
 }
@@ -380,7 +380,7 @@ pub unsafe fn apply_spim_wiring_with_log(
     scu: &ScuRegisters,
     controller_id: SmcController,
     wiring: SpimWiring,
-    policy: &MonitorPolicy,
+    policy: &SpiMonitorPolicy,
     log_buffer: Option<&'static mut [u32]>,
 ) -> Result<LockedSpiMonitor, SpimWiringError> {
     validate_controller_for_source(controller_id, wiring.source)?;
@@ -431,10 +431,10 @@ fn validate_controller_for_source(
     }
 }
 
-/// Built-in `MonitorPolicy` presets vetted against the BMC's flash opcode set.
+/// Built-in `SpiMonitorPolicy` presets vetted against the BMC's flash opcode set.
 pub mod presets {
     use ast10x0_peripherals::spimonitor::{
-        profile, MonitorPolicy, PrivilegeDirection, PrivilegeOp,
+        profile, PrivilegeDirection, PrivilegeOp, SpiMonitorPolicy,
     };
 
     /// Allow-list for the BMC's normal flash opcodes covering both 3-byte and
@@ -448,8 +448,8 @@ pub mod presets {
     /// `RDSR` (`0x05`), `WREN` (`0x06`), `WRDI` (`0x04`),
     /// `RDID` (`0x9F`), `RSTEN` (`0x66`), `RST` (`0x99`).
     #[must_use]
-    pub const fn bmc_default_policy() -> MonitorPolicy {
-        let mut p = MonitorPolicy::empty();
+    pub const fn bmc_default_policy() -> SpiMonitorPolicy {
+        let mut p = SpiMonitorPolicy::empty();
         p.allow_commands[0] = 0x03; // READ
         p.allow_commands[1] = 0x0B; // FAST_READ
         p.allow_commands[2] = 0x0C; // FAST_READ_4B
@@ -470,7 +470,7 @@ pub mod presets {
     /// Policy matching the supplied Zephyr SPIM nodes: full command list and
     /// write protection over flash addresses `0x0000_0000..0x0800_0000`.
     #[must_use]
-    pub fn zephyr_spim_policy() -> MonitorPolicy {
+    pub fn zephyr_spim_policy() -> SpiMonitorPolicy {
         let mut policy = profile::zephyr_default();
         let _ = policy.add_region(
             0,

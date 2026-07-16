@@ -55,7 +55,7 @@ pub enum LockState {
 
 /// High-level monitor lifecycle stage.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MonitorState {
+pub enum SpiMonitorState {
     Uninitialized,
     Configured,
     Locked,
@@ -153,7 +153,7 @@ pub type Result<T> = core::result::Result<T, SpiMonitorError>;
 ///
 /// Maps to SPIPF1-4 hardware blocks on AST10x0.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MonitorInstance {
+pub enum SpiMonitorId {
     /// SPIPF1 (0x7E79_1000) - typically BMC/SMC flash
     Spim0,
     /// SPIPF2 (0x7E79_2000) - typically BMC dual flash
@@ -196,7 +196,7 @@ impl From<ExtMuxSel> for MuxSelect {
 
 /// Monitor status snapshot at a point in time.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct MonitorStatus {
+pub struct SpiMonitorStatus {
     /// Current mux routing
     pub mux: MuxSelect,
     /// Whether policy tables are write-locked
