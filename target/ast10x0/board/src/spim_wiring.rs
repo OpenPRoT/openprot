@@ -6,9 +6,8 @@
 //! Composes the `scu::routing` mux helpers with the `spimonitor::controller`
 //! typestate to apply once-per-process SPIM routing and SPIPF policy at
 //! backend init time. Per-transaction reroutes are explicitly out of scope:
-//! the SPIPF lock is one-way, and the design doc
-//! (`peripherals/spimonitor/planning/overview-and-usage-model.md`) calls for
-//! "configure early, validate, lock, and operate under that locked policy."
+//! the SPIPF lock is one-way, so the design is to configure early, validate,
+//! lock, and operate under that locked policy.
 
 use ast10x0_peripherals::scu::{
     ScuError, ScuExtMuxSelect, ScuRegisters, SpiMonitorInstance, SpiMonitorPassthrough,
@@ -40,8 +39,8 @@ pub struct SpimWiring {
 }
 
 impl SpimWiring {
-    /// Default wiring for `SmcController::Spi1` (aspeed-rust SPI0,
-    /// `master_idx = 0`) routed through `Spim0` (SPIPF1 @ `0x7E79_1000`).
+    /// Default wiring for `SmcController::Spi1` (`master_idx = 0`) routed
+    /// through `Spim0` (SPIPF1 @ `0x7E79_1000`).
     #[must_use]
     pub const fn default_spi1_via_spim0() -> Self {
         Self {
@@ -53,8 +52,8 @@ impl SpimWiring {
         }
     }
 
-    /// Default wiring for `SmcController::Spi2` (aspeed-rust SPI1,
-    /// `master_idx = 2`) routed through `Spim2` (SPIPF3 @ `0x7E79_3000`).
+    /// Default wiring for `SmcController::Spi2` (`master_idx = 2`) routed
+    /// through `Spim2` (SPIPF3 @ `0x7E79_3000`).
     #[must_use]
     pub const fn default_spi2_via_spim2() -> Self {
         Self {
@@ -116,7 +115,7 @@ pub unsafe fn apply_spim_wiring(
     scu.set_spim_ext_mux(wiring.instance, wiring.ext_mux);
     scu.set_spim_miso_multi_func(wiring.instance, wiring.miso_multi_func);
 
-    let monitor_controller = match wiring.instance {
+    let monitor_controller: SpiMonitorController = match wiring.instance {
         SpiMonitorInstance::Spim0 => SpiMonitorController::Spim0,
         SpiMonitorInstance::Spim1 => SpiMonitorController::Spim1,
         SpiMonitorInstance::Spim2 => SpiMonitorController::Spim2,
@@ -144,9 +143,30 @@ fn validate_controller_for_source(
     }
 }
 
-/// Built-in `MonitorPolicy` presets vetted against the BMC's flash opcode set.
+/// Built-in `MonitorPolicy` presets for **provisioned** filter handover.
 pub mod presets {
-    use ast10x0_peripherals::spimonitor::MonitorPolicy;
+    use ast10x0_peripherals::spimonitor::{
+        MonitorPolicy, PrivilegeDirection, PrivilegeOp,
+    };
+
+    /// Allow-cmd whitelist for the BMC (32 opcodes).
+    const BMC_ALLOW_CMDS: [u8; 32] = [
+        0x03, 0x13, 0x0b, 0x0c, 0x6b, 0x6c, 0x01, 0x05, 0x35, 0x06, 0x04, 0x20, 0x21, 0x9f,
+        0x5a, 0xb7, 0xe9, 0x32, 0x34, 0xd8, 0xdc, 0x02, 0x12, 0x3b, 0x3c, 0x70, 0xbb, 0xbc,
+        0x50, 0xeb, 0xec, 0xc2,
+    ];
+
+    /// Filter policy for the BMC SPIM: allow-cmd table plus full-flash
+    /// read/write regions.
+    #[must_use]
+    pub fn bmc_filter_policy() -> MonitorPolicy {
+        let mut p = MonitorPolicy::empty();
+        p.allow_commands = BMC_ALLOW_CMDS;
+        p.allow_command_count = BMC_ALLOW_CMDS.len();
+        let _ = p.add_region(0, 0x1000_0000, PrivilegeDirection::Read, PrivilegeOp::Enable);
+        let _ = p.add_region(0, 0x1000_0000, PrivilegeDirection::Write, PrivilegeOp::Enable);
+        p
+    }
 
     /// Allow-list for the BMC's normal flash opcodes covering both 3-byte and
     /// 4-byte addressing variants. Empty `regions` (no address-privilege

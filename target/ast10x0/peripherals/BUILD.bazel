@@ -62,6 +62,8 @@ rust_library(
         "smc/spi/spi.rs",
         "smc/spi/spi_transaction.rs",
         "smc/types.rs",
+        "spimonitor/addr_priv.rs",
+        "spimonitor/cmd_table.rs",
         "spimonitor/controller.rs",
         "spimonitor/mod.rs",
         "spimonitor/policy.rs",
