@@ -30,7 +30,7 @@ use openprot_mctp_server::Server;
 use openprot_pldm_service::firmware_device::{
     FdUaCmdChannel, FdUaRspChannel, FirmwareDevice, UaFdCmdChannel, UaFdRspChannel,
 };
-use openprot_pldm_service::{MctpPldmTransport, PldmResponder, PldmRequester, PldmServiceError};
+use openprot_pldm_service::{MctpPldmTransport, PldmRequester, PldmResponder, PldmServiceError};
 use pldm_common::codec::{PldmCodec, PldmCodecWithLifetime};
 use pldm_common::message::firmware_update::apply_complete::{ApplyCompleteResponse, ApplyResult};
 use pldm_common::message::firmware_update::get_fw_params::FirmwareParameters;
@@ -46,14 +46,15 @@ use pldm_common::message::firmware_update::transfer_complete::{
     TransferCompleteResponse, TransferResult,
 };
 use pldm_common::message::firmware_update::update_component::UpdateComponentRequest;
-use pldm_common::message::firmware_update::verify_complete::{VerifyCompleteResponse, VerifyResult};
+use pldm_common::message::firmware_update::verify_complete::{
+    VerifyCompleteResponse, VerifyResult,
+};
 use pldm_common::protocol::base::{
     PldmBaseCompletionCode, PldmMsgHeader, PldmMsgType, TransferRespFlag,
 };
 use pldm_common::protocol::firmware_update::{
     ComponentClassification, ComponentResponseCode, Descriptor, FirmwareDeviceState, FwUpdateCmd,
-    PldmFirmwareString, UpdateOptionFlags, VersionStringType,
-    PLDM_FWUP_IMAGE_SET_VER_STR_MAX_LEN,
+    PldmFirmwareString, UpdateOptionFlags, VersionStringType, PLDM_FWUP_IMAGE_SET_VER_STR_MAX_LEN,
 };
 use pldm_common::util::fw_component::FirmwareComponent;
 use pldm_interface::firmware_device::fd_ops::{ComponentOperation, FdOps, FdOpsError};
@@ -315,7 +316,10 @@ impl FdOps for FakeFdOps {
         Ok(0)
     }
 
-    fn get_firmware_parms(&self, firmware_params: &mut FirmwareParameters) -> Result<(), FdOpsError> {
+    fn get_firmware_parms(
+        &self,
+        firmware_params: &mut FirmwareParameters,
+    ) -> Result<(), FdOpsError> {
         *firmware_params = FirmwareParameters::default();
         Ok(())
     }
@@ -423,7 +427,10 @@ fn fw_string(s: &str) -> PldmFirmwareString {
 /// Reads one request off `ua_server`'s PLDM listener, produces the matching
 /// success response (returning firmware bytes for `RequestFirmwareData`), and
 /// sends it back to the firmware device.
-fn serve_ua_fw_request<S: Sender, const N: usize>(ua_server: &RefCell<Server<S, N>>, listener: Handle) {
+fn serve_ua_fw_request<S: Sender, const N: usize>(
+    ua_server: &RefCell<Server<S, N>>,
+    listener: Handle,
+) {
     let mut req = [0u8; 1024];
     let meta = match ua_server.borrow_mut().try_recv(listener, &mut req) {
         Some(m) => m,
@@ -511,7 +518,7 @@ impl<C: MctpClient> FdUaCmdChannel for RequesterBridge<'_, C> {
 /// UA->FD command into `FirmwareDevice.run_terminus` and return its response.
 struct ResponderToFdBridge<'a, T: FdUaCmdChannel> {
     chan: &'a OneShotFdRsp,
-    fd: &'a RefCell<FirmwareDevice<'a>>,
+    fd: &'a RefCell<FirmwareDevice<'a, FakeFdOps>>,
     fw_req: &'a T,
     fd_buf: &'a RefCell<[u8; 1024]>,
 }
@@ -676,7 +683,10 @@ fn firmware_update_full_flow_via_requester() {
     );
     let len = req_update.encode(&mut buf).expect("encode RequestUpdate");
     let resp = ua_transact(&buf[..len]);
-    assert_eq!(resp[3], 0, "RequestUpdate completion code should be success");
+    assert_eq!(
+        resp[3], 0,
+        "RequestUpdate completion code should be success"
+    );
 
     // ---- PassComponentTable (Start+End): move to ReadyXfer ----
     instance_id += 1;
@@ -690,9 +700,14 @@ fn firmware_update_full_flow_via_requester() {
         0,      // comp_comparison_stamp
         &comp_ver,
     );
-    let len = pass_comp.encode(&mut buf).expect("encode PassComponentTable");
+    let len = pass_comp
+        .encode(&mut buf)
+        .expect("encode PassComponentTable");
     let resp = ua_transact(&buf[..len]);
-    assert_eq!(resp[3], 0, "PassComponentTable completion code should be success");
+    assert_eq!(
+        resp[3], 0,
+        "PassComponentTable completion code should be success"
+    );
     assert!(
         fd_ops.component_accepted.get(),
         "FD should have accepted the passed component"
@@ -711,9 +726,14 @@ fn firmware_update_full_flow_via_requester() {
         UpdateOptionFlags(0),
         &comp_ver,
     );
-    let len = update_comp.encode(&mut buf).expect("encode UpdateComponent");
+    let len = update_comp
+        .encode(&mut buf)
+        .expect("encode UpdateComponent");
     let resp = ua_transact(&buf[..len]);
-    assert_eq!(resp[3], 0, "UpdateComponent completion code should be success");
+    assert_eq!(
+        resp[3], 0,
+        "UpdateComponent completion code should be success"
+    );
 
     // ---- GetStatus x3: pump the FD-driven download/verify/apply state machine ----
     // Each GetStatus advances the FD initiator state machine by issuing
@@ -725,7 +745,10 @@ fn firmware_update_full_flow_via_requester() {
         let n = gs.encode(&mut b).expect("encode GetStatus");
         let resp = transact(&b[..n]);
         let status = GetStatusResponse::decode(&resp).expect("decode GetStatusResponse");
-        assert_eq!(status.completion_code, 0, "GetStatus completion should be success");
+        assert_eq!(
+            status.completion_code, 0,
+            "GetStatus completion should be success"
+        );
         status.current_state
     };
 

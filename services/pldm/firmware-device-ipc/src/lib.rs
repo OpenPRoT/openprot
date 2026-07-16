@@ -33,14 +33,16 @@
 #![warn(missing_docs)]
 
 use openprot_pldm_service::error::PldmServiceError;
-use openprot_pldm_service::firmware_device::{UaFdRspChannel, UaFdCmdChannel, FdUaRspChannel, FdUaCmdChannel};
+use openprot_pldm_service::firmware_device::{
+    FdUaCmdChannel, FdUaRspChannel, UaFdCmdChannel, UaFdRspChannel,
+};
 use userspace::syscall::Signals;
 use userspace::time::Instant;
 
 /// IPC server-side channel for receiving PLDM firmware-device commands.
-/// Meant to be used by [`FirmwareDevice`] to receive requests from the UA 
+/// Meant to be used by [`FirmwareDevice`] to receive requests from the UA
 /// and respond with the MCTP result.
-/// 
+///
 /// Wraps a Pigweed IPC channel handle.  Each call to [`FdUaRspChannel::recv`]
 /// reads one incoming request with `channel_read`; [`FdUaRspChannel::respond`]
 /// sends the response with `channel_respond`.
@@ -65,8 +67,7 @@ impl IpcFdUaRspChannel {
 
 impl FdUaRspChannel for IpcFdUaRspChannel {
     fn recv(&self, buf: &mut [u8], _timeout_millis: u32) -> Result<usize, PldmServiceError> {
-        userspace::syscall::channel_read(self.handle, 0, buf)
-            .map_err(|_| PldmServiceError::Ipc)
+        userspace::syscall::channel_read(self.handle, 0, buf).map_err(|_| PldmServiceError::Ipc)
     }
 
     fn try_recv(&self, buf: &mut [u8]) -> Result<Option<usize>, PldmServiceError> {
@@ -80,8 +81,7 @@ impl FdUaRspChannel for IpcFdUaRspChannel {
     }
 
     fn respond(&self, buf: &[u8]) -> Result<(), PldmServiceError> {
-        userspace::syscall::channel_respond(self.handle, buf)
-            .map_err(|_| PldmServiceError::Ipc)
+        userspace::syscall::channel_respond(self.handle, buf).map_err(|_| PldmServiceError::Ipc)
     }
 
     fn wait_readable(&self, _timeout_millis: u32) -> Result<(), PldmServiceError> {
@@ -100,7 +100,7 @@ impl FdUaRspChannel for IpcFdUaRspChannel {
 /// IPC client-side channel for sending PLDM firmware-update requests.
 /// Meant to be used by [`FirmwareDevice`] to send requests to the UA and receive
 /// the MCTP response.
-/// 
+///
 /// Wraps a Pigweed IPC channel handle.  Each call to [`FdUaCmdChannel::transact`]
 /// performs one synchronous `channel_transact`, blocking until the response
 /// arrives.
@@ -191,12 +191,10 @@ impl IpcUaFdRspChannel {
 
 impl UaFdRspChannel for IpcUaFdRspChannel {
     fn recv(&self, buf: &mut [u8]) -> Result<usize, PldmServiceError> {
-        userspace::syscall::channel_read(self.handle, 0, buf)
-            .map_err(|_| PldmServiceError::Ipc)
+        userspace::syscall::channel_read(self.handle, 0, buf).map_err(|_| PldmServiceError::Ipc)
     }
 
     fn respond(&self, buf: &[u8]) -> Result<(), PldmServiceError> {
-        userspace::syscall::channel_respond(self.handle, buf)
-            .map_err(|_| PldmServiceError::Ipc)
+        userspace::syscall::channel_respond(self.handle, buf).map_err(|_| PldmServiceError::Ipc)
     }
 }

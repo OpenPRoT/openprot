@@ -20,7 +20,7 @@
 //! Callers only deal with PLDM bytes; the framing byte is inserted or stripped
 //! transparently.
 
-use openprot_mctp_api::{MctpClient, MctpListener, MctpRespChannel, MctpReqChannel, Stack};
+use openprot_mctp_api::{MctpClient, MctpListener, MctpReqChannel, MctpRespChannel, Stack};
 use pldm_common::util::mctp_transport::MCTP_PLDM_MSG_TYPE;
 
 use crate::error::PldmServiceError;
@@ -118,9 +118,7 @@ impl<C: MctpClient> MctpPldmTransport<C> {
 
         // Send the PLDM payload (buf[1..1+pldm_len]).  The MCTP layer adds
         // its own framing, so we exclude buf[0].
-        let req_end = pldm_len
-            .checked_add(1)
-            .ok_or(PldmServiceError::Overflow)?;
+        let req_end = pldm_len.checked_add(1).ok_or(PldmServiceError::Overflow)?;
         let req_payload = buf.get(1..req_end).ok_or(PldmServiceError::Overflow)?;
         req_channel
             .send(MCTP_PLDM_MSG_TYPE, req_payload)
@@ -128,9 +126,7 @@ impl<C: MctpClient> MctpPldmTransport<C> {
 
         // Receive the PLDM response into buf[1..].
         let recv_buf = buf.get_mut(1..).ok_or(PldmServiceError::Overflow)?;
-        let (meta, _) = req_channel
-            .recv(recv_buf)
-            .map_err(PldmServiceError::Mctp)?;
+        let (meta, _) = req_channel.recv(recv_buf).map_err(PldmServiceError::Mctp)?;
 
         Ok(meta.payload_size)
     }
@@ -198,7 +194,9 @@ impl<C: MctpClient> MctpPldmTransport<C> {
 
         // Send the response, excluding the MCTP type byte that the transport
         // layer manages separately.
-        let resp_payload = buf.get(1..resp_total_len).ok_or(PldmServiceError::Overflow)?;
+        let resp_payload = buf
+            .get(1..resp_total_len)
+            .ok_or(PldmServiceError::Overflow)?;
         resp_channel
             .send(resp_payload)
             .map_err(PldmServiceError::Mctp)

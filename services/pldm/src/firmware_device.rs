@@ -41,9 +41,9 @@
 //!    more requests are pending.
 
 use pldm_interface::cmd_interface::CmdInterface;
-use pldm_interface::firmware_device::fd_ops::FdOps;
-use pldm_interface::firmware_device::fd_context::FirmwareDeviceContext;
 use pldm_interface::control_context::ProtocolCapability;
+use pldm_interface::firmware_device::fd_context::FirmwareDeviceContext;
+use pldm_interface::firmware_device::fd_ops::FdOps;
 
 use crate::error::PldmServiceError;
 
@@ -144,11 +144,11 @@ pub trait UaFdCmdChannel {
 /// Owns the PLDM firmware-update state machine ([`CmdInterface`]) and drives it
 /// via [`run_terminus`](FirmwareDevice::run_terminus), bridging the inbound
 /// (`fd_rsp`) and outbound (`fw_req`) IPC channels.
-pub struct FirmwareDevice<'a> {
-    cmd_interface: CmdInterface<'a>,
+pub struct FirmwareDevice<'a, O: FdOps> {
+    cmd_interface: CmdInterface<'a, O>,
 }
 
-impl<'a> FirmwareDevice<'a> {
+impl<'a, O: FdOps> FirmwareDevice<'a, O> {
     /// Create a new [`FirmwareDevice`] with the given protocol capabilities.
     ///
     /// `protocol_capabilities` should advertise at least
@@ -156,9 +156,12 @@ impl<'a> FirmwareDevice<'a> {
     /// and routes firmware-update commands correctly.
     ///
     /// [`PldmSupportedType::FwUpdate`]: pldm_common::protocol::base::PldmSupportedType::FwUpdate
-    pub fn init(fdops: &'a dyn FdOps, protocol_capabilities: &'a [ProtocolCapability<'a>]) -> Self {
+    pub fn init(fdops: &'a O, protocol_capabilities: &'a [ProtocolCapability<'a>]) -> Self {
         FirmwareDevice {
-            cmd_interface: CmdInterface::new(protocol_capabilities, FirmwareDeviceContext::new(fdops)),
+            cmd_interface: CmdInterface::new(
+                protocol_capabilities,
+                FirmwareDeviceContext::new(fdops),
+            ),
         }
     }
 
@@ -196,13 +199,15 @@ impl<'a> FirmwareDevice<'a> {
             // such as CancelUpdate is serviced between every RequestFirmwareData.
             let initiator_active = self.cmd_interface.fd_ctx.should_start_initiator_mode();
             if initiator_active {
-                let mut fw_buf  = [0u8; FD_IPC_MAX_MSG];
-                let mut fw_resp  = [0u8; FD_IPC_MAX_MSG];
-                self.cmd_interface.handle_initiator_msg(&mut fw_buf)
+                let mut fw_buf = [0u8; FD_IPC_MAX_MSG];
+                let mut fw_resp = [0u8; FD_IPC_MAX_MSG];
+                self.cmd_interface
+                    .handle_initiator_msg(&mut fw_buf)
                     .map_err(PldmServiceError::MsgHandler)?;
                 // Build a request using pldm-lib
                 fw_req.transact(&fw_buf, &mut fw_resp)?;
-                self.cmd_interface.handle_initiator_response(&mut fw_resp)
+                self.cmd_interface
+                    .handle_initiator_response(&mut fw_resp)
                     .map_err(PldmServiceError::MsgHandler)?;
             }
 
@@ -216,7 +221,9 @@ impl<'a> FirmwareDevice<'a> {
                     .cmd_interface
                     .handle_responder_msg(buf)
                     .map_err(PldmServiceError::MsgHandler)?;
-                let resp = buf.get(..resp_len).ok_or(PldmServiceError::InvalidResponseLength)?;
+                let resp = buf
+                    .get(..resp_len)
+                    .ok_or(PldmServiceError::InvalidResponseLength)?;
                 fd_rsp.respond(resp)?;
             } else if !initiator_active {
                 // Fully idle: no initiator work pending and no inbound message.
