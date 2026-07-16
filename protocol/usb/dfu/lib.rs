@@ -212,9 +212,9 @@ where
             return;
         }
         if let Some(data) = self.buffer.get(self.transfer_offset..self.transfer_total) {
-            let n = driver.transfer_in_unaligned(0, data, true);
+            let zlp = self.transfer_total < self.config.transfer_size as usize;
+            let n = driver.transfer_in_unaligned(0, data, zlp);
             self.transfer_offset += n;
-
             if self.transfer_offset == self.transfer_total {
                 if self.transfer_total < self.config.transfer_size as usize {
                     self.state = DfuState::DfuIdle;
