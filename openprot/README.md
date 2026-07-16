@@ -12,7 +12,7 @@ The proposed demo emphasizes:
 - Standardized management protocols (PLDM)
 - Integration across system components
 
-This demo direction reflects internal discussions around elevating update functionality into a **system-level capability**, rather than a localized firmware feature. 【1-6860eb】  
+This demo direction reflects internal discussions around elevating update functionality into a **system-level capability**, rather than a localized firmware feature. 【1-6860eb】
 
 ---
 
@@ -46,7 +46,7 @@ The demo centers around a **host-initiated firmware update flow**, where:
 - Initiation point: **Host CPU (not device-local)**
 - Protocol: **PLDM over I2C / I3C**
 - Target: Platform components (e.g., BMC, peripherals, firmware-managed devices)
-- Context: Designed for **OCP Global Summit timeframe** 【1-6860eb】  
+- Context: Designed for **OCP Global Summit timeframe** 【1-6860eb】
 
 ---
 
@@ -66,24 +66,24 @@ The demo centers around a **host-initiated firmware update flow**, where:
 
 ### 4.2 Logical Flow
 
-1. Host CPU issues firmware update command  
-2. Command is encoded using PLDM  
-3. Transport layer delivers message over I2C / I3C  
-4. OpenPRoT stack processes the update request  
-5. RoT firmware validates and authorizes the update  
-6. Firmware is transferred and applied to target devices  
-7. System reports status back to host  
+1. Host CPU issues firmware update command
+2. Command is encoded using PLDM
+3. Transport layer delivers message over I2C / I3C
+4. OpenPRoT stack processes the update request
+5. RoT firmware validates and authorizes the update
+6. Firmware is transferred and applied to target devices
+7. System reports status back to host
 
-This reflects the **system-oriented update pattern** discussed in the workgroup, including host-driven orchestration and PLDM-based control. 【2-0cad87】  
+This reflects the **system-oriented update pattern** discussed in the workgroup, including host-driven orchestration and PLDM-based control. 【2-0cad87】
 
 ---
 
 ## 5. Relationship to Current Demo Direction
 
 ### Current Demo Focus (APAC / MVP)
-- Secure boot  
-- Firmware update  
-- Recovery flows 【3-4dcd71】  
+- Secure boot
+- Firmware update
+- Recovery flows 【3-4dcd71】
 
 ### Gap Identified
 Current demos treat update as:
@@ -134,7 +134,7 @@ This demo reframes update as:
 - Requires platform capable of:
   - CPU ↔ device communication paths
   - I2C/I3C connectivity
-- Discussions indicate use of **AST1060-based platforms** for current demos 【2-0cad87】  
+- Discussions indicate use of **AST1060-based platforms** for current demos 【2-0cad87】
 
 ---
 
@@ -147,12 +147,12 @@ This demo reframes update as:
 ## 9. Next Steps
 
 - Define **concrete demo topology**
-  - Number and type of target devices  
-- Identify **host-side software components**  
-- Align on **PLDM message flows**  
-- Validate **transport readiness (I2C/I3C)**  
-- Prototype **end-to-end update path**  
-- Integrate into OCP demo plan  
+  - Number and type of target devices
+- Identify **host-side software components**
+- Align on **PLDM message flows**
+- Validate **transport readiness (I2C/I3C)**
+- Prototype **end-to-end update path**
+- Integrate into OCP demo plan
 
 ---
 
@@ -160,13 +160,13 @@ This demo reframes update as:
 
 The demo proposed by Dwarka represents a **step change in scope**:
 
-- From:  
-  → *Localized firmware capabilities*  
+- From:
+  → *Localized firmware capabilities*
 
-- To:  
-  → *Full system-level orchestration*  
+- To:
+  → *Full system-level orchestration*
 
 This directly supports OpenPRoT’s positioning as:
-- A **platform solution**, not just a firmware stack  
-- A **standardized control plane** for system management  
+- A **platform solution**, not just a firmware stack
+- A **standardized control plane** for system management
 ``

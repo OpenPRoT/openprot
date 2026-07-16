@@ -351,7 +351,7 @@ fn base_full_chain_via_pldm_responder() {
 
     struct ResponderToFdBridge<'a, T: FdUaCmdChannel> {
         chan: &'a OneShotFdRsp,
-        fd: &'a RefCell<FirmwareDevice<'a>>,
+        fd: &'a RefCell<FirmwareDevice<'a, FakeFdOps>>,
         fw_req: &'a T,
         fd_buf: &'a RefCell<[u8; 1024]>,
     }

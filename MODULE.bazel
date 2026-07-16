@@ -15,7 +15,6 @@ bazel_dep(name = "rules_platform", version = "0.1.0")
 bazel_dep(name = "rules_python", version = "1.8.3")
 bazel_dep(name = "ureg")
 bazel_dep(name = "caliptra_deps", version = "0.0.0")
-
 local_path_override(
     module_name = "caliptra_deps",
     path = "third_party/caliptra",

@@ -21,9 +21,9 @@
 //! framing byte) is then extracted from `buf[1..resp_len]` and sent back via
 //! the response channel.
 
+use crate::firmware_device::{UaFdCmdChannel, FD_IPC_MAX_MSG};
 use openprot_mctp_api::MctpClient;
 use pldm_common::util::mctp_transport::MCTP_PLDM_MSG_TYPE;
-use crate::firmware_device::{FD_IPC_MAX_MSG, UaFdCmdChannel};
 
 use crate::error::PldmServiceError;
 use crate::transport::MctpPldmTransport;
@@ -53,7 +53,7 @@ impl PldmResponder {
         transport: &MctpPldmTransport<C>,
         fd_cmd: &impl UaFdCmdChannel,
         buf: &mut [u8],
-        timeout_millis: u32
+        timeout_millis: u32,
     ) -> Result<(), PldmServiceError> {
         loop {
             transport.recv_and_respond(buf, timeout_millis, |framed_buf, req_total_len| {
