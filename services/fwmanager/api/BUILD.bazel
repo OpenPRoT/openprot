@@ -6,6 +6,7 @@ load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 rust_library(
     name = "fwmanager_api",
     srcs = [
+        "src/boot_control.rs",
         "src/lib.rs",
     ],
     edition = "2024",
