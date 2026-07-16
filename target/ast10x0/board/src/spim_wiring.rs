@@ -16,7 +16,7 @@ use ast10x0_peripherals::scu::{
 };
 use ast10x0_peripherals::smc::SmcController;
 use ast10x0_peripherals::spimonitor::{
-    LockedSpiMonitor, MonitorPolicy, SpiMonitor, SpiMonitorController, SpiMonitorError,
+    LockedSpiMonitor, SpiMonitorPolicy, SpiMonitor, SpiMonitorController, SpiMonitorError,
     Uninitialized,
 };
 
@@ -96,7 +96,7 @@ impl From<SpiMonitorError> for SpimWiringError {
 ///
 /// Order: validate → SCU route → passthrough → ext-mux → MISO multi-func →
 /// SPIPF policy → SPIPF lock. The lock is one-way; an empty
-/// `MonitorPolicy::empty()` combined with lock will brick the SPI bus until
+/// `SpiMonitorPolicy::empty()` combined with lock will brick the SPI bus until
 /// reset, so callers should pass a vetted preset (see [`presets`]).
 ///
 /// # Safety
@@ -106,7 +106,7 @@ pub unsafe fn apply_spim_wiring(
     scu: &ScuRegisters,
     controller_id: SmcController,
     wiring: SpimWiring,
-    policy: &MonitorPolicy,
+    policy: &SpiMonitorPolicy,
 ) -> Result<LockedSpiMonitor, SpimWiringError> {
     validate_controller_for_source(controller_id, wiring.source)?;
     scu.validate_spim_instance(wiring.instance)?;
@@ -144,9 +144,9 @@ fn validate_controller_for_source(
     }
 }
 
-/// Built-in `MonitorPolicy` presets vetted against the BMC's flash opcode set.
+/// Built-in `SpiMonitorPolicy` presets vetted against the BMC's flash opcode set.
 pub mod presets {
-    use ast10x0_peripherals::spimonitor::MonitorPolicy;
+    use ast10x0_peripherals::spimonitor::SpiMonitorPolicy;
 
     /// Allow-list for the BMC's normal flash opcodes covering both 3-byte and
     /// 4-byte addressing variants. Empty `regions` (no address-privilege
@@ -159,8 +159,8 @@ pub mod presets {
     /// `RDSR` (`0x05`), `WREN` (`0x06`), `WRDI` (`0x04`),
     /// `RDID` (`0x9F`), `RSTEN` (`0x66`), `RST` (`0x99`).
     #[must_use]
-    pub const fn bmc_default_policy() -> MonitorPolicy {
-        let mut p = MonitorPolicy::empty();
+    pub const fn bmc_default_policy() -> SpiMonitorPolicy {
+        let mut p = SpiMonitorPolicy::empty();
         p.allow_commands[0] = 0x03; // READ
         p.allow_commands[1] = 0x0B; // FAST_READ
         p.allow_commands[2] = 0x0C; // FAST_READ_4B

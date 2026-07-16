@@ -13,14 +13,14 @@ pub const MAX_CMD_SLOTS: usize = 32;
 
 /// Policy payload applied to a monitor instance.
 #[derive(Clone, Debug)]
-pub struct MonitorPolicy {
+pub struct SpiMonitorPolicy {
     pub allow_commands: [u8; MAX_CMD_SLOTS],
     pub allow_command_count: usize,
     pub regions: [Option<RegionPolicy>; MAX_REGION_SLOTS],
     pub region_count: usize,
 }
 
-impl MonitorPolicy {
+impl SpiMonitorPolicy {
     #[must_use]
     pub const fn empty() -> Self {
         Self {

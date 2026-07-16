@@ -7,10 +7,10 @@ use core::marker::PhantomData;
 
 use crate::scu::registers::ScuRegisters;
 use crate::scu::types::{ScuExtMuxSelect, SpiMonitorInstance};
-use crate::spimonitor::policy::{MonitorPolicy, MAX_REGION_SLOTS};
+use crate::spimonitor::policy::{SpiMonitorPolicy, MAX_REGION_SLOTS};
 use crate::spimonitor::registers::{SpiMonitorController, SpiMonitorRegisters};
 use crate::spimonitor::types::{
-    ExtMuxSel, LockState, MonitorState, PassthroughMode, PrivilegeDirection, PrivilegeOp, Result,
+    ExtMuxSel, LockState, SpiMonitorState, PassthroughMode, PrivilegeDirection, PrivilegeOp, Result,
     SpiMonitorError, ViolationLogEntry,
 };
 
@@ -92,7 +92,7 @@ impl SpiMonitor<Uninitialized> {
     /// Returns `Err(InvalidSlot)` if `allow_command_count` exceeds the command
     /// table length. Returns `Err(InvalidRegion)` if `region_count` exceeds
     /// `MAX_REGION_SLOTS`.
-    pub fn apply_policy(self, policy: &MonitorPolicy) -> Result<SpiMonitor<Configured>> {
+    pub fn apply_policy(self, policy: &SpiMonitorPolicy) -> Result<SpiMonitor<Configured>> {
         if policy.allow_command_count > policy.allow_commands.len() {
             return Err(SpiMonitorError::InvalidSlot);
         }
@@ -128,8 +128,8 @@ impl SpiMonitor<Uninitialized> {
     }
 
     #[must_use]
-    pub const fn state(&self) -> MonitorState {
-        MonitorState::Uninitialized
+    pub const fn state(&self) -> SpiMonitorState {
+        SpiMonitorState::Uninitialized
     }
 }
 
@@ -233,8 +233,8 @@ impl SpiMonitor<Configured> {
     }
 
     #[must_use]
-    pub const fn state(&self) -> MonitorState {
-        MonitorState::Configured
+    pub const fn state(&self) -> SpiMonitorState {
+        SpiMonitorState::Configured
     }
 }
 
@@ -300,8 +300,8 @@ impl SpiMonitor<Locked> {
     }
 
     #[must_use]
-    pub const fn state(&self) -> MonitorState {
-        MonitorState::Locked
+    pub const fn state(&self) -> SpiMonitorState {
+        SpiMonitorState::Locked
     }
 }
 

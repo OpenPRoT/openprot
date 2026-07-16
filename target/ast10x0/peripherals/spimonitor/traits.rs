@@ -7,7 +7,7 @@
 //! with SPI monitor hardware during platform initialization.
 
 use super::types::{
-    BootError, BootResult, MonitorInstance, MonitorStatus, MuxSelect, PrivilegeDirection,
+    BootError, BootResult, SpiMonitorId, SpiMonitorStatus, MuxSelect, PrivilegeDirection,
     PrivilegeOp,
 };
 
@@ -16,18 +16,18 @@ use super::types::{
 /// Implementations of this trait provide register-level access to SPI monitor
 /// blocks via PAC or other register models. Boot code uses this trait to remain
 /// independent of the concrete register implementation.
-pub trait Monitor {
+pub trait SpiMonitorControl {
     /// Set monitor mux to ROT or Host control.
-    fn set_mux(&mut self, instance: MonitorInstance, mux: MuxSelect) -> BootResult<()>;
+    fn set_mux(&mut self, instance: SpiMonitorId, mux: MuxSelect) -> BootResult<()>;
 
     /// Read current mux setting.
-    fn read_mux(&self, instance: MonitorInstance) -> BootResult<MuxSelect>;
+    fn read_mux(&self, instance: SpiMonitorId) -> BootResult<MuxSelect>;
 
     /// Soft reset monitor (clears status/logs, preserves policy).
-    fn soft_reset(&mut self, instance: MonitorInstance) -> BootResult<()>;
+    fn soft_reset(&mut self, instance: SpiMonitorId) -> BootResult<()>;
 
     /// Hardware reset monitor (full reset of all state).
-    fn hardware_reset(&mut self, instance: MonitorInstance) -> BootResult<()>;
+    fn hardware_reset(&mut self, instance: SpiMonitorId) -> BootResult<()>;
 
     /// Configure an address privilege region.
     ///
@@ -39,7 +39,7 @@ pub trait Monitor {
     /// * `op` - Allow or Block access
     fn set_address_privilege(
         &mut self,
-        instance: MonitorInstance,
+        instance: SpiMonitorId,
         start_addr: u32,
         end_addr: u32,
         direction: PrivilegeDirection,
@@ -47,10 +47,10 @@ pub trait Monitor {
     ) -> BootResult<()>;
 
     /// Read number of configured address privilege regions.
-    fn read_region_count(&self, instance: MonitorInstance) -> BootResult<u32>;
+    fn read_region_count(&self, instance: SpiMonitorId) -> BootResult<u32>;
 
     /// Read monitor status snapshot.
-    fn read_status(&self, instance: MonitorInstance) -> BootResult<MonitorStatus>;
+    fn read_status(&self, instance: SpiMonitorId) -> BootResult<SpiMonitorStatus>;
 
     /// Check if policy write-lock is supported by this monitor.
     fn supports_policy_lock(&self) -> bool {
@@ -60,7 +60,7 @@ pub trait Monitor {
     /// Lock policy tables to prevent further modification.
     ///
     /// Returns error if not supported by hardware.
-    fn lock_policy(&mut self, _instance: MonitorInstance) -> BootResult<()> {
+    fn lock_policy(&mut self, _instance: SpiMonitorId) -> BootResult<()> {
         if !self.supports_policy_lock() {
             return Err(BootError::LockedOutFromMonitor);
         }
@@ -70,7 +70,7 @@ pub trait Monitor {
     /// Verify that policy is locked (if supported).
     ///
     /// No-op if policy lock is not supported.
-    fn verify_policy_locked(&self, instance: MonitorInstance) -> BootResult<()> {
+    fn verify_policy_locked(&self, instance: SpiMonitorId) -> BootResult<()> {
         if !self.supports_policy_lock() {
             return Ok(());
         }

@@ -14,14 +14,14 @@ pub use controller::{
     Configured, ConfiguredSpiMonitor, Locked, LockedSpiMonitor, SpiMonitor, UninitSpiMonitor,
     Uninitialized,
 };
-pub use policy::{MonitorPolicy, MAX_CMD_SLOTS, MAX_REGION_SLOTS};
+pub use policy::{SpiMonitorPolicy, MAX_CMD_SLOTS, MAX_REGION_SLOTS};
 pub use registers::{
     SpiMonitorController, SpiMonitorRegisters, SPIPF1_BASE, SPIPF2_BASE, SPIPF3_BASE, SPIPF4_BASE,
     SPIPF_REG_SIZE,
 };
-pub use traits::Monitor;
+pub use traits::SpiMonitorControl;
 pub use types::{
-    BootConfig, BootError, BootPhase, BootResult, ExtMuxSel, LockState, MonitorInstance,
-    MonitorState, MonitorStatus, MuxSelect, PassthroughMode, PrivilegeDirection, PrivilegeOp,
+    BootConfig, BootError, BootPhase, BootResult, ExtMuxSel, LockState, SpiMonitorId,
+    SpiMonitorState, SpiMonitorStatus, MuxSelect, PassthroughMode, PrivilegeDirection, PrivilegeOp,
     RegionPolicy, Result as SpiMonitorResult, SpiMonitorError, ViolationLogEntry,
 };

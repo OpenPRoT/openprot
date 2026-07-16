@@ -12,9 +12,9 @@
 use ast10x0_peripherals::scu::registers::ScuRegisters;
 use ast10x0_peripherals::scu::types::{ScuExtMuxSelect, SpiMonitorInstance};
 use ast10x0_peripherals::spimonitor::registers::SpiMonitorRegisters;
-use ast10x0_peripherals::spimonitor::traits::Monitor;
+use ast10x0_peripherals::spimonitor::traits::SpiMonitorControl;
 use ast10x0_peripherals::spimonitor::types::{
-    BootError, BootResult, MonitorInstance, MonitorStatus, MuxSelect, PrivilegeDirection,
+    BootError, BootResult, SpiMonitorId, SpiMonitorStatus, MuxSelect, PrivilegeDirection,
     PrivilegeOp,
 };
 
@@ -29,9 +29,9 @@ use ast10x0_peripherals::spimonitor::types::{
 /// ```ignore
 /// let mut board = Ast1060Board::init();
 /// let mut monitor = board.monitor();
-/// monitor.set_mux(MonitorInstance::Spim0, MuxSelect::RotControl)?;
+/// monitor.set_mux(SpiMonitorId::Spim0, MuxSelect::RotControl)?;
 /// monitor.set_address_privilege(/*...*/)?;
-/// monitor.lock_policy(MonitorInstance::Spim0)?;
+/// monitor.lock_policy(SpiMonitorId::Spim0)?;
 /// ```
 pub struct Ast1060SpiMonitor<'a> {
     scu: &'a mut ScuRegisters,
@@ -59,33 +59,33 @@ impl<'a> Ast1060SpiMonitor<'a> {
 
     /// Get the register accessor for the specified monitor instance.
     #[inline]
-    fn regs(&self, instance: MonitorInstance) -> &SpiMonitorRegisters {
+    fn regs(&self, instance: SpiMonitorId) -> &SpiMonitorRegisters {
         match instance {
-            MonitorInstance::Spim0 => &self.spipf[0],
-            MonitorInstance::Spim1 => &self.spipf[1],
-            MonitorInstance::Spim2 => &self.spipf[2],
-            MonitorInstance::Spim3 => &self.spipf[3],
+            SpiMonitorId::Spim0 => &self.spipf[0],
+            SpiMonitorId::Spim1 => &self.spipf[1],
+            SpiMonitorId::Spim2 => &self.spipf[2],
+            SpiMonitorId::Spim3 => &self.spipf[3],
         }
     }
 
     /// Get mutable reference to register accessor (for write operations).
     #[inline]
-    fn regs_mut(&mut self, instance: MonitorInstance) -> &mut SpiMonitorRegisters {
+    fn regs_mut(&mut self, instance: SpiMonitorId) -> &mut SpiMonitorRegisters {
         match instance {
-            MonitorInstance::Spim0 => &mut self.spipf[0],
-            MonitorInstance::Spim1 => &mut self.spipf[1],
-            MonitorInstance::Spim2 => &mut self.spipf[2],
-            MonitorInstance::Spim3 => &mut self.spipf[3],
+            SpiMonitorId::Spim0 => &mut self.spipf[0],
+            SpiMonitorId::Spim1 => &mut self.spipf[1],
+            SpiMonitorId::Spim2 => &mut self.spipf[2],
+            SpiMonitorId::Spim3 => &mut self.spipf[3],
         }
     }
 
-    /// Map MonitorInstance to SCU SpiMonitorInstance for routing operations.
-    fn instance_to_scu(instance: MonitorInstance) -> SpiMonitorInstance {
+    /// Map SpiMonitorId to SCU SpiMonitorInstance for routing operations.
+    fn instance_to_scu(instance: SpiMonitorId) -> SpiMonitorInstance {
         match instance {
-            MonitorInstance::Spim0 => SpiMonitorInstance::Spim0,
-            MonitorInstance::Spim1 => SpiMonitorInstance::Spim1,
-            MonitorInstance::Spim2 => SpiMonitorInstance::Spim2,
-            MonitorInstance::Spim3 => SpiMonitorInstance::Spim3,
+            SpiMonitorId::Spim0 => SpiMonitorInstance::Spim0,
+            SpiMonitorId::Spim1 => SpiMonitorInstance::Spim1,
+            SpiMonitorId::Spim2 => SpiMonitorInstance::Spim2,
+            SpiMonitorId::Spim3 => SpiMonitorInstance::Spim3,
         }
     }
 
@@ -125,8 +125,8 @@ impl<'a> Ast1060SpiMonitor<'a> {
     }
 }
 
-impl<'a> Monitor for Ast1060SpiMonitor<'a> {
-    fn set_mux(&mut self, instance: MonitorInstance, mux: MuxSelect) -> BootResult<()> {
+impl<'a> SpiMonitorControl for Ast1060SpiMonitor<'a> {
+    fn set_mux(&mut self, instance: SpiMonitorId, mux: MuxSelect) -> BootResult<()> {
         // External mux selection is controlled via SCU0F0 register.
         // Delegate to SCU routing layer which has the actual register access.
         let scu_instance = Self::instance_to_scu(instance);
@@ -135,14 +135,14 @@ impl<'a> Monitor for Ast1060SpiMonitor<'a> {
         Ok(())
     }
 
-    fn read_mux(&self, instance: MonitorInstance) -> BootResult<MuxSelect> {
+    fn read_mux(&self, instance: SpiMonitorId) -> BootResult<MuxSelect> {
         // Read from SCU0F0 register via SCU routing layer.
         let scu_instance = Self::instance_to_scu(instance);
         let scu_mux = self.scu.get_spim_ext_mux(scu_instance);
         Ok(Self::scu_to_mux(scu_mux))
     }
 
-    fn soft_reset(&mut self, instance: MonitorInstance) -> BootResult<()> {
+    fn soft_reset(&mut self, instance: SpiMonitorId) -> BootResult<()> {
         let regs = self.regs_mut(instance);
         // Soft reset clears status/logs but preserves policy.
         // NON-BLOCKING TODO 1: Verify soft reset bit position from AST10x0 datasheet.
@@ -157,7 +157,7 @@ impl<'a> Monitor for Ast1060SpiMonitor<'a> {
         Ok(())
     }
 
-    fn hardware_reset(&mut self, instance: MonitorInstance) -> BootResult<()> {
+    fn hardware_reset(&mut self, instance: SpiMonitorId) -> BootResult<()> {
         let regs = self.regs_mut(instance);
         // Full hardware reset of all state (SPIPF and related SCU registers).
         // NON-BLOCKING TODO 1: Verify hardware reset bit and sequence from AST10x0 datasheet.
@@ -173,7 +173,7 @@ impl<'a> Monitor for Ast1060SpiMonitor<'a> {
 
     fn set_address_privilege(
         &mut self,
-        instance: MonitorInstance,
+        instance: SpiMonitorId,
         start_addr: u32,
         end_addr: u32,
         _direction: PrivilegeDirection,
@@ -200,14 +200,14 @@ impl<'a> Monitor for Ast1060SpiMonitor<'a> {
         Ok(())
     }
 
-    fn read_region_count(&self, _instance: MonitorInstance) -> BootResult<u32> {
+    fn read_region_count(&self, _instance: SpiMonitorId) -> BootResult<u32> {
         // Region count is tracked in memory (following aspeed-rust pattern).
         // aspeed-rust stores read_blocked_region_num and write_blocked_region_num as struct fields.
         // We return the read-blocked region count for now; write-blocked can be exposed via separate method if needed.
         Ok(self.read_blocked_region_count as u32)
     }
 
-    fn read_status(&self, instance: MonitorInstance) -> BootResult<MonitorStatus> {
+    fn read_status(&self, instance: SpiMonitorId) -> BootResult<SpiMonitorStatus> {
         let regs = self.regs(instance);
         let ctrl = regs.read_ctrl();
         let lock_status = regs.read_lock_status();
@@ -217,7 +217,7 @@ impl<'a> Monitor for Ast1060SpiMonitor<'a> {
         let scu_mux = self.scu.get_spim_ext_mux(scu_instance);
         let mux = Self::scu_to_mux(scu_mux);
 
-        Ok(MonitorStatus {
+        Ok(SpiMonitorStatus {
             mux,
             policy_locked: Self::is_policy_locked(lock_status),
             enforcement_active: Self::is_enforcement_active(ctrl),
@@ -232,7 +232,7 @@ impl<'a> Monitor for Ast1060SpiMonitor<'a> {
         true
     }
 
-    fn lock_policy(&mut self, instance: MonitorInstance) -> BootResult<()> {
+    fn lock_policy(&mut self, instance: SpiMonitorId) -> BootResult<()> {
         if !self.supports_policy_lock() {
             return Err(BootError::LockedOutFromMonitor);
         }
@@ -246,7 +246,7 @@ impl<'a> Monitor for Ast1060SpiMonitor<'a> {
         Ok(())
     }
 
-    fn verify_policy_locked(&self, instance: MonitorInstance) -> BootResult<()> {
+    fn verify_policy_locked(&self, instance: SpiMonitorId) -> BootResult<()> {
         if !self.supports_policy_lock() {
             return Ok(());
         }
