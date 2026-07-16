@@ -65,9 +65,7 @@ impl PldmRequester {
             // Receive raw PLDM request from FirmwareDevice.
             // buf[0] = MCTP framing byte (0x01), buf[1..msg_len] = PLDM bytes.
             let msg_len = fd_req.recv(buf)?;
-            let pldm_len = msg_len
-                .checked_sub(1)
-                .ok_or(PldmServiceError::Overflow)?;
+            let pldm_len = msg_len.checked_sub(1).ok_or(PldmServiceError::Overflow)?;
 
             // Forward over MCTP; response lands in buf[1..1+pldm_resp_len].
             let pldm_resp_len =
@@ -77,7 +75,10 @@ impl PldmRequester {
                 .ok_or(PldmServiceError::Overflow)?;
 
             // Return the framed response to FirmwareDevice.
-            fd_req.respond(buf.get(..resp_total_len).ok_or(PldmServiceError::Overflow)?)?;
+            fd_req.respond(
+                buf.get(..resp_total_len)
+                    .ok_or(PldmServiceError::Overflow)?,
+            )?;
         }
     }
 }

@@ -72,5 +72,5 @@ pub mod transport;
 
 pub use error::PldmServiceError;
 pub use requester::PldmRequester;
-pub use transport::MctpPldmTransport;
 pub use responder::{PldmResponder, PLDM_MSG_TYPE};
+pub use transport::MctpPldmTransport;

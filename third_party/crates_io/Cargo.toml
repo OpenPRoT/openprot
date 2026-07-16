@@ -54,7 +54,8 @@ heapless = { version = "0.9", default-features = false }
 mctp = { git = "https://github.com/CodeConstruct/mctp-rs.git", default-features = false }
 mctp-lib = { git = "https://github.com/OpenPRoT/mctp-lib.git", branch = "9e-buildup" }
 spdm-lib = { git = "https://github.com/OpenPRoT/spdm-lib.git", branch = "main" }
-pldm-lib = { git = "https://github.com/OpenPRoT/pldm-lib.git" }
+pldm-common = { git = "https://github.com/OpenPRoT/pldm-lib.git" }
+pldm-interface = { git = "https://github.com/OpenPRoT/pldm-lib.git" }
 # Pin to match Hubris ecosystem
 rand_core = { version = "0.9", default-features = false }
 sec1 = { version = "0.7.3" }
