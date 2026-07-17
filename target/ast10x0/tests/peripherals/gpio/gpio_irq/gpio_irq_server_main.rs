@@ -7,7 +7,7 @@
 #![no_std]
 
 use app_gpio_irq_server::{handle, signals};
-use ast10x0_peripherals::gpio::{GpioExt, InterruptMode, gpioa};
+use ast10x0_peripherals::gpio::{gpioa, GpioExt, InterruptMode};
 use pw_status::Error;
 use userspace::entry;
 use userspace::syscall;
