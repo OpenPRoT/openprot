@@ -7,8 +7,8 @@
 //! with SPI monitor hardware during platform initialization.
 
 use super::types::{
-    BootError, BootResult, SpiMonitorId, SpiMonitorStatus, MuxSelect, PrivilegeDirection,
-    PrivilegeOp,
+    BootError, BootResult, MuxSelect, PrivilegeDirection, PrivilegeOp, SpiMonitorId,
+    SpiMonitorStatus,
 };
 
 /// Abstract hardware interface for SPI monitor boot operations.

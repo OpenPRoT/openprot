@@ -13,9 +13,8 @@ use ast10x0_peripherals::scu::{
     SpiMonitorSource,
 };
 use ast10x0_peripherals::spimonitor::{
-    ConfiguredSpiMonitor, LockState, SpiMonitorPolicy, SpiMonitorState, PassthroughMode,
-    PrivilegeDirection, PrivilegeOp, SpiMonitor, SpiMonitorController, SpiMonitorError,
-    Uninitialized,
+    ConfiguredSpiMonitor, LockState, PassthroughMode, PrivilegeDirection, PrivilegeOp, SpiMonitor,
+    SpiMonitorController, SpiMonitorError, SpiMonitorPolicy, SpiMonitorState, Uninitialized,
 };
 
 pub const PROTECTED_LENGTH: u32 = 0x0010_0000;

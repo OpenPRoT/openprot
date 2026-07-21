@@ -23,7 +23,7 @@ pub use registers::{
 };
 pub use traits::SpiMonitorControl;
 pub use types::{
-    BootConfig, BootError, BootPhase, BootResult, ExtMuxSel, LockState, SpiMonitorId,
-    SpiMonitorState, SpiMonitorStatus, MuxSelect, PassthroughMode, PrivilegeDirection, PrivilegeOp,
-    RegionPolicy, Result as SpiMonitorResult, SpiMonitorError, ViolationLogEntry,
+    BootConfig, BootError, BootPhase, BootResult, ExtMuxSel, LockState, MuxSelect, PassthroughMode,
+    PrivilegeDirection, PrivilegeOp, RegionPolicy, Result as SpiMonitorResult, SpiMonitorError,
+    SpiMonitorId, SpiMonitorState, SpiMonitorStatus, ViolationLogEntry,
 };

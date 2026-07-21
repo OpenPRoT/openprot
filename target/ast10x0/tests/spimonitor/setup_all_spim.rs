@@ -24,8 +24,8 @@ use ast10x0_peripherals::smc::{
 };
 use ast10x0_peripherals::spimonitor::registers::SpiMonitorRegisters;
 use ast10x0_peripherals::spimonitor::{
-    ConfiguredSpiMonitor, LockedSpiMonitor, SpiMonitorPolicy, PrivilegeDirection, PrivilegeOp,
-    SpiMonitorController, ViolationLogEntry,
+    ConfiguredSpiMonitor, LockedSpiMonitor, PrivilegeDirection, PrivilegeOp, SpiMonitorController,
+    SpiMonitorPolicy, ViolationLogEntry,
 };
 use target_common::{declare_target, TargetInterface};
 use test_common::TestConfig;
