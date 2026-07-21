@@ -14,8 +14,8 @@ use ast10x0_peripherals::scu::types::{ScuExtMuxSelect, SpiMonitorInstance};
 use ast10x0_peripherals::spimonitor::registers::SpiMonitorRegisters;
 use ast10x0_peripherals::spimonitor::traits::SpiMonitorControl;
 use ast10x0_peripherals::spimonitor::types::{
-    BootError, BootResult, SpiMonitorId, SpiMonitorStatus, MuxSelect, PrivilegeDirection,
-    PrivilegeOp,
+    BootError, BootResult, MuxSelect, PrivilegeDirection, PrivilegeOp, SpiMonitorId,
+    SpiMonitorStatus,
 };
 
 /// Board-level Monitor orchestrator.
