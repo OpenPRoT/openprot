@@ -180,7 +180,7 @@ mod tests {
     }
 
     #[test]
-    fn holding_a_device_in_reset_deasserts_its_configured_line() {
+    fn releasing_a_device_from_reset_deasserts_its_configured_line() {
         let mut bmc = HalBootControl::new(MockResetController::new(), BMC_LINE);
 
         bmc.hold_in_reset().expect("hold_in_reset failed");
