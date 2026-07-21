@@ -3,7 +3,7 @@
 
 //! Actuation capability: hold a managed device in reset and release it.
 
-use openprot_hal_blocking::system_control::ResetControl;
+use openprot_hal_blocking::system_control::{Error as HalError, ErrorKind, ResetControl};
 
 /// Actuation capability: hold a managed device in reset and release it.
 ///
@@ -42,13 +42,46 @@ use openprot_hal_blocking::system_control::ResetControl;
 /// ```
 pub trait BootControl {
     /// The error type reported by this device's boot control.
-    type Error: core::fmt::Debug;
+    ///
+    /// Requires [`core::error::Error`] (in `core` since Rust 1.81) so the
+    /// orchestrator gets `Display` and a `source()` cause chain, not just the
+    /// `Debug` dump, *and* the HAL [`Error`](HalError) trait so generic
+    /// consumers can categorize failures via `kind()` without knowing the
+    /// concrete error type. HAL-backed implementations satisfy both through
+    /// [`BootError`].
+    type Error: core::error::Error + HalError;
 
     /// Holds the device in reset.
     fn hold_in_reset(&mut self) -> Result<(), Self::Error>;
 
     /// Releases the device from reset.
     fn release(&mut self) -> Result<(), Self::Error>;
+}
+
+/// Adapts any HAL system-control error into a [`core::error::Error`].
+///
+/// Reset controllers keep implementing the HAL `Error`/`kind()` pattern
+/// unchanged; this wrapper supplies the `Display` and `core::error::Error`
+/// machinery [`BootControl::Error`] requires, so no per-implementation work is
+/// needed. The underlying category stays reachable via [`BootError::kind`].
+#[derive(Debug)]
+pub struct BootError<E>(pub E);
+
+impl<E: HalError> core::fmt::Display for BootError<E> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "boot control error: {:?}", self.0.kind())
+    }
+}
+
+impl<E: HalError> core::error::Error for BootError<E> {}
+
+impl<E: HalError> HalError for BootError<E> {
+    /// The wrapped error's category, so a generic `BootControl` consumer can
+    /// branch on it (retry `Busy`, escalate `HardwareFailure`, ...) without
+    /// knowing the concrete error type.
+    fn kind(&self) -> ErrorKind {
+        self.0.kind()
+    }
 }
 
 /// Binds one reset line of a HAL reset controller to one managed device.
@@ -73,14 +106,18 @@ impl<C: ResetControl> HalBootControl<C> {
 }
 
 impl<C: ResetControl> BootControl for HalBootControl<C> {
-    type Error = C::Error;
+    type Error = BootError<C::Error>;
 
     fn hold_in_reset(&mut self) -> Result<(), Self::Error> {
-        self.controller.reset_assert(&self.reset_id)
+        self.controller
+            .reset_assert(&self.reset_id)
+            .map_err(BootError)
     }
 
     fn release(&mut self) -> Result<(), Self::Error> {
-        self.controller.reset_deassert(&self.reset_id)
+        self.controller
+            .reset_deassert(&self.reset_id)
+            .map_err(BootError)
     }
 }
 
@@ -88,7 +125,7 @@ impl<C: ResetControl> BootControl for HalBootControl<C> {
 mod tests {
     use super::*;
     use core::time::Duration;
-    use openprot_hal_blocking::system_control::{Error, ErrorKind, ErrorType};
+    use openprot_hal_blocking::system_control::{Error as HalError, ErrorKind, ErrorType};
 
     // Normally set in config.rs
     const BMC_LINE: u8 = 7;
@@ -102,7 +139,7 @@ mod tests {
     #[derive(Debug, PartialEq, Eq, Clone, Copy)]
     struct MockError(ErrorKind);
 
-    impl Error for MockError {
+    impl HalError for MockError {
         fn kind(&self) -> ErrorKind {
             self.0
         }
@@ -202,5 +239,73 @@ mod tests {
             .hold_in_reset()
             .expect_err("expected the controller error to propagate");
         assert_eq!(err.kind(), ErrorKind::InvalidResetId);
+    }
+
+    // ---- Error contract the orchestrator depends on ------------------------
+    //
+    // `BootControl::Error` requires the modern `core::error::Error` (in `core`
+    // since Rust 1.81) instead of the old `Debug`-only bound. `HalBootControl`
+    // satisfies it through the `BootError` adapter, which supplies `Display` +
+    // the `core::error::Error` marker over any HAL error while passing `kind()`
+    // through for categorization.
+
+    /// Compile-time fence: the error must satisfy `core::error::Error`
+    /// (Display + source) *and* the HAL `Error` (with `kind()`), so that
+    /// generic `BootControl` consumers get both. Fails to compile if either is
+    /// dropped.
+    fn _assert_error_contract<E: core::error::Error + HalError>() {}
+
+    #[test]
+    fn boot_error_satisfies_the_full_contract() {
+        _assert_error_contract::<BootError<MockError>>();
+    }
+
+    #[test]
+    fn boot_error_renders_a_human_readable_message() {
+        let err = BootError(MockError(ErrorKind::HardwareFailure));
+
+        // `Display`, not the `Debug` dump — this is what `core::error::Error`
+        // buys over the old `Debug`-only bound.
+        assert_eq!(err.to_string(), "boot control error: HardwareFailure");
+    }
+
+    #[test]
+    fn boot_error_is_a_leaf_with_no_source() {
+        let err = BootError(MockError(ErrorKind::Timeout));
+
+        // HAL errors carry no nested `core::error::Error` cause.
+        assert!(core::error::Error::source(&err).is_none());
+    }
+
+    #[test]
+    fn dyn_error_downcasts_back_to_the_concrete_type() {
+        let err = BootError(MockError(ErrorKind::PermissionDenied));
+
+        let dyn_err: &dyn core::error::Error = &err;
+        let recovered = dyn_err
+            .downcast_ref::<BootError<MockError>>()
+            .expect("expected to recover the concrete error type");
+        assert_eq!(recovered.kind(), ErrorKind::PermissionDenied);
+    }
+
+    /// Categorize a failure from *any* `BootControl` — the whole point of the
+    /// `kind()` bound is that this compiles for a generic `D`, not just a
+    /// concrete error type.
+    fn categorize_hold_failure<D: BootControl>(dev: &mut D) -> Option<ErrorKind> {
+        dev.hold_in_reset().err().map(|e| e.kind())
+    }
+
+    #[test]
+    fn error_kind_is_reachable_through_generic_boot_control() {
+        let mut bmc = HalBootControl::new(
+            MockResetController::failing(ErrorKind::HardwareFailure),
+            BMC_LINE,
+        );
+
+        // No concrete error type in sight — `kind()` comes from the trait bound.
+        assert_eq!(
+            categorize_hold_failure(&mut bmc),
+            Some(ErrorKind::HardwareFailure)
+        );
     }
 }
