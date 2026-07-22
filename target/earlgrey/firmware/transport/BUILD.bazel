@@ -205,6 +205,71 @@ system_image(
     tags = ["kernel"],
 )
 
+multi_process_app(
+    name = "eeprom_programmer",
+    processes = [
+        ":logmgr",
+        ":sysmgr",
+        ":platform",
+        ":flash_server",
+        ":usbmgr",
+    ],
+    tags = ["kernel"],
+    template = "app_entry.rs.jinja",
+    visibility = ["//visibility:public"],
+    deps = ["//util/panic"],
+)
+
+system_image(
+    name = "eeprom_programmer_firmware",
+    apps = [
+        ":eeprom_programmer",
+    ],
+    kernel = ":programmer_target",
+    platform = "//target/earlgrey",
+    system_config = ":programmer_system_config",
+    tags = ["kernel"],
+)
+
+filegroup(
+    name = "programmer_system_config",
+    srcs = ["programmer_system.json5"],
+)
+
+target_linker_script(
+    name = "programmer_linker_script",
+    system_config = ":programmer_system_config",
+    tags = ["kernel"],
+    template = "//target/earlgrey:linker_script_template",
+)
+
+target_codegen(
+    name = "programmer_codegen",
+    arch = "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+    crate_name = "codegen",
+    system_config = ":programmer_system_config",
+)
+
+rust_binary(
+    name = "programmer_target",
+    srcs = [
+        "programmer_target.rs",
+    ],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":programmer_codegen",
+        ":programmer_linker_script",
+        "//target/earlgrey:entry",
+        "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/subsys/console:console_backend",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)
+
 rust_binary_no_panics_test(
     name = "no_panics",
     apps = ["transport"],

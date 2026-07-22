@@ -41,7 +41,7 @@ fn run_dfu_spi_flash_test_inner(
     log::info!("waiting for Maize Welcome on console...");
     let _ = UartConsole::wait_for(
         uart,
-        r"Welcome to Maize on Earlgrey Transport Firmware!",
+        r"Welcome to Maize on Earlgrey EEPROM Programmer Firmware!",
         Duration::from_secs(10),
     )?;
 

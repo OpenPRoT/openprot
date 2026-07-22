@@ -83,6 +83,26 @@ opentitan_test(
 )
 
 opentitan_test(
+    name = "dfu_owner_transfer_hyper340_test",
+    timeout = "eternal",
+    clear_bitstream = True,
+    ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper340",
+    interface = "hyper340",
+    tags = [
+        "hardware",
+        "hyper340",
+    ],
+    target = "//target/earlgrey/firmware/transport:transport_firmware",
+    target_data = [
+        ":bootinfo_signed_transfer",
+        ":bootinfo_signed_simple",
+    ],
+    test_cmd = "--logging=info --expect-reboot --expect-app --expect-owner-transfer --firmware=target/earlgrey/firmware/transport/tests/dfu/bootinfo_transfer.app_prod_0.signed.bin",
+    test_harness = ":host_usb_dfu_owner_transfer",
+)
+
+opentitan_test(
     name = "dfu_firmware_update_hyper310_test",
     timeout = "eternal",
     clear_bitstream = True,
@@ -92,6 +112,26 @@ opentitan_test(
     tags = [
         "hardware",
         "hyper310",
+    ],
+    target = "//target/earlgrey/firmware/transport:transport_firmware",
+    target_data = [
+        ":bootinfo_signed_transfer",
+        ":bootinfo_signed_simple",
+    ],
+    test_cmd = "--logging=info --expect-reboot --expect-app --firmware=target/earlgrey/firmware/transport/tests/dfu/bootinfo_simple.app_prod_0.signed.bin",
+    test_harness = ":host_usb_dfu_owner_transfer",
+)
+
+opentitan_test(
+    name = "dfu_firmware_update_hyper340_test",
+    timeout = "eternal",
+    clear_bitstream = True,
+    ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper340",
+    interface = "hyper340",
+    tags = [
+        "hardware",
+        "hyper340",
     ],
     target = "//target/earlgrey/firmware/transport:transport_firmware",
     target_data = [
@@ -131,7 +171,7 @@ opentitan_test(
         "hardware",
         "hyper310",
     ],
-    target = "//target/earlgrey/firmware/transport:transport_firmware",
+    target = "//target/earlgrey/firmware/transport:eeprom_programmer_firmware",
     target_data = [
         ":bootinfo_signed_simple",
     ],
@@ -150,7 +190,7 @@ opentitan_test(
         "hardware",
         "hyper340",
     ],
-    target = "//target/earlgrey/firmware/transport:transport_firmware",
+    target = "//target/earlgrey/firmware/transport:eeprom_programmer_firmware",
     target_data = [
         ":bootinfo_signed_simple",
     ],
