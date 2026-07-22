@@ -5,11 +5,17 @@
 //!
 //! `BootControl` is the actuation capability: the orchestrator drives a
 //! single managed device's reset without knowing which controller line it
-//! maps to. The binding of a HAL reset controller line to a device happens
-//! once, in platform configuration, via [`HalBootControl`].
+//! maps to.
+//!
+//! This crate is a dependency-free leaf: it holds only the capability
+//! contracts, and everything depends downward on it. Concrete adapters bind a
+//! trait to a signal source and live in their own crates, so naming a
+//! capability never drags in the stack behind it — the HAL-backed
+//! `HalBootControl` is in `fwmanager-hal-adapters`; other backends implement
+//! the same trait from their own transport crate.
 
 #![cfg_attr(not(test), no_std)]
 
 mod boot_control;
 
-pub use boot_control::{BootControl, HalBootControl};
+pub use boot_control::BootControl;

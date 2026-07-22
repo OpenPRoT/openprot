@@ -4,17 +4,21 @@
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
 rust_library(
-    name = "fwmanager_api",
+    name = "fwmanager_hal_adapters",
     srcs = [
-        "src/boot_control.rs",
+        "src/hal_boot_control.rs",
         "src/lib.rs",
     ],
     edition = "2024",
     visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking",
+        "//services/fwmanager/api:fwmanager_api",
+    ],
 )
 
 # Host tests: build on the host platform, no kernel/QEMU.
 rust_test(
-    name = "fwmanager_api_test",
-    crate = ":fwmanager_api",
+    name = "fwmanager_hal_adapters_test",
+    crate = ":fwmanager_hal_adapters",
 )
