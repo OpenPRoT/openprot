@@ -141,6 +141,8 @@ exec {runner} {args}
         extra_args = " ".join(env.opentitantool_args) if env.opentitantool_args else ""
 
         test_cmd_str = ctx.attr.test_cmd
+        if test_cmd_str:
+            test_cmd_str = ctx.expand_location(test_cmd_str, targets = ctx.attr.target_data)
         if not is_custom_harness and not test_cmd_str:
             test_cmd_str = "console --non-interactive --exit-success='{}' --exit-failure='{}'".format(exit_success, exit_failure)
 

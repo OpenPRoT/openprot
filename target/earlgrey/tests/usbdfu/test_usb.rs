@@ -315,6 +315,7 @@ fn handle_usb() -> Result<(), ErrorCode> {
             };
             action.run(&mut usb);
         }
+        let _ = syscall::interrupt_ack(handle::USBDEV_INTERRUPTS, wait_return.pending_signals);
 
         // Initiate any pending transmissions (e.g. UPLOAD blocks)
         dfu.poll(&mut usb);
