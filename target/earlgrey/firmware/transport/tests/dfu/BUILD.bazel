@@ -34,6 +34,13 @@ sign_bin(
     ecdsa_key = FPGA_ECDSA_KEY,
 )
 
+sign_bin(
+    name = "transport_firmware_signed",
+    basename = "transport_firmware_signed",
+    bin = "//target/earlgrey/firmware/transport:transport_firmware",
+    ecdsa_key = FPGA_ECDSA_KEY,
+)
+
 opentitan_rust_binary(
     name = "host_usb_dfu_owner_transfer",
     srcs = ["host_usb_dfu_owner_transfer.rs"],
@@ -73,12 +80,20 @@ opentitan_test(
         "hardware",
         "hyper310",
     ],
-    target = "//target/earlgrey/firmware/transport:transport_firmware",
+    target = "//target/earlgrey/firmware/transport:eeprom_programmer_firmware",
     target_data = [
         ":bootinfo_signed_transfer",
         ":bootinfo_signed_simple",
+        ":transport_firmware_signed",
     ],
-    test_cmd = "--logging=info --expect-reboot --expect-app --expect-owner-transfer --firmware=target/earlgrey/firmware/transport/tests/dfu/bootinfo_transfer.app_prod_0.signed.bin",
+    test_cmd = " ".join([
+        "--logging=info",
+        "--expect-reboot",
+        "--expect-app",
+        "--expect-owner-transfer",
+        "--firmware=$(rootpath :bootinfo_signed_transfer)",
+        "--transport-firmware=$(rootpath :transport_firmware_signed)",
+    ]),
     test_harness = ":host_usb_dfu_owner_transfer",
 )
 
@@ -93,12 +108,20 @@ opentitan_test(
         "hardware",
         "hyper340",
     ],
-    target = "//target/earlgrey/firmware/transport:transport_firmware",
+    target = "//target/earlgrey/firmware/transport:eeprom_programmer_firmware",
     target_data = [
         ":bootinfo_signed_transfer",
         ":bootinfo_signed_simple",
+        ":transport_firmware_signed",
     ],
-    test_cmd = "--logging=info --expect-reboot --expect-app --expect-owner-transfer --firmware=target/earlgrey/firmware/transport/tests/dfu/bootinfo_transfer.app_prod_0.signed.bin",
+    test_cmd = " ".join([
+        "--logging=info",
+        "--expect-reboot",
+        "--expect-app",
+        "--expect-owner-transfer",
+        "--firmware=$(rootpath :bootinfo_signed_transfer)",
+        "--transport-firmware=$(rootpath :transport_firmware_signed)",
+    ]),
     test_harness = ":host_usb_dfu_owner_transfer",
 )
 
@@ -113,12 +136,19 @@ opentitan_test(
         "hardware",
         "hyper310",
     ],
-    target = "//target/earlgrey/firmware/transport:transport_firmware",
+    target = "//target/earlgrey/firmware/transport:eeprom_programmer_firmware",
     target_data = [
         ":bootinfo_signed_transfer",
         ":bootinfo_signed_simple",
+        ":transport_firmware_signed",
     ],
-    test_cmd = "--logging=info --expect-reboot --expect-app --firmware=target/earlgrey/firmware/transport/tests/dfu/bootinfo_simple.app_prod_0.signed.bin",
+    test_cmd = " ".join([
+        "--logging=info",
+        "--expect-reboot",
+        "--expect-app",
+        "--firmware=$(rootpath :bootinfo_signed_simple)",
+        "--transport-firmware=$(rootpath :transport_firmware_signed)",
+    ]),
     test_harness = ":host_usb_dfu_owner_transfer",
 )
 
@@ -133,12 +163,19 @@ opentitan_test(
         "hardware",
         "hyper340",
     ],
-    target = "//target/earlgrey/firmware/transport:transport_firmware",
+    target = "//target/earlgrey/firmware/transport:eeprom_programmer_firmware",
     target_data = [
         ":bootinfo_signed_transfer",
         ":bootinfo_signed_simple",
+        ":transport_firmware_signed",
     ],
-    test_cmd = "--logging=info --expect-reboot --expect-app --firmware=target/earlgrey/firmware/transport/tests/dfu/bootinfo_simple.app_prod_0.signed.bin",
+    test_cmd = " ".join([
+        "--logging=info",
+        "--expect-reboot",
+        "--expect-app",
+        "--firmware=$(rootpath :bootinfo_signed_simple)",
+        "--transport-firmware=$(rootpath :transport_firmware_signed)",
+    ]),
     test_harness = ":host_usb_dfu_owner_transfer",
 )
 
