@@ -5,7 +5,7 @@
 //!
 //! Functions and types for executing I3C CCCs.
 
-use super::config::I3cConfig;
+use super::config::{DaState, I3cConfig, IbiState};
 use super::constants::{
     I3C_BCR_IBI_PAYLOAD_HAS_DATA_BYTE, I3C_CCC_GETBCR, I3C_CCC_GETDCR, I3C_CCC_GETMRL,
     I3C_CCC_GETMWL, I3C_CCC_GETMXDS, I3C_CCC_GETPID, I3C_CCC_GETSTATUS, I3C_CCC_RSTDAA,
@@ -13,6 +13,7 @@ use super::constants::{
 };
 use super::error::{CccErrorKind, I3cError};
 use super::hardware::HardwareInterface;
+use super::types::DevKind;
 
 // =============================================================================
 // CCC Types
@@ -153,6 +154,21 @@ const fn ccc_rstact(broadcast: bool) -> u8 {
 // CCC Operations
 // =============================================================================
 
+/// Preserve errors with ambiguous bus-side effects.
+fn map_ccc_err(e: I3cError) -> I3cError {
+    match e {
+        I3cError::Timeout | I3cError::RespError | I3cError::IoError | I3cError::AddressNack => e,
+        _ => I3cError::CccError(CccErrorKind::Invalid),
+    }
+}
+
+fn mark_setnewda_unknown(config: &mut I3cConfig, dev_idx: usize, new_da: u8) {
+    config.mark_da_unknown(dev_idx, Some(new_da));
+    if let Some(dev) = config.attached.devices.get_mut(dev_idx) {
+        dev.ibi_state = IbiState::Unknown;
+    }
+}
+
 /// Enable/disable events for all devices (broadcast)
 pub fn ccc_events_all_set<H>(
     hw: &mut H,
@@ -163,6 +179,11 @@ pub fn ccc_events_all_set<H>(
 where
     H: HardwareInterface,
 {
+    // SIR changes require per-device DAT updates.
+    if events & super::constants::I3C_CCC_EVT_INTR != 0 {
+        return Err(I3cError::Access);
+    }
+
     let id = if enable {
         ccc_enec(true)
     } else {
@@ -180,7 +201,7 @@ where
             targets: None,
         },
     )
-    .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))
+    .map_err(map_ccc_err)
 }
 
 /// Enable/disable events for a specific device (direct)
@@ -223,8 +244,7 @@ where
         targets: Some(&mut tgts[..]),
     };
 
-    hw.do_ccc(config, &mut payload)
-        .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))
+    hw.do_ccc(config, &mut payload).map_err(map_ccc_err)
 }
 
 /// Execute RSTACT (Reset Action) broadcast
@@ -247,8 +267,7 @@ where
         targets: None,
     };
 
-    hw.do_ccc(config, &mut payload)
-        .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))
+    hw.do_ccc(config, &mut payload).map_err(map_ccc_err)
 }
 
 /// Get BCR (Bus Characteristics Register) from a device
@@ -280,8 +299,7 @@ where
         targets: Some(&mut tgts[..]),
     };
 
-    hw.do_ccc(config, &mut payload)
-        .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))?;
+    hw.do_ccc(config, &mut payload).map_err(map_ccc_err)?;
 
     Ok(bcr_buf[0])
 }
@@ -315,18 +333,12 @@ where
         targets: Some(&mut tgts[..]),
     };
 
-    hw.do_ccc(config, &mut payload)
-        .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))?;
+    hw.do_ccc(config, &mut payload).map_err(map_ccc_err)?;
 
     Ok(dcr_buf[0])
 }
 
-/// Bus-only SETNEWDA: send the CCC, touch **no** bookkeeping or DAT state.
-///
-/// For the DAA engine (`I3cController::bus_daa`), which addresses a device
-/// that answered on a *different* entry's address (mis-assignment /
-/// unsolicited cases) and manages the tables itself. Everyone else should use
-/// [`ccc_setnewda`].
+/// Send SETNEWDA without changing bookkeeping or DAT state.
 pub(crate) fn ccc_setnewda_bus_only<H>(
     hw: &mut H,
     config: &mut I3cConfig,
@@ -336,7 +348,8 @@ pub(crate) fn ccc_setnewda_bus_only<H>(
 where
     H: HardwareInterface,
 {
-    if curr_da == 0 || new_da == 0 {
+    // Reject addresses that would be truncated on the bus.
+    if curr_da == 0 || new_da == 0 || new_da >= super::constants::I3C_BROADCAST_ADDR {
         return Err(I3cError::CccError(CccErrorKind::InvalidParam));
     }
 
@@ -358,8 +371,7 @@ where
         targets: Some(&mut tgts[..]),
     };
 
-    hw.do_ccc(config, &mut payload)
-        .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))
+    hw.do_ccc(config, &mut payload).map_err(map_ccc_err)
 }
 
 /// Set new dynamic address for a device
@@ -372,26 +384,71 @@ pub fn ccc_setnewda<H>(
 where
     H: HardwareInterface,
 {
-    let Some(pos) = config.attached.pos_of_addr(curr_da) else {
+    let Some(dev_idx) = config.attached.find_dev_idx_by_addr(curr_da) else {
         return Err(I3cError::CccError(CccErrorKind::NotFound));
     };
+    let Some(dev) = config.attached.devices.get(dev_idx) else {
+        return Err(I3cError::CccError(CccErrorKind::NotFound));
+    };
+    if dev.kind != DevKind::I3c || dev.da_state != DaState::Verified {
+        return Err(I3cError::Access);
+    }
+    let Some(pos) = config.attached.pos_of(dev_idx) else {
+        return Err(I3cError::CccError(CccErrorKind::NotFound));
+    };
+    let ibi_was_enabled = config
+        .attached
+        .devices
+        .iter()
+        .find(|dev| dev.dyn_addr == curr_da)
+        .is_some_and(|dev| dev.ibi_state == IbiState::Enabled);
 
-    if !config.addrbook.is_free(new_da) {
+    // Check reservations before sending SETNEWDA.
+    if new_da != curr_da && !config.addrbook.is_free(new_da) {
         return Err(I3cError::CccError(CccErrorKind::NoFreeSlot));
     }
 
-    ccc_setnewda_bus_only(hw, config, curr_da, new_da)?;
+    if let Err(e) = ccc_setnewda_bus_only(hw, config, curr_da, new_da) {
+        if matches!(e, I3cError::Timeout | I3cError::RespError) {
+            // The target may have moved despite the error.
+            mark_setnewda_unknown(config, dev_idx, new_da);
+        }
+        return Err(e);
+    }
 
-    // The device now answers on `new_da`: mirror the move into the address
-    // book / attached table and reprogram the DAT slot, or every subsequent
-    // private transfer would still address the device through the stale entry.
-    // The fresh DAT write restores the SIR/MR-reject defaults — call
-    // `ibi_enable` again afterwards if the device had IBIs enabled.
-    config
-        .reassign_da(curr_da, new_da)
-        .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))?;
-    hw.attach_i3c_dev(pos.into(), new_da)
-        .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))
+    // Reprogram DAT before committing bookkeeping.
+    if hw.attach_i3c_dev(pos.into(), new_da).is_err() {
+        // The target moved but DAT did not; block further transfers.
+        mark_setnewda_unknown(config, dev_idx, new_da);
+        hw.mark_xfer_faulted();
+        return Err(I3cError::CccError(CccErrorKind::Invalid));
+    }
+
+    // Commit the move and restore IBI state if needed.
+    if config.reassign_da(curr_da, new_da).is_err() {
+        // Bus and DAT moved but bookkeeping did not.
+        mark_setnewda_unknown(config, dev_idx, new_da);
+        hw.mark_xfer_faulted();
+        return Err(I3cError::CccError(CccErrorKind::Invalid));
+    }
+
+    if ibi_was_enabled {
+        let result = hw.ibi_enable(config, new_da);
+        if let Some(dev) = config
+            .attached
+            .devices
+            .iter_mut()
+            .find(|dev| dev.dyn_addr == new_da)
+        {
+            dev.ibi_state = match result {
+                Ok(()) => IbiState::Enabled,
+                Err(I3cError::Timeout | I3cError::RespError) => IbiState::Unknown,
+                Err(_) => IbiState::Disabled,
+            };
+        }
+        result.map_err(map_ccc_err)?;
+    }
+    Ok(())
 }
 
 /// Send a direct write CCC with a small fixed payload.
@@ -423,8 +480,7 @@ where
         }),
         targets: Some(&mut tgts[..]),
     };
-    hw.do_ccc(config, &mut p)
-        .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))
+    hw.do_ccc(config, &mut p).map_err(map_ccc_err)
 }
 
 /// Send a direct read CCC into a small fixed buffer.
@@ -456,8 +512,7 @@ where
         }),
         targets: Some(&mut tgts[..]),
     };
-    hw.do_ccc(config, &mut p)
-        .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))
+    hw.do_ccc(config, &mut p).map_err(map_ccc_err)
 }
 
 /// Set Maximum Write Length for a device (direct SETMWL); mirrors the value
@@ -528,7 +583,14 @@ where
             targets: None,
         },
     )
-    .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))
+    .map_err(map_ccc_err)?;
+
+    for dev in &mut config.attached.devices {
+        if dev.kind == DevKind::I3c {
+            dev.mwl = mwl;
+        }
+    }
+    Ok(())
 }
 
 /// Broadcast SETMRL to all devices.
@@ -561,7 +623,17 @@ where
             targets: None,
         },
     )
-    .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))
+    .map_err(map_ccc_err)?;
+
+    for dev in &mut config.attached.devices {
+        if dev.kind == DevKind::I3c {
+            dev.mrl = mrl;
+            if let Some(n) = ibi_len {
+                dev.max_ibi = n;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Get Maximum Write Length from a device (GETMWL); mirrors the value into
@@ -673,8 +745,7 @@ where
         targets: Some(&mut tgts[..]),
     };
 
-    hw.do_ccc(config, &mut payload)
-        .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))?;
+    hw.do_ccc(config, &mut payload).map_err(map_ccc_err)?;
 
     Ok(bytes_to_pid(&pid_buf))
 }
@@ -720,8 +791,7 @@ where
         targets: Some(&mut targets_arr[..]),
     };
 
-    hw.do_ccc(config, &mut payload)
-        .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))?;
+    hw.do_ccc(config, &mut payload).map_err(map_ccc_err)?;
 
     let val = u16::from_be_bytes(data_buf);
 
@@ -739,7 +809,9 @@ where
 {
     match ccc_getstatus(hw, config, da, GetStatusFormat::Fmt1) {
         Ok(GetStatusResp::Fmt1 { status }) => Ok(status),
-        _ => Err(I3cError::CccError(CccErrorKind::Invalid)),
+        // Fmt1 cannot produce Fmt2.
+        Ok(GetStatusResp::Fmt2 { .. }) => Err(I3cError::CccError(CccErrorKind::Invalid)),
+        Err(e) => Err(e),
     }
 }
 
@@ -748,16 +820,31 @@ pub fn ccc_rstdaa_all<H>(hw: &mut H, config: &mut I3cConfig) -> Result<(), I3cEr
 where
     H: HardwareInterface,
 {
-    hw.do_ccc(
-        config,
-        &mut CccPayload {
-            ccc: Some(Ccc {
-                id: I3C_CCC_RSTDAA,
-                data: None,
-                num_xfer: 0,
-            }),
-            targets: None,
-        },
-    )
-    .map_err(|_| I3cError::CccError(CccErrorKind::Invalid))
+    let result = hw
+        .do_ccc(
+            config,
+            &mut CccPayload {
+                ccc: Some(Ccc {
+                    id: I3C_CCC_RSTDAA,
+                    data: None,
+                    num_xfer: 0,
+                }),
+                targets: None,
+            },
+        )
+        .map_err(map_ccc_err);
+
+    match result {
+        Ok(()) => {
+            config.commit_rstdaa();
+            Ok(())
+        }
+        Err(e @ (I3cError::Timeout | I3cError::RespError)) => {
+            // The command may have reached none, some, or all targets. Keep
+            // every possible owner reserved until a confirmed RSTDAA.
+            config.mark_rstdaa_unknown();
+            Err(e)
+        }
+        Err(e) => Err(e),
+    }
 }

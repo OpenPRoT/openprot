@@ -50,8 +50,8 @@
 use core::marker::PhantomData;
 
 use super::ccc;
-use super::config::{DeviceEntry, I3cConfig, I3cTargetConfig};
-use super::constants::I3C_BROADCAST_ADDR;
+use super::config::{DaState, DeviceEntry, I3cConfig, I3cTargetConfig, IbiState};
+use super::constants::{I3C_BROADCAST_ADDR, MAX_PRIV_XFER_CMDS, MAX_XFER_DATA_LEN};
 use super::error::I3cError;
 use super::hardware::HardwareInterface;
 use super::types::{DevKind, I2cOp, I3cIbi, I3cIbiType, I3cMsg};
@@ -127,6 +127,18 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Uninitialized> {
     /// another controller, or [`I3cError::Timeout`] if the hardware's initial
     /// queue-reset poll timed out.
     pub fn start(mut self) -> Result<I3cController<'c, H, Ready>, I3cError> {
+        // Reject invalid timing before programming hardware.
+        self.config.validate_clock()?;
+        if let Some(static_addr) = self
+            .config
+            .target_config
+            .as_ref()
+            .and_then(|target| target.static_addr)
+            && (static_addr >= I3C_BROADCAST_ADDR || self.config.addrbook.is_reserved(static_addr))
+        {
+            return Err(I3cError::InvalidArgs);
+        }
+
         let bus = self.hw.bus_num() as usize;
         let ctx = self.hw.isr_ctx(self.config.is_secondary);
         if !super::hardware::register_i3c_irq_handler(bus, ctx) {
@@ -156,6 +168,15 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Uninitialized> {
 // =============================================================================
 
 impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
+    #[inline]
+    fn ensure_primary(&self) -> Result<(), I3cError> {
+        if self.config.is_secondary {
+            Err(I3cError::Access)
+        } else {
+            Ok(())
+        }
+    }
+
     // =========================================================================
     // Device Management
     // =========================================================================
@@ -167,14 +188,19 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
     /// * `desired_da` - Desired dynamic address
     /// * `slot` - DAT slot to use
     pub fn attach_i3c_dev(&mut self, pid: u64, desired_da: u8, slot: u8) -> Result<(), I3cError> {
+        self.ensure_primary()?;
         let (hw, config) = self.parts();
         if desired_da == 0 || desired_da >= I3C_BROADCAST_ADDR {
             return Err(I3cError::InvalidArgs);
         }
-        // Bound the DAT slot: `by_pos` would silently ignore an out-of-range
-        // slot while the register facade aliases positions > 7 onto the last
-        // DAT register, corrupting whatever device lives there.
-        if usize::from(slot) >= super::constants::MAX_DEVICES_PER_BUS {
+        // GETPID returns a 48-bit value.
+        if pid >= (1u64 << 48) {
+            return Err(I3cError::InvalidArgs);
+        }
+        // Enforce both software and hardware DAT limits.
+        if usize::from(slot) >= super::constants::MAX_DEVICES_PER_BUS
+            || u16::from(slot) >= config.maxdevs
+        {
             return Err(I3cError::InvalidArgs);
         }
         if config
@@ -187,6 +213,28 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
         {
             return Err(I3cError::DevAlreadyAttached);
         }
+        if config.addrbook.is_reserved(desired_da) {
+            return Err(I3cError::InvalidArgs);
+        }
+        if !config.addrbook.is_free(desired_da) {
+            return Err(I3cError::AddrInUse);
+        }
+        if config
+            .attached
+            .devices
+            .iter()
+            .any(|d| d.dyn_addr == desired_da)
+        {
+            return Err(I3cError::AddrInUse);
+        }
+        // PID lookups require uniqueness.
+        if config.attached.devices.iter().any(|d| d.pid == Some(pid)) {
+            return Err(I3cError::DevAlreadyAttached);
+        }
+
+        // Program hardware before committing bookkeeping.
+        hw.attach_i3c_dev(slot.into(), desired_da)
+            .map_err(|_| I3cError::AddrInUse)?;
 
         let dev = DeviceEntry {
             kind: DevKind::I3c,
@@ -201,22 +249,33 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
             mrl: 0,
             mwl: 0,
             max_ibi: 0,
-            ibi_en: false,
+            ibi_state: IbiState::Disabled,
             pos: Some(slot),
-            da_assigned: false,
+            da_state: DaState::Unassigned,
         };
 
-        let idx = config
-            .attached
-            .attach(dev)
-            .map_err(|_| I3cError::AddrInUse)?;
-        config
-            .attached
-            .map_pos(slot, u8::try_from(idx).map_err(|_| I3cError::InvalidArgs)?);
+        let idx = match config.attached.attach(dev) {
+            Ok(idx) => idx,
+            Err(_) => {
+                hw.detach_i3c_dev(slot.into());
+                return Err(I3cError::NoFreeSlot);
+            }
+        };
+        let idx_u8 = match u8::try_from(idx) {
+            Ok(idx) => idx,
+            Err(_) => {
+                config.attached.detach(idx);
+                hw.detach_i3c_dev(slot.into());
+                return Err(I3cError::InvalidArgs);
+            }
+        };
+        if !config.attached.map_pos(slot, idx_u8) {
+            config.attached.detach(idx);
+            hw.detach_i3c_dev(slot.into());
+            return Err(I3cError::NoDatPos);
+        }
         config.addrbook.mark_use(desired_da, true);
-
-        hw.attach_i3c_dev(slot.into(), desired_da)
-            .map_err(|_| I3cError::AddrInUse)
+        Ok(())
     }
 
     /// Attach a legacy I2C device to the bus.
@@ -229,11 +288,15 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
     /// [`detach_i3c_dev`](Self::detach_i3c_dev) (by slot) or
     /// [`detach_i3c_dev_by_idx`](Self::detach_i3c_dev_by_idx).
     pub fn attach_i2c_dev(&mut self, static_addr: u8, slot: u8) -> Result<(), I3cError> {
+        self.ensure_primary()?;
         let (hw, config) = self.parts();
         if static_addr == 0 || static_addr >= I3C_BROADCAST_ADDR {
             return Err(I3cError::InvalidArgs);
         }
-        if usize::from(slot) >= super::constants::MAX_DEVICES_PER_BUS {
+        // Reject positions outside the implemented DAT.
+        if usize::from(slot) >= super::constants::MAX_DEVICES_PER_BUS
+            || u16::from(slot) >= config.maxdevs
+        {
             return Err(I3cError::InvalidArgs);
         }
         if config
@@ -246,24 +309,58 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
         {
             return Err(I3cError::DevAlreadyAttached);
         }
+        if config.i2c_scl_hz == 0 {
+            return Err(I3cError::InvalidParam);
+        }
+        if !config.addrbook.is_free(static_addr) {
+            return Err(if config.addrbook.is_reserved(static_addr) {
+                I3cError::InvalidArgs
+            } else {
+                I3cError::AddrInUse
+            });
+        }
+        if config
+            .attached
+            .devices
+            .iter()
+            .any(|d| d.dyn_addr == static_addr)
+        {
+            return Err(I3cError::AddrInUse);
+        }
+
+        // Program hardware before committing bookkeeping.
+        hw.attach_i2c_dev(slot.into(), static_addr)?;
 
         let mut dev = DeviceEntry::new_i2c(static_addr);
         dev.pos = Some(slot);
-        let idx = config
-            .attached
-            .attach(dev)
-            .map_err(|_| I3cError::NoFreeSlot)?;
-        config
-            .attached
-            .map_pos(slot, u8::try_from(idx).map_err(|_| I3cError::InvalidArgs)?);
+        let idx = match config.attached.attach(dev) {
+            Ok(idx) => idx,
+            Err(e) => {
+                hw.detach_i3c_dev(slot.into());
+                return Err(e);
+            }
+        };
+        let idx_u8 = match u8::try_from(idx) {
+            Ok(idx) => idx,
+            Err(_) => {
+                config.attached.detach(idx);
+                hw.detach_i3c_dev(slot.into());
+                return Err(I3cError::InvalidArgs);
+            }
+        };
+        if !config.attached.map_pos(slot, idx_u8) {
+            config.attached.detach(idx);
+            hw.detach_i3c_dev(slot.into());
+            return Err(I3cError::NoDatPos);
+        }
         // The static address occupies the same 7-bit space as dynamic ones.
         config.addrbook.mark_use(static_addr, true);
-
-        hw.attach_i2c_dev(slot.into(), static_addr)
+        Ok(())
     }
 
     /// Write to a legacy I2C device (by static address).
     pub fn i2c_write(&mut self, static_addr: u8, data: &[u8]) -> Result<(), I3cError> {
+        self.ensure_primary()?;
         let (hw, config) = self.parts();
         let pos = config
             .attached
@@ -276,6 +373,7 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
     /// Read from a legacy I2C device (by static address). `out` is filled
     /// completely on success.
     pub fn i2c_read(&mut self, static_addr: u8, out: &mut [u8]) -> Result<(), I3cError> {
+        self.ensure_primary()?;
         let (hw, config) = self.parts();
         let pos = config
             .attached
@@ -292,6 +390,7 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
         data: &[u8],
         out: &mut [u8],
     ) -> Result<(), I3cError> {
+        self.ensure_primary()?;
         let (hw, config) = self.parts();
         let pos = config
             .attached
@@ -302,7 +401,12 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
     }
 
     /// Detach an I3C device by DAT position
-    pub fn detach_i3c_dev(&mut self, pos: usize) {
+    pub fn detach_i3c_dev(&mut self, pos: usize) -> Result<(), I3cError> {
+        self.ensure_primary()?;
+        // Never touch an aliased or unimplemented DAT position.
+        if pos >= super::constants::MAX_DEVICES_PER_BUS || pos >= usize::from(self.config.maxdevs) {
+            return Ok(());
+        }
         let (hw, config) = self.parts();
         // Release the dynamic address (parity with `detach_i3c_dev_by_idx`),
         // or detaching by position would leak it in the address book forever.
@@ -313,24 +417,32 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
             .copied()
             .flatten()
             .and_then(|idx| config.attached.devices.get(usize::from(idx)))
-            .map(|dev| dev.dyn_addr);
-        if let Some(da) = da
+            .map(|dev| (dev.dyn_addr, dev.da_state));
+        if da.is_some_and(|(_, state)| state == DaState::Unknown) {
+            return Err(I3cError::Busy);
+        }
+        if let Some((da, _)) = da
             && da != 0
         {
             config.addrbook.mark_use(da, false);
         }
         config.attached.detach_by_pos(pos);
         hw.detach_i3c_dev(pos);
+        Ok(())
     }
 
     /// Detach an I3C device by device index
-    pub fn detach_i3c_dev_by_idx(&mut self, dev_idx: usize) {
+    pub fn detach_i3c_dev_by_idx(&mut self, dev_idx: usize) -> Result<(), I3cError> {
+        self.ensure_primary()?;
         let (hw, config) = self.parts();
         // `get` (not `[dev_idx]`) keeps this panic-free for the `no_panics`
         // analysis; an out-of-range index is simply a no-op.
         let Some(dev) = config.attached.devices.get(dev_idx) else {
-            return;
+            return Ok(());
         };
+        if dev.da_state == DaState::Unknown {
+            return Err(I3cError::Busy);
+        }
 
         if dev.dyn_addr != 0 {
             let dyn_addr = dev.dyn_addr;
@@ -343,6 +455,7 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
         }
 
         config.attached.detach(dev_idx);
+        Ok(())
     }
 
     // =========================================================================
@@ -375,12 +488,14 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
     /// // More aggressive recovery
     /// ctrl.recover_bus(18);
     /// ```
-    pub fn recover_bus(&mut self, scl_toggles: u32) {
+    pub fn recover_bus(&mut self, scl_toggles: u32) -> Result<(), I3cError> {
+        self.ensure_primary()?;
         let (hw, _) = self.parts();
         hw.enter_sw_mode();
         hw.i3c_toggle_scl_in(scl_toggles);
         hw.gen_internal_stop();
         hw.exit_sw_mode();
+        Ok(())
     }
 
     /// Perform full bus recovery with controller reset
@@ -408,9 +523,14 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
     /// [`I3cError::Timeout`] if the controller reset bits did not self-clear —
     /// the engine is wedged beyond what software recovery can fix.
     pub fn recover_bus_full(&mut self, reset_mask: u32) -> Result<(), I3cError> {
-        self.recover_bus(8);
+        self.recover_bus(8)?;
         let (hw, _) = self.parts();
-        hw.reset_ctrl(reset_mask)
+        let result = hw.reset_ctrl(reset_mask);
+        if result.is_err() {
+            // Block transfers until a successful init.
+            hw.mark_xfer_faulted();
+        }
+        result
     }
 
     // =========================================================================
@@ -420,6 +540,9 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
     /// Allocate a dynamic address from `start_addr`.
     #[inline]
     pub fn alloc_dynamic_address_from(&mut self, start_addr: u8) -> Option<u8> {
+        if self.ensure_primary().is_err() {
+            return None;
+        }
         let (_, config) = self.parts();
         config.addrbook.alloc_from(start_addr)
     }
@@ -432,14 +555,15 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
     #[inline]
     #[must_use]
     pub fn target_dynamic_address(&self) -> Option<u8> {
-        super::hardware::isr_events(self.hw.bus_num() as usize)
+        let addr = super::hardware::isr_events(self.hw.bus_num() as usize)
             .dyn_addr()
-            .or_else(|| self.config.target_config.as_ref().and_then(|t| t.addr))
+            .or_else(|| self.config.target_config.as_ref().and_then(|t| t.addr))?;
+        // Filter stale or reserved values.
+        (addr != 0 && !self.config.addrbook.is_reserved(addr)).then_some(addr)
     }
 
     /// Max read/write lengths `(mrl, mwl)` the bus master pushed to this
-    /// target via SETMRL/SETMWL, if any update was observed (latched by the
-    /// ISR from `SLV_MAX_LEN`). Target mode only.
+    /// target via SETMRL/SETMWL, if any update was observed.
     #[inline]
     #[must_use]
     pub fn target_max_lengths(&self) -> Option<(u16, u16)> {
@@ -448,37 +572,67 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
 
     /// Set the device's IBI mandatory data byte and enable IBI delivery for `addr`.
     pub fn enable_ibi(&mut self, addr: u8, mdb: u8) -> Result<(), I3cError> {
+        self.ensure_primary()?;
         let (hw, config) = self.parts();
         hw.set_ibi_mdb(mdb);
-        hw.ibi_enable(config, addr)
+        let result = hw.ibi_enable(config, addr);
+        if let Some(dev) = config
+            .attached
+            .devices
+            .iter_mut()
+            .find(|d| d.dyn_addr == addr)
+        {
+            dev.ibi_state = match result {
+                Ok(()) => IbiState::Enabled,
+                Err(I3cError::Timeout | I3cError::RespError) => IbiState::Unknown,
+                Err(_) => dev.ibi_state,
+            };
+        }
+        result
     }
 
     /// Disable IBI delivery for `addr` (DISEC + reject its SIRs).
     pub fn disable_ibi(&mut self, addr: u8) -> Result<(), I3cError> {
+        self.ensure_primary()?;
         let (hw, config) = self.parts();
-        hw.ibi_disable(config, addr)
+        let result = hw.ibi_disable(config, addr);
+        if let Some(dev) = config
+            .attached
+            .devices
+            .iter_mut()
+            .find(|d| d.dyn_addr == addr)
+        {
+            dev.ibi_state = match result {
+                Ok(()) => IbiState::Disabled,
+                Err(I3cError::Timeout | I3cError::RespError | I3cError::AddressNack) => {
+                    IbiState::Unknown
+                }
+                Err(_) => dev.ibi_state,
+            };
+        }
+        result
     }
 
-    /// Re-run the full hardware initialization on a live controller.
-    ///
-    /// Recovery hammer for an engine wedged beyond what
-    /// [`recover_bus_full`](Self::recover_bus_full) can fix (the vendor C
-    /// driver's `target_rst_worker` equivalent). The ISR registration is left
-    /// untouched. Side effects: in target mode the dynamic address is dropped
-    /// (the bus master must re-run DAA) and SIRs are blocked until the next
-    /// DA assignment; in master mode the DAT slots of attached devices are
-    /// re-programmed from the bookkeeping (the bus targets keep their
-    /// addresses — only this controller was reset), but IBIs must be
-    /// re-enabled via [`enable_ibi`](Self::enable_ibi).
+    /// Re-run full hardware initialization and rebuild attached DAT entries.
     pub fn reinit(&mut self) -> Result<(), I3cError> {
         let (hw, config) = self.parts();
         hw.init(config)?;
+        for dev in &mut config.attached.devices {
+            dev.ibi_state = IbiState::Disabled;
+        }
         for i in 0..config.attached.devices.len() {
             let Some(dev) = config.attached.devices.get(i) else {
                 continue;
             };
             if let Some(pos) = dev.pos {
-                let _ = hw.attach_i3c_dev(pos.into(), dev.dyn_addr);
+                let result = match dev.kind {
+                    DevKind::I3c => hw.attach_i3c_dev(pos.into(), dev.dyn_addr),
+                    DevKind::I2c => hw.attach_i2c_dev(pos.into(), dev.static_addr),
+                };
+                if result.is_err() {
+                    hw.mark_xfer_faulted();
+                }
+                result?;
             }
         }
         cortex_m::asm::dmb();
@@ -487,6 +641,7 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
 
     /// Issue a private read to `pid`, returning the number of received bytes.
     pub fn priv_read(&mut self, pid: u64, out: &mut [u8]) -> Result<u32, I3cError> {
+        self.ensure_primary()?;
         let (hw, config) = self.parts();
         let actual_len = u32::try_from(out.len()).map_err(|_| I3cError::InvalidArgs)?;
         let mut msgs = [I3cMsg {
@@ -503,6 +658,7 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
 
     /// Issue a private write to `pid`.
     pub fn priv_write(&mut self, pid: u64, data: &mut [u8]) -> Result<(), I3cError> {
+        self.ensure_primary()?;
         let (hw, config) = self.parts();
         let actual_len = u32::try_from(data.len()).map_err(|_| I3cError::InvalidArgs)?;
         let mut msgs = [I3cMsg {
@@ -540,21 +696,38 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
         &mut self,
         static_address: SevenBitAddress,
     ) -> Result<SevenBitAddress, I3cError> {
+        self.ensure_primary()?;
         let (hw, config) = self.parts();
         let slot = config
             .attached
             .pos_of_addr(static_address)
             .ok_or(I3cError::AddrInUse)?;
 
-        hw.do_entdaa(config, slot.into())
-            .map_err(|_| I3cError::AddrInUse)?;
-
-        let pid = ccc::ccc_getpid(hw, config, static_address).map_err(|_| I3cError::Invalid)?;
-
         let dev_idx = config
             .attached
             .find_dev_idx_by_addr(static_address)
             .ok_or(I3cError::Other)?;
+
+        // Do not repeat ENTDAA for an address that may already be claimed.
+        let already_claimed = config
+            .attached
+            .devices
+            .get(dev_idx)
+            .is_some_and(|d| d.da_state != DaState::Unassigned);
+        if !already_claimed {
+            match hw.do_entdaa(config, slot.into()) {
+                Ok(()) => config.mark_da_unknown(dev_idx, None),
+                Err(e @ (I3cError::Timeout | I3cError::RespError)) => {
+                    // The target may have latched the DAT address before the
+                    // controller lost completion.
+                    config.mark_da_unknown(dev_idx, None);
+                    return Err(e);
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        let pid = ccc::ccc_getpid(hw, config, static_address)?;
 
         let old_pid = config
             .attached
@@ -566,12 +739,20 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
         if let Some(op) = old_pid
             && pid != op
         {
+            // Preserve the claimed state after a PID mismatch.
+            if let Some(dev) = config.attached.devices.get_mut(dev_idx) {
+                dev.da_state = DaState::Unknown;
+            }
             return Err(I3cError::Other);
         }
 
-        let bcr = ccc::ccc_getbcr(hw, config, static_address).map_err(|_| I3cError::Invalid)?;
-        // DCR is informational — a device that NACKs GETDCR still works.
-        let dcr = ccc::ccc_getdcr(hw, config, static_address).unwrap_or(0);
+        let bcr = ccc::ccc_getbcr(hw, config, static_address)?;
+        // DCR is optional; only an address NACK is benign.
+        let dcr = match ccc::ccc_getdcr(hw, config, static_address) {
+            Ok(dcr) => dcr,
+            Err(I3cError::AddressNack) => 0,
+            Err(e) => return Err(e),
+        };
 
         {
             let dev = config
@@ -583,7 +764,7 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
             dev.pid = Some(pid);
             dev.bcr = bcr;
             dev.dcr = dcr;
-            dev.da_assigned = true;
+            dev.da_state = DaState::Verified;
         }
 
         let dyn_addr: SevenBitAddress = config
@@ -593,8 +774,15 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
             .ok_or(I3cError::Other)?
             .dyn_addr;
 
-        hw.ibi_enable(config, dyn_addr)
-            .map_err(|_| I3cError::Other)?;
+        let ibi_result = hw.ibi_enable(config, dyn_addr);
+        if let Some(dev) = config.attached.devices.get_mut(dev_idx) {
+            dev.ibi_state = match ibi_result {
+                Ok(()) => IbiState::Enabled,
+                Err(I3cError::Timeout | I3cError::RespError) => IbiState::Unknown,
+                Err(_) => dev.ibi_state,
+            };
+        }
+        ibi_result?;
 
         Ok(dyn_addr)
     }
@@ -616,11 +804,14 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
     ///   is parked on a freshly allocated address so it stops answering
     ///   subsequent ENTDAAs.
     ///
-    /// Returns the number of devices verified in this run. Exits when ENTDAA
-    /// reports no more unassigned devices (NACK/timeout). IBIs are not
-    /// enabled here — call [`enable_ibi`](Self::enable_ibi) per device
+    /// Returns the number of devices verified in this run, but only when every
+    /// attached device that needed an address was verified. If ENTDAA reports
+    /// no more responders while entries are still pending, returns
+    /// [`I3cError::DaaNack`] instead of reporting a partial success. IBIs are
+    /// not enabled here — call [`enable_ibi`](Self::enable_ibi) per device
     /// afterwards.
     pub fn bus_daa(&mut self) -> Result<u32, I3cError> {
+        self.ensure_primary()?;
         let (hw, config) = self.parts();
         let ndevs = config.attached.by_pos.len();
 
@@ -632,7 +823,7 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
             };
             if dev.kind == DevKind::I3c
                 && dev.pid.is_some()
-                && !dev.da_assigned
+                && dev.da_state == DaState::Unassigned
                 && let Some(pos) = dev.pos
             {
                 // pos < 8 enforced by attach_i3c_dev.
@@ -642,6 +833,7 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
 
         let mut verified = 0u32;
         let mut pos = 0usize;
+        let mut normal_nack = false;
         // Hang guard only: every lap either clears a `need` bit, parks an
         // unsolicited device (finite), or exits via the ENTDAA break below.
         let mut budget = 8 * (ndevs as u32);
@@ -670,15 +862,49 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
                 continue;
             };
 
-            if hw.do_entdaa(config, pos as u32).is_err() {
-                // NACK/timeout: nothing unassigned left on the bus.
-                break;
+            let provisional_idx = config
+                .attached
+                .by_pos
+                .get(pos)
+                .copied()
+                .flatten()
+                .map(usize::from);
+
+            match hw.do_entdaa(config, pos as u32) {
+                Ok(()) => {}
+                // Address NACK normally ends DAA.
+                Err(I3cError::DaaNack) => {
+                    normal_nack = true;
+                    break;
+                }
+                Err(e @ (I3cError::Timeout | I3cError::RespError)) => {
+                    // ENTDAA may have assigned this slot before completion was
+                    // lost. Never retry it as unassigned.
+                    if let Some(idx) = provisional_idx {
+                        config.mark_da_unknown(idx, None);
+                    }
+                    return Err(e);
+                }
+                Err(e) => return Err(e),
             }
 
-            let Ok(pid) = ccc::ccc_getpid(hw, config, addr) else {
-                // Winner could not be identified; retry this slot next lap.
-                pos = (pos + 1) % ndevs;
-                continue;
+            // Mark the claimed address unknown until GETPID identifies it.
+            if let Some(idx) = provisional_idx {
+                config.mark_da_unknown(idx, None);
+            }
+
+            let pid = match ccc::ccc_getpid(hw, config, addr) {
+                Ok(pid) => pid,
+                // The address is claimed; retrying ENTDAA could collide.
+                Err(e) => {
+                    // Only RSTDAA can safely clear this unknown owner.
+                    if let Some(dev) =
+                        provisional_idx.and_then(|idx| config.attached.devices.get_mut(idx))
+                    {
+                        dev.da_state = DaState::Unknown;
+                    }
+                    return Err(e);
+                }
             };
 
             let owner = config
@@ -695,47 +921,98 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
                         .map_or(addr, |d| d.desired_da);
                     if expected == addr {
                         // The intended device answered its own slot.
-                        let bcr = ccc::ccc_getbcr(hw, config, addr).unwrap_or(0);
-                        let dcr = ccc::ccc_getdcr(hw, config, addr).unwrap_or(0);
+                        let bcr = ccc::ccc_getbcr(hw, config, addr)?;
+                        let dcr = match ccc::ccc_getdcr(hw, config, addr) {
+                            Ok(dcr) => dcr,
+                            Err(I3cError::AddressNack) => 0,
+                            Err(e) => return Err(e),
+                        };
                         if let Some(dev) = config.attached.devices.get_mut(idx) {
                             dev.bcr = bcr;
                             dev.dcr = dcr;
-                            dev.da_assigned = true;
+                            dev.da_state = DaState::Verified;
                         }
                         need &= !(1u32 << pos);
                         verified += 1;
-                    } else if ccc::ccc_setnewda_bus_only(hw, config, addr, expected).is_ok() {
-                        // Wrong device won this slot: it now sits on its own
-                        // expected address (its own DAT slot already holds
-                        // that address), so it is done...
-                        let bcr = ccc::ccc_getbcr(hw, config, expected).unwrap_or(0);
-                        let dcr = ccc::ccc_getdcr(hw, config, expected).unwrap_or(0);
-                        if let Some(dev) = config.attached.devices.get_mut(idx) {
-                            dev.bcr = bcr;
-                            dev.dcr = dcr;
-                            dev.da_assigned = true;
+                    } else {
+                        let setnewda_result =
+                            ccc::ccc_setnewda_bus_only(hw, config, addr, expected);
+                        // Probe ambiguous moves before freeing the old slot.
+                        let move_ambiguous = matches!(
+                            setnewda_result,
+                            Err(I3cError::Timeout | I3cError::RespError)
+                        );
+                        if setnewda_result.is_ok() || move_ambiguous {
+                            if setnewda_result.is_ok()
+                                && let Some(dev) =
+                                    provisional_idx.and_then(|i| config.attached.devices.get_mut(i))
+                            {
+                                dev.da_state = DaState::Unassigned;
+                            }
+                            if let Some(dev) = config.attached.devices.get_mut(idx) {
+                                dev.da_state = DaState::Unknown;
+                            }
+                            // Verify the winner at its expected address.
+                            let bcr = ccc::ccc_getbcr(hw, config, expected)?;
+                            let dcr = match ccc::ccc_getdcr(hw, config, expected) {
+                                Ok(dcr) => dcr,
+                                Err(I3cError::AddressNack) => 0,
+                                Err(e) => return Err(e),
+                            };
+                            if move_ambiguous
+                                && let Some(dev) =
+                                    provisional_idx.and_then(|i| config.attached.devices.get_mut(i))
+                            {
+                                // The probe confirmed the move.
+                                dev.da_state = DaState::Unassigned;
+                            }
+                            if let Some(dev) = config.attached.devices.get_mut(idx) {
+                                dev.bcr = bcr;
+                                dev.dcr = dcr;
+                                dev.da_state = DaState::Verified;
+                            }
+                            if let Some(own_pos) = config
+                                .attached
+                                .pos_of(idx)
+                                .or_else(|| config.attached.devices.get(idx).and_then(|d| d.pos))
+                            {
+                                need &= !(1u32 << u32::from(own_pos));
+                            }
+                            verified += 1;
+                            // Retry this slot for its intended owner.
+                        } else {
+                            // A definite move failure leaves the slot occupied.
+                            return Err(setnewda_result.err().unwrap_or(I3cError::Other));
                         }
-                        if let Some(own_pos) = config
-                            .attached
-                            .pos_of(idx)
-                            .or_else(|| config.attached.devices.get(idx).and_then(|d| d.pos))
-                        {
-                            need &= !(1u32 << u32::from(own_pos));
-                        }
-                        verified += 1;
-                        // ...and this slot's bit stays set so its intended
-                        // owner gets the next ENTDAA here.
                     }
                 }
                 None => {
                     // Unknown PID: park it on a fresh address so it stops
                     // answering ENTDAA for slots it does not own.
                     let Some(park) = config.addrbook.alloc_from(8) else {
-                        break;
+                        return Err(I3cError::AddrExhausted);
                     };
                     config.addrbook.mark_use(park, true);
-                    if ccc::ccc_setnewda_bus_only(hw, config, addr, park).is_err() {
-                        config.addrbook.mark_use(park, false);
+                    match ccc::ccc_setnewda_bus_only(hw, config, addr, park) {
+                        Ok(()) => {
+                            if let Some(dev) =
+                                provisional_idx.and_then(|i| config.attached.devices.get_mut(i))
+                            {
+                                dev.da_state = DaState::Unassigned;
+                            }
+                        }
+                        Err(e @ (I3cError::Timeout | I3cError::RespError)) => {
+                            // Keep an ambiguously adopted parking address reserved.
+                            if let Some(idx) = provisional_idx {
+                                config.mark_da_unknown(idx, Some(park));
+                            }
+                            return Err(e);
+                        }
+                        Err(e) => {
+                            // Release a definitely unused parking address.
+                            config.addrbook.mark_use(park, false);
+                            return Err(e);
+                        }
                     }
                     // Retry this slot without advancing.
                     continue;
@@ -745,11 +1022,21 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
             pos = (pos + 1) % ndevs;
         }
 
-        Ok(verified)
+        if need == 0 {
+            Ok(verified)
+        } else if normal_nack {
+            // A normal ENTDAA NACK ends discovery, but attached devices are
+            // still pending. Do not report a partial assignment as success.
+            Err(I3cError::DaaNack)
+        } else {
+            // The retry budget expired with assignments pending.
+            Err(I3cError::AddrExhausted)
+        }
     }
 
     /// Acknowledge an IBI from `address` (validates the device is known).
     pub fn acknowledge_ibi(&mut self, address: SevenBitAddress) -> Result<(), I3cError> {
+        self.ensure_primary()?;
         let (_, config) = self.parts();
         let dev_idx = config
             .attached
@@ -763,7 +1050,7 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
             .devices
             .get(dev_idx)
             .ok_or(I3cError::Other)?;
-        if dev.pid.is_none() {
+        if dev.pid.is_none() || dev.da_state != DaState::Verified {
             return Err(I3cError::Other);
         }
 
@@ -774,33 +1061,36 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
     /// after receiving a hot-join IBI; nothing else is required here.
     #[allow(clippy::unused_self)]
     pub fn handle_hot_join(&mut self) -> Result<(), I3cError> {
+        self.ensure_primary()?;
         Ok(())
     }
 
     /// Bus speed is fixed on the AST1060 controller; this is a no-op.
     #[allow(clippy::unused_self)]
     pub fn set_bus_speed(&mut self) -> Result<(), I3cError> {
+        self.ensure_primary()?;
         Ok(())
     }
 
-    /// The AST1060 controller does not support multi-master; this is a no-op.
+    /// Multi-master mode is unsupported.
     #[allow(clippy::unused_self)]
     pub fn request_mastership(&mut self) -> Result<(), I3cError> {
-        Ok(())
+        Err(I3cError::Access)
     }
 
     // --- Target (secondary) mode callbacks ---
 
-    /// Initialize target mode with `own_addr` (sets the static/target address).
+    /// Initialize target-mode software state with `own_addr`.
     pub fn target_init(&mut self, own_addr: u8) {
         let (_, config) = self.parts();
-        if let Some(t) = config.target_config.as_mut() {
-            if t.addr.is_none() {
-                t.addr = Some(own_addr);
+        if let Some(target) = config.target_config.as_mut() {
+            if target.addr.is_none() {
+                target.addr = Some(own_addr);
             }
         } else {
-            config.target_config =
-                Some(I3cTargetConfig::new(0, Some(own_addr), /* mdb */ 0xae));
+            let mut target = I3cTargetConfig::new(0, Some(own_addr), /* mdb */ 0xae);
+            target.addr = Some(own_addr);
+            config.target_config = Some(target);
         }
     }
 
@@ -821,8 +1111,11 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
     /// caller owns that delay — wait ~1 s after the `TargetDaAssignment` work
     /// item before calling this if the bus master is slow to settle.
     pub fn target_on_dynamic_address_assigned(&mut self) {
-        let da = super::hardware::isr_events(self.hw.bus_num() as usize).dyn_addr();
-        if let (Some(da), Some(tc)) = (da, self.config.target_config.as_mut()) {
+        // Require an ISR-confirmed dynamic address.
+        let Some(da) = super::hardware::isr_events(self.hw.bus_num() as usize).dyn_addr() else {
+            return;
+        };
+        if let Some(tc) = self.config.target_config.as_mut() {
             tc.addr = Some(da);
         }
         self.config.sir_allowed_by_sw = true;
@@ -863,7 +1156,7 @@ impl<'c, H: HardwareInterface> I3cController<'c, H, Ready> {
 
         match rc {
             Ok(()) => Ok(buffer.len() + payload.len()),
-            _ => Ok(0),
+            Err(e) => Err(e),
         }
     }
 }
@@ -888,6 +1181,7 @@ impl<'c, H: HardwareInterface> embedded_hal::i2c::I2c for I3cController<'c, H, R
         address: SevenBitAddress,
         operations: &mut [embedded_hal::i2c::Operation<'_>],
     ) -> Result<(), I3cError> {
+        self.ensure_primary()?;
         let (hw, config) = self.parts();
         let pos = config
             .attached
@@ -897,13 +1191,25 @@ impl<'c, H: HardwareInterface> embedded_hal::i2c::I2c for I3cController<'c, H, R
         if operations.is_empty() {
             return Ok(());
         }
+        if operations.len() > MAX_PRIV_XFER_CMDS {
+            return Err(I3cError::TooManyMsgs);
+        }
+        // Validate before borrowing caller buffers.
+        for op in operations.iter() {
+            let len = match op {
+                embedded_hal::i2c::Operation::Write(buf) => buf.len(),
+                embedded_hal::i2c::Operation::Read(buf) => buf.len(),
+            };
+            if len == 0 || len > MAX_XFER_DATA_LEN {
+                return Err(I3cError::InvalidArgs);
+            }
+        }
 
-        let mut ops: heapless::Vec<I2cOp<'_>, { super::constants::MAX_PRIV_XFER_CMDS }> =
-            heapless::Vec::new();
+        let mut ops: heapless::Vec<I2cOp<'_>, MAX_PRIV_XFER_CMDS> = heapless::Vec::new();
         for op in operations.iter_mut() {
             let mapped = match op {
-                embedded_hal::i2c::Operation::Write(b) => I2cOp::Write(b),
-                embedded_hal::i2c::Operation::Read(b) => I2cOp::Read(core::mem::take(b)),
+                embedded_hal::i2c::Operation::Write(buf) => I2cOp::Write(&**buf),
+                embedded_hal::i2c::Operation::Read(buf) => I2cOp::Read(&mut **buf),
             };
             ops.push(mapped).map_err(|_| I3cError::TooManyMsgs)?;
         }

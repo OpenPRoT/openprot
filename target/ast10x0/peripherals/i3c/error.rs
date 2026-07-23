@@ -33,6 +33,15 @@ pub enum I3cError {
     IoError,
     /// Invalid operation or state
     Invalid,
+    /// Transfer completed but response status indicated failure; unlike
+    /// `Timeout`, it may already have taken effect at the target.
+    RespError,
+    /// ENTDAA address-phase NACK: no unassigned device answered (expected
+    /// end of a DAA walk, not a fault like other `RespError` cases).
+    DaaNack,
+    /// Target-address phase NACK on a direct transfer, e.g. unsupported
+    /// optional CCC — kept distinct from other response failures.
+    AddressNack,
     /// Address already in use
     AddrInUse,
     /// Address space exhausted
@@ -65,6 +74,9 @@ impl fmt::Display for I3cError {
             Self::Access => write!(f, "access denied"),
             Self::IoError => write!(f, "I/O error"),
             Self::Invalid => write!(f, "invalid operation"),
+            Self::RespError => write!(f, "transfer response indicated failure"),
+            Self::DaaNack => write!(f, "ENTDAA: no unassigned device answered"),
+            Self::AddressNack => write!(f, "target address was not acknowledged"),
             Self::AddrInUse => write!(f, "address in use"),
             Self::AddrExhausted => write!(f, "address space exhausted"),
             Self::NoFreeSlot => write!(f, "no free slot"),

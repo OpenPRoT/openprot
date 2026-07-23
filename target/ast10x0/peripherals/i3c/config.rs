@@ -8,6 +8,7 @@
 use core::marker::PhantomData;
 use heapless::Vec;
 
+use super::constants::NSEC_PER_SEC;
 use super::error::I3cError;
 use super::types::DevKind;
 
@@ -19,17 +20,24 @@ use super::types::DevKind;
 pub struct I3cTargetConfig {
     /// Target flags
     pub flags: u8,
-    /// Dynamic address (assigned by controller)
+    /// Dynamic address assigned by DAA.
     pub addr: Option<u8>,
+    /// Static address advertised before DAA.
+    pub static_addr: Option<u8>,
     /// Mandatory Data Byte for IBI
     pub mdb: u8,
 }
 
 impl I3cTargetConfig {
-    /// Create a new target configuration
+    /// Create a target configuration with no assigned dynamic address.
     #[must_use]
-    pub const fn new(flags: u8, addr: Option<u8>, mdb: u8) -> Self {
-        Self { flags, addr, mdb }
+    pub const fn new(flags: u8, static_addr: Option<u8>, mdb: u8) -> Self {
+        Self {
+            flags,
+            addr: None,
+            static_addr,
+            mdb,
+        }
     }
 }
 
@@ -83,11 +91,18 @@ impl AddrBook {
         }
     }
 
-    /// Check if an address is free (not in use and not reserved)
+    /// Check whether a 7-bit address is free.
     #[inline]
     #[must_use]
     pub fn is_free(&self, addr: u8) -> bool {
-        !Self::bit_get(&self.in_use, addr) && !Self::bit_get(&self.reserved, addr)
+        addr < 128 && !Self::bit_get(&self.in_use, addr) && !Self::bit_get(&self.reserved, addr)
+    }
+
+    /// Check whether an address is reserved or outside the 7-bit range.
+    #[inline]
+    #[must_use]
+    pub fn is_reserved(&self, addr: u8) -> bool {
+        addr >= 128 || Self::bit_get(&self.reserved, addr)
     }
 
     /// Reserve default I3C addresses per specification
@@ -127,15 +142,41 @@ impl AddrBook {
     /// Mark an address as used or free
     #[inline]
     pub fn mark_use(&mut self, addr: u8, used: bool) {
-        if addr != 0 {
+        // Avoid bitmap aliasing above the 7-bit range.
+        if addr != 0 && addr < 128 {
             Self::bit_set(&mut self.in_use, addr, used);
         }
+    }
+
+    /// Clear all in-use addresses.
+    pub fn reset_in_use(&mut self) {
+        self.in_use = [0; 4];
     }
 }
 
 // =============================================================================
 // Device Entry
 // =============================================================================
+
+/// Cached controller/target IBI state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IbiState {
+    Disabled,
+    Enabled,
+    /// An ENEC/DISEC or DAT reprogramming operation had an ambiguous outcome.
+    Unknown,
+}
+
+/// Confidence in a device entry's dynamic-address assignment.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DaState {
+    /// No device has claimed this address.
+    Unassigned,
+    /// GETPID confirmed the address owner.
+    Verified,
+    /// The address may be claimed, but its owner is unverified.
+    Unknown,
+}
 
 /// Entry for a device attached to the I3C bus
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -164,14 +205,12 @@ pub struct DeviceEntry {
     pub mwl: u16,
     /// Maximum IBI payload size
     pub max_ibi: u8,
-    /// IBI enabled flag
-    pub ibi_en: bool,
+    /// Cached IBI state.
+    pub ibi_state: IbiState,
     /// Position in DAT (Device Address Table)
     pub pos: Option<u8>,
-    /// Dynamic address verified on the bus (set by DAA once the device's PID
-    /// was read back at its address). Cleared state means the entry is only a
-    /// reservation.
-    pub da_assigned: bool,
+    /// Dynamic-address confidence.
+    pub da_state: DaState,
 }
 
 impl DeviceEntry {
@@ -191,9 +230,9 @@ impl DeviceEntry {
             mrl: 0,
             mwl: 0,
             max_ibi: 0,
-            ibi_en: false,
+            ibi_state: IbiState::Disabled,
             pos: None,
-            da_assigned: false,
+            da_state: DaState::Unassigned,
         }
     }
 
@@ -213,9 +252,9 @@ impl DeviceEntry {
             mrl: 0,
             mwl: 0,
             max_ibi: 0,
-            ibi_en: false,
+            ibi_state: IbiState::Disabled,
             pos: None,
-            da_assigned: false,
+            da_state: DaState::Unassigned,
         }
     }
 }
@@ -350,7 +389,9 @@ impl Attached {
     /// Unmap a DAT position
     #[inline]
     pub fn unmap_pos(&mut self, pos: u8) {
-        self.by_pos[pos as usize] = None;
+        if let Some(slot) = self.by_pos.get_mut(pos as usize) {
+            *slot = None;
+        }
     }
 }
 
@@ -450,10 +491,14 @@ impl I3cConfig {
     /// Create a new configuration with default values
     #[must_use]
     pub fn new() -> Self {
+        // Constructors must reserve spec-defined addresses.
+        let mut addrbook = AddrBook::new();
+        addrbook.reserve_defaults();
+
         Self {
             common: CommonState::default(),
             target_config: None,
-            addrbook: AddrBook::new(),
+            addrbook,
             attached: Attached::new(),
             core_clk_hz: None,
             core_period: 0,
@@ -480,27 +525,29 @@ impl I3cConfig {
         self.attached = Attached::new();
     }
 
-    /// Pick an initial dynamic address for a device
-    ///
-    /// Tries `desired` first, then `static_addr`, then allocates from pool.
+    /// Pick and reserve an initial dynamic address for a device.
     pub fn pick_initial_da(&mut self, static_addr: u8, desired: u8) -> Option<u8> {
-        if desired != 0 && self.addrbook.is_free(desired) {
-            self.addrbook.mark_use(desired, true);
-            return Some(desired);
-        }
-        if static_addr != 0 && self.addrbook.is_free(static_addr) {
-            self.addrbook.mark_use(static_addr, true);
-            return Some(static_addr);
-        }
-        // Mark the fallback allocation too (`alloc_from` is a pure scan), or
-        // the next caller would be handed the same "initial" address.
-        let addr = self.addrbook.alloc_from(8)?;
+        let addr = if desired != 0 && self.addrbook.is_free(desired) {
+            desired
+        } else if static_addr != 0 && self.addrbook.is_free(static_addr) {
+            static_addr
+        } else {
+            self.addrbook.alloc_from(8)?
+        };
         self.addrbook.mark_use(addr, true);
         Some(addr)
     }
 
     /// Reassign a device's dynamic address
     pub fn reassign_da(&mut self, from: u8, to: u8) -> Result<(), I3cError> {
+        // Resolve the device before mutating the address book.
+        let idx = self
+            .attached
+            .devices
+            .iter()
+            .position(|d| d.dyn_addr == from)
+            .ok_or(I3cError::DevNotFound)?;
+
         if from == to {
             return Ok(());
         }
@@ -510,19 +557,61 @@ impl I3cConfig {
 
         self.addrbook.mark_use(from, false);
         self.addrbook.mark_use(to, true);
+        if let Some(dev) = self.attached.devices.get_mut(idx) {
+            dev.dyn_addr = to;
+            // Keep the next DAA cycle on the new address.
+            dev.desired_da = to;
+        }
+        Ok(())
+    }
 
-        if let Some((i, mut e)) = self
-            .attached
-            .devices
-            .iter()
-            .enumerate()
-            .find_map(|(i, d)| (d.dyn_addr == from).then_some((i, *d)))
-        {
-            e.dyn_addr = to;
-            self.attached.devices[i] = e;
-            Ok(())
-        } else {
-            Err(I3cError::DevNotFound)
+    /// Record an address-changing operation whose bus-side outcome is
+    /// ambiguous. The old and candidate addresses stay reserved so neither
+    /// can be handed to another target before the owner is verified.
+    pub(crate) fn mark_da_unknown(&mut self, dev_idx: usize, candidate: Option<u8>) {
+        let Some(dev) = self.attached.devices.get_mut(dev_idx) else {
+            return;
+        };
+        if dev.kind != DevKind::I3c {
+            return;
+        }
+
+        dev.da_state = DaState::Unknown;
+        self.addrbook.mark_use(dev.dyn_addr, true);
+        self.addrbook.mark_use(dev.desired_da, true);
+        if let Some(addr) = candidate {
+            self.addrbook.mark_use(addr, true);
+        }
+    }
+
+    /// Preserve all possible address owners after an ambiguous broadcast
+    /// RSTDAA. Existing reservations, including parking addresses, remain
+    /// intact because the command may not have reached every target.
+    pub(crate) fn mark_rstdaa_unknown(&mut self) {
+        for dev in &mut self.attached.devices {
+            if dev.kind != DevKind::I3c {
+                continue;
+            }
+            dev.da_state = DaState::Unknown;
+            dev.ibi_state = IbiState::Unknown;
+            self.addrbook.mark_use(dev.dyn_addr, true);
+            self.addrbook.mark_use(dev.desired_da, true);
+        }
+    }
+
+    /// Commit a confirmed broadcast RSTDAA and rebuild reservations from the
+    /// addresses that will be offered by the next DAA walk.
+    pub(crate) fn commit_rstdaa(&mut self) {
+        self.addrbook.reset_in_use();
+        for dev in &mut self.attached.devices {
+            match dev.kind {
+                DevKind::I2c => self.addrbook.mark_use(dev.static_addr, true),
+                DevKind::I3c => {
+                    dev.da_state = DaState::Unassigned;
+                    dev.ibi_state = IbiState::Disabled;
+                    self.addrbook.mark_use(dev.desired_da, true);
+                }
+            }
         }
     }
 }
@@ -643,6 +732,12 @@ pub const I3C_MIN_CORE_CLK_HDR: u32 = 25_000_000;
 /// Maximum supported core clock (Hz)
 pub const I3C_MAX_CORE_CLK: u32 = 400_000_000;
 
+/// Maximum I3C SDR SCL frequency.
+pub const I3C_MAX_SCL_HZ: u32 = 12_500_000;
+
+/// Maximum legacy-I2C Fast-mode Plus frequency.
+pub const I3C_MAX_I2C_SCL_HZ: u32 = 1_000_000;
+
 impl I3cConfig {
     /// Validate clock configuration
     ///
@@ -675,24 +770,53 @@ impl I3cConfig {
     /// config.validate_clock()?;
     /// ```
     pub fn validate_clock(&self) -> Result<(), I3cError> {
-        if let Some(core_hz) = self.core_clk_hz {
-            // Check core clock range
-            if core_hz < I3C_MIN_CORE_CLK_SDR {
-                return Err(I3cError::InvalidParam);
-            }
-            if core_hz > I3C_MAX_CORE_CLK {
-                return Err(I3cError::InvalidParam);
-            }
+        // Enforce protocol frequency limits.
+        if self.i3c_scl_hz > I3C_MAX_SCL_HZ {
+            return Err(I3cError::InvalidParam);
+        }
+        if self.i2c_scl_hz > I3C_MAX_I2C_SCL_HZ {
+            return Err(I3cError::InvalidParam);
+        }
+        // Primary mode requires I3C timing; legacy-I2C timing is optional.
+        if !self.is_secondary && self.i3c_scl_hz == 0 {
+            return Err(I3cError::InvalidParam);
+        }
 
-            // Check I3C SCL achievability (need ~4x core clock for timing
-            // resolution). `saturating_mul`: an absurd SCL must fail
-            // validation, not overflow-panic inside the validator.
-            if self.i3c_scl_hz > 0 && core_hz < self.i3c_scl_hz.saturating_mul(4) {
-                return Err(I3cError::InvalidParam);
-            }
+        if let Some(core_hz) = self.core_clk_hz
+            && (core_hz < I3C_MIN_CORE_CLK_SDR || core_hz > I3C_MAX_CORE_CLK)
+        {
+            return Err(I3cError::InvalidParam);
+        }
 
-            // Check I2C SCL achievability
-            if self.i2c_scl_hz > 0 && core_hz < self.i2c_scl_hz.saturating_mul(4) {
+        // Validate against the same fallback used by `init_clock`.
+        let effective_core_hz = self.core_clk_hz.unwrap_or(I3C_MIN_CORE_CLK_SDR);
+        if self.i3c_scl_hz > 0 && effective_core_hz < self.i3c_scl_hz.saturating_mul(4) {
+            return Err(I3cError::InvalidParam);
+        }
+        if self.i2c_scl_hz > 0 && effective_core_hz < self.i2c_scl_hz.saturating_mul(4) {
+            return Err(I3cError::InvalidParam);
+        }
+
+        // Custom timing requires complete high/low pairs.
+        if (self.i3c_od_scl_hi_period_ns == 0) != (self.i3c_od_scl_lo_period_ns == 0)
+            || (self.i3c_pp_scl_hi_period_ns == 0) != (self.i3c_pp_scl_lo_period_ns == 0)
+        {
+            return Err(I3cError::InvalidParam);
+        }
+
+        // Custom periods must fit the 8-bit timing registers.
+        let period_ns = NSEC_PER_SEC.div_ceil(effective_core_hz.max(1)).max(1);
+        for ns in [
+            self.i3c_od_scl_hi_period_ns,
+            self.i3c_od_scl_lo_period_ns,
+            self.i3c_pp_scl_hi_period_ns,
+            self.i3c_pp_scl_lo_period_ns,
+        ] {
+            if ns == 0 {
+                continue;
+            }
+            let cnt = ns.div_ceil(period_ns);
+            if cnt == 0 || cnt > u32::from(u8::MAX) {
                 return Err(I3cError::InvalidParam);
             }
         }

@@ -56,14 +56,14 @@ pub use error::{CccErrorKind, I3cError, Result};
 
 // Configuration
 pub use config::{
-    AddrBook, Attached, CommonCfg, CommonState, DeviceEntry, I3cConfig, I3cTargetConfig, ResetSpec,
-    I3C_MAX_CORE_CLK, I3C_MIN_CORE_CLK_HDR, I3C_MIN_CORE_CLK_SDR,
+    AddrBook, Attached, CommonCfg, CommonState, DeviceEntry, I3cConfig, I3cTargetConfig, IbiState,
+    ResetSpec, I3C_MAX_CORE_CLK, I3C_MIN_CORE_CLK_HDR, I3C_MIN_CORE_CLK_SDR,
 };
 
 // Core types
 pub use types::{
-    Completion, DevKind, I2cOp, I3cCmd, I3cDeviceId, I3cIbi, I3cIbiType, I3cMsg, I3cPid,
-    I3cStatus, I3cXfer, SpeedI2c, SpeedI3c, Tid,
+    Completion, DevKind, I2cOp, I3cCmd, I3cDeviceId, I3cIbi, I3cIbiType, I3cMsg, I3cPid, I3cStatus,
+    I3cXfer, SpeedI2c, SpeedI3c, Tid,
 };
 
 // Hardware interface
