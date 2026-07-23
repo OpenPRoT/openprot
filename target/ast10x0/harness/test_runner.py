@@ -269,9 +269,8 @@ def _run_remote(
 ) -> bool:
     """SCP firmware and runner to Pi; stream UART back over SSH stdout."""
     host = args.pi_host
-    gpio = config["gpio"]
-    uart = config["uart"]
-    baudrate = args.baudrate if args.baudrate else uart["baudrate"]
+    dev_a = config["device_a"]
+    baudrate = args.baudrate if args.baudrate else config["baudrate"]
 
     remote_dir = "/tmp/ast1060_test"
 
@@ -311,21 +310,24 @@ def _run_remote(
             check=True,
         )
 
-    remote_cmd = f"python3 -u {remote_dir}/pi_test_runner.py {uart_device}"
+    remote_cmd = f"python3 -u {remote_dir}/pi_test_runner.py"
     if not args.parse_only:
         remote_cmd += f" {remote_fw}"
     remote_cmd += (
-        f" --srst-pin {gpio['srst_pin']}"
-        f" --fwspick-pin {gpio['fwspick_pin']}"
+        f" --srst-pin {dev_a['srst_pin']}"
+        f" --fwspick-pin {dev_a['fwspick_pin']}"
         f" --baudrate {baudrate}"
     )
+    if uart_device:
+        remote_cmd += f" --uart-device {uart_device}"
+    if args.verbose_runner:
+        remote_cmd += " --verbose-runner"
     if args.parse_only:
         remote_cmd += " --stream-only"
     if remote_slave_fw:
         device_b = config["device_b"]
         remote_cmd += (
             f" --slave-firmware {remote_slave_fw}"
-            f" --slave-uart-device {device_b['serial_port']}"
             f" --slave-srst-pin {device_b['srst_pin']}"
             f" --slave-fwspick-pin {device_b['fwspick_pin']}"
         )
@@ -375,7 +377,7 @@ def main() -> int:
         "--baudrate",
         type=int,
         default=None,
-        help=f"Override baud rate from evb_config.toml (default: {config['uart']['baudrate']})",
+        help=f"Override baud rate from evb_config.toml (default: {config['baudrate']})",
     )
     parser.add_argument(
         "--log-file",
@@ -392,6 +394,15 @@ def main() -> int:
         action="store_true",
         help="Skip GPIO and firmware upload; stream and detokenize UART output only",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose-runner",
+        action="store_true",
+        help=(
+            "Dump each port's post-flush buffer during UART discovery. Pass "
+            "through Bazel with --test_arg=-v"
+        ),
+    )
     args, remaining = parser.parse_known_args()
 
     if os.environ.get("PW_RUNNER_PASSTHROUGH") == "1":
@@ -400,10 +411,19 @@ def main() -> int:
         res = subprocess.run([args.firmware] + remaining)
         return res.returncode
 
-    uart_device = os.environ.get("UART_DEVICE") or config["uart"]["serial_port"]
+    # Normally the Pi auto-discovers the UART by resetting the board, so no
+    # device is configured. UART_DEVICE lets a caller pin an explicit port;
+    # --parse-only can't reset, so it requires one.
+    uart_device = os.environ.get("UART_DEVICE")
 
     if not args.firmware:
         parser.error("firmware is required")
+
+    if args.parse_only and not uart_device:
+        parser.error(
+            "--parse-only requires UART_DEVICE to be set "
+            "(no reset happens, so the port can't be auto-discovered)"
+        )
 
     # system_image emits both .elf and .bin under the same stem; accept either.
     # When invoked via --run_under on a system_image_test, Bazel passes the
