@@ -22,17 +22,16 @@
 //! `Option<IbiWork>` (`IbiWork` is `Copy`, no niche pointers), guarded by the
 //! same `critical_section`. The process-global queue/handler design (goal.md
 //! ADR-3) is preserved — an ISR still cannot borrow a stack-owned device, so
-//! the IBI plane stays global, arbitrated by `critical_section`. The public
-//! API (`i3c_ibi_workq_consumer().dequeue()` + the three enqueue functions) is
-//! unchanged.
+//! the IBI plane stays global and uses one consumer per bus.
 
 use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicBool, Ordering};
 use critical_section::Mutex;
 
 /// IBI queue depth
 const IBIQ_DEPTH: usize = 16;
 /// Maximum IBI payload data size
-const IBI_DATA_MAX: u8 = 16;
+pub const IBI_DATA_MAX: u8 = 16;
 /// Maximum private-write payload captured per [`IbiWork::TargetMasterWrite`].
 ///
 /// The vendor C driver delivers the full write (heap-allocated per response);
@@ -57,6 +56,8 @@ pub const IBI_MWR_DATA_MAX: usize = 64;
 /// IBI work item representing an interrupt event
 #[derive(Debug, Clone, Copy)]
 pub enum IbiWork {
+    /// One or more older work items were dropped because the queue was full.
+    Overflow,
     /// Hot-Join request from a device
     HotJoin,
     /// Slave Interrupt Request
@@ -92,6 +93,7 @@ struct IbiRing {
     buf: [Option<IbiWork>; IBIQ_DEPTH],
     head: usize,
     len: usize,
+    overflowed: bool,
 }
 
 impl IbiRing {
@@ -100,27 +102,32 @@ impl IbiRing {
             buf: [None; IBIQ_DEPTH],
             head: 0,
             len: 0,
+            overflowed: false,
         }
     }
 
     fn push(&mut self, work: IbiWork) -> bool {
-        // `get_mut` + modulo keep this panic-free even if the indices were
-        // somehow out of range; `head` is normalized first.
         self.head %= IBIQ_DEPTH;
         if self.len >= IBIQ_DEPTH {
-            return false;
+            // Keep the newest IRQ information when the consumer falls behind.
+            self.head = (self.head + 1) % IBIQ_DEPTH;
+            self.len = IBIQ_DEPTH - 1;
+            self.overflowed = true;
         }
         let idx = (self.head + self.len) % IBIQ_DEPTH;
-        if let Some(slot) = self.buf.get_mut(idx) {
-            *slot = Some(work);
-            self.len += 1;
-            true
-        } else {
-            false
-        }
+        let Some(slot) = self.buf.get_mut(idx) else {
+            return false;
+        };
+        *slot = Some(work);
+        self.len += 1;
+        true
     }
 
     fn pop(&mut self) -> Option<IbiWork> {
+        if self.overflowed {
+            self.overflowed = false;
+            return Some(IbiWork::Overflow);
+        }
         self.head %= IBIQ_DEPTH;
         if self.len == 0 || self.len > IBIQ_DEPTH {
             // Empty, or a corrupt length — treat as empty (panic-free).
@@ -145,8 +152,15 @@ static IBI_RINGS: [Mutex<UnsafeCell<IbiRing>>; 4] = [
     Mutex::new(UnsafeCell::new(IbiRing::new())),
 ];
 
-/// Push `work` onto the ring for `bus`. Returns `false` if `bus` is out of
-/// range or the ring is full.
+/// Enforce the single-consumer side of the per-bus SPSC queue.
+static IBI_CONSUMER_CLAIMED: [AtomicBool; 4] = [
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+    AtomicBool::new(false),
+];
+
+/// Push work; a full ring drops the oldest item and records an overflow event.
 ///
 /// The `&mut IbiRing` is confined to this leaf function — no caller-provided
 /// code runs while it is live — so the exclusive borrow cannot be re-entered.
@@ -177,6 +191,11 @@ fn ring_pop(bus: usize) -> Option<IbiWork> {
     })
 }
 
+/// Discard pre-reset work for a bus.
+pub fn i3c_ibi_workq_clear(bus: usize) {
+    while ring_pop(bus).is_some() {}
+}
+
 // =============================================================================
 // Consumer Handle
 // =============================================================================
@@ -187,6 +206,14 @@ fn ring_pop(bus: usize) -> Option<IbiWork> {
 /// the critical section. Returned by [`i3c_ibi_workq_consumer`].
 pub struct IbiConsumer {
     bus: usize,
+}
+
+impl Drop for IbiConsumer {
+    fn drop(&mut self) {
+        if let Some(claimed) = IBI_CONSUMER_CLAIMED.get(self.bus) {
+            claimed.store(false, Ordering::Release);
+        }
+    }
 }
 
 impl IbiConsumer {
@@ -202,9 +229,10 @@ impl IbiConsumer {
 /// Returns `None` if the bus index is out of range.
 #[must_use]
 pub fn i3c_ibi_workq_consumer(bus: usize) -> Option<IbiConsumer> {
-    if bus >= IBI_RINGS.len() {
-        return None;
-    }
+    let claimed = IBI_CONSUMER_CLAIMED.get(bus)?;
+    claimed
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .ok()?;
     Some(IbiConsumer { bus })
 }
 
@@ -224,7 +252,7 @@ pub fn i3c_ibi_work_enqueue_hotjoin(bus: usize) -> bool {
     ring_push(bus, IbiWork::HotJoin)
 }
 
-/// Enqueue a target interrupt (SIR) notification
+/// Enqueue an SIR.
 #[must_use]
 pub fn i3c_ibi_work_enqueue_target_irq(bus: usize, addr: u8, data: &[u8]) -> bool {
     let mut ibi_buf = [0u8; IBI_DATA_MAX as usize];

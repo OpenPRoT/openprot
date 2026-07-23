@@ -487,7 +487,7 @@ impl I3cRegisters {
     fn fifo_drain<F: FnMut() -> u32>(mut read_word: F, len: usize) {
         let nwords = (len + 3) >> 2;
         for _ in 0..nwords {
-            let _ = read_word();
+            read_word();
         }
     }
 

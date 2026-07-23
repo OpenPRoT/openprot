@@ -53,6 +53,8 @@ const KNOWN_PID: u64 = 0x07ec_a003_2000;
 const MAX_EXCHANGES: u32 = 10;
 const XFER_DATA_LEN: usize = 16;
 const WAIT_LOG_SPINS: u32 = 0x0400_0000;
+/// Maximum consecutive idle spins while waiting for IBI work.
+const MAX_WAIT_SPINS: u32 = WAIT_LOG_SPINS * 8;
 
 /// Calibrated busy-wait used as the driver's yield/delay hook. Mirrors the
 /// reference `DummyDelay::delay_ns` (busy-loop of ~`ns / 100` nops). A named
@@ -199,9 +201,19 @@ fn run_controller() -> Result<(), &'static str> {
     let mut config = build_config()?;
     // SAFETY: the test owns I3C bus 2 and uses the matching PAC blocks.
     let hw = unsafe { I3cHw::new(I3C_BUS, yield_delay) }.ok_or("invalid I3C bus index")?;
-    let mut ctrl = I3cController::new(hw, &mut config)
-        .start()
-        .map_err(|_| "controller start failed")?;
+    let mut ctrl = I3cController::new(hw, &mut config).start().map_err(|e| {
+        use ast10x0_peripherals::i3c::I3cError;
+        // 1=InvalidParam (validate_clock), 2=Timeout (reset-poll in init),
+        // 3=Busy (IRQ slot already claimed), 0xff=anything else.
+        let code: u32 = match e {
+            I3cError::InvalidParam => 1,
+            I3cError::Timeout => 2,
+            I3cError::Busy => 3,
+            _ => 0xff,
+        };
+        pw_log::error!("controller start failed: code={}", code as u32);
+        "controller start failed"
+    })?;
     let bus = ctrl.bus_num() as usize;
     let mut ibi_cons = i3c_ibi_workq_consumer(bus).ok_or("IBI consumer unavailable")?;
     pw_log::info!("IBI work queue ready on bus {}", bus as u32);
@@ -215,13 +227,9 @@ fn run_controller() -> Result<(), &'static str> {
     unsafe { NVIC::unmask(ast1060_pac::Interrupt::i3c2) };
     pw_log::info!("I3C2 controller ready");
 
-    let dyn_addr = ctrl
-        .alloc_dynamic_address_from(8)
-        .ok_or("no dynamic address available")?;
+    let dyn_addr = 8;
     ctrl.attach_i3c_dev(KNOWN_PID, dyn_addr, 0)
         .map_err(|_| "attach_i3c_dev failed")?;
-    ctrl.enable_ibi(dyn_addr, 0)
-        .map_err(|_| "ibi_enable failed")?;
     pw_log::info!("pre-attached dev at slot 0, dyn addr {}", dyn_addr as u32);
 
     let mut received = 0u32;
@@ -230,6 +238,9 @@ fn run_controller() -> Result<(), &'static str> {
         let Some(work) = ibi_cons.dequeue() else {
             core::hint::spin_loop();
             spin_count = spin_count.wrapping_add(1);
+            if spin_count >= MAX_WAIT_SPINS {
+                return Err("timed out waiting for IBI work");
+            }
             if spin_count & (WAIT_LOG_SPINS - 1) == 0 {
                 let irq_count = I3C2_IRQ_COUNT.load(core::sync::atomic::Ordering::Relaxed);
                 let status = I3C2_LAST_STATUS.load(core::sync::atomic::Ordering::Relaxed);
@@ -268,11 +279,15 @@ fn run_controller() -> Result<(), &'static str> {
             }
             continue;
         };
+        // Measure consecutive idle time only.
+        spin_count = 0;
         match work {
+            IbiWork::Overflow => return Err("IBI queue overflow"),
             IbiWork::HotJoin => {
                 pw_log::info!("[IBI] hotjoin");
                 dump_i3c2(0);
-                let _ = ctrl.handle_hot_join();
+                ctrl.handle_hot_join()
+                    .map_err(|_| "handle_hot_join failed")?;
                 match ctrl.assign_dynamic_address(dyn_addr) {
                     Ok(da) => pw_log::info!("DA assigned: 0x{:02x}", da as u32),
                     Err(e) => {
@@ -287,15 +302,16 @@ fn run_controller() -> Result<(), &'static str> {
                             _ => 0xff,
                         };
                         pw_log::error!("assign_dynamic_address failed: code={}", code as u32);
+                        // DA assignment failure invalidates the test.
+                        return Err("assign_dynamic_address failed");
                     }
                 }
                 dump_i3c2(1);
             }
             IbiWork::Sirq { addr, len, .. } => {
                 pw_log::info!("[IBI] SIRQ from 0x{:02x} len {}", addr as u32, len as u32);
-                if ctrl.acknowledge_ibi(addr).is_err() {
-                    pw_log::error!("acknowledge_ibi failed");
-                }
+                ctrl.acknowledge_ibi(addr)
+                    .map_err(|_| "acknowledge_ibi failed")?;
 
                 let exchange = received;
                 let (read_len, read_data) = master_read_from_target(&mut ctrl)?;
@@ -360,7 +376,9 @@ impl TargetInterface for Target {
                 b"TEST_RESULT:FAIL\n"
             }
         };
-        let _ = console_backend_write_all(sentinel);
+        if console_backend_write_all(sentinel).is_err() {
+            pw_log::error!("failed to write controller test result sentinel");
+        }
         #[expect(clippy::empty_loop)]
         loop {}
     }

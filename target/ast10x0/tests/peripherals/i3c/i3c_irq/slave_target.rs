@@ -49,6 +49,8 @@ const MAX_IBIS: u32 = 10;
 const HOT_JOIN_STARTUP_DELAY_SPINS: u32 = 0x1000_0000;
 /// Re-raise hot-join while waiting in case the first request hit the NACK window.
 const HOT_JOIN_RETRY_SPINS: u32 = 0x0400_0000;
+/// Maximum hot-join retry windows.
+const HOT_JOIN_MAX_RETRIES: u32 = 64;
 const WAIT_MASTER_WRITE_SPINS: u32 = 0x0400_0000;
 const XFER_DATA_LEN: usize = 16;
 
@@ -80,6 +82,17 @@ fn dump_slave_i3c2(label: u32) {
         event_ctrl as u32
     );
     pw_log::info!("[SDUMP{}] dev_addr={:08x}", label as u32, dev_addr as u32);
+}
+
+/// Log a compact hot-join error code.
+fn log_hot_join_err(e: ast10x0_peripherals::i3c::I3cError) {
+    use ast10x0_peripherals::i3c::I3cError;
+    let code: u32 = match e {
+        I3cError::Access => 1,
+        I3cError::Invalid => 2,
+        _ => 0xff,
+    };
+    pw_log::error!("target_raise_hot_join failed: code={}", code as u32);
 }
 
 fn log_target_hj_state(label: u32) {
@@ -149,7 +162,8 @@ fn wait_for_master_write(ibi_cons: &mut IbiConsumer, exchange: u32) -> Result<()
         };
 
         match work {
-            IbiWork::TargetMasterWrite { len, data } => {
+            IbiWork::Overflow => return Err("IBI queue overflow"),
+            IbiWork::TargetMasterWrite { len, data, .. } => {
                 log_target_master_write(exchange, len, &data);
                 return Ok(());
             }
@@ -189,7 +203,7 @@ fn build_config() -> Result<I3cConfig, &'static str> {
         .i3c_od_scl_lo_period_ns(0)
         .sda_tx_hold_ns(0)
         .dcr(0xcc)
-        .target_config(I3cTargetConfig::new(0, Some(0), 0xae));
+        .target_config(I3cTargetConfig::new(0, Some(9), 0xae));
     config.init_runtime_fields();
     config
         .validate_clock()
@@ -226,37 +240,39 @@ fn run_target() -> Result<(), &'static str> {
     // unmasking cannot deliver an IRQ into partially-initialized state.
     unsafe { NVIC::unmask(ast1060_pac::Interrupt::i3c2) };
 
-    let dyn_addr = 8u8;
-    let dev_idx = 0usize;
-    let _ = ctrl.attach_i3c_dev(0, dyn_addr, dev_idx as u8);
-    pw_log::info!(
-        "target dev at slot {}, dyn addr {}",
-        dev_idx as u32,
-        dyn_addr as u32
-    );
-
     pw_log::info!("waiting before hot-join...");
     spin_wait(HOT_JOIN_STARTUP_DELAY_SPINS);
     pw_log::info!("raising hot-join; waiting for dynamic address assignment...");
-    let hj_ok = ctrl.target_raise_hot_join().is_ok();
-    pw_log::info!("[DBG] hot-join raise ok={}", hj_ok as u32);
+    if let Err(e) = ctrl.target_raise_hot_join() {
+        log_hot_join_err(e);
+    }
     log_target_hj_state(0);
 
     // Wait for the controller to assign our dynamic address.
     let mut spin_count = 0u32;
+    let mut retries = 0u32;
     loop {
         let Some(work) = ibi_cons.dequeue() else {
             core::hint::spin_loop();
             spin_count = spin_count.wrapping_add(1);
             if spin_count & (HOT_JOIN_RETRY_SPINS - 1) == 0 {
-                pw_log::info!("[DBG] retry hot-join");
-                let hj_ok = ctrl.target_raise_hot_join().is_ok();
-                pw_log::info!("[DBG] hot-join retry ok={}", hj_ok as u32);
+                retries += 1;
+                if retries > HOT_JOIN_MAX_RETRIES {
+                    // Fail instead of waiting forever.
+                    return Err(
+                        "hot-join: exceeded retry budget waiting for dynamic address assignment",
+                    );
+                }
+                pw_log::info!("[DBG] retry hot-join, attempt {}", retries as u32);
+                if let Err(e) = ctrl.target_raise_hot_join() {
+                    log_hot_join_err(e);
+                }
                 log_target_hj_state(1);
             }
             continue;
         };
         match work {
+            IbiWork::Overflow => return Err("IBI queue overflow"),
             IbiWork::TargetDaAssignment => {
                 let da = ctrl.target_dynamic_address();
                 if let Some(da) = da {
@@ -269,7 +285,7 @@ fn run_target() -> Result<(), &'static str> {
             IbiWork::Sirq { addr, len, .. } => {
                 pw_log::info!("[IBI] SIRQ from 0x{:02x} len {}", addr as u32, len as u32);
             }
-            IbiWork::TargetMasterWrite { len, data } => {
+            IbiWork::TargetMasterWrite { len, data, .. } => {
                 log_target_master_write(0, len, &data);
             }
         }
@@ -313,7 +329,9 @@ impl TargetInterface for Target {
                 b"TEST_RESULT:FAIL\n"
             }
         };
-        let _ = console_backend_write_all(sentinel);
+        if console_backend_write_all(sentinel).is_err() {
+            pw_log::error!("failed to write target test result sentinel");
+        }
         #[expect(clippy::empty_loop)]
         loop {}
     }

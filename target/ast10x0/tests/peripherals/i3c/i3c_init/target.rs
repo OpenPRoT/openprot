@@ -104,7 +104,9 @@ impl TargetInterface for Target {
             }
         };
 
-        let _ = console_backend_write_all(sentinel);
+        if console_backend_write_all(sentinel).is_err() {
+            pw_log::error!("failed to write test result sentinel");
+        }
         #[expect(clippy::empty_loop)]
         loop {}
     }
