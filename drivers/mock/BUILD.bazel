@@ -1,0 +1,21 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "spi_device_fake",
+    srcs = ["spi_device_fake.rs"],
+    crate_name = "drivers_mock_spi_device_fake",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util/error",
+        "@rust_crates//:embedded-hal",
+    ],
+)
+
+rust_test(
+    name = "spi_device_fake_test",
+    crate = ":spi_device_fake",
+)
