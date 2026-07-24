@@ -883,6 +883,8 @@ impl<Y: FnMut(u32)> Ast1060I3c<Y> {
     /// Recover a timed-out transfer and re-arm its IRQs.
     fn recover_timeout_xfer(&mut self, config: &mut I3cConfig) {
         i3c_debug!(self.logger, "wait_xfer_complete: timeout");
+        // enter_halt isn't expected to fail; reset_ctrl still runs
+        // unconditionally, and a halt failure is caught below via halt_ok.
         let halt_ok = self.enter_halt(true, config).is_ok();
         let reset_ok = self.reset_ctrl(RESET_CTRL_XFER_QUEUES).is_ok();
         let exit_ok = self.exit_halt(config).is_ok();
@@ -1001,6 +1003,8 @@ impl<Y: FnMut(u32)> Ast1060I3c<Y> {
 
         if ret != 0 {
             // Keep the IBI queue while recovering transfer queues.
+            // enter_halt isn't expected to fail; reset_ctrl still runs
+            // unconditionally, and a halt failure is caught below via halt_ok.
             let halt_ok = self.enter_halt(false, config).is_ok();
             let reset_ok = self.reset_ctrl(RESET_CTRL_XFER_QUEUES).is_ok();
             let exit_ok = self.exit_halt(config).is_ok();
@@ -1624,6 +1628,9 @@ impl<Y: FnMut(u32)> HardwareTransfer for Ast1060I3c<Y> {
                 {
                     // Recover transfer-level errors lacking a response.
                     xfer.ret = -1;
+                    // enter_halt isn't expected to fail; reset_ctrl still runs
+                    // unconditionally, and a halt failure is caught below via
+                    // halt_ok.
                     let halt_ok = self.enter_halt(false, config).is_ok();
                     let reset_ok = self.reset_ctrl(RESET_CTRL_XFER_QUEUES).is_ok();
                     let exit_ok = self.exit_halt(config).is_ok();
@@ -2306,6 +2313,8 @@ impl<Y: FnMut(u32)> HardwareTarget for Ast1060I3c<Y> {
         // CCC): recover here on the thread, where the wait policy lives.
         if events.take_fault() {
             i3c_debug!(self.logger, "recovering deferred target fault");
+            // enter_halt isn't expected to fail; reset_ctrl still runs
+            // unconditionally, and a halt failure is caught below via halt_ok.
             let halt_ok = self.enter_halt(false, config).is_ok();
             let reset_ok = self.reset_ctrl(RESET_CTRL_QUEUES).is_ok();
             let exit_ok = self.exit_halt(config).is_ok();
