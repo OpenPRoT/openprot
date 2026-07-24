@@ -4,35 +4,22 @@
 #![no_std]
 #![no_main]
 
-use flash_server_codegen::{handle, signals};
-use pw_status::Error;
-use userspace::time::Instant;
-use userspace::{process_entry, syscall};
-use util_error::{AsStatus, ErrorCode};
-use util_zfmt::messages::{ProcessExit, ProcessStart};
-use zfmt::Zfmt;
-
+use combined_flash_server_codegen::{handle, signals};
 use earlgrey_util::EarlgreyFlashAddress;
 use eflash_driver::{EmbeddedFlash, Permission};
-use hal_flash::{BlockingFlash, FlashAddress};
+use hal_flash::BlockingFlash;
+use hal_flash_driver::FlashAddress;
+use pw_status::Error;
 use services_flash_server::FlashIpcServer;
 use spi_flash::SpiFlash;
 use spi_host::SpiHost0;
+use userspace::time::Instant;
+use userspace::{entry, syscall};
+use util_error::ErrorCode;
 use util_ipc::IpcHandle;
 use util_types::Blocking;
 
-#[derive(Zfmt)]
-#[zfmt(format = "SPI Host init failed: {code:08x}")]
-struct SpiHostInitFailed {
-    code: u32,
-}
-
-#[derive(Zfmt)]
-#[zfmt(format = "SPI Flash init failed: {code:08x}")]
-struct SpiFlashInitFailed {
-    code: u32,
-}
-
+// EFlash Interrupt Blocker
 struct FlashCtrlInterrupt;
 
 impl Blocking for FlashCtrlInterrupt {
@@ -52,73 +39,74 @@ impl Blocking for FlashCtrlInterrupt {
     }
 }
 
-fn flash_server() -> Result<(), ErrorCode> {
+fn run_server() -> Result<(), ErrorCode> {
+    // 1. Initialize EFlash driver.
+    pw_log::info!("combined_server: initializing EFlash driver");
+    // SAFETY: We have exclusive access to FlashCtrl in this test process.
     let mut eflash_driver =
         EmbeddedFlash::new_with_interrupts(unsafe { flash_ctrl_core::FlashCtrl::new() });
     eflash_driver.set_default_permission(Permission::FULL_ACCESS);
+    // Grant info page permissions as well (same as standard eflash server)
     for i in 5..9 {
         eflash_driver.set_info_permission(FlashAddress::info(0, i, 0), Permission::FULL_ACCESS)?;
         eflash_driver.set_info_permission(FlashAddress::info(1, i, 0), Permission::FULL_ACCESS)?;
     }
+
     let eflash = BlockingFlash {
         driver: eflash_driver,
         blocking: FlashCtrlInterrupt,
     };
     let mut eflash_server = FlashIpcServer::new(eflash);
 
+    // 2. Initialize SPI Host.
+    pw_log::info!("combined_server: initializing SPI Host");
+    // SAFETY: We have exclusive access to SPI_HOST0 in this test process.
     let mmio0 = unsafe { spi_host::RegisterBlock::new(SpiHost0::PTR) };
     let mut spi_host = unsafe { earlgrey_spi_host::SpiHost::new(mmio0) };
     if let Err(e) = spi_host.init(&earlgrey_spi_host::SpiConfig::DEFAULT_SPI0) {
-        let code = u32::from(ErrorCode::from(e));
-        util_zfmt::error!(SpiHostInitFailed { code });
+        pw_log::error!(
+            "combined_server: SPI Host init failed: 0x{:x}",
+            u32::from(ErrorCode::from(e))
+        );
         return Err(ErrorCode::from(e));
     }
 
+    // 3. Initialize SpiFlash driver.
+    pw_log::info!("combined_server: initializing SpiFlash driver");
     let mut spi_flash = SpiFlash::new(spi_host);
     if let Err(e) = spi_flash.init() {
-        util_zfmt::error!(SpiFlashInitFailed { code: u32::from(e) });
+        pw_log::error!(
+            "combined_server: SPI Flash init failed: 0x{:x}",
+            u32::from(e)
+        );
         return Err(e);
     }
     let mut spi_flash_server = FlashIpcServer::new(spi_flash);
 
+    // 4. Register wait group ports.
+    pw_log::info!("combined_server: registering wait group ports");
     syscall::wait_group_add(
         handle::FLASH_WAIT_GROUP,
-        handle::EFLASH_UPDATEMGR_SERVICE,
+        handle::EFLASH_SERVICE,
         syscall::Signals::READABLE,
-        1, // token 1 = EFlash updatemgr
+        handle::EFLASH_SERVICE as usize,
     )
     .map_err(ErrorCode::kernel_error)?;
 
     syscall::wait_group_add(
         handle::FLASH_WAIT_GROUP,
-        handle::EFLASH_USB_SERVICE,
+        handle::SPI_FLASH_SERVICE,
         syscall::Signals::READABLE,
-        2, // token 2 = EFlash usb
-    )
-    .map_err(ErrorCode::kernel_error)?;
-
-    syscall::wait_group_add(
-        handle::FLASH_WAIT_GROUP,
-        handle::SPI_FLASH_UPDATEMGR_SERVICE,
-        syscall::Signals::READABLE,
-        3, // token 3 = SPI Flash updatemgr
-    )
-    .map_err(ErrorCode::kernel_error)?;
-
-    syscall::wait_group_add(
-        handle::FLASH_WAIT_GROUP,
-        handle::SPI_FLASH_USB_SERVICE,
-        syscall::Signals::READABLE,
-        4, // token 4 = SPI Flash usb
+        handle::SPI_FLASH_SERVICE as usize,
     )
     .map_err(ErrorCode::kernel_error)?;
 
     let mut buf = [0u8; 2064];
-    let eflash_updatemgr_ipc = IpcHandle::new(handle::EFLASH_UPDATEMGR_SERVICE);
-    let eflash_usb_ipc = IpcHandle::new(handle::EFLASH_USB_SERVICE);
-    let spi_flash_updatemgr_ipc = IpcHandle::new(handle::SPI_FLASH_UPDATEMGR_SERVICE);
-    let spi_flash_usb_ipc = IpcHandle::new(handle::SPI_FLASH_USB_SERVICE);
+    let eflash_ipc = IpcHandle::new(handle::EFLASH_SERVICE);
+    let spi_flash_ipc = IpcHandle::new(handle::SPI_FLASH_SERVICE);
 
+    // 5. Enter main wait_group loop.
+    pw_log::info!("combined_server: entering main wait_group loop");
     loop {
         let wait_result = syscall::object_wait(
             handle::FLASH_WAIT_GROUP,
@@ -128,28 +116,30 @@ fn flash_server() -> Result<(), ErrorCode> {
         .map_err(ErrorCode::kernel_error)?;
 
         let token = wait_result.user_data;
-        if token == 1 {
-            eflash_server.handle_one(&eflash_updatemgr_ipc, &mut buf)?;
-        } else if token == 2 {
-            eflash_server.handle_one(&eflash_usb_ipc, &mut buf)?;
-        } else if token == 3 {
-            spi_flash_server.handle_one(&spi_flash_updatemgr_ipc, &mut buf)?;
-        } else if token == 4 {
-            spi_flash_server.handle_one(&spi_flash_usb_ipc, &mut buf)?;
+        if token == handle::EFLASH_SERVICE as usize {
+            eflash_server.handle_one(&eflash_ipc, &mut buf)?;
+        } else if token == handle::SPI_FLASH_SERVICE as usize {
+            spi_flash_server.handle_one(&spi_flash_ipc, &mut buf)?;
         }
     }
 }
 
-#[process_entry("flash_server")]
+#[entry]
 fn entry() -> Result<(), Error> {
-    util_zfmt::info!(ProcessStart {
-        name: "flash_server"
-    });
-    let ret = flash_server();
-    util_zfmt::error!(ProcessExit {
-        name: "flash_server",
-        status: ret.as_status()
-    });
+    pw_log::info!("🔄 COMBINED FLASH SERVER START");
+    let ret = run_server();
 
-    Err(Error::Unknown)
+    let ret = match ret {
+        Ok(()) => {
+            pw_log::info!("✅ COMBINED FLASH SERVER PASS");
+            Ok(())
+        }
+        Err(e) => {
+            pw_log::error!("❌ COMBINED FLASH SERVER FAIL: {:08x}", u32::from(e));
+            Err(Error::Unknown)
+        }
+    };
+    ret
 }
+
+util_panic::make_panic_handler!();

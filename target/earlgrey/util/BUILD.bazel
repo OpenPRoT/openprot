@@ -45,6 +45,22 @@ rust_test(
 )
 
 rust_library(
+    name = "fw_update",
+    srcs = ["fw_update.rs"],
+    crate_name = "earlgrey_fw_update",
+    edition = "2024",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":util",
+        "//target/earlgrey/services/sysmgr:client",
+        "//util/error",
+        "//util/io",
+        "@rust_crates//:zerocopy",
+    ],
+)
+
+rust_library(
     name = "dfu",
     srcs = ["dfu.rs"],
     crate_name = "earlgrey_dfu",
@@ -52,6 +68,7 @@ rust_library(
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],
     deps = [
+        ":fw_update",
         ":util",
         "//hal/blocking/flash",
         "//hal/blocking/usb:hal_usb",

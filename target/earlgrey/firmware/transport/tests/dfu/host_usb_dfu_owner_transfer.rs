@@ -25,6 +25,9 @@ struct CmdArgs {
     )]
     firmware: String,
 
+    #[arg(long)]
+    transport_firmware: String,
+
     #[arg(long, default_value = "false")]
     expect_reboot: bool,
 
@@ -39,19 +42,20 @@ fn run_dfu_owner_transfer_test(
     transport: &TransportWrapper,
     usb: &UsbOpts,
     firmware_path: &str,
+    transport_firmware_path: &str,
     expect_reboot: bool,
     expect_app: bool,
     expect_owner_transfer: bool,
 ) -> Result<()> {
     let uart = transport.uart("console")?;
 
-    log::info!("Resetting target...");
+    log::info!("Resetting target running eeprom_programmer_firmware...");
     transport.reset(opentitanlib::app::UartRx::Clear)?;
 
-    log::info!("waiting for Maize Welcome on console...");
+    log::info!("Waiting for Maize Welcome on console...");
     let _ = UartConsole::wait_for(
         &*uart,
-        r"Welcome to Maize on Earlgrey Transport Firmware!",
+        r"Welcome to Maize on Earlgrey EEPROM Programmer Firmware!",
         Duration::from_secs(10),
     )?;
 
@@ -69,7 +73,7 @@ fn run_dfu_owner_transfer_test(
     let usb_pid = usb.pid;
 
     log::info!(
-        "waiting for DFU device (VID={:04x}, PID={:04x})...",
+        "Waiting for DFU device (VID={:04x}, PID={:04x})...",
         usb_vid,
         usb_pid
     );
@@ -78,13 +82,42 @@ fn run_dfu_owner_transfer_test(
         .device_by_id_with_timeout(usb_vid, usb_pid, None, Duration::from_secs(10))
         .context("DFU device not found")?;
 
-    log::info!("Claiming DFU interface...");
+    log::info!("Claiming DFU interface to invalidate EEPROM0 and flash transport_firmware...");
     let interface_num = 2;
     device.claim_interface(interface_num)?;
 
     let transfer_size = get_dfu_transfer_size(&*device, interface_num)?;
     log::info!("DFU Transfer Size (Block Size): {} bytes", transfer_size);
 
+    let dfu = DfuClient::new(&*device, interface_num);
+
+    log::info!("Invalidating EEPROM0 with 100 KiB invalid payload on Alt 5...");
+    device.set_alternate_setting(interface_num, 5)?;
+    let invalid_data = vec![0x00u8; 100 * 1024];
+    sequence_dfu_download(&dfu, &*uart, &invalid_data, transfer_size, false)?;
+
+    log::info!("Flashing transport_firmware on Alt 0...");
+    device.set_alternate_setting(interface_num, 0)?;
+    let transport_fw_data = std::fs::read(transport_firmware_path)?;
+    sequence_dfu_download(&dfu, &*uart, &transport_fw_data, transfer_size, true)?;
+
+    let _ = device.release_interface(interface_num);
+
+    log::info!("Waiting for Transport Firmware reboot on console...");
+    let _ = UartConsole::wait_for(
+        &*uart,
+        r"Welcome to Maize on Earlgrey Transport Firmware!",
+        Duration::from_secs(10),
+    )?;
+
+    log::info!("Connecting to DFU device running Transport Firmware...");
+    let device = transport
+        .usb()?
+        .device_by_id_with_timeout(usb_vid, usb_pid, None, Duration::from_secs(10))
+        .context("DFU device not found")?;
+    device.claim_interface(interface_num)?;
+
+    let transfer_size = get_dfu_transfer_size(&*device, interface_num)?;
     let dfu = DfuClient::new(&*device, interface_num);
 
     log::info!(
@@ -176,6 +209,7 @@ fn main() -> Result<()> {
         &transport,
         &args.usb,
         &args.firmware,
+        &args.transport_firmware,
         args.expect_reboot,
         args.expect_app,
         args.expect_owner_transfer,

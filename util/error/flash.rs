@@ -36,6 +36,9 @@ pub const FLASH_GENERIC_INVALID_SIZE: ErrorCode = FLASH_GENERIC.from_pw(8, Error
 /// The erase size is invalid.
 pub const FLASH_GENERIC_ERASE_INVALID_SIZE: ErrorCode =
     FLASH_GENERIC.from_pw(9, Error::InvalidArgument);
+/// The flash device is not initialized.
+pub const FLASH_GENERIC_NOT_INITIALIZED: ErrorCode =
+    FLASH_GENERIC.from_pw(10, Error::FailedPrecondition);
 
 /// SFDP: Invalid memory density.
 pub const FLASH_GENERIC_SFDP_INVALID_MEMORY_DENSITY: ErrorCode =

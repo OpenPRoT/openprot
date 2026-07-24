@@ -1,0 +1,140 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("//target/earlgrey/signing/keys:defs.bzl", "FPGA_ECDSA_KEY")
+load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_test")
+load("//target/earlgrey/tooling/signing:defs.bzl", "sign_bin")
+load("//third_party/lowrisc_opentitan:defs.bzl", "opentitan_rust_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+sign_bin(
+    name = "transport_firmware_signed",
+    basename = "transport_firmware_signed",
+    bin = "//target/earlgrey/firmware/transport:transport_firmware",
+    ecdsa_key = FPGA_ECDSA_KEY,
+)
+
+opentitan_rust_binary(
+    name = "host_eeprom_owner_transfer",
+    srcs = ["host_eeprom_owner_transfer.rs"],
+    edition = "2024",
+    rustc_flags = [
+        "-C",
+        "link-arg=-Wl,--allow-shlib-undefined",
+    ],
+    deps = [
+        "//target/earlgrey/testutil",
+        "//third_party/lowrisc_opentitan:opentitanlib",
+        "//third_party/lowrisc_opentitan:usb_test_helper",
+        "@ot_crate_index//:anyhow",
+        "@ot_crate_index//:clap",
+        "@ot_crate_index//:log",
+    ],
+)
+
+opentitan_test(
+    name = "updatemgr_eeprom_owner_transfer_hyper310_test",
+    timeout = "eternal",
+    clear_bitstream = True,
+    ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper310",
+    interface = "hyper310",
+    tags = [
+        "hardware",
+        "hyper310",
+    ],
+    target = "//target/earlgrey/firmware/transport:eeprom_programmer_firmware",
+    target_data = [
+        ":transport_firmware_signed",
+        "//target/earlgrey/firmware/transport/tests/dfu:bootinfo_signed_transfer",
+        "@opentitan_devbundle//:rom_ext/rom_ext_usbdfu_anyversion_fpga_cw310.prod_key_0.signed.bin",
+    ],
+    test_cmd = " ".join([
+        "--logging=info",
+        "--expect-owner-transfer",
+        "--rom-ext=$(rootpath @opentitan_devbundle//:rom_ext/rom_ext_usbdfu_anyversion_fpga_cw310.prod_key_0.signed.bin)",
+        "--firmware=$(rootpath //target/earlgrey/firmware/transport/tests/dfu:bootinfo_signed_transfer)",
+        "--transport-firmware=$(rootpath :transport_firmware_signed)",
+    ]),
+    test_harness = ":host_eeprom_owner_transfer",
+)
+
+opentitan_test(
+    name = "updatemgr_eeprom_owner_transfer_hyper340_test",
+    timeout = "eternal",
+    clear_bitstream = True,
+    ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper340",
+    interface = "hyper340",
+    tags = [
+        "hardware",
+        "hyper340",
+    ],
+    target = "//target/earlgrey/firmware/transport:eeprom_programmer_firmware",
+    target_data = [
+        ":transport_firmware_signed",
+        "//target/earlgrey/firmware/transport/tests/dfu:bootinfo_signed_transfer",
+        "@opentitan_devbundle//:rom_ext/rom_ext_usbdfu_anyversion_fpga_cw340.prod_key_0.signed.bin",
+    ],
+    test_cmd = " ".join([
+        "--logging=info",
+        "--expect-owner-transfer",
+        "--rom-ext=$(rootpath @opentitan_devbundle//:rom_ext/rom_ext_usbdfu_anyversion_fpga_cw340.prod_key_0.signed.bin)",
+        "--firmware=$(rootpath //target/earlgrey/firmware/transport/tests/dfu:bootinfo_signed_transfer)",
+        "--transport-firmware=$(rootpath :transport_firmware_signed)",
+    ]),
+    test_harness = ":host_eeprom_owner_transfer",
+)
+
+opentitan_test(
+    name = "updatemgr_eeprom_firmware_update_hyper310_test",
+    timeout = "eternal",
+    clear_bitstream = True,
+    ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper310",
+    interface = "hyper310",
+    tags = [
+        "hardware",
+        "hyper310",
+    ],
+    target = "//target/earlgrey/firmware/transport:eeprom_programmer_firmware",
+    target_data = [
+        ":transport_firmware_signed",
+        "//target/earlgrey/firmware/transport/tests/dfu:bootinfo_signed_simple",
+        "@opentitan_devbundle//:rom_ext/rom_ext_usbdfu_anyversion_fpga_cw310.prod_key_0.signed.bin",
+    ],
+    test_cmd = " ".join([
+        "--logging=info",
+        "--rom-ext=$(rootpath @opentitan_devbundle//:rom_ext/rom_ext_usbdfu_anyversion_fpga_cw310.prod_key_0.signed.bin)",
+        "--firmware=$(rootpath //target/earlgrey/firmware/transport/tests/dfu:bootinfo_signed_simple)",
+        "--transport-firmware=$(rootpath :transport_firmware_signed)",
+    ]),
+    test_harness = ":host_eeprom_owner_transfer",
+)
+
+opentitan_test(
+    name = "updatemgr_eeprom_firmware_update_hyper340_test",
+    timeout = "eternal",
+    clear_bitstream = True,
+    ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper340",
+    interface = "hyper340",
+    tags = [
+        "hardware",
+        "hyper340",
+    ],
+    target = "//target/earlgrey/firmware/transport:eeprom_programmer_firmware",
+    target_data = [
+        ":transport_firmware_signed",
+        "//target/earlgrey/firmware/transport/tests/dfu:bootinfo_signed_simple",
+        "@opentitan_devbundle//:rom_ext/rom_ext_usbdfu_anyversion_fpga_cw340.prod_key_0.signed.bin",
+    ],
+    test_cmd = " ".join([
+        "--logging=info",
+        "--rom-ext=$(rootpath @opentitan_devbundle//:rom_ext/rom_ext_usbdfu_anyversion_fpga_cw340.prod_key_0.signed.bin)",
+        "--firmware=$(rootpath //target/earlgrey/firmware/transport/tests/dfu:bootinfo_signed_simple)",
+        "--transport-firmware=$(rootpath :transport_firmware_signed)",
+    ]),
+    test_harness = ":host_eeprom_owner_transfer",
+)

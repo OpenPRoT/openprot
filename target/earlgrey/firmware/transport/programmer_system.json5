@@ -16,7 +16,7 @@
   },
   apps: [
     {
-      name: "transport",
+      name: "eeprom_programmer",
       flash_size_bytes: 65536,
       processes: [
         {
@@ -125,41 +125,6 @@
           ]
         },
         {
-          name: "updatemgr",
-          ram_size_bytes: 8192,
-          objects: [
-            {
-              name: "logger_updatemgr",
-              type: "channel_initiator",
-              handler_process: "logmgr",
-              handler_object_name: "logger_updatemgr"
-            },
-            {
-              name: "sysmgr_updater_client",
-              type: "channel_initiator",
-              handler_process: "sysmgr",
-              handler_object_name: "sysmgr_updater_service"
-            },
-            {
-              name: "spi_flash_updatemgr",
-              type: "channel_initiator",
-              handler_process: "flash_server",
-              handler_object_name: "spi_flash_updatemgr_service"
-            },
-            {
-              name: "flash_updatemgr",
-              type: "channel_initiator",
-              handler_process: "flash_server",
-              handler_object_name: "eflash_updatemgr_service"
-            },
-            {
-              name: "updatemgr_thread",
-              kernel_stack_size_bytes: 4096,
-              type: "thread"
-            }
-          ]
-        },
-        {
           name: "platform",
           ram_size_bytes: 4096,
           objects: [
@@ -212,12 +177,7 @@
               name: "flash_interrupts",
               type: "interrupt",
               irqs: [
-                // { name: "flash_ctrl_prog_empty", number: 160 },
-                // { name: "flash_ctrl_prog_lvl", number: 161 },
-                // { name: "flash_ctrl_rd_full", number: 162 },
-                // { name: "flash_ctrl_rd_lvl", number: 163 },
                 { name: "flash_ctrl_op_done", number: 164 },
-                // { name: "flash_ctrl_corr_err", number: 165 },
               ]
             },
             {
@@ -269,14 +229,6 @@
                 { name: "usbdev_av_out_empty", number: 142 },
                 { name: "usbdev_rx_full", number: 143 },
                 { name: "usbdev_av_overflow", number: 144 },
-                // { name: "usbdev_link_in_err", number: 145 },
-                // { name: "usbdev_link_in_err", number: 145 },
-                // { name: "usbdev_rx_crc_err", number: 146 },
-                // { name: "usbdev_rx_pid_err", number: 147 },
-                // { name: "usbdev_rx_bitstuff_err", number: 148 },
-                // { name: "usbdev_frame", number: 149 },
-                // { name: "usbdev_powered", number: 150 },
-                // { name: "usbdev_link_out_err", number: 151 },
                 { name: "usbdev_av_setup_empty", number: 152 }
               ]
             },
@@ -312,8 +264,6 @@
               size_bytes: 0x1000
             },
             {
-              // TODO: eliminate pinmux from usbmgr after implementing pinmux
-              // configuration in the platform task.
               name: "pinmux",
               type: "device",
               start_address: 0x40460000,

@@ -17,3 +17,12 @@ pub const EG_ERROR_CERT_BAD_NAME: ErrorCode = EG_ERROR.from_pw(2, Error::Invalid
 pub const EG_ERROR_BAD_BOOT_LOG: ErrorCode = EG_ERROR.from_pw(3, Error::Unknown);
 /// The boot slot is unknown or invalid.
 pub const EG_ERROR_BOOT_SLOT_UNKNOWN: ErrorCode = EG_ERROR.from_pw(4, Error::Unknown);
+
+/// Failed to configure SPI Mux control pin.
+pub const EG_ERROR_SPI_MUX_CTRL_CONFIG_FAILED: ErrorCode = EG_ERROR.from_pw(5, Error::Internal);
+/// Failed to configure SPI Mux enable pin.
+pub const EG_ERROR_SPI_MUX_OE_CONFIG_FAILED: ErrorCode = EG_ERROR.from_pw(6, Error::Internal);
+/// Failed to set SPI Mux pin states.
+pub const EG_ERROR_SPI_MUX_SET_FAILED: ErrorCode = EG_ERROR.from_pw(7, Error::Internal);
+/// The firmware update bundle was not found on external flash.
+pub const EG_ERROR_UPDATE_NOT_FOUND: ErrorCode = EG_ERROR.from_pw(8, Error::NotFound);
