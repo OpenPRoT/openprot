@@ -1,0 +1,14 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "devices",
+    srcs = ["devices.rs"],
+    crate_name = "board_devices",
+    edition = "2024",
+    deps = ["//services/fwmanager/api:fwmanager_api"],
+)
