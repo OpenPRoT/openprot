@@ -111,6 +111,13 @@ pub const DFU_CDI0_CERT: hal_usb::StringDescriptorRef =
 pub const DFU_CDI1_CERT: hal_usb::StringDescriptorRef =
     hal_usb::string_descriptor!("CDI1 Certificate").as_ref();
 
+pub const DFU_ALT_FIRMWARE: u8 = 0;
+pub const DFU_ALT_UDS_CERT: u8 = 1;
+pub const DFU_ALT_CDI0_CERT: u8 = 2;
+pub const DFU_ALT_CDI1_CERT: u8 = 3;
+pub const DFU_ALT_RESERVED: u8 = 4; // Access to OWNER_PAGE_1
+pub const DFU_ALT_SPI_EEPROM0: u8 = 5;
+
 /// Retrieves a certificate from the info partition in flash.
 ///
 /// # Arguments
@@ -247,21 +254,26 @@ impl FwUpdate {
 /// DFU handler for Earlgrey, managing firmware updates and certificate uploads.
 pub struct EarlgreyDfuHandler<IPC: IpcChannel> {
     flash: FlashIpcClient,
+    spi_flash: FlashIpcClient,
     sysmgr: SysmgrClient<IPC>,
     update: FwUpdate,
+    alt_setting: Option<u8>,
 }
 
 impl<IPC: IpcChannel> EarlgreyDfuHandler<IPC> {
     /// Creates a new DFU handler.
     pub fn new(
         flash: FlashIpcClient,
+        spi_flash: FlashIpcClient,
         sysmgr: SysmgrClient<IPC>,
         info: &BootInfo,
     ) -> Result<Self, ErrorCode> {
         Ok(EarlgreyDfuHandler {
             flash,
+            spi_flash,
             sysmgr,
             update: FwUpdate::new(info)?,
+            alt_setting: None,
         })
     }
 
@@ -394,8 +406,48 @@ impl<IPC: IpcChannel> EarlgreyDfuHandler<IPC> {
         }
         Ok(())
     }
-}
 
+    fn flash_spi_eeprom0_block(&mut self, block_num: u32, data: &[u8]) -> Result<(), DfuStatus> {
+        let (total_size, page_size, _) = self
+            .spi_flash
+            .geometry()
+            .map_err(|_| DfuStatus::ErrUnknown)?;
+        let address = block_num * FLASH_BLOCK_SIZE as u32;
+        if address >= total_size.get() as u32 {
+            return Err(DfuStatus::ErrAddress);
+        }
+        if (address as usize) % page_size.get() == 0 {
+            self.spi_flash
+                .erase(FlashAddress::new(address), page_size)
+                .map_err(|_| DfuStatus::ErrErase)?;
+        }
+        self.spi_flash
+            .program(FlashAddress::new(address), data)
+            .map_err(|_| DfuStatus::ErrProg)?;
+        Ok(())
+    }
+
+    fn read_spi_eeprom0_block(
+        &mut self,
+        block_num: u32,
+        data: &mut [u8],
+    ) -> Result<usize, DfuStatus> {
+        let (total_size, _, _) = self
+            .spi_flash
+            .geometry()
+            .map_err(|_| DfuStatus::ErrUnknown)?;
+        let address = block_num * FLASH_BLOCK_SIZE as u32;
+        let total_bytes = total_size.get() as u32;
+        if address >= total_bytes {
+            return Ok(0);
+        }
+        let read_len = core::cmp::min(data.len(), (total_bytes - address) as usize);
+        self.spi_flash
+            .read(FlashAddress::new(address), &mut data[..read_len])
+            .map_err(|_| DfuStatus::ErrUnknown)?;
+        Ok(read_len)
+    }
+}
 impl<IPC: IpcChannel> DfuHandler for EarlgreyDfuHandler<IPC> {
     /// Handles a DFU download (DNLOAD) request.
     ///
@@ -407,8 +459,11 @@ impl<IPC: IpcChannel> DfuHandler for EarlgreyDfuHandler<IPC> {
             block: block_num,
             len: data.len() as u32,
         });
-        if alt == 0 {
+        self.alt_setting = Some(alt);
+        if alt == DFU_ALT_FIRMWARE {
             self.flash_fw_block(block_num as u32, data)
+        } else if alt == DFU_ALT_SPI_EEPROM0 {
+            self.flash_spi_eeprom0_block(block_num as u32, data)
         } else {
             Err(DfuStatus::ErrFile)
         }
@@ -424,8 +479,12 @@ impl<IPC: IpcChannel> DfuHandler for EarlgreyDfuHandler<IPC> {
             block: block_num,
             len: data.len() as u32,
         });
+        self.alt_setting = Some(alt);
         match alt {
-            1 | 2 | 3 => get_certificate(&mut self.flash, alt - 1, data),
+            DFU_ALT_UDS_CERT | DFU_ALT_CDI0_CERT | DFU_ALT_CDI1_CERT => {
+                get_certificate(&mut self.flash, alt - DFU_ALT_UDS_CERT, data)
+            }
+            DFU_ALT_SPI_EEPROM0 => self.read_spi_eeprom0_block(block_num as u32, data),
             _ => Err(DfuStatus::ErrFile),
         }
     }
@@ -436,6 +495,9 @@ impl<IPC: IpcChannel> DfuHandler for EarlgreyDfuHandler<IPC> {
     /// slot and requests a reboot.
     fn manifest(&mut self) -> Result<(), DfuStatus> {
         util_zfmt::info!(DfuManifest);
+        if self.alt_setting == Some(DFU_ALT_SPI_EEPROM0) {
+            return Ok(());
+        }
         if self.update.state == FwUpdateState::Done
             || self.update.state == FwUpdateState::Application
             || self.update.state == FwUpdateState::RomExt

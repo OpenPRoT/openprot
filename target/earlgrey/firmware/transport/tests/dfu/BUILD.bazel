@@ -101,3 +101,59 @@ opentitan_test(
     test_cmd = "--logging=info --expect-reboot --expect-app --firmware=target/earlgrey/firmware/transport/tests/dfu/bootinfo_simple.app_prod_0.signed.bin",
     test_harness = ":host_usb_dfu_owner_transfer",
 )
+
+opentitan_rust_binary(
+    name = "host_usb_dfu_spi_flash",
+    srcs = ["host_usb_dfu_spi_flash.rs"],
+    edition = "2024",
+    rustc_flags = [
+        "-C",
+        "link-arg=-Wl,--allow-shlib-undefined",
+    ],
+    deps = [
+        "//target/earlgrey/testutil",
+        "//third_party/lowrisc_opentitan:opentitanlib",
+        "//third_party/lowrisc_opentitan:usb_test_helper",
+        "@ot_crate_index//:anyhow",
+        "@ot_crate_index//:clap",
+        "@ot_crate_index//:log",
+    ],
+)
+
+opentitan_test(
+    name = "dfu_spi_flash_hyper310_test",
+    timeout = "eternal",
+    clear_bitstream = True,
+    ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper310",
+    interface = "hyper310",
+    tags = [
+        "hardware",
+        "hyper310",
+    ],
+    target = "//target/earlgrey/firmware/transport:transport_firmware",
+    target_data = [
+        ":bootinfo_signed_simple",
+    ],
+    test_cmd = "--logging=info --firmware=target/earlgrey/firmware/transport/tests/dfu/bootinfo_simple.app_prod_0.signed.bin",
+    test_harness = ":host_usb_dfu_spi_flash",
+)
+
+opentitan_test(
+    name = "dfu_spi_flash_hyper340_test",
+    timeout = "eternal",
+    clear_bitstream = True,
+    ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper340",
+    interface = "hyper340",
+    tags = [
+        "hardware",
+        "hyper340",
+    ],
+    target = "//target/earlgrey/firmware/transport:transport_firmware",
+    target_data = [
+        ":bootinfo_signed_simple",
+    ],
+    test_cmd = "--logging=info --firmware=target/earlgrey/firmware/transport/tests/dfu/bootinfo_simple.app_prod_0.signed.bin",
+    test_harness = ":host_usb_dfu_spi_flash",
+)
