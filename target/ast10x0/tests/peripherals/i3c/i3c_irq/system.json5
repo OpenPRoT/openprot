@@ -13,7 +13,7 @@
         flash_start_address: 0x00000600,  // After vector table
         flash_size_bytes: 262144,         // 256KB for kernel code (in RAM)
         ram_start_address: 0x00040600,    // RAM starts after code
-        ram_size_bytes: 393216,           // 384KB for data
+        ram_size_bytes: 391680,           // ends at RAM_NC boundary (0x000A0000)
         interrupt_table: {
             table: {
                 // I3C2 IRQ (bus 2, used by the HV IBI test).
