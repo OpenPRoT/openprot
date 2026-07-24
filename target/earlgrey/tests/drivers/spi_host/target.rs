@@ -10,7 +10,7 @@ use {console_backend as _, entry as _};
 pub struct Target {}
 
 impl TargetInterface for Target {
-    const NAME: &'static str = "Earlgrey Userspace UART";
+    const NAME: &'static str = "Earlgrey SPI Host test";
 
     fn main() -> ! {
         codegen::start();
