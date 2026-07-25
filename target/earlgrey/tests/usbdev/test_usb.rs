@@ -11,6 +11,7 @@ use zerocopy::IntoBytes;
 use test_usb_codegen::{handle, signals};
 use userspace::time::Instant;
 use userspace::{entry, syscall};
+use util_panic as _;
 
 use aligned::{Aligned, A4};
 use hal_usb::driver::{UsbDriver, UsbEvent, UsbPacket};
@@ -256,5 +257,3 @@ fn entry() -> Result<()> {
 
     ret
 }
-
-util_panic::make_panic_handler!();

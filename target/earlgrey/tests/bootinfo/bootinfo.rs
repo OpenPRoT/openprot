@@ -20,6 +20,7 @@ use userspace::{entry, syscall};
 use util_error::ErrorCode;
 use util_ipc::IpcHandle;
 use util_misc::hexstr;
+use util_panic as _;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
 const OWNERSHIP_KEY_ALG_ECDSA_P256: u32 = 0x36353250;
@@ -331,5 +332,3 @@ fn entry() -> Result<(), Error> {
     let _ = syscall::debug_shutdown(ret);
     loop {}
 }
-
-util_panic::make_panic_handler!();

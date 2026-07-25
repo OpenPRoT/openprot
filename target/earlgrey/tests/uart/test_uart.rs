@@ -8,6 +8,7 @@ use test_uart_codegen::handle;
 use userspace::syscall::Signals;
 use userspace::time::Instant;
 use userspace::{entry, syscall};
+use util_panic as _;
 
 use registers::uart::*;
 
@@ -72,5 +73,3 @@ fn entry() -> Result<()> {
 
     ret
 }
-
-util_panic::make_panic_handler!();

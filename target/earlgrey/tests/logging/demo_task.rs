@@ -9,6 +9,7 @@ use pw_status::Result;
 use registers::rv_timer::RvTimer;
 use userspace::time::{sleep_until, Instant};
 use userspace::{entry, syscall};
+use util_panic as _;
 use zfmt::{log_info, FlatAdapter, FlatSend, ZfmtStr, ZfmtU64};
 
 #[inline(always)]
@@ -162,5 +163,3 @@ fn entry() -> Result<()> {
     pw_log::info!("Demo task finished");
     Ok(())
 }
-
-util_panic::make_panic_handler!();

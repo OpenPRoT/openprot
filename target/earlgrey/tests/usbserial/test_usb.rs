@@ -11,6 +11,7 @@ use pw_status::{Error, Result, StatusCode};
 use test_usb_codegen::{handle, signals};
 use userspace::time::Instant;
 use userspace::{entry, syscall};
+use util_panic as _;
 
 use zerocopy::IntoBytes;
 
@@ -205,5 +206,3 @@ fn entry() -> Result<()> {
 
     ret
 }
-
-util_panic::make_panic_handler!();

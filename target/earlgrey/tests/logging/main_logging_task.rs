@@ -10,6 +10,7 @@ use registers::rv_timer::RvTimer;
 use userspace::syscall::Signals;
 use userspace::time::Instant;
 use userspace::{entry, syscall};
+use util_panic as _;
 use zfmt::events::{DebugMessage, EventHeader, StreamStart};
 use zfmt::{leb128, FixedBuf, Write};
 use zfmt::{log_bare_event, log_info, FlatAdapter, FlatSend, ZfmtU64};
@@ -185,5 +186,3 @@ fn entry() -> Result<()> {
     let _ = syscall::debug_shutdown(Ok(()));
     Ok(())
 }
-
-util_panic::make_panic_handler!();

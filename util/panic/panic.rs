@@ -3,25 +3,6 @@
 
 #![no_std]
 
-#[macro_export]
-macro_rules! make_panic_handler {
-    () => {
-        #[panic_handler]
-        fn panic_handler(info: &core::panic::PanicInfo) -> ! {
-            if let Some(location) = info.location() {
-                util_panic::panic_is_possible(
-                    location.file().as_ptr(),
-                    location.file().len(),
-                    location.line(),
-                    location.column(),
-                );
-            } else {
-                util_panic::panic_is_possible(core::ptr::null(), 0, 0, 0);
-            }
-        }
-    };
-}
-
 // This panic_is_possible function is the hook used by the panic detector
 // to identify the presence a panic handler.
 #[unsafe(no_mangle)]
@@ -49,4 +30,18 @@ pub extern "C" fn panic_is_possible(
 
     #[expect(clippy::empty_loop)]
     loop {}
+}
+
+#[panic_handler]
+fn panic_handler(info: &core::panic::PanicInfo) -> ! {
+    if let Some(location) = info.location() {
+        panic_is_possible(
+            location.file().as_ptr(),
+            location.file().len(),
+            location.line(),
+            location.column(),
+        );
+    } else {
+        panic_is_possible(core::ptr::null(), 0, 0, 0);
+    }
 }

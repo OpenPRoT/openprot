@@ -9,6 +9,7 @@ use pw_status::Error;
 use test_usb_dfu_codegen::{handle, signals};
 use userspace::time::Instant;
 use userspace::{entry, syscall};
+use util_panic as _;
 
 use aligned::{Aligned, A4};
 use hal_usb::{ConfigDescriptor, DeviceDescriptor, StringDescriptorRef};
@@ -353,5 +354,3 @@ fn entry() -> Result<(), Error> {
     let _ = syscall::debug_shutdown(ret);
     loop {}
 }
-
-util_panic::make_panic_handler!();

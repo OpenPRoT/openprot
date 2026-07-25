@@ -7,6 +7,7 @@ use flash_server_codegen::{handle, signals};
 use pw_status::Error;
 use userspace::time::Instant;
 use userspace::{entry, syscall};
+use util_panic as _;
 
 use earlgrey_util::EarlgreyFlashAddress;
 use eflash_driver::{EmbeddedFlash, Permission};
@@ -85,5 +86,3 @@ fn entry() -> Result<(), Error> {
     //loop {}
     ret
 }
-
-util_panic::make_panic_handler!();
