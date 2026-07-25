@@ -8,6 +8,7 @@ use test_uart_listener_codegen::{handle, signals};
 use userspace::syscall::Signals;
 use userspace::time::Instant;
 use userspace::{entry, syscall};
+use util_panic as _;
 
 use registers::uart::*;
 
@@ -80,5 +81,3 @@ fn wait_for_interrupts() -> Result<()> {
 fn entry() -> Result<()> {
     wait_for_interrupts()
 }
-
-util_panic::make_panic_handler!();

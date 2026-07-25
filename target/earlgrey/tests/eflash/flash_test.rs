@@ -6,6 +6,7 @@
 use flash_test_codegen::handle;
 use pw_status::Error;
 use userspace::entry;
+use util_panic as _;
 
 use earlgrey_util::EarlgreyFlashAddress;
 use hal_flash::{Flash, FlashAddress};
@@ -130,5 +131,3 @@ fn entry() -> Result<(), Error> {
     //loop {}
     ret
 }
-
-util_panic::make_panic_handler!();

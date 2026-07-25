@@ -5,6 +5,7 @@
 #![no_std]
 
 use userspace::entry;
+use util_panic as _;
 
 {% for process in app.processes %}
 // Force linking of process crate
@@ -32,4 +33,3 @@ fn main(index: usize) {
     }
 }
 
-util_panic::make_panic_handler!();

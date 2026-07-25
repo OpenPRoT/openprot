@@ -14,6 +14,7 @@ use embedded_hal::spi::SpiDevice;
 use pw_status::{Error, Result};
 use spi_host::{SpiHost0, SpiHost1};
 use userspace::entry;
+use util_panic as _;
 
 fn run_test() -> Result<()> {
     // SAFETY: We have exclusive access to SPI_HOST0 in this test process.
@@ -137,5 +138,3 @@ fn entry() -> Result<()> {
 
     ret
 }
-
-util_panic::make_panic_handler!();
