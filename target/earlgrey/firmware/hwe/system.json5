@@ -123,12 +123,39 @@
               handler_object_name: "logger_platform"
             },
             {
+              name: "sysmgr_platform",
+              type: "channel_initiator",
+              handler_process: "sysmgr",
+              handler_object_name: "sysmgr_service"
+            },
+            {
+              name: "platform_interrupts",
+              type: "interrupt",
+              irqs: [
+                { name: "gpio_16", number: 53 },
+                { name: "gpio_17", number: 54 },
+                { name: "gpio_18", number: 55 }
+              ]
+            },
+            {
               name: "platform_thread",
               kernel_stack_size_bytes: 2048,
               type: "thread"
             }
           ],
           memory_mappings: [
+            {
+              name: "gpio",
+              type: "device",
+              start_address: 0x40040000,
+              size_bytes: 0x1000
+            },
+            {
+              name: "pinmux",
+              type: "device",
+              start_address: 0x40460000,
+              size_bytes: 0x1000
+            }
           ]
         },
         {
@@ -234,14 +261,6 @@
               name: "usbdev",
               type: "device",
               start_address: 0x40320000,
-              size_bytes: 0x1000
-            },
-            {
-              // TODO: eliminate pinmux from usbmgr after implementing pinmux
-              // configuration in the platform task.
-              name: "pinmux",
-              type: "device",
-              start_address: 0x40460000,
               size_bytes: 0x1000
             }
           ]

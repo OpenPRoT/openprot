@@ -5,19 +5,136 @@
 #![no_main]
 
 use pw_status::Error;
-use userspace::time::{sleep_until, Clock, Duration, SystemClock};
 use userspace::{process_entry, syscall};
 use util_error::{AsStatus, ErrorCode};
 use util_zfmt::messages::{ProcessExit, ProcessStart};
 
-/*
- * TODO: implement platform server.
- */
-
 fn platform_server() -> Result<(), ErrorCode> {
+    use earlgrey_gpio::EarlGreyGpio;
+    use earlgrey_pinout::dualsbs::DualSideBySide;
+    use earlgrey_pinout::swstraps::SwStraps;
+    use earlgrey_pinout::Pinout;
+    use earlgrey_platform::reset::{ResetPolicy, TargetCpuReset};
+    use earlgrey_platform::server::PlatformServer;
+    use earlgrey_platform::spimux::SpiMuxHandler;
+    use earlgrey_platform::usbmux::UsbMuxHandler;
+    use earlgrey_sysmgr_client::{ResetInfo, SysmgrClient};
+    use platform_codegen::{handle, signals};
+    use userspace::syscall::Signals;
+    use userspace::time::{Clock, Duration, SystemClock};
+    use util_ipc::IpcHandle;
+
+    // SAFETY: the platform process has exclusive access to the GPIO & Pinmux peripherals.
+    let mut gpio = unsafe { EarlGreyGpio::new() };
+    let sysmgr = SysmgrClient::new(IpcHandle::new(handle::SYSMGR_PLATFORM));
+
+    // 1. Unconditionally configure SwStraps pinmux.
+    SwStraps::configure(&mut gpio)?;
+
+    // 2. Read software straps.
+    let straps = SwStraps::read_straps(&mut gpio)?;
+    util_zfmt::debug!("SW_STRAPs read: {straps:02x}", straps = straps);
+
+    // 3. Send the strap value to sysmgr.
+    sysmgr.set_software_straps(straps)?;
+
+    // 4. Retrieve BootInfo from sysmgr.
+    let boot_info = sysmgr.get_boot_info()?;
+    let is_low_power = (boot_info.reset.reason & ResetInfo::REASON_LOW_POWER_EXIT) != 0;
+
+    // 5. Examine straps, configure board pinmux if power-on-reset, and create handlers.
+    let (usb_mux, spi_mux, reset_policy, usb_sig, rst0_sig, rst1_sig) = match straps {
+        SwStraps::TEACUP_BOARD | SwStraps::BRINGUP_STRAPS1 | SwStraps::BRINGUP_STRAPS2 => {
+            if !is_low_power {
+                DualSideBySide::configure(&mut gpio)?;
+            }
+            (
+                UsbMuxHandler::new(DualSideBySide::USB_PRESENCE_N, DualSideBySide::USB_MUX_CTRL),
+                SpiMuxHandler::new(
+                    DualSideBySide::SPI_MUX_EN_N,
+                    DualSideBySide::SPI_MUX_CTRL,
+                    DualSideBySide::SPI_RESET_N,
+                    DualSideBySide::SPI_HOST0_WP_N,
+                    DualSideBySide::SPI_HOST1_WP_N,
+                ),
+                ResetPolicy::TargetCpu(TargetCpuReset::new(
+                    DualSideBySide::RST_CTRL0_N,
+                    DualSideBySide::RST_MON0_N,
+                    DualSideBySide::RST_MON1_N,
+                )),
+                signals::GPIO_16,
+                signals::GPIO_17,
+                signals::GPIO_18,
+            )
+        }
+        _ => {
+            // Fall back to DualSideBySide for undefined strapping values.
+            if !is_low_power {
+                DualSideBySide::configure(&mut gpio)?;
+            }
+            (
+                UsbMuxHandler::new(DualSideBySide::USB_PRESENCE_N, DualSideBySide::USB_MUX_CTRL),
+                SpiMuxHandler::new(
+                    DualSideBySide::SPI_MUX_EN_N,
+                    DualSideBySide::SPI_MUX_CTRL,
+                    DualSideBySide::SPI_RESET_N,
+                    DualSideBySide::SPI_HOST0_WP_N,
+                    DualSideBySide::SPI_HOST1_WP_N,
+                ),
+                ResetPolicy::TargetCpu(TargetCpuReset::new(
+                    DualSideBySide::RST_CTRL0_N,
+                    DualSideBySide::RST_MON0_N,
+                    DualSideBySide::RST_MON1_N,
+                )),
+                signals::GPIO_16,
+                signals::GPIO_17,
+                signals::GPIO_18,
+            )
+        }
+    };
+
+    let mut server = PlatformServer::new(gpio, usb_mux, spi_mux, reset_policy);
+    server.set_exit_deadline(SystemClock::now() + Duration::from_secs(10));
+    server.start(is_low_power)?;
+
     loop {
-        sleep_until(SystemClock::now() + Duration::from_secs(600))
-            .map_err(ErrorCode::kernel_error)?;
+        if server.should_exit() {
+            return Ok(());
+        }
+        let deadline = server.next_deadline();
+        let wait_res = syscall::object_wait(
+            handle::PLATFORM_INTERRUPTS,
+            usb_sig | rst0_sig | rst1_sig,
+            deadline,
+        );
+
+        match wait_res {
+            Ok(wait_return) => {
+                let signals = wait_return.pending_signals;
+
+                if (signals & usb_sig) != Signals::empty() {
+                    server.handle_usb_presence_interrupt()?;
+                }
+                if (signals & rst0_sig) != Signals::empty() {
+                    server.handle_rst_mon_interrupt(0)?;
+                }
+                if (signals & rst1_sig) != Signals::empty() {
+                    server.handle_rst_mon_interrupt(1)?;
+                }
+
+                syscall::interrupt_ack(handle::PLATFORM_INTERRUPTS, signals)
+                    .map_err(ErrorCode::kernel_error)?;
+            }
+            Err(Error::DeadlineExceeded) => {
+                if server.should_exit() {
+                    return Ok(());
+                }
+                server.handle_timeout()?;
+            }
+            Err(e) => {
+                return Err(ErrorCode::kernel_error(e));
+            }
+        }
     }
 }
 

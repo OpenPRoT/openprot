@@ -323,24 +323,8 @@ fn handle_usb() -> Result<(), ErrorCode> {
     }
 }
 
-/// Configures pinmux for the USB device.
-///
-/// Currently configures USB sense (VBUS detect) to constant high.
-fn usb_setup_pinmux() {
-    // TODO: move pinmux setup into the platform task.
-    use top_earlgrey::{PinmuxInsel, PinmuxPeripheralIn};
-    let mut pinmux = unsafe { pinmux::PinmuxAon::new() };
-
-    pinmux
-        .regs_mut()
-        .mio_periph_insel()
-        .at(PinmuxPeripheralIn::UsbdevSense as usize)
-        .modify(|_| (PinmuxInsel::ConstantOne as u32).into());
-}
-
 /// USB manager server entry point.
 fn usbmgr_server() -> Result<(), ErrorCode> {
-    usb_setup_pinmux();
     handle_usb()
 }
 

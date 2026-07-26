@@ -79,7 +79,6 @@ impl SysmgrServer {
             },
         };
 
-        util_zfmt::info!(info.clone());
         Ok(Self { info, retram })
     }
 
@@ -121,6 +120,19 @@ impl SysmgrServer {
         Ok(&data[0..0])
     }
 
+    fn handle_set_software_straps<'a>(
+        &mut self,
+        data: &'a mut [u8],
+        reqsz: usize,
+    ) -> Result<&'a [u8], ErrorCode> {
+        let straps_bytes = data.get(..reqsz).ok_or(error::IPC_ERROR_BAD_REQ_LEN)?;
+        let straps =
+            u32::read_from_bytes(straps_bytes).map_err(|_| error::IPC_ERROR_BAD_REQ_LEN)?;
+        self.info.reset.software_straps = straps;
+        util_zfmt::info!(self.info.clone());
+        Ok(&data[0..0])
+    }
+
     fn handle_op<'a>(
         &mut self,
         opcode: Opcode,
@@ -131,6 +143,7 @@ impl SysmgrServer {
             op::SYSMGR_OP_GET_BOOT_INFO => self.handle_get_boot_info(data, reqsz),
             op::SYSMGR_OP_REQ_REBOOT => self.handle_req_reboot(data, reqsz),
             op::SYSMGR_OP_SET_BOOT_POLICY => self.handle_set_boot_policy(data, reqsz),
+            op::SYSMGR_OP_SET_SW_STRAPS => self.handle_set_software_straps(data, reqsz),
             _ => Err(error::IPC_ERROR_UNKNOWN_OP),
         }
     }
