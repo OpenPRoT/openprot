@@ -17,3 +17,6 @@ pub const EG_PINMUX_INVALID_OUTPUT: ErrorCode = EG_PINMUX.from_pw(2, Error::Inva
 
 /// The requested pad is invalid or does not support configuration.
 pub const EG_PINMUX_INVALID_PAD: ErrorCode = EG_PINMUX.from_pw(3, Error::InvalidArgument);
+
+/// The requested pad is invalid or does not support configuration.
+pub const EG_PINMUX_INVALID_STRAP_CONFIG: ErrorCode = EG_PINMUX.from_pw(4, Error::InvalidArgument);

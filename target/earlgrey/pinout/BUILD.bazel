@@ -1,0 +1,32 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "pinout",
+    srcs = [
+        "config.rs",
+        "dualsbs.rs",
+        "lib.rs",
+        "swstraps.rs",
+        "target.rs",
+    ],
+    crate_name = "earlgrey_pinout",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking",
+        "//target/earlgrey/drivers:gpio",
+        "//target/earlgrey/drivers:pinmux",
+        "//target/earlgrey/registers:top_earlgrey",
+        "//target/earlgrey/util/error",
+        "//util/error",
+    ] + select({
+        "@platforms//os:none": [
+            "@pigweed//pw_kernel/userspace",
+        ],
+        "//conditions:default": [
+        ],
+    }),
+)
