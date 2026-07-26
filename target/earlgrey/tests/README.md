@@ -10,6 +10,7 @@ Each subdirectory here represents a test suite or a specific test target:
 *   **[`eflash`](eflash)**: Tests the embedded flash driver operations (erase, program, read) using a secure `flash_server` userspace process.
 *   **[`ipc/user`](ipc/user)**: Tests userspace IPC channel communication between different processes on the microkernel.
 *   **[`logging`](logging)**: Tests the microkernel logging subsystems and `pw_log` routing.
+*   **[`swstraps`](swstraps)**: Tests software straps pinmux configuration, reading, and stabilization across hardware/simulator targets.
 *   **[`threads/kernel`](threads/kernel)**: Tests kernel-level threading, context switching, and scheduling invariants.
 *   **[`uart`](uart)**: Tests UART driver initialization and loopback communication (using interrupt-driven RX/TX).
 *   **[`unittest_runner`](unittest_runner)**: Runs the upstream Pigweed kernel unit and integration test suite on the target hardware.
