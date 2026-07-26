@@ -2,14 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
-load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
 
 rust_library(
     name = "gpio",
     srcs = ["gpio.rs"],
     crate_name = "earlgrey_gpio",
     edition = "2024",
-    target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],
     deps = [
         ":pinmux",
@@ -26,7 +24,6 @@ rust_library(
     srcs = ["pinmux.rs"],
     crate_name = "earlgrey_pinmux",
     edition = "2024",
-    target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],
     deps = [
         "//target/earlgrey/registers",
