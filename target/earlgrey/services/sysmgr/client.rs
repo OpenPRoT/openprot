@@ -15,6 +15,7 @@ pub mod op {
     pub const SYSMGR_OP_GET_BOOT_INFO: Opcode = Opcode::new(*b"MGBI");
     pub const SYSMGR_OP_SET_BOOT_POLICY: Opcode = Opcode::new(*b"MGBP");
     pub const SYSMGR_OP_REQ_REBOOT: Opcode = Opcode::new(*b"MGRB");
+    pub const SYSMGR_OP_SET_SW_STRAPS: Opcode = Opcode::new(*b"MSWS");
 }
 
 pub struct SysmgrClient<IPC: IpcChannel> {
@@ -75,6 +76,17 @@ pub struct ResetInfo {
     pub software_straps: u32,
 }
 
+impl ResetInfo {
+    pub const REASON_POR: u32 = 1 << 0;
+    pub const REASON_LOW_POWER_EXIT: u32 = 1 << 1;
+    pub const REASON_SW_RESET: u32 = 1 << 2;
+    pub const REASON_HW_REQ_SYSRST_CTRL: u32 = 1 << 3;
+    pub const REASON_HW_REQ_AON_TIMER: u32 = 1 << 4;
+    pub const REASON_HW_REQ_PWRMGR: u32 = 1 << 5;
+    pub const REASON_HW_REQ_ALERT_HANDLER: u32 = 1 << 6;
+    pub const REASON_HW_REQ_RV_DM: u32 = 1 << 7;
+}
+
 #[derive(Clone, FromBytes, IntoBytes, Immutable, KnownLayout, Zfmt)]
 #[repr(C)]
 #[zfmt(format = "{chip} {rom_ext} {app} {ownership} {reset}")]
@@ -133,6 +145,18 @@ impl<IPC: IpcChannel> SysmgrClient<IPC> {
         self.ipc
             .transact(
                 &[op::SYSMGR_OP_REQ_REBOOT.as_bytes()],
+                &mut [result.as_mut_bytes()],
+                Instant::MAX,
+            )
+            .map_err(ErrorCode::kernel_error)?;
+        ErrorCode::check_status(result)
+    }
+
+    pub fn set_software_straps(&self, straps: u32) -> Result<(), ErrorCode> {
+        let mut result = 0u32;
+        self.ipc
+            .transact(
+                &[op::SYSMGR_OP_SET_SW_STRAPS.as_bytes(), straps.as_bytes()],
                 &mut [result.as_mut_bytes()],
                 Instant::MAX,
             )

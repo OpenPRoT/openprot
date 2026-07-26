@@ -14,6 +14,13 @@ impl SwStraps {
     pub const SW_STRAP0: GpioPin = GpioPin::Pin22;
     pub const SW_STRAP1: GpioPin = GpioPin::Pin23;
     pub const SW_STRAP2: GpioPin = GpioPin::Pin24;
+
+    /// The teacup board normally operates with a strapping value of 0.
+    pub const TEACUP_BOARD: u32 = 0;
+    /// Strap-combo reserved for bringup.
+    pub const BRINGUP_STRAPS1: u32 = 1;
+    /// Strap-combo reserved for bringup.
+    pub const BRINGUP_STRAPS2: u32 = 2;
 }
 
 impl Pinout for SwStraps {

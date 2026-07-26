@@ -54,7 +54,6 @@ rust_process(
         "//protocol/usb/stack",
         "//services/flash:client",
         "//target/earlgrey/drivers:usb_driver",
-        "//target/earlgrey/registers:pinmux",
         "//target/earlgrey/registers:top_earlgrey",
         "//target/earlgrey/registers:usbdev",
         "//target/earlgrey/services/sysmgr:client",
@@ -129,7 +128,12 @@ rust_process(
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
+        "//target/earlgrey/drivers:gpio",
+        "//target/earlgrey/pinout",
+        "//target/earlgrey/services/platform",
+        "//target/earlgrey/services/sysmgr:client",
         "//util/error",
+        "//util/ipc",
         "//util/zfmt",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_status/rust:pw_status",
@@ -161,6 +165,7 @@ system_image(
     platform = "//target/earlgrey",
     system_config = ":system_config",
     tags = ["kernel"],
+    visibility = ["//visibility:public"],
 )
 
 rust_binary_no_panics_test(
