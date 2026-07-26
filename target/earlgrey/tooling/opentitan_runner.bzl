@@ -144,22 +144,20 @@ exec {runner} {args}
         if not is_custom_harness and not test_cmd_str:
             test_cmd_str = "console --non-interactive --exit-success='{}' --exit-failure='{}'".format(exit_success, exit_failure)
 
+        if env.test_args:
+            formatted_test_args = [arg.format(firmware = bin_file.short_path) for arg in env.test_args]
+            test_args = " ".join(formatted_test_args)
+        else:
+            test_args = "--interface={interface}".format(interface = env.interface)
+
         if is_custom_harness:
             test_exec = test_harness.short_path
-            test_args = "--interface={interface}".format(interface = env.interface)
-            if test_cmd_str:
-                test_args += " " + test_cmd_str
         else:
             test_exec = opentitantool.short_path
-            if env.test_args:
-                formatted_test_args = [arg.format(firmware = bin_file.short_path) for arg in env.test_args]
-                test_args = " ".join(formatted_test_args)
-            else:
-                test_args = "--interface={interface}".format(interface = env.interface)
-
             test_args = "--rcfile= " + test_args
-            if test_cmd_str:
-                test_args += " " + test_cmd_str
+
+        if test_cmd_str:
+            test_args += " " + test_cmd_str
 
         script_content = "#!/bin/bash\nset -e\n"
         if setup_args_str:
