@@ -13,6 +13,7 @@ use hal_flash::{Flash, FlashAddress};
 use services_flash_client::FlashIpcClient;
 use util_error::{ErrorCode, KERNEL_ERROR_INTERNAL};
 use util_ipc::IpcHandle;
+use util_panic as _;
 
 fn erase_program_test(
     flash: &mut FlashIpcClient,
@@ -106,5 +107,3 @@ fn entry() -> Result<(), Error> {
 
     ret
 }
-
-util_panic::make_panic_handler!();
