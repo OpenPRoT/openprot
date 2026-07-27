@@ -12,8 +12,8 @@ mod types;
 
 pub use registers::GpioRegisters;
 pub use types::{
-    Floating, GpioError, GpioExt, Input, InputMode, InterruptMode, OpenDrain, OpenDrainMode,
-    Output, OutputMode, PullDown, PullUp, PushPull, Tristate,
+    ActiveHigh, ActiveLow, Floating, GpioError, GpioExt, Input, InputMode, InterruptMode,
+    OpenDrain, OpenDrainMode, Output, OutputMode, PullDown, PullUp, PushPull, Tristate,
 };
 
 macro_rules! gpio_macro {
@@ -137,8 +137,14 @@ macro_rules! gpio_macro {
                     {
                         let p = unsafe { &*device::Gpio::ptr() };
                         p.$data_val_reg().modify(|r, w| unsafe {
-                            w.bits(r.bits() & !(1u32 << ($pos + $i)))
+                            let mask = 1u32 << ($pos + $i);
+                            w.bits(if ODM::ACTIVE_HIGH {
+                                r.bits() | mask
+                            } else {
+                                r.bits() & !mask
+                            })
                         });
+                        // Start released in the inactive state.
                         p.$dir_reg().modify(|r, w| unsafe {
                             w.bits(r.bits() & !(1u32 << ($pos + $i)))
                         });
@@ -197,7 +203,9 @@ macro_rules! gpio_macro {
                 {
                     fn is_set_high(&mut self) -> Result<bool, Self::Error> {
                         let p = unsafe { &*device::Gpio::ptr() };
-                        Ok((p.$dir_reg().read().bits() & (1u32 << ($pos + $i))) == 0)
+                        let is_output =
+                            (p.$dir_reg().read().bits() & (1u32 << ($pos + $i))) != 0;
+                        Ok(is_output == ODM::ACTIVE_HIGH)
                     }
 
                     fn is_set_low(&mut self) -> Result<bool, Self::Error> {
@@ -212,7 +220,12 @@ macro_rules! gpio_macro {
                     fn set_high(&mut self) -> Result<(), Self::Error> {
                         let p = unsafe { &*device::Gpio::ptr() };
                         p.$dir_reg().modify(|r, w| unsafe {
-                            w.bits(r.bits() & !(1u32 << ($pos + $i)))
+                            let mask = 1u32 << ($pos + $i);
+                            w.bits(if ODM::ACTIVE_HIGH {
+                                r.bits() | mask
+                            } else {
+                                r.bits() & !mask
+                            })
                         });
                         Ok(())
                     }
@@ -220,7 +233,12 @@ macro_rules! gpio_macro {
                     fn set_low(&mut self) -> Result<(), Self::Error> {
                         let p = unsafe { &*device::Gpio::ptr() };
                         p.$dir_reg().modify(|r, w| unsafe {
-                            w.bits(r.bits() | (1u32 << ($pos + $i)))
+                            let mask = 1u32 << ($pos + $i);
+                            w.bits(if ODM::ACTIVE_HIGH {
+                                r.bits() & !mask
+                            } else {
+                                r.bits() | mask
+                            })
                         });
                         Ok(())
                     }

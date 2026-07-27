@@ -13,8 +13,20 @@ pub trait OutputMode {}
 
 /// `OpenDrain` modes implement this trait.
 pub trait OpenDrainMode {
-    /// Returns whether pull-up is enabled.
-    fn pup() -> bool;
+    /// Whether the actively driven level is high.
+    const ACTIVE_HIGH: bool;
+}
+
+/// Active-low open-drain mode: output drives low and input releases high.
+pub struct ActiveLow;
+impl OpenDrainMode for ActiveLow {
+    const ACTIVE_HIGH: bool = false;
+}
+
+/// Active-high open-drain mode: output drives high and input releases low.
+pub struct ActiveHigh;
+impl OpenDrainMode for ActiveHigh {
+    const ACTIVE_HIGH: bool = true;
 }
 
 /// Input mode (type state).
@@ -28,11 +40,6 @@ where
 /// Sub-mode of Input: Floating input (type state).
 pub struct Floating;
 impl InputMode for Floating {}
-impl OpenDrainMode for Floating {
-    fn pup() -> bool {
-        false
-    }
-}
 
 /// Sub-mode of Input: Pulled down input (type state).
 pub struct PullDown;
@@ -41,11 +48,6 @@ impl InputMode for PullDown {}
 /// Sub-mode of Input: Pulled up input (type state).
 pub struct PullUp;
 impl InputMode for PullUp {}
-impl OpenDrainMode for PullUp {
-    fn pup() -> bool {
-        true
-    }
-}
 
 /// Tri-state mode (type state).
 pub struct Tristate;
@@ -69,7 +71,7 @@ pub struct OpenDrain<ODM>
 where
     ODM: OpenDrainMode,
 {
-    pub(super) _pull: PhantomData<ODM>,
+    pub(super) _mode: PhantomData<ODM>,
 }
 impl<ODM> OutputMode for OpenDrain<ODM> where ODM: OpenDrainMode {}
 

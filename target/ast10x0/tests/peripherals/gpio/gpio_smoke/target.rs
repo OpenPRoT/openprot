@@ -6,7 +6,7 @@
 #![no_std]
 #![no_main]
 
-use ast10x0_peripherals::gpio::{gpioa, Floating, GpioExt};
+use ast10x0_peripherals::gpio::{gpioa, ActiveLow, GpioExt};
 use ast10x0_peripherals::scu::{pinctrl, ScuRegisters};
 use console_backend::console_backend_write_all;
 use embedded_hal::digital::{InputPin, OutputPin, StatefulOutputPin};
@@ -41,7 +41,7 @@ fn run_gpioa_test() -> bool {
     }
     pw_log::info!("GPIOA1 pull-up input read high");
 
-    let mut pa3 = gpioa.pa3.into_open_drain_output::<Floating>();
+    let mut pa3 = gpioa.pa3.into_open_drain_output::<ActiveLow>();
     if pa3.set_low().is_err() || !pa3.is_set_low().unwrap_or(false) {
         pw_log::error!("GPIOA3 open-drain output did not latch low");
         return false;
