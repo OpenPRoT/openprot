@@ -11,18 +11,21 @@ use fwmanager_api::config::{CommitPolicy, DeviceConfig};
 
 /// Declaration order is the boot order: the orchestrator releases devices
 /// top to bottom, one at a time.
-pub const MANAGED_DEVICES: &[DeviceConfig] = &[
+///
+/// The mock board's reset controller addresses lines by plain index, so its
+/// reset id type is `u8`.
+pub const MANAGED_DEVICES: &[DeviceConfig<u8>] = &[
     // Direct-flash SPI device (BMC archetype): the eRoT fronts its flash.
     DeviceConfig {
         name: "bmc",
-        reset_line: 7,
+        reset_signal: 7,
         boot_timeout: core::time::Duration::from_secs(90),
         commit_policy: CommitPolicy::Liveness,
     },
     // PLDM device (NIC archetype): self-updating, SPDM-capable.
     DeviceConfig {
         name: "nic",
-        reset_line: 3,
+        reset_signal: 3,
         boot_timeout: core::time::Duration::from_secs(30),
         commit_policy: CommitPolicy::LivenessAndAttestation,
     },

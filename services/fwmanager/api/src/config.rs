@@ -15,11 +15,16 @@ pub enum CommitPolicy {
 }
 
 /// One managed downstream device, as declared by the board config.
+///
+/// Generic over the board's reset signal type `R`, which must match the
+/// `ResetId` of the reset controller behind the board's `BootControl`
+/// implementation — the compiler rejects a table whose ids the controller
+/// cannot accept.
 #[derive(Debug, Clone, Copy)]
-pub struct DeviceConfig {
+pub struct DeviceConfig<R> {
     pub name: &'static str,
-    /// Reset line id, passed to HalBootControl::new.
-    pub reset_line: u8,
+    /// Reset signal id, passed to HalBootControl::new.
+    pub reset_signal: R,
     /// How long the orchestrator waits for this device to report Booted
     /// before it declares a timeout.
     pub boot_timeout: core::time::Duration,
@@ -28,7 +33,7 @@ pub struct DeviceConfig {
 
 /// Checks a device table. Board configs call this in a const context so a
 /// bad table fails the build.
-pub const fn validate(devices: &[DeviceConfig]) {
+pub const fn validate<R>(devices: &[DeviceConfig<R>]) {
     let mut i = 0;
     while i < devices.len() {
         assert!(!devices[i].name.is_empty(), "device name must not be empty");
