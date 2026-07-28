@@ -15,6 +15,7 @@ use pw_status::{Error, Result};
 use spi_flash::SpiFlash;
 use spi_host::SpiHost0;
 use userspace::entry;
+use util_panic as _;
 
 fn run_test() -> Result<()> {
     // 1. Initialize SPI Host.
@@ -114,5 +115,3 @@ fn entry() -> Result<()> {
 
     ret
 }
-
-util_panic::make_panic_handler!();

@@ -17,6 +17,7 @@ use userspace::time::Instant;
 use userspace::{entry, syscall};
 use util_error::ErrorCode;
 use util_ipc::IpcHandle;
+use util_panic as _;
 use util_types::Blocking;
 
 // EFlash Interrupt Blocker
@@ -141,5 +142,3 @@ fn entry() -> Result<(), Error> {
     };
     ret
 }
-
-util_panic::make_panic_handler!();
