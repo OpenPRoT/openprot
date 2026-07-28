@@ -3,19 +3,19 @@
 
 //! End-to-end host test for a full PLDM firmware-update flow.
 //!
-//! This extends the wiring exercised by `base_host.rs`
-//! (`PldmResponder::run_responder` + `FirmwareDevice::run_terminus`) with the
-//! FD-initiated request path (`PldmRequester::run_requester`).  When the FD
+//! This extends the wiring exercised by `base_host.rs` with the FD-initiated
+//! request path. `FirmwareDevice` owns both MCTP transports directly: when it
 //! enters update mode it drives the download / verify / apply state machine by
 //! issuing PLDM requests (`RequestFirmwareData`, `TransferComplete`,
-//! `VerifyComplete`, `ApplyComplete`) back to the Update Agent.  Those requests
-//! flow:
+//! `VerifyComplete`, `ApplyComplete`) to the Update Agent through its
+//! `requester_transport`, while UA->FD commands keep flowing through its
+//! `responder_transport`:
 //!
 //! ```text
-//!  UA cmd --> PldmResponder --> FirmwareDevice.run_terminus
+//!  UA cmd --> FirmwareDevice.run_terminus (responder_transport)
 //!                                   |
 //!                                   v (initiator mode)
-//!                              PldmRequester.run_requester --> remote UA (over MCTP)
+//!                              requester_transport --> remote UA (over MCTP)
 //! ```
 //!
 //! All transports are backed by in-memory MCTP `Server`s and packet queues.
@@ -27,10 +27,8 @@ use mctp_lib::fragment::{Fragmenter, SendOutput};
 use mctp_lib::Sender;
 use openprot_mctp_api::{Handle, MctpClient, MctpError, RecvMetadata, ResponseCode};
 use openprot_mctp_server::Server;
-use openprot_pldm_service::firmware_device::{
-    FdUaCmdChannel, FdUaRspChannel, FirmwareDevice, UaFdCmdChannel, UaFdRspChannel,
-};
-use openprot_pldm_service::{MctpPldmTransport, PldmRequester, PldmResponder, PldmServiceError};
+use openprot_pldm_service::firmware_device::FirmwareDevice;
+use openprot_pldm_service::{MctpPldmTransport, PldmServiceError};
 use pldm_common::codec::{PldmCodec, PldmCodecWithLifetime};
 use pldm_common::message::firmware_update::apply_complete::{ApplyCompleteResponse, ApplyResult};
 use pldm_common::message::firmware_update::get_fw_params::FirmwareParameters;
@@ -165,135 +163,6 @@ impl<S: Sender, const N: usize, F: FnMut()> MctpClient for DirectClientWithPump<
 
     fn drop_handle(&self, handle: Handle) {
         let _ = self.server.borrow_mut().unbind(handle);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// One-shot IPC channels used to bridge the service loops into direct calls.
-// ---------------------------------------------------------------------------
-
-/// FD command channel (`fd_cmd`): carries UA->FD commands into `run_terminus`.
-struct OneShotFdRsp {
-    req: RefCell<Option<Vec<u8>>>,
-    resp: RefCell<Option<Vec<u8>>>,
-    served: Cell<bool>,
-}
-
-impl OneShotFdRsp {
-    fn new() -> Self {
-        Self {
-            req: RefCell::new(None),
-            resp: RefCell::new(None),
-            served: Cell::new(false),
-        }
-    }
-
-    fn load_req(&self, req: &[u8]) {
-        *self.req.borrow_mut() = Some(req.to_vec());
-        *self.resp.borrow_mut() = None;
-        self.served.set(false);
-    }
-
-    fn take_resp(&self) -> Result<Vec<u8>, PldmServiceError> {
-        self.resp.borrow_mut().take().ok_or(PldmServiceError::Ipc)
-    }
-}
-
-impl FdUaRspChannel for OneShotFdRsp {
-    fn recv(&self, buf: &mut [u8], _timeout_millis: u32) -> Result<usize, PldmServiceError> {
-        if self.served.get() {
-            return Err(PldmServiceError::Ipc);
-        }
-
-        let req = self.req.borrow_mut().take().ok_or(PldmServiceError::Ipc)?;
-        if req.len() > buf.len() {
-            return Err(PldmServiceError::Overflow);
-        }
-
-        buf[..req.len()].copy_from_slice(&req);
-        self.served.set(true);
-        Ok(req.len())
-    }
-
-    fn try_recv(&self, buf: &mut [u8]) -> Result<Option<usize>, PldmServiceError> {
-        // One-shot: after its single request is served, signal `run_terminus`
-        // to stop looping by returning `Ipc` (tolerated by the bridge below).
-        if self.served.get() {
-            return Err(PldmServiceError::Ipc);
-        }
-
-        let Some(req) = self.req.borrow_mut().take() else {
-            return Err(PldmServiceError::Ipc);
-        };
-        if req.len() > buf.len() {
-            return Err(PldmServiceError::Overflow);
-        }
-
-        buf[..req.len()].copy_from_slice(&req);
-        self.served.set(true);
-        Ok(Some(req.len()))
-    }
-
-    fn respond(&self, buf: &[u8]) -> Result<(), PldmServiceError> {
-        *self.resp.borrow_mut() = Some(buf.to_vec());
-        Ok(())
-    }
-
-    fn wait_readable(&self, _timeout_millis: u32) -> Result<(), PldmServiceError> {
-        // In-memory one-shot channel: nothing to wait on.
-        Ok(())
-    }
-}
-
-/// UA request channel (`fw_req` peer): carries FD-initiated requests into
-/// `run_requester`, which forwards them over MCTP to the remote UA.
-struct OneShotUaReq {
-    req: RefCell<Option<Vec<u8>>>,
-    resp: RefCell<Option<Vec<u8>>>,
-    served: Cell<bool>,
-}
-
-impl OneShotUaReq {
-    fn new() -> Self {
-        Self {
-            req: RefCell::new(None),
-            resp: RefCell::new(None),
-            served: Cell::new(false),
-        }
-    }
-
-    fn load_req(&self, req: &[u8]) {
-        *self.req.borrow_mut() = Some(req.to_vec());
-        *self.resp.borrow_mut() = None;
-        self.served.set(false);
-    }
-
-    fn take_resp(&self) -> Result<Vec<u8>, PldmServiceError> {
-        self.resp.borrow_mut().take().ok_or(PldmServiceError::Ipc)
-    }
-}
-
-impl UaFdRspChannel for OneShotUaReq {
-    fn recv(&self, buf: &mut [u8]) -> Result<usize, PldmServiceError> {
-        // One-shot: after the queued request is served, return `Ipc` so
-        // `run_requester` exits its loop (tolerated by the bridge below).
-        if self.served.get() {
-            return Err(PldmServiceError::Ipc);
-        }
-
-        let req = self.req.borrow_mut().take().ok_or(PldmServiceError::Ipc)?;
-        if req.len() > buf.len() {
-            return Err(PldmServiceError::Overflow);
-        }
-
-        buf[..req.len()].copy_from_slice(&req);
-        self.served.set(true);
-        Ok(req.len())
-    }
-
-    fn respond(&self, buf: &[u8]) -> Result<(), PldmServiceError> {
-        *self.resp.borrow_mut() = Some(buf.to_vec());
-        Ok(())
     }
 }
 
@@ -480,71 +349,6 @@ fn serve_ua_fw_request<S: Sender, const N: usize>(
         .expect("send FD-initiated request response");
 }
 
-/// Client-side bridge: `FirmwareDevice.run_terminus` calls this to issue an
-/// FD-initiated request; it drives `PldmRequester.run_requester` to forward the
-/// request to the remote UA over MCTP and return the response.
-struct RequesterBridge<'a, C: MctpClient> {
-    chan: &'a OneShotUaReq,
-    requester: &'a RefCell<PldmRequester>,
-    transport: &'a MctpPldmTransport<C>,
-    buf: &'a RefCell<[u8; 1024]>,
-    remote_eid: u8,
-}
-
-impl<C: MctpClient> FdUaCmdChannel for RequesterBridge<'_, C> {
-    fn transact(&self, req: &[u8], resp: &mut [u8]) -> Result<usize, PldmServiceError> {
-        self.chan.load_req(req);
-        match self.requester.borrow_mut().run_requester(
-            self.chan,
-            self.transport,
-            self.remote_eid,
-            &mut self.buf.borrow_mut()[..],
-            TIMEOUT_MILLIS,
-        ) {
-            Ok(()) | Err(PldmServiceError::Ipc) => {}
-            Err(e) => return Err(e),
-        }
-
-        let out = self.chan.take_resp()?;
-        if out.len() > resp.len() {
-            return Err(PldmServiceError::Overflow);
-        }
-        resp[..out.len()].copy_from_slice(&out);
-        Ok(out.len())
-    }
-}
-
-/// Server-side bridge: `PldmResponder.run_responder` calls this to forward a
-/// UA->FD command into `FirmwareDevice.run_terminus` and return its response.
-struct ResponderToFdBridge<'a, T: FdUaCmdChannel> {
-    chan: &'a OneShotFdRsp,
-    fd: &'a RefCell<FirmwareDevice<'a, FakeFdOps>>,
-    fw_req: &'a T,
-    fd_buf: &'a RefCell<[u8; 1024]>,
-}
-
-impl<T: FdUaCmdChannel> UaFdCmdChannel for ResponderToFdBridge<'_, T> {
-    fn transact(&self, req: &[u8], resp: &mut [u8]) -> Result<usize, PldmServiceError> {
-        self.chan.load_req(req);
-        match self.fd.borrow_mut().run_terminus(
-            self.chan,
-            self.fw_req,
-            &mut self.fd_buf.borrow_mut()[..],
-            TIMEOUT_MILLIS,
-        ) {
-            Ok(()) | Err(PldmServiceError::Ipc) => {}
-            Err(e) => return Err(e),
-        }
-
-        let out = self.chan.take_resp()?;
-        if out.len() > resp.len() {
-            return Err(PldmServiceError::Overflow);
-        }
-        resp[..out.len()].copy_from_slice(&out);
-        Ok(out.len())
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Test
 // ---------------------------------------------------------------------------
@@ -578,20 +382,9 @@ fn firmware_update_full_flow_via_requester() {
         .listener(PLDM_MSG_TYPE)
         .expect("register UA PLDM listener");
 
-    let fd = RefCell::new(FirmwareDevice::init(
-        &fd_ops,
-        &pldm_interface::config::PLDM_PROTOCOL_CAPABILITIES,
-    ));
-    let fd_buf = RefCell::new([0u8; 1024]);
-
-    let fd_rsp_bridge_chan = OneShotFdRsp::new();
-    let ua_req_bridge_chan = OneShotUaReq::new();
-
-    // Requester side: forwards FD-initiated requests to the remote UA. Its MCTP
-    // client sends from `fd_server` (EID 42) to the UA and, before each recv,
-    // pumps packets across and lets the UA answer the request.
-    let requester = RefCell::new(PldmRequester::new());
-    let requester_buf = RefCell::new([0u8; 1024]);
+    // Requester transport: forwards FD-initiated requests to the remote UA.
+    // Its MCTP client sends from `fd_server` (EID 42) to the UA and, before
+    // each recv, pumps packets across and lets the UA answer the request.
     let requester_client = DirectClientWithPump::new(&fd_server, || {
         // Deliver the FD-originated request to the UA.
         transfer(&fd_to_ua_packets, &mut ua_server.borrow_mut());
@@ -604,30 +397,22 @@ fn firmware_update_full_flow_via_requester() {
     });
     let requester_transport = MctpPldmTransport::new(requester_client);
 
-    let fd_to_req_bridge = RequesterBridge {
-        chan: &ua_req_bridge_chan,
-        requester: &requester,
-        transport: &requester_transport,
-        buf: &requester_buf,
-        remote_eid: UA_EID,
-    };
-
-    let responder_bridge = ResponderToFdBridge {
-        chan: &fd_rsp_bridge_chan,
-        fd: &fd,
-        fw_req: &fd_to_req_bridge,
-        fd_buf: &fd_buf,
-    };
-
-    // Responder side: receives UA->FD commands on `fd_server` and hands them to
-    // the FD. Its pre-recv pump delivers queued UA->FD packets into `fd_server`.
+    // Responder transport: receives UA->FD commands on `fd_server` and hands
+    // them to the FD. Its pre-recv pump delivers queued UA->FD packets into
+    // `fd_server`.
     let responder_client = DirectClientWithPump::new(&fd_server, || {
         transfer(&ua_to_fd_packets, &mut fd_server.borrow_mut());
         ua_to_fd_packets.borrow_mut().clear();
     });
     let responder_transport = MctpPldmTransport::new(responder_client);
-    let responder = RefCell::new(PldmResponder::new());
-    let responder_buf = RefCell::new([0u8; 1024]);
+
+    let fd = RefCell::new(FirmwareDevice::init(
+        &fd_ops,
+        &pldm_interface::config::PLDM_PROTOCOL_CAPABILITIES,
+        responder_transport,
+        requester_transport,
+    ));
+    let fd_buf = RefCell::new([0u8; 1024]);
 
     // Run one full UA->FD->UA command round-trip and return the PLDM response
     // payload (without the MCTP framing byte).
@@ -641,17 +426,18 @@ fn firmware_update_full_flow_via_requester() {
             .send(Some(req_handle), PLDM_MSG_TYPE, None, None, false, req_pldm)
             .expect("send UA command");
 
-        // Drive the responder until its inbound queue drains. A terminating
-        // timeout means "done", not a failure.
-        match responder.borrow_mut().run_responder(
-            &responder_transport,
-            &responder_bridge,
-            &mut responder_buf.borrow_mut()[..],
+        // Drive the FD until its inbound queue drains; this also drives any
+        // FD-initiated requests to the UA through `requester_transport`. A
+        // terminating timeout means "done", not a failure.
+        match fd.borrow_mut().run_terminus(
+            UA_EID,
+            &mut fd_buf.borrow_mut()[..],
+            TIMEOUT_MILLIS,
             TIMEOUT_MILLIS,
         ) {
             Ok(()) => {}
             Err(PldmServiceError::Mctp(e)) if e.is_timeout() => {}
-            Err(e) => panic!("responder failed: {e:?}"),
+            Err(e) => panic!("firmware device failed: {e:?}"),
         }
 
         transfer(&fd_to_ua_packets, &mut ua_server.borrow_mut());
@@ -735,45 +521,28 @@ fn firmware_update_full_flow_via_requester() {
         "UpdateComponent completion code should be success"
     );
 
-    // ---- GetStatus x3: pump the FD-driven download/verify/apply state machine ----
-    // Each GetStatus advances the FD initiator state machine by issuing
-    // FD-initiated requests (RequestFirmwareData / TransferComplete /
-    // VerifyComplete / ApplyComplete) to the UA via run_requester.
-    let get_state = |instance_id: u8, transact: &dyn Fn(&[u8]) -> Vec<u8>| -> u8 {
-        let mut b = [0u8; 1024];
-        let gs = GetStatusRequest::new(instance_id, PldmMsgType::Request);
-        let n = gs.encode(&mut b).expect("encode GetStatus");
-        let resp = transact(&b[..n]);
-        let status = GetStatusResponse::decode(&resp).expect("decode GetStatusResponse");
-        assert_eq!(
-            status.completion_code, 0,
-            "GetStatus completion should be success"
-        );
-        status.current_state
-    };
-
+    // Because `FirmwareDevice` now owns both MCTP transports directly,
+    // `run_terminus` autonomously drives the entire download / verify /
+    // apply state machine to completion within the same call that
+    // processed `UpdateComponent` above (issuing RequestFirmwareData,
+    // TransferComplete, VerifyComplete, and ApplyComplete to the UA via
+    // `requester_transport` in a tight loop, with nothing to interrupt it
+    // since no other UA command is pending). A single GetStatus check
+    // afterward should therefore already observe the FD back in ReadyXfer.
     instance_id += 1;
-    let state1 = get_state(instance_id, &ua_transact);
+    let mut b = [0u8; 1024];
+    let gs = GetStatusRequest::new(instance_id, PldmMsgType::Request);
+    let n = gs.encode(&mut b).expect("encode GetStatus");
+    let resp = ua_transact(&b[..n]);
+    let status = GetStatusResponse::decode(&resp).expect("decode GetStatusResponse");
     assert_eq!(
-        state1,
-        FirmwareDeviceState::Download as u8,
-        "FD should be downloading firmware"
+        status.completion_code, 0,
+        "GetStatus completion should be success"
     );
-
-    instance_id += 1;
-    let state2 = get_state(instance_id, &ua_transact);
     assert_eq!(
-        state2,
-        FirmwareDeviceState::Apply as u8,
-        "FD should be applying firmware after verify completes"
-    );
-
-    instance_id += 1;
-    let state3 = get_state(instance_id, &ua_transact);
-    assert_eq!(
-        state3,
+        status.current_state,
         FirmwareDeviceState::ReadyXfer as u8,
-        "FD should return to ReadyXfer after apply completes"
+        "FD should have returned to ReadyXfer once the update completed"
     );
 
     // ---- Final assertions: the whole FD-driven flow ran end to end ----

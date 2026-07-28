@@ -3,6 +3,8 @@
 
 //! Error types for the PLDM service.
 
+use core::fmt;
+
 use openprot_mctp_api::MctpError;
 use pldm_interface::error::MsgHandlerError;
 
@@ -15,11 +17,19 @@ pub enum PldmServiceError {
     MsgHandler(MsgHandlerError),
     /// A buffer size or arithmetic overflow.
     Overflow,
-    /// A response length exceeded the available buffer.
-    InvalidResponseLength,
-    /// An IPC channel error (read, respond, or transact failure).
-    Ipc,
 }
+
+impl fmt::Display for PldmServiceError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            PldmServiceError::Mctp(e) => write!(f, "MCTP transport error: {e:?}"),
+            PldmServiceError::MsgHandler(e) => write!(f, "PLDM message handler error: {e:?}"),
+            PldmServiceError::Overflow => write!(f, "buffer size or arithmetic overflow"),
+        }
+    }
+}
+
+impl core::error::Error for PldmServiceError {}
 
 impl From<MctpError> for PldmServiceError {
     fn from(e: MctpError) -> Self {

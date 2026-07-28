@@ -20,6 +20,7 @@
 //! Callers only deal with PLDM bytes; the framing byte is inserted or stripped
 //! transparently.
 
+use openprot_mctp_api::stack::StackListener;
 use openprot_mctp_api::{MctpClient, MctpListener, MctpReqChannel, MctpRespChannel, Stack};
 use pldm_common::util::mctp_transport::MCTP_PLDM_MSG_TYPE;
 
@@ -71,11 +72,7 @@ impl<C: MctpClient> MctpPldmTransport<C> {
 
     /// Get a reference to the underlying MCTP [`Stack`].
     ///
-    /// Useful when the raw stack is needed (e.g. to set the local EID or to
-    /// hand to [`PldmResponder`] / [`PldmRequester`]).
-    ///
-    /// [`PldmResponder`]: crate::responder::PldmResponder
-    /// [`PldmRequester`]: crate::requester::PldmRequester
+    /// Useful when the raw stack is needed (e.g. to set the local EID).
     pub fn stack(&self) -> &Stack<C> {
         &self.stack
     }
@@ -146,6 +143,17 @@ impl<C: MctpClient> MctpPldmTransport<C> {
     ///
     /// A `timeout_millis` of `0` blocks indefinitely.
     ///
+    /// This registers and drops a fresh listener on every call. A caller that
+    /// invokes this repeatedly in a tight loop with no other MCTP traffic in
+    /// between is unaffected, but a caller that interleaves other MCTP
+    /// activity on the same endpoint between calls (e.g.
+    /// [`FirmwareDevice::run_terminus`](crate::firmware_device::FirmwareDevice::run_terminus),
+    /// which interleaves FD-initiated requests) should use
+    /// [`responder_listener`](Self::responder_listener) and
+    /// [`respond_once`](Self::respond_once) instead, to avoid a window with no
+    /// listener registered in which an inbound request could be dropped by
+    /// the underlying MCTP stack.
+    ///
     /// # Errors
     ///
     /// Returns [`PldmServiceError::Overflow`] if `buf` is too small.
@@ -160,11 +168,55 @@ impl<C: MctpClient> MctpPldmTransport<C> {
     where
         F: FnOnce(&mut [u8], usize) -> Result<usize, PldmServiceError>,
     {
-        let mut listener = self
-            .stack
-            .listener(MCTP_PLDM_MSG_TYPE, timeout_millis)
-            .map_err(PldmServiceError::Mctp)?;
+        let mut listener = self.responder_listener(timeout_millis)?;
+        self.respond_once(&mut listener, buf, handler)
+    }
 
+    /// Register a persistent listener for inbound PLDM requests.
+    ///
+    /// Unlike [`recv_and_respond`](Self::recv_and_respond), which registers
+    /// and drops a listener handle on every call, the returned listener can
+    /// be reused across many [`respond_once`](Self::respond_once) calls
+    /// (adjusting its timeout with [`StackListener::set_timeout`] as needed).
+    /// This matters because the underlying MCTP stack requires an active
+    /// listener registration to accept an inbound request of a given
+    /// message type; a caller that interleaves other MCTP traffic (e.g.
+    /// FD-initiated requests) between polls would otherwise have a window
+    /// with no listener registered in which an inbound UA command could be
+    /// silently dropped.
+    ///
+    /// A `timeout_millis` of `0` blocks indefinitely.
+    pub fn responder_listener(
+        &self,
+        timeout_millis: u32,
+    ) -> Result<StackListener<'_, C>, PldmServiceError> {
+        self.stack
+            .listener(MCTP_PLDM_MSG_TYPE, timeout_millis)
+            .map_err(PldmServiceError::Mctp)
+    }
+
+    /// Receive one incoming PLDM request on an already-registered `listener`
+    /// (obtained via [`responder_listener`](Self::responder_listener)), frame
+    /// it in `buf`, and invoke `handler` to produce a response.
+    ///
+    /// See [`recv_and_respond`](Self::recv_and_respond) for the buffer and
+    /// handler contract; this method has the same semantics but reuses an
+    /// existing listener instead of registering a new one.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`PldmServiceError::Overflow`] if `buf` is too small.
+    /// Returns [`PldmServiceError::Mctp`] on any MCTP transport error.
+    /// Propagates any error returned by `handler`.
+    pub fn respond_once<F>(
+        &self,
+        listener: &mut StackListener<'_, C>,
+        buf: &mut [u8],
+        handler: F,
+    ) -> Result<(), PldmServiceError>
+    where
+        F: FnOnce(&mut [u8], usize) -> Result<usize, PldmServiceError>,
+    {
         // Receive into buf[1..]; discard the payload sub-slice to end the
         // mutable borrow before we touch buf[0].
         let recv_buf = buf.get_mut(1..).ok_or(PldmServiceError::Overflow)?;

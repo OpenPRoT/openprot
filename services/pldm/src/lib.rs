@@ -3,28 +3,30 @@
 
 //! # openprot-pldm-service
 //!
-//! PLDM-over-MCTP responder service built on top of
-//! [`openprot-mctp-api`] and [`pldm-interface`].
+//! PLDM Firmware Device (FD) service built on top of
+//! [`openprot-mctp-api`] and [`pldm-interface`], talking PLDM-over-MCTP
+//! directly to a remote Update Agent (UA).
 //!
 //! ## Architecture
 //!
 //! ```text
 //! ┌──────────────────────────┐
-//! │   Application / Firmware │  creates PldmResponder / PldmRequester, calls run_responder()/run_requester()
+//! │   Application / Firmware │  constructs FirmwareDevice, calls run_terminus()
 //! └───────────┬──────────────┘
 //!             │
 //!             ▼
-//! ┌──────────────────────────┐
-//! │   openprot-pldm-service  │◄── this crate
-//! │   PldmResponder          │  dispatches to CmdInterface (responder side)
-//! │   PldmRequester          │  sends PLDM requests (initiator side)
-//! └───────────┬──────────────┘
-//!             │ MctpListener / MctpReqChannel / MctpRespChannel
-//!             ▼
-//! ┌──────────────────────────┐
-//! │   openprot-mctp-api      │  Stack<C: MctpClient>
-//! │   (Stack facade)         │
-//! └───────────┬──────────────┘
+//! ┌───────────────────────────────────────────┐
+//! │   openprot-pldm-service                   │◄── this crate
+//! │   FirmwareDevice<'a, O: FdOps, Cr, Cq>    │
+//! │     - cmd_interface: CmdInterface<'a, O>  │  PLDM FW-update state machine
+//! │     - responder_transport: inbound UA→FD  │
+//! │     - requester_transport: outbound FD→UA │
+//! └───────────┬──────────────┬────────────────┘
+//!             │              │ MctpPldmTransport<C: MctpClient>
+//!             ▼              ▼
+//! ┌───────────────────────────────────────────┐
+//! │   openprot-mctp-api                       │  Stack<C: MctpClient>
+//! └───────────┬───────────────────────────────┘
 //!             │ IPC / transport
 //!             ▼
 //! ┌──────────────────────────┐
@@ -35,28 +37,31 @@
 //! ## Usage
 //!
 //! ```rust,ignore
-//! use openprot_pldm_service::{MctpPldmTransport, PldmResponder, PldmRequester};
+//! use openprot_pldm_service::firmware_device::FirmwareDevice;
+//! use openprot_pldm_service::MctpPldmTransport;
+//! use pldm_interface::config::PLDM_PROTOCOL_CAPABILITIES;
 //!
-//! // `client` is any `MctpClient`. `ua_cmd` implements `UaFdCmdChannel` and
-//! // `fd_req` implements `UaFdRspChannel` — both are provided by the
-//! // platform IPC glue (see the `firmware-device-ipc` crate).
-//! let transport = MctpPldmTransport::new(client);
+//! // `fd_ops` implements `FdOps` (platform-specific flash / component
+//! // logic). `responder_client` / `requester_client` are `MctpClient`
+//! // implementations (they may share the same underlying MCTP endpoint).
+//! let responder_transport = MctpPldmTransport::new(responder_client);
+//! let requester_transport = MctpPldmTransport::new(requester_client);
+//!
+//! let mut fd = FirmwareDevice::init(
+//!     &fd_ops,
+//!     &PLDM_PROTOCOL_CAPABILITIES,
+//!     responder_transport,
+//!     requester_transport,
+//! );
+//!
+//! const UA_EID: u8 = 8;
 //! let mut buf = [0u8; 1024];
 //!
-//! // Responder task: forward inbound PLDM requests from the Update Agent to
-//! // the FirmwareDevice process and return its responses. `run_responder`
-//! // loops forever, returning only on error; a `timeout_millis` of `0`
-//! // blocks indefinitely on each exchange.
-//! let responder = PldmResponder::new();
-//! if let Err(e) = responder.run_responder(&transport, &ua_cmd, &mut buf, 0) {
-//!     // handle or log error
-//! }
-//!
-//! // Requester task (typically a separate process): forward FD-initiated
-//! // PLDM requests to a remote endpoint over MCTP.
-//! const REMOTE_EID: u8 = 8;
-//! let requester = PldmRequester::new();
-//! if let Err(e) = requester.run_requester(&fd_req, &transport, REMOTE_EID, &mut buf, 0) {
+//! // `run_terminus` loops forever, interleaving inbound UA commands with any
+//! // FD-initiated requests (e.g. RequestFirmwareData) once an update begins.
+//! // It returns only on error; a `timeout_millis`/`requester_timeout_millis`
+//! // of `0` blocks indefinitely while idle.
+//! if let Err(e) = fd.run_terminus(UA_EID, &mut buf, 0, 0) {
 //!     // handle or log error
 //! }
 //! ```
@@ -66,11 +71,7 @@
 
 pub mod error;
 pub mod firmware_device;
-pub mod requester;
-pub mod responder;
 pub mod transport;
 
 pub use error::PldmServiceError;
-pub use requester::PldmRequester;
-pub use responder::{PldmResponder, PLDM_MSG_TYPE};
 pub use transport::MctpPldmTransport;
