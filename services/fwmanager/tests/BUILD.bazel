@@ -1,0 +1,21 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_test")
+
+# Host end-to-end, black-box: a MockDownstreamDevice on the eRoT's seams
+# (reset line, boot-complete line, firmware flash). The flow verifies the
+# device's firmware first and only then releases it from reset — the same
+# effect order the orchestrator state machine produces. No kernel, no QEMU.
+rust_test(
+    name = "boot_flow_test",
+    srcs = ["boot_flow.rs"],
+    edition = "2024",
+    deps = [
+        "//hal/blocking",
+        "//hal/blocking/flash",
+        "//platform/impls/baremetal/mock",
+        "//services/fwmanager/api:fwmanager_api",
+        "//services/fwmanager/hal-adapters:fwmanager_hal_adapters",
+    ],
+)

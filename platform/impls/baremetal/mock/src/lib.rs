@@ -12,6 +12,7 @@
 #![allow(clippy::expect_used)]
 #![allow(clippy::arithmetic_side_effects)]
 
+pub mod downstream_device;
 pub mod hash;
 pub mod i2c_hardware;
 pub mod system_control;
