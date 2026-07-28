@@ -7,26 +7,45 @@
 
 #![no_std]
 
-use fwmanager_api::config::{CommitPolicy, DeviceConfig};
+use core::time::Duration;
+
+use fwmanager_api::config::{BootCheckpoint, BootSignal, CommitPolicy, DeviceConfig};
 
 /// Declaration order is the boot order: the orchestrator releases devices
 /// top to bottom, one at a time.
 ///
-/// The mock board's reset controller addresses lines by plain index, so its
-/// reset id type is `u8`.
-pub const MANAGED_DEVICES: &[DeviceConfig<u8>] = &[
+/// The mock board's reset controller and boot monitor both address
+/// signals by plain index, so both id types are `u8`.
+pub const MANAGED_DEVICES: &[DeviceConfig<u8, u8>] = &[
     // Direct-flash SPI device (BMC archetype): the eRoT fronts its flash.
+    // Single checkpoint: it raises a boot-complete GPIO.
     DeviceConfig {
         name: "bmc",
         reset_signal: 7,
-        boot_timeout: core::time::Duration::from_secs(90),
+        checkpoints: &[BootCheckpoint {
+            name: "boot-complete",
+            signal: BootSignal::GpioBootComplete(12),
+            window: Duration::from_secs(90),
+        }],
         commit_policy: CommitPolicy::Liveness,
     },
-    // PLDM device (NIC archetype): self-updating, SPDM-capable.
+    // PLDM device (NIC archetype): self-updating, SPDM-capable. Two
+    // checkpoints, exercising the multi-checkpoint path.
     DeviceConfig {
         name: "nic",
         reset_signal: 3,
-        boot_timeout: core::time::Duration::from_secs(30),
+        checkpoints: &[
+            BootCheckpoint {
+                name: "mctp-ready",
+                signal: BootSignal::MctpReady,
+                window: Duration::from_secs(20),
+            },
+            BootCheckpoint {
+                name: "heartbeat",
+                signal: BootSignal::Heartbeat,
+                window: Duration::from_secs(10),
+            },
+        ],
         commit_policy: CommitPolicy::LivenessAndAttestation,
     },
 ];
