@@ -100,3 +100,74 @@ pub const fn validate<R, G>(devices: &[DeviceConfig<R, G>]) {
         i += 1;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::time::Duration;
+
+    // Board tables run validate() at compile time, where a rejection is a
+    // build error nobody can assert on. These tests call it at runtime to
+    // prove the reject paths actually fire — a vacuous loop would pass
+    // every `const _` check silently.
+
+    const CHECKPOINT: BootCheckpoint<u8> = BootCheckpoint {
+        name: "boot-complete",
+        signal: BootSignal::GpioBootComplete(0),
+        window: Duration::from_secs(1),
+    };
+
+    const DEVICE: DeviceConfig<u8, u8> = DeviceConfig {
+        name: "dev",
+        reset_signal: 0,
+        checkpoints: &[CHECKPOINT],
+        commit_policy: CommitPolicy::Liveness,
+    };
+
+    #[test]
+    fn accepts_a_valid_table() {
+        validate(&[DEVICE]);
+    }
+
+    #[test]
+    #[should_panic(expected = "device name must not be empty")]
+    fn rejects_an_empty_device_name() {
+        validate(&[DEVICE, DeviceConfig { name: "", ..DEVICE }]);
+    }
+
+    #[test]
+    #[should_panic(expected = "at least one boot checkpoint")]
+    fn rejects_an_empty_checkpoint_list() {
+        validate(&[DeviceConfig {
+            checkpoints: &[],
+            ..DEVICE
+        }]);
+    }
+
+    #[test]
+    #[should_panic(expected = "checkpoint name must not be empty")]
+    fn rejects_an_empty_checkpoint_name() {
+        validate(&[DeviceConfig {
+            checkpoints: &[BootCheckpoint {
+                name: "",
+                ..CHECKPOINT
+            }],
+            ..DEVICE
+        }]);
+    }
+
+    #[test]
+    #[should_panic(expected = "checkpoint window must not be zero")]
+    fn rejects_a_zero_checkpoint_window() {
+        validate(&[DeviceConfig {
+            checkpoints: &[
+                CHECKPOINT,
+                BootCheckpoint {
+                    window: Duration::ZERO,
+                    ..CHECKPOINT
+                },
+            ],
+            ..DEVICE
+        }]);
+    }
+}
