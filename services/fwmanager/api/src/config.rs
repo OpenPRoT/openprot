@@ -6,6 +6,11 @@
 //! device is named here.
 
 /// What the orchestrator requires before it commits a staged image.
+///
+/// Intentionally exhaustive (not `#[non_exhaustive]`): adding a variant is
+/// a breaking change, so the compiler forces every match on the policy —
+/// in particular the orchestrator's commit decision — to handle the new
+/// variant explicitly instead of falling into a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommitPolicy {
     /// The device reports it came up.
@@ -20,6 +25,10 @@ pub enum CommitPolicy {
 /// `ResetId` of the reset controller behind the board's `BootControl`
 /// implementation — the compiler rejects a table whose ids the controller
 /// cannot accept.
+///
+/// Intentionally exhaustive (not `#[non_exhaustive]`): board tables
+/// construct this struct by literal, which the attribute would forbid.
+/// Adding a field is a breaking change that updates every board table.
 #[derive(Debug, Clone, Copy)]
 pub struct DeviceConfig<R> {
     pub name: &'static str,
