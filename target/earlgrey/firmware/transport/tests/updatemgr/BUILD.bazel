@@ -35,8 +35,10 @@ opentitan_rust_binary(
 
 [
     opentitan_test(
-        name = "updatemgr_eeprom_{test_name}_{env_name}_test".format(
+        name = "updatemgr_eeprom_{test_name}_slot_{rom_ext_slot}{fw_slot}_{env_name}_test".format(
             env_name = env_name,
+            fw_slot = fw_slot,
+            rom_ext_slot = rom_ext_slot,
             test_name = test_name + ("_standalone_app" if is_standalone else ""),
         ),
         timeout = "eternal",
@@ -60,11 +62,13 @@ opentitan_rust_binary(
             "--expect-owner-transfer",
         ] if expect_owner_transfer else []) + [
             "--transport-rom-ext=$(rootpath {})".format(rom_ext_bin),
+            "--transport-rom-ext-slot={}".format(rom_ext_slot),
         ] + ([
             "--new-rom-ext=$(rootpath {})".format(rom_ext_bin),
         ] if not is_standalone else []) + [
             "--new-firmware=$(rootpath {})".format(fw_binary),
             "--transport-firmware=$(rootpath :transport_firmware_signed)",
+            "--transport-firmware-slot={}".format(fw_slot),
         ]),
         test_harness = ":host_eeprom_owner_transfer",
     )
@@ -79,5 +83,11 @@ opentitan_rust_binary(
     for is_standalone in [
         False,
         True,
+    ]
+    for rom_ext_slot, fw_slot in [
+        ("a", "a"),
+        ("a", "b"),
+        ("b", "a"),
+        ("b", "b"),
     ]
 ]

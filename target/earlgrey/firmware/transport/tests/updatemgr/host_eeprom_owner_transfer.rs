@@ -16,6 +16,21 @@ use opentitanlib::uart::console::UartConsole;
 use opentitanlib::util::file::FromReader;
 use usb::UsbOpts;
 
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+enum Slot {
+    A,
+    B,
+}
+
+impl Slot {
+    fn base_offset(self) -> usize {
+        match self {
+            Slot::A => 0,
+            Slot::B => 0x80000,
+        }
+    }
+}
+
 #[derive(Parser, Debug)]
 struct CmdArgs {
     #[command(flatten)]
@@ -27,6 +42,9 @@ struct CmdArgs {
     #[arg(long)]
     transport_rom_ext: String,
 
+    #[arg(long, value_enum, default_value_t = Slot::A)]
+    transport_rom_ext_slot: Slot,
+
     #[arg(long)]
     new_rom_ext: Option<String>,
 
@@ -35,6 +53,9 @@ struct CmdArgs {
 
     #[arg(long)]
     transport_firmware: String,
+
+    #[arg(long, value_enum, default_value_t = Slot::A)]
+    transport_firmware_slot: Slot,
 
     #[arg(long, default_value = "false")]
     expect_owner_transfer: bool,
@@ -163,17 +184,22 @@ fn flash_transport_firmware(
     bootstrap: &opentitanlib::bootstrap::BootstrapOptions,
     transport_rom_ext_path: &str,
     transport_firmware_path: &str,
+    rom_ext_slot: Slot,
+    firmware_slot: Slot,
 ) -> Result<()> {
-    let firmware_offset = get_firmware_assembly_offset(transport_firmware_path)?;
+    let rom_ext_offset = rom_ext_slot.base_offset();
+    let app_rel_offset = get_firmware_assembly_offset(transport_firmware_path)?;
+    let firmware_offset = firmware_slot.base_offset() + app_rel_offset;
     log::info!(
-        "Assembling transport_firmware image: ROM Ext ('{}') @ 0, Firmware ('{}') @ {:#x}...",
+        "Assembling transport_firmware image: ROM Ext ('{}') @ {:#x}, Firmware ('{}') @ {:#x}...",
         transport_rom_ext_path,
+        rom_ext_offset,
         transport_firmware_path,
         firmware_offset
     );
-    let mut image_assembler = ImageAssembler::with_params(0x100000, true);
+    let mut image_assembler = ImageAssembler::with_params(0x100000, false);
     image_assembler.chunks.extend([
-        ImageChunk::Offset(transport_rom_ext_path.into(), 0),
+        ImageChunk::Offset(transport_rom_ext_path.into(), rom_ext_offset),
         ImageChunk::Offset(transport_firmware_path.into(), firmware_offset),
     ]);
     let payload = image_assembler.assemble()?;
@@ -235,9 +261,11 @@ fn run_dfu_eeprom_owner_transfer_test(
     usb: &UsbOpts,
     bootstrap: &opentitanlib::bootstrap::BootstrapOptions,
     transport_rom_ext_path: &str,
+    transport_rom_ext_slot: Slot,
     new_rom_ext_path: Option<&str>,
     new_firmware_path: &str,
     transport_firmware_path: &str,
+    transport_firmware_slot: Slot,
     expect_owner_transfer: bool,
 ) -> Result<()> {
     let uart = transport.uart("console")?;
@@ -279,6 +307,8 @@ fn run_dfu_eeprom_owner_transfer_test(
         bootstrap,
         transport_rom_ext_path,
         transport_firmware_path,
+        transport_rom_ext_slot,
+        transport_firmware_slot,
     )?;
 
     verify_telemetry(&*uart, expect_owner_transfer)?;
@@ -298,9 +328,11 @@ fn main() -> Result<()> {
         &args.usb,
         &args.init.bootstrap.options,
         &args.transport_rom_ext,
+        args.transport_rom_ext_slot,
         args.new_rom_ext.as_deref(),
         &args.new_firmware,
         &args.transport_firmware,
+        args.transport_firmware_slot,
         args.expect_owner_transfer,
     )?;
     Ok(())
