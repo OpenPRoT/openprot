@@ -71,6 +71,11 @@ impl PlatformServer {
             .handle_event(ResetEvent::Timeout, &mut self.gpio)
     }
 
+    pub fn route_spi_mux(&mut self, route: crate::spimux::SpiMuxRoute) -> Result<(), ErrorCode> {
+        self.spi_mux
+            .handle_event(SpiMuxEvent::Route(route), &mut self.gpio)
+    }
+
     pub fn handle_usb_presence_interrupt(&mut self) -> Result<(), ErrorCode> {
         self.usb_mux
             .handle_event(UsbMuxEvent::PinChanged, &mut self.gpio)
