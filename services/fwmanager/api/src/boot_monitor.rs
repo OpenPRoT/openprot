@@ -12,8 +12,6 @@
 /// orchestrator's timeout, not by this enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BootStatus {
-    /// Held in reset by the orchestrator; not yet released.
-    InReset,
     /// Released, but boot completion not yet observed.
     Booting,
     /// Boot completion observed.
@@ -49,6 +47,13 @@ pub trait BootMonitor {
     type Error: core::error::Error;
 
     /// Returns the current liveness of the device.
+    ///
+    /// Any given monitor may only ever produce a *subset* of [`BootStatus`],
+    /// depending on the signals it can access: a single ready pin yields only
+    /// `Booting`/`Booted`, while a fault-channel backend can also report
+    /// `Failed`. This is a capability difference between backends, not an
+    /// incomplete implementation. Consumers must still handle the full set —
+    /// they cannot know statically which backend they hold.
     ///
     /// # Errors
     ///
