@@ -251,7 +251,7 @@ macro_rules! gpio_macro {
                     fn is_high(&mut self) -> Result<bool, Self::Error> {
                         let p = unsafe { &*device::Gpio::ptr() };
                         Ok(
-                            (p.$data_read_reg().read().bits() & (1u32 << ($pos + $i)))
+                            (p.$data_val_reg().read().bits() & (1u32 << ($pos + $i)))
                                 == (1u32 << ($pos + $i)),
                         )
                     }
@@ -321,10 +321,8 @@ macro_rules! gpio_macro {
                                 p.$int_sen_t2().modify(|r, w| unsafe {
                                     w.bits(r.bits() & !(1u32 << ($pos + $i)))
                                 });
-                                // Note: original uses `| !` (OR with NOT) here, preserved
-                                // faithfully.
                                 p.$int_en_reg().modify(|r, w| unsafe {
-                                    w.bits(r.bits() | !(1u32 << ($pos + $i)))
+                                    w.bits(r.bits() | (1u32 << ($pos + $i)))
                                 });
                             }
                             InterruptMode::EdgeBoth => {
