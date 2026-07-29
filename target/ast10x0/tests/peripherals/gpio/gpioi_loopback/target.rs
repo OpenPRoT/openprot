@@ -103,7 +103,11 @@ fn test_gpio_loopback() -> bool {
             return false;
         }
         let initial_level = if initial_high { "high" } else { "low" };
-        pw_log::info!("{}: GPIOI0 as output drive initial level {}", name as &str, initial_level as &str);
+        pw_log::info!(
+            "{}: GPIOI0 as output drive initial level {}",
+            name as &str,
+            initial_level as &str
+        );
         cortex_m::asm::delay(GPIO_LEVEL_DELAY_CYCLES);
 
         let input_matches = if initial_high {
@@ -115,7 +119,11 @@ fn test_gpio_loopback() -> bool {
             pw_log::error!("{}: input and output GPIO level mismatch", name as &str);
             return false;
         }
-        pw_log::info!("{}: GPIOI1 as input read initial level {}", name as &str, initial_level as &str);
+        pw_log::info!(
+            "{}: GPIOI1 as input read initial level {}",
+            name as &str,
+            initial_level as &str
+        );
 
         input.clear_interrupt();
         input.set_interrupt_mode(mode);
@@ -136,7 +144,11 @@ fn test_gpio_loopback() -> bool {
             return false;
         }
         let trigger_level = if trigger_high { "high" } else { "low" };
-        pw_log::info!("{}: GPIOI0 as output drive trigger level {}", name as &str, trigger_level as &str);
+        pw_log::info!(
+            "{}: GPIOI0 as output drive trigger level {}",
+            name as &str,
+            trigger_level as &str
+        );
         cortex_m::asm::delay(GPIO_LEVEL_DELAY_CYCLES);
 
         let input_matches = if trigger_high {
@@ -149,7 +161,11 @@ fn test_gpio_loopback() -> bool {
             input.set_interrupt_mode(InterruptMode::Disabled);
             return false;
         }
-        pw_log::info!("{}: GPIOI1 as input read trigger level {}", name as &str, trigger_level as &str);
+        pw_log::info!(
+            "{}: GPIOI1 as input read trigger level {}",
+            name as &str,
+            trigger_level as &str
+        );
 
         if !input.get_interrupt_status() {
             pw_log::error!("{}: interrupt status was not set", name as &str);

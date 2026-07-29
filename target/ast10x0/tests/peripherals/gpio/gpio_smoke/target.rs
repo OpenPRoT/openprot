@@ -32,11 +32,17 @@ fn run_gpioa_test() -> bool {
     // so either 0 or 1 is valid in this configuration test.
     let mut pa0 = gpioa.pa0.into_pull_down_input();
     let pa0_level = pa0.is_high().unwrap_or(false);
-    pw_log::info!("GPIOA0 input configured; sampled level={}", pa0_level as u32);
+    pw_log::info!(
+        "GPIOA0 input configured; sampled level={}",
+        pa0_level as u32
+    );
 
     let mut pa1 = gpioa.pa1.into_pull_up_input();
     let pa1_level = pa1.is_high().unwrap_or(false);
-    pw_log::info!("GPIOA1 input configured; sampled level={}", pa1_level as u32);
+    pw_log::info!(
+        "GPIOA1 input configured; sampled level={}",
+        pa1_level as u32
+    );
 
     let mut pa3 = gpioa.pa3.into_open_drain_output::<ActiveLow>();
     if pa3.set_low().is_err() || !pa3.is_set_low().unwrap_or(false) {
