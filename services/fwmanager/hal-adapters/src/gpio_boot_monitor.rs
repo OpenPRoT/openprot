@@ -73,6 +73,17 @@ impl<E: GpioError> From<E> for MonitorError<E> {
 /// latches high is read directly; an edge or pulse (for example a heartbeat) is
 /// latched in hardware at bring-up so `read_input` still reflects it.
 ///
+/// The monitor only reads, so it *borrows* the port rather than owning it:
+/// several monitors can watch different lines of the same bank (on the
+/// AST1060 SGPIOM a bank packs 32 unrelated lines, so distinct devices'
+/// ready signals routinely share one). Platform configuration keeps the bank
+/// alive for as long as its monitors.
+///
+/// A single ready line can only ever answer "up yet?", so this backend
+/// reports the [`BootStatus::Booting`]/[`BootStatus::Booted`] subset — see
+/// [`BootMonitor::boot_status`] on why that is a capability difference, not
+/// an incomplete implementation.
+///
 /// Where a hardware latch is used, the platform must clear it whenever the
 /// device re-enters reset (typically by wiring the latch's clear to the
 /// device's reset line) — [`BootMonitor`] requires that evidence from a
@@ -80,13 +91,13 @@ impl<E: GpioError> From<E> for MonitorError<E> {
 /// reads the line, it cannot re-arm it.
 ///
 /// [`HalBootControl`]: crate::HalBootControl
-pub struct GpioBootMonitor<P: GpioPort> {
-    port: P,
+pub struct GpioBootMonitor<'a, P: GpioPort> {
+    port: &'a P,
     ready_pin: P::Mask,
     active: ActivePolarity,
 }
 
-impl<P: GpioPort> GpioBootMonitor<P> {
+impl<'a, P: GpioPort> GpioBootMonitor<'a, P> {
     /// Binds `port`'s line `ready_pin`, asserted per `active`, as a device's
     /// boot-complete signal.
     ///
@@ -101,7 +112,7 @@ impl<P: GpioPort> GpioBootMonitor<P> {
     /// in every sample, so it would report every device `Booted` from the
     /// moment reset is released — a misbinding that must fail at
     /// construction, in platform bring-up, not stay silent in the field.
-    pub fn new(port: P, ready_pin: P::Mask, active: ActivePolarity) -> Self {
+    pub fn new(port: &'a P, ready_pin: P::Mask, active: ActivePolarity) -> Self {
         assert!(
             !ready_pin.is_empty(),
             "GpioBootMonitor bound to an empty pin mask"
@@ -117,7 +128,7 @@ impl<P: GpioPort> GpioBootMonitor<P> {
 // `P::Error: 'static` because `source()` hands out `&(dyn Error + 'static)`
 // referencing the wrapped HAL error. Error types are plain data; this costs
 // no real implementation anything.
-impl<P: GpioPort> BootMonitor for GpioBootMonitor<P>
+impl<P: GpioPort> BootMonitor for GpioBootMonitor<'_, P>
 where
     P::Error: 'static,
 {
@@ -242,11 +253,8 @@ mod tests {
     // A ready line asserted high reads as Booted under active-high polarity.
     #[test]
     fn booted_when_ready_line_asserted() {
-        let mon = GpioBootMonitor::new(
-            MockGpioPort::with_input(BMC_READY),
-            BMC_READY,
-            ActivePolarity::ActiveHigh,
-        );
+        let port = MockGpioPort::with_input(BMC_READY);
+        let mon = GpioBootMonitor::new(&port, BMC_READY, ActivePolarity::ActiveHigh);
 
         assert_eq!(mon.boot_status().expect("read failed"), BootStatus::Booted);
     }
@@ -255,11 +263,8 @@ mod tests {
     // until the orchestrator's own timeout fires.
     #[test]
     fn booting_when_ready_line_deasserted() {
-        let mon = GpioBootMonitor::new(
-            MockGpioPort::with_input(Mask::empty()),
-            BMC_READY,
-            ActivePolarity::ActiveHigh,
-        );
+        let port = MockGpioPort::with_input(Mask::empty());
+        let mon = GpioBootMonitor::new(&port, BMC_READY, ActivePolarity::ActiveHigh);
 
         assert_eq!(mon.boot_status().expect("read failed"), BootStatus::Booting);
     }
@@ -267,11 +272,8 @@ mod tests {
     // Active-low inverts the sense: a low line is asserted, hence Booted.
     #[test]
     fn respects_active_low_polarity() {
-        let mon = GpioBootMonitor::new(
-            MockGpioPort::with_input(Mask::empty()),
-            BMC_READY,
-            ActivePolarity::ActiveLow,
-        );
+        let port = MockGpioPort::with_input(Mask::empty());
+        let mon = GpioBootMonitor::new(&port, BMC_READY, ActivePolarity::ActiveLow);
 
         assert_eq!(mon.boot_status().expect("read failed"), BootStatus::Booted);
     }
@@ -280,11 +282,8 @@ mod tests {
     // device Booting.
     #[test]
     fn ignores_other_lines() {
-        let mon = GpioBootMonitor::new(
-            MockGpioPort::with_input(Mask(1 << 2)),
-            BMC_READY,
-            ActivePolarity::ActiveHigh,
-        );
+        let port = MockGpioPort::with_input(Mask(1 << 2));
+        let mon = GpioBootMonitor::new(&port, BMC_READY, ActivePolarity::ActiveHigh);
 
         assert_eq!(mon.boot_status().expect("read failed"), BootStatus::Booting);
     }
@@ -294,21 +293,15 @@ mod tests {
     #[test]
     #[should_panic(expected = "empty pin mask")]
     fn empty_ready_mask_panics_at_construction() {
-        GpioBootMonitor::new(
-            MockGpioPort::with_input(Mask::empty()),
-            Mask::empty(),
-            ActivePolarity::ActiveHigh,
-        );
+        let port = MockGpioPort::with_input(Mask::empty());
+        GpioBootMonitor::new(&port, Mask::empty(), ActivePolarity::ActiveHigh);
     }
 
     // A controller error surfaces through BootMonitor unchanged.
     #[test]
     fn port_error_propagates_through_boot_monitor() {
-        let mon = GpioBootMonitor::new(
-            MockGpioPort::failing(GpioErrorKind::HardwareFailure),
-            BMC_READY,
-            ActivePolarity::ActiveHigh,
-        );
+        let port = MockGpioPort::failing(GpioErrorKind::HardwareFailure);
+        let mon = GpioBootMonitor::new(&port, BMC_READY, ActivePolarity::ActiveHigh);
 
         let err = mon
             .boot_status()
