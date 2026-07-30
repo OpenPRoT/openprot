@@ -24,11 +24,11 @@ pub enum MeasurementAuthority {
 /// A single firmware measurement record to include in the EAT token.
 #[derive(Clone, Debug)]
 pub struct Measurement {
-    pub component:  String,
-    pub version:    String,
+    pub component: String,
+    pub version: String,
     pub digest_alg: DigestAlgorithm,
-    pub digest:     Vec<u8>,
-    pub authority:  MeasurementAuthority,
+    pub digest: Vec<u8>,
+    pub authority: MeasurementAuthority,
 }
 
 /// DER-encoded certificate chain ordered leaf → root.
@@ -36,9 +36,9 @@ pub struct CertChain(pub Vec<Vec<u8>>);
 
 /// Producer configuration, set once at platform initialisation.
 pub struct AttestConfig {
-    pub oemid:          OemId,
-    pub hw_model:       String,
-    pub hw_version:     String,
+    pub oemid: OemId,
+    pub hw_model: String,
+    pub hw_version: String,
     pub cert_cache_ttl: Duration,
 }
 

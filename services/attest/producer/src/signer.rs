@@ -18,14 +18,18 @@ use crate::{builder, dice_identity, measurements};
 
 /// Attestation producer backed by a Caliptra hardware signer.
 pub struct HwAttestProducer {
-    signer:    Arc<dyn CaliptraSigner>,
-    config:    AttestConfig,
+    signer: Arc<dyn CaliptraSigner>,
+    config: AttestConfig,
     providers: Vec<Box<dyn MeasurementProvider>>,
 }
 
 impl HwAttestProducer {
     pub fn new(signer: Arc<dyn CaliptraSigner>, config: AttestConfig) -> Self {
-        Self { signer, config, providers: Vec::new() }
+        Self {
+            signer,
+            config,
+            providers: Vec::new(),
+        }
     }
 
     /// Register an additional measurement provider (UEFI, BMC, etc.).
