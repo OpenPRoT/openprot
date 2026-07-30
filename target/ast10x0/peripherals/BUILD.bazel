@@ -24,6 +24,7 @@ rust_library(
         "hace/registers.rs",
         "i2c/constants.rs",
         "i2c/controller.rs",
+        "i2c/dma.rs",
         "i2c/error.rs",
         "i2c/global.rs",
         "i2c/hal_impl.rs",

@@ -59,6 +59,7 @@
 
 mod constants;
 mod controller;
+mod dma;
 mod error;
 mod global;
 mod hal_impl;
