@@ -1,3 +1,4 @@
+// Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 // Integration tests for openprot-attest-producer.
 // Requires: cargo test --features test-support

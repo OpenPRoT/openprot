@@ -1,3 +1,4 @@
+// Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
 //! OCP-EAT COSE_Sign1 token assembly.
