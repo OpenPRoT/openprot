@@ -9,7 +9,8 @@
 use std::sync::Arc;
 
 use openprot_attest_api::{
-    AttestConfig, AttestError, AttestProducer, CaliptraSigner, CertChain, MeasurementProvider,
+    AttestConfig, AttestError, AttestProducer, CaliptraSigner, CertChain,
+    MeasurementProvider,
 };
 
 use crate::{builder, dice_identity, measurements};
@@ -39,7 +40,11 @@ impl HwAttestProducer {
 }
 
 impl AttestProducer for HwAttestProducer {
-    fn generate_token(&self, nonce: &[u8], evidence: &[u8]) -> Result<Vec<u8>, AttestError> {
+    fn generate_token(
+        &self,
+        nonce: &[u8],
+        evidence: &[u8],
+    ) -> Result<Vec<u8>, AttestError> {
         let meas = measurements::collect(vec![], &self.providers)?;
         builder::build(&self.config, &*self.signer, &meas, nonce, evidence)
     }
@@ -69,7 +74,11 @@ impl SoftwareAttestProducer {
 
 #[cfg(feature = "test-support")]
 impl AttestProducer for SoftwareAttestProducer {
-    fn generate_token(&self, nonce: &[u8], evidence: &[u8]) -> Result<Vec<u8>, AttestError> {
+    fn generate_token(
+        &self,
+        nonce: &[u8],
+        evidence: &[u8],
+    ) -> Result<Vec<u8>, AttestError> {
         let meas = measurements::test_caliptra_measurements();
         builder::build(&self.config, &StubSigner, &meas, nonce, evidence)
     }

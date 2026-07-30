@@ -12,7 +12,9 @@
 use openprot_attest_api::{AttestError, CaliptraSigner, CertChain};
 
 /// Retrieve the full DICE certificate chain from Caliptra, ordered leaf → root.
-pub fn cert_chain(signer: &dyn CaliptraSigner) -> Result<CertChain, AttestError> {
+pub fn cert_chain(
+    signer: &dyn CaliptraSigner,
+) -> Result<CertChain, AttestError> {
     let chain = signer.cert_chain_der()?;
     if chain.len() < 2 {
         return Err(AttestError::Caliptra(
@@ -35,16 +37,24 @@ mod tests {
     struct TwoCerts;
 
     impl CaliptraSigner for OneCert {
-        fn sign_es384(&self, _: &[u8]) -> Result<[u8; 96], AttestError> { Ok([0u8; 96]) }
-        fn alias_cert_der(&self) -> Result<Vec<u8>, AttestError> { Ok(vec![0x30, 0x00]) }
+        fn sign_es384(&self, _: &[u8]) -> Result<[u8; 96], AttestError> {
+            Ok([0u8; 96])
+        }
+        fn alias_cert_der(&self) -> Result<Vec<u8>, AttestError> {
+            Ok(vec![0x30, 0x00])
+        }
         fn cert_chain_der(&self) -> Result<Vec<Vec<u8>>, AttestError> {
             Ok(vec![vec![0x30, 0x00]])
         }
     }
 
     impl CaliptraSigner for TwoCerts {
-        fn sign_es384(&self, _: &[u8]) -> Result<[u8; 96], AttestError> { Ok([0u8; 96]) }
-        fn alias_cert_der(&self) -> Result<Vec<u8>, AttestError> { Ok(vec![0x30, 0x00]) }
+        fn sign_es384(&self, _: &[u8]) -> Result<[u8; 96], AttestError> {
+            Ok([0u8; 96])
+        }
+        fn alias_cert_der(&self) -> Result<Vec<u8>, AttestError> {
+            Ok(vec![0x30, 0x00])
+        }
         fn cert_chain_der(&self) -> Result<Vec<Vec<u8>>, AttestError> {
             Ok(vec![vec![0x30, 0x00], vec![0x30, 0x01]])
         }

@@ -19,7 +19,10 @@ pub fn collect(
     let mut all = caliptra_measurements;
     for provider in providers {
         let entries = provider.measurements().map_err(|e| {
-            AttestError::Provider(format!("provider '{}' failed: {e}", provider.component_name()))
+            AttestError::Provider(format!(
+                "provider '{}' failed: {e}",
+                provider.component_name()
+            ))
         })?;
         all.extend(entries);
     }
@@ -33,25 +36,25 @@ pub fn test_caliptra_measurements() -> Vec<Measurement> {
 
     vec![
         Measurement {
-            component:  "Caliptra ROM".into(),
-            version:    "1.0.0".into(),
+            component: "Caliptra ROM".into(),
+            version: "1.0.0".into(),
             digest_alg: DigestAlgorithm::Sha384,
-            digest:     vec![0xAAu8; 48],
-            authority:  MeasurementAuthority::Caliptra,
+            digest: vec![0xAAu8; 48],
+            authority: MeasurementAuthority::Caliptra,
         },
         Measurement {
-            component:  "Caliptra FMC".into(),
-            version:    "2.3.1".into(),
+            component: "Caliptra FMC".into(),
+            version: "2.3.1".into(),
             digest_alg: DigestAlgorithm::Sha384,
-            digest:     vec![0xBBu8; 48],
-            authority:  MeasurementAuthority::Caliptra,
+            digest: vec![0xBBu8; 48],
+            authority: MeasurementAuthority::Caliptra,
         },
         Measurement {
-            component:  "Caliptra RT".into(),
-            version:    "2.3.1".into(),
+            component: "Caliptra RT".into(),
+            version: "2.3.1".into(),
             digest_alg: DigestAlgorithm::Sha384,
-            digest:     vec![0xCCu8; 48],
-            authority:  MeasurementAuthority::Caliptra,
+            digest: vec![0xCCu8; 48],
+            authority: MeasurementAuthority::Caliptra,
         },
     ]
 }
@@ -67,17 +70,19 @@ mod tests {
     }
 
     impl MeasurementProvider for StubProvider {
-        fn component_name(&self) -> &str { self.name }
+        fn component_name(&self) -> &str {
+            self.name
+        }
         fn measurements(&self) -> Result<Vec<Measurement>, AttestError> {
             if self.fail {
                 Err(AttestError::Provider("intentional failure".into()))
             } else {
                 Ok(vec![Measurement {
-                    component:  self.name.into(),
-                    version:    "0.1".into(),
+                    component: self.name.into(),
+                    version: "0.1".into(),
                     digest_alg: DigestAlgorithm::Sha384,
-                    digest:     vec![0xBBu8; 48],
-                    authority:  MeasurementAuthority::Platform,
+                    digest: vec![0xBBu8; 48],
+                    authority: MeasurementAuthority::Platform,
                 }])
             }
         }
@@ -85,11 +90,11 @@ mod tests {
 
     fn rom() -> Measurement {
         Measurement {
-            component:  "ROM".into(),
-            version:    "1.0".into(),
+            component: "ROM".into(),
+            version: "1.0".into(),
             digest_alg: DigestAlgorithm::Sha384,
-            digest:     vec![0xAAu8; 48],
-            authority:  MeasurementAuthority::Caliptra,
+            digest: vec![0xAAu8; 48],
+            authority: MeasurementAuthority::Caliptra,
         }
     }
 
@@ -103,7 +108,10 @@ mod tests {
     #[test]
     fn provider_measurements_are_appended() {
         let providers: Vec<Box<dyn MeasurementProvider>> =
-            vec![Box::new(StubProvider { name: "UEFI", fail: false })];
+            vec![Box::new(StubProvider {
+                name: "UEFI",
+                fail: false,
+            })];
         let result = collect(vec![rom()], &providers).unwrap();
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].component, "ROM");
@@ -113,8 +121,14 @@ mod tests {
     #[test]
     fn multiple_providers_all_appended() {
         let providers: Vec<Box<dyn MeasurementProvider>> = vec![
-            Box::new(StubProvider { name: "UEFI", fail: false }),
-            Box::new(StubProvider { name: "BMC",  fail: false }),
+            Box::new(StubProvider {
+                name: "UEFI",
+                fail: false,
+            }),
+            Box::new(StubProvider {
+                name: "BMC",
+                fail: false,
+            }),
         ];
         let result = collect(vec![], &providers).unwrap();
         assert_eq!(result.len(), 2);
@@ -123,7 +137,10 @@ mod tests {
     #[test]
     fn failing_provider_propagates_error() {
         let providers: Vec<Box<dyn MeasurementProvider>> =
-            vec![Box::new(StubProvider { name: "BMC", fail: true })];
+            vec![Box::new(StubProvider {
+                name: "BMC",
+                fail: true,
+            })];
         let err = collect(vec![], &providers).unwrap_err();
         assert!(err.to_string().contains("BMC"));
     }
