@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # services/attest
 
 Attestation producer service for the OpenPRoT Platform Root of Trust.

@@ -1,3 +1,5 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # openprot-attest-api
 
 Platform-independent trait and type definitions for the OpenPRoT attestation
