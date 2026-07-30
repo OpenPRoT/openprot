@@ -107,11 +107,10 @@ mod tests {
 
     #[test]
     fn provider_measurements_are_appended() {
-        let providers: Vec<Box<dyn MeasurementProvider>> =
-            vec![Box::new(StubProvider {
-                name: "UEFI",
-                fail: false,
-            })];
+        let providers: Vec<Box<dyn MeasurementProvider>> = vec![Box::new(StubProvider {
+            name: "UEFI",
+            fail: false,
+        })];
         let result = collect(vec![rom()], &providers).unwrap();
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].component, "ROM");
@@ -136,11 +135,10 @@ mod tests {
 
     #[test]
     fn failing_provider_propagates_error() {
-        let providers: Vec<Box<dyn MeasurementProvider>> =
-            vec![Box::new(StubProvider {
-                name: "BMC",
-                fail: true,
-            })];
+        let providers: Vec<Box<dyn MeasurementProvider>> = vec![Box::new(StubProvider {
+            name: "BMC",
+            fail: true,
+        })];
         let err = collect(vec![], &providers).unwrap_err();
         assert!(err.to_string().contains("BMC"));
     }

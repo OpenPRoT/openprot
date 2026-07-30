@@ -18,13 +18,9 @@ fn config() -> AttestConfig {
     }
 }
 
-fn decode_payload_map(
-    token: &[u8],
-) -> Vec<(ciborium::value::Value, ciborium::value::Value)> {
-    let outer: ciborium::value::Value =
-        ciborium::de::from_reader(token).unwrap();
-    let payload_bytes =
-        outer.as_array().unwrap()[2].as_bytes().unwrap().clone();
+fn decode_payload_map(token: &[u8]) -> Vec<(ciborium::value::Value, ciborium::value::Value)> {
+    let outer: ciborium::value::Value = ciborium::de::from_reader(token).unwrap();
+    let payload_bytes = outer.as_array().unwrap()[2].as_bytes().unwrap().clone();
     let payload: ciborium::value::Value =
         ciborium::de::from_reader(payload_bytes.as_slice()).unwrap();
     payload.as_map().unwrap().clone()
@@ -35,9 +31,7 @@ fn find_claim(
     key: i64,
 ) -> Option<ciborium::value::Value> {
     map.iter()
-        .find(|(k, _)| {
-            k.as_integer().and_then(|i| i64::try_from(i).ok()) == Some(key)
-        })
+        .find(|(k, _)| k.as_integer().and_then(|i| i64::try_from(i).ok()) == Some(key))
         .map(|(_, v)| v.clone())
 }
 
@@ -47,8 +41,7 @@ fn find_claim(
 fn token_is_four_element_cbor_array() {
     let producer = SoftwareAttestProducer::new(config());
     let token = producer.generate_token(b"testnonce12345678", &[]).unwrap();
-    let value: ciborium::value::Value =
-        ciborium::de::from_reader(token.as_slice()).unwrap();
+    let value: ciborium::value::Value = ciborium::de::from_reader(token.as_slice()).unwrap();
     assert_eq!(value.as_array().unwrap().len(), 4);
 }
 
@@ -56,8 +49,7 @@ fn token_is_four_element_cbor_array() {
 fn protected_header_is_bytes() {
     let producer = SoftwareAttestProducer::new(config());
     let token = producer.generate_token(b"n", &[]).unwrap();
-    let outer: ciborium::value::Value =
-        ciborium::de::from_reader(token.as_slice()).unwrap();
+    let outer: ciborium::value::Value = ciborium::de::from_reader(token.as_slice()).unwrap();
     assert!(outer.as_array().unwrap()[0].as_bytes().is_some());
 }
 
@@ -65,8 +57,7 @@ fn protected_header_is_bytes() {
 fn signature_is_96_zero_bytes() {
     let producer = SoftwareAttestProducer::new(config());
     let token = producer.generate_token(b"n", &[]).unwrap();
-    let outer: ciborium::value::Value =
-        ciborium::de::from_reader(token.as_slice()).unwrap();
+    let outer: ciborium::value::Value = ciborium::de::from_reader(token.as_slice()).unwrap();
     let sig = outer.as_array().unwrap()[3].as_bytes().unwrap();
     assert_eq!(sig.len(), 96);
     assert!(sig.iter().all(|&b| b == 0));

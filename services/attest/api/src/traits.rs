@@ -20,11 +20,7 @@ pub trait AttestProducer: Send + Sync {
     /// available.
     ///
     /// Returns the complete COSE_Sign1 structure as a byte vector.
-    fn generate_token(
-        &self,
-        nonce: &[u8],
-        evidence: &[u8],
-    ) -> Result<Vec<u8>, AttestError>;
+    fn generate_token(&self, nonce: &[u8], evidence: &[u8]) -> Result<Vec<u8>, AttestError>;
 
     /// Return the current DICE certificate chain, ordered leaf → root.
     fn cert_chain(&self) -> Result<CertChain, AttestError>;

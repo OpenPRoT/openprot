@@ -228,33 +228,27 @@ mod tests {
 
     fn decode_payload(token: &[u8]) -> Vec<(Value, Value)> {
         let outer: Value = ciborium::de::from_reader(token).unwrap();
-        let payload_bytes =
-            outer.as_array().unwrap()[2].as_bytes().unwrap().clone();
-        let payload: Value =
-            ciborium::de::from_reader(payload_bytes.as_slice()).unwrap();
+        let payload_bytes = outer.as_array().unwrap()[2].as_bytes().unwrap().clone();
+        let payload: Value = ciborium::de::from_reader(payload_bytes.as_slice()).unwrap();
         payload.as_map().unwrap().clone()
     }
 
     fn find_claim(map: &[(Value, Value)], key: i64) -> Option<&Value> {
         map.iter()
-            .find(|(k, _)| {
-                k.as_integer().and_then(|i| i64::try_from(i).ok()) == Some(key)
-            })
+            .find(|(k, _)| k.as_integer().and_then(|i| i64::try_from(i).ok()) == Some(key))
             .map(|(_, v)| v)
     }
 
     #[test]
     fn output_is_four_element_cbor_array() {
-        let token =
-            build(&config(), &TestSigner, &meas(), b"nonce", &[]).unwrap();
+        let token = build(&config(), &TestSigner, &meas(), b"nonce", &[]).unwrap();
         let value: Value = ciborium::de::from_reader(token.as_slice()).unwrap();
         assert_eq!(value.as_array().unwrap().len(), 4);
     }
 
     #[test]
     fn nonce_appears_in_payload() {
-        let token =
-            build(&config(), &TestSigner, &meas(), b"testnonce", &[]).unwrap();
+        let token = build(&config(), &TestSigner, &meas(), b"testnonce", &[]).unwrap();
         let map = decode_payload(&token);
         let v = find_claim(&map, 10).unwrap(); // CLAIM_NONCE = 10
         assert_eq!(v.as_bytes().unwrap(), b"testnonce");
@@ -270,8 +264,7 @@ mod tests {
     #[test]
     fn non_empty_evidence_included_verbatim() {
         let evidence = vec![0xDE, 0xAD, 0xBE, 0xEF];
-        let token =
-            build(&config(), &TestSigner, &meas(), b"n", &evidence).unwrap();
+        let token = build(&config(), &TestSigner, &meas(), b"n", &evidence).unwrap();
         let map = decode_payload(&token);
         let v = find_claim(&map, -70001).unwrap();
         assert_eq!(v.as_bytes().unwrap(), &evidence);

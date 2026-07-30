@@ -12,9 +12,7 @@
 use openprot_attest_api::{AttestError, CaliptraSigner, CertChain};
 
 /// Retrieve the full DICE certificate chain from Caliptra, ordered leaf → root.
-pub fn cert_chain(
-    signer: &dyn CaliptraSigner,
-) -> Result<CertChain, AttestError> {
+pub fn cert_chain(signer: &dyn CaliptraSigner) -> Result<CertChain, AttestError> {
     let chain = signer.cert_chain_der()?;
     if chain.len() < 2 {
         return Err(AttestError::Caliptra(

@@ -32,6 +32,6 @@ mod types;
 pub use error::AttestError;
 pub use traits::AttestProducer;
 pub use types::{
-    AttestConfig, CaliptraSigner, CertChain, DigestAlgorithm, Measurement,
-    MeasurementAuthority, MeasurementProvider, OemId,
+    AttestConfig, CaliptraSigner, CertChain, DigestAlgorithm, Measurement, MeasurementAuthority,
+    MeasurementProvider, OemId,
 };
