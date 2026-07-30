@@ -30,6 +30,7 @@ rust_test(
 rust_test(
     name = "attest_producer_integration_test",
     srcs = ["tests/producer_integration.rs"],
+    edition = "2021",
     features = ["test-support"],
     deps = [
         ":attest_producer",

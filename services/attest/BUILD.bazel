@@ -17,7 +17,7 @@ test_suite(
     name = "attest_host_tests",
     tests = [
         "//services/attest/api:attest_api_test",
-        "//services/attest/producer:attest_producer_unit_test",
         "//services/attest/producer:attest_producer_integration_test",
+        "//services/attest/producer:attest_producer_unit_test",
     ],
 )
