@@ -48,6 +48,8 @@ rust_library(
         "i3c/registers.rs",
         "i3c/types.rs",
         "lib.rs",
+        "otp/common.rs",
+        "otp/mod.rs",
         "scu/cache.rs",
         "scu/clock.rs",
         "scu/mod.rs",
