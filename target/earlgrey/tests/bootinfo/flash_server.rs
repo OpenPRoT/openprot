@@ -13,28 +13,9 @@ use earlgrey_util::flash::EarlgreyFlashAddress;
 use eflash_driver::{EmbeddedFlash, Permission};
 use hal_flash::{BlockingFlash, FlashAddress};
 use services_flash_server::FlashIpcServer;
+use util_blocking::pigweed::BlockingInterrupt;
 use util_error::ErrorCode;
 use util_ipc::IpcHandle;
-use util_types::Blocking;
-
-struct FlashCtrlInterrupt;
-
-impl Blocking for FlashCtrlInterrupt {
-    fn wait_for_notification(&self) {
-        loop {
-            if let Ok(w) = syscall::object_wait(
-                handle::FLASH_INTERRUPTS,
-                signals::FLASH_CTRL_OP_DONE,
-                Instant::MAX,
-            ) {
-                if w.pending_signals.contains(signals::FLASH_CTRL_OP_DONE) {
-                    break;
-                }
-            }
-        }
-        let _ = syscall::interrupt_ack(handle::FLASH_INTERRUPTS, signals::FLASH_CTRL_OP_DONE);
-    }
-}
 
 fn flash_server() -> Result<(), ErrorCode> {
     let mut driver =
@@ -46,7 +27,10 @@ fn flash_server() -> Result<(), ErrorCode> {
     }
     let flash = BlockingFlash {
         driver,
-        blocking: FlashCtrlInterrupt,
+        blocking: BlockingInterrupt {
+            handle: handle::FLASH_INTERRUPTS,
+            signals: signals::FLASH_CTRL_OP_DONE,
+        },
     };
     let mut flash_server = FlashIpcServer::new(flash);
     let mut buf = [0u8; 2064];
