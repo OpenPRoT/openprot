@@ -15,6 +15,7 @@ rust_library(
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
+        "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_time/rust:pw_time",
         "@rust_crates//:zerocopy",
     ],

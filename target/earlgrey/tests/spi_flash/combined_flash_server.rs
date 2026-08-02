@@ -15,30 +15,10 @@ use spi_flash::SpiFlash;
 use spi_host::SpiHost0;
 use userspace::time::Instant;
 use userspace::{entry, syscall};
+use util_blocking::BlockingInterrupt;
 use util_error::ErrorCode;
 use util_ipc::IpcHandle;
 use util_panic as _;
-use util_types::Blocking;
-
-// EFlash Interrupt Blocker
-struct FlashCtrlInterrupt;
-
-impl Blocking for FlashCtrlInterrupt {
-    fn wait_for_notification(&self) {
-        loop {
-            if let Ok(w) = syscall::object_wait(
-                handle::FLASH_INTERRUPTS,
-                signals::FLASH_CTRL_OP_DONE,
-                Instant::MAX,
-            ) {
-                if w.pending_signals.contains(signals::FLASH_CTRL_OP_DONE) {
-                    break;
-                }
-            }
-        }
-        let _ = syscall::interrupt_ack(handle::FLASH_INTERRUPTS, signals::FLASH_CTRL_OP_DONE);
-    }
-}
 
 fn run_server() -> Result<(), ErrorCode> {
     // 1. Initialize EFlash driver.
@@ -55,7 +35,10 @@ fn run_server() -> Result<(), ErrorCode> {
 
     let eflash = BlockingFlash {
         driver: eflash_driver,
-        blocking: FlashCtrlInterrupt,
+        blocking: BlockingInterrupt {
+            handle: handle::FLASH_INTERRUPTS,
+            signals: signals::FLASH_CTRL_OP_DONE,
+        },
     };
     let mut eflash_server = FlashIpcServer::new(eflash);
 
