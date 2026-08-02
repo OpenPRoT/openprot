@@ -13,12 +13,3 @@ pub use opcode::Opcode;
 pub use power_of_2::PowerOf2Usize;
 pub use time::MultiplyDuration;
 pub use time::Nanoseconds;
-
-/// A trait for blocking on notifications.
-///
-/// This trait is typically implemented by mechanisms that need to wait for
-/// an event or notification from another part of the system (e.g., an interrupt).
-pub trait Blocking {
-    /// Waits until a notification is received.
-    fn wait_for_notification(&self);
-}

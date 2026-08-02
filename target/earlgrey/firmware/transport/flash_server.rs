@@ -18,8 +18,8 @@ use hal_flash::{BlockingFlash, FlashAddress};
 use services_flash_server::FlashIpcServer;
 use spi_flash::SpiFlash;
 use spi_host::SpiHost0;
+use util_blocking::pigweed::BlockingInterrupt;
 use util_ipc::IpcHandle;
-use util_types::Blocking;
 
 #[derive(Zfmt)]
 #[zfmt(format = "SPI Host init failed: {code:08x}")]
@@ -33,25 +33,6 @@ struct SpiFlashInitFailed {
     code: u32,
 }
 
-struct FlashCtrlInterrupt;
-
-impl Blocking for FlashCtrlInterrupt {
-    fn wait_for_notification(&self) {
-        loop {
-            if let Ok(w) = syscall::object_wait(
-                handle::FLASH_INTERRUPTS,
-                signals::FLASH_CTRL_OP_DONE,
-                Instant::MAX,
-            ) {
-                if w.pending_signals.contains(signals::FLASH_CTRL_OP_DONE) {
-                    break;
-                }
-            }
-        }
-        let _ = syscall::interrupt_ack(handle::FLASH_INTERRUPTS, signals::FLASH_CTRL_OP_DONE);
-    }
-}
-
 fn flash_server() -> Result<(), ErrorCode> {
     let mut eflash_driver =
         EmbeddedFlash::new_with_interrupts(unsafe { flash_ctrl_core::FlashCtrl::new() });
@@ -62,7 +43,10 @@ fn flash_server() -> Result<(), ErrorCode> {
     }
     let eflash = BlockingFlash {
         driver: eflash_driver,
-        blocking: FlashCtrlInterrupt,
+        blocking: BlockingInterrupt {
+            handle: handle::FLASH_INTERRUPTS,
+            signals: signals::FLASH_CTRL_OP_DONE,
+        },
     };
     let mut eflash_server = FlashIpcServer::new(eflash);
 
