@@ -158,6 +158,9 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
     fn erase(&mut self, start_addr: FlashAddress, size: PowerOf2Usize) -> Result<(), Self::Error> {
         self.driver.start_erase(start_addr, size)?;
         self.blocking.wait_for_notification();
+        while self.driver.is_busy() {
+            self.blocking.wait_for_notification();
+        }
         self.driver.complete_op()
     }
     /// Programs data into flash.
@@ -180,6 +183,9 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
             )];
             self.driver.start_program(addr, chunk)?;
             self.blocking.wait_for_notification();
+            while self.driver.is_busy() {
+                self.blocking.wait_for_notification();
+            }
             self.driver.complete_op()?;
             data = &data[chunk.len()..];
             addr += chunk.len();
