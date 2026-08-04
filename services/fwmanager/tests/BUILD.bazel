@@ -19,3 +19,21 @@ rust_test(
         "//services/fwmanager/hal-adapters:fwmanager_hal_adapters",
     ],
 )
+
+# The downstream firmware-update lifecycle, same black-box style: staging,
+# activation under reset, trial boot, commit/rollback — asserted purely on
+# the device's externally visible signals. The test-local drivers are the
+# executable spec for the orchestrator (PR #357).
+rust_test(
+    name = "lifecycle_update_test",
+    srcs = ["lifecycle_update.rs"],
+    edition = "2024",
+    deps = [
+        "//hal/blocking",
+        "//hal/blocking/flash",
+        "//platform/impls/baremetal/mock",
+        "//services/fwmanager/api:fwmanager_api",
+        "//services/fwmanager/hal-adapters:fwmanager_hal_adapters",
+        "//util/types",
+    ],
+)
