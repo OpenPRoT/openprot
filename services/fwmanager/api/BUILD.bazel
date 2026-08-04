@@ -8,8 +8,10 @@ rust_library(
     srcs = [
         "src/boot_control.rs",
         "src/boot_monitor.rs",
+        "src/boot_progress.rs",
         "src/config.rs",
         "src/lib.rs",
+        "src/slot_control.rs",
     ],
     edition = "2024",
     visibility = ["//visibility:public"],
