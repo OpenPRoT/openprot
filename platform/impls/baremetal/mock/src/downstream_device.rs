@@ -2,16 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Mock downstream device: one managed device as the eRoT sees it — a reset
-//! line in, a boot-complete line out, and its firmware flash.
-//!
-//! All three handles observe the same device state, so a test can bind them
-//! to real adapters and treat the eRoT plus device as a black box: load a
-//! firmware image, run the boot flow, and check only externally visible
-//! outcomes (was the device released, did it report boot-complete).
+//! line in, a boot-complete line out, A/B firmware slots, a staging region,
+//! and a slot-selection store. All handles observe the same device state,
+//! so tests can bind real adapters and assert only on externally visible
+//! outcomes.
 
 use core::cell::RefCell;
 use core::num::NonZero;
 
+use fwmanager_api::SlotControl;
 use hal_flash::{Flash, FlashAddress};
 use openprot_hal_blocking::gpio_port::{
     GpioError, GpioErrorKind, GpioErrorType, GpioPort, PinMask,
@@ -21,7 +20,7 @@ use util_types::PowerOf2Usize;
 
 use crate::system_control::MockSystemControlError;
 
-/// Flash size of the mock device.
+/// Flash size of the mock device (per slot and for the staging region).
 pub const MOCK_DEVICE_FLASH_SIZE: usize = 256;
 
 struct DeviceState {
@@ -33,13 +32,37 @@ struct DeviceState {
     /// Hardware latch on the boot-complete line. Cleared by the reset line,
     /// as the platform wiring requires.
     ready_latched: bool,
-    flash: [u8; MOCK_DEVICE_FLASH_SIZE],
+    /// The device's two firmware slots (A = 0, B = 1).
+    slots: [[u8; MOCK_DEVICE_FLASH_SIZE]; 2],
+    /// Staging area an update is written to before activation.
+    staging: [u8; MOCK_DEVICE_FLASH_SIZE],
+    /// The slot the device boots by default; survives resets.
+    committed_slot: usize,
+    /// Slot armed for a trial boot. One-shot as a boot selector (consumed
+    /// by the release that boots it); promotable until commit/rollback.
+    trial_slot: Option<usize>,
+    /// Whether the armed trial was already consumed by a boot.
+    trial_consumed: bool,
     flash_reads: usize,
     /// Recorded at the first release: had the device's flash been read by
     /// then? Lets tests prove verification preceded release.
     release_preceded_by_flash_read: Option<bool>,
+    /// The slot the device booted at its most recent release.
+    last_boot_slot: Option<usize>,
+    /// Program operations that touched a *bootable slot* while the device
+    /// was running — must stay zero in a correct flow. Staging writes
+    /// don't count.
+    programs_while_running: usize,
+    /// Recorded at the first commit: had the device reported boot-complete
+    /// by then? Proves commit waited for boot confirmation.
+    commit_preceded_by_ready: Option<bool>,
+    commit_count: usize,
+    rollback_count: usize,
     reset_fault: Option<MockSystemControlError>,
     gpio_fault: Option<GpioErrorKind>,
+    /// When set, every flash program operation fails, simulating a device
+    /// whose firmware write path is broken.
+    program_fault: bool,
 }
 
 impl DeviceState {
@@ -55,6 +78,15 @@ impl DeviceState {
             }
         }
         self.ready_latched
+    }
+
+    /// The slot the next release would boot: an armed, not-yet-consumed
+    /// trial wins, otherwise the committed slot.
+    fn boot_slot(&self) -> usize {
+        match self.trial_slot {
+            Some(trial) if !self.trial_consumed => trial,
+            _ => self.committed_slot,
+        }
     }
 }
 
@@ -74,23 +106,34 @@ impl MockDownstreamDevice {
                 boots_after,
                 polls_since_release: 0,
                 ready_latched: false,
-                flash: [0xFF; MOCK_DEVICE_FLASH_SIZE],
+                slots: [[0xFF; MOCK_DEVICE_FLASH_SIZE]; 2],
+                staging: [0xFF; MOCK_DEVICE_FLASH_SIZE],
+                committed_slot: 0,
+                trial_slot: None,
+                trial_consumed: false,
                 flash_reads: 0,
                 release_preceded_by_flash_read: None,
+                last_boot_slot: None,
+                programs_while_running: 0,
+                commit_preceded_by_ready: None,
+                commit_count: 0,
+                rollback_count: 0,
                 reset_fault: None,
                 gpio_fault: None,
+                program_fault: false,
             }),
         }
     }
 
-    /// Writes `image` to the start of the device's flash.
+    /// Writes `image` to the start of the device's current boot slot.
     ///
     /// # Panics
     ///
     /// Panics if `image` exceeds [`MOCK_DEVICE_FLASH_SIZE`].
     pub fn load_firmware(&self, image: &[u8]) {
         let mut state = self.state.borrow_mut();
-        state.flash[..image.len()].copy_from_slice(image);
+        let slot = state.boot_slot();
+        state.slots[slot][..image.len()].copy_from_slice(image);
     }
 
     /// Latches the boot-complete line, simulating evidence left over from a
@@ -123,9 +166,42 @@ impl MockDownstreamDevice {
         }
     }
 
-    /// The device's firmware flash, as the eRoT's interposer sees it.
+    /// The device's firmware flash, as the eRoT's interposer sees it:
+    /// reads and writes land in the slot the next release would boot.
     pub fn flash(&self) -> MockDeviceFlash<'_> {
-        MockDeviceFlash { state: &self.state }
+        MockDeviceFlash {
+            state: &self.state,
+            region: MockRegion::BootSlot,
+        }
+    }
+
+    /// A specific flash region of the device. Accesses through this handle
+    /// don't count toward [`Self::flash_reads`] — that instrumentation
+    /// proves boot-image verification, not update plumbing.
+    pub fn region_flash(&self, region: MockRegion) -> MockDeviceFlash<'_> {
+        MockDeviceFlash {
+            state: &self.state,
+            region,
+        }
+    }
+
+    /// The device's slot-selection store, for the eRoT's [`SlotControl`]
+    /// binding.
+    pub fn slot_store(&self) -> MockDeviceSlotStore<'_> {
+        MockDeviceSlotStore { state: &self.state }
+    }
+
+    /// Re-script when the device asserts boot-complete after its next
+    /// release; `None` makes it never come up. Lets one test cover several
+    /// boot cycles with different outcomes.
+    pub fn set_boots_after(&self, boots_after: Option<usize>) {
+        self.state.borrow_mut().boots_after = boots_after;
+    }
+
+    /// Makes every flash program operation fail, simulating a device whose
+    /// firmware write path is broken.
+    pub fn inject_program_fault(&self) {
+        self.state.borrow_mut().program_fault = true;
     }
 
     pub fn is_in_reset(&self) -> bool {
@@ -144,6 +220,43 @@ impl MockDownstreamDevice {
     /// release, `Some(false)` if not, `None` if it was never released.
     pub fn release_preceded_by_flash_read(&self) -> Option<bool> {
         self.state.borrow().release_preceded_by_flash_read
+    }
+
+    /// The slot committed as the device's default boot selection.
+    pub fn committed_slot(&self) -> usize {
+        self.state.borrow().committed_slot
+    }
+
+    /// The slot the device booted at its most recent release, `None` if it
+    /// was never released.
+    pub fn last_boot_slot(&self) -> Option<usize> {
+        self.state.borrow().last_boot_slot
+    }
+
+    /// Program operations that touched a bootable slot while the device was
+    /// running — nonzero means firmware was written under a live device.
+    /// Staging writes are exempt.
+    pub fn programs_while_running(&self) -> usize {
+        self.state.borrow().programs_while_running
+    }
+
+    /// `Some(true)` if the device had reported boot-complete before its
+    /// first commit, `Some(false)` if not, `None` if nothing was committed.
+    pub fn commit_preceded_by_ready(&self) -> Option<bool> {
+        self.state.borrow().commit_preceded_by_ready
+    }
+
+    pub fn commit_count(&self) -> usize {
+        self.state.borrow().commit_count
+    }
+
+    pub fn rollback_count(&self) -> usize {
+        self.state.borrow().rollback_count
+    }
+
+    /// The raw content of `slot`, for image-landed-where-expected checks.
+    pub fn slot_content(&self, slot: usize) -> [u8; MOCK_DEVICE_FLASH_SIZE] {
+        self.state.borrow().slots[slot]
     }
 }
 
@@ -181,6 +294,12 @@ impl ResetControl for MockDeviceResetLine<'_> {
         }
         state.in_reset = false;
         state.polls_since_release = 0;
+        let slot = state.boot_slot();
+        state.last_boot_slot = Some(slot);
+        // One-shot arming: this boot consumes the trial selector.
+        if state.trial_slot.is_some() {
+            state.trial_consumed = true;
+        }
         Ok(())
     }
 
@@ -288,13 +407,27 @@ impl GpioPort for MockDeviceReadyLine<'_> {
 pub enum MockFlashError {
     /// Access past [`MOCK_DEVICE_FLASH_SIZE`].
     OutOfRange,
+    /// The device's firmware write path is broken (injected fault).
+    ProgramFault,
 }
 
-/// The device's firmware flash. Reads count toward
-/// [`MockDownstreamDevice::flash_reads`], so tests can prove the eRoT
-/// verified firmware before releasing the device.
+/// One addressable flash region of the mock device.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MockRegion {
+    /// The slot the device's next release would boot (an armed, unconsumed
+    /// trial, else the committed slot).
+    BootSlot,
+    /// An explicit firmware slot (A = 0, B = 1).
+    Slot(usize),
+    /// The staging area updates are written to before activation.
+    Staging,
+}
+
+/// A flash view of the device. Only the [`MockRegion::BootSlot`] view
+/// counts reads toward [`MockDownstreamDevice::flash_reads`].
 pub struct MockDeviceFlash<'d> {
     state: &'d RefCell<DeviceState>,
+    region: MockRegion,
 }
 
 impl MockDeviceFlash<'_> {
@@ -305,6 +438,17 @@ impl MockDeviceFlash<'_> {
             return Err(MockFlashError::OutOfRange);
         }
         Ok(start..end)
+    }
+
+    fn region_mut<'s>(&self, state: &'s mut DeviceState) -> &'s mut [u8; MOCK_DEVICE_FLASH_SIZE] {
+        match self.region {
+            MockRegion::BootSlot => {
+                let slot = state.boot_slot();
+                &mut state.slots[slot]
+            }
+            MockRegion::Slot(slot) => &mut state.slots[slot],
+            MockRegion::Staging => &mut state.staging,
+        }
     }
 }
 
@@ -320,8 +464,11 @@ impl Flash for MockDeviceFlash<'_> {
     fn read(&mut self, start_addr: FlashAddress, buf: &mut [u8]) -> Result<(), MockFlashError> {
         let range = Self::range(start_addr, buf.len())?;
         let mut state = self.state.borrow_mut();
-        buf.copy_from_slice(&state.flash[range]);
-        state.flash_reads += 1;
+        let region = self.region_mut(&mut state);
+        buf.copy_from_slice(&region[range]);
+        if self.region == MockRegion::BootSlot {
+            state.flash_reads += 1;
+        }
         Ok(())
     }
 
@@ -331,13 +478,91 @@ impl Flash for MockDeviceFlash<'_> {
         size: PowerOf2Usize,
     ) -> Result<(), MockFlashError> {
         let range = Self::range(start_addr, size.get())?;
-        self.state.borrow_mut().flash[range].fill(0xFF);
+        let mut state = self.state.borrow_mut();
+        self.region_mut(&mut state)[range].fill(0xFF);
         Ok(())
     }
 
     fn program(&mut self, start_addr: FlashAddress, data: &[u8]) -> Result<(), MockFlashError> {
         let range = Self::range(start_addr, data.len())?;
-        self.state.borrow_mut().flash[range].copy_from_slice(data);
+        let mut state = self.state.borrow_mut();
+        if state.program_fault {
+            return Err(MockFlashError::ProgramFault);
+        }
+        if !state.in_reset && self.region != MockRegion::Staging {
+            state.programs_while_running += 1;
+        }
+        self.region_mut(&mut state)[range].copy_from_slice(data);
+        Ok(())
+    }
+}
+
+/// Error of the mock device's slot store.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MockSlotError {
+    /// Commit or rollback was called with no trial armed.
+    NoTrialArmed,
+    /// A slot index outside A/B.
+    InvalidSlot,
+}
+
+impl core::fmt::Display for MockSlotError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::NoTrialArmed => f.write_str("no trial slot armed"),
+            Self::InvalidSlot => f.write_str("slot index outside A/B"),
+        }
+    }
+}
+
+impl core::error::Error for MockSlotError {}
+
+/// The device's slot-selection store, implementing [`SlotControl`] with
+/// one-shot arming. Records whether the first commit happened after the
+/// device reported boot-complete.
+pub struct MockDeviceSlotStore<'d> {
+    state: &'d RefCell<DeviceState>,
+}
+
+impl SlotControl for MockDeviceSlotStore<'_> {
+    type SlotId = usize;
+    type Error = MockSlotError;
+
+    fn active_slot(&self) -> Result<usize, MockSlotError> {
+        Ok(self.state.borrow().committed_slot)
+    }
+
+    fn trial_slot(&self) -> Result<Option<usize>, MockSlotError> {
+        Ok(self.state.borrow().trial_slot)
+    }
+
+    fn set_trial(&mut self, slot: usize) -> Result<(), MockSlotError> {
+        if slot > 1 {
+            return Err(MockSlotError::InvalidSlot);
+        }
+        let mut state = self.state.borrow_mut();
+        state.trial_slot = Some(slot);
+        state.trial_consumed = false;
+        Ok(())
+    }
+
+    fn commit(&mut self) -> Result<(), MockSlotError> {
+        let mut state = self.state.borrow_mut();
+        let trial = state.trial_slot.take().ok_or(MockSlotError::NoTrialArmed)?;
+        if state.commit_preceded_by_ready.is_none() {
+            state.commit_preceded_by_ready = Some(state.ready_latched);
+        }
+        state.committed_slot = trial;
+        state.trial_consumed = false;
+        state.commit_count += 1;
+        Ok(())
+    }
+
+    fn rollback(&mut self) -> Result<(), MockSlotError> {
+        let mut state = self.state.borrow_mut();
+        state.trial_slot.take().ok_or(MockSlotError::NoTrialArmed)?;
+        state.trial_consumed = false;
+        state.rollback_count += 1;
         Ok(())
     }
 }
