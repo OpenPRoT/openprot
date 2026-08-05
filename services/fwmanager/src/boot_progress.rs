@@ -1,59 +1,39 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! Boot-progress confirmation: walk one device's configured checkpoints and
-//! judge its boot good or failed.
-//!
-//! After the orchestrator releases a device from reset
-//! ([`BootControl::release`](fwmanager_api::BootControl::release)), the
-//! device's boot is confirmed by observing each of its configured
-//! [`BootCheckpoint`]s within that checkpoint's window. Windows are
-//! sequential: checkpoint *n*'s window opens the moment checkpoint *n − 1*
-//! is observed (the first opens at release). A window that expires — or a
-//! device-reported failure — fails the boot, naming the checkpoint that
-//! died; that failure is what triggers recovery.
+//! Boot-progress confirmation: after a device is released from reset, each
+//! of its [`BootCheckpoint`]s must be observed within that checkpoint's
+//! window. Windows are sequential — checkpoint *n*'s opens when *n − 1* is
+//! observed, the first at release. An expired window or device-reported
+//! failure fails the boot, naming the checkpoint; that failure triggers
+//! recovery.
 
 use core::time::Duration;
 
 use fwmanager_api::config::{BootCheckpoint, BootSignal, DeviceConfig};
 use fwmanager_api::{BootMonitor, BootStatus};
 
-/// How many consecutive monitor read errors [`BootWalk::poll`] tolerates
-/// before it fails the walk: the read is retried on the next two polls, the
-/// third consecutive error is terminal. Any successful read resets the
-/// count. Transient faults on a transport that is itself still coming up
-/// should not condemn a boot — but a channel that stays broken cannot
-/// confirm one either. A module constant until a real transport shows a
-/// per-checkpoint budget is needed; the window deadline applies unchanged
-/// either way (read errors never extend it).
+/// Consecutive monitor read errors [`BootWalk::poll`] tolerates; one more
+/// is terminal. A successful read resets the count; read errors never
+/// extend the window. A constant until a real transport needs a
+/// per-checkpoint budget.
 const MAX_MONITOR_READ_RETRIES: u8 = 2;
 
-/// Resolves the monitor observing one boot-progress signal.
-///
-/// Owned by the board (or test) wiring: the walk never learns which backend
-/// serves which signal. `Monitor` is a single type — a board with
-/// heterogeneous backends wraps them in its own closed monitor enum, and
-/// one physical transport may back several signal kinds by handing out one
-/// thin monitor view per signal (an MCTP stack serving
-/// [`BootSignal::MctpReady`] and [`BootSignal::Heartbeat`]).
-///
-/// Returns `None` when the wiring maps no backend to `signal` — a board
-/// wiring bug the walk surfaces as a named failure rather than a hang,
-/// since the device-table schema cannot validate wiring it never sees.
+/// Resolves the monitor observing one boot-progress signal. Owned by the
+/// board wiring, typically as a closed monitor enum; one transport may back
+/// several signal kinds by handing out one thin view per signal.
 pub trait MonitorMap<G> {
-    /// The wiring's monitor type (typically its closed monitor enum).
+    /// The wiring's monitor type.
     type Monitor: BootMonitor;
 
-    /// Returns the monitor watching `signal`, or `None` if the wiring maps
-    /// no backend to it.
+    /// Returns the monitor watching `signal`; `None` (a wiring bug) fails
+    /// the walk rather than hanging it.
     fn monitor_for(&self, signal: &BootSignal<G>) -> Option<&Self::Monitor>;
 }
 
-/// A checkpoint window in the walk's time unit. `Duration::as_millis` is
-/// exact for the schema's seconds-scale windows; a sub-millisecond window
-/// rounds *up* to one millisecond so the schema's non-zero-window invariant
-/// survives the unit change, and absurd windows saturate instead of
-/// truncating.
+/// A checkpoint window in the walk's time unit. Sub-millisecond windows
+/// round up to 1 ms (preserving the schema's non-zero invariant); absurd
+/// ones saturate.
 const fn window_millis(window: Duration) -> u64 {
     let ms = window.as_millis();
     if ms == 0 {
@@ -81,11 +61,8 @@ pub enum Progress {
     Complete,
 }
 
-/// Why a device's boot walk failed.
-///
-/// Every variant names the device and the checkpoint that died — that is
-/// what [`BootCheckpoint`]'s `name` field exists for. A failure is terminal
-/// for the walk; recovery is the caller's decision, made on this value.
+/// Why a device's boot walk failed. Every variant names the device and
+/// checkpoint; a failure is terminal, recovery is the caller's decision.
 #[derive(Debug)]
 pub enum BootFailure<E> {
     /// The checkpoint's window expired without its signal — the walk's own
@@ -96,17 +73,15 @@ pub enum BootFailure<E> {
         /// The checkpoint whose window expired.
         checkpoint: &'static str,
     },
-    /// The device itself reported a boot failure
-    /// ([`BootStatus::Failed`]).
+    /// The device itself reported a boot failure ([`BootStatus::Failed`]).
     DeviceReported {
         /// The device whose boot failed.
         device: &'static str,
         /// The checkpoint being awaited when the device reported failure.
         checkpoint: &'static str,
     },
-    /// The checkpoint's monitor stayed unreadable past the retry budget
-    /// ([`MAX_MONITOR_READ_RETRIES`]) — the evidence channel itself broke,
-    /// which is not the same fault as a silent device. The concrete monitor
+    /// The checkpoint's monitor stayed unreadable past the retry budget —
+    /// a broken evidence channel, not a silent device. The concrete monitor
     /// error is the [`source()`](core::error::Error::source).
     MonitorRead {
         /// The device whose boot walk was cut short.
@@ -116,9 +91,7 @@ pub enum BootFailure<E> {
         /// The monitor's own error.
         source: E,
     },
-    /// The board wiring maps no monitor to this checkpoint's signal — a
-    /// wiring bug, surfaced instead of waiting on evidence that can never
-    /// arrive.
+    /// The board wiring maps no monitor to this checkpoint's signal.
     UnmappedSignal {
         /// The device whose boot walk was cut short.
         device: &'static str,
@@ -139,7 +112,9 @@ impl<E> core::fmt::Display for BootFailure<E> {
                     "{device}: device reported boot failure at checkpoint '{checkpoint}'"
                 )
             }
-            Self::MonitorRead { device, checkpoint, .. } => {
+            Self::MonitorRead {
+                device, checkpoint, ..
+            } => {
                 write!(
                     f,
                     "{device}: monitor read failed at checkpoint '{checkpoint}'"
@@ -164,35 +139,26 @@ impl<E: core::error::Error + 'static> core::error::Error for BootFailure<E> {
     }
 }
 
-/// One device's boot-progress walk.
-///
-/// Plain data: it holds which checkpoint is awaited and when that
-/// checkpoint's window expires. It never sleeps and never reads a clock —
-/// callers inject `now_millis` from their monotonic time source, so the
-/// walk's every verdict is reproducible on the host with literal
-/// timestamps.
-///
-/// A device with no checkpoints (a passive device, released blind under
+/// One device's boot-progress walk. Plain data — it never sleeps or reads
+/// a clock; callers inject `now_millis` from their monotonic time source.
+/// A device with no checkpoints (passive, released blind under
 /// [`CommitPolicy::None`](fwmanager_api::config::CommitPolicy::None)) is
-/// complete from construction: there is no evidence to wait for.
+/// complete from construction.
 ///
 /// # How the orchestrator uses it
 ///
-/// Declaration order in the device table is the boot order, one device at a
-/// time; releasing each device is sequenced by the flow that owns its
-/// [`BootControl`](fwmanager_api::BootControl):
+/// Declaration order in the device table is the boot order, one device at
+/// a time:
 ///
 /// ```ignore
 /// for dev in MANAGED_DEVICES {
-///     control_for(dev).release()?;          // run the just-verified image
+///     control_for(dev).release()?;
 ///     let mut walk = BootWalk::for_device(dev, now_millis());
 ///     loop {
 ///         match walk.poll(&monitors, now_millis())? {
-///             Progress::Waiting { deadline_millis, .. } => {
-///                 // Sleep until the next poll, never past the deadline.
-///                 sleep_until_millis(deadline_millis.min(now_millis() + POLL_PERIOD));
-///             }
-///             Progress::Complete => break,  // boot confirmed: next device
+///             Progress::Waiting { deadline_millis, .. } =>
+///                 sleep_until_millis(deadline_millis.min(now_millis() + POLL_PERIOD)),
+///             Progress::Complete => break,
 ///         }
 ///     }
 /// }
@@ -238,29 +204,15 @@ impl<G: 'static> BootWalk<G> {
     }
 
     /// Folds one observation of the awaited checkpoint's signal into the
-    /// walk.
+    /// walk. The pure core: [`poll`](Self::poll) obtains the observation;
+    /// callers holding boot evidence as events drive this directly (`E` is
+    /// free — no monitor-flavored failures here).
     ///
-    /// This is the pure core: it never touches a monitor — obtaining the
-    /// observation is [`poll`](Self::poll)'s job, and a caller that already
-    /// holds boot evidence as events can drive this directly. `E` is free
-    /// because this layer produces no monitor-flavored failures.
-    ///
-    /// Decision order:
-    ///
-    /// - [`BootStatus::Booted`] advances to the next checkpoint even when
-    ///   `now_millis` is at or past the deadline — the observation is
-    ///   proof, and a polling loop that oversleeps its final poll must not
-    ///   condemn a device that is provably up. The next checkpoint's window
-    ///   opens at `now_millis`.
-    /// - [`BootStatus::Failed`] fails the walk immediately, with window
-    ///   time left or not.
-    /// - [`BootStatus::Booting`] is judged against the window: the walk
-    ///   fails once `now_millis` reaches the deadline (the window is
-    ///   half-open — expiry is `now_millis >= deadline`).
-    ///
-    /// A completed walk ignores `status` and keeps returning
-    /// [`Progress::Complete`]. An `Err` is terminal: the caller stops
-    /// observing and hands the failure to recovery.
+    /// `Booted` advances even at or past the deadline (the observation is
+    /// proof; an oversleeping poller must not condemn a live device) and
+    /// opens the next window at `now_millis`. `Failed` fails immediately.
+    /// `Booting` fails once `now_millis >= deadline`. A completed walk
+    /// keeps returning [`Progress::Complete`]; an `Err` is terminal.
     pub fn observe<E>(
         &mut self,
         status: BootStatus,
@@ -301,21 +253,11 @@ impl<G: 'static> BootWalk<G> {
         }
     }
 
-    /// One poll: look up the awaited checkpoint's monitor, read it, and
-    /// fold the observation in via [`observe`](Self::observe).
-    ///
-    /// The lookup happens on every poll with the *current* checkpoint's
-    /// signal, so a device whose checkpoints ride different backends (a
-    /// GPIO line, then a heartbeat) is watched by the right monitor at each
-    /// step. A completed walk returns [`Progress::Complete`] without
-    /// consulting the map — a passive device's monitors are never read.
-    ///
-    /// A read error is retried on later polls up to
-    /// [`MAX_MONITOR_READ_RETRIES`] consecutive times, counted as absent
-    /// evidence in the meantime (the window keeps running and may expire
-    /// first); one more consecutive error fails the walk as
-    /// [`BootFailure::MonitorRead`]. As with [`observe`](Self::observe),
-    /// an `Err` is terminal.
+    /// One poll: look up the *current* checkpoint's monitor, read it, and
+    /// fold the observation in via [`observe`](Self::observe). A completed
+    /// walk never consults the map. Up to [`MAX_MONITOR_READ_RETRIES`]
+    /// consecutive read errors count as absent evidence (the window keeps
+    /// running); one more fails the walk as [`BootFailure::MonitorRead`].
     pub fn poll<M: MonitorMap<G>>(
         &mut self,
         monitors: &M,
@@ -440,7 +382,10 @@ mod tests {
                 checkpoint: "boot-complete",
             }
         ));
-        assert_eq!(err.to_string(), "bmc: checkpoint 'boot-complete' window expired");
+        assert_eq!(
+            err.to_string(),
+            "bmc: checkpoint 'boot-complete' window expired"
+        );
     }
 
     // The second checkpoint's window opens when the first is observed, not
@@ -892,7 +837,14 @@ mod tests {
         // one device at a time — and the passive cpld consumes no polls.
         assert_eq!(
             *wiring.lookups.borrow(),
-            ["gpio", "gpio", "gpio", "mctp-ready", "mctp-ready", "heartbeat"]
+            [
+                "gpio",
+                "gpio",
+                "gpio",
+                "mctp-ready",
+                "mctp-ready",
+                "heartbeat"
+            ]
         );
     }
 
@@ -912,8 +864,8 @@ mod tests {
         };
         let clock = FakeClock(Cell::new(0));
 
-        let err = walk_the_table(&wiring, &clock)
-            .expect_err("the missing heartbeat must fail the walk");
+        let err =
+            walk_the_table(&wiring, &clock).expect_err("the missing heartbeat must fail the walk");
         assert!(matches!(
             err,
             BootFailure::WindowExpired {

@@ -2,12 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Boot Orchestrator core: orchestration logic over the capability seams in
-//! `fwmanager-api`.
-//!
-//! This crate is sans-IO: time is injected as monotonic milliseconds and
-//! boot evidence arrives through the [`fwmanager_api::BootMonitor`] seam, so
-//! every decision it makes is host-testable. The kernel-side pump (real
-//! clock, sleeping between polls) lives with the runtime, not here.
+//! `fwmanager-api`. Sans-IO — time is injected as monotonic milliseconds and
+//! evidence arrives through [`fwmanager_api::BootMonitor`] — so every
+//! decision is host-testable; the kernel-side pump lives with the runtime.
 
 #![cfg_attr(not(test), no_std)]
 
