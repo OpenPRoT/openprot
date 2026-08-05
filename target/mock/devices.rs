@@ -67,4 +67,25 @@ pub const MANAGED_DEVICES: &[DeviceConfig<u8, MockSignal>] = &[
     },
 ];
 
-const _: () = orchestrator_config::validate(MANAGED_DEVICES);
+/// Board-local checks the generic `validate` cannot do — it knows the
+/// schema's shape, not this board's meanings. Same const-fence pattern:
+/// a bad signal fails the build.
+const fn validate_signals(devices: &[DeviceConfig<u8, MockSignal>]) {
+    let mut i = 0;
+    while i < devices.len() {
+        let mut c = 0;
+        while c < devices[i].checkpoints.len() {
+            if let MockSignal::Gpio(line) = devices[i].checkpoints[c].signal {
+                // The mock ready-line bank packs 32 lines, SGPIO-style.
+                assert!(line < 32, "gpio signal names a line outside the bank");
+            }
+            c += 1;
+        }
+        i += 1;
+    }
+}
+
+const _: () = {
+    orchestrator_config::validate(MANAGED_DEVICES);
+    validate_signals(MANAGED_DEVICES);
+};

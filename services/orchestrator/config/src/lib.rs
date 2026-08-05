@@ -35,7 +35,9 @@ pub enum CommitPolicy {
 pub struct BootCheckpoint<G> {
     /// Names the checkpoint in failure reports ("bl1", "kernel", …).
     pub name: &'static str,
-    /// Board-defined signal id, resolved by the board's `EvidenceReader`.
+    /// Board-defined signal id, resolved by the board's `EvidenceReader`
+    /// (in `orchestrator-capabilities`). An id rather than a function, so
+    /// the table stays pure data — the type-level docs say why.
     pub signal: G,
     /// Window for one attempt at this checkpoint. Expiry is the
     /// orchestrator's own judgment; hung devices report nothing.
@@ -71,8 +73,9 @@ pub struct DeviceConfig<R, G: 'static> {
 /// bad table fails the build.
 ///
 /// Only schema-shape checks are possible here; checks on the board's own
-/// types (signal ranges, uniqueness) belong next to the table that defines
-/// their meaning, in a board-local `const fn` run alongside this one.
+/// types (signal ranges, uniqueness of signal ids) belong next to the
+/// table that defines their meaning, in a board-local `const fn` run
+/// alongside this one — `target/mock/devices.rs` shows the pattern.
 pub const fn validate<R, G>(devices: &[DeviceConfig<R, G>]) {
     let mut i = 0;
     while i < devices.len() {
