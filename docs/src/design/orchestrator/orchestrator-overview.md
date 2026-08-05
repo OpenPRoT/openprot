@@ -25,6 +25,9 @@ avoid the two drifting apart.
   boundary, `ComponentAttrs`, and concrete sequencing examples.
 - [**State Machine**](./orchestrator-machine.md): All states, shared storage, entry
   actions, transition table, and the `SupervisingPlatform` superstate.
+- [**Platform Architecture**](./orchestrator-platform.md): The platform half around
+  the core — surrounding services, capability contracts, the board device table,
+  and the fail-safe rules at the responsibility boundary.
 
 ## Design Principles
 
