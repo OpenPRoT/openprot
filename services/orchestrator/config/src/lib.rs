@@ -41,6 +41,7 @@ pub struct BootCheckpoint<G> {
     /// orchestrator's own judgment; hung devices report nothing.
     pub timeout: core::time::Duration,
     /// Attempts allowed beyond the first before the failure is final.
+    /// `0` means the one attempt is all the device gets.
     pub max_retries: u8,
 }
 
@@ -90,10 +91,39 @@ pub const fn validate<R, G>(devices: &[DeviceConfig<R, G>]) {
                 !devices[i].checkpoints[c].timeout.is_zero(),
                 "checkpoint timeout must not be zero"
             );
+            // Failure reports identify a checkpoint by name; a duplicate
+            // would make them ambiguous.
+            let mut d = c + 1;
+            while d < devices[i].checkpoints.len() {
+                assert!(
+                    !str_eq(
+                        devices[i].checkpoints[c].name,
+                        devices[i].checkpoints[d].name
+                    ),
+                    "checkpoint names must be unique per device"
+                );
+                d += 1;
+            }
             c += 1;
         }
         i += 1;
     }
+}
+
+// `==` on `&str` is not const; compare bytes by hand.
+const fn str_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
 }
 
 #[cfg(test)]
@@ -123,6 +153,21 @@ mod tests {
     #[test]
     fn accepts_a_valid_table() {
         validate(&[DEVICE]);
+    }
+
+    #[test]
+    #[should_panic(expected = "checkpoint names must be unique")]
+    fn rejects_duplicate_checkpoint_names() {
+        validate(&[DeviceConfig {
+            checkpoints: &[
+                CHECKPOINT,
+                BootCheckpoint {
+                    signal: 1,
+                    ..CHECKPOINT
+                },
+            ],
+            ..DEVICE
+        }]);
     }
 
     #[test]
