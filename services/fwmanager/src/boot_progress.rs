@@ -15,8 +15,39 @@
 
 use core::time::Duration;
 
-use fwmanager_api::config::BootCheckpoint;
-use fwmanager_api::BootStatus;
+use fwmanager_api::config::{BootCheckpoint, BootSignal};
+use fwmanager_api::{BootMonitor, BootStatus};
+
+/// How many consecutive monitor read errors [`BootWalk::poll`] tolerates
+/// before it fails the walk: the read is retried on the next two polls, the
+/// third consecutive error is terminal. Any successful read resets the
+/// count. Transient faults on a transport that is itself still coming up
+/// should not condemn a boot — but a channel that stays broken cannot
+/// confirm one either. A module constant until a real transport shows a
+/// per-checkpoint budget is needed; the window deadline applies unchanged
+/// either way (read errors never extend it).
+const MAX_MONITOR_READ_RETRIES: u8 = 2;
+
+/// Resolves the monitor observing one boot-progress signal.
+///
+/// Owned by the board (or test) wiring: the walk never learns which backend
+/// serves which signal. `Monitor` is a single type — a board with
+/// heterogeneous backends wraps them in its own closed monitor enum, and
+/// one physical transport may back several signal kinds by handing out one
+/// thin monitor view per signal (an MCTP stack serving
+/// [`BootSignal::MctpReady`] and [`BootSignal::Heartbeat`]).
+///
+/// Returns `None` when the wiring maps no backend to `signal` — a board
+/// wiring bug the walk surfaces as a named failure rather than a hang,
+/// since the device-table schema cannot validate wiring it never sees.
+pub trait MonitorMap<G> {
+    /// The wiring's monitor type (typically its closed monitor enum).
+    type Monitor: BootMonitor;
+
+    /// Returns the monitor watching `signal`, or `None` if the wiring maps
+    /// no backend to it.
+    fn monitor_for(&self, signal: &BootSignal<G>) -> Option<&Self::Monitor>;
+}
 
 /// A checkpoint window in the walk's time unit. `Duration::as_millis` is
 /// exact for the schema's seconds-scale windows; a sub-millisecond window
@@ -56,7 +87,7 @@ pub enum Progress {
 /// what [`BootCheckpoint`]'s `name` field exists for. A failure is terminal
 /// for the walk; recovery is the caller's decision, made on this value.
 #[derive(Debug)]
-pub enum BootFailure {
+pub enum BootFailure<E> {
     /// The checkpoint's window expired without its signal — the walk's own
     /// judgment; hung devices report nothing.
     WindowExpired {
@@ -73,9 +104,30 @@ pub enum BootFailure {
         /// The checkpoint being awaited when the device reported failure.
         checkpoint: &'static str,
     },
+    /// The checkpoint's monitor stayed unreadable past the retry budget
+    /// ([`MAX_MONITOR_READ_RETRIES`]) — the evidence channel itself broke,
+    /// which is not the same fault as a silent device. The concrete monitor
+    /// error is the [`source()`](core::error::Error::source).
+    MonitorRead {
+        /// The device whose boot walk was cut short.
+        device: &'static str,
+        /// The checkpoint whose monitor could not be read.
+        checkpoint: &'static str,
+        /// The monitor's own error.
+        source: E,
+    },
+    /// The board wiring maps no monitor to this checkpoint's signal — a
+    /// wiring bug, surfaced instead of waiting on evidence that can never
+    /// arrive.
+    UnmappedSignal {
+        /// The device whose boot walk was cut short.
+        device: &'static str,
+        /// The checkpoint whose signal has no monitor.
+        checkpoint: &'static str,
+    },
 }
 
-impl core::fmt::Display for BootFailure {
+impl<E> core::fmt::Display for BootFailure<E> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::WindowExpired { device, checkpoint } => {
@@ -87,11 +139,30 @@ impl core::fmt::Display for BootFailure {
                     "{device}: device reported boot failure at checkpoint '{checkpoint}'"
                 )
             }
+            Self::MonitorRead { device, checkpoint, .. } => {
+                write!(
+                    f,
+                    "{device}: monitor read failed at checkpoint '{checkpoint}'"
+                )
+            }
+            Self::UnmappedSignal { device, checkpoint } => {
+                write!(
+                    f,
+                    "{device}: no monitor wired for checkpoint '{checkpoint}'"
+                )
+            }
         }
     }
 }
 
-impl core::error::Error for BootFailure {}
+impl<E: core::error::Error + 'static> core::error::Error for BootFailure<E> {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        match self {
+            Self::MonitorRead { source, .. } => Some(source),
+            _ => None,
+        }
+    }
+}
 
 /// One device's boot-progress walk.
 ///
@@ -113,6 +184,9 @@ pub struct BootWalk<G: 'static> {
     /// When the awaited checkpoint's window expires, in the caller's
     /// monotonic milliseconds. Meaningless once the walk is complete.
     deadline_millis: u64,
+    /// Consecutive monitor read errors on the awaited checkpoint; reset by
+    /// any successful read.
+    read_errors: u8,
 }
 
 impl<G: 'static> BootWalk<G> {
@@ -132,6 +206,7 @@ impl<G: 'static> BootWalk<G> {
             checkpoints,
             next: 0,
             deadline_millis,
+            read_errors: 0,
         }
     }
 
@@ -139,8 +214,9 @@ impl<G: 'static> BootWalk<G> {
     /// walk.
     ///
     /// This is the pure core: it never touches a monitor — obtaining the
-    /// observation is the polling layer's job, and a caller that already
-    /// holds boot evidence as events can drive this directly.
+    /// observation is [`poll`](Self::poll)'s job, and a caller that already
+    /// holds boot evidence as events can drive this directly. `E` is free
+    /// because this layer produces no monitor-flavored failures.
     ///
     /// Decision order:
     ///
@@ -158,11 +234,11 @@ impl<G: 'static> BootWalk<G> {
     /// A completed walk ignores `status` and keeps returning
     /// [`Progress::Complete`]. An `Err` is terminal: the caller stops
     /// observing and hands the failure to recovery.
-    pub fn observe(
+    pub fn observe<E>(
         &mut self,
         status: BootStatus,
         now_millis: u64,
-    ) -> Result<Progress, BootFailure> {
+    ) -> Result<Progress, BootFailure<E>> {
         let Some(awaited) = self.checkpoints.get(self.next) else {
             return Ok(Progress::Complete);
         };
@@ -197,13 +273,73 @@ impl<G: 'static> BootWalk<G> {
             }
         }
     }
+
+    /// One poll: look up the awaited checkpoint's monitor, read it, and
+    /// fold the observation in via [`observe`](Self::observe).
+    ///
+    /// The lookup happens on every poll with the *current* checkpoint's
+    /// signal, so a device whose checkpoints ride different backends (a
+    /// GPIO line, then a heartbeat) is watched by the right monitor at each
+    /// step. A completed walk returns [`Progress::Complete`] without
+    /// consulting the map — a passive device's monitors are never read.
+    ///
+    /// A read error is retried on later polls up to
+    /// [`MAX_MONITOR_READ_RETRIES`] consecutive times, counted as absent
+    /// evidence in the meantime (the window keeps running and may expire
+    /// first); one more consecutive error fails the walk as
+    /// [`BootFailure::MonitorRead`]. As with [`observe`](Self::observe),
+    /// an `Err` is terminal.
+    pub fn poll<M: MonitorMap<G>>(
+        &mut self,
+        monitors: &M,
+        now_millis: u64,
+    ) -> Result<Progress, BootFailure<<M::Monitor as BootMonitor>::Error>> {
+        let Some(awaited) = self.checkpoints.get(self.next) else {
+            return Ok(Progress::Complete);
+        };
+        let Some(monitor) = monitors.monitor_for(&awaited.signal) else {
+            return Err(BootFailure::UnmappedSignal {
+                device: self.device,
+                checkpoint: awaited.name,
+            });
+        };
+        match monitor.boot_status() {
+            Ok(status) => {
+                self.read_errors = 0;
+                self.observe(status, now_millis)
+            }
+            Err(source) => {
+                if self.read_errors < MAX_MONITOR_READ_RETRIES {
+                    self.read_errors += 1;
+                    self.observe(BootStatus::Booting, now_millis)
+                } else {
+                    Err(BootFailure::MonitorRead {
+                        device: self.device,
+                        checkpoint: awaited.name,
+                        source,
+                    })
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::cell::Cell;
     use core::time::Duration;
-    use fwmanager_api::config::BootSignal;
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct MockFault;
+
+    impl core::fmt::Display for MockFault {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            f.write_str("mock monitor fault")
+        }
+    }
+
+    impl core::error::Error for MockFault {}
 
     // Checkpoint shapes mirroring the mock board's archetypes: a single
     // GPIO boot-complete line (the bmc) and a two-checkpoint message path
@@ -232,7 +368,7 @@ mod tests {
         walk: &mut BootWalk<u8>,
         status: BootStatus,
         now_millis: u64,
-    ) -> Result<Progress, BootFailure> {
+    ) -> Result<Progress, BootFailure<MockFault>> {
         walk.observe(status, now_millis)
     }
 
@@ -378,5 +514,271 @@ mod tests {
                 deadline_millis: 1,
             }
         );
+    }
+
+    // ── The poll layer: monitors behind the MonitorMap seam ─────────────
+
+    /// Replays a fixed script of reads; the last entry repeats forever.
+    struct ScriptedMonitor {
+        script: &'static [Result<BootStatus, MockFault>],
+        cursor: Cell<usize>,
+    }
+
+    impl ScriptedMonitor {
+        fn new(script: &'static [Result<BootStatus, MockFault>]) -> Self {
+            Self {
+                script,
+                cursor: Cell::new(0),
+            }
+        }
+    }
+
+    impl BootMonitor for ScriptedMonitor {
+        type Error = MockFault;
+
+        fn boot_status(&self) -> Result<BootStatus, MockFault> {
+            let i = self.cursor.get();
+            self.cursor.set(i + 1);
+            self.script[i.min(self.script.len() - 1)]
+        }
+    }
+
+    /// One MCTP endpoint backing two signal kinds: the wiring hands out one
+    /// thin view per signal, all reading this shared backend.
+    struct MctpEndpoint {
+        ready: Cell<bool>,
+        heartbeat_seen: Cell<bool>,
+    }
+
+    enum MctpSignalKind {
+        Ready,
+        Heartbeat,
+    }
+
+    /// The wiring's closed monitor enum — the shape a board declares.
+    enum MockMonitor<'a> {
+        Gpio(&'a ScriptedMonitor),
+        Mctp(&'a MctpEndpoint, MctpSignalKind),
+    }
+
+    impl BootMonitor for MockMonitor<'_> {
+        type Error = MockFault;
+
+        fn boot_status(&self) -> Result<BootStatus, MockFault> {
+            let up = match self {
+                Self::Gpio(mon) => return mon.boot_status(),
+                Self::Mctp(ep, MctpSignalKind::Ready) => ep.ready.get(),
+                Self::Mctp(ep, MctpSignalKind::Heartbeat) => ep.heartbeat_seen.get(),
+            };
+            Ok(if up {
+                BootStatus::Booted
+            } else {
+                BootStatus::Booting
+            })
+        }
+    }
+
+    struct MockWiring<'a> {
+        gpio: Option<MockMonitor<'a>>,
+        mctp_ready: Option<MockMonitor<'a>>,
+        heartbeat: Option<MockMonitor<'a>>,
+    }
+
+    impl<'a> MonitorMap<u8> for MockWiring<'a> {
+        type Monitor = MockMonitor<'a>;
+
+        fn monitor_for(&self, signal: &BootSignal<u8>) -> Option<&MockMonitor<'a>> {
+            match signal {
+                BootSignal::GpioBootComplete(_) => self.gpio.as_ref(),
+                BootSignal::MctpReady => self.mctp_ready.as_ref(),
+                BootSignal::Heartbeat => self.heartbeat.as_ref(),
+                BootSignal::VersionQuery => None,
+            }
+        }
+    }
+
+    /// Wiring for walks that must never consult a monitor.
+    struct PanickingMap;
+
+    impl MonitorMap<u8> for PanickingMap {
+        type Monitor = ScriptedMonitor;
+
+        fn monitor_for(&self, _: &BootSignal<u8>) -> Option<&ScriptedMonitor> {
+            panic!("this walk must never consult a monitor")
+        }
+    }
+
+    /// Wiring that maps nothing — a board wiring bug.
+    struct NoMonitors;
+
+    impl MonitorMap<u8> for NoMonitors {
+        type Monitor = ScriptedMonitor;
+
+        fn monitor_for(&self, _: &BootSignal<u8>) -> Option<&ScriptedMonitor> {
+            None
+        }
+    }
+
+    // The lookup happens per poll with the current checkpoint's signal, so
+    // both of the nic's checkpoints are answered by the one MCTP endpoint
+    // through its per-signal views.
+    #[test]
+    fn one_backend_serves_several_signal_kinds_through_per_signal_views() {
+        let endpoint = MctpEndpoint {
+            ready: Cell::new(false),
+            heartbeat_seen: Cell::new(false),
+        };
+        let wiring = MockWiring {
+            gpio: None,
+            mctp_ready: Some(MockMonitor::Mctp(&endpoint, MctpSignalKind::Ready)),
+            heartbeat: Some(MockMonitor::Mctp(&endpoint, MctpSignalKind::Heartbeat)),
+        };
+        let mut walk = BootWalk::new("nic", NIC, 0);
+
+        assert_eq!(
+            walk.poll(&wiring, 1_000).expect("walk failed"),
+            Progress::Waiting {
+                checkpoint: "mctp-ready",
+                deadline_millis: 20_000,
+            }
+        );
+
+        endpoint.ready.set(true);
+        assert_eq!(
+            walk.poll(&wiring, 2_000).expect("walk failed"),
+            Progress::Waiting {
+                checkpoint: "heartbeat",
+                deadline_millis: 12_000,
+            }
+        );
+
+        endpoint.heartbeat_seen.set(true);
+        assert_eq!(
+            walk.poll(&wiring, 3_000).expect("walk failed"),
+            Progress::Complete
+        );
+    }
+
+    // Two consecutive read errors are tolerated as absent evidence, a
+    // successful read resets the count, and the third consecutive error is
+    // terminal — with the concrete monitor error kept on the source() chain.
+    #[test]
+    fn transient_read_errors_are_retried_then_terminal() {
+        const SCRIPT: &[Result<BootStatus, MockFault>] = &[
+            Err(MockFault),
+            Err(MockFault),
+            Ok(BootStatus::Booting),
+            Err(MockFault),
+            Err(MockFault),
+            Err(MockFault),
+        ];
+        let gpio = ScriptedMonitor::new(SCRIPT);
+        let wiring = MockWiring {
+            gpio: Some(MockMonitor::Gpio(&gpio)),
+            mctp_ready: None,
+            heartbeat: None,
+        };
+        let mut walk = BootWalk::new("bmc", BMC, 0);
+
+        for poll in 1..=5u64 {
+            assert!(
+                matches!(
+                    walk.poll(&wiring, poll * 1_000),
+                    Ok(Progress::Waiting { .. })
+                ),
+                "poll {poll} should still be waiting"
+            );
+        }
+
+        let err = walk
+            .poll(&wiring, 6_000)
+            .expect_err("expected the third consecutive read error to be terminal");
+        assert!(matches!(
+            err,
+            BootFailure::MonitorRead {
+                device: "bmc",
+                checkpoint: "boot-complete",
+                ..
+            }
+        ));
+        assert_eq!(
+            err.to_string(),
+            "bmc: monitor read failed at checkpoint 'boot-complete'"
+        );
+        let source = core::error::Error::source(&err).expect("MonitorRead must carry a source");
+        assert!(source.downcast_ref::<MockFault>().is_some());
+    }
+
+    // A backend that can only answer "up yet?" (a single ready line) never
+    // produces Failed; the failure verdict must not depend on it — expiry
+    // is the walk's own judgment.
+    #[test]
+    fn a_monitor_that_never_reports_failed_still_yields_a_verdict() {
+        const STUCK: &[Result<BootStatus, MockFault>] = &[Ok(BootStatus::Booting)];
+        let gpio = ScriptedMonitor::new(STUCK);
+        let wiring = MockWiring {
+            gpio: Some(MockMonitor::Gpio(&gpio)),
+            mctp_ready: None,
+            heartbeat: None,
+        };
+        let mut walk = BootWalk::new("bmc", BMC, 0);
+
+        assert!(matches!(
+            walk.poll(&wiring, 89_999),
+            Ok(Progress::Waiting { .. })
+        ));
+        assert!(matches!(
+            walk.poll(&wiring, 90_000),
+            Err(BootFailure::WindowExpired {
+                device: "bmc",
+                checkpoint: "boot-complete",
+            })
+        ));
+    }
+
+    #[test]
+    fn an_unmapped_signal_is_a_named_failure_not_a_hang() {
+        let mut walk = BootWalk::new("nic", NIC, 0);
+
+        let err = walk
+            .poll(&NoMonitors, 0)
+            .expect_err("expected the missing wiring to surface");
+        assert!(matches!(
+            err,
+            BootFailure::UnmappedSignal {
+                device: "nic",
+                checkpoint: "mctp-ready",
+            }
+        ));
+        assert_eq!(
+            err.to_string(),
+            "nic: no monitor wired for checkpoint 'mctp-ready'"
+        );
+    }
+
+    // A passive device is released blind: complete from the first poll,
+    // and its monitors — it has none — are provably never consulted.
+    #[test]
+    fn a_passive_device_never_consults_the_map() {
+        let mut walk = BootWalk::new("cpld", &[], 0);
+
+        assert_eq!(
+            walk.poll(&PanickingMap, 0).expect("walk failed"),
+            Progress::Complete
+        );
+        // Polling past completion stays Complete without a lookup.
+        assert_eq!(
+            walk.poll(&PanickingMap, 1_000).expect("walk failed"),
+            Progress::Complete
+        );
+    }
+
+    // Compile fence: BootFailure satisfies the full error contract, so it
+    // can ride any seam that expects a core::error::Error.
+    fn _assert_error_contract<E: core::error::Error>() {}
+
+    #[test]
+    fn boot_failure_is_a_core_error() {
+        _assert_error_contract::<BootFailure<MockFault>>();
     }
 }

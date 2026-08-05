@@ -13,4 +13,4 @@
 
 mod boot_progress;
 
-pub use boot_progress::{BootFailure, BootWalk, Progress};
+pub use boot_progress::{BootFailure, BootWalk, MonitorMap, Progress};
