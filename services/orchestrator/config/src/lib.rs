@@ -55,9 +55,12 @@ pub struct BootCheckpoint<G> {
     pub window: core::time::Duration,
 }
 
-/// Identifies one slot within one device's layout. Opaque: meaning comes
-/// from the position in that device's slot table, never from a global
-/// vocabulary — slot 0 on the BMC and slot 0 on the NIC are unrelated.
+/// Identifies one slot within one device's layout. An opaque per-device
+/// token, not an index: ids need only be unique within one device's table
+/// ([`validate`] enforces exactly that) — they are not required to be
+/// contiguous, ordered, or to start at zero, and slot 0 on the BMC and
+/// slot 0 on the NIC are unrelated. Ladder order comes from table
+/// declaration order, never from id values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SlotId(pub u8);
 
