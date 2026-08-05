@@ -156,4 +156,176 @@ mod tests {
         // Display comes from the core::error::Error bound, not a Debug dump.
         assert_eq!(err.to_string(), "progress register unreadable");
     }
+
+    // ── Message-path evidence (NIC archetype) ───────────────────────────
+    // A timeout is never on the wire: a hung device sends nothing, the
+    // reader reports Booting forever, and only the orchestrator's clock
+    // (the checkpoint's window, judged by the walker) turns that silence
+    // into a verdict. The three channels stay separate: silence → Booting;
+    // the device speaks → FailedRetriable/FailedFatal ends the wait early;
+    // the channel breaks → Err.
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum NicSignal {
+        /// The endpoint answers a control query as ready.
+        MctpReady,
+        /// A heartbeat message arrived (latched; reset clears it).
+        Heartbeat,
+    }
+
+    struct MockNicEndpoint {
+        /// Control queries are answered after this many reads; `None` =
+        /// the device is hung. Silence is the only "timeout signal" a
+        /// device has — there is no message for it.
+        responds_after: Option<usize>,
+        reads: usize,
+        /// Device-sent failure notification, latched (reset clears it) —
+        /// what the message path *can* carry: an active verdict.
+        fault_code: Option<u8>,
+        /// Heartbeat arrival, latched by the transport.
+        heartbeat_seen: bool,
+        /// Injected transport fault: the channel itself breaks.
+        bus_fault: bool,
+    }
+
+    impl MockNicEndpoint {
+        fn silent() -> Self {
+            Self {
+                responds_after: None,
+                reads: 0,
+                fault_code: None,
+                heartbeat_seen: false,
+                bus_fault: false,
+            }
+        }
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct MctpFault;
+
+    impl core::fmt::Display for MctpFault {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            f.write_str("mctp transport fault")
+        }
+    }
+
+    impl core::error::Error for MctpFault {}
+
+    impl EvidenceReader<NicSignal> for MockNicEndpoint {
+        type Error = MctpFault;
+
+        fn read(&mut self, signal: &NicSignal) -> Result<BootStatus, MctpFault> {
+            if self.bus_fault {
+                return Err(MctpFault);
+            }
+            match signal {
+                NicSignal::MctpReady => {
+                    if let Some(code) = self.fault_code {
+                        return Ok(match code {
+                            0xEE => BootStatus::FailedRetriable,
+                            _ => BootStatus::FailedFatal,
+                        });
+                    }
+                    // Query answered => evidence; no answer => no evidence
+                    // yet. NOT an error — the channel is fine, the device
+                    // is silent.
+                    self.reads += 1;
+                    Ok(match self.responds_after {
+                        Some(n) if self.reads > n => BootStatus::Booted,
+                        _ => BootStatus::Booting,
+                    })
+                }
+                NicSignal::Heartbeat => Ok(match self.heartbeat_seen {
+                    true => BootStatus::Booted,
+                    false => BootStatus::Booting,
+                }),
+            }
+        }
+    }
+
+    // A hung endpoint is Booting on every read, forever — turning that
+    // into a timeout is the walker's job, on the orchestrator's clock.
+    #[test]
+    fn a_hung_endpoint_reads_booting_forever() {
+        let mut nic = MockNicEndpoint::silent();
+
+        for _ in 0..100 {
+            assert_eq!(
+                nic.read(&NicSignal::MctpReady).expect("read failed"),
+                BootStatus::Booting
+            );
+        }
+    }
+
+    #[test]
+    fn silence_ends_once_the_endpoint_answers() {
+        let mut nic = MockNicEndpoint {
+            responds_after: Some(2),
+            ..MockNicEndpoint::silent()
+        };
+
+        assert_eq!(
+            nic.read(&NicSignal::MctpReady).expect("read failed"),
+            BootStatus::Booting
+        );
+        assert_eq!(
+            nic.read(&NicSignal::MctpReady).expect("read failed"),
+            BootStatus::Booting
+        );
+        assert_eq!(
+            nic.read(&NicSignal::MctpReady).expect("read failed"),
+            BootStatus::Booted
+        );
+    }
+
+    // A device that is up enough to talk reports its own verdict and ends
+    // the wait early — no window needs to expire.
+    #[test]
+    fn a_talking_device_reports_its_own_verdict() {
+        let mut nic = MockNicEndpoint {
+            fault_code: Some(0xEE),
+            ..MockNicEndpoint::silent()
+        };
+        assert_eq!(
+            nic.read(&NicSignal::MctpReady).expect("read failed"),
+            BootStatus::FailedRetriable
+        );
+
+        let mut nic = MockNicEndpoint {
+            fault_code: Some(0x03),
+            ..MockNicEndpoint::silent()
+        };
+        assert_eq!(
+            nic.read(&NicSignal::MctpReady).expect("read failed"),
+            BootStatus::FailedFatal
+        );
+    }
+
+    // Channel trouble is the reader's Error — distinct from both silence
+    // and a device-reported verdict.
+    #[test]
+    fn a_broken_channel_is_an_error_not_evidence() {
+        let mut nic = MockNicEndpoint {
+            bus_fault: true,
+            ..MockNicEndpoint::silent()
+        };
+
+        let err = nic
+            .read(&NicSignal::MctpReady)
+            .expect_err("expected the transport fault");
+        assert_eq!(err.to_string(), "mctp transport fault");
+    }
+
+    #[test]
+    fn a_latched_heartbeat_reads_booted() {
+        let mut nic = MockNicEndpoint {
+            heartbeat_seen: true,
+            ..MockNicEndpoint::silent()
+        };
+
+        assert_eq!(
+            nic.read(&NicSignal::Heartbeat).expect("read failed"),
+            BootStatus::Booted
+        );
+    }
 }
