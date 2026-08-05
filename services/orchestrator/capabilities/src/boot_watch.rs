@@ -35,17 +35,20 @@ pub enum WalkVerdict {
     },
     /// Every checkpoint passed — the device is up.
     Complete,
-    /// A window expired or the device reported failure, with retry budget
-    /// left; the window is re-armed. The caller re-resets the device and
-    /// keeps polling — what a retry re-runs is the caller's policy.
+    /// The attempt failed — a window expired, or the device reported
+    /// [`FailedRetriable`](crate::BootStatus::FailedRetriable) (which ends
+    /// the wait early) — and retry budget remains; the window is re-armed.
+    /// The caller re-resets the device and keeps polling — what a retry
+    /// re-runs is the caller's policy.
     Retry {
         /// The checkpoint that failed.
         checkpoint: &'static str,
         /// Attempts left after this one.
         retries_left: u8,
     },
-    /// Retry budget exhausted — this boot is dead. Recovery is the
-    /// caller's move.
+    /// This boot is dead: retry budget exhausted, or the device reported
+    /// [`FailedFatal`](crate::BootStatus::FailedFatal) — a verdict no
+    /// remaining budget can overturn. Recovery is the caller's move.
     Dead {
         /// The checkpoint the boot died at.
         checkpoint: &'static str,

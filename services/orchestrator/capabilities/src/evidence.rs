@@ -41,9 +41,11 @@ mod tests {
     // A reader implemented against no HAL at all — the contract must be
     // satisfiable from any stack. One monotonic progress register serves
     // four staged-boot signals through one reader (the pattern a real SoC
-    // board is expected to use); a poison value fails every signal.
+    // board is expected to use); fault codes in the same register carry
+    // the device's own judgment, fatal or retriable, for every signal.
 
     const POISON: u8 = 0xFF;
+    const TRANSIENT: u8 = 0xEE;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum TestSignal {
@@ -77,7 +79,8 @@ mod tests {
             }
             let TestSignal::Progress(threshold) = *signal;
             Ok(match self.level {
-                POISON => BootStatus::Failed,
+                POISON => BootStatus::FailedFatal,
+                TRANSIENT => BootStatus::FailedRetriable,
                 l if l >= threshold => BootStatus::Booted,
                 _ => BootStatus::Booting,
             })
@@ -104,10 +107,11 @@ mod tests {
         assert_eq!(read(4), BootStatus::Booting); // service
     }
 
-    // A poisoned register must read Failed for every signal, whichever
-    // stage the walk happens to be awaiting.
+    // Fault codes must read the same for every signal, whichever stage
+    // the walk happens to be awaiting — and they carry the device's own
+    // retriability judgment.
     #[test]
-    fn a_poisoned_register_fails_every_signal() {
+    fn a_poisoned_register_fails_every_signal_fatally() {
         let mut soc = SocReader {
             level: POISON,
             fail: false,
@@ -117,7 +121,23 @@ mod tests {
             assert_eq!(
                 soc.read(&TestSignal::Progress(threshold))
                     .expect("read failed"),
-                BootStatus::Failed
+                BootStatus::FailedFatal
+            );
+        }
+    }
+
+    #[test]
+    fn a_transient_fault_reads_retriable_for_every_signal() {
+        let mut soc = SocReader {
+            level: TRANSIENT,
+            fail: false,
+        };
+
+        for threshold in 1..=4 {
+            assert_eq!(
+                soc.read(&TestSignal::Progress(threshold))
+                    .expect("read failed"),
+                BootStatus::FailedRetriable
             );
         }
     }
