@@ -16,6 +16,36 @@ use crate::BootStatus;
 /// The status must describe the **current** boot cycle — see
 /// [`BootStatus`] for the latching contract (evidence is cleared by the
 /// reset path, never by the reader).
+///
+/// # Wiring a concrete reader
+///
+/// Concrete readers (e.g. `GpioBootMonitor` in `orchestrator-hal-adapters`)
+/// stay signal-agnostic — an adapter crate cannot know a board's `G`.
+/// The board impl owns the match; the hardware binding is made once, at
+/// construction, and the signal id just proves the right reader was
+/// wired:
+///
+/// ```ignore
+/// /// bmc wiring: one ready line behind the board's signal vocabulary.
+/// struct BmcReader<'a, P: GpioPort> {
+///     // (port, pin, polarity) bound at bring-up from the table's Gpio(12).
+///     ready: GpioBootMonitor<'a, P>,
+/// }
+///
+/// impl<P: GpioPort> EvidenceReader<MockSignal> for BmcReader<'_, P>
+/// where
+///     P::Error: 'static,
+/// {
+///     type Error = MonitorError<P::Error>;
+///
+///     fn read(&mut self, signal: &MockSignal) -> Result<BootStatus, Self::Error> {
+///         match signal {
+///             MockSignal::Gpio(_) => self.ready.boot_status(),
+///             other => unreachable!("bmc reader wired to {other:?}"),
+///         }
+///     }
+/// }
+/// ```
 pub trait EvidenceReader<G> {
     /// The error type reported by this reader.
     ///
