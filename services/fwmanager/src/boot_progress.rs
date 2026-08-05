@@ -15,7 +15,7 @@
 
 use core::time::Duration;
 
-use fwmanager_api::config::{BootCheckpoint, BootSignal};
+use fwmanager_api::config::{BootCheckpoint, BootSignal, DeviceConfig};
 use fwmanager_api::{BootMonitor, BootStatus};
 
 /// How many consecutive monitor read errors [`BootWalk::poll`] tolerates
@@ -175,6 +175,28 @@ impl<E: core::error::Error + 'static> core::error::Error for BootFailure<E> {
 /// A device with no checkpoints (a passive device, released blind under
 /// [`CommitPolicy::None`](fwmanager_api::config::CommitPolicy::None)) is
 /// complete from construction: there is no evidence to wait for.
+///
+/// # How the orchestrator uses it
+///
+/// Declaration order in the device table is the boot order, one device at a
+/// time; releasing each device is sequenced by the flow that owns its
+/// [`BootControl`](fwmanager_api::BootControl):
+///
+/// ```ignore
+/// for dev in MANAGED_DEVICES {
+///     control_for(dev).release()?;          // run the just-verified image
+///     let mut walk = BootWalk::for_device(dev, now_millis());
+///     loop {
+///         match walk.poll(&monitors, now_millis())? {
+///             Progress::Waiting { deadline_millis, .. } => {
+///                 // Sleep until the next poll, never past the deadline.
+///                 sleep_until_millis(deadline_millis.min(now_millis() + POLL_PERIOD));
+///             }
+///             Progress::Complete => break,  // boot confirmed: next device
+///         }
+///     }
+/// }
+/// ```
 pub struct BootWalk<G: 'static> {
     device: &'static str,
     checkpoints: &'static [BootCheckpoint<G>],
@@ -208,6 +230,11 @@ impl<G: 'static> BootWalk<G> {
             deadline_millis,
             read_errors: 0,
         }
+    }
+
+    /// Convenience constructor over a device-table entry.
+    pub fn for_device<R>(device: &DeviceConfig<R, G>, now_millis: u64) -> Self {
+        Self::new(device.name, device.checkpoints, now_millis)
     }
 
     /// Folds one observation of the awaited checkpoint's signal into the
@@ -780,5 +807,119 @@ mod tests {
     #[test]
     fn boot_failure_is_a_core_error() {
         _assert_error_contract::<BootFailure<MockFault>>();
+    }
+
+    // ── The mock board, end to end ───────────────────────────────────────
+    // The composition loop from the type-level docs, run over the real
+    // mock device table: bmc, then nic, then the passive cpld.
+
+    use std::cell::RefCell;
+
+    struct FakeClock(Cell<u64>);
+
+    impl FakeClock {
+        fn now(&self) -> u64 {
+            self.0.get()
+        }
+
+        fn advance(&self, millis: u64) {
+            self.0.set(self.0.get() + millis);
+        }
+    }
+
+    /// Records every signal lookup, proving which device's evidence was
+    /// consulted when (each poll makes exactly one lookup).
+    struct RecordingWiring<'a> {
+        inner: MockWiring<'a>,
+        lookups: RefCell<Vec<&'static str>>,
+    }
+
+    impl<'a> MonitorMap<u8> for RecordingWiring<'a> {
+        type Monitor = MockMonitor<'a>;
+
+        fn monitor_for(&self, signal: &BootSignal<u8>) -> Option<&MockMonitor<'a>> {
+            self.lookups.borrow_mut().push(match signal {
+                BootSignal::GpioBootComplete(_) => "gpio",
+                BootSignal::MctpReady => "mctp-ready",
+                BootSignal::Heartbeat => "heartbeat",
+                BootSignal::VersionQuery => "version-query",
+            });
+            self.inner.monitor_for(signal)
+        }
+    }
+
+    /// The doc-sketch loop made concrete: release is out of scope here, so
+    /// each device's walk starts at the current fake time and waiting
+    /// advances the clock by a fixed poll period.
+    fn walk_the_table<M>(wiring: &M, clock: &FakeClock) -> Result<(), BootFailure<MockFault>>
+    where
+        M: MonitorMap<u8>,
+        M::Monitor: BootMonitor<Error = MockFault>,
+    {
+        for dev in board_devices::MANAGED_DEVICES {
+            let mut walk = BootWalk::for_device(dev, clock.now());
+            while let Progress::Waiting { .. } = walk.poll(wiring, clock.now())? {
+                clock.advance(1_000);
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn the_mock_board_boots_in_declaration_order() {
+        // Scripted evidence per signal (the Gpio arm is just "a scripted
+        // backend" here; which transport it models is irrelevant).
+        let gpio = ScriptedMonitor::new(&[
+            Ok(BootStatus::Booting),
+            Ok(BootStatus::Booting),
+            Ok(BootStatus::Booted),
+        ]);
+        let mctp_ready = ScriptedMonitor::new(&[Ok(BootStatus::Booting), Ok(BootStatus::Booted)]);
+        let heartbeat = ScriptedMonitor::new(&[Ok(BootStatus::Booted)]);
+        let wiring = RecordingWiring {
+            inner: MockWiring {
+                gpio: Some(MockMonitor::Gpio(&gpio)),
+                mctp_ready: Some(MockMonitor::Gpio(&mctp_ready)),
+                heartbeat: Some(MockMonitor::Gpio(&heartbeat)),
+            },
+            lookups: RefCell::new(Vec::new()),
+        };
+        let clock = FakeClock(Cell::new(0));
+
+        walk_the_table(&wiring, &clock).expect("the mock board must boot");
+
+        // bmc's evidence is exhausted before nic's is first consulted —
+        // one device at a time — and the passive cpld consumes no polls.
+        assert_eq!(
+            *wiring.lookups.borrow(),
+            ["gpio", "gpio", "gpio", "mctp-ready", "mctp-ready", "heartbeat"]
+        );
+    }
+
+    #[test]
+    fn a_boot_failure_stops_the_table_walk_naming_the_culprit() {
+        let gpio = ScriptedMonitor::new(&[Ok(BootStatus::Booted)]);
+        let mctp_ready = ScriptedMonitor::new(&[Ok(BootStatus::Booted)]);
+        // The heartbeat never arrives: nic's second window must expire.
+        let heartbeat = ScriptedMonitor::new(&[Ok(BootStatus::Booting)]);
+        let wiring = RecordingWiring {
+            inner: MockWiring {
+                gpio: Some(MockMonitor::Gpio(&gpio)),
+                mctp_ready: Some(MockMonitor::Gpio(&mctp_ready)),
+                heartbeat: Some(MockMonitor::Gpio(&heartbeat)),
+            },
+            lookups: RefCell::new(Vec::new()),
+        };
+        let clock = FakeClock(Cell::new(0));
+
+        let err = walk_the_table(&wiring, &clock)
+            .expect_err("the missing heartbeat must fail the walk");
+        assert!(matches!(
+            err,
+            BootFailure::WindowExpired {
+                device: "nic",
+                checkpoint: "heartbeat",
+            }
+        ));
     }
 }

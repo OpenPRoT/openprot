@@ -16,8 +16,11 @@ rust_library(
     ],
 )
 
-# Host tests: build on the host platform, no kernel/QEMU.
+# Host tests: build on the host platform, no kernel/QEMU. The mock board's
+# device table is a test-only fixture: the library itself depends on the
+# api crate alone.
 rust_test(
     name = "fwmanager_test",
     crate = ":fwmanager",
+    deps = ["//target/mock:devices"],
 )
