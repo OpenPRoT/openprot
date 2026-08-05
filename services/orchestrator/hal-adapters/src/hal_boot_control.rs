@@ -74,7 +74,8 @@ mod tests {
     use core::time::Duration;
     use openprot_hal_blocking::system_control::{Error as HalError, ErrorKind, ErrorType};
 
-    // Normally set in config.rs
+    // Everything that is config is normally declared in the board device
+    // table (`target/<board>/devices.rs`).
     const BMC_LINE: u8 = 7;
 
     #[derive(Debug, PartialEq, Eq, Clone, Copy)]

@@ -7,7 +7,8 @@ rust_library(
     name = "orchestrator_capabilities",
     srcs = [
         "src/boot_control.rs",
-        "src/boot_monitor.rs",
+        "src/boot_status.rs",
+        "src/boot_watch.rs",
         "src/lib.rs",
     ],
     edition = "2024",

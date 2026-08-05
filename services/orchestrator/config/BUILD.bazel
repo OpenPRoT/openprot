@@ -8,6 +8,7 @@ rust_library(
     srcs = ["src/lib.rs"],
     edition = "2024",
     visibility = ["//visibility:public"],
+    deps = ["//services/orchestrator/capabilities:orchestrator_capabilities"],
 )
 
 # Host tests: build on the host platform, no kernel/QEMU.
