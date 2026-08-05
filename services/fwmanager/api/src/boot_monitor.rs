@@ -62,7 +62,6 @@ pub trait BootMonitor {
 }
 
 #[cfg(test)]
-#[allow(clippy::bool_assert_comparison)]
 mod tests {
     use super::*;
     use core::cell::Cell;
@@ -134,47 +133,9 @@ mod tests {
             fail: true,
         };
 
-        let err = comes_up_within(&mon, 1).expect_err("expected the monitor fault");
+        let err = mon.boot_status().expect_err("expected the monitor fault");
 
         // Display comes from the core::error::Error bound, not a Debug dump.
         assert_eq!(err.to_string(), "mock monitor fault");
-    }
-
-    // ── The orchestrator's future shape ─────────────────────────────────
-    // Usage examples for the future orchestrator, not API guarantees; move
-    // these to the orchestrator crate once it exists.
-
-    /// Poll a monitor up to `poll_budget` times. `Booting` is not a failure;
-    /// `Ok(false)` means the budget ran out before the device came up.
-    fn comes_up_within<M: BootMonitor>(mon: &M, poll_budget: usize) -> Result<bool, M::Error> {
-        for _ in 0..poll_budget {
-            if mon.boot_status()? == BootStatus::Booted {
-                return Ok(true);
-            }
-        }
-        Ok(false)
-    }
-
-    // A device that comes up within the poll budget reads Booted.
-    #[test]
-    fn a_device_that_comes_up_within_budget_is_booted() {
-        let mon = MockMonitor {
-            ready_after: 2,
-            polls: Cell::new(0),
-            fail: false,
-        };
-
-        assert_eq!(comes_up_within(&mon, 5).expect("boot_status failed"), true);
-    }
-
-    #[test]
-    fn a_device_that_never_comes_up_is_a_timeout_not_an_error() {
-        let mon = MockMonitor {
-            ready_after: usize::MAX,
-            polls: Cell::new(0),
-            fail: false,
-        };
-
-        assert_eq!(comes_up_within(&mon, 3).expect("boot_status failed"), false);
     }
 }
