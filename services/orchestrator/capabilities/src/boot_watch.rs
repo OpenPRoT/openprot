@@ -37,14 +37,19 @@ pub enum WalkVerdict {
     Complete,
     /// The attempt failed — a window expired, or the device reported
     /// [`FailedRetriable`](crate::BootStatus::FailedRetriable) (which ends
-    /// the wait early) — and retry budget remains; the window is re-armed.
-    /// The caller re-resets the device and keeps polling — what a retry
-    /// re-runs is the caller's policy.
+    /// the wait early) — and retry budget remains; the window is re-armed
+    /// from the poll that judged it. The caller re-resets the device and
+    /// keeps polling — what a retry re-runs is the caller's policy.
     Retry {
         /// The checkpoint that failed.
         checkpoint: &'static str,
         /// Attempts left after this one.
         retries_left: u8,
+        /// When the re-armed window expires: the judging poll's
+        /// `now_millis` plus the checkpoint's `timeout`. The caller
+        /// schedules against this exactly as it does for `Waiting` —
+        /// no deadline arithmetic of its own.
+        deadline_millis: u64,
     },
     /// This boot is dead: retry budget exhausted, or the device reported
     /// [`FailedFatal`](crate::BootStatus::FailedFatal) — a verdict no
@@ -92,6 +97,7 @@ mod tests {
                 WalkVerdict::Retry {
                     checkpoint: "heartbeat",
                     retries_left: 1,
+                    deadline_millis: 30_000,
                 },
                 WalkVerdict::Dead {
                     checkpoint: "heartbeat",
@@ -113,7 +119,8 @@ mod tests {
                 },
                 WalkVerdict::Retry {
                     checkpoint: "heartbeat",
-                    retries_left: 1
+                    retries_left: 1,
+                    deadline_millis: 30_000
                 },
             ]
         );
