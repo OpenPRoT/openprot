@@ -9,7 +9,7 @@
 
 use core::time::Duration;
 
-use orchestrator_config::{BootCheckpoint, DeviceConfig};
+use orchestrator_config::{BootCheckpoint, DeviceConfig, Slot, SlotId};
 
 /// The mock board's boot-signal vocabulary. The schema carries these
 /// opaquely; only this board's `EvidenceReader` gives them meaning.
@@ -41,6 +41,23 @@ pub const MANAGED_DEVICES: &[DeviceConfig<u8, MockSignal>] = &[
             MockSignal::Gpio(12),
             Duration::from_secs(90),
         )],
+        // Plain A/B: two equal writable slots, recovery falls back to the
+        // other one. Real boards declare their own topology; a golden
+        // slot is optional.
+        &[
+            Slot {
+                id: SlotId(0),
+                writable: true,
+                bootable: true,
+                role: None,
+            },
+            Slot {
+                id: SlotId(1),
+                writable: true,
+                bootable: true,
+                role: None,
+            },
+        ],
     ),
     // PLDM device (NIC archetype): self-updating, SPDM-capable. Two
     // checkpoints, exercising the multi-checkpoint path: transport up
@@ -52,6 +69,10 @@ pub const MANAGED_DEVICES: &[DeviceConfig<u8, MockSignal>] = &[
             BootCheckpoint::new("mctp-ready", MockSignal::MctpReady, Duration::from_secs(20)),
             BootCheckpoint::new("heartbeat", MockSignal::Heartbeat, Duration::from_secs(10)),
         ],
+        // Self-updating device: it owns its boot selection, the eRoT never
+        // sees its slot topology. No local ladder rungs, so recovery can
+        // only escalate.
+        &[],
     ),
 ];
 

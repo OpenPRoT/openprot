@@ -64,6 +64,8 @@ const SOC: DeviceConfig<u8, u8> = DeviceConfig::new(
         BootCheckpoint::new("bl1", 0, core::time::Duration::from_millis(50)),
         BootCheckpoint::new("kernel", 0, core::time::Duration::from_millis(50)),
     ],
+    // Slot topology is irrelevant to the boot walk; empty is legal.
+    &[],
 );
 
 /// The device table speaks `core::time::Duration`; the runtime speaks the

@@ -81,6 +81,41 @@ impl<G> BootCheckpoint<G> {
     }
 }
 
+/// Identifies one slot within one device's layout. Opaque: meaning comes
+/// from the position in that device's slot table, never from a global
+/// vocabulary — slot 0 on the BMC and slot 0 on the NIC are unrelated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SlotId(pub u8);
+
+/// A distinguished duty a slot carries beyond being writable/bootable.
+///
+/// Intentionally exhaustive (not `#[non_exhaustive]`): adding a role is a
+/// breaking change, so every consumer that dispatches on roles — in
+/// particular recovery-candidate selection — is forced to handle the new
+/// role explicitly instead of falling into a wildcard arm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SlotRole {
+    /// The slot recovery falls back to after every ordinary rung failed.
+    /// A "golden" image is this role plus `writable: false` — a property
+    /// combination, not a separate name.
+    Recovery,
+}
+
+/// One slot in a device's layout: topology as data, not a type. A layout
+/// is plain A/B, A/B + golden, or single + golden purely by what the table
+/// declares — no layout shape is named anywhere.
+#[derive(Debug, Clone, Copy)]
+pub struct Slot {
+    pub id: SlotId,
+    /// May the update path write this slot? `false` on a recovery-role
+    /// slot is what makes it "golden".
+    pub writable: bool,
+    /// May the device boot from this slot? Every bootable slot is a rung
+    /// of the recovery ladder.
+    pub bootable: bool,
+    pub role: Option<SlotRole>,
+}
+
 /// One managed downstream device, as declared by the board config.
 ///
 /// Generic over the board's reset signal type `R` (which must match the
@@ -100,6 +135,7 @@ pub struct DeviceConfig<R, G: 'static> {
     name: &'static str,
     reset_signal: R,
     checkpoints: &'static [BootCheckpoint<G>],
+    slots: &'static [Slot],
 }
 
 impl<R, G> DeviceConfig<R, G> {
@@ -109,14 +145,17 @@ impl<R, G> DeviceConfig<R, G> {
     /// # Panics
     ///
     /// Panics — a build error in const context — if `name` is empty, if
-    /// `checkpoints` is empty, or if two checkpoints share a name
-    /// (failure reports identify a checkpoint by name; a duplicate would
-    /// make them ambiguous).
+    /// `checkpoints` is empty, if two checkpoints share a name (failure
+    /// reports identify a checkpoint by name; a duplicate would make them
+    /// ambiguous), or if `slots` breaks a layout rule: unique ids, at
+    /// most one recovery-role slot (which must be bootable), and a
+    /// bootable slot in any non-empty layout.
     #[must_use]
     pub const fn new(
         name: &'static str,
         reset_signal: R,
         checkpoints: &'static [BootCheckpoint<G>],
+        slots: &'static [Slot],
     ) -> Self {
         assert!(!name.is_empty(), "device name must not be empty");
         assert!(
@@ -135,10 +174,40 @@ impl<R, G> DeviceConfig<R, G> {
             }
             c += 1;
         }
+        let mut bootable = 0;
+        let mut recovery_slots = 0;
+        let mut s = 0;
+        while s < slots.len() {
+            if slots[s].bootable {
+                bootable += 1;
+            }
+            if matches!(slots[s].role, Some(SlotRole::Recovery)) {
+                recovery_slots += 1;
+                assert!(slots[s].bootable, "a recovery-role slot must be bootable");
+            }
+            let mut t = s + 1;
+            while t < slots.len() {
+                assert!(
+                    slots[s].id.0 != slots[t].id.0,
+                    "slot ids must be unique within a device"
+                );
+                t += 1;
+            }
+            s += 1;
+        }
+        assert!(
+            recovery_slots <= 1,
+            "at most one recovery-role slot per device"
+        );
+        assert!(
+            slots.is_empty() || bootable > 0,
+            "a non-empty slot layout needs a bootable slot"
+        );
         Self {
             name,
             reset_signal,
             checkpoints,
+            slots,
         }
     }
 
@@ -161,6 +230,17 @@ impl<R, G> DeviceConfig<R, G> {
     #[must_use]
     pub const fn checkpoints(&self) -> &'static [BootCheckpoint<G>] {
         self.checkpoints
+    }
+
+    /// This device's slot layout. The recovery ladder is derived from it,
+    /// never declared: bootable slots in declaration order, recovery-role
+    /// slot last, escalation to out-of-band recovery once no rung is left.
+    /// A layout without rungs — e.g. empty, for a device that owns its
+    /// boot selection internally (the PLDM archetype) — leaves escalation
+    /// as the only step.
+    #[must_use]
+    pub const fn slots(&self) -> &'static [Slot] {
+        self.slots
     }
 }
 
@@ -197,33 +277,120 @@ mod tests {
     const CHECKPOINT_DUP: BootCheckpoint<u8> =
         BootCheckpoint::new("boot-complete", 1, Duration::from_secs(1));
 
+    /// An ordinary slot: writable, bootable, no role.
+    const fn slot(id: u8) -> Slot {
+        Slot {
+            id: SlotId(id),
+            writable: true,
+            bootable: true,
+            role: None,
+        }
+    }
+
+    /// A recovery-role slot; non-writable, but no test depends on that.
+    const fn recovery_slot(id: u8) -> Slot {
+        Slot {
+            writable: false,
+            role: Some(SlotRole::Recovery),
+            ..slot(id)
+        }
+    }
+
     #[test]
     fn accepts_a_valid_table() {
-        let device = DeviceConfig::new("dev", 0u8, &[CHECKPOINT]);
+        let device = DeviceConfig::new("dev", 0u8, &[CHECKPOINT], const { &[slot(0), slot(1)] });
         assert_eq!(device.name(), "dev");
         assert_eq!(*device.reset_signal(), 0);
         assert_eq!(device.checkpoints().len(), 1);
         assert_eq!(device.checkpoints()[0].name(), "boot-complete");
         assert_eq!(*device.checkpoints()[0].signal(), 0);
         assert_eq!(device.checkpoints()[0].timeout(), Duration::from_secs(1));
+        assert_eq!(device.slots().len(), 2);
+    }
+
+    #[test]
+    fn accepts_a_layout_with_a_recovery_slot() {
+        let _ = DeviceConfig::new(
+            "dev",
+            0u8,
+            &[CHECKPOINT],
+            const { &[slot(0), slot(1), recovery_slot(2)] },
+        );
+    }
+
+    #[test]
+    fn accepts_an_empty_layout() {
+        let _ = DeviceConfig::new("dev", 0u8, &[CHECKPOINT], &[]);
     }
 
     #[test]
     #[should_panic(expected = "checkpoint names must be unique")]
     fn rejects_duplicate_checkpoint_names() {
-        let _ = DeviceConfig::new("dev", 0u8, &[CHECKPOINT, CHECKPOINT_DUP]);
+        let _ = DeviceConfig::new("dev", 0u8, &[CHECKPOINT, CHECKPOINT_DUP], &[]);
     }
 
     #[test]
     #[should_panic(expected = "device name must not be empty")]
     fn rejects_an_empty_device_name() {
-        let _ = DeviceConfig::new("", 0u8, &[CHECKPOINT]);
+        let _ = DeviceConfig::new("", 0u8, &[CHECKPOINT], &[]);
     }
 
     #[test]
     #[should_panic(expected = "at least one boot checkpoint")]
     fn rejects_an_empty_checkpoint_list() {
-        let _ = DeviceConfig::new("dev", 0u8, &[] as &[BootCheckpoint<u8>]);
+        let _ = DeviceConfig::new("dev", 0u8, &[] as &[BootCheckpoint<u8>], &[]);
+    }
+
+    #[test]
+    #[should_panic(expected = "slot ids must be unique")]
+    fn rejects_duplicate_slot_ids() {
+        let _ = DeviceConfig::new("dev", 0u8, &[CHECKPOINT], const { &[slot(0), slot(0)] });
+    }
+
+    #[test]
+    #[should_panic(expected = "at most one recovery-role slot")]
+    fn rejects_two_recovery_role_slots() {
+        let _ = DeviceConfig::new(
+            "dev",
+            0u8,
+            &[CHECKPOINT],
+            const { &[slot(0), recovery_slot(1), recovery_slot(2)] },
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "recovery-role slot must be bootable")]
+    fn rejects_an_unbootable_recovery_slot() {
+        let _ = DeviceConfig::new(
+            "dev",
+            0u8,
+            &[CHECKPOINT],
+            const {
+                &[
+                    slot(0),
+                    Slot {
+                        bootable: false,
+                        ..recovery_slot(1)
+                    },
+                ]
+            },
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "needs a bootable slot")]
+    fn rejects_a_layout_with_no_bootable_slot() {
+        let _ = DeviceConfig::new(
+            "dev",
+            0u8,
+            &[CHECKPOINT],
+            const {
+                &[Slot {
+                    bootable: false,
+                    ..slot(0)
+                }]
+            },
+        );
     }
 
     #[test]
