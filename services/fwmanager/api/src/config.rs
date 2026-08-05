@@ -13,6 +13,11 @@
 /// variant explicitly instead of falling into a wildcard arm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommitPolicy {
+    /// The device offers no boot evidence at all (a passive device the
+    /// orchestrator releases blind): a staged image is committed once
+    /// readback verification passes, there is nothing else to wait for.
+    /// The only legal policy for a device with no boot checkpoints.
+    None,
     /// The device reports it came up.
     Liveness,
     /// Liveness plus SPDM re-attestation of the running image.
@@ -141,8 +146,9 @@ pub const fn validate<R, G>(devices: &[DeviceConfig<R, G>]) {
     while i < devices.len() {
         assert!(!devices[i].name.is_empty(), "device name must not be empty");
         assert!(
-            !devices[i].checkpoints.is_empty(),
-            "device must declare at least one boot checkpoint"
+            !devices[i].checkpoints.is_empty()
+                || matches!(devices[i].commit_policy, CommitPolicy::None),
+            "a device without boot checkpoints must use CommitPolicy::None"
         );
         let mut c = 0;
         while c < devices[i].checkpoints.len() {
@@ -339,10 +345,21 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "at least one boot checkpoint")]
-    fn rejects_an_empty_checkpoint_list() {
+    #[should_panic(expected = "must use CommitPolicy::None")]
+    fn rejects_missing_checkpoints_with_a_liveness_gate() {
         validate(&[DeviceConfig {
             checkpoints: &[],
+            ..DEVICE
+        }]);
+    }
+
+    #[test]
+    fn accepts_a_passive_device() {
+        validate(&[DeviceConfig {
+            checkpoints: &[],
+            commit_policy: CommitPolicy::None,
+            slots: const { &[slot(0)] },
+            recovery_policy: RecoveryPolicy::EscalateOnly,
             ..DEVICE
         }]);
     }

@@ -11,6 +11,7 @@ use core::time::Duration;
 
 use fwmanager_api::config::{
     BootCheckpoint, BootSignal, CommitPolicy, DeviceConfig, RecoveryPolicy, SlotDesc, SlotId,
+    SlotRole,
 };
 
 /// Declaration order is the boot order: the orchestrator releases devices
@@ -72,6 +73,40 @@ pub const MANAGED_DEVICES: &[DeviceConfig<u8, u8>] = &[
         // only escalate.
         slots: &[],
         recovery_policy: RecoveryPolicy::EscalateOnly,
+    },
+    // Passive downstream SPI device (symbiont archetype): the eRoT fronts
+    // the device's flash and releases it blind — it produces no boot
+    // evidence, so there are no checkpoints and nothing gates commit
+    // beyond readback verification. Its flash still carries a full
+    // layout; with no boot signal, the ladder is walked on verification
+    // failures only.
+    DeviceConfig {
+        name: "cpld",
+        reset_signal: 9,
+        checkpoints: &[],
+        commit_policy: CommitPolicy::None,
+        slots: &[
+            SlotDesc {
+                id: SlotId(0),
+                writable: true,
+                bootable: true,
+                role: None,
+            },
+            SlotDesc {
+                id: SlotId(1),
+                writable: true,
+                bootable: true,
+                role: None,
+            },
+            // Golden: recovery role and never written after provisioning.
+            SlotDesc {
+                id: SlotId(2),
+                writable: false,
+                bootable: true,
+                role: Some(SlotRole::Recovery),
+            },
+        ],
+        recovery_policy: RecoveryPolicy::Ladder,
     },
 ];
 
