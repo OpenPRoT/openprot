@@ -9,7 +9,9 @@
 
 use core::time::Duration;
 
-use fwmanager_api::config::{BootCheckpoint, BootSignal, CommitPolicy, DeviceConfig};
+use fwmanager_api::config::{
+    BootCheckpoint, BootSignal, CommitPolicy, DeviceConfig, RecoveryPolicy, SlotDesc, SlotId,
+};
 
 /// Declaration order is the boot order: the orchestrator releases devices
 /// top to bottom, one at a time.
@@ -28,6 +30,24 @@ pub const MANAGED_DEVICES: &[DeviceConfig<u8, u8>] = &[
             window: Duration::from_secs(90),
         }],
         commit_policy: CommitPolicy::Liveness,
+        // Plain A/B: two equal writable slots, recovery falls back to the
+        // other one. Real boards declare their own topology; a golden
+        // slot is optional.
+        slots: &[
+            SlotDesc {
+                id: SlotId(0),
+                writable: true,
+                bootable: true,
+                role: None,
+            },
+            SlotDesc {
+                id: SlotId(1),
+                writable: true,
+                bootable: true,
+                role: None,
+            },
+        ],
+        recovery_policy: RecoveryPolicy::Ladder,
     },
     // PLDM device (NIC archetype): self-updating, SPDM-capable. Two
     // checkpoints, exercising the multi-checkpoint path.
@@ -47,6 +67,11 @@ pub const MANAGED_DEVICES: &[DeviceConfig<u8, u8>] = &[
             },
         ],
         commit_policy: CommitPolicy::LivenessAndAttestation,
+        // Self-updating device: it owns its boot selection, the eRoT never
+        // sees its slot topology. No local ladder rungs, so recovery can
+        // only escalate.
+        slots: &[],
+        recovery_policy: RecoveryPolicy::EscalateOnly,
     },
 ];
 
