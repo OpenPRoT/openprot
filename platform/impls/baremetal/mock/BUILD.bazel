@@ -15,6 +15,9 @@ rust_library(
     edition = "2024",
     deps = [
         "//hal/blocking",
+        "//hal/blocking/flash",
+        "//services/fwmanager/api:fwmanager_api",
+        "//util/types",
         "@rust_crates//:cortex-m",
         "@rust_crates//:embedded-hal",
     ],

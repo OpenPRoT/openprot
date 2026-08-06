@@ -24,7 +24,11 @@
 
 mod boot_control;
 mod boot_monitor;
+mod boot_progress;
 pub mod config;
+mod slot_control;
 
 pub use boot_control::BootControl;
 pub use boot_monitor::{BootMonitor, BootStatus};
+pub use boot_progress::{await_boot, BootProgress};
+pub use slot_control::SlotControl;

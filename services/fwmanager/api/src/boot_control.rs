@@ -33,11 +33,14 @@
 /// dev.hold_in_reset()?;
 /// store.set_trial(new_slot)?;      // tentative boot selection — not yet committed
 /// dev.release()?;                  // boot the trial image
-/// match monitor.await_boot(window)? {
-///     Booted           => store.commit(new_slot)?,   // observed good => make it active
-///     Failed | Timeout => { /* nothing committed; previous slot still active */ }
+/// match await_boot(&monitor, poll_budget)? {
+///     Booted           => store.commit()?,   // observed good => promote the trial
+///     Failed | Timeout => store.rollback()?, // disarm; previous slot still active
 /// }
 /// ```
+///
+/// The slot store and the boot window are the [`crate::SlotControl`] and
+/// [`crate::await_boot`] capabilities.
 pub trait BootControl {
     /// The error type reported by this device's boot control.
     ///
