@@ -45,18 +45,8 @@ pub const MANAGED_DEVICES: &[DeviceConfig<u8, MockSignal>] = &[
         // other one. Real boards declare their own topology; a golden
         // slot is optional.
         &[
-            Slot {
-                id: SlotId(0),
-                writable: true,
-                bootable: true,
-                role: None,
-            },
-            Slot {
-                id: SlotId(1),
-                writable: true,
-                bootable: true,
-                role: None,
-            },
+            Slot::new(SlotId(0), true, true, None),
+            Slot::new(SlotId(1), true, true, None),
         ],
     ),
     // PLDM device (NIC archetype): self-updating, SPDM-capable. Two
