@@ -7,10 +7,7 @@
 
 use core::cell::{Cell, RefCell};
 
-use mctp::{Eid, Tag};
-use mctp_lib::fragment::{Fragmenter, SendOutput};
-use mctp_lib::Sender;
-use openprot_mctp_api::{Handle, MctpClient, MctpError, RecvMetadata, ResponseCode};
+use mctp::Eid;
 use openprot_mctp_server::Server;
 use openprot_pldm_service::firmware_device::FirmwareDevice;
 use openprot_pldm_service::{MctpPldmTransport, PldmServiceError};
@@ -26,109 +23,10 @@ use pldm_common::protocol::firmware_update::{ComponentResponseCode, Descriptor};
 use pldm_common::util::fw_component::FirmwareComponent;
 use pldm_interface::firmware_device::fd_ops::{ComponentOperation, FdOps, FdOpsError};
 
-const FD_EID: u8 = 42;
-const UA_EID: u8 = 8;
-const TIMEOUT_MILLIS: u32 = 0;
+mod common;
+use common::{transfer, BufferSender, DirectClientWithPump, FD_EID, TIMEOUT_MILLIS, UA_EID};
 
-struct BufferSender<'a> {
-    packets: &'a RefCell<Vec<Vec<u8>>>,
-}
-
-impl Sender for BufferSender<'_> {
-    fn send_vectored(
-        &mut self,
-        mut fragmenter: Fragmenter,
-        payload: &[&[u8]],
-    ) -> mctp::Result<Tag> {
-        loop {
-            // Fragmenter requires the output buffer to be at least the payload
-            // MTU (255) plus the 4-byte MCTP transport header.
-            let mut buf = [0u8; 255 + 4];
-            match fragmenter.fragment_vectored(payload, &mut buf) {
-                SendOutput::Packet(p) => self.packets.borrow_mut().push(p.to_vec()),
-                SendOutput::Complete { tag, .. } => return Ok(tag),
-                SendOutput::Error { err, .. } => return Err(err),
-            }
-        }
-    }
-
-    fn get_mtu(&self) -> usize {
-        255
-    }
-}
-
-fn transfer<S: Sender, const N: usize>(packets: &RefCell<Vec<Vec<u8>>>, dest: &mut Server<S, N>) {
-    let pkts = packets.borrow();
-    for pkt in pkts.iter() {
-        dest.inbound(pkt).expect("inbound should accept packet");
-    }
-}
-
-struct DirectClientWithPump<'a, S: Sender, const N: usize, F: FnMut()> {
-    server: &'a RefCell<Server<S, N>>,
-    pre_recv_pump: RefCell<F>,
-}
-
-impl<'a, S: Sender, const N: usize, F: FnMut()> DirectClientWithPump<'a, S, N, F> {
-    fn new(server: &'a RefCell<Server<S, N>>, pre_recv_pump: F) -> Self {
-        Self {
-            server,
-            pre_recv_pump: RefCell::new(pre_recv_pump),
-        }
-    }
-}
-
-impl<S: Sender, const N: usize, F: FnMut()> MctpClient for DirectClientWithPump<'_, S, N, F> {
-    fn req(&self, eid: u8) -> Result<Handle, MctpError> {
-        self.server.borrow_mut().req(eid)
-    }
-
-    fn listener(&self, msg_type: u8) -> Result<Handle, MctpError> {
-        self.server.borrow_mut().listener(msg_type)
-    }
-
-    fn get_eid(&self) -> u8 {
-        self.server.borrow().get_eid()
-    }
-
-    fn set_eid(&self, eid: u8) -> Result<(), MctpError> {
-        self.server.borrow_mut().set_eid(eid)
-    }
-
-    fn recv(
-        &self,
-        handle: Handle,
-        _timeout_millis: u32,
-        buf: &mut [u8],
-    ) -> Result<RecvMetadata, MctpError> {
-        (self.pre_recv_pump.borrow_mut())();
-
-        self.server
-            .borrow_mut()
-            .try_recv(handle, buf)
-            .ok_or(MctpError::from_code(ResponseCode::TimedOut))
-    }
-
-    fn send(
-        &self,
-        handle: Option<Handle>,
-        msg_type: u8,
-        eid: Option<u8>,
-        tag: Option<u8>,
-        integrity_check: bool,
-        buf: &[u8],
-    ) -> Result<u8, MctpError> {
-        self.server
-            .borrow_mut()
-            .send(handle, msg_type, eid, tag, integrity_check, buf)
-    }
-
-    fn drop_handle(&self, handle: Handle) {
-        let _ = self.server.borrow_mut().unbind(handle);
-    }
-}
-
-struct FakeFdOps {
+struct MockFdOps {
     component_accepted: Cell<bool>,
     download_bytes_received: Cell<usize>,
     verified: Cell<bool>,
@@ -136,7 +34,7 @@ struct FakeFdOps {
     activated: Cell<bool>,
 }
 
-impl FdOps for FakeFdOps {
+impl FdOps for MockFdOps {
     fn get_device_identifiers(
         &self,
         _device_identifiers: &mut [Descriptor],
@@ -234,7 +132,7 @@ impl FdOps for FakeFdOps {
 
 #[test]
 fn base_full_chain_via_firmware_device() {
-    let fd_ops = FakeFdOps {
+    let fd_ops = MockFdOps {
         component_accepted: Cell::new(false),
         download_bytes_received: Cell::new(0),
         verified: Cell::new(false),

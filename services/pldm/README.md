@@ -21,8 +21,8 @@ process or platform-specific IPC bridge:
 └───────────┬──────────────┘
             │
             ▼
-┌──────────────────────────────────────────┐
-│   openprot-pldm-service                  │◄── this crate
+┌───────────────────────────────────────────┐
+│   openprot-pldm-service                   │◄── this crate
 │   FirmwareDevice<'a, O: FdOps, Cr, Cq>    │
 │     - cmd_interface: CmdInterface<'a, O>  │  PLDM FW-update state machine
 │     - responder_transport: inbound UA→FD  │
@@ -30,8 +30,8 @@ process or platform-specific IPC bridge:
 └───────────┬──────────────┬────────────────┘
             │              │ MctpPldmTransport<C: MctpClient>
             ▼              ▼
-┌──────────────────────────────────────────┐
-│   openprot-mctp-api                      │  Stack<C: MctpClient>
+┌───────────────────────────────────────────┐
+│   openprot-mctp-api                       │  Stack<C: MctpClient>
 └───────────┬───────────────────────────────┘
             │ IPC / transport
             ▼

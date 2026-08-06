@@ -26,7 +26,10 @@ rust_test(
 
 rust_test(
     name = "base_host_test",
-    srcs = ["tests/base_host.rs"],
+    srcs = [
+        "tests/base_host.rs",
+        "tests/common.rs",
+    ],
     crate_root = "tests/base_host.rs",
     edition = "2024",
     deps = [
@@ -42,7 +45,10 @@ rust_test(
 
 rust_test(
     name = "firmware_update_host_test",
-    srcs = ["tests/firmware_update_host.rs"],
+    srcs = [
+        "tests/firmware_update_host.rs",
+        "tests/common.rs",
+    ],
     crate_root = "tests/firmware_update_host.rs",
     edition = "2024",
     deps = [
