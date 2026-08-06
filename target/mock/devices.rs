@@ -25,7 +25,8 @@ pub enum MockSignal {
 }
 
 /// Declaration order is the boot order: the orchestrator releases devices
-/// top to bottom, one at a time.
+/// top to bottom, one at a time. This table is the authority — the
+/// orchestrator's chain of trust is built from it, never beside it.
 ///
 /// The mock board's reset controller addresses reset lines by plain index,
 /// so the reset id type is `u8`.

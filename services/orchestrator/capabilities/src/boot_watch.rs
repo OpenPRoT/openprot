@@ -39,7 +39,10 @@ pub enum WalkVerdict {
         /// When the awaited checkpoint's window expires.
         deadline_millis: u64,
     },
-    /// Every checkpoint passed — the device is up.
+    /// Every checkpoint passed — the device is up. Which state-machine
+    /// event this becomes is the shell's mapping, by component kind:
+    /// `ComponentReady` for an iRoT-backed device, `Booted` for a
+    /// symbiont.
     Complete,
     /// This boot attempt failed at `checkpoint`; the walk is over.
     /// Whether to try again, recover, or give up is the orchestrator's
