@@ -81,16 +81,66 @@ pub enum SlotRole {
 /// One slot in a device's layout: topology as data, not a type. A layout
 /// is plain A/B, A/B + golden, or single + golden purely by what the table
 /// declares — no layout shape is named anywhere.
+///
+/// Immutable, and only constructible through [`Slot::new`], which
+/// enforces the per-slot invariant — an invalid slot is unrepresentable,
+/// not merely rejected later. Rules that span a whole layout (unique ids,
+/// one recovery slot, ladder rungs) stay in [`validate`], which sees the
+/// list.
 #[derive(Debug, Clone, Copy)]
 pub struct Slot {
-    pub id: SlotId,
+    id: SlotId,
+    writable: bool,
+    bootable: bool,
+    role: Option<SlotRole>,
+}
+
+impl Slot {
+    /// Declares one slot. Const, so board tables still build at compile
+    /// time — where a rejected slot is a build error, the same teeth as
+    /// [`validate`]. (A `Result`-returning constructor cannot build a
+    /// `&'static` table; panicking in const context is how schema rules
+    /// fail the build.)
+    ///
+    /// # Panics
+    ///
+    /// Panics if `role` is [`SlotRole::Recovery`] and `bootable` is
+    /// `false` — recovery boots the device from that slot, so an
+    /// unbootable recovery slot is a contradiction.
+    pub const fn new(id: SlotId, writable: bool, bootable: bool, role: Option<SlotRole>) -> Self {
+        assert!(
+            !(matches!(role, Some(SlotRole::Recovery)) && !bootable),
+            "a recovery-role slot must be bootable"
+        );
+        Self {
+            id,
+            writable,
+            bootable,
+            role,
+        }
+    }
+
+    /// This slot's id, unique within the device (checked by [`validate`]).
+    pub const fn id(&self) -> SlotId {
+        self.id
+    }
+
     /// May the update path write this slot? `false` on a recovery-role
     /// slot is what makes it "golden".
-    pub writable: bool,
+    pub const fn writable(&self) -> bool {
+        self.writable
+    }
+
     /// May the device boot from this slot? Every bootable slot is a rung
     /// of the recovery ladder.
-    pub bootable: bool,
-    pub role: Option<SlotRole>,
+    pub const fn bootable(&self) -> bool {
+        self.bootable
+    }
+
+    /// This slot's special role, if any.
+    pub const fn role(&self) -> Option<SlotRole> {
+        self.role
+    }
 }
 
 /// One managed downstream device, as declared by the board config.
@@ -150,17 +200,18 @@ pub const fn validate<R, G>(devices: &[DeviceConfig<R, G>]) {
         let mut recovery_slots = 0;
         let mut s = 0;
         while s < slots.len() {
-            if slots[s].bootable {
+            if slots[s].bootable() {
                 bootable += 1;
             }
-            if matches!(slots[s].role, Some(SlotRole::Recovery)) {
+            // Recovery ⇒ bootable is enforced by Slot::new — an
+            // unbootable recovery slot is unrepresentable here.
+            if matches!(slots[s].role(), Some(SlotRole::Recovery)) {
                 recovery_slots += 1;
-                assert!(slots[s].bootable, "a recovery-role slot must be bootable");
             }
             let mut t = s + 1;
             while t < slots.len() {
                 assert!(
-                    slots[s].id.0 != slots[t].id.0,
+                    slots[s].id().0 != slots[t].id().0,
                     "slot ids must be unique within a device"
                 );
                 t += 1;
@@ -197,21 +248,12 @@ mod tests {
 
     /// An ordinary slot: writable, bootable, no role.
     const fn slot(id: u8) -> Slot {
-        Slot {
-            id: SlotId(id),
-            writable: true,
-            bootable: true,
-            role: None,
-        }
+        Slot::new(SlotId(id), true, true, None)
     }
 
     /// A recovery-role slot; non-writable, but no test depends on that.
     const fn recovery_slot(id: u8) -> Slot {
-        Slot {
-            writable: false,
-            role: Some(SlotRole::Recovery),
-            ..slot(id)
-        }
+        Slot::new(SlotId(id), false, true, Some(SlotRole::Recovery))
     }
 
     const DEVICE: DeviceConfig<u8, u8> = DeviceConfig {
@@ -261,34 +303,19 @@ mod tests {
         }]);
     }
 
+    // The per-slot invariant fails at construction, before any list-level
+    // validate could run — an invalid slot is unrepresentable.
     #[test]
     #[should_panic(expected = "recovery-role slot must be bootable")]
-    fn rejects_an_unbootable_recovery_slot() {
-        validate(&[DeviceConfig {
-            slots: const {
-                &[
-                    slot(0),
-                    slot(1),
-                    Slot {
-                        bootable: false,
-                        ..recovery_slot(2)
-                    },
-                ]
-            },
-            ..DEVICE
-        }]);
+    fn rejects_an_unbootable_recovery_slot_at_construction() {
+        Slot::new(SlotId(2), false, false, Some(SlotRole::Recovery));
     }
 
     #[test]
     #[should_panic(expected = "needs a bootable slot")]
     fn rejects_a_layout_with_no_bootable_slot() {
         validate(&[DeviceConfig {
-            slots: const {
-                &[Slot {
-                    bootable: false,
-                    ..slot(0)
-                }]
-            },
+            slots: const { &[Slot::new(SlotId(0), true, false, None)] },
             ..DEVICE
         }]);
     }
