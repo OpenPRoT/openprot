@@ -134,7 +134,7 @@ enum Gating {
 /// gated out. The walk-phase payloads (`AwaitingReady`/`Recovering`) stay on the
 /// global [`State`] rather than here — those phases are properties of the whole
 /// machine, not of one component. Named for the *component service* axis to keep
-/// it distinct from fwmanager's trial-boot/commit (update-slot) lifecycle, which
+/// it distinct from orchestrator-api's trial-boot/commit (update-slot) lifecycle, which
 /// is a separate concern.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum ComponentLifecycle {

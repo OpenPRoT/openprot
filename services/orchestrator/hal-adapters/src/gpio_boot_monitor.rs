@@ -4,10 +4,10 @@
 //! HAL-backed [`BootMonitor`]: read a device's boot-complete signal off a GPIO
 //! input line.
 
-use fwmanager_api::{BootMonitor, BootStatus};
 use openprot_hal_blocking::gpio_port::{
     ActivePolarity, GpioError, GpioErrorKind, GpioPort, PinMask,
 };
+use orchestrator_api::{BootMonitor, BootStatus};
 
 /// Adapts any HAL GPIO error into a [`core::error::Error`].
 ///

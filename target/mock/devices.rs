@@ -9,7 +9,7 @@
 
 use core::time::Duration;
 
-use fwmanager_api::config::{BootCheckpoint, BootSignal, CommitPolicy, DeviceConfig};
+use orchestrator_api::config::{BootCheckpoint, BootSignal, CommitPolicy, DeviceConfig};
 
 /// Declaration order is the boot order: the orchestrator releases devices
 /// top to bottom, one at a time.
@@ -50,4 +50,4 @@ pub const MANAGED_DEVICES: &[DeviceConfig<u8, u8>] = &[
     },
 ];
 
-const _: () = fwmanager_api::config::validate(MANAGED_DEVICES);
+const _: () = orchestrator_api::config::validate(MANAGED_DEVICES);

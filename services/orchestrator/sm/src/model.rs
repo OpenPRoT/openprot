@@ -194,7 +194,7 @@ pub enum Event {
     /// up. The passive-tier counterpart to [`Event::ComponentReady`]: a passive
     /// component has no iRoT to self-verify, so "it booted" is the only
     /// post-release signal it can produce. Clears that component's boot-progress
-    /// watchdog. Mirrors fwmanager's `BootProgress::Booted`.
+    /// watchdog. Mirrors orchestrator-api's `BootProgress::Booted`.
     Booted(ComponentId),
     /// A challenger has requested a signed attestation.
     AttestationChallenge,

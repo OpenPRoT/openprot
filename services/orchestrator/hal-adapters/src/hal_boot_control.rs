@@ -3,8 +3,8 @@
 
 //! HAL-backed [`BootControl`]: bind one reset-controller line to a device.
 
-use fwmanager_api::BootControl;
 use openprot_hal_blocking::system_control::{Error as HalError, ErrorKind, ResetControl};
+use orchestrator_api::BootControl;
 
 /// Adapts any HAL system-control error into a [`core::error::Error`].
 ///

@@ -15,7 +15,7 @@
 //! downward on it. Concrete adapters bind a trait to a signal source and
 //! live in their own crates, so naming a capability never drags in the stack
 //! behind it — the HAL-backed `HalBootControl` and `GpioBootMonitor` are in
-//! `fwmanager-hal-adapters`; other backends (for example an MCTP-ready
+//! `orchestrator-hal-adapters`; other backends (for example an MCTP-ready
 //! `BootMonitor`) implement the same traits from their own transport crate.
 //! Config values live in the board device tables
 //! (`target/<board>/devices.rs`).

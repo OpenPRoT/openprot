@@ -603,7 +603,7 @@ fn corruption_out_of_chain_id_is_dropped() {
 /// never reports [`Event::Booted`] before its watchdog fires is recovered like
 /// any other boot failure — even while the walk is still in `PreSupervision`.
 /// This closes the release-and-forget gap (CSA boot-progress checkpointing is
-/// device-agnostic; fwmanager arms a `boot_timeout` for every device).
+/// device-agnostic; the orchestrator arms a `boot_timeout` for every device).
 #[test]
 fn passive_boot_timeout_enters_recovering() {
     let (effects, state) = drive(

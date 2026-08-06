@@ -10,5 +10,5 @@ rust_library(
     srcs = ["devices.rs"],
     crate_name = "board_devices",
     edition = "2024",
-    deps = ["//services/fwmanager/api:fwmanager_api"],
+    deps = ["//services/orchestrator/api:orchestrator_api"],
 )

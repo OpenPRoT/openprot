@@ -4,19 +4,22 @@
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
 rust_library(
-    name = "fwmanager_api",
+    name = "orchestrator_hal_adapters",
     srcs = [
-        "src/boot_control.rs",
-        "src/boot_monitor.rs",
-        "src/config.rs",
+        "src/gpio_boot_monitor.rs",
+        "src/hal_boot_control.rs",
         "src/lib.rs",
     ],
     edition = "2024",
     visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking",
+        "//services/orchestrator/api:orchestrator_api",
+    ],
 )
 
 # Host tests: build on the host platform, no kernel/QEMU.
 rust_test(
-    name = "fwmanager_api_test",
-    crate = ":fwmanager_api",
+    name = "orchestrator_hal_adapters_test",
+    crate = ":orchestrator_hal_adapters",
 )
