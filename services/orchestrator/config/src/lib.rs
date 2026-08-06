@@ -7,8 +7,10 @@
 
 #![cfg_attr(not(test), no_std)]
 
-/// One boot checkpoint: a signal the orchestrator waits for, how long it
-/// waits per attempt, and how many failed attempts it tolerates.
+/// One boot checkpoint: a signal the orchestrator waits for, and how long
+/// it waits. Retry policy is deliberately not table data: a retry
+/// re-resets the device and re-runs the whole walk, so budgets are
+/// per boot attempt and owned by the orchestrator state machine.
 ///
 /// `signal` is a board-defined id — the schema attaches no meaning to it
 /// and names no signal kinds. Each board defines its own vocabulary (a
@@ -28,9 +30,6 @@ pub struct BootCheckpoint<G> {
     /// Window for one attempt at this checkpoint. Expiry is the
     /// orchestrator's own judgment; hung devices report nothing.
     pub timeout: core::time::Duration,
-    /// Attempts allowed beyond the first before the failure is final.
-    /// `0` means the one attempt is all the device gets.
-    pub max_retries: u8,
 }
 
 /// One managed downstream device, as declared by the board config.
@@ -55,7 +54,8 @@ pub struct DeviceConfig<R, G: 'static> {
     pub reset_signal: R,
     /// Boot checkpoints, in the order the device passes them. The device
     /// counts as booted when the last one is reached; a checkpoint whose
-    /// window and retry budget are exhausted fails the boot.
+    /// window expires fails the attempt — whether to retry or recover is
+    /// the orchestrator's decision, not table data.
     pub checkpoints: &'static [BootCheckpoint<G>],
 }
 
@@ -133,7 +133,6 @@ mod tests {
         name: "boot-complete",
         signal: 0,
         timeout: Duration::from_secs(1),
-        max_retries: 1,
     };
 
     const DEVICE: DeviceConfig<u8, u8> = DeviceConfig {

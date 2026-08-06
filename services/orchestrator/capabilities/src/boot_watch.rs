@@ -19,9 +19,15 @@ pub trait BootWatch {
 
 /// Everything the orchestrator needs to know about a boot walk.
 ///
-/// Deliberately free of device and error types: the orchestrator acts the
-/// same whatever the cause, so the concrete detail is logged by the walk
-/// while it is still in scope, not carried across the seam.
+/// Observation only: the walk judges checkpoint windows, never lives.
+/// Retry counts and terminal calls belong to the orchestrator state
+/// machine (`ComponentStatus.retry`, the `Recovering` → `RecoveryFailed`
+/// path) — a verdict that carried a retry budget would be a second owner
+/// for the same decision, free to disagree with the first.
+///
+/// Deliberately free of device and error types: the concrete detail is
+/// logged by the walk while it is still in scope, not carried across the
+/// seam.
 ///
 /// Intentionally exhaustive (not `#[non_exhaustive]`): adding a verdict is
 /// a breaking change, so the compiler forces every consumer — in particular
@@ -35,29 +41,31 @@ pub enum WalkVerdict {
     },
     /// Every checkpoint passed — the device is up.
     Complete,
-    /// The attempt failed — a window expired, or the device reported
-    /// [`FailedRetriable`](crate::BootStatus::FailedRetriable) (which ends
-    /// the wait early) — and retry budget remains; the window is re-armed
-    /// from the poll that judged it. The caller re-resets the device and
-    /// keeps polling — what a retry re-runs is the caller's policy.
-    Retry {
-        /// The checkpoint that failed.
+    /// This boot attempt failed at `checkpoint`; the walk is over.
+    /// Whether to try again, recover, or give up is the orchestrator's
+    /// decision — a retry re-resets the device and starts a fresh walk.
+    Failed {
+        /// The checkpoint the attempt died at.
         checkpoint: &'static str,
-        /// Attempts left after this one.
-        retries_left: u8,
-        /// When the re-armed window expires: the judging poll's
-        /// `now_millis` plus the checkpoint's `timeout`. The caller
-        /// schedules against this exactly as it does for `Waiting` —
-        /// no deadline arithmetic of its own.
-        deadline_millis: u64,
+        /// Why it died — the one input the retry decision needs.
+        cause: FailureCause,
     },
-    /// This boot is dead: retry budget exhausted, or the device reported
-    /// [`FailedFatal`](crate::BootStatus::FailedFatal) — a verdict no
-    /// remaining budget can overturn. Recovery is the caller's move.
-    Dead {
-        /// The checkpoint the boot died at.
-        checkpoint: &'static str,
-    },
+}
+
+/// Why a boot attempt failed at a checkpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FailureCause {
+    /// The window expired; the device reported nothing.
+    TimedOut,
+    /// The device reported a failure worth another attempt
+    /// ([`FailedRetriable`](crate::BootStatus::FailedRetriable)) — the
+    /// wait ended early.
+    DeviceRetriable,
+    /// The device reported a terminal failure
+    /// ([`FailedFatal`](crate::BootStatus::FailedFatal)) — re-running the
+    /// same image cannot change the verdict, whatever retry budget the
+    /// orchestrator has left.
+    DeviceFatal,
 }
 
 #[cfg(test)]
@@ -94,13 +102,13 @@ mod tests {
         };
         let mut nic = ScriptedWalk {
             verdicts: &[
-                WalkVerdict::Retry {
+                WalkVerdict::Failed {
                     checkpoint: "heartbeat",
-                    retries_left: 1,
-                    deadline_millis: 30_000,
+                    cause: FailureCause::TimedOut,
                 },
-                WalkVerdict::Dead {
+                WalkVerdict::Failed {
                     checkpoint: "heartbeat",
+                    cause: FailureCause::DeviceFatal,
                 },
             ],
             next: 0,
@@ -117,10 +125,9 @@ mod tests {
                 WalkVerdict::Waiting {
                     deadline_millis: 90_000
                 },
-                WalkVerdict::Retry {
+                WalkVerdict::Failed {
                     checkpoint: "heartbeat",
-                    retries_left: 1,
-                    deadline_millis: 30_000
+                    cause: FailureCause::TimedOut
                 },
             ]
         );
@@ -128,8 +135,9 @@ mod tests {
             second,
             [
                 WalkVerdict::Complete,
-                WalkVerdict::Dead {
-                    checkpoint: "heartbeat"
+                WalkVerdict::Failed {
+                    checkpoint: "heartbeat",
+                    cause: FailureCause::DeviceFatal
                 },
             ]
         );

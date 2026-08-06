@@ -39,7 +39,6 @@ pub const MANAGED_DEVICES: &[DeviceConfig<u8, MockSignal>] = &[
             name: "boot-complete",
             signal: MockSignal::Gpio(12),
             timeout: Duration::from_secs(90),
-            max_retries: 1,
         }],
     },
     // PLDM device (NIC archetype): self-updating, SPDM-capable. Two
@@ -53,13 +52,11 @@ pub const MANAGED_DEVICES: &[DeviceConfig<u8, MockSignal>] = &[
                 name: "mctp-ready",
                 signal: MockSignal::MctpReady,
                 timeout: Duration::from_secs(20),
-                max_retries: 2,
             },
             BootCheckpoint {
                 name: "heartbeat",
                 signal: MockSignal::Heartbeat,
                 timeout: Duration::from_secs(10),
-                max_retries: 0,
             },
         ],
     },
