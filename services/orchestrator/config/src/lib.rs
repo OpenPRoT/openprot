@@ -7,20 +7,6 @@
 
 #![cfg_attr(not(test), no_std)]
 
-/// What the orchestrator requires before it commits a staged image.
-///
-/// Intentionally exhaustive (not `#[non_exhaustive]`): adding a variant is
-/// a breaking change, so the compiler forces every match on the policy —
-/// in particular the orchestrator's commit decision — to handle the new
-/// variant explicitly instead of falling into a wildcard arm.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CommitPolicy {
-    /// The device reports it came up.
-    Liveness,
-    /// Liveness plus SPDM re-attestation of the running image.
-    LivenessAndAttestation,
-}
-
 /// One boot checkpoint: a signal the orchestrator waits for, how long it
 /// waits per attempt, and how many failed attempts it tolerates.
 ///
@@ -57,6 +43,11 @@ pub struct BootCheckpoint<G> {
 /// Intentionally exhaustive (not `#[non_exhaustive]`): board tables
 /// construct this struct by literal, which the attribute would forbid.
 /// Adding a field is a breaking change that updates every board table.
+///
+/// Deliberately says nothing about attestation or commit requirements:
+/// those follow from what kind of device this is (iRoT-backed or
+/// symbiont, the orchestrator's `ComponentKind`), not from a table
+/// setting — a second knob would only let the two disagree.
 #[derive(Debug, Clone, Copy)]
 pub struct DeviceConfig<R, G: 'static> {
     pub name: &'static str,
@@ -66,7 +57,6 @@ pub struct DeviceConfig<R, G: 'static> {
     /// counts as booted when the last one is reached; a checkpoint whose
     /// window and retry budget are exhausted fails the boot.
     pub checkpoints: &'static [BootCheckpoint<G>],
-    pub commit_policy: CommitPolicy,
 }
 
 /// Checks a device table. Board configs call this in a const context so a
@@ -150,7 +140,6 @@ mod tests {
         name: "dev",
         reset_signal: 0,
         checkpoints: &[CHECKPOINT],
-        commit_policy: CommitPolicy::Liveness,
     };
 
     #[test]

@@ -9,7 +9,7 @@
 
 use core::time::Duration;
 
-use orchestrator_config::{BootCheckpoint, CommitPolicy, DeviceConfig};
+use orchestrator_config::{BootCheckpoint, DeviceConfig};
 
 /// The mock board's boot-signal vocabulary. The schema carries these
 /// opaquely; only this board's `EvidenceReader` gives them meaning.
@@ -41,7 +41,6 @@ pub const MANAGED_DEVICES: &[DeviceConfig<u8, MockSignal>] = &[
             timeout: Duration::from_secs(90),
             max_retries: 1,
         }],
-        commit_policy: CommitPolicy::Liveness,
     },
     // PLDM device (NIC archetype): self-updating, SPDM-capable. Two
     // checkpoints, exercising the multi-checkpoint path: transport up
@@ -63,7 +62,6 @@ pub const MANAGED_DEVICES: &[DeviceConfig<u8, MockSignal>] = &[
                 max_retries: 0,
             },
         ],
-        commit_policy: CommitPolicy::LivenessAndAttestation,
     },
 ];
 
