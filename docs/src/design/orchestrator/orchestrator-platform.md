@@ -1,45 +1,14 @@
 # Platform Architecture
 
-The orchestrator is the eRoT service that owns the
-firmware lifecycle of the platform's downstream devices: verify before
-running, supervise the boot, recover from corruption, apply updates,
-report every degradation. In NIST SP 800-193 terms: *protect*, *detect*,
-*recover*.
-
-It is pure policy. It decides *when* a device leaves reset, *which* image
-gets verified, *whether* an update activates — the platform's controllers
-and services carry the decisions out. It never drives a wire, parses a bus
-protocol, or holds a key (see [Where the responsibility
-ends](#where-the-responsibility-ends)).
-
-## Responsibilities
-
-1. **Verified boot.** Walk the chain of trust in dependency order.
-   Devices with eRoT-readable flash (BMC flash behind the SPI monitor)
-   are verified (signature + SVN) while held in reset; the monitor's
-   hardware write filter stays armed until first fetch, closing the
-   time-of-check/time-of-use window. Devices with private flash (NIC,
-   retimer) rely on their own boot ROM and join the trust chain only
-   after SPDM attestation.
-2. **Boot supervision.** After release, wait on the device's declared
-   boot checkpoints (boot-complete GPIO, heartbeat, MCTP ready, version
-   query). An expired checkpoint window means the boot failed — hung
-   devices report nothing.
-3. **Recovery and isolation.** Restore a corrupt device from its recovery
-   image, with a bounded retry count. If its policy allows degraded
-   operation, isolate it instead: hold in reset, drop from the trust
-   chain, report. If a required device cannot be recovered, latch the
-   platform locked.
-4. **Firmware update.** Accept, authenticate, stage, activate; defer
-   requests while a boot walk, update, or recovery is in flight. The
-   anti-rollback (SVN) floor advances only after the new image proves it
-   boots and runs.
-5. **Attestation and reporting.** Answer attestation challenges as the
-   SPDM responder's policy half: the orchestrator decides which
-   measurements answer a challenge, the crypto engine signs them on its
-   behalf — the key never leaves the vault, the transport only carries
-   the session. Report isolation, recovery failure, and deferred or
-   aborted updates to platform management.
+Every decision — when a device leaves reset, which image gets verified,
+whether an update activates — is made in the [state
+machine](./orchestrator-machine.md); what those decisions are and how
+they sequence is that page's subject, not this one's. The platform is
+everything around that core: the sensors that feed it events and the
+actuators that carry out its effects. This page describes that half —
+the layers inside the orchestrator process, the platform services it
+calls, the board device table, and the fail-safe rules at the
+responsibility boundary.
 
 ## Structure
 
@@ -72,8 +41,10 @@ Two rules follow:
   zero policy changes.
 - **Protection survives its crash.** The SPI monitor filters flash traffic
   in hardware, on its own; the orchestrator only loads its rules at
-  boot and is not in the data path. Busy or crashed, it cannot be bypassed
-  — there is nothing to bypass.
+  boot and is not in the data path, and the hardware write filter stays
+  armed until the device's first fetch, closing the
+  time-of-check/time-of-use window. Busy or crashed, the orchestrator
+  cannot be bypassed — there is nothing to bypass.
 
 ```mermaid
 flowchart TB
