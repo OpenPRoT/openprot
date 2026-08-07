@@ -12,6 +12,52 @@
 
 #![cfg_attr(not(test), no_std)]
 
+/// How a device in the chain of trust is classified. Declared per device
+/// in the board table; the orchestrator supervises accordingly.
+///
+/// Corresponds directly to the two-tier model in the CSA architecture
+/// document: `Active` = eRoT gate + iRoT gate; `Passive` = eRoT gate
+/// only.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComponentKind {
+    /// Has an integrated iRoT (e.g. Caliptra). Both the eRoT-side checks
+    /// (signature + SVN) and the iRoT-side check (local self-verification)
+    /// apply. The orchestrator waits for the device's readiness report
+    /// (`ComponentReady`) before advancing the chain walk.
+    Active,
+    /// No integrated iRoT. The eRoT's signature + SVN check is the only
+    /// *trust* gate, so the chain walk advances speculatively after the
+    /// device's reset release without blocking on readiness. The released
+    /// device is still watched for boot-progress liveness (`Booted`)
+    /// under the same per-device watchdog as an `Active` device's
+    /// readiness: a passive device that never reports in before its
+    /// timeout is recovered like any other boot failure. CSA
+    /// boot-progress checkpointing is device-agnostic — every released
+    /// device owes a boot-progress signal, iRoT or not.
+    Passive,
+}
+
+/// Recovery-failure classification: what the orchestrator does once a
+/// device's restore attempts are **exhausted** (its per-device retry
+/// count reaches the board's retry budget). Every verification or
+/// corruption failure is retried first, regardless of this
+/// classification — CSA's "recover first" principle. This value is
+/// consulted only after retries are exhausted.
+///
+/// (The narrative design docs sometimes call the `Required` outcome
+/// "platform halt" — same behavior, this is the type-level name.)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FailurePolicy {
+    /// Stop the boot sequence entirely: the orchestrator locks down.
+    Required,
+    /// Hold this device in reset and continue booting the rest of the
+    /// platform.
+    Isolable,
+    /// Hold this device **and** any device whose `depends_on` names it
+    /// (transitively), then continue booting the rest of the platform.
+    Cascading,
+}
+
 /// One boot checkpoint: a signal the orchestrator waits for, and how long
 /// it waits. Retry policy is deliberately not table data: a retry
 /// re-resets the device and re-runs the whole walk, so budgets are

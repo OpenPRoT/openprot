@@ -20,50 +20,10 @@ impl ComponentId {
     }
 }
 
-/// How a component in the trust chain is classified. The board supplies one
-/// [`ComponentKind`] per [`ComponentId`] when building the chain.
-///
-/// Corresponds directly to the two-tier model in the CSA architecture document:
-/// `Active` = eRoT gate + iRoT gate; `Passive` = eRoT gate only.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ComponentKind {
-    /// Has an integrated iRoT (e.g. Caliptra). Both eRoT-side (signature + SVN)
-    /// and iRoT-side (local self-verification) checks apply. The machine waits in
-    /// [`State::AwaitingReady`] for [`Event::ComponentReady`] before advancing.
-    Active,
-    /// No integrated iRoT. The eRoT's signature + SVN check is the only *trust*
-    /// gate, so the chain walk advances speculatively after `ReleaseReset`
-    /// without blocking in [`State::AwaitingReady`]. The released component is
-    /// still watched for boot-progress liveness ([`Event::Booted`]) under the
-    /// same per-component watchdog as an `Active` component's
-    /// [`Event::ComponentReady`]: a passive device that never reports in before
-    /// its [`Event::Timeout`] is recovered like any other boot failure. CSA
-    /// boot-progress checkpointing is device-agnostic — every released device
-    /// owes a boot-progress signal, iRoT or not.
-    Passive,
-}
-
-/// Recovery-failure classification: what the machine does once a required
-/// component's restore attempts are **exhausted** (its per-component retry
-/// count reaches `max_retry`). Every verification or corruption failure enters
-/// [`State::Recovering`] and is retried first, regardless of this
-/// classification — CSA's "recover first" principle. This value is consulted
-/// only after retries are exhausted.
-///
-/// (The narrative design docs sometimes call the `Required` outcome "platform
-/// halt" — same behavior, this is the type-level name.)
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum FailurePolicy {
-    /// Stop the boot sequence entirely: self-emits [`Event::RecoveryFailed`],
-    /// which drives the machine to [`State::Locked`].
-    Required,
-    /// Hold this component in reset (added to `Rot.gated`) and continue
-    /// booting the rest of the platform.
-    Isolable,
-    /// Hold this component **and** any component whose `depends_on` names it
-    /// (transitively), then continue booting the rest of the platform.
-    Cascading,
-}
+// The component-classification vocabulary lives in the device-table schema
+// crate (single source of truth: boards declare kind and policy per device in
+// their table). Re-exported here so the reducer's API is unchanged.
+pub use orchestrator_config::{ComponentKind, FailurePolicy};
 
 /// Opaque recovery-region key supplied by the board at chain-build time.
 /// Components sharing a `RegionId` are restored together: when any region
