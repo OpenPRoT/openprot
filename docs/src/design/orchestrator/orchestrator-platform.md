@@ -83,12 +83,12 @@ flowchart TB
     subgraph ORCH["Orchestrator&nbsp;(one&nbsp;process)"]
         SM["Boot state machine<br/>verify / release / supervise /<br/>recover / update / lock"]
         MOD["Update, recovery,<br/>anti-rollback modules<br/>(libraries, not services)"]
-        CAP["Device capabilities<br/>BootControl and peers<br/>(+ HAL adapters)"]
+        CAP["Device capabilities<br/>BootControl and peers —<br/>IPC clients, marshalling only<br/>(+ HAL adapters)"]
     end
 
-    NET["MCTP / PLDM / SPDM<br/>(transport task, protocols as libs;<br/>carries data, holds no authority —<br/>SPDM responder decisions: orchestrator)"]
+    NET["MCTP / PLDM / SPDM<br/>services/mctp · services/spdm<br/>(transport task, protocols as libs;<br/>carries data, holds no authority —<br/>SPDM responder decisions: orchestrator)"]
     CRYPTO["Crypto engine<br/>+ key vault"]
-    STORE["Storage<br/>pending-update record,<br/>retry counts, lockdown latch<br/>(write: orchestrator only)"]
+    STORE["Storage<br/>services/storage<br/>pending-update record,<br/>retry counts, lockdown latch<br/>(write: orchestrator only)"]
     SPI["SPI monitor<br/>flash access, bus filtering"]
     RST["Reset controller<br/>(fail-safe: lines come up<br/>asserted after any restart)"]
     GPIO["GPIO controller"]
@@ -126,15 +126,35 @@ flowchart TB
     SPI <--> DEV
     NET <-->|"MCTP to active devices:<br/>heartbeat, MCTP ready,<br/>version query, SPDM, PLDM"| DEV
 
+    %% every blue orchestrator ↔ service arrow above is one of these round trips
+    subgraph IPCL["IPC seam — every blue arrow is one of these round trips (syscall-like)"]
+        direction LR
+        CL["client: the orchestrator,<br/>via the service's client crate<br/>(services/*/client, marshalling)"] -->|"IPC call over kernel channel<br/>(client-ipc)"| SV["server: the platform service task,<br/>does the hardware I/O<br/>on the caller's behalf<br/>(services/*/server)"]
+        SV -.->|"data back via IPC,<br/>queued as event"| CL
+    end
+    DEV ~~~ IPCL
+    style IPCL fill:#fafafa,stroke:#999,stroke-dasharray:4 3
+
+    %% IPC edges in blue; indices count every link above in source order, invisible ~~~ links included
+    linkStyle 7,8,9,10,11,12,13,14,15,16,17,22,23 stroke:#1f6feb,stroke-width:2.5px
 
     %% all plain nodes outside the box are platform services: own tasks, shared, board-wired
     classDef svc fill:#eef6ee,stroke:#7a9a7a
     class NET,CRYPTO,STORE,SPI,RST,GPIO svc
+    classDef legend fill:#f7f7f7,stroke:#999,stroke-dasharray:4 3
+    class CL,SV legend
 ```
 
 The six green boxes outside the orchestrator box are platform services —
-each one its own task. Four rules govern how the orchestrator relies on
-them:
+each one its own task, reached the way a syscall is: the orchestrator
+issues an IPC call, the service performs the hardware interaction on its
+behalf, and the data comes back via IPC. Each service follows the crate
+layering established by `services/i2c` and `services/mctp`: `api` (wire
+protocol), `client` (marshalling, host-buildable), `client-ipc` (the
+kernel-channel transport), `server` (dispatch onto the hardware). Boxes
+name their crates where the service exists today; the rest follow the
+same pattern as they land. Four rules govern how the orchestrator relies
+on them:
 
 - **Never block.** Commands are fire-and-forget; every reply (a crypto
   verdict, a storage ack) returns as a queued event, so a long image hash
