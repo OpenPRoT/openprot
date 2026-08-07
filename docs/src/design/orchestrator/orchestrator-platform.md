@@ -87,7 +87,7 @@ flowchart TB
     CRYPTO -->|"pass / fail<br/>verdict"| ORCH
     STORE -->|"ack /<br/>resume state"| ORCH
     RST -->|"restart<br/>notice"| ORCH
-    SPI -->|"corruption<br/>detected"| ORCH
+    SPI -->|"fact: write<br/>blocked"| ORCH
     GPIO -->|"boot-complete<br/>line"| ORCH
     NET -->|"boot<br/>signals"| ORCH
 
@@ -124,9 +124,13 @@ layering established by `services/i2c` and `services/mctp`: `api` (wire
 protocol), `client` (marshalling, host-buildable), `client-ipc` (the
 kernel-channel transport), `server` (dispatch onto the hardware). Boxes
 name their crates where the service exists today; the rest follow the
-same pattern as they land. Four rules govern how the orchestrator relies
+same pattern as they land. Five rules govern how the orchestrator relies
 on them:
 
+- **Facts, not verdicts.** Services report what they observed — the SPI
+  monitor a blocked write, the transport a missed heartbeat — never what
+  it means. "Corruption" is a verdict, and verdicts are made in one
+  place only: the state machine.
 - **Never block.** Commands are fire-and-forget; every reply (a crypto
   verdict, a storage ack) returns as a queued event, so a long image hash
   cannot delay the judgment of a boot window elsewhere.
