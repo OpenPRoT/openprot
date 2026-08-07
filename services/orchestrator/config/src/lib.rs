@@ -6,9 +6,13 @@
 //! device is named here.
 //!
 //! Invariants are enforced in the `const fn` constructors, so an invalid
-//! table is a build error and there is no validate step to forget. Checks
-//! on board-defined types belong next to the table that gives them
-//! meaning (`target/mock/devices.rs` shows the pattern).
+//! table is a build error and there is no validate step to forget.
+//! Per-entry checks live in [`DeviceConfig::new`] and
+//! [`BootCheckpoint::new`]; cross-entry checks (unique device names,
+//! dependency ordering) live in [`DeviceTable::new`] — each invariant is
+//! checked in exactly one place. Checks on board-defined types belong
+//! next to the table that gives them meaning (`target/mock/devices.rs`
+//! shows the pattern).
 
 #![cfg_attr(not(test), no_std)]
 
@@ -134,17 +138,21 @@ impl<G> BootCheckpoint<G> {
 /// implementation) and its boot-signal vocabulary `G`, for the same
 /// reason: signal ids are board-specific.
 ///
-/// Deliberately says nothing about attestation or commit requirements:
-/// those follow from what kind of device this is (iRoT-backed or
-/// symbiont, the orchestrator's `ComponentKind`), not from a table
-/// setting — a second knob would only let the two disagree.
+/// Attestation and commit requirements are deliberately not separate
+/// settings: they follow from [`kind`](Self::kind) (iRoT-backed or
+/// symbiont) — a second knob would only let the two disagree.
 ///
 /// Fields are private so a device entry that violates the schema is
 /// unrepresentable: [`new`](Self::new) is the only way in, and it checks.
+/// Cross-entry invariants (name uniqueness, dependency ordering) are
+/// [`DeviceTable::new`]'s job — one check, one place.
 #[derive(Debug, Clone, Copy)]
 pub struct DeviceConfig<R, G: 'static> {
     name: &'static str,
     reset_signal: R,
+    kind: ComponentKind,
+    failure_policy: FailurePolicy,
+    depends_on: Option<&'static str>,
     checkpoints: &'static [BootCheckpoint<G>],
 }
 
@@ -162,6 +170,8 @@ impl<R, G> DeviceConfig<R, G> {
     pub const fn new(
         name: &'static str,
         reset_signal: R,
+        kind: ComponentKind,
+        failure_policy: FailurePolicy,
         checkpoints: &'static [BootCheckpoint<G>],
     ) -> Self {
         assert!(!name.is_empty(), "device name must not be empty");
@@ -184,8 +194,23 @@ impl<R, G> DeviceConfig<R, G> {
         Self {
             name,
             reset_signal,
+            kind,
+            failure_policy,
+            depends_on: None,
             checkpoints,
         }
+    }
+
+    /// Builder: declare that this device is held whenever the named
+    /// device is held (cascade). Only meaningful when the *named* device
+    /// is [`FailurePolicy::Cascading`]. The name must belong to a device
+    /// declared **earlier** in the table — checked by
+    /// [`DeviceTable::new`], not here (a single entry cannot see the
+    /// table).
+    #[must_use]
+    pub const fn with_depends_on(mut self, dependency: &'static str) -> Self {
+        self.depends_on = Some(dependency);
+        self
     }
 
     /// The device's name in reports and logs.
@@ -200,6 +225,24 @@ impl<R, G> DeviceConfig<R, G> {
         &self.reset_signal
     }
 
+    /// Trust-chain classification (iRoT gate or not).
+    #[must_use]
+    pub const fn kind(&self) -> ComponentKind {
+        self.kind
+    }
+
+    /// What happens once this device's recovery is exhausted.
+    #[must_use]
+    pub const fn failure_policy(&self) -> FailurePolicy {
+        self.failure_policy
+    }
+
+    /// Name of the earlier table entry this device cascades with, if any.
+    #[must_use]
+    pub const fn depends_on(&self) -> Option<&'static str> {
+        self.depends_on
+    }
+
     /// Boot checkpoints, in the order the device passes them. The device
     /// counts as booted when the last one is reached; a checkpoint whose
     /// window expires fails the attempt — whether to retry or recover is
@@ -207,6 +250,71 @@ impl<R, G> DeviceConfig<R, G> {
     #[must_use]
     pub const fn checkpoints(&self) -> &'static [BootCheckpoint<G>] {
         self.checkpoints
+    }
+}
+
+/// The board's device table: every managed device, in boot order. The
+/// only way to get one is [`new`](Self::new), which proves the
+/// cross-entry invariants at build time — so holding a `DeviceTable` *is*
+/// the proof, and downstream conversions (the orchestrator's chain of
+/// trust) need no failure path of their own.
+#[derive(Debug, Clone, Copy)]
+pub struct DeviceTable<R: 'static, G: 'static> {
+    devices: &'static [DeviceConfig<R, G>],
+}
+
+impl<R, G> DeviceTable<R, G> {
+    /// Declares the board's device table. `const`, so a bad table is a
+    /// build error.
+    ///
+    /// # Panics
+    ///
+    /// Panics — a build error in const context — if the table is empty,
+    /// longer than `u8::MAX` (the orchestrator's cursor bound), declares
+    /// two devices with the same name, or contains a `depends_on` that
+    /// does not name a **strictly earlier** entry (which also rules out
+    /// dangling and self dependencies: a dependency is always walked
+    /// before its dependents).
+    #[must_use]
+    pub const fn new(devices: &'static [DeviceConfig<R, G>]) -> Self {
+        assert!(!devices.is_empty(), "device table must not be empty");
+        assert!(
+            devices.len() <= u8::MAX as usize,
+            "device table exceeds the orchestrator's cursor bound"
+        );
+        let mut i = 0;
+        while i < devices.len() {
+            let mut j = i + 1;
+            while j < devices.len() {
+                assert!(
+                    !str_eq(devices[i].name, devices[j].name),
+                    "device names must be unique"
+                );
+                j += 1;
+            }
+            if let Some(dep) = devices[i].depends_on {
+                let mut found_earlier = false;
+                let mut k = 0;
+                while k < i {
+                    if str_eq(devices[k].name, dep) {
+                        found_earlier = true;
+                    }
+                    k += 1;
+                }
+                assert!(
+                    found_earlier,
+                    "depends_on must name a device declared earlier in the table"
+                );
+            }
+            i += 1;
+        }
+        Self { devices }
+    }
+
+    /// The devices, in declaration order — which is the boot order.
+    #[must_use]
+    pub const fn devices(&self) -> &'static [DeviceConfig<R, G>] {
+        self.devices
     }
 }
 
@@ -243,11 +351,32 @@ mod tests {
     const CHECKPOINT_DUP: BootCheckpoint<u8> =
         BootCheckpoint::new("boot-complete", 1, Duration::from_secs(1));
 
+    const fn device(name: &'static str) -> DeviceConfig<u8, u8> {
+        DeviceConfig::new(
+            name,
+            0u8,
+            ComponentKind::Passive,
+            FailurePolicy::Required,
+            &[CHECKPOINT],
+        )
+    }
+
     #[test]
     fn accepts_a_valid_table() {
-        let device = DeviceConfig::new("dev", 0u8, &[CHECKPOINT]);
+        const DEVICE: DeviceConfig<u8, u8> = DeviceConfig::new(
+            "dev",
+            0u8,
+            ComponentKind::Active,
+            FailurePolicy::Isolable,
+            &[CHECKPOINT],
+        );
+        let table = DeviceTable::new(&[DEVICE]);
+        let device = &table.devices()[0];
         assert_eq!(device.name(), "dev");
         assert_eq!(*device.reset_signal(), 0);
+        assert_eq!(device.kind(), ComponentKind::Active);
+        assert_eq!(device.failure_policy(), FailurePolicy::Isolable);
+        assert_eq!(device.depends_on(), None);
         assert_eq!(device.checkpoints().len(), 1);
         assert_eq!(device.checkpoints()[0].name(), "boot-complete");
         assert_eq!(*device.checkpoints()[0].signal(), 0);
@@ -255,21 +384,83 @@ mod tests {
     }
 
     #[test]
+    fn accepts_a_backward_dependency() {
+        const ROOT: DeviceConfig<u8, u8> = device("root");
+        const LEAF: DeviceConfig<u8, u8> = device("leaf").with_depends_on("root");
+        let table = DeviceTable::new(&[ROOT, LEAF]);
+        assert_eq!(table.devices()[1].depends_on(), Some("root"));
+    }
+
+    #[test]
+    #[should_panic(expected = "device table must not be empty")]
+    fn rejects_an_empty_table() {
+        let _ = DeviceTable::new(&[] as &[DeviceConfig<u8, u8>]);
+    }
+
+    #[test]
+    #[should_panic(expected = "device names must be unique")]
+    fn rejects_duplicate_device_names() {
+        const A: DeviceConfig<u8, u8> = device("dev");
+        const B: DeviceConfig<u8, u8> = device("dev");
+        let _ = DeviceTable::new(&[A, B]);
+    }
+
+    #[test]
+    #[should_panic(expected = "depends_on must name a device declared earlier")]
+    fn rejects_an_unknown_dependency() {
+        const LEAF: DeviceConfig<u8, u8> = device("leaf").with_depends_on("ghost");
+        let _ = DeviceTable::new(&[LEAF]);
+    }
+
+    #[test]
+    #[should_panic(expected = "depends_on must name a device declared earlier")]
+    fn rejects_a_forward_dependency() {
+        const LEAF: DeviceConfig<u8, u8> = device("leaf").with_depends_on("root");
+        const ROOT: DeviceConfig<u8, u8> = device("root");
+        let _ = DeviceTable::new(&[LEAF, ROOT]);
+    }
+
+    #[test]
+    #[should_panic(expected = "depends_on must name a device declared earlier")]
+    fn rejects_a_self_dependency() {
+        const DEV: DeviceConfig<u8, u8> = device("dev").with_depends_on("dev");
+        let _ = DeviceTable::new(&[DEV]);
+    }
+
+    #[test]
     #[should_panic(expected = "checkpoint names must be unique")]
     fn rejects_duplicate_checkpoint_names() {
-        let _ = DeviceConfig::new("dev", 0u8, &[CHECKPOINT, CHECKPOINT_DUP]);
+        let _ = DeviceConfig::new(
+            "dev",
+            0u8,
+            ComponentKind::Passive,
+            FailurePolicy::Required,
+            &[CHECKPOINT, CHECKPOINT_DUP],
+        );
     }
 
     #[test]
     #[should_panic(expected = "device name must not be empty")]
     fn rejects_an_empty_device_name() {
-        let _ = DeviceConfig::new("", 0u8, &[CHECKPOINT]);
+        let _ = DeviceConfig::new(
+            "",
+            0u8,
+            ComponentKind::Passive,
+            FailurePolicy::Required,
+            &[CHECKPOINT],
+        );
     }
 
     #[test]
     #[should_panic(expected = "at least one boot checkpoint")]
     fn rejects_an_empty_checkpoint_list() {
-        let _ = DeviceConfig::new("dev", 0u8, &[] as &[BootCheckpoint<u8>]);
+        let _ = DeviceConfig::new(
+            "dev",
+            0u8,
+            ComponentKind::Passive,
+            FailurePolicy::Required,
+            &[] as &[BootCheckpoint<u8>],
+        );
     }
 
     #[test]

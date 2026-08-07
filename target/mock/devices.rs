@@ -9,7 +9,9 @@
 
 use core::time::Duration;
 
-use orchestrator_config::{BootCheckpoint, DeviceConfig};
+use orchestrator_config::{
+    BootCheckpoint, ComponentKind, DeviceConfig, DeviceTable, FailurePolicy,
+};
 
 /// The mock board's boot-signal vocabulary. The schema carries these
 /// opaquely; only this board's `EvidenceReader` gives them meaning.
@@ -30,30 +32,37 @@ pub enum MockSignal {
 ///
 /// The mock board's reset controller addresses reset lines by plain index,
 /// so the reset id type is `u8`.
-pub const MANAGED_DEVICES: &[DeviceConfig<u8, MockSignal>] = &[
+pub const MANAGED_DEVICES: DeviceTable<u8, MockSignal> = DeviceTable::new(&[
     // Direct-flash SPI device (BMC archetype): the eRoT fronts its flash.
-    // Single checkpoint: it raises a boot-complete GPIO.
+    // No iRoT, so the eRoT's check is the only trust gate (Passive), and
+    // the platform is pointless without its BMC (Required). Single
+    // checkpoint: it raises a boot-complete GPIO.
     DeviceConfig::new(
         "bmc",
         7,
+        ComponentKind::Passive,
+        FailurePolicy::Required,
         &[BootCheckpoint::new(
             "boot-complete",
             MockSignal::Gpio(12),
             Duration::from_secs(90),
         )],
     ),
-    // PLDM device (NIC archetype): self-updating, SPDM-capable. Two
-    // checkpoints, exercising the multi-checkpoint path: transport up
-    // first, then proof the workload is alive.
+    // PLDM device (NIC archetype): self-updating, SPDM-capable — an iRoT
+    // of its own (Active), and the platform can serve degraded without it
+    // (Isolable). Two checkpoints, exercising the multi-checkpoint path:
+    // transport up first, then proof the workload is alive.
     DeviceConfig::new(
         "nic",
         3,
+        ComponentKind::Active,
+        FailurePolicy::Isolable,
         &[
             BootCheckpoint::new("mctp-ready", MockSignal::MctpReady, Duration::from_secs(20)),
             BootCheckpoint::new("heartbeat", MockSignal::Heartbeat, Duration::from_secs(10)),
         ],
     ),
-];
+]);
 
 /// Board-local checks the schema constructors cannot do — they know the
 /// schema's shape, not this board's meanings. Const-fence pattern: a bad
@@ -74,4 +83,4 @@ const fn validate_signals(devices: &[DeviceConfig<u8, MockSignal>]) {
     }
 }
 
-const _: () = validate_signals(MANAGED_DEVICES);
+const _: () = validate_signals(MANAGED_DEVICES.devices());
