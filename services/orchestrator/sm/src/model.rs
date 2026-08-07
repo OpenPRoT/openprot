@@ -339,94 +339,66 @@ pub enum State {
 /// A validated **chain of trust**: the ordered list of components the eRoT
 /// walks, verifies, and supervises, in walk order.
 ///
-/// Build one with [`TryFrom`]/[`TryInto`] from a `heapless::Vec` of
-/// `(ComponentId, ComponentAttrs)` pairs. The conversion is the single place
-/// the reducer's structural invariants are enforced, so a malformed chain
-/// fails closed at the boundary instead of misbehaving later:
-///
-/// - the chain is non-empty,
-/// - every [`ComponentId`] is unique,
-/// - every `depends_on` names a component that exists and appears *strictly
-///   earlier* in the chain (no dangling, forward, or self dependencies — a
-///   dependency is always walked before its dependents),
-/// - the length fits `u8`, the `cursor` index type.
-///
-/// ```ignore
-/// let mut v = heapless::Vec::<_, 4>::new();
-/// v.push((ComponentId::new(0), ComponentAttrs::passive_required())).unwrap();
-/// let chain: Chain<4> = v.try_into()?;
-/// ```
+/// Built from the board's validated [`DeviceTable`](orchestrator_config::DeviceTable)
+/// via [`from_table`](Self::from_table). The structural invariants the reducer
+/// relies on — non-empty, unique ids, every `depends_on` strictly earlier in
+/// the walk, length within the `cursor`'s `u8` bound — are proved once, at
+/// build time, by `DeviceTable::new`; holding a table is holding the proof, so
+/// the conversion here cannot fail and no second copy of the rules exists.
 #[derive(Clone, Debug)]
 pub struct Chain<const N: usize> {
     entries: heapless::Vec<(ComponentId, ComponentAttrs), N>,
 }
 
-/// Why a `heapless::Vec` of components is not a valid [`Chain`].
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ChainError {
-    /// The chain has no components.
-    Empty,
-    /// The chain is longer than `u8::MAX`, so `cursor` could not index it.
-    TooLong,
-    /// The same [`ComponentId`] appears more than once.
-    DuplicateId(ComponentId),
-    /// A `depends_on` names an id that is not in the chain.
-    UnknownDependency {
-        component: ComponentId,
-        depends_on: ComponentId,
-    },
-    /// A `depends_on` names a component that does not appear strictly earlier
-    /// in the chain (a forward reference or a self-reference). A dependency
-    /// must be walked before its dependents.
-    ForwardDependency {
-        component: ComponentId,
-        depends_on: ComponentId,
-    },
-}
-
 impl<const N: usize> Chain<N> {
+    /// Derive the chain of trust from the board's device table: index `i`
+    /// becomes `ComponentId(i)` (declaration order is walk order), kind and
+    /// failure policy are copied, and `depends_on` names resolve to the ids
+    /// of their (strictly earlier) entries. `recovery_region` has no table
+    /// home yet — nothing consumes it — so every component gets the default
+    /// region.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `N` is smaller than the table. Unreachable when `N` is
+    /// derived from the same table (`table.devices().len()`), which is the
+    /// only intended call shape.
+    pub fn from_table<R, G: 'static>(table: &orchestrator_config::DeviceTable<R, G>) -> Self {
+        let devices = table.devices();
+        assert!(
+            devices.len() <= N,
+            "chain capacity N is smaller than the device table"
+        );
+        let mut entries = heapless::Vec::new();
+        for (i, device) in devices.iter().enumerate() {
+            let depends_on = device.depends_on().map(|dep| {
+                let position = devices
+                    .iter()
+                    .position(|d| d.name() == dep)
+                    .expect("DeviceTable::new proved every dependency exists");
+                ComponentId::new(position as u8)
+            });
+            let attrs = ComponentAttrs {
+                kind: device.kind(),
+                failure_policy: device.failure_policy(),
+                recovery_region: RegionId::new(0),
+                depends_on,
+            };
+            let _ = entries.push((ComponentId::new(i as u8), attrs));
+        }
+        Self { entries }
+    }
+
+    /// Test-only back door for reducer tests that build ad-hoc chains
+    /// without a board table. Not compiled into production builds, so
+    /// `from_table` stays the only way to obtain a `Chain` there.
+    #[cfg(test)]
+    pub(crate) fn new_unchecked(entries: heapless::Vec<(ComponentId, ComponentAttrs), N>) -> Self {
+        Self { entries }
+    }
+
     /// Consume the validated chain, yielding its components in walk order.
     pub(crate) fn into_entries(self) -> heapless::Vec<(ComponentId, ComponentAttrs), N> {
         self.entries
-    }
-}
-
-impl<const N: usize> TryFrom<heapless::Vec<(ComponentId, ComponentAttrs), N>> for Chain<N> {
-    type Error = ChainError;
-
-    fn try_from(
-        entries: heapless::Vec<(ComponentId, ComponentAttrs), N>,
-    ) -> Result<Self, ChainError> {
-        if entries.is_empty() {
-            return Err(ChainError::Empty);
-        }
-        if entries.len() > u8::MAX as usize {
-            return Err(ChainError::TooLong);
-        }
-        for (i, (id, _)) in entries.iter().enumerate() {
-            if entries[..i].iter().any(|(prev, _)| prev == id) {
-                return Err(ChainError::DuplicateId(*id));
-            }
-        }
-        for (i, (id, attrs)) in entries.iter().enumerate() {
-            if let Some(dep) = attrs.depends_on {
-                match entries.iter().position(|(cid, _)| *cid == dep) {
-                    None => {
-                        return Err(ChainError::UnknownDependency {
-                            component: *id,
-                            depends_on: dep,
-                        });
-                    }
-                    Some(j) if j >= i => {
-                        return Err(ChainError::ForwardDependency {
-                            component: *id,
-                            depends_on: dep,
-                        });
-                    }
-                    Some(_) => {}
-                }
-            }
-        }
-        Ok(Self { entries })
     }
 }
