@@ -33,45 +33,38 @@ pub enum MockSignal {
 pub const MANAGED_DEVICES: &[DeviceConfig<u8, MockSignal>] = &[
     // Direct-flash SPI device (BMC archetype): the eRoT fronts its flash.
     // Single checkpoint: it raises a boot-complete GPIO.
-    DeviceConfig {
-        name: "bmc",
-        reset_signal: 7,
-        checkpoints: &[BootCheckpoint {
-            name: "boot-complete",
-            signal: MockSignal::Gpio(12),
-            timeout: Duration::from_secs(90),
-        }],
-    },
+    DeviceConfig::new(
+        "bmc",
+        7,
+        &[BootCheckpoint::new(
+            "boot-complete",
+            MockSignal::Gpio(12),
+            Duration::from_secs(90),
+        )],
+    ),
     // PLDM device (NIC archetype): self-updating, SPDM-capable. Two
     // checkpoints, exercising the multi-checkpoint path: transport up
     // first, then proof the workload is alive.
-    DeviceConfig {
-        name: "nic",
-        reset_signal: 3,
-        checkpoints: &[
-            BootCheckpoint {
-                name: "mctp-ready",
-                signal: MockSignal::MctpReady,
-                timeout: Duration::from_secs(20),
-            },
-            BootCheckpoint {
-                name: "heartbeat",
-                signal: MockSignal::Heartbeat,
-                timeout: Duration::from_secs(10),
-            },
+    DeviceConfig::new(
+        "nic",
+        3,
+        &[
+            BootCheckpoint::new("mctp-ready", MockSignal::MctpReady, Duration::from_secs(20)),
+            BootCheckpoint::new("heartbeat", MockSignal::Heartbeat, Duration::from_secs(10)),
         ],
-    },
+    ),
 ];
 
-/// Board-local checks the generic `validate` cannot do — it knows the
-/// schema's shape, not this board's meanings. Same const-fence pattern:
-/// a bad signal fails the build.
+/// Board-local checks the schema constructors cannot do — they know the
+/// schema's shape, not this board's meanings. Const-fence pattern: a bad
+/// signal fails the build.
 const fn validate_signals(devices: &[DeviceConfig<u8, MockSignal>]) {
     let mut i = 0;
     while i < devices.len() {
+        let checkpoints = devices[i].checkpoints();
         let mut c = 0;
-        while c < devices[i].checkpoints.len() {
-            if let MockSignal::Gpio(line) = devices[i].checkpoints[c].signal {
+        while c < checkpoints.len() {
+            if let MockSignal::Gpio(line) = *checkpoints[c].signal() {
                 // The mock ready-line bank packs 32 lines, SGPIO-style.
                 assert!(line < 32, "gpio signal names a line outside the bank");
             }
@@ -81,7 +74,4 @@ const fn validate_signals(devices: &[DeviceConfig<u8, MockSignal>]) {
     }
 }
 
-const _: () = {
-    orchestrator_config::validate(MANAGED_DEVICES);
-    validate_signals(MANAGED_DEVICES);
-};
+const _: () = validate_signals(MANAGED_DEVICES);
