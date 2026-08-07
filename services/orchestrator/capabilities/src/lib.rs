@@ -27,11 +27,9 @@
 #![cfg_attr(not(test), no_std)]
 
 mod boot_control;
-mod boot_status;
 mod boot_watch;
 mod evidence;
 
 pub use boot_control::BootControl;
-pub use boot_status::BootStatus;
 pub use boot_watch::{BootWatch, FailureCause, WalkVerdict};
-pub use evidence::EvidenceReader;
+pub use evidence::{BootStatus, EvidenceReader};

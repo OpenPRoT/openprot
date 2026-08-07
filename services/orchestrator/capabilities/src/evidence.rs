@@ -1,9 +1,34 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! Evidence reading: resolve a board-defined signal id to boot liveness.
+//! Evidence reading: the boot-liveness vocabulary and the reader that
+//! resolves a board-defined signal id to it.
 
-use crate::BootStatus;
+/// Liveness of a managed device's boot: Boot Confirmation only — whether
+/// the device came up, never what booted (that is attestation).
+///
+/// The failure variants are optional device-reported evidence, never the
+/// only failure path: a hung device reports nothing, so a stuck boot is
+/// caught by the observer's timeout, not by this enum. Sources may
+/// produce only a subset (a ready pin yields just `Booting`/`Booted`);
+/// consumers must handle the full set.
+///
+/// A status must describe the **current** boot cycle: latched evidence
+/// is cleared by the reset path, never by the reader — a reader that
+/// could clear its own evidence would let a read race a reset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BootStatus {
+    /// Released, but boot completion not yet observed.
+    Booting,
+    /// Boot completion observed.
+    Booted,
+    /// Device reported a failure worth another attempt (transient
+    /// self-test miss); ends the wait early instead of burning the window.
+    FailedRetriable,
+    /// Device reported a terminal failure (corrupt image) — re-running
+    /// the same image cannot change the verdict.
+    FailedFatal,
+}
 
 /// Reads a device's boot evidence, one signal at a time.
 ///
