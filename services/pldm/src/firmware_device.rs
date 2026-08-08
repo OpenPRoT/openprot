@@ -51,7 +51,7 @@ use crate::error::PldmServiceError;
 use crate::transport::MctpPldmTransport;
 
 /// Maximum PLDM-over-MCTP message size (MCTP-type byte + PLDM payload).
-pub const FD_IPC_MAX_MSG: usize = 1024;
+pub const FD_MAX_MSG: usize = 1024;
 
 /// Poll timeout (milliseconds) used for the inbound responder listener while
 /// an initiator (FD-to-UA) request is active.
@@ -154,7 +154,7 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
             .responder_listener(timeout_millis)?;
         // Scratch buffer for FD-initiated (outbound) requests, reused across
         // iterations rather than re-zeroed on every loop pass.
-        let mut fw_buf = [0u8; FD_IPC_MAX_MSG];
+        let mut fw_buf = [0u8; FD_MAX_MSG];
 
         loop {
             // Phase 1: while in initiator mode, issue at most ONE outbound
@@ -189,7 +189,8 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
             // stays live during a transfer and the Update Agent can cancel at
             // any time. `handle_responder_msg` receives the *whole* buffer
             // because responses may be larger than the request they answer
-            // (e.g. GetTid: 4-byte request, 5-byte response).
+            // (e.g. GetTid: 4-byte request, 5-byte response). Commands from
+            // any EID other than `remote_eid` are dropped without a response.
             let poll_timeout = if initiator_active {
                 RESPONDER_POLL_TIMEOUT_MILLIS
             } else {
@@ -199,7 +200,12 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
             match self.responder_transport.respond_once(
                 &mut responder_listener,
                 buf,
-                |framed_buf, _req_total_len| {
+                |framed_buf, _req_total_len, source_eid| {
+                    // Only act on commands from the UA this instance serves;
+                    // silently drop anything else (e.g. a rogue endpoint).
+                    if source_eid != remote_eid {
+                        return Ok(0);
+                    }
                     self.cmd_interface
                         .handle_responder_msg(framed_buf)
                         .map_err(PldmServiceError::MsgHandler)

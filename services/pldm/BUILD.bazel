@@ -46,10 +46,29 @@ rust_test(
 rust_test(
     name = "firmware_update_host_test",
     srcs = [
-        "tests/firmware_update_host.rs",
         "tests/common.rs",
+        "tests/firmware_update_host.rs",
     ],
     crate_root = "tests/firmware_update_host.rs",
+    edition = "2024",
+    deps = [
+        ":pldm_service",
+        "//services/mctp/api:mctp_api",
+        "//services/mctp/server:mctp_server_lib",
+        "@rust_crates//:mctp",
+        "@rust_crates//:mctp-lib",
+        "@rust_crates//:pldm-common",
+        "@rust_crates//:pldm-interface",
+    ],
+)
+
+rust_test(
+    name = "unexpected_eid_host_test",
+    srcs = [
+        "tests/common.rs",
+        "tests/unexpected_eid_host.rs",
+    ],
+    crate_root = "tests/unexpected_eid_host.rs",
     edition = "2024",
     deps = [
         ":pldm_service",

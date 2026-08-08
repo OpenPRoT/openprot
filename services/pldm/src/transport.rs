@@ -50,7 +50,7 @@ use crate::error::PldmServiceError;
 ///
 /// // Receive and respond to one inbound PLDM request via a handler closure.
 /// transport
-///     .recv_and_respond(&mut buf, 5_000, |framed_buf| {
+///     .recv_and_respond(&mut buf, 5_000, |framed_buf, _req_total_len, _source_eid| {
 ///         // framed_buf[0] == 0x01, framed_buf[1..] is the PLDM payload.
 ///         // Process and write the response in-place; return total bytes.
 ///         my_cmd_interface.handle_responder_msg(framed_buf)
@@ -135,11 +135,13 @@ impl<C: MctpClient> MctpPldmTransport<C> {
     /// MCTP PLDM type byte (`0x01`).  `handler` receives the entire `buf`
     /// (with the request framed at `buf[..1+payload_size]`) so it has room to
     /// write a response that is larger than the request, processing it in
-    /// place. `handler` is called with the full framed buffer and the total
-    /// request length (including `buf[0]`). It must return the total number of
-    /// bytes written for the response (including the type byte at `buf[0]`).
-    /// Bytes
-    /// `buf[1..resp_total_len]` are sent back to the requester.
+    /// place. `handler` is called with the full framed buffer, the total
+    /// request length (including `buf[0]`), and the source EID of the
+    /// request (`RecvMetadata::remote_eid`), so callers can filter requests
+    /// by sender. It must return the total number of bytes written for the
+    /// response (including the type byte at `buf[0]`), or `0` to indicate no
+    /// response should be sent (e.g. the request came from an unexpected
+    /// EID). Bytes `buf[1..resp_total_len]` are sent back to the requester.
     ///
     /// A `timeout_millis` of `0` blocks indefinitely.
     ///
@@ -166,7 +168,7 @@ impl<C: MctpClient> MctpPldmTransport<C> {
         handler: F,
     ) -> Result<(), PldmServiceError>
     where
-        F: FnOnce(&mut [u8], usize) -> Result<usize, PldmServiceError>,
+        F: FnOnce(&mut [u8], usize, u8) -> Result<usize, PldmServiceError>,
     {
         let mut listener = self.responder_listener(timeout_millis)?;
         self.respond_once(&mut listener, buf, handler)
@@ -215,7 +217,7 @@ impl<C: MctpClient> MctpPldmTransport<C> {
         handler: F,
     ) -> Result<(), PldmServiceError>
     where
-        F: FnOnce(&mut [u8], usize) -> Result<usize, PldmServiceError>,
+        F: FnOnce(&mut [u8], usize, u8) -> Result<usize, PldmServiceError>,
     {
         // Receive into buf[1..]; discard the payload sub-slice to end the
         // mutable borrow before we touch buf[0].
@@ -242,7 +244,13 @@ impl<C: MctpClient> MctpPldmTransport<C> {
 
         // Invoke the handler to process the request in-place.  The handler is
         // given the whole buffer so the response may exceed the request size.
-        let resp_total_len = handler(buf, req_total_len)?;
+        let resp_total_len = handler(buf, req_total_len, meta.remote_eid)?;
+
+        // A handler returning 0 means it deliberately chose not to respond
+        // (e.g. the request came from an EID it does not serve).
+        if resp_total_len == 0 {
+            return Ok(());
+        }
 
         // Send the response, excluding the MCTP type byte that the transport
         // layer manages separately.
