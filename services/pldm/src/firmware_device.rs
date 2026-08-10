@@ -163,25 +163,28 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
             // such as CancelUpdate is serviced between every RequestFirmwareData.
             let initiator_active = self.cmd_interface.fd_ctx.should_start_initiator_mode();
             if initiator_active {
-                let pldm_len = self
+                match self
                     .cmd_interface
                     .generate_initiator_request(&mut fw_buf)
-                    .map_err(PldmServiceError::MsgHandler)?;
-                if pldm_len > 0 {
-                    let resp_len = self.requester_transport.send_request(
-                        remote_eid,
-                        pldm_len,
-                        &mut fw_buf,
-                        requester_timeout_millis,
-                    )?;
-                    let resp_total_len =
-                        resp_len.checked_add(1).ok_or(PldmServiceError::Overflow)?;
-                    let resp = fw_buf
-                        .get_mut(..resp_total_len)
-                        .ok_or(PldmServiceError::Overflow)?;
-                    self.cmd_interface
-                        .process_initiator_response(resp)
-                        .map_err(PldmServiceError::MsgHandler)?;
+                    .map_err(PldmServiceError::MsgHandler)?
+                {
+                    Some(pldm_len) => {
+                        let resp_len = self.requester_transport.send_request(
+                            remote_eid,
+                            pldm_len,
+                            &mut fw_buf,
+                            requester_timeout_millis,
+                        )?;
+                        let resp_total_len =
+                            resp_len.checked_add(1).ok_or(PldmServiceError::Overflow)?;
+                        let resp = fw_buf
+                            .get_mut(..resp_total_len)
+                            .ok_or(PldmServiceError::Overflow)?;
+                        self.cmd_interface
+                            .process_initiator_response(resp)
+                            .map_err(PldmServiceError::MsgHandler)?;
+                    }
+                    None => {}
                 }
             }
 
