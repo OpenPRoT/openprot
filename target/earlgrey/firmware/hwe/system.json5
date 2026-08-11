@@ -17,7 +17,7 @@
   apps: [
     {
       name: "hwe",
-      flash_size_bytes: 49152,
+      flash_size_bytes: 65536,
       processes: [
         {
           name: "logmgr",
@@ -41,6 +41,10 @@
             },
             {
               name: "logger_usb",
+              type: "channel_handler"
+            },
+            {
+              name: "logger_spidev",
               type: "channel_handler"
             },
             {
@@ -262,6 +266,38 @@
               type: "device",
               start_address: 0x40320000,
               size_bytes: 0x1000
+            }
+          ]
+        },
+        {
+          name: "spidev",
+          ram_size_bytes: 4096,
+          objects: [
+            {
+              name: "logger_spidev",
+              type: "channel_initiator",
+              handler_process: "logmgr",
+              handler_object_name: "logger_spidev"
+            },
+            {
+              name: "spidev_interrupts",
+              type: "interrupt",
+              irqs: [
+                { name: "spi_device_upload_cmdfifo_not_empty", number: 69 }
+              ]
+            },
+            {
+              name: "spidev_thread",
+              kernel_stack_size_bytes: 2048,
+              type: "thread"
+            }
+          ],
+          memory_mappings: [
+            {
+              name: "spi_device",
+              type: "device",
+              start_address: 0x40050000,
+              size_bytes: 0x2000
             }
           ]
         }
