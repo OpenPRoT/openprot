@@ -55,6 +55,44 @@ pub struct BootCheckpoint<G> {
     pub window: core::time::Duration,
 }
 
+/// Identifies one slot within one device's layout. An opaque per-device
+/// token, not an index: ids need only be unique within one device's table
+/// ([`validate`] enforces exactly that) — they are not required to be
+/// contiguous, ordered, or to start at zero, and slot 0 on the BMC and
+/// slot 0 on the NIC are unrelated. Ladder order comes from table
+/// declaration order, never from id values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SlotId(pub u8);
+
+/// A distinguished duty a slot carries beyond being writable/bootable.
+///
+/// Intentionally exhaustive (not `#[non_exhaustive]`): adding a role is a
+/// breaking change, so every consumer that dispatches on roles — in
+/// particular recovery-candidate selection — is forced to handle the new
+/// role explicitly instead of falling into a wildcard arm.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SlotRole {
+    /// The slot recovery falls back to after every ordinary rung failed.
+    /// A "golden" image is this role plus `writable: false` — a property
+    /// combination, not a separate name.
+    Recovery,
+}
+
+/// One slot in a device's layout: topology as data, not a type. A layout
+/// is plain A/B, A/B + golden, or single + golden purely by what the table
+/// declares — no layout shape is named anywhere.
+#[derive(Debug, Clone, Copy)]
+pub struct Slot {
+    pub id: SlotId,
+    /// May the update path write this slot? `false` on a recovery-role
+    /// slot is what makes it "golden".
+    pub writable: bool,
+    /// May the device boot from this slot? Every bootable slot is a rung
+    /// of the recovery ladder.
+    pub bootable: bool,
+    pub role: Option<SlotRole>,
+}
+
 /// One managed downstream device, as declared by the board config.
 ///
 /// Generic over the board's reset signal type `R`, which must match the
@@ -75,6 +113,13 @@ pub struct DeviceConfig<R, G: 'static> {
     /// checkpoint whose window expires fails the boot.
     pub checkpoints: &'static [BootCheckpoint<G>],
     pub commit_policy: CommitPolicy,
+    /// This device's slot layout. The recovery ladder is derived from it,
+    /// never declared: bootable slots in declaration order, recovery-role
+    /// slot last, escalation to out-of-band recovery once no rung is left.
+    /// A layout without rungs — e.g. empty, for a device that owns its
+    /// boot selection internally (the PLDM archetype) — leaves escalation
+    /// as the only step.
+    pub slots: &'static [Slot],
 }
 
 /// Checks a device table. Board configs call this in a const context so a
@@ -99,6 +144,37 @@ pub const fn validate<R, G>(devices: &[DeviceConfig<R, G>]) {
             );
             c += 1;
         }
+
+        let slots = devices[i].slots;
+        let mut bootable = 0;
+        let mut recovery_slots = 0;
+        let mut s = 0;
+        while s < slots.len() {
+            if slots[s].bootable {
+                bootable += 1;
+            }
+            if matches!(slots[s].role, Some(SlotRole::Recovery)) {
+                recovery_slots += 1;
+                assert!(slots[s].bootable, "a recovery-role slot must be bootable");
+            }
+            let mut t = s + 1;
+            while t < slots.len() {
+                assert!(
+                    slots[s].id.0 != slots[t].id.0,
+                    "slot ids must be unique within a device"
+                );
+                t += 1;
+            }
+            s += 1;
+        }
+        assert!(
+            recovery_slots <= 1,
+            "at most one recovery-role slot per device"
+        );
+        assert!(
+            slots.is_empty() || bootable > 0,
+            "a non-empty slot layout needs a bootable slot"
+        );
         i += 1;
     }
 }
@@ -119,16 +195,102 @@ mod tests {
         window: Duration::from_secs(1),
     };
 
+    /// An ordinary slot: writable, bootable, no role.
+    const fn slot(id: u8) -> Slot {
+        Slot {
+            id: SlotId(id),
+            writable: true,
+            bootable: true,
+            role: None,
+        }
+    }
+
+    /// A recovery-role slot; non-writable, but no test depends on that.
+    const fn recovery_slot(id: u8) -> Slot {
+        Slot {
+            writable: false,
+            role: Some(SlotRole::Recovery),
+            ..slot(id)
+        }
+    }
+
     const DEVICE: DeviceConfig<u8, u8> = DeviceConfig {
         name: "dev",
         reset_signal: 0,
         checkpoints: &[CHECKPOINT],
         commit_policy: CommitPolicy::Liveness,
+        slots: &[slot(0), slot(1)],
     };
 
     #[test]
     fn accepts_a_valid_table() {
         validate(&[DEVICE]);
+    }
+
+    #[test]
+    fn accepts_a_layout_with_a_recovery_slot() {
+        validate(&[DeviceConfig {
+            slots: const { &[slot(0), slot(1), recovery_slot(2)] },
+            ..DEVICE
+        }]);
+    }
+
+    #[test]
+    fn accepts_an_empty_layout() {
+        validate(&[DeviceConfig {
+            slots: &[],
+            ..DEVICE
+        }]);
+    }
+
+    #[test]
+    #[should_panic(expected = "slot ids must be unique")]
+    fn rejects_duplicate_slot_ids() {
+        validate(&[DeviceConfig {
+            slots: const { &[slot(0), slot(0)] },
+            ..DEVICE
+        }]);
+    }
+
+    #[test]
+    #[should_panic(expected = "at most one recovery-role slot")]
+    fn rejects_two_recovery_role_slots() {
+        validate(&[DeviceConfig {
+            slots: const { &[slot(0), recovery_slot(1), recovery_slot(2)] },
+            ..DEVICE
+        }]);
+    }
+
+    #[test]
+    #[should_panic(expected = "recovery-role slot must be bootable")]
+    fn rejects_an_unbootable_recovery_slot() {
+        validate(&[DeviceConfig {
+            slots: const {
+                &[
+                    slot(0),
+                    slot(1),
+                    Slot {
+                        bootable: false,
+                        ..recovery_slot(2)
+                    },
+                ]
+            },
+            ..DEVICE
+        }]);
+    }
+
+    #[test]
+    #[should_panic(expected = "needs a bootable slot")]
+    fn rejects_a_layout_with_no_bootable_slot() {
+        validate(&[DeviceConfig {
+            slots: const {
+                &[Slot {
+                    bootable: false,
+                    ..slot(0)
+                }]
+            },
+            ..DEVICE
+        }]);
     }
 
     #[test]
