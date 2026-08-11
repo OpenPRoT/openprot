@@ -93,7 +93,7 @@ buf[1..] : PLDM request / response bytes
 ```
 
 Size the buffer to accommodate the largest PLDM message your application
-expects (typically ≤ 4096 bytes; smaller for embedded targets). See
+expects (typically ≤ 1024 bytes; smaller for embedded targets). See
 `FD_IPC_MAX_MSG` in [`src/firmware_device.rs`](src/firmware_device.rs) for the
 scratch-buffer size used internally for FD-initiated requests.
 

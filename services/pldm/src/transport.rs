@@ -24,7 +24,7 @@ use openprot_mctp_api::stack::StackListener;
 use openprot_mctp_api::{MctpClient, MctpListener, MctpReqChannel, MctpRespChannel, Stack};
 use pldm_common::util::mctp_transport::MCTP_PLDM_MSG_TYPE;
 
-use crate::error::PldmServiceError;
+use crate::error::{PldmServiceError, PldmMemError};
 
 /// MCTP transport adapter for PLDM messages.
 ///
@@ -90,7 +90,7 @@ impl<C: MctpClient> MctpPldmTransport<C> {
     ///
     /// # Errors
     ///
-    /// Returns [`PldmServiceError::Overflow`] if `buf` is too small to hold
+    /// Returns [`PldmServiceError::PldmMem`] if `buf` is too small to hold
     /// the request or if an arithmetic overflow would occur.
     /// Returns [`PldmServiceError::Mctp`] on any MCTP transport error.
     pub fn send_request(
@@ -104,7 +104,7 @@ impl<C: MctpClient> MctpPldmTransport<C> {
         // keeps buf consistent for callers that inspect buf[0] afterward.
         match buf.first_mut() {
             Some(b) => *b = MCTP_PLDM_MSG_TYPE,
-            None => return Err(PldmServiceError::Overflow),
+            None => return Err(PldmServiceError::PldmMem(PldmMemError::MalformedBuffer)),
         }
 
         // Open an outbound request channel.
@@ -115,14 +115,14 @@ impl<C: MctpClient> MctpPldmTransport<C> {
 
         // Send the PLDM payload (buf[1..1+pldm_len]).  The MCTP layer adds
         // its own framing, so we exclude buf[0].
-        let req_end = pldm_len.checked_add(1).ok_or(PldmServiceError::Overflow)?;
-        let req_payload = buf.get(1..req_end).ok_or(PldmServiceError::Overflow)?;
+        let req_end = pldm_len.checked_add(1).ok_or(PldmServiceError::PldmMem(PldmMemError::OverflowMaxSize))?;
+        let req_payload = buf.get(1..req_end).ok_or(PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
         req_channel
             .send(MCTP_PLDM_MSG_TYPE, req_payload)
             .map_err(PldmServiceError::Mctp)?;
 
         // Receive the PLDM response into buf[1..].
-        let recv_buf = buf.get_mut(1..).ok_or(PldmServiceError::Overflow)?;
+        let recv_buf = buf.get_mut(1..).ok_or(PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
         let (meta, _) = req_channel.recv(recv_buf).map_err(PldmServiceError::Mctp)?;
 
         Ok(meta.payload_size)
@@ -207,7 +207,7 @@ impl<C: MctpClient> MctpPldmTransport<C> {
     ///
     /// # Errors
     ///
-    /// Returns [`PldmServiceError::Overflow`] if `buf` is too small.
+    /// Returns [`PldmServiceError::PldmMem(PldmMemError::BufferTooSmall)`] if `buf` is too small.
     /// Returns [`PldmServiceError::Mctp`] on any MCTP transport error.
     /// Propagates any error returned by `handler`.
     pub fn respond_once<F>(
@@ -221,7 +221,7 @@ impl<C: MctpClient> MctpPldmTransport<C> {
     {
         // Receive into buf[1..]; discard the payload sub-slice to end the
         // mutable borrow before we touch buf[0].
-        let recv_buf = buf.get_mut(1..).ok_or(PldmServiceError::Overflow)?;
+        let recv_buf = buf.get_mut(1..).ok_or(PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
         let (meta, mut resp_channel) = listener
             .recv(recv_buf)
             .map(|(m, _, r)| (m, r))
@@ -232,7 +232,7 @@ impl<C: MctpClient> MctpPldmTransport<C> {
         // Stamp the framing byte.
         match buf.first_mut() {
             Some(b) => *b = MCTP_PLDM_MSG_TYPE,
-            None => return Err(PldmServiceError::Overflow),
+            None => return Err(PldmServiceError::PldmMem(PldmMemError::MalformedBuffer)),
         }
 
         // Ensure the buffer is at least large enough to hold the framed
@@ -240,7 +240,7 @@ impl<C: MctpClient> MctpPldmTransport<C> {
         let req_total_len = payload_size
             .checked_add(1)
             .filter(|&total_len| total_len <= buf.len())
-            .ok_or(PldmServiceError::Overflow)?;
+            .ok_or(PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
 
         // Invoke the handler to process the request in-place.  The handler is
         // given the whole buffer so the response may exceed the request size.
@@ -256,7 +256,7 @@ impl<C: MctpClient> MctpPldmTransport<C> {
         // layer manages separately.
         let resp_payload = buf
             .get(1..resp_total_len)
-            .ok_or(PldmServiceError::Overflow)?;
+            .ok_or(PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
         resp_channel
             .send(resp_payload)
             .map_err(PldmServiceError::Mctp)

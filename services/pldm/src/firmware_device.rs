@@ -47,7 +47,7 @@ use pldm_interface::control_context::ProtocolCapability;
 use pldm_interface::firmware_device::fd_context::FirmwareDeviceContext;
 use pldm_interface::firmware_device::fd_ops::FdOps;
 
-use crate::error::PldmServiceError;
+use crate::error::{PldmServiceError, PldmMemError};
 use crate::transport::MctpPldmTransport;
 
 /// Maximum PLDM-over-MCTP message size (MCTP-type byte + PLDM payload).
@@ -176,10 +176,11 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
                             requester_timeout_millis,
                         )?;
                         let resp_total_len =
-                            resp_len.checked_add(1).ok_or(PldmServiceError::Overflow)?;
+                            // resp_len.checked_add(1).ok_or(PldmServiceError::Overflow)?;
+                            resp_len.checked_add(1).ok_or(PldmServiceError::PldmMem(PldmMemError::OverflowMaxSize))?;
                         let resp = fw_buf
                             .get_mut(..resp_total_len)
-                            .ok_or(PldmServiceError::Overflow)?;
+                            .ok_or(PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
                         self.cmd_interface
                             .process_initiator_response(resp)
                             .map_err(PldmServiceError::MsgHandler)?;
