@@ -27,7 +27,19 @@
               type: "channel_handler",
             },
             {
-              name: "spi_flash_service",
+              name: "spi_flash0_service",
+              type: "channel_handler",
+            },
+            {
+              name: "spi_flash1_service",
+              type: "channel_handler",
+            },
+            {
+              name: "spi_generic_flash_service",
+              type: "channel_handler",
+            },
+            {
+              name: "spi_flash_mux_service",
               type: "channel_handler",
             },
             {
@@ -59,6 +71,12 @@
               type: "device",
               start_address: 0x40300000,
               size_bytes: 0x1000,
+            },
+            {
+              name: "spi_host1",
+              type: "device",
+              start_address: 0x40310000,
+              size_bytes: 0x1000,
             }
           ],
         },
@@ -74,10 +92,28 @@
           ram_size_bytes: 8192,
           objects: [
             {
-              name: "flash_service",
+              name: "spi_generic_flash_service",
               type: "channel_initiator",
               handler_process: "combined_flash_server",
-              handler_object_name: "spi_flash_service",
+              handler_object_name: "spi_generic_flash_service",
+            },
+            {
+              name: "spi_flash0_service",
+              type: "channel_initiator",
+              handler_process: "combined_flash_server",
+              handler_object_name: "spi_flash0_service",
+            },
+            {
+              name: "spi_flash1_service",
+              type: "channel_initiator",
+              handler_process: "combined_flash_server",
+              handler_object_name: "spi_flash1_service",
+            },
+            {
+              name: "spi_flash_mux_service",
+              type: "channel_initiator",
+              handler_process: "combined_flash_server",
+              handler_object_name: "spi_flash_mux_service",
             },
             {
               name: "eflash_service",

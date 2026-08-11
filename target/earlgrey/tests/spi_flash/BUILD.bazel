@@ -25,11 +25,13 @@ rust_app(
         "//drivers/flash:spi_flash",
         "//hal/blocking/flash",
         "//hal/blocking/flash:driver",
+        "//services/flash:opcode",
         "//services/flash:server",
         "//target/earlgrey/drivers:eflash_driver",
         "//target/earlgrey/drivers:spi_host",
         "//target/earlgrey/registers:flash_ctrl_core",
         "//target/earlgrey/registers:spi_host",
+        "//target/earlgrey/services/platform",
         "//target/earlgrey/util",
         "//util/error",
         "//util/ipc",
@@ -39,6 +41,7 @@ rust_app(
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
         "@rust_crates//:embedded-hal",
+        "@rust_crates//:zerocopy",
     ],
 )
 
@@ -55,6 +58,8 @@ rust_app(
     deps = [
         "//hal/blocking/flash",
         "//services/flash:client",
+        "//services/flash:opcode",
+        "//target/earlgrey/services/platform",
         "//target/earlgrey/util",
         "//util/error",
         "//util/ipc",
@@ -63,6 +68,7 @@ rust_app(
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:zerocopy",
     ],
 )
 

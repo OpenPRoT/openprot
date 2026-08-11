@@ -8,6 +8,7 @@ package(default_visibility = ["//visibility:public"])
 rust_library(
     name = "platform",
     srcs = [
+        "flash_mux.rs",
         "lib.rs",
         "reset.rs",
         "server.rs",
@@ -23,6 +24,7 @@ rust_library(
         "//target/earlgrey/util",
         "//util/error",
         "//util/ipc",
+        "//util/types",
         "//util/zfmt",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_status/rust:pw_status",

@@ -76,6 +76,30 @@ impl PlatformServer {
             .handle_event(SpiMuxEvent::Route(route), &mut self.gpio)
     }
 
+    /// Executes the safe 4-step SPI MUX handshake and switching sequence.
+    pub fn switch_mux(
+        &mut self,
+        route: crate::spimux::SpiMuxRoute,
+        flash_mux: &crate::flash_mux::FlashMuxClient,
+    ) -> Result<(), ErrorCode> {
+        let bitmap = match route {
+            crate::spimux::SpiMuxRoute::HostCpu0Earlgrey1 => 0x2,
+            crate::spimux::SpiMuxRoute::HostCpu1Earlgrey0 => 0x1,
+        };
+        // Step 1: Notify Flash Service of impending MUX switch (quiesce access).
+        flash_mux.switch_mux_notice()?;
+
+        // Step 2: Perform physical GPIO reset pulse and MUX channel selection.
+        // If hardware switching fails, leave Flash Service in quiescent state (bitmap = 0)
+        // to prevent accessing an uninitialized or unstable SPI bus.
+        self.route_spi_mux(route)?;
+
+        // Step 3: Notify Flash Service that MUX switch finished (reinit 4-byte mode & restore access).
+        flash_mux.switch_mux_fin_notice(bitmap)?;
+
+        Ok(())
+    }
+
     pub fn handle_usb_presence_interrupt(&mut self) -> Result<(), ErrorCode> {
         self.usb_mux
             .handle_event(UsbMuxEvent::PinChanged, &mut self.gpio)
