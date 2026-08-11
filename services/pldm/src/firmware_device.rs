@@ -62,6 +62,16 @@ pub const FD_MAX_MSG: usize = 1024;
 /// within this window is expected and is not treated as an error.
 const RESPONDER_POLL_TIMEOUT_MILLIS: u32 = 1;
 
+/// Outcome of [`FirmwareDevice::run_terminus`].
+pub enum RunTerminusResult {
+    /// The loop exited normally (currently unreachable: `run_terminus` only
+    /// returns via an error today, but this variant exists so a future,
+    /// well-defined completion condition does not require an API change).
+    Completed,
+    /// The loop was stopped by an unrecoverable error.
+    StoppedByError(PldmServiceError),
+}
+
 /// PLDM Firmware Device service.
 ///
 /// Owns the PLDM firmware-update state machine ([`CmdInterface`]) and drives
@@ -143,6 +153,19 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
     ///
     /// [`should_start_initiator_mode`]: pldm_interface::firmware_device::fd_context::FirmwareDeviceContext
     pub fn run_terminus(
+        &mut self,
+        remote_eid: u8,
+        buf: &mut [u8],
+        timeout_millis: u32,
+        requester_timeout_millis: u32,
+    ) -> RunTerminusResult {
+        match self.run_terminus_inner(remote_eid, buf, timeout_millis, requester_timeout_millis) {
+            Ok(()) => RunTerminusResult::Completed,
+            Err(e) => RunTerminusResult::StoppedByError(e),
+        }
+    }
+
+    fn run_terminus_inner(
         &mut self,
         remote_eid: u8,
         buf: &mut [u8],

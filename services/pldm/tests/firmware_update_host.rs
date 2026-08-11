@@ -26,7 +26,7 @@ use mctp::Eid;
 use mctp_lib::Sender;
 use openprot_mctp_api::Handle;
 use openprot_mctp_server::Server;
-use openprot_pldm_service::firmware_device::FirmwareDevice;
+use openprot_pldm_service::firmware_device::{FirmwareDevice, RunTerminusResult};
 use openprot_pldm_service::{MctpPldmTransport, PldmServiceError};
 use pldm_common::codec::{PldmCodec, PldmCodecWithLifetime};
 use pldm_common::message::firmware_update::apply_complete::{ApplyCompleteResponse, ApplyResult};
@@ -333,9 +333,9 @@ fn firmware_update_full_flow_via_requester() {
             TIMEOUT_MILLIS,
             TIMEOUT_MILLIS,
         ) {
-            Ok(()) => {}
-            Err(PldmServiceError::Mctp(e)) if e.is_timeout() => {}
-            Err(e) => panic!("firmware device failed: {e:?}"),
+            RunTerminusResult::Completed => {}
+            RunTerminusResult::StoppedByError(PldmServiceError::Mctp(e)) if e.is_timeout() => {}
+            RunTerminusResult::StoppedByError(e) => panic!("firmware device failed: {e:?}"),
         }
 
         transfer(&fd_to_ua_packets, &mut ua_server.borrow_mut());

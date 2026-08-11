@@ -9,7 +9,7 @@ use core::cell::{Cell, RefCell};
 
 use mctp::Eid;
 use openprot_mctp_server::Server;
-use openprot_pldm_service::firmware_device::FirmwareDevice;
+use openprot_pldm_service::firmware_device::{FirmwareDevice, RunTerminusResult};
 use openprot_pldm_service::{MctpPldmTransport, PldmServiceError};
 use pldm_common::codec::PldmCodec;
 use pldm_common::message::control::{GetTidRequest, SetTidRequest};
@@ -203,9 +203,9 @@ fn responder_ignores_commands_from_unexpected_eid() {
     // to serve, so commands from `ATTACKER_EID` must be ignored below.
     let mut run_fd_once =
         || match fd.run_terminus(UA_EID, &mut fd_buf, TIMEOUT_MILLIS, TIMEOUT_MILLIS) {
-            Ok(()) => {}
-            Err(PldmServiceError::Mctp(e)) if e.is_timeout() => {}
-            Err(e) => panic!("firmware device failed: {e:?}"),
+            RunTerminusResult::Completed => {}
+            RunTerminusResult::StoppedByError(PldmServiceError::Mctp(e)) if e.is_timeout() => {}
+            RunTerminusResult::StoppedByError(e) => panic!("firmware device failed: {e:?}"),
         };
 
     let mut buf = [0u8; 1024];
