@@ -4,6 +4,14 @@
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
 rust_library(
+    name = "opcode",
+    srcs = ["opcode.rs"],
+    crate_name = "spi_flash_opcode",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+)
+
+rust_library(
     name = "spi_flash",
     srcs = ["spi_flash.rs"],
     crate_name = "spi_flash",
@@ -13,6 +21,7 @@ rust_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":opcode",
         "//hal/blocking/flash",
         "//hal/blocking/flash:driver",
         "//util/error",
