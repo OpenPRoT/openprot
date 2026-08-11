@@ -5,20 +5,8 @@
 //! events, effects, states, and the validated [`Chain`] of trust. These types
 //! carry no reducer behavior; the state machine itself lives in the crate root.
 
-/// An opaque identifier for one platform component. The core never inspects it;
-/// the board layer decides which real hardware each id refers to.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct ComponentId(u8);
-
-impl ComponentId {
-    pub const fn new(id: u8) -> Self {
-        Self(id)
-    }
-
-    pub const fn get(self) -> u8 {
-        self.0
-    }
-}
+pub use orchestrator_config::ComponentId;
+use orchestrator_config::DeviceConfig;
 
 /// How a component in the trust chain is classified. The board supplies one
 /// [`ComponentKind`] per [`ComponentId`] when building the chain.
@@ -379,10 +367,12 @@ pub enum State {
 /// A validated **chain of trust**: the ordered list of components the eRoT
 /// walks, verifies, and supervises, in walk order.
 ///
-/// Build one with [`TryFrom`]/[`TryInto`] from a `heapless::Vec` of
-/// `(ComponentId, ComponentAttrs)` pairs. The conversion is the single place
-/// the reducer's structural invariants are enforced, so a malformed chain
-/// fails closed at the boundary instead of misbehaving later:
+/// Board integrations should use [`Chain::from_device_configs`] so device
+/// count, order, and ids come directly from their `DeviceConfig` array. Tests
+/// and lower-level callers can also use [`TryFrom`]/[`TryInto`] with a
+/// `heapless::Vec` of `(ComponentId, ComponentAttrs)` pairs. Both paths enforce
+/// the reducer's structural invariants at the boundary, so a malformed chain
+/// fails closed instead of misbehaving later:
 ///
 /// - the chain is non-empty,
 /// - every [`ComponentId`] is unique,
@@ -425,6 +415,24 @@ pub enum ChainError {
 }
 
 impl<const N: usize> Chain<N> {
+    /// Build the chain directly from the board's device table.
+    ///
+    /// Device count, order, and ids come from the same table used by the board
+    /// drivers. `attrs_for` supplies policy by stable id without introducing a
+    /// second ordered list that could drift from the hardware configuration.
+    pub fn from_device_configs<R, G>(
+        devices: &[DeviceConfig<R, G>; N],
+        mut attrs_for: impl FnMut(ComponentId) -> ComponentAttrs,
+    ) -> Result<Self, ChainError> {
+        let mut entries = heapless::Vec::new();
+        for device in devices {
+            entries
+                .push((device.id, attrs_for(device.id)))
+                .expect("device array length matches chain capacity");
+        }
+        entries.try_into()
+    }
+
     /// Consume the validated chain, yielding its components in walk order.
     pub(crate) fn into_entries(self) -> heapless::Vec<(ComponentId, ComponentAttrs), N> {
         self.entries

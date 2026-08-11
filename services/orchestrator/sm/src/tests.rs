@@ -1549,6 +1549,43 @@ fn chain_rejects_empty() {
     assert_eq!(Chain::try_from(empty).unwrap_err(), ChainError::Empty);
 }
 
+/// Device order and ids are inherited from the board table instead of being
+/// repeated in an independently maintained orchestrator list.
+#[test]
+fn chain_builds_from_device_config_source_of_truth() {
+    use core::time::Duration;
+    use orchestrator_config::{BootCheckpoint, BootSignal, CommitPolicy, DeviceConfig};
+
+    const CHECKPOINT: BootCheckpoint<u8> = BootCheckpoint {
+        name: "ready",
+        signal: BootSignal::GpioBootComplete(1),
+        window: Duration::from_secs(1),
+    };
+    const DEVICES: [DeviceConfig<u8, u8>; 2] = [
+        DeviceConfig {
+            id: C1,
+            name: "first",
+            reset_signal: 2,
+            checkpoints: &[CHECKPOINT],
+            commit_policy: CommitPolicy::Liveness,
+        },
+        DeviceConfig {
+            id: C0,
+            name: "second",
+            reset_signal: 3,
+            checkpoints: &[CHECKPOINT],
+            commit_policy: CommitPolicy::Liveness,
+        },
+    ];
+
+    let chain = Chain::from_device_configs(&DEVICES, |_| ComponentAttrs::passive_required())
+        .expect("valid device table");
+    let entries = chain.into_entries();
+
+    assert_eq!(entries.as_slice()[0].0, C1);
+    assert_eq!(entries.as_slice()[1].0, C0);
+}
+
 /// A repeated `ComponentId` is rejected: the reducer's linear id lookups would
 /// otherwise be ambiguous.
 #[test]

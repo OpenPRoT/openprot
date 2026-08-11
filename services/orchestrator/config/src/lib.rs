@@ -7,6 +7,24 @@
 
 #![cfg_attr(not(test), no_std)]
 
+/// Stable identifier shared by the board device table and orchestrator core.
+///
+/// The value is opaque to the state machine. Keeping the type in this
+/// dependency-free config crate lets every layer refer to the same device without
+/// maintaining a second positional-id convention.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ComponentId(u8);
+
+impl ComponentId {
+    pub const fn new(id: u8) -> Self {
+        Self(id)
+    }
+
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
 /// What the orchestrator requires before it commits a staged image.
 ///
 /// Intentionally exhaustive (not `#[non_exhaustive]`): adding a variant is
@@ -67,6 +85,8 @@ pub struct BootCheckpoint<G> {
 /// Adding a field is a breaking change that updates every board table.
 #[derive(Debug, Clone, Copy)]
 pub struct DeviceConfig<R, G: 'static> {
+    /// Stable id used by the orchestrator, update manager, and board drivers.
+    pub id: ComponentId,
     pub name: &'static str,
     /// Reset signal id, passed to HalBootControl::new.
     pub reset_signal: R,
@@ -80,9 +100,18 @@ pub struct DeviceConfig<R, G: 'static> {
 /// Checks a device table. Board configs call this in a const context so a
 /// bad table fails the build.
 pub const fn validate<R, G>(devices: &[DeviceConfig<R, G>]) {
+    assert!(!devices.is_empty(), "device table must not be empty");
     let mut i = 0;
     while i < devices.len() {
         assert!(!devices[i].name.is_empty(), "device name must not be empty");
+        let mut j = i + 1;
+        while j < devices.len() {
+            assert!(
+                devices[i].id.get() != devices[j].id.get(),
+                "component id must be unique"
+            );
+            j += 1;
+        }
         assert!(
             !devices[i].checkpoints.is_empty(),
             "device must declare at least one boot checkpoint"
@@ -120,6 +149,7 @@ mod tests {
     };
 
     const DEVICE: DeviceConfig<u8, u8> = DeviceConfig {
+        id: ComponentId::new(0),
         name: "dev",
         reset_signal: 0,
         checkpoints: &[CHECKPOINT],
@@ -132,9 +162,34 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "device table must not be empty")]
+    fn rejects_an_empty_table() {
+        validate::<u8, u8>(&[]);
+    }
+
+    #[test]
+    #[should_panic(expected = "component id must be unique")]
+    fn rejects_a_duplicate_component_id() {
+        validate(&[
+            DEVICE,
+            DeviceConfig {
+                name: "other",
+                ..DEVICE
+            },
+        ]);
+    }
+
+    #[test]
     #[should_panic(expected = "device name must not be empty")]
     fn rejects_an_empty_device_name() {
-        validate(&[DEVICE, DeviceConfig { name: "", ..DEVICE }]);
+        validate(&[
+            DEVICE,
+            DeviceConfig {
+                id: ComponentId::new(1),
+                name: "",
+                ..DEVICE
+            },
+        ]);
     }
 
     #[test]

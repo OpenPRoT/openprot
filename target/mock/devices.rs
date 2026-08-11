@@ -9,17 +9,18 @@
 
 use core::time::Duration;
 
-use orchestrator_config::{BootCheckpoint, BootSignal, CommitPolicy, DeviceConfig};
+use orchestrator_config::{BootCheckpoint, BootSignal, CommitPolicy, ComponentId, DeviceConfig};
 
 /// Declaration order is the boot order: the orchestrator releases devices
 /// top to bottom, one at a time.
 ///
 /// The mock board's reset controller and boot monitor both address
 /// signals by plain index, so both id types are `u8`.
-pub const MANAGED_DEVICES: &[DeviceConfig<u8, u8>] = &[
+pub const MANAGED_DEVICES: [DeviceConfig<u8, u8>; 2] = [
     // Direct-flash SPI device (BMC archetype): the eRoT fronts its flash.
     // Single checkpoint: it raises a boot-complete GPIO.
     DeviceConfig {
+        id: ComponentId::new(0),
         name: "bmc",
         reset_signal: 7,
         checkpoints: &[BootCheckpoint {
@@ -32,6 +33,7 @@ pub const MANAGED_DEVICES: &[DeviceConfig<u8, u8>] = &[
     // PLDM device (NIC archetype): self-updating, SPDM-capable. Two
     // checkpoints, exercising the multi-checkpoint path.
     DeviceConfig {
+        id: ComponentId::new(1),
         name: "nic",
         reset_signal: 3,
         checkpoints: &[
@@ -50,4 +52,4 @@ pub const MANAGED_DEVICES: &[DeviceConfig<u8, u8>] = &[
     },
 ];
 
-const _: () = orchestrator_config::validate(MANAGED_DEVICES);
+const _: () = orchestrator_config::validate(&MANAGED_DEVICES);
