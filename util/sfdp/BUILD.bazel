@@ -16,6 +16,7 @@ rust_library(
         "//util/error",
         "//util/io",
         "//util/types",
+        "@rust_crates//:aligned",
         "@rust_crates//:zerocopy",
     ],
 )

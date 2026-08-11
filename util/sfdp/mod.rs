@@ -5,6 +5,7 @@
 
 const _: () = assert!(cfg!(target_endian = "little"));
 
+use aligned::{Aligned, A4};
 use bitfield_struct::bitfield;
 use core::mem::offset_of;
 use util_error as error;
@@ -1693,6 +1694,60 @@ impl<R: RandomRead<Error: From<ErrorCode>>> SfdpReader<R> {
     }
 }
 
+pub const DEFAULT_SFDP_TABLE_SIZE: usize = 256;
+
+/// Generates a standard JESD216 SFDP table (256 bytes, aligned to 4 bytes)
+/// for a flash of a specific size (in bytes).
+pub fn create_default_sfdp_table(
+    flash_total_len: usize,
+) -> Aligned<A4, [u8; DEFAULT_SFDP_TABLE_SIZE]> {
+    let mut buf = Aligned([0xFFu8; DEFAULT_SFDP_TABLE_SIZE]);
+
+    let header = SfdpHeader {
+        sig: SfdpSignature::EXPECTED_VALUE,
+        major_rev: 1,
+        minor_rev: 0,
+        access_protocol: AccessProtocol::LEGACY,
+        num_parameter_header: 0, // 0-based => 1 parameter header
+    };
+
+    let phdr = ParameterHeader {
+        parameter_id_lsb: 0x00,
+        minor_rev: 0,
+        major_rev: 1,
+        len_in_dwords: 23,
+        ptr: U24::new(16),
+        parameter_id_msb: 0xFF,
+    };
+
+    let mut bpt = BasicFlashParameterTable::new_zeroed();
+    if let Ok(density) = MemoryDensity::from_byte_len(flash_total_len as u32) {
+        bpt.table_jesd216.memory_density = density;
+    }
+    bpt.table_jesd216.word1.set_supports_1s_1s_4s_read(true);
+    bpt.table_jesd216.word1.set_erase4k_instr(0x20);
+    bpt.table_jesd216
+        .word1
+        .set_legacy_erase_sizes(LegacyEraseSizes::Erase4k);
+    bpt.table_jesd216
+        .word1
+        .set_legacy_write_granularity(LegacyWriteGranularity::Buffer64);
+    bpt.table_jesd216
+        .word1
+        .set_addr_bytes(AddressBytes::_3Or4Byte);
+    bpt.table_jesd216a
+        .word15
+        .set_quad_enable_requirements(QuadEnableRequirements::QeBit6SR1);
+
+    buf[0..8].copy_from_slice(header.as_bytes());
+    buf[8..16].copy_from_slice(phdr.as_bytes());
+    let bpt_bytes = bpt.as_bytes();
+    let bpt_copy_len = core::cmp::min(bpt_bytes.len(), 23 * 4);
+    buf[16..16 + bpt_copy_len].copy_from_slice(&bpt_bytes[..bpt_copy_len]);
+
+    buf
+}
+
 #[cfg(test)]
 mod test {
     use error::FLASH_GENERIC_SFDP_PARAMETERS_TOO_SHORT;
@@ -2291,5 +2346,20 @@ mod test {
         assert!(table.table.word1.erase_type_3_support());
         assert_eq!(table.table.word2.erase_type_1_instr(), 0x21);
         assert_eq!(table.table.word2.erase_type_3_instr(), 0xdc);
+    }
+
+    #[test]
+    fn test_create_default_sfdp_table() {
+        let table = create_default_sfdp_table(64 * 1024 * 1024);
+        let mut reader = SfdpReader::new(&table[..]).expect("Failed to parse default SFDP table");
+        let header = reader.header().expect("Failed to get header");
+        assert_eq!(header.sig, SfdpSignature::EXPECTED_VALUE);
+        assert_eq!(header.major_rev, 1);
+        assert_eq!(header.num_parameter_header, 0);
+
+        let basic_table = reader
+            .read_table::<BasicFlashParameterTable>()
+            .expect("Failed to read BFPT");
+        assert_eq!(basic_table.table.table_jesd216.word1.erase4k_instr(), 0x20);
     }
 }
