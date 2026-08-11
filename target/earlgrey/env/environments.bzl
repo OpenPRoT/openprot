@@ -231,7 +231,7 @@ def _fpga_environment_impl(ctx):
     if rom_ext:
         boot_cmd = "bootstrap {boot_image}"
     else:
-        boot_cmd = "rescue firmware {firmware}"
+        boot_cmd = "rescue firmware --rate 1500000 {firmware}"
 
     return [
         TestEnvironmentInfo(
