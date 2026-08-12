@@ -462,28 +462,7 @@ pub struct Status {
     reserved7: bool,
 }
 
-const OP_STATUS: u8 = 0x05;
-const OP_WRITE_EN: u8 = 0x06;
-const OP_WR_STATUS: u8 = 0x01;
-const OP_WR_EAR: u8 = 0xC5;
-const OP_READ: u8 = 0x03;
-const OP_QREAD: u8 = 0x6B;
-const OP_READ4B: u8 = 0x13;
-const OP_QREAD4B: u8 = 0x6C;
-const OP_CHIP_ERASE: u8 = 0xC7;
-const OP_ERASE_4K: u8 = 0x20;
-const OP_ERASE4B_4K: u8 = 0x21;
-const OP_ERASE_64K: u8 = 0xD8;
-const OP_ERASE4B_64K: u8 = 0xDC;
-const OP_PROGRAM: u8 = 0x02;
-const OP_QPROGRAM: u8 = 0x32;
-const OP_PROGRAM4B: u8 = 0x12;
-const OP_QPROGRAM4B: u8 = 0x34;
-const OP_SFDP_READ: u8 = 0x5a;
-const OP_RESET_ENABLE: u8 = 0x66;
-const OP_RESET: u8 = 0x99;
-const OP_READ_JEDEC_ID: u8 = 0x9f;
-const OP_ENTER_4B_ADDR_MODE: u8 = 0xB7;
+pub use spi_flash_opcode::*;
 
 /// A RandomRead implementation that can be used to access SFDP bytes.
 pub struct SfdpRandRead<'a, S: embedded_hal::spi::SpiDevice> {

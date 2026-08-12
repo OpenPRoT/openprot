@@ -104,3 +104,19 @@ rust_library(
         "@ureg",
     ],
 )
+
+rust_library(
+    name = "spi_device",
+    srcs = ["spi_device.rs"],
+    crate_name = "earlgrey_spi_device",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//drivers/flash:opcode",
+        "//target/earlgrey/registers:spi_device",
+        "//util/error",
+        "//util/regcpy",
+        "@rust_crates//:aligned",
+        "@ureg",
+    ],
+)

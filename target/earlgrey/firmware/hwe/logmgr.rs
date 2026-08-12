@@ -196,6 +196,12 @@ fn logmgr_server() -> Result<(), Error> {
         Signals::READABLE,
         handle::LOGGER_SYSMGR as usize,
     )?;
+    syscall::wait_group_add(
+        handle::LOGMGR_WAIT_GROUP,
+        handle::LOGGER_SPIDEV,
+        Signals::READABLE,
+        handle::LOGGER_SPIDEV as usize,
+    )?;
 
     let mut server = LogServer::<2048>::new();
     let mut active_log = ActiveLog::new();

@@ -1,0 +1,39 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("//target/earlgrey/signing/keys:defs.bzl", "FPGA_ECDSA_KEY")
+load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_test")
+load("//third_party/lowrisc_opentitan:defs.bzl", "opentitan_rust_binary")
+
+opentitan_rust_binary(
+    name = "host_spidev_check",
+    srcs = ["host_spidev_check.rs"],
+    edition = "2024",
+    rustc_flags = [
+        "-C",
+        "link-arg=-Wl,--allow-shlib-undefined",
+    ],
+    deps = [
+        "//target/earlgrey/testutil",
+        "//third_party/lowrisc_opentitan:opentitanlib",
+        "@ot_crate_index//:anyhow",
+        "@ot_crate_index//:clap",
+        "@ot_crate_index//:humantime",
+        "@ot_crate_index//:log",
+    ],
+)
+
+opentitan_test(
+    name = "spidev_hyper340_test",
+    clear_bitstream = True,
+    ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper340",
+    interface = "hyper340",
+    tags = [
+        "hardware",
+        "hyper340",
+    ],
+    target = "//target/earlgrey/firmware/hwe:hwe_firmware",
+    test_cmd = "--logging=info",
+    test_harness = ":host_spidev_check",
+)

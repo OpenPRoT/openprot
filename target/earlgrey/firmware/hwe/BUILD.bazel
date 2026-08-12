@@ -141,6 +141,30 @@ rust_process(
     ],
 )
 
+rust_process(
+    name = "spidev",
+    srcs = [
+        "spidev.rs",
+    ],
+    codegen_crate_name = "spidev_codegen",
+    edition = "2024",
+    system_config = "@pigweed//pw_kernel/target:system_config_file",
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//target/earlgrey/drivers:spi_device",
+        "//target/earlgrey/registers:spi_device",
+        "//util/error",
+        "//util/ipc",
+        "//util/sfdp",
+        "//util/zfmt",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:aligned",
+        "@zfmt//zfmt",
+    ],
+)
+
 multi_process_app(
     name = "hwe",
     processes = [
@@ -149,6 +173,7 @@ multi_process_app(
         ":platform",
         ":flash_server",
         ":usbmgr",
+        ":spidev",
     ],
     tags = ["kernel"],
     template = "app_entry.rs.jinja",
