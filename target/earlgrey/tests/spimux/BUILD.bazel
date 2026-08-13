@@ -8,80 +8,50 @@ load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_scri
 load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
-load("//target/earlgrey/signing/keys:defs.bzl", "FPGA_ECDSA_KEY")
+load("//target/earlgrey/signing/keys:defs.bzl", "FPGA_ECDSA_KEY", "SILICON_ECDSA_KEY")
 load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_test")
+load("//third_party/lowrisc_opentitan:defs.bzl", "opentitan_rust_binary")
 
 rust_app(
-    name = "combined_flash_server",
+    name = "test_spimux",
     srcs = [
-        "combined_flash_server.rs",
+        "test_spimux.rs",
     ],
-    codegen_crate_name = "combined_flash_server_codegen",
+    codegen_crate_name = "test_spimux_codegen",
     edition = "2024",
     system_config = "@pigweed//pw_kernel/target:system_config_file",
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
-        "//drivers/flash:spi_flash",
-        "//hal/blocking/flash",
-        "//hal/blocking/flash:driver",
-        "//services/flash:opcode",
-        "//services/flash:server",
-        "//target/earlgrey/drivers:eflash_driver",
-        "//target/earlgrey/drivers:spi_host",
-        "//target/earlgrey/registers:flash_ctrl_core",
-        "//target/earlgrey/registers:spi_host",
+        "//hal/blocking",
+        "//target/earlgrey/drivers:gpio",
+        "//target/earlgrey/pinout",
         "//target/earlgrey/services/platform",
-        "//target/earlgrey/util",
-        "//util/error",
-        "//util/ipc",
-        "//util/panic",
-        "//util/types",
-        "@pigweed//pw_kernel/userspace",
-        "@pigweed//pw_log/rust:pw_log",
-        "@pigweed//pw_status/rust:pw_status",
-        "@rust_crates//:embedded-hal",
-        "@rust_crates//:zerocopy",
-    ],
-)
-
-rust_app(
-    name = "spi_flash_test",
-    srcs = [
-        "spi_flash_test.rs",
-    ],
-    codegen_crate_name = "spi_flash_test_codegen",
-    edition = "2024",
-    system_config = "@pigweed//pw_kernel/target:system_config_file",
-    tags = ["kernel"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "//hal/blocking/flash",
-        "//services/flash:client",
-        "//services/flash:opcode",
-        "//target/earlgrey/services/platform",
-        "//target/earlgrey/util",
-        "//util/error",
-        "//util/ipc",
-        "//util/misc",
         "//util/panic",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
-        "@rust_crates//:zerocopy",
     ],
 )
 
 system_image(
-    name = "spi_flash",
+    name = "spimux",
     apps = [
-        ":combined_flash_server",
-        ":spi_flash_test",
+        ":test_spimux",
     ],
     kernel = ":target",
     platform = "//target/earlgrey",
     system_config = ":system_config",
     tags = ["kernel"],
+)
+
+rust_binary_no_panics_test(
+    name = "no_panics",
+    apps = [
+        "test_spimux",
+    ],
+    binary = ":spimux",
+    tags = ["no_panics"],
 )
 
 target_linker_script(
@@ -123,8 +93,53 @@ rust_binary(
     ],
 )
 
+opentitan_rust_binary(
+    name = "host_spimux_check",
+    srcs = ["host_spimux_check.rs"],
+    edition = "2024",
+    rustc_flags = [
+        "-C",
+        "link-arg=-Wl,--allow-shlib-undefined",
+    ],
+    deps = [
+        "//third_party/lowrisc_opentitan:opentitanlib",
+        "@ot_crate_index//:anyhow",
+        "@ot_crate_index//:clap",
+        "@ot_crate_index//:humantime",
+        "@ot_crate_index//:log",
+    ],
+)
+
 opentitan_test(
-    name = "spi_flash_hyper340_test",
+    name = "spimux_verilator_test",
+    timeout = "eternal",
+    environment = "//target/earlgrey/env:verilator",
+    interface = "verilator",
+    tags = [
+        "manual",
+        "verilator",
+    ],
+    target = ":spimux",
+    test_cmd = "--logging=info --timeout=10m",
+    test_harness = ":host_spimux_check",
+)
+
+opentitan_test(
+    name = "spimux_hyper310_test",
+    ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper310",
+    interface = "hyper310",
+    tags = [
+        "hardware",
+        "hyper310",
+    ],
+    target = ":spimux",
+    test_cmd = "--logging=info",
+    test_harness = ":host_spimux_check",
+)
+
+opentitan_test(
+    name = "spimux_hyper340_test",
     ecdsa_key = FPGA_ECDSA_KEY,
     environment = "//target/earlgrey/env:hyper340",
     interface = "hyper340",
@@ -132,23 +147,22 @@ opentitan_test(
         "hardware",
         "hyper340",
     ],
-    target = ":spi_flash",
+    target = ":spimux",
+    test_cmd = "--logging=info",
+    test_harness = ":host_spimux_check",
 )
 
 opentitan_test(
-    name = "spi_flash_qemu_test",
-    timeout = "moderate",
-    environment = "//target/earlgrey/env:qemu",
-    interface = "qemu",
-    tags = ["qemu"],
-    target = ":spi_flash",
-)
-
-rust_binary_no_panics_test(
-    name = "no_panics",
-    apps = [
-        "combined_flash_server",
-        "spi_flash_test",
+    name = "spimux_silicon_test",
+    ecdsa_key = SILICON_ECDSA_KEY,
+    environment = "//target/earlgrey/env:teacup",
+    interface = "teacup",
+    tags = [
+        "earlgrey_silicon",
+        "manual",
+        "silicon",
     ],
-    binary = ":spi_flash",
+    target = ":spimux",
+    test_cmd = "--logging=info",
+    test_harness = ":host_spimux_check",
 )

@@ -39,6 +39,8 @@ pub const FLASH_GENERIC_NOT_INITIALIZED: ErrorCode =
     FLASH_GENERIC.from_pw(10, Error::FailedPrecondition);
 /// The flash device is busy.
 pub const FLASH_GENERIC_BUSY: ErrorCode = FLASH_GENERIC.from_pw(11, Error::Unavailable);
+/// The flash device is currently inaccessible (e.g., MUX disconnected or bus isolated).
+pub const FLASH_GENERIC_INACCESSIBLE: ErrorCode = FLASH_GENERIC.from_pw(12, Error::Unavailable);
 
 /// SFDP: Invalid memory density.
 pub const FLASH_GENERIC_SFDP_INVALID_MEMORY_DENSITY: ErrorCode =

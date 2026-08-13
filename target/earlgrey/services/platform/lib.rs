@@ -3,6 +3,7 @@
 
 #![no_std]
 
+pub mod flash_mux;
 pub mod reset;
 pub mod server;
 pub mod spimux;

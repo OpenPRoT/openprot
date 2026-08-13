@@ -40,7 +40,7 @@ Upon starting, the Platform Service (`//target/earlgrey/firmware/hwe/platform.rs
 Inside `PlatformServer::start(is_low_power_exit)` (`//target/earlgrey/services/platform/server.rs`):
 6.  Configures interrupts on the reset monitors (`RST_MON0_N`, `RST_MON1_N`) and USB presence (`USB_PRESENCE_N`).
 7.  Dispatches initial startup events to the state machine handlers:
-    *   If it is a **Cold Boot / Power-On Reset**, dispatches `SpiMuxEvent::ColdBoot` to `SpiMuxHandler` (driving `SPI_MUX_CTRL` low, `SPI_MUX_EN_N` low, and releasing resets) and dispatches `ResetEvent::Start { is_low_power_exit: false }` to `ResetPolicy` to enter the `LatchReset` state and perform a target reset.
+    *   If it is a **Cold Boot / Power-On Reset**, dispatches `SpiMuxEvent::ColdBoot` to `SpiMuxHandler` (selecting `SpiMuxRoute::HostCpu0Earlgrey1`, driving `SPI_MUX_CTRL` low to connect Host CPU to Flash 0 and Earlgrey to Flash 1, enabling `SPI_MUX_EN_N` low, and releasing resets) and dispatches `ResetEvent::Start { is_low_power_exit: false }` to `ResetPolicy` to enter the `LatchReset` state and perform a target reset.
     *   If it is a **Low Power Exit**, dispatches `ResetEvent::Start { is_low_power_exit: true }` to `ResetPolicy` to transition directly to the `Running` state.
 
 ## Strap Reading Procedure
