@@ -1,8 +1,0 @@
---- a/pw_kernel/tooling/system_image.bzl
-+++ b/pw_kernel/tooling/system_image.bzl
-@@ -182 +182,4 @@
--            runfiles = ctx.attr.image[DefaultInfo].default_runfiles,
-+            runfiles = ctx.runfiles(files = [
-+                ctx.attr.image[SystemImageInfo].elf,
-+                ctx.attr.image[SystemImageInfo].bin,
-+            ]),

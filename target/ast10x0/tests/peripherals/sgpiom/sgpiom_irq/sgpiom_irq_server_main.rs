@@ -178,7 +178,7 @@ fn entry() {
 }
 
 /// Busy-wait `ms` milliseconds on the monotonic clock.
-fn busy_wait_ms(ms: i64) {
+fn busy_wait_ms(ms: u64) {
     use userspace::time::Duration;
     let until = syscall::debug_clock_now() + Duration::from_millis(ms);
     while syscall::debug_clock_now() < until {}

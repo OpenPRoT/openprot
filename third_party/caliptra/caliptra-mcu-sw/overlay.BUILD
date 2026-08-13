@@ -17,6 +17,7 @@ exports_files(
         "rom/src/lib.rs",
         "common/testing/src/lib.rs",
         "registers/generated-emulator/src/lib.rs",
+        "registers/generated-firmware/src/lib.rs",
         "emulator/consts/src/lib.rs",
         "caliptra-util-host/apps/mailbox/server/src/lib.rs",
         "builder/src/lib.rs",

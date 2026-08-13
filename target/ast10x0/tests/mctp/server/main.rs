@@ -268,7 +268,7 @@ fn mctp_server_loop() -> Result<()> {
                             Instant::MAX
                         } else {
                             SystemClock::now()
-                                .checked_add_duration(Duration::from_millis(timeout_millis as i64))
+                                .checked_add_duration(Duration::from_millis(timeout_millis as u64))
                                 .unwrap_or(Instant::MAX)
                         };
                         // No message yet — remove MCTP from WaitGroup so the fast-path cannot

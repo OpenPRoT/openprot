@@ -1,0 +1,33 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// OpenPRoT eRoT production image for the AST1060 — skeleton.
+//
+// This is THE composition file: what appears under `apps` below is what
+// exists on the flashed eRoT, fixed at build time. Kernel-only today;
+// each service joins as its app lands. The intended final composition:
+//
+//   apps: [
+//     // i2c_server: owns the I²C MMIO block + IRQs, serves bus access
+//     // over IPC (the pattern proven in tests/mctp/server).
+//     // mctp_server: MCTP over the i2c channel_initiator.
+//     // orchestrator: its thread owns the
+//     //   Orchestrator state machine and the boot walks, blocking in
+//     //   object_wait on {timer at next walk deadline, IPC channels}.
+//     //   Needs: channel_initiators to mctp (and flash, once that
+//     //   service exists), a memory_mapping for the reset/ready GPIO
+//     //   block, and the board device table for its chain.
+//   ]
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,
+    },
+    kernel: {
+        flash_start_address: 0x00000500,
+        flash_size_bytes: 262144,
+        ram_start_address: 0x00040500,
+        ram_size_bytes: 391936, // ends at RAM_NC boundary (0x000A0000)
+    },
+}

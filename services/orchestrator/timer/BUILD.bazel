@@ -4,19 +4,20 @@
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
 rust_library(
-    name = "orchestrator_capabilities",
+    name = "orchestrator_timer",
     srcs = [
-        "src/boot_control.rs",
-        "src/boot_watch.rs",
-        "src/evidence.rs",
         "src/lib.rs",
     ],
+    crate_name = "openprot_orchestrator_timer",
     edition = "2024",
     visibility = ["//visibility:public"],
+    deps = [
+        "@rust_crates//:heapless",
+    ],
 )
 
-# Host tests: build on the host platform, no kernel/QEMU.
 rust_test(
-    name = "orchestrator_capabilities_test",
-    crate = ":orchestrator_capabilities",
+    name = "orchestrator_timer_test",
+    crate = ":orchestrator_timer",
+    edition = "2024",
 )

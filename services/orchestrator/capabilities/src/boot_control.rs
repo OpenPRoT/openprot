@@ -33,7 +33,7 @@
 /// dev.hold_in_reset()?;
 /// store.set_trial(new_slot)?;      // tentative boot selection — not yet committed
 /// dev.release()?;                  // boot the trial image
-/// match monitor.await_boot(window)? {
+/// match supervise_boot(window)? {
 ///     Booted           => store.commit(new_slot)?,   // observed good => make it active
 ///     Failed | Timeout => { /* nothing committed; previous slot still active */ }
 /// }

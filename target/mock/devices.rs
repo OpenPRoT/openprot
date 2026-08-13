@@ -9,45 +9,69 @@
 
 use core::time::Duration;
 
-use orchestrator_config::{BootCheckpoint, BootSignal, CommitPolicy, DeviceConfig};
+use orchestrator_config::{BootCheckpoint, DeviceConfig};
+
+/// The mock board's boot-signal vocabulary. The schema carries these
+/// opaquely; only this board's `EvidenceReader` gives them meaning.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MockSignal {
+    /// A boot-complete GPIO line, by index.
+    Gpio(u8),
+    /// The device's MCTP endpoint answers as ready.
+    MctpReady,
+    /// The device sends a heartbeat message (latched; the reset path
+    /// clears it).
+    Heartbeat,
+}
 
 /// Declaration order is the boot order: the orchestrator releases devices
-/// top to bottom, one at a time.
+/// top to bottom, one at a time. This table is the authority — the
+/// orchestrator's chain of trust is built from it, never beside it.
 ///
-/// The mock board's reset controller and boot monitor both address
-/// signals by plain index, so both id types are `u8`.
-pub const MANAGED_DEVICES: &[DeviceConfig<u8, u8>] = &[
+/// The mock board's reset controller addresses reset lines by plain index,
+/// so the reset id type is `u8`.
+pub const MANAGED_DEVICES: &[DeviceConfig<u8, MockSignal>] = &[
     // Direct-flash SPI device (BMC archetype): the eRoT fronts its flash.
     // Single checkpoint: it raises a boot-complete GPIO.
-    DeviceConfig {
-        name: "bmc",
-        reset_signal: 7,
-        checkpoints: &[BootCheckpoint {
-            name: "boot-complete",
-            signal: BootSignal::GpioBootComplete(12),
-            window: Duration::from_secs(90),
-        }],
-        commit_policy: CommitPolicy::Liveness,
-    },
+    DeviceConfig::new(
+        "bmc",
+        7,
+        &[BootCheckpoint::new(
+            "boot-complete",
+            MockSignal::Gpio(12),
+            Duration::from_secs(90),
+        )],
+    ),
     // PLDM device (NIC archetype): self-updating, SPDM-capable. Two
-    // checkpoints, exercising the multi-checkpoint path.
-    DeviceConfig {
-        name: "nic",
-        reset_signal: 3,
-        checkpoints: &[
-            BootCheckpoint {
-                name: "mctp-ready",
-                signal: BootSignal::MctpReady,
-                window: Duration::from_secs(20),
-            },
-            BootCheckpoint {
-                name: "heartbeat",
-                signal: BootSignal::Heartbeat,
-                window: Duration::from_secs(10),
-            },
+    // checkpoints, exercising the multi-checkpoint path: transport up
+    // first, then proof the workload is alive.
+    DeviceConfig::new(
+        "nic",
+        3,
+        &[
+            BootCheckpoint::new("mctp-ready", MockSignal::MctpReady, Duration::from_secs(20)),
+            BootCheckpoint::new("heartbeat", MockSignal::Heartbeat, Duration::from_secs(10)),
         ],
-        commit_policy: CommitPolicy::LivenessAndAttestation,
-    },
+    ),
 ];
 
-const _: () = orchestrator_config::validate(MANAGED_DEVICES);
+/// Board-local checks the schema constructors cannot do — they know the
+/// schema's shape, not this board's meanings. Const-fence pattern: a bad
+/// signal fails the build.
+const fn validate_signals(devices: &[DeviceConfig<u8, MockSignal>]) {
+    let mut i = 0;
+    while i < devices.len() {
+        let checkpoints = devices[i].checkpoints();
+        let mut c = 0;
+        while c < checkpoints.len() {
+            if let MockSignal::Gpio(line) = *checkpoints[c].signal() {
+                // The mock ready-line bank packs 32 lines, SGPIO-style.
+                assert!(line < 32, "gpio signal names a line outside the bank");
+            }
+            c += 1;
+        }
+        i += 1;
+    }
+}
+
+const _: () = validate_signals(MANAGED_DEVICES);

@@ -1,19 +1,20 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! HAL-backed [`BootMonitor`]: read a device's boot-complete signal off a GPIO
-//! input line.
+//! HAL-backed boot-status reader: read a device's boot-complete signal off a
+//! GPIO input line into a [`BootStatus`].
 
 use openprot_hal_blocking::gpio_port::{
     ActivePolarity, GpioError, GpioErrorKind, GpioPort, PinMask,
 };
-use orchestrator_capabilities::{BootMonitor, BootStatus};
+use orchestrator_capabilities::BootStatus;
 
 /// Adapts any HAL GPIO error into a [`core::error::Error`].
 ///
 /// GPIO ports keep implementing the HAL `GpioError`/`kind()` pattern
 /// unchanged; this wrapper supplies the `Display` and `core::error::Error`
-/// machinery [`BootMonitor::Error`] requires, so no per-implementation work is
+/// machinery the orchestrator expects of boot-evidence errors, so no
+/// per-implementation work is
 /// needed. The underlying category stays reachable via [`MonitorError::kind`],
 /// and the concrete HAL error through the
 /// [`source()`](core::error::Error::source) chain, downcast to
@@ -79,15 +80,15 @@ impl<E: GpioError> From<E> for MonitorError<E> {
 /// ready signals routinely share one). Platform configuration keeps the bank
 /// alive for as long as its monitors.
 ///
-/// A single ready line can only ever answer "up yet?", so this backend
+/// A single ready line can only ever answer "up yet?", so this reader
 /// reports the [`BootStatus::Booting`]/[`BootStatus::Booted`] subset — see
-/// [`BootMonitor::boot_status`] on why that is a capability difference, not
-/// an incomplete implementation.
+/// [`BootStatus`] on why that is a capability difference, not an incomplete
+/// implementation.
 ///
 /// Where a hardware latch is used, the platform must clear it whenever the
 /// device re-enters reset (typically by wiring the latch's clear to the
-/// device's reset line) — [`BootMonitor`] requires that evidence from a
-/// previous boot never reads as [`BootStatus::Booted`], and this adapter only
+/// device's reset line) — [`BootStatus`] requires that evidence from a
+/// previous boot never reads as [`BootStatus::Booted`], and this reader only
 /// reads the line, it cannot re-arm it.
 ///
 /// [`HalBootControl`]: crate::HalBootControl
@@ -128,16 +129,16 @@ impl<'a, P: GpioPort> GpioBootMonitor<'a, P> {
 // `P::Error: 'static` because `source()` hands out `&(dyn Error + 'static)`
 // referencing the wrapped HAL error. Error types are plain data; this costs
 // no real implementation anything.
-impl<P: GpioPort> BootMonitor for GpioBootMonitor<'_, P>
+impl<P: GpioPort> GpioBootMonitor<'_, P>
 where
     P::Error: 'static,
 {
-    type Error = MonitorError<P::Error>;
-
+    /// Returns the current liveness of the device.
+    ///
     /// # Errors
     ///
     /// Propagates any error returned by the port's `read_input`.
-    fn boot_status(&self) -> Result<BootStatus, Self::Error> {
+    pub fn boot_status(&self) -> Result<BootStatus, MonitorError<P::Error>> {
         let high = self.port.read_input()?.contains(self.ready_pin);
         let booted = match self.active {
             ActivePolarity::ActiveHigh => high,
@@ -156,7 +157,8 @@ mod tests {
     use super::*;
     use openprot_hal_blocking::gpio_port::GpioErrorType;
 
-    // BMC boot-complete on line 4. Normally set in config.rs.
+    // BMC boot-complete on line 4. Everything that is config is normally
+    // declared in the board device table (`target/<board>/devices.rs`).
     const BMC_READY: Mask = Mask(1 << 4);
 
     /// Bitmask over a single mock GPIO bank.
@@ -238,15 +240,15 @@ mod tests {
         }
 
         fn configure(&mut self, _: Mask, _: ()) -> Result<(), MockError> {
-            panic!("BootMonitor must never configure pins");
+            panic!("the boot-status reader must never configure pins");
         }
 
         fn set_reset(&mut self, _: Mask, _: Mask) -> Result<(), MockError> {
-            panic!("BootMonitor must never drive outputs");
+            panic!("the boot-status reader must never drive outputs");
         }
 
         fn toggle(&mut self, _: Mask) -> Result<(), MockError> {
-            panic!("BootMonitor must never drive outputs");
+            panic!("the boot-status reader must never drive outputs");
         }
     }
 
@@ -297,9 +299,9 @@ mod tests {
         GpioBootMonitor::new(&port, Mask::empty(), ActivePolarity::ActiveHigh);
     }
 
-    // A controller error surfaces through BootMonitor unchanged.
+    // A controller error surfaces through the reader unchanged.
     #[test]
-    fn port_error_propagates_through_boot_monitor() {
+    fn port_error_propagates_through_the_reader() {
         let port = MockGpioPort::failing(GpioErrorKind::HardwareFailure);
         let mon = GpioBootMonitor::new(&port, BMC_READY, ActivePolarity::ActiveHigh);
 
