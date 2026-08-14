@@ -10,10 +10,14 @@
 //! controller soft-reset (datasheet §27.6.8).
 //!
 //! [`ArmedDma`] makes that teardown a property of the type system: constructing
-//! it arms the engine, and dropping it without [`ArmedDma::commit`] soft-resets
-//! the controller automatically — so no transfer error path can leave the
-//! engine live. All DMA-lifecycle `unsafe` is confined to this module, holding
-//! its own `Copy` of the [`Ast1060I2cRegisters`] façade.
+//! it arms the engine, and its [`Drop`] soft-resets the controller
+//! unconditionally. [`ArmedDma::commit`] *consumes* the guard (defusing the
+//! teardown by forgetting it), so a committed transaction is no longer a
+//! droppable `ArmedDma` — "committed" is the absence of the value, not a runtime
+//! flag. Every error path that returns before commit therefore drops a live
+//! guard and tears the engine down; there is no state in which the teardown can
+//! be skipped by mistake. All DMA-lifecycle `unsafe` is confined to this module,
+//! holding its own `Copy` of the [`Ast1060I2cRegisters`] façade.
 
 use super::constants;
 use super::registers::Ast1060I2cRegisters;
@@ -21,14 +25,14 @@ use super::registers::Ast1060I2cRegisters;
 /// Guard for one armed master DMA transaction.
 ///
 /// Constructing an `ArmedDma` programs the DMA length + buffer-base registers
-/// (the engine is now a potential AHB bus master). If the guard is dropped
-/// without [`commit`](ArmedDma::commit), [`Drop`] soft-resets the controller
-/// and waits for the engine to go idle. On the happy path the caller calls
-/// [`commit`](ArmedDma::commit) and the drop is a no-op.
+/// (the engine is now a potential AHB bus master). [`Drop`] soft-resets the
+/// controller and waits for the engine to go idle. The happy path calls
+/// [`commit`](ArmedDma::commit), which consumes the guard so its `Drop` never
+/// runs — there is no "committed" flag, the committed state is simply the guard
+/// no longer existing.
 #[must_use = "drop tears down the DMA engine; bind it for the transfer's lifetime"]
 pub(crate) struct ArmedDma {
     mmio: Ast1060I2cRegisters,
-    committed: bool,
 }
 
 impl ArmedDma {
@@ -44,10 +48,7 @@ impl ArmedDma {
         mmio.i2c()
             .i2cm30()
             .write(|w| unsafe { w.sdramdmabuffer_base_addr().bits(phy_addr) });
-        Self {
-            mmio,
-            committed: false,
-        }
+        Self { mmio }
     }
 
     /// Arm an RX DMA transaction: program i2cm1c (len-1) + i2cm34 (base addr).
@@ -62,23 +63,21 @@ impl ArmedDma {
         mmio.i2c()
             .i2cm34()
             .modify(|_, w| unsafe { w.sdramdmabuffer_base_addr1().bits(phy_addr) });
-        Self {
-            mmio,
-            committed: false,
-        }
+        Self { mmio }
     }
 
     /// Transfer completed cleanly (STOP issued); no teardown needed.
-    pub(crate) fn commit(mut self) {
-        self.committed = true;
+    pub(crate) fn commit(self) {
+        core::mem::forget(self);
     }
 }
 
 impl Drop for ArmedDma {
     fn drop(&mut self) {
-        if self.committed {
-            return;
-        }
+        // Reached only for an *uncommitted* guard: `commit` consumes and forgets
+        // the value, so a committed transaction never drops here. Teardown is
+        // therefore unconditional.
+        //
         // No master-only abort exists; soft-reset the controller (datasheet
         // §27.6.8): clear I2CC00 function-control, then restore it. Timing in
         // I2CC04 survives. Then spin until the engine reports idle, bounded so
