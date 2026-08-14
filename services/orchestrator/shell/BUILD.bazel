@@ -1,0 +1,25 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "orchestrator_shell",
+    srcs = [
+        "src/board.rs",
+        "src/lib.rs",
+    ],
+    crate_name = "openprot_orchestrator_shell",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/orchestrator/sm:orchestrator_sm",
+    ],
+)
+
+# Host tests: build on the host platform, no kernel/QEMU.
+rust_test(
+    name = "orchestrator_shell_test",
+    crate = ":orchestrator_shell",
+    edition = "2024",
+)
