@@ -48,9 +48,9 @@ impl Recorder {
 }
 
 impl Platform for Recorder {
-    fn execute(&mut self, effect: Effect) -> Result<(), EffectError> {
+    fn execute(&mut self, effect: Effect) -> Result<Option<Event>, EffectError> {
         self.recorded.push(effect);
-        Ok(())
+        Ok(None)
     }
 }
 
@@ -359,7 +359,7 @@ fn retry_count_resets_after_successful_recovery() {
     ] {
         orch.dispatch_with(ev, |e| {
             effects.push(e);
-            Ok(())
+            Ok(None)
         });
     }
     assert_eq!(orch.state(), State::Ready);
@@ -372,7 +372,7 @@ fn retry_count_resets_after_successful_recovery() {
     ] {
         orch.dispatch_with(ev, |e| {
             effects.push(e);
-            Ok(())
+            Ok(None)
         });
     }
     assert_eq!(orch.state(), State::Ready);
@@ -407,7 +407,7 @@ fn retry_budget_is_per_component() {
     ] {
         orch.dispatch_with(ev, |e| {
             effects.push(e);
-            Ok(())
+            Ok(None)
         });
     }
 
@@ -432,7 +432,7 @@ fn custom_retry_cap_latches_sooner() {
     ] {
         orch.dispatch_with(ev, |e| {
             effects.push(e);
-            Ok(())
+            Ok(None)
         });
     }
     assert_eq!(orch.state(), State::Locked);
@@ -457,7 +457,7 @@ fn custom_capacity_walks_full_chain() {
     ] {
         orch.dispatch_with(ev, |e| {
             effects.push(e);
-            Ok(())
+            Ok(None)
         });
     }
     assert_eq!(orch.state(), State::Ready);
@@ -1428,7 +1428,7 @@ fn locked_is_terminal() {
     for ev in [BOOT, Event::VerificationFailed(C0), Event::Restored(C0)] {
         orch.dispatch_with(ev, |e| {
             effects.push(e);
-            Ok(())
+            Ok(None)
         });
     }
     assert_eq!(orch.state(), State::Locked);
@@ -1443,7 +1443,7 @@ fn locked_is_terminal() {
     ] {
         orch.dispatch_with(ev, |e| {
             effects.push(e);
-            Ok(())
+            Ok(None)
         });
     }
     assert_eq!(
@@ -1497,7 +1497,7 @@ fn speculative_read_effects_are_emitted_together() {
 
     orch.dispatch_with(BOOT, |e| {
         effects.push(e);
-        Ok(())
+        Ok(None)
     });
     assert_eq!(
         effects,
@@ -1507,7 +1507,7 @@ fn speculative_read_effects_are_emitted_together() {
     effects.clear();
     orch.dispatch_with(Event::VerificationPassed(C0), |e| {
         effects.push(e);
-        Ok(())
+        Ok(None)
     });
     // All three effects emitted in the same handler, before ComponentReady.
     assert_eq!(
@@ -1632,13 +1632,13 @@ impl FailOn {
 }
 
 impl Platform for FailOn {
-    fn execute(&mut self, effect: Effect) -> Result<(), EffectError> {
+    fn execute(&mut self, effect: Effect) -> Result<Option<Event>, EffectError> {
         self.recorded.push(effect);
         if effect == self.trigger {
             self.failed = true;
             Err(EffectError)
         } else {
-            Ok(())
+            Ok(None)
         }
     }
 }
@@ -1965,4 +1965,82 @@ fn property_verify_before_release_holds_under_random_sequences() {
             }
         }
     }
+}
+
+/// A returned event settles in the same run: a platform that answers every
+/// `VerifyFirmware` in place walks a provisioned chain to `Ready` from one
+/// dispatch.
+#[test]
+fn returned_verdicts_settle_in_one_dispatch() {
+    struct InstantVerify {
+        recorded: Vec<Effect>,
+    }
+    impl Platform for InstantVerify {
+        fn execute(&mut self, effect: Effect) -> Result<Option<Event>, EffectError> {
+            self.recorded.push(effect);
+            Ok(match effect {
+                Effect::VerifyFirmware(id) => Some(Event::VerificationPassed(id)),
+                _ => None,
+            })
+        }
+    }
+
+    let mut orch = Orchestrator::<CAPACITY, ECAP>::new(
+        passive_required(&[C0, C1]).try_into().expect("valid chain"),
+        MAX_RETRY,
+    );
+    let mut platform = InstantVerify {
+        recorded: Vec::new(),
+    };
+
+    orch.dispatch(&mut platform, BOOT);
+
+    assert_eq!(orch.state(), State::Ready);
+    assert_eq!(
+        platform.recorded,
+        std::vec![
+            Effect::ReadFirmware(C0),
+            Effect::VerifyFirmware(C0),
+            Effect::ReleaseReset(C0),
+            Effect::ReadFirmware(C1),
+            Effect::VerifyFirmware(C1),
+            Effect::ReleaseReset(C1),
+        ],
+    );
+}
+
+/// A batch whose executors return more events than the pending queue holds
+/// fails closed: the run latches `Locked` instead of losing feedback.
+#[test]
+fn returned_event_overflow_latches_locked() {
+    struct Chatty;
+    impl Platform for Chatty {
+        fn execute(&mut self, effect: Effect) -> Result<Option<Event>, EffectError> {
+            Ok(match effect {
+                // The re-walk after Restored quiesces every live component
+                // and re-verifies the first — on a full 8-chain that is more
+                // returned events than PENDING_CAP in one batch.
+                Effect::AssertReset(_) | Effect::ReadFirmware(_) => {
+                    Some(Event::AttestationChallenge)
+                }
+                Effect::VerifyFirmware(id) => Some(Event::VerificationPassed(id)),
+                _ => None,
+            })
+        }
+    }
+
+    let ids: Vec<ComponentId> = (0..8).map(ComponentId::new).collect();
+    let mut orch = Orchestrator::<CAPACITY, ECAP>::new(
+        passive_required(&ids).try_into().expect("valid chain"),
+        MAX_RETRY,
+    );
+    let mut platform = Chatty;
+
+    orch.dispatch(&mut platform, BOOT);
+    assert_eq!(orch.state(), State::Ready);
+
+    orch.dispatch(&mut platform, Event::CorruptionDetected(C0));
+    orch.dispatch(&mut platform, Event::Restored(C0));
+
+    assert_eq!(orch.state(), State::Locked);
 }

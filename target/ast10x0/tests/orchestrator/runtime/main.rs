@@ -91,11 +91,11 @@ impl FakePlatform {
 }
 
 impl Platform for FakePlatform {
-    fn execute(&mut self, effect: Effect) -> core::result::Result<(), EffectError> {
+    fn execute(&mut self, effect: Effect) -> core::result::Result<Option<Event>, EffectError> {
         if let Effect::ReleaseReset(id) = effect {
             let _ = self.released.push(id);
         }
-        Ok(())
+        Ok(None)
     }
 }
 

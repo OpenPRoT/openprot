@@ -27,21 +27,20 @@ pub use model::*;
 // deployment. The board owns `N` (chain length), `E` (effect-buffer size) and
 // max_retry.
 
-/// Upper bound on how many events one settle can queue: the triggering outside
-/// event, at most one `Emit` follow-up (`RecoveryFailed`, emitted at most once
-/// before latching), and at most one injected `EffectFailed` (de-duplicated in
-/// `dispatch_with` — it is idempotent and terminal, so a second is never
-/// queued). Three total; `PENDING_CAP` keeps headroom above that so the pushes
-/// in `dispatch_with` can never overflow.
+/// Upper bound on events queued at once inside `dispatch_with`. The queue
+/// pops as it settles, so this bounds *in-flight* events, not a run's total
+/// length: one batch can queue at most one `Emit` follow-up plus one returned
+/// event per external effect. Executors that return an event for many effects
+/// of one batch can overflow this; overflow is fail-closed (see
+/// `dispatch_with`), never silent loss.
 const PENDING_CAP: usize = 8;
 
-/// Compile-time floor tying the queue capacity to that worst case, mirroring
-/// `Rot::EFFECT_CAP_OK` for the effect buffer. Evaluated at build time (an
-/// anonymous `const`), so an under-sized `PENDING_CAP` fails to compile rather
-/// than risking a runtime overflow.
+/// Compile-time floor: room for an `Emit` follow-up, a returned event, and
+/// the injected `EffectFailed`. Evaluated at build time (an anonymous
+/// `const`), so an under-sized `PENDING_CAP` fails to compile.
 const _: () = assert!(
     PENDING_CAP >= 3,
-    "PENDING_CAP must hold one outside event + one Emit follow-up + one EffectFailed",
+    "PENDING_CAP must hold an Emit follow-up + a returned event + EffectFailed",
 );
 
 /// Result of dispatching one event to a state (or its superstate).
@@ -892,6 +891,16 @@ pub struct EffectError;
 /// [`EffectError`] if it could not be performed. Never called with
 /// [`Effect::Emit`] — the orchestrator consumes those internally.
 ///
+/// `Ok(Some(event))` feeds back what the effect produced synchronously (e.g.
+/// a verification verdict); the driver queues it and settles it in the same
+/// dispatch run. At most one event per effect. Never block in `execute`:
+/// results that arrive later (boot progress, timer expiry) are delivered as
+/// their own outside events via `dispatch`.
+///
+/// Failure stays on the error channel, never in a returned event: `Err` is
+/// checked between effects, so a failed actuation aborts the rest of the
+/// batch — a feedback event cannot do that.
+///
 /// Contract the state machine relies on:
 /// - **Honest, complete feedback.** The core's correctness rests entirely on
 ///   the event stream the shell feeds back; dropping, reordering, or
@@ -908,7 +917,7 @@ pub struct EffectError;
 ///   will *believe* it is `Locked`. The shell must treat that failure as
 ///   terminal (halt/reset), not a recoverable error.
 pub trait Platform {
-    fn execute(&mut self, effect: Effect) -> Result<(), EffectError>;
+    fn execute(&mut self, effect: Effect) -> Result<Option<Event>, EffectError>;
 }
 
 /// A handle for a caller's own event loop. Owns the machine's storage
@@ -990,61 +999,65 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
         }
     }
 
-    /// Handle one event all the way through — including any [`Effect::Emit`]
-    /// follow-ups — calling `on_effect` for each external effect in order.
+    /// Handle one event all the way through — every [`Effect::Emit`]
+    /// follow-up and every event the executors return — calling `on_effect`
+    /// for each external effect in order. One call runs to quiescence.
     ///
     /// If `on_effect` reports an [`EffectError`], the driver injects an
     /// [`Event::EffectFailed`] into the same run, so a failed actuation is
     /// handled fail-closed (the machine latches to [`State::Locked`]) rather
-    /// than silently ignored.
+    /// than silently ignored. A pending-queue overflow is handled the same
+    /// way: losing a returned event would break the honest-feedback contract,
+    /// so the run latches instead.
     pub fn dispatch_with(
         &mut self,
         event: Event,
-        mut on_effect: impl FnMut(Effect) -> Result<(), EffectError>,
+        mut on_effect: impl FnMut(Effect) -> Result<Option<Event>, EffectError>,
     ) {
-        let mut pending: heapless::Vec<Event, PENDING_CAP> = heapless::Vec::new();
+        let mut pending: heapless::Deque<Event, PENDING_CAP> = heapless::Deque::new();
         // Dead Err arm: `pending` is empty and `PENDING_CAP >= 3` (asserted at
         // build time), so the first push always fits.
-        let _ = pending.push(event);
+        let _ = pending.push_back(event);
+        // `EffectFailed` is injected at most once: it is idempotent and
+        // terminal (drives to `Locked`, which discards everything after).
+        let mut failed = false;
 
-        let mut i = 0;
-        while i < pending.len() {
-            let ev = pending[i];
-            i += 1;
-
+        while let Some(ev) = pending.pop_front() {
             let mut buf = Sink::<E>::new();
             self.step(&ev, &mut buf);
 
             for &effect in buf.effects() {
-                match effect {
-                    Effect::Emit(internal) => {
-                        // Dead Err arm: the state machine emits at most one `Emit`
-                        // (`RecoveryFailed`) per settle, well within PENDING_CAP.
-                        let _ = pending.push(internal);
-                    }
-                    external => {
-                        if on_effect(external).is_err() {
-                            // Fail-closed AND fail-fast: abandon the rest of this
-                            // batch so no effect ordered after the failed one hits
-                            // hardware. `step` has already advanced the state as if
-                            // the whole batch applied, so actuating `k+1..` would
-                            // carry out effects for a transition we are about to
-                            // override by latching to `Locked`.
-                            //
-                            // Inject `EffectFailed` once: it is idempotent and
-                            // terminal (drives to `Locked`, which discards
-                            // everything after), so a second injection would be a
-                            // no-op. De-duping against this append-only queue —
-                            // which still holds the first `EffectFailed` as its own
-                            // marker — caps the queue at the worst case
-                            // `PENDING_CAP` is sized for. Dead Err arm: that bound
-                            // is below PENDING_CAP.
-                            if !pending.contains(&Event::EffectFailed) {
-                                let _ = pending.push(Event::EffectFailed);
+                let follow_up = match effect {
+                    // Internal: handle next, never forwarded to the platform.
+                    Effect::Emit(internal) => Some(internal),
+                    external => match on_effect(external) {
+                        Ok(follow_up) => follow_up,
+                        Err(_) => {
+                            // Fail-closed AND fail-fast: abandon the rest of
+                            // this batch so no effect ordered after the failed
+                            // one hits hardware. `step` has already advanced
+                            // the state as if the whole batch applied, so
+                            // actuating `k+1..` would carry out effects for a
+                            // transition the latch to `Locked` overrides.
+                            if !failed {
+                                failed = true;
+                                let _ = pending.push_back(Event::EffectFailed);
                             }
                             break;
                         }
-                    }
+                    },
+                };
+                if let Some(next) = follow_up
+                    && pending.push_back(next).is_err()
+                    && !failed
+                {
+                    // Queue full: the event would be lost. Fail closed — drop
+                    // the newest queued event to make room for the latch,
+                    // which discards everything after it anyway.
+                    failed = true;
+                    pending.pop_back();
+                    let _ = pending.push_back(Event::EffectFailed);
+                    break;
                 }
             }
         }
