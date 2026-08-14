@@ -8,12 +8,15 @@ rust_library(
     srcs = [
         "src/board.rs",
         "src/lib.rs",
+        "src/shell.rs",
+        "src/tests.rs",
     ],
     crate_name = "openprot_orchestrator_shell",
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
         "//services/orchestrator/sm:orchestrator_sm",
+        "@rust_crates//:heapless",
     ],
 )
 

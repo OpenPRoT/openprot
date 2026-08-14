@@ -4,14 +4,24 @@
 # orchestrator shell (`openprot_orchestrator_shell`)
 
 The effect-executing layer around the orchestrator state machine. `Shell`
-implements the SM's `Platform` seam with one method per `Effect`, each doc
-comment stating its obligation from the platform-boundary contract
-(`docs/src/design/orchestrator/orchestrator-model.md` §6).
+implements the SM's `Platform` seam: one method per `Effect`, each
+documenting its obligation from the platform-boundary contract
+([orchestrator-model.md §6](../../../docs/src/design/orchestrator/orchestrator-model.md)). Unimplemented executors return
+`ShellError::NotImplemented`; the SM fail-closes on them.
 
-Executors are filled in one at a time; the rest return
-`ShellError::NotImplemented`, and the SM fail-closes on any effect the shell
-cannot yet perform. The shell is board-blind: everything device-specific
-arrives through the seams in `board.rs` — `ImageSource` (interposed flash, a
-PLDM/MCTP transfer, a test double) and `Verifier` (what counts as authentic).
-Verdicts and other executor-produced events flow back to the SM through
-`Shell::take_event`.
+Everything device-specific arrives through the seams in `board.rs`
+(`ImageSource`, `Verifier`, bundled in `Board`); executor-produced events
+return to the SM via `Shell::take_event`. The driver loop dispatches an
+outside event, then keeps dispatching what the executors produced until
+`take_event` returns `None`:
+
+```rust
+orch.dispatch(&mut shell, event);
+while let Some(ev) = shell.take_event() {
+    orch.dispatch(&mut shell, ev);
+}
+```
+
+Implemented executors: `read_firmware`, `verify_firmware`. Everything else
+returns `NotImplemented` until its pillar lands (boot walk, recovery,
+update path, attestation, reporting).
