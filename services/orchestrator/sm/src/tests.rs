@@ -2044,3 +2044,78 @@ fn returned_event_overflow_latches_locked() {
 
     assert_eq!(orch.state(), State::Locked);
 }
+
+/// A failed effect with the pending queue already full still latches: the
+/// latch evicts the newest queued event rather than being dropped itself.
+/// Regression test — a back-of-queue push would be lost here, and the run
+/// would settle to `Ready` as if nothing failed.
+#[test]
+fn failed_effect_with_full_queue_still_latches() {
+    struct ChattyThenFail {
+        rewalking: bool,
+    }
+    impl Platform for ChattyThenFail {
+        fn execute(&mut self, effect: Effect) -> Result<Option<Event>, EffectError> {
+            match effect {
+                // The re-walk after Restored asserts reset on all eight live
+                // components first — exactly PENDING_CAP returned events, so
+                // the queue is full (but never overflowed) when the read
+                // that follows fails.
+                Effect::AssertReset(_) if self.rewalking => Ok(Some(Event::AttestationChallenge)),
+                Effect::ReadFirmware(_) if self.rewalking => Err(EffectError),
+                Effect::VerifyFirmware(id) => Ok(Some(Event::VerificationPassed(id))),
+                _ => Ok(None),
+            }
+        }
+    }
+
+    let ids: Vec<ComponentId> = (0..8).map(ComponentId::new).collect();
+    let mut orch = Orchestrator::<CAPACITY, ECAP>::new(
+        passive_required(&ids).try_into().expect("valid chain"),
+        MAX_RETRY,
+    );
+    let mut platform = ChattyThenFail { rewalking: false };
+
+    orch.dispatch(&mut platform, BOOT);
+    assert_eq!(orch.state(), State::Ready);
+
+    orch.dispatch(&mut platform, Event::CorruptionDetected(C0));
+    platform.rewalking = true;
+    orch.dispatch(&mut platform, Event::Restored(C0));
+
+    assert_eq!(orch.state(), State::Locked);
+}
+
+/// An event returned by executing `LatchLockdown` itself is queued, settles
+/// in `Locked`, and is discarded — the latch stays terminal and nothing is
+/// actuated after the lockdown.
+#[test]
+fn event_returned_during_lockdown_is_discarded() {
+    struct FailRelease {
+        recorded: Vec<Effect>,
+    }
+    impl Platform for FailRelease {
+        fn execute(&mut self, effect: Effect) -> Result<Option<Event>, EffectError> {
+            self.recorded.push(effect);
+            match effect {
+                Effect::ReleaseReset(_) => Err(EffectError),
+                Effect::LatchLockdown => Ok(Some(Event::AttestationChallenge)),
+                _ => Ok(None),
+            }
+        }
+    }
+
+    let mut orch = Orchestrator::<CAPACITY, ECAP>::new(
+        passive_required(&[C0]).try_into().expect("valid chain"),
+        MAX_RETRY,
+    );
+    let mut platform = FailRelease {
+        recorded: Vec::new(),
+    };
+
+    orch.dispatch(&mut platform, BOOT);
+    orch.dispatch(&mut platform, Event::VerificationPassed(C0));
+
+    assert_eq!(orch.state(), State::Locked);
+    assert_eq!(platform.recorded.last(), Some(&Effect::LatchLockdown));
+}

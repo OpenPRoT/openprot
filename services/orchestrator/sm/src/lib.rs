@@ -893,9 +893,10 @@ pub struct EffectError;
 ///
 /// `Ok(Some(event))` feeds back what the effect produced synchronously (e.g.
 /// a verification verdict); the driver queues it and settles it in the same
-/// dispatch run. At most one event per effect. Never block in `execute`:
-/// results that arrive later (boot progress, timer expiry) are delivered as
-/// their own outside events via `dispatch`.
+/// dispatch run. At most one event per effect. Synchronous results belong
+/// here, not in a shell-side queue — one feedback path keeps ordering honest.
+/// Never block in `execute`: results that arrive later (boot progress, timer
+/// expiry) are delivered as their own outside events via `dispatch`.
 ///
 /// Failure stays on the error channel, never in a returned event: `Err` is
 /// checked between effects, so a failed actuation aborts the rest of the
@@ -905,6 +906,10 @@ pub struct EffectError;
 /// - **Honest, complete feedback.** The core's correctness rests entirely on
 ///   the event stream the shell feeds back; dropping, reordering, or
 ///   synthesizing events silently breaks the state machine's invariants.
+/// - **Returned events quiesce.** Every returned event reports a result the
+///   reducer consumes (its retry budgets bound re-verification cycles). An
+///   executor that manufactures an event for every effect keeps one dispatch
+///   run alive indefinitely.
 /// - **`AssertReset` holds, it does not pulse.** A reset must keep the component
 ///   quiesced and non-executing until its matching `ReleaseReset`. The core's
 ///   at-rest verification guarantee depends on this: it re-asserts reset on
@@ -1004,22 +1009,37 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
     /// for each external effect in order. One call runs to quiescence.
     ///
     /// If `on_effect` reports an [`EffectError`], the driver injects an
-    /// [`Event::EffectFailed`] into the same run, so a failed actuation is
-    /// handled fail-closed (the machine latches to [`State::Locked`]) rather
-    /// than silently ignored. A pending-queue overflow is handled the same
-    /// way: losing a returned event would break the honest-feedback contract,
-    /// so the run latches instead.
+    /// [`Event::EffectFailed`] at the *front* of the queue, so a failed
+    /// actuation is handled fail-closed: the latch settles next, and feedback
+    /// still queued behind it drains into [`State::Locked`] (discarded)
+    /// instead of actuating hardware after a failure. A pending-queue
+    /// overflow is handled the same way: losing a returned event would break
+    /// the honest-feedback contract, so the run latches instead.
     pub fn dispatch_with(
         &mut self,
         event: Event,
         mut on_effect: impl FnMut(Effect) -> Result<Option<Event>, EffectError>,
     ) {
+        // Fail-closed latch: `EffectFailed` goes to the *front*, so it settles
+        // next and everything still queued drains into `Locked` (discarded)
+        // instead of actuating hardware after a failure. Prefer evicting the
+        // newest queued event over losing the latch itself.
+        fn latch(pending: &mut heapless::Deque<Event, PENDING_CAP>) {
+            if pending.is_full() {
+                pending.pop_back();
+            }
+            // Dead Err arm: the eviction above guarantees room.
+            let _ = pending.push_front(Event::EffectFailed);
+        }
+
         let mut pending: heapless::Deque<Event, PENDING_CAP> = heapless::Deque::new();
         // Dead Err arm: `pending` is empty and `PENDING_CAP >= 3` (asserted at
         // build time), so the first push always fits.
         let _ = pending.push_back(event);
         // `EffectFailed` is injected at most once: it is idempotent and
-        // terminal (drives to `Locked`, which discards everything after).
+        // terminal (drives to `Locked`, which discards everything after). The
+        // only external effect executed after it settles is `Locked`'s own
+        // entry, whose failure must not inject again.
         let mut failed = false;
 
         while let Some(ev) = pending.pop_front() {
@@ -1034,14 +1054,13 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
                         Ok(follow_up) => follow_up,
                         Err(_) => {
                             // Fail-closed AND fail-fast: abandon the rest of
-                            // this batch so no effect ordered after the failed
-                            // one hits hardware. `step` has already advanced
-                            // the state as if the whole batch applied, so
-                            // actuating `k+1..` would carry out effects for a
-                            // transition the latch to `Locked` overrides.
+                            // this batch. `step` has already advanced the
+                            // state as if the whole batch applied, and the
+                            // latch overrides that transition, so nothing
+                            // ordered after the failure may hit hardware.
                             if !failed {
                                 failed = true;
-                                let _ = pending.push_back(Event::EffectFailed);
+                                latch(&mut pending);
                             }
                             break;
                         }
@@ -1051,12 +1070,10 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
                     && pending.push_back(next).is_err()
                     && !failed
                 {
-                    // Queue full: the event would be lost. Fail closed — drop
-                    // the newest queued event to make room for the latch,
-                    // which discards everything after it anyway.
+                    // Queue full: `next` would be lost, breaking the
+                    // honest-feedback contract. Fail closed instead.
                     failed = true;
-                    pending.pop_back();
-                    let _ = pending.push_back(Event::EffectFailed);
+                    latch(&mut pending);
                     break;
                 }
             }
