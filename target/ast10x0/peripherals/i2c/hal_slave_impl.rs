@@ -19,6 +19,7 @@ use embedded_hal::i2c::SevenBitAddress;
 use openprot_hal_blocking::i2c_hardware::slave::{I2cIsrEvent, I2cSlaveBuffer, I2cSlaveCore};
 use openprot_hal_blocking::i2c_hardware::I2cBusRecovery;
 
+use super::constants;
 use super::controller::Ast1060I2c;
 use super::error::I2cError;
 use super::slave::{SlaveConfig, SlaveEvent};
@@ -63,12 +64,12 @@ impl<Y: FnMut(u32)> I2cSlaveCore<SevenBitAddress> for Ast1060I2c<'_, Y> {
     }
 
     fn is_slave_mode_enabled(&self) -> bool {
-        self.regs().i2cc00().read().enbl_slave_fn().bit()
+        self.mmio.i2c.read_bit(constants::I2CC00, 1)
     }
 
     fn slave_address(&self) -> Option<SevenBitAddress> {
         if self.is_slave_mode_enabled() {
-            Some(self.regs().i2cs40().read().slave_dev_addr1().bits())
+            Some((self.mmio.i2c.read_reg(constants::I2CS40) & 0x7f) as u8)
         } else {
             None
         }

@@ -67,6 +67,7 @@ mod master;
 mod recovery;
 mod registers;
 mod slave;
+mod subsystem;
 mod timing;
 mod transfer;
 mod types;
@@ -78,6 +79,7 @@ pub use error::I2cError;
 pub use global::init_i2c_global;
 pub use registers::Ast1060I2cRegisters;
 pub use slave::{SlaveBuffer, SlaveConfig, SlaveEvent};
+pub use subsystem::bringup;
 pub use types::*;
 
 // Re-export HAL implementations for external use

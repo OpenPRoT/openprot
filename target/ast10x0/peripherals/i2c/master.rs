@@ -28,6 +28,7 @@
 //! - **i2cm14** (Interrupt Status Register): Read status, write-to-clear
 //!   - Reference: `ast1060_i2c.rs:849-870` (`aspeed_i2c_master_irq`)
 
+use super::constants::{I2cCmd, I2cMasterCommand, I2cMasterStatus, I2cStat};
 use super::{constants, controller::Ast1060I2c, error::I2cError, types::I2cXferMode};
 
 impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
@@ -106,40 +107,40 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
         self.completion = false;
 
         // Clear any previous status
-        self.clear_interrupts(0xffff_ffff);
+        self.clear_interrupts(I2cMasterStatus::all());
 
         for (i, &byte) in bytes.iter().enumerate() {
             let is_first = i == 0;
             let is_last = i == msg_len - 1;
 
             // Write data byte to TX byte buffer (i2cc08)
-            self.regs()
-                .i2cc08()
-                .modify(|_, w| unsafe { w.tx_byte_buffer().bits(byte) });
+            self.mmio
+                .i2c
+                .modify_field(constants::I2CC08, 0, 0xff, u32::from(byte));
 
             // Build command
-            let mut cmd = constants::AST_I2CM_PKT_EN | constants::AST_I2CM_TX_CMD;
+            let mut cmd = I2cMasterCommand::packet().with(I2cCmd::Tx);
 
             // Only send START and address on first byte
             if is_first {
-                cmd |= constants::ast_i2cm_pkt_addr(addr) | constants::AST_I2CM_START_CMD;
+                cmd = cmd.address(addr).with(I2cCmd::Start);
             }
 
             // Send STOP on last byte (omitted when caller wants repeated-START)
             if is_last && stop {
-                cmd |= constants::AST_I2CM_STOP_CMD;
+                cmd = cmd.with(I2cCmd::Stop);
             }
 
             // Issue command to i2cm18
-            self.regs().i2cm18().write(|w| unsafe { w.bits(cmd) });
+            cmd.issue(&self.mmio.i2c);
 
             // Wait for completion
             self.completion = false;
             self.wait_completion(constants::DEFAULT_TIMEOUT_US)?;
 
             // Check for errors (read from i2cm14 - interrupt status register)
-            let status = self.regs().i2cm14().read().bits();
-            if status & constants::AST_I2CM_TX_NAK != 0 {
+            let status = I2cMasterStatus::read(&self.mmio.i2c);
+            if status.has(I2cStat::TxNak) {
                 return Err(I2cError::NoAcknowledge);
             }
 
@@ -166,38 +167,38 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
         self.completion = false;
 
         // Clear any previous status
-        self.clear_interrupts(0xffff_ffff);
+        self.clear_interrupts(I2cMasterStatus::all());
 
         for (i, byte) in buffer.iter_mut().enumerate() {
             let is_first = i == 0;
             let is_last = i == msg_len - 1;
 
             // Build command
-            let mut cmd = constants::AST_I2CM_PKT_EN | constants::AST_I2CM_RX_CMD;
+            let mut cmd = I2cMasterCommand::packet().with(I2cCmd::Rx);
 
             // Only send START and address on first byte
             if is_first {
-                cmd |= constants::ast_i2cm_pkt_addr(addr) | constants::AST_I2CM_START_CMD;
+                cmd = cmd.address(addr).with(I2cCmd::Start);
             }
 
             // Send NACK and STOP on last byte
             if is_last {
-                cmd |= constants::AST_I2CM_RX_CMD_LAST | constants::AST_I2CM_STOP_CMD;
+                cmd = cmd.with(I2cCmd::RxLast).with(I2cCmd::Stop);
             }
 
             // Issue command to i2cm18
-            self.regs().i2cm18().write(|w| unsafe { w.bits(cmd) });
+            cmd.issue(&self.mmio.i2c);
 
             // Wait for completion
             self.completion = false;
             self.wait_completion(constants::DEFAULT_TIMEOUT_US)?;
 
             // Read data from RX byte buffer (i2cc08)
-            *byte = self.regs().i2cc08().read().rx_byte_buffer().bits();
+            *byte = ((self.mmio.i2c.read_reg(constants::I2CC08) >> 8) & 0xff) as u8;
 
             // Check status (read from i2cm14 - interrupt status register)
-            let status = self.regs().i2cm14().read().bits();
-            if status & constants::AST_I2CM_TX_NAK != 0 {
+            let status = I2cMasterStatus::read(&self.mmio.i2c);
+            if status.has(I2cStat::TxNak) {
                 return Err(I2cError::NoAcknowledge);
             }
 
@@ -238,41 +239,41 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
 
             // Set TX byte count in i2cc0c (len - 1)
             #[allow(clippy::cast_possible_truncation)]
-            self.regs()
-                .i2cc0c()
-                .modify(|_, w| unsafe { w.tx_data_byte_count().bits((chunk_len - 1) as u8) });
+            self.mmio
+                .i2c
+                .modify_field(constants::I2CC0C, 8, 0x1f, (chunk_len - 1) as u32);
 
             // Clear interrupts before command
-            self.clear_interrupts(0xffff_ffff);
+            self.clear_interrupts(I2cMasterStatus::all());
             self.completion = false;
 
             // Build command based on chunk position
             // First chunk: PKT_EN + addr + START + TX_CMD + TX_BUFF_EN
             // Subsequent chunks: PKT_EN + TX_CMD + TX_BUFF_EN (NO START, NO addr)
-            let mut cmd = constants::AST_I2CM_PKT_EN
-                | constants::AST_I2CM_TX_CMD
-                | constants::AST_I2CM_TX_BUFF_EN;
+            let mut cmd = I2cMasterCommand::packet()
+                .with(I2cCmd::Tx)
+                .with(I2cCmd::TxBuff);
 
             // Only send START and address on first chunk
             if is_first {
-                cmd |= constants::ast_i2cm_pkt_addr(addr) | constants::AST_I2CM_START_CMD;
+                cmd = cmd.address(addr).with(I2cCmd::Start);
             }
 
             // Add STOP on last chunk (omitted when caller wants repeated-START)
             if is_last && stop {
-                cmd |= constants::AST_I2CM_STOP_CMD;
+                cmd = cmd.with(I2cCmd::Stop);
             }
 
             // Issue command to i2cm18
-            self.regs().i2cm18().write(|w| unsafe { w.bits(cmd) });
+            cmd.issue(&self.mmio.i2c);
 
             // Wait for completion
             self.wait_completion(constants::DEFAULT_TIMEOUT_US)?;
 
             // Check for errors
-            let status = self.regs().i2cm14().read().bits();
-            if status & constants::AST_I2CM_PKT_ERROR != 0 {
-                if status & constants::AST_I2CM_TX_NAK != 0 {
+            let status = I2cMasterStatus::read(&self.mmio.i2c);
+            if status.has(I2cStat::PktError) {
+                if status.has(I2cStat::TxNak) {
                     return Err(I2cError::NoAcknowledge);
                 }
                 return Err(I2cError::Abnormal);
@@ -313,41 +314,41 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
 
             // Set RX buffer size in i2cc0c (len - 1)
             #[allow(clippy::cast_possible_truncation)]
-            self.regs()
-                .i2cc0c()
-                .modify(|_, w| unsafe { w.rx_pool_buffer_size().bits((chunk_len - 1) as u8) });
+            self.mmio
+                .i2c
+                .modify_field(constants::I2CC0C, 16, 0x1f, (chunk_len - 1) as u32);
 
             // Clear interrupts before command
-            self.clear_interrupts(0xffff_ffff);
+            self.clear_interrupts(I2cMasterStatus::all());
             self.completion = false;
 
             // Build command based on chunk position
             // First chunk: PKT_EN + addr + START + RX_CMD + RX_BUFF_EN
             // Subsequent chunks: PKT_EN + RX_CMD + RX_BUFF_EN (NO START, NO addr)
-            let mut cmd = constants::AST_I2CM_PKT_EN
-                | constants::AST_I2CM_RX_CMD
-                | constants::AST_I2CM_RX_BUFF_EN;
+            let mut cmd = I2cMasterCommand::packet()
+                .with(I2cCmd::Rx)
+                .with(I2cCmd::RxBuff);
 
             // Only send START and address on first chunk
             if is_first {
-                cmd |= constants::ast_i2cm_pkt_addr(addr) | constants::AST_I2CM_START_CMD;
+                cmd = cmd.address(addr).with(I2cCmd::Start);
             }
 
             // Add NACK and STOP on last chunk
             if is_last {
-                cmd |= constants::AST_I2CM_RX_CMD_LAST | constants::AST_I2CM_STOP_CMD;
+                cmd = cmd.with(I2cCmd::RxLast).with(I2cCmd::Stop);
             }
 
             // Issue command to i2cm18
-            self.regs().i2cm18().write(|w| unsafe { w.bits(cmd) });
+            cmd.issue(&self.mmio.i2c);
 
             // Wait for completion
             self.wait_completion(constants::DEFAULT_TIMEOUT_US)?;
 
             // Check for errors
-            let status = self.regs().i2cm14().read().bits();
-            if status & constants::AST_I2CM_PKT_ERROR != 0 {
-                if status & constants::AST_I2CM_TX_NAK != 0 {
+            let status = I2cMasterStatus::read(&self.mmio.i2c);
+            if status.has(I2cStat::PktError) {
+                if status.has(I2cStat::TxNak) {
                     return Err(I2cError::NoAcknowledge);
                 }
                 return Err(I2cError::Abnormal);
@@ -371,37 +372,35 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
 
     /// Handle interrupt (process completion status)
     pub fn handle_interrupt(&mut self) -> Result<(), I2cError> {
-        let status = self.regs().i2cm14().read().bits();
+        let status = I2cMasterStatus::read(&self.mmio.i2c);
 
         // Check for packet mode completion
-        if status & constants::AST_I2CM_PKT_DONE != 0 {
+        if status.has(I2cStat::PktDone) {
             // Workaround: master/slave packet mode TX_ACK stuck issue.
             // When master gets TX_ACK mid-transaction (no STOP yet) while slave
             // packet mode is active, the slave state machine latches a spurious
             // RX_DONE and will NACK the next master byte. Pulse i2cs28 to clear it.
             // Ref: Zephyr i2c_aspeed.c aspeed_i2c_master_irq() ~line 1284
-            if status & (constants::AST_I2CM_TX_ACK | constants::AST_I2CM_NORMAL_STOP)
-                == constants::AST_I2CM_TX_ACK
-            {
-                if self.regs().i2cs28().read().enbl_slave_pkt_op_mode().bit() {
-                    let slave_cmd = self.regs().i2cs28().read().bits();
-                    self.regs().i2cs28().write(|w| unsafe { w.bits(0) });
-                    self.regs().i2cs28().write(|w| unsafe { w.bits(slave_cmd) });
+            if status.has(I2cStat::TxAck) && !status.has(I2cStat::NormalStop) {
+                if self.mmio.i2c.read_bit(constants::I2CS28, 16) {
+                    let slave_cmd = self.mmio.i2c.read_reg(constants::I2CS28);
+                    self.mmio.i2c.write_reg(constants::I2CS28, 0);
+                    self.mmio.i2c.write_reg(constants::I2CS28, slave_cmd);
                 }
             }
 
             self.completion = true;
-            self.clear_interrupts(constants::AST_I2CM_PKT_DONE);
+            self.clear_interrupts(I2cMasterStatus::flag(I2cStat::PktDone));
 
             // Check for errors
-            if status & constants::AST_I2CM_PKT_ERROR != 0 {
-                if status & constants::AST_I2CM_TX_NAK != 0 {
+            if status.has(I2cStat::PktError) {
+                if status.has(I2cStat::TxNak) {
                     return Err(I2cError::NoAcknowledge);
                 }
-                if status & constants::AST_I2CM_ARBIT_LOSS != 0 {
+                if status.has(I2cStat::ArbitLoss) {
                     return Err(I2cError::ArbitrationLoss);
                 }
-                if status & constants::AST_I2CM_ABNORMAL != 0 {
+                if status.has(I2cStat::Abnormal) {
                     return Err(I2cError::Abnormal);
                 }
                 return Err(I2cError::Bus);
@@ -411,29 +410,29 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
         }
 
         // Check for byte mode completion
-        if status & (constants::AST_I2CM_TX_ACK | constants::AST_I2CM_RX_DONE) != 0 {
+        if status.has(I2cStat::TxAck) || status.has(I2cStat::RxDone) {
             self.completion = true;
             self.clear_interrupts(status);
             return Ok(());
         }
 
         // Check for errors
-        if status & constants::AST_I2CM_TX_NAK != 0 {
+        if status.has(I2cStat::TxNak) {
             self.clear_interrupts(status);
             return Err(I2cError::NoAcknowledge);
         }
 
-        if status & constants::AST_I2CM_ABNORMAL != 0 {
+        if status.has(I2cStat::Abnormal) {
             self.clear_interrupts(status);
             return Err(I2cError::Abnormal);
         }
 
-        if status & constants::AST_I2CM_ARBIT_LOSS != 0 {
+        if status.has(I2cStat::ArbitLoss) {
             self.clear_interrupts(status);
             return Err(I2cError::ArbitrationLoss);
         }
 
-        if status & constants::AST_I2CM_SCL_LOW_TO != 0 {
+        if status.has(I2cStat::SclLowTo) {
             self.clear_interrupts(status);
             return Err(I2cError::Timeout);
         }
@@ -502,41 +501,39 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
 
             // Set DMA TX length in i2cm1c (len - 1)
             #[allow(clippy::cast_possible_truncation)]
-            self.regs().i2cm1c().write(|w| unsafe {
-                w.dmatx_buf_len_byte()
-                    .bits((chunk_len - 1) as u16)
-                    .dmatx_buf_len_wr_enbl_for_cur_write_cmd()
-                    .set_bit()
-            });
+            self.mmio.i2c.write_reg(
+                constants::I2CM1C,
+                (((chunk_len - 1) as u32) & 0xfff) | (1 << 15),
+            );
 
             // Set DMA TX buffer base address in i2cm30
-            self.regs()
-                .i2cm30()
-                .write(|w| unsafe { w.sdramdmabuffer_base_addr().bits(phy_addr) });
+            self.mmio
+                .i2c
+                .write_reg(constants::I2CM30, phy_addr & 0x7fff_ffff);
 
-            self.clear_interrupts(0xffff_ffff);
+            self.clear_interrupts(I2cMasterStatus::all());
             self.completion = false;
 
             // Build command
-            let mut cmd = constants::AST_I2CM_PKT_EN
-                | constants::AST_I2CM_TX_CMD
-                | constants::AST_I2CM_TX_DMA_EN;
+            let mut cmd = I2cMasterCommand::packet()
+                .with(I2cCmd::Tx)
+                .with(I2cCmd::TxDma);
 
             if is_first {
-                cmd |= constants::ast_i2cm_pkt_addr(addr) | constants::AST_I2CM_START_CMD;
+                cmd = cmd.address(addr).with(I2cCmd::Start);
             }
             // Add STOP on last chunk (omitted when caller wants repeated-START)
             if is_last && stop {
-                cmd |= constants::AST_I2CM_STOP_CMD;
+                cmd = cmd.with(I2cCmd::Stop);
             }
 
-            self.regs().i2cm18().write(|w| unsafe { w.bits(cmd) });
+            cmd.issue(&self.mmio.i2c);
 
             self.wait_completion(constants::DEFAULT_TIMEOUT_US)?;
 
-            let status = self.regs().i2cm14().read().bits();
-            if status & constants::AST_I2CM_PKT_ERROR != 0 {
-                if status & constants::AST_I2CM_TX_NAK != 0 {
+            let status = I2cMasterStatus::read(&self.mmio.i2c);
+            if status.has(I2cStat::PktError) {
+                if status.has(I2cStat::TxNak) {
                     return Err(I2cError::NoAcknowledge);
                 }
                 return Err(I2cError::Abnormal);
@@ -582,41 +579,40 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
             };
 
             // Set DMA RX length in i2cm1c (len - 1)
+            let cur = self.mmio.i2c.read_reg(constants::I2CM1C);
             #[allow(clippy::cast_possible_truncation)]
-            self.regs().i2cm1c().modify(|_, w| unsafe {
-                w.dmarx_buf_len_byte()
-                    .bits((chunk_len - 1) as u16)
-                    .dmarx_buf_len_wr_enbl_for_cur_write_cmd()
-                    .set_bit()
-            });
+            let v = (cur & !((0xfff << 16) | (1 << 31)))
+                | ((((chunk_len - 1) as u32) & 0xfff) << 16)
+                | (1 << 31);
+            self.mmio.i2c.write_reg(constants::I2CM1C, v);
 
             // Set DMA RX buffer base address in i2cm34
-            self.regs()
-                .i2cm34()
-                .modify(|_, w| unsafe { w.sdramdmabuffer_base_addr1().bits(phy_addr) });
+            self.mmio
+                .i2c
+                .modify_field(constants::I2CM34, 0, 0x7fff_ffff, phy_addr);
 
-            self.clear_interrupts(0xffff_ffff);
+            self.clear_interrupts(I2cMasterStatus::all());
             self.completion = false;
 
             // Build command
-            let mut cmd = constants::AST_I2CM_PKT_EN
-                | constants::AST_I2CM_RX_CMD
-                | constants::AST_I2CM_RX_DMA_EN;
+            let mut cmd = I2cMasterCommand::packet()
+                .with(I2cCmd::Rx)
+                .with(I2cCmd::RxDma);
 
             if is_first {
-                cmd |= constants::ast_i2cm_pkt_addr(addr) | constants::AST_I2CM_START_CMD;
+                cmd = cmd.address(addr).with(I2cCmd::Start);
             }
             if is_last {
-                cmd |= constants::AST_I2CM_RX_CMD_LAST | constants::AST_I2CM_STOP_CMD;
+                cmd = cmd.with(I2cCmd::RxLast).with(I2cCmd::Stop);
             }
 
-            self.regs().i2cm18().write(|w| unsafe { w.bits(cmd) });
+            cmd.issue(&self.mmio.i2c);
 
             self.wait_completion(constants::DEFAULT_TIMEOUT_US)?;
 
-            let status = self.regs().i2cm14().read().bits();
-            if status & constants::AST_I2CM_PKT_ERROR != 0 {
-                if status & constants::AST_I2CM_TX_NAK != 0 {
+            let status = I2cMasterStatus::read(&self.mmio.i2c);
+            if status.has(I2cStat::PktError) {
+                if status.has(I2cStat::TxNak) {
                     return Err(I2cError::NoAcknowledge);
                 }
                 return Err(I2cError::Abnormal);
