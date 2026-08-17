@@ -2837,7 +2837,7 @@
           "CARGO_BAZEL_DEBUG": null,
           "CARGO_BAZEL_GENERATOR_SHA256": null,
           "CARGO_BAZEL_GENERATOR_URL": null,
-          "CARGO_BAZEL_ISOLATED": null,
+          "CARGO_BAZEL_ISOLATED": "0",
           "CARGO_BAZEL_REPIN": null,
           "CARGO_BAZEL_REPIN_ONLY": null,
           "CARGO_BAZEL_TIMEOUT": null,
