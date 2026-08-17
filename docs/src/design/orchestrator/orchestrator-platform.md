@@ -27,10 +27,10 @@ Three board-agnostic layers:
   boot checkpoints and windows, commit policy. Validated at compile time, so
   a malformed table is a build error.
 
-## Where the responsibility ends
+## Responsibility Scope
 
 The orchestrator stops at the capability contracts.
-Controllers that touch signals and buses belong to the platform HAL and
+Controllers that access signals and buses belong to the platform HAL and
 drivers; crypto and transport are services it *uses* but does not own.
 Two rules follow:
 
@@ -116,16 +116,17 @@ flowchart TB
     class CL,SV legend
 ```
 
-The six green boxes outside the orchestrator box are platform services —
-each one its own task, reached the way a syscall is: the orchestrator
-issues an IPC call, the service performs the hardware interaction on its
-behalf, and the data comes back via IPC. Each service follows the crate
-layering established by `services/i2c` and `services/mctp`: `api` (wire
-protocol), `client` (marshalling, host-buildable), `client-ipc` (the
-kernel-channel transport), `server` (dispatch onto the hardware). Boxes
-name their crates where the service exists today; the rest follow the
-same pattern as they land. Five rules govern how the orchestrator relies
-on them:
+The six green boxes outside the orchestrator box are platform services — each
+one its own task, reached the way a syscall is: the orchestrator issues an IPC
+call, the service performs the hardware interaction on its behalf, and the data
+comes back via IPC. Each service follows the crate layering established by
+[`services/i2c`](https://github.com/OpenPRoT/openprot/tree/main/services/i2c)
+and
+[`services/mctp`](https://github.com/OpenPRoT/openprot/tree/main/services/mctp):
+`api` (wire protocol), `client` (marshalling, host-buildable), `client-ipc`
+(the kernel-channel transport), `server` (dispatch onto the hardware). Boxes
+name their crates where the service exists today; the rest follow the same
+pattern as they land. Five rules govern how the orchestrator relies on them:
 
 - **Facts, not verdicts.** Services report what they observed — the SPI
   monitor a blocked write, the transport a missed heartbeat — never what
