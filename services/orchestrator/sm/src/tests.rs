@@ -1682,7 +1682,7 @@ fn failed_isolation_actuation_latches_lockdown() {
     assert!(plat.recorded.contains(&Effect::LatchLockdown));
 }
 
-/// A failed recovery actuation is fail-closed too: if the shell cannot even
+/// A failed recovery actuation is fail-closed too: if the platform driver cannot even
 /// recover a required component, the platform latches rather
 /// than continuing with an unrecovered component.
 #[test]

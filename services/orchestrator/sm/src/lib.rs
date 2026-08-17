@@ -4,9 +4,9 @@
 //! `openprot_orchestrator_sm` — the eRoT boot-sequence state machine.
 //!
 //! This is the pure decision core: it describes side effects as [`Effect`]
-//! values rather than performing them; the surrounding OpenPRoT shell carries
-//! them out via a [`Platform`] impl. No concrete hardware appears here — the
-//! machine is generic over an opaque [`ComponentId`].
+//! values rather than performing them; the surrounding OpenPRoT platform
+//! driver carries them out via a [`Platform`] impl. No concrete hardware
+//! appears here — the machine is generic over an opaque [`ComponentId`].
 //!
 //! Three invariants define the boundary:
 //!   1. **Effects flow through [`Sink`]** — fresh per event, drained afterward.
@@ -151,7 +151,7 @@ struct ComponentStatus {
     retry: u8,
     /// Set while this component has been released from reset but has not yet
     /// reported its boot-progress signal ([`Event::ComponentReady`] for an
-    /// `Active` component, [`Event::Booted`] for a `Passive` one). The shell
+    /// `Active` component, [`Event::Booted`] for a `Passive` one). The platform driver
     /// arms a per-component watchdog on release; this bit is what a later
     /// [`Event::Timeout`] consults to tell a real boot failure from a stale or
     /// spurious timeout. Orthogonal to `lifecycle`: a gated component owes no
@@ -315,7 +315,7 @@ impl<const N: usize, const E: usize> Rot<N, E> {
     }
 
     /// Record that `id` has been released and now owes a boot-progress signal.
-    /// Paired with the `ReleaseReset` emitted at each release site: the shell
+    /// Paired with the `ReleaseReset` emitted at each release site: the platform driver
     /// arms its per-component boot watchdog there, and this arms ours. Also
     /// marks the component *live* (`released`), which a later re-entry to
     /// [`State::PreSupervision`] uses to quiesce it before re-verifying.
@@ -877,13 +877,13 @@ impl<const N: usize, const E: usize> Rot<N, E> {
     }
 }
 
-/// Signals that the shell could not carry out an [`Effect`]. The machine does
-/// not need the shell's error detail — **every** actuation failure is treated
+/// Signals that the platform driver could not carry out an [`Effect`]. The machine does
+/// not need the driver's error detail — **every** actuation failure is treated
 /// the same, fail-closed: the driver injects [`Event::EffectFailed`] and the
 /// machine latches to [`State::Locked`]. This blanket policy is deliberate and
 /// is what lets the failure signal stay a payload-less marker; a future design
 /// that needs per-effect recovery must add a *new*, descriptive event rather
-/// than widen this type. The shell logs the specifics on its side.
+/// than widen this type. The driver logs the specifics on its side.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct EffectError;
 
@@ -894,7 +894,7 @@ pub struct EffectError;
 /// `Ok(Some(event))` feeds back what the effect produced synchronously (e.g.
 /// a verification verdict); the driver queues it and settles it in the same
 /// dispatch run. At most one event per effect. Synchronous results belong
-/// here, not in a shell-side queue — one feedback path keeps ordering honest.
+/// here, not in a driver-side queue — one feedback path keeps ordering honest.
 /// Never block in `execute`: results that arrive later (boot progress, timer
 /// expiry) are delivered as their own outside events via `dispatch`.
 ///
@@ -904,7 +904,7 @@ pub struct EffectError;
 ///
 /// Contract the state machine relies on:
 /// - **Honest, complete feedback.** The core's correctness rests entirely on
-///   the event stream the shell feeds back; dropping, reordering, or
+///   the event stream the driver feeds back; dropping, reordering, or
 ///   synthesizing events silently breaks the state machine's invariants.
 /// - **Returned events quiesce.** Every returned event reports a result the
 ///   reducer consumes (its retry budgets bound re-verification cycles). An
@@ -919,7 +919,7 @@ pub struct EffectError;
 ///   component resume before verification and void that guarantee.
 /// - **A failed [`Effect::LatchLockdown`] is a hard fault.** Lockdown is the top
 ///   of the escalation ladder — the core has nothing stronger to emit and
-///   will *believe* it is `Locked`. The shell must treat that failure as
+///   will *believe* it is `Locked`. The driver must treat that failure as
 ///   terminal (halt/reset), not a recoverable error.
 pub trait Platform {
     fn execute(&mut self, effect: Effect) -> Result<Option<Event>, EffectError>;

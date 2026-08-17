@@ -67,7 +67,7 @@ pub enum FailurePolicy {
 
 /// Opaque recovery-region key supplied by the board at chain-build time.
 /// Components sharing a `RegionId` are restored together: when any region
-/// member enters [`State::Recovering`], the shell resolves and restores the
+/// member enters [`State::Recovering`], the platform driver resolves and restores the
 /// whole region. The core treats this as an equality key only and never
 /// inspects membership itself.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -182,7 +182,7 @@ pub enum PowerOnResult {
 /// Everything the outside world can tell the state machine.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Event {
-    /// Power-on, carrying the shell's self-verification and provisioning result.
+    /// Power-on, carrying the platform driver's self-verification and provisioning result.
     PowerGood(PowerOnResult),
     /// The eRoT's signature + SVN check on this component passed.
     VerificationPassed(ComponentId),
@@ -215,7 +215,7 @@ pub enum Event {
     Restored(ComponentId),
     /// A required component's recovery was exhausted.
     RecoveryFailed,
-    /// The shell's boot-progress watchdog fired: `id` did not report its
+    /// The platform driver's boot-progress watchdog fired: `id` did not report its
     /// boot-progress signal ([`Event::ComponentReady`] for an `Active`
     /// component, [`Event::Booted`] for a `Passive` one) within its configured
     /// boot timeout. Treated as a verification failure — a component still
@@ -236,7 +236,7 @@ pub enum Event {
     /// when it executes [`Effect::ActivateUpdate`] and cancels it on
     /// [`Effect::CommitSvnFloor`].
     CommitTimeout,
-    /// The shell could not carry out an emitted [`Effect`]; fail-closed, it
+    /// The platform driver could not carry out an emitted [`Effect`]; fail-closed, it
     /// latches to [`State::Locked`] from any state. Injected by the driver when
     /// a [`Platform::execute`](crate::Platform::execute) call fails; never
     /// produced by a handler.
