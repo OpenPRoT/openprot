@@ -7,6 +7,9 @@
 //! single managed device's reset without knowing which controller line it
 //! maps to.
 //!
+//! `SvnFloor` is the anti-rollback capability: one device's durable SVN
+//! floor, read at verification and advanced only after a confirmed boot.
+//!
 //! `BootStatus` is the shared vocabulary for boot-liveness evidence, and
 //! `EvidenceReader` resolves a board-defined signal id to it. The schema
 //! names no signal kinds: each board's device table declares its
@@ -29,7 +32,9 @@
 mod boot_control;
 mod boot_watch;
 mod evidence;
+mod svn_floor;
 
 pub use boot_control::BootControl;
 pub use boot_watch::{BootWatch, FailureCause, WalkVerdict};
 pub use evidence::{BootStatus, EvidenceReader};
+pub use svn_floor::{Svn, SvnFloor};
