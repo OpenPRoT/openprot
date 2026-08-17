@@ -4,14 +4,14 @@
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
 rust_library(
-    name = "orchestrator_shell",
+    name = "orchestrator_driver",
     srcs = [
         "src/board.rs",
+        "src/driver.rs",
         "src/lib.rs",
-        "src/shell.rs",
         "src/tests.rs",
     ],
-    crate_name = "openprot_orchestrator_shell",
+    crate_name = "openprot_orchestrator_driver",
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
@@ -22,7 +22,7 @@ rust_library(
 
 # Host tests: build on the host platform, no kernel/QEMU.
 rust_test(
-    name = "orchestrator_shell_test",
-    crate = ":orchestrator_shell",
+    name = "orchestrator_driver_test",
+    crate = ":orchestrator_driver",
     edition = "2024",
 )

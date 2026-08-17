@@ -136,8 +136,8 @@ impl BoardTypes for MockBoard {
     type Verifier = XorVerifier;
 }
 
-fn shell(images: [MemImage; 1]) -> Shell<MockBoard, 1> {
-    Shell::new(Board {
+fn driver(images: [MemImage; 1]) -> PlatformDriver<MockBoard, 1> {
+    PlatformDriver::new(Board {
         images,
         verifier: XorVerifier { fault: false },
     })
@@ -151,17 +151,17 @@ fn orchestrator() -> Orchestrator<1, 4> {
     Orchestrator::new(chain.try_into().unwrap(), 3)
 }
 
-// PowerGood drives ReadFirmware + VerifyFirmware into the shell; the
+// PowerGood drives ReadFirmware + VerifyFirmware into the driver; the
 // verdict comes back as an event.
 #[test]
 fn boot_verifies_the_first_component() {
     let mut orch = orchestrator();
-    let mut shell = shell([MemImage::holding(valid_image())]);
+    let mut driver = driver([MemImage::holding(valid_image())]);
 
-    orch.dispatch(&mut shell, Event::PowerGood(PowerOnResult::Provisioned));
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
 
-    assert_eq!(shell.take_event(), Some(Event::VerificationPassed(C0)));
-    assert_eq!(shell.take_event(), None);
+    assert_eq!(driver.take_event(), Some(Event::VerificationPassed(C0)));
+    assert_eq!(driver.take_event(), None);
     assert_eq!(orch.state(), State::PreSupervision);
 }
 
@@ -169,20 +169,20 @@ fn boot_verifies_the_first_component() {
 fn corrupt_image_fails_verification() {
     let mut corrupt = valid_image();
     corrupt[7] ^= 0x01;
-    let mut shell = shell([MemImage::holding(corrupt)]);
+    let mut driver = driver([MemImage::holding(corrupt)]);
 
-    shell.read_firmware(C0).unwrap();
-    shell.verify_firmware(C0).unwrap();
+    driver.read_firmware(C0).unwrap();
+    driver.verify_firmware(C0).unwrap();
 
-    assert_eq!(shell.take_event(), Some(Event::VerificationFailed(C0)));
+    assert_eq!(driver.take_event(), Some(Event::VerificationFailed(C0)));
 }
 
 #[test]
 fn verify_without_read_is_refused() {
-    let mut shell = shell([MemImage::holding(valid_image())]);
+    let mut driver = driver([MemImage::holding(valid_image())]);
 
-    assert_eq!(shell.verify_firmware(C0), Err(ShellError::NoImage));
-    assert_eq!(shell.take_event(), None);
+    assert_eq!(driver.verify_firmware(C0), Err(DriverError::NoImage));
+    assert_eq!(driver.take_event(), None);
 }
 
 // An unopenable source is a failed actuation, not a verdict: the SM
@@ -192,12 +192,12 @@ fn unopenable_source_fails_closed() {
     let mut orch = orchestrator();
     let mut image = MemImage::holding(valid_image());
     image.fail_open = true;
-    let mut shell = shell([image]);
+    let mut driver = driver([image]);
 
-    orch.dispatch(&mut shell, Event::PowerGood(PowerOnResult::Provisioned));
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
 
     assert_eq!(orch.state(), State::Locked);
-    assert_eq!(shell.take_event(), None);
+    assert_eq!(driver.take_event(), None);
 }
 
 // A source that opens but cannot be read fails the same way, via the
@@ -207,34 +207,34 @@ fn unreadable_source_fails_closed() {
     let mut orch = orchestrator();
     let mut image = MemImage::holding(valid_image());
     image.fail_read = true;
-    let mut shell = shell([image]);
+    let mut driver = driver([image]);
 
-    orch.dispatch(&mut shell, Event::PowerGood(PowerOnResult::Provisioned));
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
 
     assert_eq!(orch.state(), State::Locked);
-    assert_eq!(shell.take_event(), None);
+    assert_eq!(driver.take_event(), None);
 }
 
 // So does a verifier that cannot run its check.
 #[test]
 fn verifier_fault_fails_closed() {
     let mut orch = orchestrator();
-    let mut shell = Shell::<MockBoard, 1>::new(Board {
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
         images: [MemImage::holding(valid_image())],
         verifier: XorVerifier { fault: true },
     });
 
-    orch.dispatch(&mut shell, Event::PowerGood(PowerOnResult::Provisioned));
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
 
     assert_eq!(orch.state(), State::Locked);
-    assert_eq!(shell.take_event(), None);
+    assert_eq!(driver.take_event(), None);
 }
 
 const C1: ComponentId = ComponentId::new(1);
 
 #[test]
 fn verify_for_a_different_component_is_refused() {
-    let mut shell = Shell::<MockBoard, 2>::new(Board {
+    let mut driver = PlatformDriver::<MockBoard, 2>::new(Board {
         images: [
             MemImage::holding(valid_image()),
             MemImage::holding(valid_image()),
@@ -242,18 +242,18 @@ fn verify_for_a_different_component_is_refused() {
         verifier: XorVerifier { fault: false },
     });
 
-    shell.read_firmware(C0).unwrap();
+    driver.read_firmware(C0).unwrap();
 
-    assert_eq!(shell.verify_firmware(C1), Err(ShellError::NoImage));
+    assert_eq!(driver.verify_firmware(C1), Err(DriverError::NoImage));
 }
 
 #[test]
 fn unknown_component_is_refused() {
-    let mut shell = shell([MemImage::holding(valid_image())]);
+    let mut driver = driver([MemImage::holding(valid_image())]);
 
     assert_eq!(
-        shell.read_firmware(ComponentId::new(9)),
-        Err(ShellError::UnknownComponent)
+        driver.read_firmware(ComponentId::new(9)),
+        Err(DriverError::UnknownComponent)
     );
 }
 
@@ -261,15 +261,15 @@ fn unknown_component_is_refused() {
 // not silently dropped.
 #[test]
 fn event_queue_overflow_is_reported() {
-    let mut shell = shell([MemImage::holding(valid_image())]);
+    let mut driver = driver([MemImage::holding(valid_image())]);
 
     let mut queued = 0;
     loop {
-        shell.read_firmware(C0).unwrap();
-        match shell.verify_firmware(C0) {
+        driver.read_firmware(C0).unwrap();
+        match driver.verify_firmware(C0) {
             Ok(()) => queued += 1,
             Err(e) => {
-                assert_eq!(e, ShellError::QueueFull);
+                assert_eq!(e, DriverError::QueueFull);
                 break;
             }
         }
@@ -278,16 +278,16 @@ fn event_queue_overflow_is_reported() {
 }
 
 // Effect::Emit is the orchestrator's internal channel and must never reach
-// a Platform; the shell refuses it rather than acting on it.
+// a Platform; the driver refuses it rather than acting on it.
 #[test]
 fn emit_is_refused() {
     use openprot_orchestrator_sm::{Effect, EffectError, Platform};
 
-    let mut shell = shell([MemImage::holding(valid_image())]);
+    let mut driver = driver([MemImage::holding(valid_image())]);
 
     assert_eq!(
-        shell.execute(Effect::Emit(Event::UpdateRequest)),
+        driver.execute(Effect::Emit(Event::UpdateRequest)),
         Err(EffectError)
     );
-    assert_eq!(shell.take_event(), None);
+    assert_eq!(driver.take_event(), None);
 }

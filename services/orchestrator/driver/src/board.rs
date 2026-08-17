@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! What the board supplies to the shell: traits and wiring data only.
+//! What the board supplies to the driver: traits and wiring data only.
 //! Boards (or test mocks) implement these.
 
 use openprot_orchestrator_sm::ComponentId;
@@ -97,7 +97,7 @@ pub trait BoardTypes {
 }
 
 /// Everything the board supplies, built once at bring-up and handed to
-/// `Shell::new`. Fields are public: executors may need two parts at once
+/// `PlatformDriver::new`. Fields are public: executors may need two parts at once
 /// (disjoint borrows).
 ///
 /// ```ignore

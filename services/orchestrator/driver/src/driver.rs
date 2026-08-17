@@ -1,26 +1,26 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! The [`Shell`]: one executor method per [`Effect`] variant, routed from
+//! The [`PlatformDriver`]: one executor method per [`Effect`] variant, routed from
 //! the SM through the [`Platform`] impl.
 
 use openprot_orchestrator_sm::{ComponentId, Effect, EffectError, Event, Platform};
 
 use crate::board::{Board, BoardTypes, ImageSource, Verdict, Verifier};
 
-/// Queue bound. Executors produce at most one event per effect, the driver
-/// drains after every dispatch, and the largest SM effect batch today is
+/// Queue bound. Executors produce at most one event per effect, the event loop
+/// drains it after every dispatch, and the largest SM effect batch today is
 /// two (ReadFirmware + VerifyFirmware) — 4 is that worst case with
-/// headroom. Overflow is reported ([`ShellError::QueueFull`]), never
+/// headroom. Overflow is reported ([`DriverError::QueueFull`]), never
 /// silent loss.
 const EVENT_CAP: usize = 4;
 
-/// Why the shell could not carry out an effect.
+/// Why the driver could not carry out an effect.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ShellError {
+pub enum DriverError {
     /// The executor for this effect has not been written yet.
     NotImplemented,
-    /// The effect names a component the shell has no device for.
+    /// The effect names a component the driver has no device for.
     UnknownComponent,
     /// The component's image source could not be opened.
     ImageUnavailable,
@@ -34,24 +34,24 @@ pub enum ShellError {
     QueueFull,
 }
 
-impl core::fmt::Display for ShellError {
+impl core::fmt::Display for DriverError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(match self {
-            ShellError::NotImplemented => "executor not implemented",
-            ShellError::UnknownComponent => "no device for this component id",
-            ShellError::ImageUnavailable => "image source could not be opened",
-            ShellError::NoImage => "no image staged for this component",
-            ShellError::VerifierFault => "verifier could not perform the check",
-            ShellError::QueueFull => "event queue full",
+            DriverError::NotImplemented => "executor not implemented",
+            DriverError::UnknownComponent => "no device for this component id",
+            DriverError::ImageUnavailable => "image source could not be opened",
+            DriverError::NoImage => "no image staged for this component",
+            DriverError::VerifierFault => "verifier could not perform the check",
+            DriverError::QueueFull => "event queue full",
         })
     }
 }
 
-impl core::error::Error for ShellError {}
+impl core::error::Error for DriverError {}
 
 /// The effect executors. Everything device-specific lives in the [`Board`];
-/// the shell's own fields are bookkeeping.
-pub struct Shell<B: BoardTypes, const N: usize> {
+/// the driver's own fields are bookkeeping.
+pub struct PlatformDriver<B: BoardTypes, const N: usize> {
     board: Board<B, N>,
     /// Component whose image is staged (source opened) for verification.
     staged: Option<ComponentId>,
@@ -59,7 +59,7 @@ pub struct Shell<B: BoardTypes, const N: usize> {
     pending: heapless::Deque<Event, EVENT_CAP>,
 }
 
-impl<B: BoardTypes, const N: usize> Shell<B, N> {
+impl<B: BoardTypes, const N: usize> PlatformDriver<B, N> {
     pub fn new(board: Board<B, N>) -> Self {
         Self {
             board,
@@ -68,48 +68,48 @@ impl<B: BoardTypes, const N: usize> Shell<B, N> {
         }
     }
 
-    /// Next event owed to the SM; the driver loop drains this after each
+    /// Next event owed to the SM; the event loop drains this after each
     /// dispatch.
     pub fn take_event(&mut self) -> Option<Event> {
         self.pending.pop_front()
     }
 
-    fn enqueue(&mut self, event: Event) -> Result<(), ShellError> {
+    fn enqueue(&mut self, event: Event) -> Result<(), DriverError> {
         self.pending
             .push_back(event)
-            .map_err(|_| ShellError::QueueFull)
+            .map_err(|_| DriverError::QueueFull)
     }
 
     /// Stage `id`'s image: open its source so
     /// [`verify_firmware`](Self::verify_firmware) can read it.
-    pub fn read_firmware(&mut self, id: ComponentId) -> Result<(), ShellError> {
+    pub fn read_firmware(&mut self, id: ComponentId) -> Result<(), DriverError> {
         self.staged = None;
         let source = self
             .board
             .images
             .get_mut(id.get() as usize)
-            .ok_or(ShellError::UnknownComponent)?;
-        source.open().map_err(|_| ShellError::ImageUnavailable)?;
+            .ok_or(DriverError::UnknownComponent)?;
+        source.open().map_err(|_| DriverError::ImageUnavailable)?;
         self.staged = Some(id);
         Ok(())
     }
 
     /// Judge the staged image via the [`Verifier`] and queue the verdict:
     /// `Event::VerificationPassed(id)` or `Event::VerificationFailed(id)`.
-    pub fn verify_firmware(&mut self, id: ComponentId) -> Result<(), ShellError> {
+    pub fn verify_firmware(&mut self, id: ComponentId) -> Result<(), DriverError> {
         if self.staged != Some(id) {
-            return Err(ShellError::NoImage);
+            return Err(DriverError::NoImage);
         }
         let source = self
             .board
             .images
             .get_mut(id.get() as usize)
-            .ok_or(ShellError::UnknownComponent)?;
+            .ok_or(DriverError::UnknownComponent)?;
         let verdict = self
             .board
             .verifier
             .verify(id, source)
-            .map_err(|_| ShellError::VerifierFault)?;
+            .map_err(|_| DriverError::VerifierFault)?;
         self.enqueue(match verdict {
             Verdict::Authentic => Event::VerificationPassed(id),
             Verdict::Rejected => Event::VerificationFailed(id),
@@ -119,89 +119,89 @@ impl<B: BoardTypes, const N: usize> Shell<B, N> {
     /// Release `id` from reset, then walk its boot checkpoints; feed back
     /// one `Event::ComponentReady(id)` (Active) or `Event::Booted(id)`
     /// (Passive), or `Event::Timeout(id)` on window expiry.
-    pub fn release_reset(&mut self, _id: ComponentId) -> Result<(), ShellError> {
-        Err(ShellError::NotImplemented)
+    pub fn release_reset(&mut self, _id: ComponentId) -> Result<(), DriverError> {
+        Err(DriverError::NotImplemented)
     }
 
     /// Hold `id` in reset — a durable quiesce, not a pulse; at-rest
     /// verification and the recovery re-walk depend on it.
-    pub fn assert_reset(&mut self, _id: ComponentId) -> Result<(), ShellError> {
-        Err(ShellError::NotImplemented)
+    pub fn assert_reset(&mut self, _id: ComponentId) -> Result<(), DriverError> {
+        Err(DriverError::NotImplemented)
     }
 
     /// Restore `id` from its configured recovery source (the mechanism is
     /// board config); feed back `Event::Restored(id)` or
     /// `Event::RecoveryFailed`.
-    pub fn recover_component(&mut self, _id: ComponentId) -> Result<(), ShellError> {
-        Err(ShellError::NotImplemented)
+    pub fn recover_component(&mut self, _id: ComponentId) -> Result<(), DriverError> {
+        Err(DriverError::NotImplemented)
     }
 
     /// Authenticate the staged update; feed back `Event::UpdateVerified` or
     /// `Event::UpdateRejected`.
-    pub fn authenticate_update(&mut self) -> Result<(), ShellError> {
-        Err(ShellError::NotImplemented)
+    pub fn authenticate_update(&mut self) -> Result<(), DriverError> {
+        Err(DriverError::NotImplemented)
     }
 
     /// Write the incoming update image into the staging region.
-    pub fn stage_update(&mut self) -> Result<(), ShellError> {
-        Err(ShellError::NotImplemented)
+    pub fn stage_update(&mut self) -> Result<(), DriverError> {
+        Err(DriverError::NotImplemented)
     }
 
     /// Trial-boot the staged image and arm the commit watchdog; feed back
     /// `Event::BootConfirmed(id)` or `Event::CommitTimeout`.
-    pub fn activate_update(&mut self) -> Result<(), ShellError> {
-        Err(ShellError::NotImplemented)
+    pub fn activate_update(&mut self) -> Result<(), DriverError> {
+        Err(DriverError::NotImplemented)
     }
 
     /// Discard the staged image.
-    pub fn discard_staged(&mut self) -> Result<(), ShellError> {
-        Err(ShellError::NotImplemented)
+    pub fn discard_staged(&mut self) -> Result<(), DriverError> {
+        Err(DriverError::NotImplemented)
     }
 
     /// Advance the SVN floor past `id`'s confirmed image; cancels the
     /// commit watchdog armed by [`activate_update`](Self::activate_update).
-    pub fn commit_svn_floor(&mut self, _id: ComponentId) -> Result<(), ShellError> {
-        Err(ShellError::NotImplemented)
+    pub fn commit_svn_floor(&mut self, _id: ComponentId) -> Result<(), DriverError> {
+        Err(DriverError::NotImplemented)
     }
 
     /// Produce a signed attestation for the pending challenge.
-    pub fn sign_attestation(&mut self) -> Result<(), ShellError> {
-        Err(ShellError::NotImplemented)
+    pub fn sign_attestation(&mut self) -> Result<(), DriverError> {
+        Err(DriverError::NotImplemented)
     }
 
     /// Report `id` gated and the platform degraded (CSA degraded-mode
     /// clause).
-    pub fn report_isolated(&mut self, _id: ComponentId) -> Result<(), ShellError> {
-        Err(ShellError::NotImplemented)
+    pub fn report_isolated(&mut self, _id: ComponentId) -> Result<(), DriverError> {
+        Err(DriverError::NotImplemented)
     }
 
     /// Report that `id` exhausted recovery, immediately before the machine
     /// latches `Locked`.
-    pub fn report_recovery_failed(&mut self, _id: ComponentId) -> Result<(), ShellError> {
-        Err(ShellError::NotImplemented)
+    pub fn report_recovery_failed(&mut self, _id: ComponentId) -> Result<(), DriverError> {
+        Err(DriverError::NotImplemented)
     }
 
     /// Answer the requester: update declined, machine busy (e.g. a PLDM
     /// "retry later" completion code).
-    pub fn report_update_deferred(&mut self) -> Result<(), ShellError> {
-        Err(ShellError::NotImplemented)
+    pub fn report_update_deferred(&mut self) -> Result<(), DriverError> {
+        Err(DriverError::NotImplemented)
     }
 
     /// Answer the requester: its in-flight update was superseded by
     /// recovery.
-    pub fn report_update_aborted(&mut self) -> Result<(), ShellError> {
-        Err(ShellError::NotImplemented)
+    pub fn report_update_aborted(&mut self) -> Result<(), DriverError> {
+        Err(DriverError::NotImplemented)
     }
 
     /// Latch the terminal safe state. A failure here is a hard fault: the
     /// SM believes it is `Locked`, so the real executor must halt, not
     /// recover.
-    pub fn latch_lockdown(&mut self) -> Result<(), ShellError> {
-        Err(ShellError::NotImplemented)
+    pub fn latch_lockdown(&mut self) -> Result<(), DriverError> {
+        Err(DriverError::NotImplemented)
     }
 }
 
-impl<B: BoardTypes, const N: usize> Platform for Shell<B, N> {
+impl<B: BoardTypes, const N: usize> Platform for PlatformDriver<B, N> {
     /// Routes each effect to its executor. Exhaustive: a new [`Effect`]
     /// variant must get an executor before this compiles. Every executor
     /// error reports as [`EffectError`] — the SM treats all actuation
