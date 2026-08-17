@@ -36,6 +36,7 @@ rust_binary(
     deps = [
         ":codegen",
         ":linker_script",
+        "//hal",
         "//target/ast10x0:entry",
         "//target/ast10x0/peripherals",
         "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",

@@ -4,9 +4,8 @@
 #![no_std]
 #![no_main]
 
-use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor, I2cBusCfg};
+use ast10x0_board::Pins;
 use ast10x0_peripherals::i2c::{ClockConfig, I2cConfig, I2cError, I2cSpeed, I2cXferMode};
-use ast10x0_peripherals::scu::pinctrl;
 use codegen as _;
 use console_backend::console_backend_write_all;
 use entry as _;
@@ -51,24 +50,17 @@ fn i2c_error_str(error: I2cError) -> &'static str {
 fn run_slave_rx_test() -> Result<(), &'static str> {
     pw_log::info!("=== AST10x0 I2C slave RX test (Bus 2, addr 0x42) ===");
 
-    // Phase A — board init: SCU clock/reset + pin-mux + init_bus(2).
-    let board = Ast10x0Board::new(Ast10x0BoardDescriptor {
-        pinctrl_groups: &[pinctrl::PINCTRL_I2C2],
-        i2c_buses: &[I2cBusCfg {
-            bus: 2,
-            config: SLAVE_CFG,
-        }],
-    });
-    // SAFETY: Test target runs once at boot with exclusive access to the board.
-    unsafe { board.init() }.map_err(|_| "board init failed")?;
-    pw_log::info!("Board init complete");
-
-    // Phase B — open the already-initialised bus and configure slave mode.
-    // SAFETY: board.init() called init_bus(2); we are the sole owner of Bus 2.
-    let mut driver = unsafe { i2c_backend::open_bus(2, &SLAVE_CFG) }.map_err(|e| {
-        pw_log::error!("open_bus failed: {}", i2c_error_str(e) as &str);
-        "open_bus failed"
+    // Phase A/B — mint the board's pin tokens (the sole `unsafe`), then a safe open of Bus 2:
+    // `pins.i2c2` is the bus already wired to its pins, and `open` consumes it (open-once). A
+    // second open of Bus 2 (or wiring scu418_0/1 to another capability) is a compile error.
+    // Config is supplied at open time; SCU access is behind the scenes.
+    // SAFETY: Test target runs once at boot with exclusive access to the hardware.
+    let pins = unsafe { Pins::take() };
+    let mut driver = pins.i2c2.open(&SLAVE_CFG).map_err(|e| {
+        pw_log::error!("open_i2c(Bus2) failed: {}", i2c_error_str(e) as &str);
+        "open failed"
     })?;
+    pw_log::info!("Bus 2 claimed");
 
     driver.configure_slave_address(SLAVE_ADDR).map_err(|e| {
         pw_log::error!(

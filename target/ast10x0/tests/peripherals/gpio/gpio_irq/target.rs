@@ -6,7 +6,8 @@
 #![no_std]
 #![no_main]
 
-use ast10x0_peripherals::scu::{pinctrl, ScuRegisters};
+use ast10x0_peripherals::gpio::IntoGpio;
+use ast10x0_peripherals::scu::{self, create_pins};
 use console_backend::console_backend_write_all;
 use entry as _;
 use target_common::{declare_target, TargetInterface};
@@ -17,11 +18,11 @@ impl TargetInterface for Target {
     const NAME: &'static str = "AST10x0 GPIO IRQ Bringup";
 
     fn main() -> ! {
-        // SAFETY: single call at boot with exclusive access to SCU global registers.
-        unsafe {
-            let scu = ScuRegisters::new_global_unlocked();
-            scu.apply_pinctrl_group(pinctrl::PINCTRL_GPIOA0);
-        }
+        // Create the pin, bind it to GPIO, and route it; its `COALESCED` route folds at compile time.
+        // SAFETY: sole pin creation site in this binary, at boot; the pins! table is this chip's true pin map.
+        let pins = unsafe { create_pins() };
+        let _gpio = pins.scu410_0.into_gpio();
+        scu::route(&_gpio);
 
         codegen::start();
         #[expect(clippy::empty_loop)]

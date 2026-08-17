@@ -50,7 +50,6 @@ fn run_i3c_init_smoke_test() -> Result<(), &'static str> {
 
     let board = Ast10x0Board::new(Ast10x0BoardDescriptor {
         pinctrl_groups: &[pinctrl::PINCTRL_I3C0],
-        i2c_buses: &[],
     });
     // SAFETY: Test target runs once at boot with exclusive access to the board.
     unsafe { board.init() }.expect("board init failed");
