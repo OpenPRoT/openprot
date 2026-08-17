@@ -13,12 +13,10 @@
 #![no_std]
 #![no_main]
 
-use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
+use ast10x0_board::Pins;
 use ast10x0_peripherals::i2c::{
-    Ast1060I2c, Ast1060I2cRegisters, ClockConfig, I2cConfig, I2cSpeed, I2cXferMode, SlaveConfig,
-    SlaveEvent,
+    Ast1060I2c, ClockConfig, I2cConfig, I2cSpeed, I2cXferMode, SlaveConfig, SlaveEvent,
 };
-use ast10x0_peripherals::scu::pinctrl;
 use codegen as _;
 use console_backend::console_backend_write_all;
 use entry as _;
@@ -61,19 +59,12 @@ fn run_slave() -> Result<(), &'static str> {
         SLAVE_ADDR as u32
     );
 
-    let board = Ast10x0Board::new(Ast10x0BoardDescriptor {
-        pinctrl_groups: &[pinctrl::PINCTRL_I2C2],
-        i2c_buses: &[],
-    });
-    // SAFETY: single call at boot with exclusive access to SCU/I2C global regs.
-    unsafe { board.init() }.expect("board init failed");
-
-    // SAFETY: single MMIO-pointer perimeter — the test owns I2C2 for the process lifetime.
-    let mut slave = unsafe {
-        let mmio = Ast1060I2cRegisters::new(ast1060_pac::I2c2::ptr(), ast1060_pac::I2cbuff2::ptr());
-        Ast1060I2c::new(mmio, &i2c2_config(), |_| core::hint::spin_loop())
-    }
-    .map_err(|_| "slave I2C2 init failed")?;
+    // SAFETY: single call at boot with exclusive SoC access; routes Bus 2's pins and brings up I2C.
+    let pins = unsafe { Pins::take() };
+    let mut slave = pins
+        .i2c2
+        .open(&i2c2_config())
+        .map_err(|_| "slave I2C2 init failed")?;
 
     let slave_cfg = SlaveConfig::new(SLAVE_ADDR).map_err(|_| "SlaveConfig::new failed")?;
 

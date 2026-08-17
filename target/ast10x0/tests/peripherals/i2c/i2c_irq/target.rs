@@ -19,11 +19,8 @@
 #![no_std]
 #![no_main]
 
-use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
-use ast10x0_peripherals::i2c::{
-    Ast1060I2c, Ast1060I2cRegisters, ClockConfig, I2cConfig, I2cSpeed, I2cXferMode,
-};
-use ast10x0_peripherals::scu::pinctrl;
+use ast10x0_board::Pins;
+use ast10x0_peripherals::i2c::{ClockConfig, I2cConfig, I2cSpeed, I2cXferMode};
 use codegen as _;
 use console_backend::console_backend_write_all;
 use entry as _;
@@ -49,19 +46,12 @@ fn run_master() -> Result<(), &'static str> {
     pw_log::info!("=== I2C slave IRQ test: MASTER (device A) ===");
     pw_log::info!("J15 must be connected. Load slave image on device B first.");
 
-    let board = Ast10x0Board::new(Ast10x0BoardDescriptor {
-        pinctrl_groups: &[pinctrl::PINCTRL_I2C2],
-        i2c_buses: &[],
-    });
-    // SAFETY: single call at boot with exclusive access to SCU/I2C global regs.
-    unsafe { board.init() }.expect("board init failed");
-
-    // SAFETY: single MMIO-pointer perimeter — the test owns I2C2 for the process lifetime.
-    let mut master = unsafe {
-        let mmio = Ast1060I2cRegisters::new(ast1060_pac::I2c2::ptr(), ast1060_pac::I2cbuff2::ptr());
-        Ast1060I2c::new(mmio, &i2c2_config(), |_| core::hint::spin_loop())
-    }
-    .map_err(|_| "master I2C2 init failed")?;
+    // SAFETY: single call at boot with exclusive SoC access; routes Bus 2's pins and brings up I2C.
+    let pins = unsafe { Pins::take() };
+    let mut master = pins
+        .i2c2
+        .open(&i2c2_config())
+        .map_err(|_| "master I2C2 init failed")?;
 
     // ------------------------------------------------------------------
     // Test 1: master write → slave DataReceived
