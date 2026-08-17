@@ -44,9 +44,10 @@
 //! - `base_clk2` (0x08): 50M / ((8+2)/2) = 10 `MHz` → 400 kHz with div=25
 //! - `base_clk3` (0x22): 50M / ((34+2)/2) = 2.77 `MHz` → 100 kHz with div=28
 
+use super::constants;
 use super::error::I2cError;
 use super::types::{ClockConfig, I2cConfig, I2cSpeed};
-use ast1060_pac::i2c::RegisterBlock;
+use crate::Mmio;
 use core::cmp::min;
 
 /// Maximum divider ratio per base clock
@@ -72,7 +73,10 @@ const SPEED_FAST_PLUS: u32 = 1_000_000;
 ///
 /// * `Ok(())` on successful configuration
 /// * `Err(I2cError::Invalid)` if timing cannot be achieved
-pub fn configure_timing(regs: &RegisterBlock, config: &I2cConfig) -> Result<(), I2cError> {
+pub fn configure_timing(
+    regs: &Mmio<openprot_hal::i2c::I2cBlock>,
+    config: &I2cConfig,
+) -> Result<(), I2cError> {
     let clocks = &config.clock_config;
 
     // Step 1: Get target speed
@@ -103,20 +107,13 @@ pub fn configure_timing(regs: &RegisterBlock, config: &I2cConfig) -> Result<(), 
 
     // Step 5: Write AC timing register with all fields in a single write
     // This avoids corrupting fields with multiple separate writes
-    regs.i2cc04().write(|w| unsafe {
-        w.base_clk_divisor_tbase_clk()
-            .bits((div & 0xf) as u8)
-            .cycles_of_master_sclclklow_pulse_width_tcklow()
-            .bits(scl_low)
-            .cycles_of_master_sclclkhigh_pulse_width_tckhigh()
-            .bits(scl_high)
-            .cycles_of_master_sclclkhigh_minimum_pulse_width_tckhigh_min()
-            .bits(scl_high_min)
-            .timeout_base_clk_divisor_tout_base_clk()
-            .bits(timeout_divisor)
-            .timeout_timer()
-            .bits(timeout_timer)
-    });
+    let val = (div & 0xf)
+        | ((u32::from(timeout_divisor) & 0x3) << 8)
+        | ((u32::from(scl_low) & 0xf) << 12)
+        | ((u32::from(scl_high) & 0xf) << 16)
+        | ((u32::from(scl_high_min) & 0xf) << 20)
+        | ((u32::from(timeout_timer) & 0x1f) << 24);
+    regs.write_reg(constants::I2CC04, val);
 
     Ok(())
 }
