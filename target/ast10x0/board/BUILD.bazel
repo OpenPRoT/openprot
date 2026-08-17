@@ -8,6 +8,7 @@ rust_library(
     name = "ast10x0_board",
     srcs = [
         "src/bmc.rs",
+        "src/board.rs",
         "src/lib.rs",
         "src/spi_monitor.rs",
         "src/spim_wiring.rs",
@@ -17,6 +18,7 @@ rust_library(
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],
     deps = [
+        "//hal",
         "//hal/blocking",
         "//services/orchestrator/adapters/hal:orchestrator_hal_adapters",
         "//services/orchestrator/capabilities:orchestrator_capabilities",
