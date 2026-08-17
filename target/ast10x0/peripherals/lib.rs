@@ -5,6 +5,9 @@
 #![feature(associated_type_defaults)]
 #![feature(adt_const_params)]
 
+/// The HAL's confined MMIO applier, re-exported so `crate::Mmio` resolves target-wide.
+pub use openprot_hal::field_mux::Mmio;
+
 pub mod aperture;
 pub mod gpio;
 pub mod hace;
@@ -16,3 +19,6 @@ pub mod sgpiom;
 pub mod smc;
 pub mod spimonitor;
 pub mod uart;
+
+/// The chip's pin universe, created once at boot — re-exported so apps need no `scu` import for pins.
+pub use scu::{create_pins, PinTokens};
