@@ -22,7 +22,7 @@
 //! second transaction cannot be armed while one is live — exclusivity of the
 //! engine is the borrow checker's, not a comment's.
 
-use super::constants;
+use super::constants::{self, I2cMasterCommand, I2cMasterStatus};
 use super::controller::Ast1060I2c;
 use super::error::I2cError;
 
@@ -43,41 +43,37 @@ impl<'i, 'b, Y: FnMut(u32)> ArmedDma<'i, 'b, Y> {
     /// Arm a TX DMA transaction: program i2cm1c (len-1) + i2cm30 (base addr).
     pub(crate) fn arm_tx(i2c: &'i mut Ast1060I2c<'b, Y>, phy_addr: u32, len: usize) -> Self {
         #[allow(clippy::cast_possible_truncation)]
-        i2c.regs().i2cm1c().write(|w| unsafe {
-            w.dmatx_buf_len_byte()
-                .bits((len - 1) as u16)
-                .dmatx_buf_len_wr_enbl_for_cur_write_cmd()
-                .set_bit()
-        });
-        i2c.regs()
-            .i2cm30()
-            .write(|w| unsafe { w.sdramdmabuffer_base_addr().bits(phy_addr) });
+        i2c.mmio
+            .i2c
+            .write_reg(constants::I2CM1C, (((len - 1) as u32) & 0xfff) | (1 << 15));
+        i2c.mmio
+            .i2c
+            .write_reg(constants::I2CM30, phy_addr & 0x7fff_ffff);
         Self { i2c }
     }
 
     /// Arm an RX DMA transaction: program i2cm1c (len-1) + i2cm34 (base addr).
     pub(crate) fn arm_rx(i2c: &'i mut Ast1060I2c<'b, Y>, phy_addr: u32, len: usize) -> Self {
+        let cur = i2c.mmio.i2c.read_reg(constants::I2CM1C);
         #[allow(clippy::cast_possible_truncation)]
-        i2c.regs().i2cm1c().modify(|_, w| unsafe {
-            w.dmarx_buf_len_byte()
-                .bits((len - 1) as u16)
-                .dmarx_buf_len_wr_enbl_for_cur_write_cmd()
-                .set_bit()
-        });
-        i2c.regs()
-            .i2cm34()
-            .modify(|_, w| unsafe { w.sdramdmabuffer_base_addr1().bits(phy_addr) });
+        let v = (cur & !((0xfff << 16) | (1 << 31)))
+            | ((((len - 1) as u32) & 0xfff) << 16)
+            | (1 << 31);
+        i2c.mmio.i2c.write_reg(constants::I2CM1C, v);
+        i2c.mmio
+            .i2c
+            .modify_field(constants::I2CM34, 0, 0x7fff_ffff, phy_addr);
         Self { i2c }
     }
 
     /// Issue `cmd` on i2cm18 and wait for the engine to quiesce. On success the
     /// guard is forgotten, so no teardown runs; on timeout it drops live here
     /// and soft-resets the controller.
-    pub(crate) fn run(self, cmd: u32) -> Result<(), I2cError> {
-        self.i2c.clear_interrupts(0xffff_ffff);
+    pub(crate) fn run(mut self, cmd: I2cMasterCommand) -> Result<(), I2cError> {
+        self.i2c.clear_interrupts(I2cMasterStatus::all());
         self.i2c.completion = false;
 
-        self.i2c.regs().i2cm18().write(|w| unsafe { w.bits(cmd) });
+        cmd.issue(&self.i2c.mmio.i2c);
 
         match self.i2c.wait_completion(constants::DEFAULT_TIMEOUT_US) {
             Ok(()) => {
@@ -103,21 +99,23 @@ impl<Y: FnMut(u32)> Drop for ArmedDma<'_, '_, Y> {
         // This disables the slave function for the reset window, which is safe
         // here: the i2c-server-runtime backend is master-only and never arms a
         // concurrent slave on this controller.
-        let fun_ctrl = self.i2c.regs().i2cc00().read().bits();
-        unsafe {
-            self.i2c.regs().i2cc00().write(|w| w.bits(0));
-            self.i2c.regs().i2cc00().write(|w| w.bits(fun_ctrl));
-        }
+        let fun_ctrl = self.i2c.mmio.i2c.read_reg(constants::I2CC00);
+        self.i2c.mmio.i2c.write_reg(constants::I2CC00, 0);
+        self.i2c.mmio.i2c.write_reg(constants::I2CC00, fun_ctrl);
 
         let mut timeout = constants::ABORT_TIMEOUT_US;
-        while timeout > 0 && self.i2c.regs().i2cc08().read().bus_busy_status().bit() {
+        while timeout > 0
+            && self
+                .i2c
+                .mmio
+                .i2c
+                .read_bit(constants::I2CC08, constants::AST_I2CC_BUS_BUSY_BIT)
+        {
             timeout = timeout.saturating_sub(1);
             core::hint::spin_loop();
         }
 
         // Clear any latched interrupts from the aborted transaction.
-        unsafe {
-            self.i2c.regs().i2cm14().write(|w| w.bits(0xffff_ffff));
-        }
+        I2cMasterStatus::all().clear(&self.i2c.mmio.i2c);
     }
 }

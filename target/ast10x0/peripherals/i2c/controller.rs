@@ -3,11 +3,11 @@
 
 //! AST1060 I2C controller implementation
 
+use super::constants::{I2cMasterStatus, I2cStat};
 use super::registers::Ast1060I2cRegisters;
 use super::timing::configure_timing;
 use super::types::{I2cConfig, I2cXferMode};
 use super::{constants, error::I2cError};
-use ast1060_pac::{i2c::RegisterBlock, i2cbuff::RegisterBlock as BuffRegisterBlock};
 
 /// Main I2C hardware abstraction.
 ///
@@ -24,7 +24,7 @@ use ast1060_pac::{i2c::RegisterBlock, i2cbuff::RegisterBlock as BuffRegisterBloc
 pub struct Ast1060I2c<'a, Y: FnMut(u32)> {
     /// MMIO façade — the sole site of register-pointer `unsafe`. Not `Sync`
     /// (and not `Send`) by construction, so `Ast1060I2c` isn't either.
-    mmio: Ast1060I2cRegisters,
+    pub(crate) mmio: Ast1060I2cRegisters,
 
     /// Transfer mode (visible to other modules for optimization decisions)
     pub(crate) xfer_mode: I2cXferMode,
@@ -61,7 +61,7 @@ impl<'a, Y: FnMut(u32)> Ast1060I2c<'a, Y> {
     /// `new()` call.
     ///
     /// Safe: the `unsafe` register-pointer perimeter was discharged once at
-    /// [`Ast1060I2cRegisters::new`]; this only consumes the resulting façade.
+    /// [`Ast1060I2cRegisters::from_pins`]; this only consumes the resulting façade.
     pub fn new(
         mmio: Ast1060I2cRegisters,
         config: &I2cConfig,
@@ -130,7 +130,7 @@ impl<'a, Y: FnMut(u32)> Ast1060I2c<'a, Y> {
     ///
     /// Like [`from_initialized`] but attaches separate master and slave DMA
     /// buffers. Use when the bus was already initialized via [`new_with_dma`]
-    /// or `init_bus` and you want to avoid redundant hardware init.
+    /// or `open_bus_dma` and you want to avoid redundant hardware init.
     ///
     /// Both buffers must reside in non-cached SRAM and remain valid for this
     /// `Ast1060I2c`'s lifetime.
@@ -148,19 +148,6 @@ impl<'a, Y: FnMut(u32)> Ast1060I2c<'a, Y> {
         i2c
     }
 
-    /// I2C register block, via the MMIO façade (sole `unsafe` deref is inside
-    /// [`Ast1060I2cRegisters`]). Driver-internal use.
-    #[inline]
-    pub(crate) fn regs(&self) -> &RegisterBlock {
-        self.mmio.i2c()
-    }
-
-    /// I2CBUFF register block, via the MMIO façade. Driver-internal use.
-    #[inline]
-    pub(crate) fn buff_regs(&self) -> &BuffRegisterBlock {
-        self.mmio.buff()
-    }
-
     /// Initialize hardware
     #[inline(never)]
     pub fn init_hardware(&mut self, config: &I2cConfig) -> Result<(), I2cError> {
@@ -168,45 +155,38 @@ impl<'a, Y: FnMut(u32)> Ast1060I2c<'a, Y> {
         // See: super::global::init_i2c_global().
 
         // Reset I2C controller
-        unsafe {
-            self.regs().i2cc00().write(|w| w.bits(0));
-        }
+        self.mmio.i2c.write_reg(constants::I2CC00, 0);
 
         // Configure multi-master
         if !self.multi_master {
-            self.regs()
-                .i2cc00()
-                .modify(|_, w| w.dis_multimaster_capability_for_master_fn_only().set_bit());
+            self.mmio.i2c.modify_field(constants::I2CC00, 15, 1, 1);
         }
 
         // Enable master function and bus auto-release
-        self.regs().i2cc00().modify(|_, w| {
-            w.enbl_bus_autorelease_when_scllow_sdalow_or_slave_mode_inactive_timeout()
-                .set_bit()
-                .enbl_master_fn()
-                .set_bit()
-        });
+        let v = self.mmio.i2c.read_reg(constants::I2CC00);
+        self.mmio.i2c.write_reg(
+            constants::I2CC00,
+            v | constants::AST_I2CC_BUS_AUTO_RELEASE | constants::AST_I2CC_MASTER_EN,
+        );
 
         // Configure timing
-        configure_timing(self.regs(), config)?;
+        configure_timing(&self.mmio.i2c, config)?;
 
         // Clear all interrupts
-        unsafe {
-            self.regs().i2cm14().write(|w| w.bits(0xffff_ffff));
-        }
+        I2cMasterStatus::all().clear(&self.mmio.i2c);
 
         // Enable interrupts for packet mode
-        self.regs().i2cm10().modify(|_, w| {
-            w.enbl_pkt_cmd_done_int()
-                .set_bit()
-                .enbl_bus_recover_done_int()
-                .set_bit()
-        });
+        let v = self.mmio.i2c.read_reg(constants::I2CM10);
+        self.mmio.i2c.write_reg(
+            constants::I2CM10,
+            v | constants::AST_I2CM_PKT_DONE | constants::AST_I2CM_BUS_RECOVER,
+        );
 
         if self.smbus_alert {
-            self.regs()
-                .i2cm10()
-                .modify(|_, w| w.enbl_smbus_dev_alert_int().set_bit());
+            let v = self.mmio.i2c.read_reg(constants::I2CM10);
+            self.mmio
+                .i2c
+                .write_reg(constants::I2CM10, v | constants::AST_I2CM_SMBUS_ALT);
         }
 
         Ok(())
@@ -214,30 +194,21 @@ impl<'a, Y: FnMut(u32)> Ast1060I2c<'a, Y> {
 
     /// Enable interrupts
     pub fn enable_interrupts(&mut self, mask: u32) {
-        unsafe {
-            self.regs().i2cm10().write(|w| w.bits(mask));
-        }
+        self.mmio.i2c.write_reg(constants::I2CM10, mask);
     }
 
-    /// Clear interrupts
-    pub fn clear_interrupts(&mut self, mask: u32) {
-        unsafe {
-            self.regs().i2cm14().write(|w| w.bits(mask));
-        }
+    /// Clear interrupts (write-1-to-clear the flags held in `mask`)
+    pub fn clear_interrupts(&mut self, mask: I2cMasterStatus) {
+        mask.clear(&self.mmio.i2c);
     }
 
     /// Check if bus is busy
     ///
-    /// Checks if any I2C transfer is currently active by examining status register bits.
+    /// Bus is active if any of the low status flags (ACK/NAK/arbitration) are set.
     #[must_use]
     pub fn is_bus_busy(&self) -> bool {
-        let status = self.regs().i2cm14().read().bits();
-        // Bus is busy if any transfer command bits are set
-        (status
-            & (constants::AST_I2CM_TX_CMD
-                | constants::AST_I2CM_RX_CMD
-                | constants::AST_I2CM_START_CMD))
-            != 0
+        let status = I2cMasterStatus::read(&self.mmio.i2c);
+        status.has(I2cStat::TxAck) || status.has(I2cStat::TxNak) || status.has(I2cStat::ArbitLoss)
     }
 
     /// Wait for completion with timeout (visible to master/transfer modules).

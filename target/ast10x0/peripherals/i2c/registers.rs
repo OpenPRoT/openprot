@@ -1,68 +1,47 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! Confined-`unsafe` MMIO façade for the AST1060 I2C controller.
-//!
-//! Sibling of `target/ast10x0/peripherals/hace/registers.rs` — the catalog
-//! reference for the *Confined-`unsafe` MMIO Façade* pattern. All `unsafe`
-//! required to touch the I2C and I2CBUFF register blocks is confined here:
-//! one `unsafe fn new` (the entire perimeter, discharged once by the caller)
-//! and one private deref per block (`i2c()`, `buff()`). The driver state
-//! machine (`controller`/`master`/`slave`/…) reaches hardware **only** through
-//! these two safe accessors, so no driver code constructs a raw register
-//! pointer.
+//! Confined-`unsafe` MMIO façade for the AST1060 I2C controller: two macro-generated `Mmio`
+//! appliers (I2C + I2CBUFF). Drivers call the generic ops with offset constants; no hand-written `unsafe`.
 
-use core::marker::PhantomData;
+use super::{Ast1060I2c, I2cConfig, I2cError};
+use crate::Mmio;
+use openprot_hal::i2c::{i2c_mmios, I2cBlock, I2cBuffBlock, I2cController, I2cScl, I2cSda};
+use openprot_hal::resource::Routes;
 
-use ast1060_pac::{i2c::RegisterBlock, i2cbuff::RegisterBlock as BuffRegisterBlock};
+fn spin(_ns: u32) {
+    core::hint::spin_loop();
+}
 
-/// Safe façade over one AST1060 controller's `(I2C, I2CBUFF)` register pair.
+/// The controller-open seam lives with the driver: bring up the registers (pins are already muxed by
+/// the bus constructor), then hand back the ready driver. Open-once is the owning `I2cBus`'s `self`.
+impl I2cController for Ast1060I2cRegisters {
+    type Config = I2cConfig;
+    type Ready = Ast1060I2c<'static, fn(u32)>;
+    type Error = I2cError;
+
+    fn open(self, config: &I2cConfig) -> Result<Self::Ready, I2cError> {
+        Ast1060I2c::new(self, config, spin as fn(u32))
+    }
+}
+
+/// Safe façade over one controller's `(I2C, I2CBUFF)` register pair — two confined MMIO appliers.
+/// Both `Mmio`s already impl `RegBlock`, so drivers touch them directly (`.i2c`/`.buff`), no forwarders.
 ///
-/// `Copy` and pointer-only by design (per the pattern): it *confines*
-/// `unsafe` and *restricts threading*; it does **not** enforce exclusive
-/// access — that is delegated to the gate's caller and to the owning
-/// `Ast1060I2c` (one instance per bus, every op an `&mut` borrow).
+/// `Copy`, deliberately: the two appliers are stateless base pointers, and exclusivity of the
+/// controller is enforced upstream by the bus owning both (non-`Copy`, mint-once) pin tokens. The
+/// per-op driver in the backend re-derives a transient view from this façade under `&mut self`.
 #[derive(Copy, Clone)]
 pub struct Ast1060I2cRegisters {
-    i2c: *mut RegisterBlock,
-    buff: *mut BuffRegisterBlock,
-    /// `*mut` ⇒ `!Send`/`!Sync`: the register pointers cannot be shared
-    /// across threads without explicit synchronization.
-    _not_send: PhantomData<*mut ()>,
+    pub(crate) i2c: Mmio<I2cBlock>,
+    pub(crate) buff: Mmio<I2cBuffBlock>,
 }
 
 impl Ast1060I2cRegisters {
-    /// The **entire** `unsafe` perimeter for AST1060 I2C MMIO — discharged
-    /// exactly once, here, by the caller.
-    ///
-    /// # Safety
-    ///
-    /// - `i2c` and `buff` are valid, non-null pointers to the I2C and
-    ///   I2CBUFF register blocks of the **same** controller, and remain
-    ///   valid for the lifetime of every `Ast1060I2c` built from this value.
-    /// - Access to the controller is serialized by the caller (the i2c
-    ///   server owns one instance per bus; all ops are `&mut`).
+    /// Fabricate the façade from the bus's two pin tokens; the HAL helper const-asserts one controller and mints its two bases.
     #[must_use]
-    pub const unsafe fn new(i2c: *const RegisterBlock, buff: *const BuffRegisterBlock) -> Self {
-        Self {
-            i2c: i2c as *mut RegisterBlock,
-            buff: buff as *mut BuffRegisterBlock,
-            _not_send: PhantomData,
-        }
-    }
-
-    /// Sole `unsafe` deref of the I2C block; justified by `new`'s invariant.
-    #[inline]
-    pub(crate) fn i2c(&self) -> &RegisterBlock {
-        // SAFETY: `new` guarantees a valid pointer for this value's lifetime;
-        // access is serialized by the owning `Ast1060I2c` (`&mut` per op).
-        unsafe { &*self.i2c }
-    }
-
-    /// Sole `unsafe` deref of the I2CBUFF block; same justification as `i2c`.
-    #[inline]
-    pub(crate) fn buff(&self) -> &BuffRegisterBlock {
-        // SAFETY: see `i2c`.
-        unsafe { &*self.buff }
+    pub const fn from_pins<Scl: Routes<I2cScl>, Sda: Routes<I2cSda>>(scl: &Scl, sda: &Sda) -> Self {
+        let (i2c, buff) = i2c_mmios(scl, sda);
+        Self { i2c, buff }
     }
 }
