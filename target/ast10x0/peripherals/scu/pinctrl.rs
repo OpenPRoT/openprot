@@ -1,24 +1,16 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
+//! DEPRECATED: legacy runtime-match pin muxing; new peripherals use `pins!`/`Routes<C>::DATA` + `apply_mux`.
+//!
 //! SCU Pin Control (Pinctrl) for multi-function pin configuration.
 //!
 //! Provides register-level access to configure AST1060 pins for different
 //! functions (I2C, I3C, GPIO, etc.) via SCU multiplex registers.
 
+use super::pinmux::PinctrlPin;
 use super::ScuRegisters;
 use paste::paste;
-
-/// Describes a single pin configuration operation.
-#[derive(Clone, Copy, Debug)]
-pub struct PinctrlPin {
-    /// SCU register offset (0x410, 0x414, 0x690, etc.)
-    pub offset: u32,
-    /// Bit position within the register (0-31)
-    pub bit: u32,
-    /// true = clear bit, false = set bit
-    pub clear: bool,
-}
 
 /// Macro to generate paired pin constants for set/clear operations.
 macro_rules! gen_pin_pairs {

@@ -3,12 +3,28 @@
 
 //! AST10x0 SCU low-level register access.
 
+use super::pins::ScuBlock;
 use ast1060_pac as device;
 use core::marker::PhantomData;
 
 const SCU_UNLOCK_KEY: u32 = 0x1688_A8A8;
 
-/// Safe wrapper around the AST10x0 SCU register block.
+/// Write-enable the SCU's protected registers, through the confined `Mmio` accessor. The key stays
+/// private here; the pin-mux route path calls this before applying a pin's coalesced mux writes.
+pub(crate) fn unlock_scu_writes(mmio: &crate::Mmio<ScuBlock>) {
+    mmio.write_reg(0x000, SCU_UNLOCK_KEY);
+}
+
+/// Safe accessor for the AST10x0 SCU register block — the shared clock/reset/pin-mux authority.
+///
+/// The SCU is a stateless, re-entrant control block: this handle is just a fixed MMIO pointer,
+/// and every operation is a register read/write via a safe `&self` method. Its meaningful
+/// invariant is *provenance* (past the boot gate), not exclusive ownership — so it is `Copy`.
+/// Mint it once through the sole `unsafe` constructor ([`ScuRegisters::new_global_unlocked`]) at
+/// boot and copy that handle into every capability that needs SCU access; the copy is the shared
+/// authority. Holding one is proof the boot gate ran, which is what lets the register methods be
+/// safe.
+#[derive(Clone, Copy)]
 pub struct ScuRegisters {
     base: *const device::scu::RegisterBlock,
     /// Prevent `Send` and `Sync`.
@@ -72,5 +88,16 @@ impl ScuRegisters {
         self.regs()
             .scu000()
             .write(|w| unsafe { w.bits(SCU_UNLOCK_KEY) });
+    }
+}
+
+/// Offset-addressed access for the coalesced mux applier — one RMW per touched SCU register via the `ScuBlock` singleton applier.
+impl openprot_hal::field_mux::RegBlock for ScuRegisters {
+    fn read_reg(&self, offset: u32) -> u32 {
+        crate::Mmio::<ScuBlock>::block().read_reg(offset)
+    }
+
+    fn write_reg(&self, offset: u32, val: u32) {
+        crate::Mmio::<ScuBlock>::block().write_reg(offset, val)
     }
 }
