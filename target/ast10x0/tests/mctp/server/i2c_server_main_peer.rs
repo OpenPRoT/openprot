@@ -7,6 +7,7 @@
 #![no_std]
 
 use app_i2c_server_peer::{handle, signals};
+use ast10x0_peripherals::create_pins;
 use ast10x0_peripherals::i2c::{ClockConfig, I2cConfig, I2cSpeed, I2cXferMode};
 use i2c_server_runtime::{run, Bus};
 use userspace::entry;
@@ -20,25 +21,27 @@ const SLAVE_CFG: I2cConfig = I2cConfig {
     clock_config: ClockConfig::ast1060_default(),
 };
 
-#[unsafe(link_section = ".ram_nc")]
-static mut MASTER_DMA_BUF: [u8; 4096] = [0u8; 4096];
-#[unsafe(link_section = ".ram_nc")]
-static mut SLAVE_DMA_BUF: [u8; 256] = [0u8; 256];
-
 #[entry]
 fn entry() {
-    // SAFETY: board init ran init_bus(2) in the kernel; buffers are non-cached and owned here.
-    let master_dma_buf: &'static mut [u8] =
-        unsafe { &mut *core::ptr::addr_of_mut!(MASTER_DMA_BUF) };
-    let slave_dma_buf: &'static mut [u8] = unsafe { &mut *core::ptr::addr_of_mut!(SLAVE_DMA_BUF) };
-    let driver =
-        match unsafe { i2c_backend::open_bus_dma(2, &SLAVE_CFG, master_dma_buf, slave_dma_buf) } {
-            Ok(d) => d,
-            Err(_) => {
-                pw_log::error!("open_bus_dma(2) failed");
-                loop {}
-            }
-        };
+    // The kernel routed Bus 2's pins at the SCU before starting us; userspace has no SCU grant, so
+    // we bind the already-routed pins rather than re-muxing them.
+    // SAFETY: sole pin creation site in this binary, at boot; the pins! table is this chip's true pin map.
+    let pins = unsafe { create_pins() };
+    let (scl, sda) = (pins.scu418_0, pins.scu418_1);
+
+    let (Some(master_dma_buf), Some(slave_dma_buf)) = (
+        i2c_backend::non_cached_buf!(4096),
+        i2c_backend::non_cached_buf!(256),
+    ) else {
+        pw_log::error!("i2c DMA buffers already taken");
+        loop {}
+    };
+    // Bind Bus 2's already-muxed pins and bring the controller up (init + DMA wrap) in one step.
+    let Ok(driver) = i2c_backend::open_bus_dma(scl, sda, &SLAVE_CFG, master_dma_buf, slave_dma_buf)
+    else {
+        pw_log::error!("i2c bus open failed");
+        loop {}
+    };
 
     pw_log::info!("I2C server peer ready on Bus 2");
 

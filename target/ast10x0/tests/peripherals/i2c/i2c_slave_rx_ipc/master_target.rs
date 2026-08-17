@@ -10,11 +10,8 @@
 #![no_std]
 #![no_main]
 
-use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
-use ast10x0_peripherals::i2c::{
-    Ast1060I2c, Ast1060I2cRegisters, ClockConfig, I2cConfig, I2cSpeed, I2cXferMode,
-};
-use ast10x0_peripherals::scu::pinctrl;
+use ast10x0_board::Pins;
+use ast10x0_peripherals::i2c::{ClockConfig, I2cConfig, I2cSpeed, I2cXferMode};
 use codegen as _;
 use console_backend::console_backend_write_all;
 use entry as _;
@@ -37,17 +34,11 @@ fn i2c2_config() -> I2cConfig {
 }
 
 fn run_master() -> Result<(), &'static str> {
-    let board = Ast10x0Board::new(Ast10x0BoardDescriptor {
-        pinctrl_groups: &[pinctrl::PINCTRL_I2C2],
-        i2c_buses: &[],
-    });
-    // SAFETY: single call at boot with exclusive access to SCU/I2C global regs.
-    unsafe { board.init() }.map_err(|_| "board init failed")?;
-
-    // SAFETY: I2C2 registers accessed only through `master` for this test.
-    let mmio =
-        unsafe { Ast1060I2cRegisters::new(ast1060_pac::I2c2::ptr(), ast1060_pac::I2cbuff2::ptr()) };
-    let mut master = Ast1060I2c::new(mmio, &i2c2_config(), |_| core::hint::spin_loop())
+    // SAFETY: single call at boot with exclusive SoC access; routes Bus 2's pins and brings up I2C.
+    let pins = unsafe { Pins::take() };
+    let mut master = pins
+        .i2c2
+        .open(&i2c2_config())
         .map_err(|_| "I2C2 master init failed")?;
 
     master
