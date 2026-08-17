@@ -7,6 +7,7 @@
 //! are kept for potential future use or testing. The main byte/buffer mode logic
 //! is now in master.rs with inline command building for better control.
 
+use super::constants::{I2cCmd, I2cMasterCommand, I2cMasterStatus};
 use super::{constants, controller::Ast1060I2c, error::I2cError, types::I2cXferMode};
 
 #[allow(dead_code)]
@@ -34,7 +35,7 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
         self.completion = false;
 
         // Clear any previous status
-        self.clear_interrupts(0xffff_ffff);
+        self.clear_interrupts(I2cMasterStatus::all());
 
         match self.xfer_mode {
             I2cXferMode::ByteMode => {
@@ -53,28 +54,24 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
     /// Command register is i2cm18, data register is i2cc08.
     fn start_byte_mode(&mut self, addr: u8, is_read: bool, len: usize) {
         // Build command: packet mode + address + start
-        let mut cmd = constants::AST_I2CM_PKT_EN
-            | constants::ast_i2cm_pkt_addr(addr)
-            | constants::AST_I2CM_START_CMD;
+        let mut cmd = I2cMasterCommand::packet().address(addr).with(I2cCmd::Start);
 
         if is_read {
-            cmd |= constants::AST_I2CM_RX_CMD;
+            cmd = cmd.with(I2cCmd::Rx);
             // For last byte (or single byte), send NACK and STOP
             if len == 1 {
-                cmd |= constants::AST_I2CM_RX_CMD_LAST | constants::AST_I2CM_STOP_CMD;
+                cmd = cmd.with(I2cCmd::RxLast).with(I2cCmd::Stop);
             }
         } else {
-            cmd |= constants::AST_I2CM_TX_CMD;
+            cmd = cmd.with(I2cCmd::Tx);
             // For last byte (or single byte), send STOP
             if len == 1 {
-                cmd |= constants::AST_I2CM_STOP_CMD;
+                cmd = cmd.with(I2cCmd::Stop);
             }
         }
 
         // Issue command to i2cm18 (Master Command Register)
-        unsafe {
-            self.regs().i2cm18().write(|w| w.bits(cmd));
-        }
+        cmd.issue(&self.mmio.i2c);
     }
 
     /// Start transfer in buffer mode (up to 32 bytes)
@@ -90,36 +87,33 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
         #[allow(clippy::cast_possible_truncation)]
         if is_read {
             // Set RX buffer size (len - 1)
-            self.regs()
-                .i2cc0c()
-                .modify(|_, w| unsafe { w.rx_pool_buffer_size().bits((len - 1) as u8) });
+            self.mmio
+                .i2c
+                .modify_field(constants::I2CC0C, 16, 0x1f, (len - 1) as u32);
         } else {
             // Set TX byte count (len - 1)
-            self.regs()
-                .i2cc0c()
-                .modify(|_, w| unsafe { w.tx_data_byte_count().bits((len - 1) as u8) });
+            self.mmio
+                .i2c
+                .modify_field(constants::I2CC0C, 8, 0x1f, (len - 1) as u32);
         }
 
         // Build command: PKT_EN + address + START + TX/RX + BUFF_EN + STOP
-        let mut cmd = constants::AST_I2CM_PKT_EN
-            | constants::ast_i2cm_pkt_addr(addr)
-            | constants::AST_I2CM_START_CMD;
+        let mut cmd = I2cMasterCommand::packet().address(addr).with(I2cCmd::Start);
 
         if is_read {
-            cmd |= constants::AST_I2CM_RX_CMD
-                | constants::AST_I2CM_RX_BUFF_EN
-                | constants::AST_I2CM_RX_CMD_LAST;
+            cmd = cmd
+                .with(I2cCmd::Rx)
+                .with(I2cCmd::RxBuff)
+                .with(I2cCmd::RxLast);
         } else {
-            cmd |= constants::AST_I2CM_TX_CMD | constants::AST_I2CM_TX_BUFF_EN;
+            cmd = cmd.with(I2cCmd::Tx).with(I2cCmd::TxBuff);
         }
 
         // Add stop for last chunk
-        cmd |= constants::AST_I2CM_STOP_CMD;
+        cmd = cmd.with(I2cCmd::Stop);
 
         // Issue command to i2cm18 (Master Command Register) - single write
-        unsafe {
-            self.regs().i2cm18().write(|w| w.bits(cmd));
-        }
+        cmd.issue(&self.mmio.i2c);
 
         Ok(())
     }
@@ -130,7 +124,6 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
             return Err(I2cError::Invalid);
         }
 
-        let buff_regs = self.buff_regs();
         let mut idx = 0;
 
         while idx < data.len() {
@@ -148,9 +141,7 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
             }
 
             // Write to buffer register array (AST1060 has 8 DWORDs = 32 bytes)
-            unsafe {
-                buff_regs.buff(dword_idx).write(|w| w.bits(dword));
-            }
+            self.mmio.buff.write_reg((dword_idx as u32) * 4, dword);
 
             idx += 4;
         }
@@ -164,7 +155,6 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
             return Err(I2cError::Invalid);
         }
 
-        let buff_regs = self.buff_regs();
         let mut idx = 0;
 
         while idx < data.len() {
@@ -174,7 +164,7 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
             }
 
             // Read from buffer register array
-            let dword = buff_regs.buff(dword_idx).read().bits();
+            let dword = self.mmio.buff.read_reg((dword_idx as u32) * 4);
 
             // Extract bytes from DWORD (little-endian)
             for byte_pos in 0..4 {

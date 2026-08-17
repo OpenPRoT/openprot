@@ -12,6 +12,7 @@ rust_library(
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],
     deps = [
+        "//hal",
         "//hal/blocking",
         "//services/i2c/api:i2c_api",
         "//target/ast10x0/peripherals",
