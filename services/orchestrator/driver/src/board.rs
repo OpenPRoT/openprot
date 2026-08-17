@@ -5,7 +5,8 @@
 //! Boards (or test mocks) implement these.
 
 use openprot_orchestrator_sm::ComponentId;
-use orchestrator_capabilities::BootControl;
+
+pub use orchestrator_capabilities::BootControl;
 
 /// Access to one component's active firmware image, however it is reached —
 /// interposed flash, a PLDM/MCTP transfer, a RAM copy in tests.
