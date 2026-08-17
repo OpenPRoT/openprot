@@ -171,7 +171,7 @@ fn corrupt_image_fails_verification() {
     corrupt[7] ^= 0x01;
     let mut driver = driver([MemImage::holding(corrupt)]);
 
-    driver.read_firmware(C0).unwrap();
+    driver.stage_firmware(C0).unwrap();
     driver.verify_firmware(C0).unwrap();
 
     assert_eq!(driver.take_event(), Some(Event::VerificationFailed(C0)));
@@ -242,7 +242,7 @@ fn verify_for_a_different_component_is_refused() {
         verifier: XorVerifier { fault: false },
     });
 
-    driver.read_firmware(C0).unwrap();
+    driver.stage_firmware(C0).unwrap();
 
     assert_eq!(driver.verify_firmware(C1), Err(DriverError::NoImage));
 }
@@ -252,7 +252,7 @@ fn unknown_component_is_refused() {
     let mut driver = driver([MemImage::holding(valid_image())]);
 
     assert_eq!(
-        driver.read_firmware(ComponentId::new(9)),
+        driver.stage_firmware(ComponentId::new(9)),
         Err(DriverError::UnknownComponent)
     );
 }
@@ -265,7 +265,7 @@ fn event_queue_overflow_is_reported() {
 
     let mut queued = 0;
     loop {
-        driver.read_firmware(C0).unwrap();
+        driver.stage_firmware(C0).unwrap();
         match driver.verify_firmware(C0) {
             Ok(()) => queued += 1,
             Err(e) => {

@@ -82,7 +82,7 @@ impl<B: BoardTypes, const N: usize> PlatformDriver<B, N> {
 
     /// Stage `id`'s image: open its source so
     /// [`verify_firmware`](Self::verify_firmware) can read it.
-    pub fn read_firmware(&mut self, id: ComponentId) -> Result<(), DriverError> {
+    pub fn stage_firmware(&mut self, id: ComponentId) -> Result<(), DriverError> {
         self.staged = None;
         let source = self
             .board
@@ -208,7 +208,7 @@ impl<B: BoardTypes, const N: usize> Platform for PlatformDriver<B, N> {
     /// failures the same, fail-closed.
     fn execute(&mut self, effect: Effect) -> Result<(), EffectError> {
         match effect {
-            Effect::ReadFirmware(id) => self.read_firmware(id),
+            Effect::ReadFirmware(id) => self.stage_firmware(id),
             Effect::VerifyFirmware(id) => self.verify_firmware(id),
             Effect::ReleaseReset(id) => self.release_reset(id),
             Effect::AssertReset(id) => self.assert_reset(id),
