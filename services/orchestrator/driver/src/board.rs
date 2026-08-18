@@ -85,9 +85,10 @@ pub enum Verdict {
     Rejected,
 }
 
-/// One board's type choices, named by a marker type. A new seam adds an
-/// associated type here and a field on [`Board`] — never another parameter.
-pub trait BoardTypes {
+/// The set of platform capabilities one board composes into the
+/// `PlatformDriver`, named by a marker type. A new seam adds an associated
+/// type here and a field on [`Board`] — never another parameter.
+pub trait BoardCapabilities {
     /// Image access for the managed components.
     type Image: ImageSource;
     /// Judges images for every component.
@@ -102,7 +103,7 @@ pub trait BoardTypes {
 ///
 /// ```ignore
 /// struct Ast1060Board;
-/// impl BoardTypes for Ast1060Board {
+/// impl BoardCapabilities for Ast1060Board {
 ///     type Image = SpiFlashImage;       // interposed flash, offsets from the slot layout
 ///     type Verifier = ManifestVerifier; // signature + SVN via the crypto engine
 /// }
@@ -111,7 +112,7 @@ pub trait BoardTypes {
 ///     verifier,
 /// };
 /// ```
-pub struct Board<B: BoardTypes, const N: usize> {
+pub struct Board<B: BoardCapabilities, const N: usize> {
     /// `images[i]` belongs to `ComponentId(i)` — device index = chain
     /// position = table declaration order.
     pub images: [B::Image; N],

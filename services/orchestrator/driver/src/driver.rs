@@ -6,7 +6,7 @@
 
 use openprot_orchestrator_sm::{ComponentId, Effect, EffectError, Event, Platform};
 
-use crate::board::{Board, BoardTypes, ImageSource, Verdict, Verifier};
+use crate::board::{Board, BoardCapabilities, ImageSource, Verdict, Verifier};
 
 /// Queue bound. Executors produce at most one event per effect, the event loop
 /// drains it after every dispatch, and the largest SM effect batch today is
@@ -51,7 +51,7 @@ impl core::error::Error for DriverError {}
 
 /// The effect executors. Everything device-specific lives in the [`Board`];
 /// the driver's own fields are bookkeeping.
-pub struct PlatformDriver<B: BoardTypes, const N: usize> {
+pub struct PlatformDriver<B: BoardCapabilities, const N: usize> {
     board: Board<B, N>,
     /// Component whose image is staged (source opened) for verification.
     staged: Option<ComponentId>,
@@ -59,7 +59,7 @@ pub struct PlatformDriver<B: BoardTypes, const N: usize> {
     pending: heapless::Deque<Event, EVENT_CAP>,
 }
 
-impl<B: BoardTypes, const N: usize> PlatformDriver<B, N> {
+impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     pub fn new(board: Board<B, N>) -> Self {
         Self {
             board,
@@ -201,7 +201,7 @@ impl<B: BoardTypes, const N: usize> PlatformDriver<B, N> {
     }
 }
 
-impl<B: BoardTypes, const N: usize> Platform for PlatformDriver<B, N> {
+impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
     /// Routes each effect to its executor. Exhaustive: a new [`Effect`]
     /// variant must get an executor before this compiles. Every executor
     /// error reports as [`EffectError`] — the SM treats all actuation

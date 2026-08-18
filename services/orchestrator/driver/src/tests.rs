@@ -131,7 +131,7 @@ impl Verifier for XorVerifier {
 /// The test board's type choices.
 struct MockBoard;
 
-impl BoardTypes for MockBoard {
+impl BoardCapabilities for MockBoard {
     type Image = MemImage;
     type Verifier = XorVerifier;
 }

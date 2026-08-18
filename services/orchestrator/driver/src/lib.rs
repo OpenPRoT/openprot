@@ -27,5 +27,5 @@ mod driver;
 #[cfg(test)]
 mod tests;
 
-pub use board::{Board, BoardTypes, ImageSource, Verdict, Verifier};
+pub use board::{Board, BoardCapabilities, ImageSource, Verdict, Verifier};
 pub use driver::{DriverError, PlatformDriver};
