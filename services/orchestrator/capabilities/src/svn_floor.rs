@@ -39,7 +39,7 @@ pub trait SvnFloor {
     type Error: core::error::Error;
 
     /// The current floor: the lowest SVN this device may still boot.
-    fn floor(&mut self) -> Result<Svn, Self::Error>;
+    fn floor(&self) -> Result<Svn, Self::Error>;
 
     /// Raises the floor to `to`. At or below the current floor: `Ok`, no-op.
     fn advance(&mut self, to: Svn) -> Result<(), Self::Error>;
@@ -71,7 +71,7 @@ mod tests {
     impl SvnFloor for MockFloor {
         type Error = MockFault;
 
-        fn floor(&mut self) -> Result<Svn, MockFault> {
+        fn floor(&self) -> Result<Svn, MockFault> {
             if self.fail {
                 Err(MockFault)
             } else {
