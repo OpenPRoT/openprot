@@ -81,6 +81,9 @@ pw_rust = use_extension("@pigweed//pw_toolchain/rust:extensions.bzl", "pw_rust")
 pw_rust.toolchain(cipd_tag = "git_revisions:fe5c95d4ae33ec9d7831921e448e2daf8264ea42,7b074fc9362a4a6a5f172dd8936a22fb25eff96b")
 use_repo(pw_rust, "pw_rust_toolchains")
 
+pw_cxx_toolchain = use_extension("@pigweed//pw_toolchain/cc:pw_cxx_toolchain.bzl", "pw_cxx_toolchain")
+use_repo(pw_cxx_toolchain, "llvm_toolchain")
+
 register_toolchains(
     "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_linux",
     "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_macos",
