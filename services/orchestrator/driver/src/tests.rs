@@ -181,7 +181,7 @@ fn corrupt_image_fails_verification() {
 fn verify_without_read_is_refused() {
     let mut driver = driver([MemImage::holding(valid_image())]);
 
-    assert_eq!(driver.verify_firmware(C0), Err(DriverError::NoImage));
+    assert_eq!(driver.verify_firmware(C0), Err(DriverError::NotStaged));
     assert_eq!(driver.take_event(), None);
 }
 
@@ -244,7 +244,7 @@ fn verify_for_a_different_component_is_refused() {
 
     driver.stage_firmware(C0).unwrap();
 
-    assert_eq!(driver.verify_firmware(C1), Err(DriverError::NoImage));
+    assert_eq!(driver.verify_firmware(C1), Err(DriverError::NotStaged));
 }
 
 #[test]

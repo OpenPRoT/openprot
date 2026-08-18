@@ -25,7 +25,7 @@ pub enum DriverError {
     /// The component's image source could not be opened.
     ImageUnavailable,
     /// Verify was asked for a component whose image was never staged.
-    NoImage,
+    NotStaged,
     /// The verifier could not perform the check (a failed image is a
     /// [`Verdict`], not an error).
     VerifierFault,
@@ -40,7 +40,7 @@ impl core::fmt::Display for DriverError {
             DriverError::NotImplemented => "executor not implemented",
             DriverError::UnknownComponent => "no device for this component id",
             DriverError::ImageUnavailable => "image source could not be opened",
-            DriverError::NoImage => "no image staged for this component",
+            DriverError::NotStaged => "no image staged for this component",
             DriverError::VerifierFault => "verifier could not perform the check",
             DriverError::QueueFull => "event queue full",
         })
@@ -98,7 +98,7 @@ impl<B: BoardTypes, const N: usize> PlatformDriver<B, N> {
     /// `Event::VerificationPassed(id)` or `Event::VerificationFailed(id)`.
     pub fn verify_firmware(&mut self, id: ComponentId) -> Result<(), DriverError> {
         if self.staged != Some(id) {
-            return Err(DriverError::NoImage);
+            return Err(DriverError::NotStaged);
         }
         let source = self
             .board
