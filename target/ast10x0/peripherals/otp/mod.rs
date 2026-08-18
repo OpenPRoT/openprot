@@ -183,8 +183,7 @@ pub static REGION_INFO: &[RegionInfo] = &[
         alignment: 4,
     },
 ];
-// INVARIANT: REGION_INFO must be ordered by AspeedOtpRegion discriminant (Data=0, Configuration=1,
-// Strap=2, ScuProtection=3) because several functions index it directly by `region as usize`.
+// INVARIANT: REGION_INFO must stay ordered by AspeedOtpRegion discriminant; code indexes it by `region as usize`.
 
 impl<L: Logger> OtpController<L> {
     /// # Safety
@@ -509,6 +508,9 @@ impl<L: Logger> OtpController<L> {
 
         let otp_addr = address & !(1 << 15);
 
+        if value.len() < 2 || ignore.len() < 2 || compare.len() < 2 {
+            return false;
+        }
         if num_dw == 1 {
             return self.verify_dw(address, value[0], ignore[0], &mut compare[0]);
         } else if num_dw == 2 {
@@ -545,6 +547,29 @@ impl<L: Logger> OtpController<L> {
         }
         true
     }
+    /// Verify only the DWORD(s) that were programmed, each at its own even/odd address.
+    fn verify_prog_words(
+        &mut self,
+        address: u32,
+        buffer: &[u32],
+        ignore_mask: &[u32],
+        prog0: bool,
+        prog1: bool,
+        compare: &mut [u32],
+    ) -> bool {
+        if buffer.len() < 2 || ignore_mask.len() < 2 || compare.len() < 2 {
+            return false;
+        }
+        match (prog0, prog1) {
+            (true, true) => self.verify_2dw(address, buffer, ignore_mask, 2, compare),
+            (true, false) => self.verify_dw(address, buffer[0], ignore_mask[0], &mut compare[0]),
+            (false, true) => {
+                self.verify_dw(address + 1, buffer[1], ignore_mask[1], &mut compare[1])
+            }
+            (false, false) => true,
+        }
+    }
+
     /// Program and verify 2 DWORDs with normal→soak retry, skipping already-matching words
     pub fn otp_prog_verify_2dw(
         &mut self,
@@ -553,10 +578,12 @@ impl<L: Logger> OtpController<L> {
         buffer: &[u32],
         ignore: &[u32],
     ) -> Result<(), OtpError> {
+        if otp_data.len() < 2 || buffer.len() < 2 || ignore.len() < 2 {
+            return Err(OtpError::InvalidBufSize);
+        }
         let mut ignore_mask: [u32; 2] = [0, 0];
         let mut compare: [u32; 2] = [0, 0];
         let mut pass: bool;
-        let mut verify_size = 0;
         ignore_mask[0] = ignore[0];
         ignore_mask[1] = ignore[1];
         let data0_masked = otp_data[0] & !ignore_mask[0];
@@ -590,31 +617,30 @@ impl<L: Logger> OtpController<L> {
         {
             return Err(OtpError::WriteFailed);
         }
+        // Which DWORD(s) still differ and must be burned; verify each at its own address.
+        let prog0 = ignore_mask[0] != 0xffff_ffff;
+        let prog1 = ignore_mask[1] != 0xffff_ffff;
         self.otp_soak(OtpSoak::NormalProg);
-
-        //ignore
-        if ignore_mask[0] != 0xffff_ffff {
+        if prog0 {
             self.otp_prog_dw(buffer[0], ignore_mask[0], address)?;
-            verify_size += 1;
         }
-        if ignore_mask[1] != 0xffff_ffff {
+        if prog1 {
             self.otp_prog_dw(buffer[1], ignore_mask[1], address + 1)?;
-            verify_size += 1;
         }
         pass = false;
         for _j in 0..OTP_OP_RETRIES {
-            if self.verify_2dw(address, buffer, &ignore_mask, verify_size, &mut compare) {
+            if self.verify_prog_words(address, buffer, &ignore_mask, prog0, prog1, &mut compare) {
                 pass = true;
                 break;
             }
             self.otp_soak(OtpSoak::SoakProg);
-            if compare[0] != 0 {
+            if prog0 && compare[0] != 0 {
                 self.otp_prog_dw(compare[0], ignore_mask[0], address)?;
             }
-            if verify_size == 2 && compare[1] != !0 {
+            if prog1 && compare[1] != !0 {
                 self.otp_prog_dw(compare[1], ignore_mask[1], address + 1)?;
             }
-            if self.verify_2dw(address, buffer, &ignore_mask, verify_size, &mut compare) {
+            if self.verify_prog_words(address, buffer, &ignore_mask, prog0, prog1, &mut compare) {
                 pass = true;
                 break;
             }
@@ -719,6 +745,9 @@ impl<L: Logger> OtpController<L> {
     pub fn otp_strap_status(&self, os: &mut [StrapStatus]) -> Result<(), OtpError> {
         let mut otpstrap_raw: [u32; 2] = [0; 2];
 
+        if os.len() < 64 {
+            return Err(OtpError::InvalidBufSize);
+        }
         for j in 0..64 {
             os[j].value = false;
             os[j].remaining_writes = 6;
@@ -790,12 +819,12 @@ impl<L: Logger> OtpController<L> {
         if cdw_len % 2 != 0 {
             return Err(OtpError::InvalidBufSize);
         }
-        for i in (offset..offset + cdw_len).step_by(2) {
-            let idx = i - offset;
+        for (pair, chunk) in buffer.chunks_exact_mut(2).enumerate() {
+            let i = offset + pair * 2;
             match self.otp_read_data(u32::try_from(i).unwrap(), &mut temp) {
                 Ok(()) => {
-                    buffer[idx] = temp[0];
-                    buffer[idx + 1] = temp[1];
+                    chunk[0] = temp[0];
+                    chunk[1] = temp[1];
                 }
                 Err(e) => return Err(e),
             }
@@ -865,19 +894,22 @@ impl<L: Logger> OtpController<L> {
         if offset & 0x3 != 0 {
             return Err(OtpError::AlignmentError);
         }
+        if cdw_len % 2 != 0 {
+            return Err(OtpError::InvalidBufSize);
+        }
         self.otp_unlock_reg();
 
         let mut scratch: [u32; 2] = [0, 0];
-        for i in (offset..offset + cdw_len).step_by(2) {
-            let idx0 = i - offset;
-            result = self.otp_read_data(u32::try_from(i).unwrap(), &mut scratch);
-            if result.is_err() {
-                otp_debug!(
-                    self.logger,
-                    "otp_prog_data: read fail {:?}",
-                    result.unwrap_err()
-                );
-                break;
+        for (pair, chunk) in data.chunks_exact(2).enumerate() {
+            let idx0 = pair * 2;
+            let i = offset + idx0;
+            match self.otp_read_data(u32::try_from(i).unwrap(), &mut scratch) {
+                Ok(()) => {}
+                Err(e) => {
+                    otp_debug!(self.logger, "otp_prog_data: read fail {:?}", e);
+                    result = Err(e);
+                    break;
+                }
             }
             otp_debug!(
                 self.logger,
@@ -885,12 +917,7 @@ impl<L: Logger> OtpController<L> {
                 idx0,
                 idx0 + 1
             );
-            result = self.otp_prog_verify_2dw(
-                u32::try_from(i).unwrap(),
-                &scratch,
-                &data[idx0..idx0 + 2],
-                &ignore,
-            );
+            result = self.otp_prog_verify_2dw(u32::try_from(i).unwrap(), &scratch, chunk, &ignore);
             if result.is_err() {
                 break;
             }
@@ -903,17 +930,9 @@ impl<L: Logger> OtpController<L> {
 
     /// Extract the requested value of strap bit `i` from the caller's `strap` words.
     fn strap_target_bit(strap: &[u32], start_bit: usize, i: usize) -> u32 {
-        if i < 32 {
-            let offset = u32::try_from(i).unwrap();
-            (strap[0] >> (offset - u32::try_from(start_bit).unwrap())) & 0x1
-        } else {
-            let offset = u32::try_from(i - 32).unwrap();
-            if i - start_bit < 32 {
-                (strap[0] >> u32::try_from(i - start_bit).unwrap()) & 0x1
-            } else {
-                (strap[1] >> (offset - u32::try_from(start_bit).unwrap())) & 0x1
-            }
-        }
+        let rel = i - start_bit;
+        let (word, shift) = if rel < 32 { (0, rel) } else { (1, rel - 32) };
+        (strap.get(word).copied().unwrap_or(0) >> shift) & 0x1
     }
 
     /// Program strap bits; every unprotected bit that differs from its current value is burned.
@@ -1050,7 +1069,7 @@ impl<L: Logger> OtpController<L> {
         let mut data_masked: u32;
         let mut buf_masked: u32;
         let mut addr: usize;
-        let mut pass: bool = false;
+        let mut pass: bool = true;
         let scupro_start = REGION_INFO[AspeedOtpRegion::ScuProtection as usize].start;
         let cdw_size = otp_scu.len();
         let total_size = REGION_INFO[AspeedOtpRegion::ScuProtection as usize].cdw_size;
@@ -1065,7 +1084,7 @@ impl<L: Logger> OtpController<L> {
 
         for i in start..start + cdw_size {
             let idx = i - start;
-            data_masked = scu_pro[idx] & !ignore;
+            data_masked = scu_pro.get(idx).copied().unwrap_or(0) & !ignore;
             buf_masked = otp_scu[idx] & !ignore;
             addr = scupro_start + i * 2;
             if data_masked == buf_masked {
@@ -1098,11 +1117,13 @@ impl<L: Logger> OtpController<L> {
     }
 
     pub fn region_capacity(&self, region: AspeedOtpRegion) -> usize {
-        REGION_INFO[region as usize].cdw_size << 2
+        REGION_INFO
+            .get(region as usize)
+            .map_or(0, |r| r.cdw_size << 2)
     }
     #[allow(clippy::unused_self)]
     pub fn region_alignment(&self, region: AspeedOtpRegion) -> usize {
-        REGION_INFO[region as usize].alignment
+        REGION_INFO.get(region as usize).map_or(0, |r| r.alignment)
     }
     #[allow(clippy::match_same_arms)]
     fn is_region_protected(&self, region: AspeedOtpRegion) -> Result<bool, OtpError> {
@@ -1505,6 +1526,18 @@ mod tests {
         // matches, so retries exhaust and the whole program returns WriteFailed.
         let (mut ctrl, _buf) = unsafe { make_ctrl_buf() };
         assert_eq!(ctrl.otp_prog_data(0, &[1, 0]), Err(OtpError::WriteFailed));
+    }
+
+    #[test]
+    fn prog_data_odd_length_rejected() {
+        // Data is programmed in even/odd DWORD pairs; an odd word count can't be
+        // paired and is rejected before any fuse work (guards chunks_exact from
+        // silently dropping the trailing word).
+        let mut ctrl = unsafe { make_ctrl() };
+        assert_eq!(
+            ctrl.otp_prog_data(0, &[1, 2, 3]),
+            Err(OtpError::InvalidBufSize)
+        );
     }
 
     #[test]
