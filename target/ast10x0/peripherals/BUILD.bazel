@@ -112,6 +112,26 @@ rust_library(
 )
 
 rust_test(
+    name = "otp_test",
+    srcs = [
+        "otp/common.rs",
+        "otp/mod.rs",
+    ],
+    crate_name = "otp_test",
+    crate_root = "otp/mod.rs",
+    edition = "2024",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        "@ast1060_pac",
+        "@rust_crates//:embedded-hal",
+        "@rust_crates//:heapless",
+    ],
+)
+
+rust_test(
     name = "spimonitor_commands_test",
     srcs = ["spimonitor/commands.rs"],
     crate_name = "spimonitor_commands_test",

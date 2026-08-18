@@ -48,7 +48,7 @@ pub enum OtpError {
     AlignmentError,
     BoundaryError,
     Timeout,
-    UnknowRevID,
+    UnknownRevId,
     Unknown,
 }
 
@@ -73,7 +73,7 @@ pub struct ProtectionStatus {
 }
 
 /// Strap bit programming status
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StrapStatus {
     /// Current strap bit value
     pub value: bool,
