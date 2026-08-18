@@ -121,7 +121,7 @@ impl Verifier for XorVerifier {
         }
         let ok = len > IMAGE_MAGIC.len() && magic == IMAGE_MAGIC && xor == 0;
         Ok(if ok {
-            Verdict::Authentic
+            Verdict::Authenticated
         } else {
             Verdict::Rejected
         })

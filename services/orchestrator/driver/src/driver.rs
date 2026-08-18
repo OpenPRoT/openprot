@@ -111,7 +111,7 @@ impl<B: BoardTypes, const N: usize> PlatformDriver<B, N> {
             .verify(id, source)
             .map_err(|_| DriverError::VerifierFault)?;
         self.enqueue(match verdict {
-            Verdict::Authentic => Event::VerificationPassed(id),
+            Verdict::Authenticated => Event::VerificationPassed(id),
             Verdict::Rejected => Event::VerificationFailed(id),
         })
     }

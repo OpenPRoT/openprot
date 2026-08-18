@@ -80,7 +80,7 @@ impl<V: Verifier> Verifier for &mut V {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verdict {
     /// Reported as `Event::VerificationPassed`.
-    Authentic,
+    Authenticated,
     /// Reported as `Event::VerificationFailed`.
     Rejected,
 }
