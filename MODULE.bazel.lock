@@ -2233,7 +2233,7 @@
     "@@pigweed+//pw_toolchain/cc:pw_cxx_toolchain.bzl%pw_cxx_toolchain": {
       "general": {
         "bzlTransitiveDigest": "ur0PgZTSpo9gLUum1tYMVnAibSN5cy89N+uaHAxXtKU=",
-        "usagesDigest": "VJKzSLvYrPIp3N/cUgLBxWOQL+32xuBhnqLFoukfvvQ=",
+        "usagesDigest": "EVBM8wsrk62NhLgzUoiowGkC7SGo2uZlLddwkXXdKM8=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},

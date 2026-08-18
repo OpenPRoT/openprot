@@ -1,0 +1,15 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_python//python:defs.bzl", "py_binary")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["stack_size_test.bzl"])
+
+py_binary(
+    name = "check_stack_sizes",
+    srcs = ["check_stack_sizes.py"],
+    main = "check_stack_sizes.py",
+    visibility = ["//visibility:public"],
+)
