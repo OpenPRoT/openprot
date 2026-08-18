@@ -26,7 +26,9 @@ pub struct Svn(pub u32);
 ///   succeeds as a no-op (a replayed commit is harmless); no call ever
 ///   lowers the floor. A lower target is not distinguishable from a replay
 ///   at this seam; callers that need to detect one compare against
-///   [`floor`](Self::floor) first.
+///   [`floor`](Self::floor) first. The no-op lives in the implementor: an
+///   encoding that is naturally one-way (unary fuse counters) gets it for
+///   free, any other storage must check `to` against its floor itself.
 /// - **Durable on return.** When `advance` returns `Ok`, the new floor
 ///   survives power loss. A torn write may lose the advance (the caller
 ///   re-commits) but must never leave the floor below its previous value.
