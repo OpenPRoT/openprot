@@ -11,6 +11,7 @@ rust_library(
         "src/evidence.rs",
         "src/lib.rs",
         "src/svn_floor.rs",
+        "src/updatable.rs",
     ],
     edition = "2024",
     visibility = ["//visibility:public"],
