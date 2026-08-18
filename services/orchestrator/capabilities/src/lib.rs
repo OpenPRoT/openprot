@@ -16,6 +16,12 @@
 //! checkpoints as data (`BootCheckpoint` in `orchestrator-config`), and the
 //! board's reader gives the ids meaning.
 //!
+//! `Updatable` is the update capability: stage a payload on one device
+//! (polled, one bounded step at a time) and mark it the boot candidate —
+//! always tentatively; the commit gate lives elsewhere. `PayloadSource` is
+//! the chunked read seam staging pulls from — transports and slot
+//! bookkeeping stay behind the adapter.
+//!
 //! `BootWatch` is the seam the orchestrator polls: one device's boot walk,
 //! erased of every device-specific type, answering with a `WalkVerdict`.
 //!
@@ -37,9 +43,11 @@ mod boot_watch;
 mod evidence;
 mod lockdown_latch;
 mod svn_floor;
+mod updatable;
 
 pub use boot_control::BootControl;
 pub use boot_watch::{BootWatch, FailureCause, WalkVerdict};
 pub use evidence::{BootStatus, EvidenceReader};
 pub use lockdown_latch::LockdownLatch;
 pub use svn_floor::{Svn, SvnFloor};
+pub use updatable::{PayloadReadError, PayloadSource, StageProgress, Updatable};
