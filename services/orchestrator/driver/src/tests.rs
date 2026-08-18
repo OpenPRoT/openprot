@@ -257,6 +257,17 @@ fn unknown_component_is_refused() {
     );
 }
 
+// An unknown id is reported as such even though it is also never staged.
+#[test]
+fn verify_of_unknown_component_is_refused() {
+    let mut driver = driver([MemImage::holding(valid_image())]);
+
+    assert_eq!(
+        driver.verify_firmware(ComponentId::new(9)),
+        Err(DriverError::UnknownComponent)
+    );
+}
+
 // Undrained verdicts eventually fill the queue; the overflow is reported,
 // not silently dropped.
 #[test]

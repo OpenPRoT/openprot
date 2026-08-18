@@ -101,10 +101,12 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// Judge the staged image via the [`Verifier`] and queue the verdict:
     /// `Event::VerificationPassed(id)` or `Event::VerificationFailed(id)`.
     pub fn verify_firmware(&mut self, id: ComponentId) -> Result<(), DriverError> {
+        // Id validity first: an unknown component is UnknownComponent even
+        // though it can never be staged.
+        let source = Self::source(&mut self.board.images, id)?;
         if self.staged != Some(id) {
             return Err(DriverError::NotStaged);
         }
-        let source = Self::source(&mut self.board.images, id)?;
         let verdict = self
             .board
             .verifier
