@@ -1092,7 +1092,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 [[package]]
 name = "pldm-common"
 version = "0.1.0"
-source = "git+https://github.com/OpenPRoT/pldm-lib.git#ede07931f096fc206707b977e55cfb480762eae9"
+source = "git+https://github.com/OpenPRoT/pldm-lib.git#c709ae4adbc28b168f10e4a4531149abf5116b92"
 dependencies = [
  "bitfield 0.14.0",
  "zerocopy",
@@ -1101,7 +1101,7 @@ dependencies = [
 [[package]]
 name = "pldm-interface"
 version = "0.1.0"
-source = "git+https://github.com/OpenPRoT/pldm-lib.git#ede07931f096fc206707b977e55cfb480762eae9"
+source = "git+https://github.com/OpenPRoT/pldm-lib.git#c709ae4adbc28b168f10e4a4531149abf5116b92"
 dependencies = [
  "bitfield 0.14.0",
  "pldm-common",
