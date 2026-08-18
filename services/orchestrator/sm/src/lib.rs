@@ -47,6 +47,16 @@ const _: () = assert!(
     "PENDING_CAP must hold one outside event + one Emit follow-up + one EffectFailed",
 );
 
+/// The proven effect-buffer floor for a chain of `n` components: a full
+/// cascade (`n` `AssertReset`s paired with `n` `ReportIsolated`s) plus the
+/// destination `PreSupervision` entry's two effects. Boards size their
+/// effect buffer with this; `Rot::EFFECT_CAP_OK` enforces the same floor —
+/// the formula lives only here.
+#[must_use]
+pub const fn effect_floor(n: usize) -> usize {
+    2 * n + 2
+}
+
 /// Result of dispatching one event to a state (or its superstate).
 enum Outcome {
     /// Event consumed; state unchanged; no entry action runs.
@@ -219,12 +229,11 @@ pub struct Rot<const N: usize, const E: usize> {
 }
 
 impl<const N: usize, const E: usize> Rot<N, E> {
-    /// Compile-time floor: the effect buffer must hold a full cascade (`N`
-    /// `AssertReset`s paired with `N` `ReportIsolated`s) plus the destination
-    /// `PreSupervision` entry's two effects. Forced by `new` below, so an
-    /// under-sized `E` fails to build.
+    /// Compile-time floor: `E` must be at least [`effect_floor`]`(N)` (see
+    /// there for the worst case). Forced by `new` below, so an under-sized
+    /// `E` fails to build.
     const EFFECT_CAP_OK: () = assert!(
-        E >= 2 * N + 2,
+        E >= effect_floor(N),
         "effect buffer E must be >= 2 * chain length N + 2",
     );
 

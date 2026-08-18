@@ -69,10 +69,9 @@ pub const MANAGED_DEVICES: DeviceTable<u8, MockSignal> = DeviceTable::new(&[
 /// table's length.
 pub const DEVICE_COUNT: usize = MANAGED_DEVICES.devices().len();
 
-/// Derived, not declared: the orchestrator's proven effect-buffer floor
-/// (`E >= 2 * N + 2`), with no headroom — headroom would be a second,
-/// hand-picked number.
-pub const EFFECT_CAP: usize = 2 * DEVICE_COUNT + 2;
+/// Derived, not declared: the orchestrator's proven effect-buffer floor,
+/// with no headroom — headroom would be a second, hand-picked number.
+pub const EFFECT_CAP: usize = openprot_orchestrator_sm::effect_floor(DEVICE_COUNT);
 
 /// Consecutive failed-restore attempts per device before its failure
 /// policy is consulted. A genuine board fact — not derivable — so it is

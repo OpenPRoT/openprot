@@ -14,7 +14,7 @@ const C3: ComponentId = ComponentId::new(3);
 const BOOT: Event = Event::PowerGood(PowerOnResult::Provisioned);
 
 const CAPACITY: usize = 8;
-const ECAP: usize = 2 * CAPACITY + 2;
+const ECAP: usize = effect_floor(CAPACITY);
 const MAX_RETRY: u8 = 3;
 
 fn chain(
