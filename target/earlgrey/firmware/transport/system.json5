@@ -126,7 +126,7 @@
         },
         {
           name: "updatemgr",
-          ram_size_bytes: 8192,
+          ram_size_bytes: 4096,
           objects: [
             {
               name: "logger_updatemgr",
@@ -154,7 +154,7 @@
             },
             {
               name: "updatemgr_thread",
-              kernel_stack_size_bytes: 4096,
+              kernel_stack_size_bytes: 2048,
               type: "thread"
             }
           ]

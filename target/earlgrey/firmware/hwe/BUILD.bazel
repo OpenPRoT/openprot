@@ -11,6 +11,7 @@ load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
 load("//target/earlgrey/signing/keys:defs.bzl", "FPGA_ECDSA_KEY", "SILICON_ECDSA_KEY")
 load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_test")
+load("//target/earlgrey/tooling/stack_checker:stack_size_test.bzl", "rust_stack_size_test")
 
 rust_process(
     name = "logmgr",
@@ -173,6 +174,14 @@ rust_binary_no_panics_test(
     apps = ["hwe"],
     binary = ":hwe_firmware",
     tags = ["no_panics"],
+)
+
+rust_stack_size_test(
+    name = "stack_size",
+    apps = ["hwe"],
+    binary = ":hwe_firmware",
+    system_config = ":system_config",
+    tags = ["stack_size"],
 )
 
 target_linker_script(
