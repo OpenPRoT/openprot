@@ -14,8 +14,9 @@
 //! via [`PlatformDriver::take_event`] and dispatches each.
 //!
 //! Everything device-specific arrives through the seams in [`board`]:
-//! image access ([`ImageSource`]) and image judgment ([`Verifier`]),
-//! bundled in one [`Board`] built by the board's composition crate.
+//! image access ([`ImageSource`]), image judgment ([`Verifier`]) and reset
+//! actuation ([`orchestrator_capabilities::BootControl`]), bundled in one
+//! [`Board`] built by the board's composition crate.
 //!
 //! [`Platform`]: openprot_orchestrator_sm::Platform
 

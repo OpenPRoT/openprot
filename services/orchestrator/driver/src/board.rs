@@ -5,6 +5,7 @@
 //! Boards (or test mocks) implement these.
 
 use openprot_orchestrator_sm::ComponentId;
+use orchestrator_capabilities::BootControl;
 
 /// Access to one component's active firmware image, however it is reached —
 /// interposed flash, a PLDM/MCTP transfer, a RAM copy in tests.
@@ -93,8 +94,9 @@ pub trait BoardCapabilities {
     type Image: ImageSource;
     /// Judges images for every component.
     type Verifier: Verifier;
-    // Later seams: Reset (release/assert_reset), Evidence (checkpoint
-    // walk), Recovery, Staging.
+    /// Reset actuation for the managed components.
+    type BootControl: BootControl;
+    // Later seams: Evidence (checkpoint walk), Recovery, Staging.
 }
 
 /// Everything the board supplies, built once at bring-up and handed to
@@ -104,12 +106,14 @@ pub trait BoardCapabilities {
 /// ```ignore
 /// struct Ast1060Board;
 /// impl BoardCapabilities for Ast1060Board {
-///     type Image = SpiFlashImage;       // interposed flash, offsets from the slot layout
-///     type Verifier = ManifestVerifier; // signature + SVN via the crypto engine
+///     type Image = SpiFlashImage;         // interposed flash, offsets from the slot layout
+///     type Verifier = ManifestVerifier;   // signature + SVN via the crypto engine
+///     type BootControl = ExtrstGpio;      // per-component reset line
 /// }
 /// let board = Board::<Ast1060Board, 2> {
 ///     images: [bmc_image, cpld_image],
 ///     verifier,
+///     boot_controls: [bmc_reset, cpld_reset],
 /// };
 /// ```
 pub struct Board<B: BoardCapabilities, const N: usize> {
@@ -118,5 +122,8 @@ pub struct Board<B: BoardCapabilities, const N: usize> {
     pub images: [B::Image; N],
     /// Judges images for every component.
     pub verifier: B::Verifier,
-    // Later seams add fields, e.g. resets: [B::Reset; N].
+    /// `boot_controls[i]` actuates `ComponentId(i)`'s reset, same indexing
+    /// as `images`.
+    pub boot_controls: [B::BootControl; N],
+    // Later seams add fields, e.g. evidence: [B::Evidence; N].
 }

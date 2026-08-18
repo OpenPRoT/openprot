@@ -15,6 +15,7 @@ rust_library(
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
+        "//services/orchestrator/capabilities:orchestrator_capabilities",
         "//services/orchestrator/sm:orchestrator_sm",
         "@rust_crates//:heapless",
     ],

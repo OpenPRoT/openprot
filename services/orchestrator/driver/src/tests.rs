@@ -128,18 +128,67 @@ impl Verifier for XorVerifier {
     }
 }
 
+#[derive(Debug)]
+struct ResetFault;
+
+impl core::fmt::Display for ResetFault {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("reset line fault")
+    }
+}
+
+impl core::error::Error for ResetFault {}
+
+/// Reset actuation without a HAL; `held` is shared so tests can observe the
+/// line after the control moves into the driver.
+struct MockReset {
+    held: std::rc::Rc<core::cell::Cell<bool>>,
+    fail: bool,
+}
+
+impl MockReset {
+    fn new() -> Self {
+        Self {
+            held: std::rc::Rc::new(core::cell::Cell::new(true)),
+            fail: false,
+        }
+    }
+}
+
+impl orchestrator_capabilities::BootControl for MockReset {
+    type Error = ResetFault;
+
+    fn hold_in_reset(&mut self) -> Result<(), ResetFault> {
+        if self.fail {
+            return Err(ResetFault);
+        }
+        self.held.set(true);
+        Ok(())
+    }
+
+    fn release(&mut self) -> Result<(), ResetFault> {
+        if self.fail {
+            return Err(ResetFault);
+        }
+        self.held.set(false);
+        Ok(())
+    }
+}
+
 /// The test board's type choices.
 struct MockBoard;
 
 impl BoardCapabilities for MockBoard {
     type Image = MemImage;
     type Verifier = XorVerifier;
+    type BootControl = MockReset;
 }
 
 fn driver(images: [MemImage; 1]) -> PlatformDriver<MockBoard, 1> {
     PlatformDriver::new(Board {
         images,
         verifier: XorVerifier { fault: false },
+        boot_controls: [MockReset::new()],
     })
 }
 
@@ -222,6 +271,7 @@ fn verifier_fault_fails_closed() {
     let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
         images: [MemImage::holding(valid_image())],
         verifier: XorVerifier { fault: true },
+        boot_controls: [MockReset::new()],
     });
 
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
@@ -240,6 +290,7 @@ fn verify_for_a_different_component_is_refused() {
             MemImage::holding(valid_image()),
         ],
         verifier: XorVerifier { fault: false },
+        boot_controls: [MockReset::new(), MockReset::new()],
     });
 
     driver.stage_firmware(C0).unwrap();
@@ -266,6 +317,51 @@ fn verify_of_unknown_component_is_refused() {
         driver.verify_firmware(ComponentId::new(9)),
         Err(DriverError::UnknownComponent)
     );
+}
+
+#[test]
+fn reset_release_and_assert_reach_the_boot_control() {
+    let control = MockReset::new();
+    let held = control.held.clone();
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
+        images: [MemImage::holding(valid_image())],
+        verifier: XorVerifier { fault: false },
+        boot_controls: [control],
+    });
+
+    driver.release_reset(C0).unwrap();
+    assert!(!held.get());
+
+    driver.assert_reset(C0).unwrap();
+    assert!(held.get());
+}
+
+#[test]
+fn reset_of_unknown_component_is_refused() {
+    let mut driver = driver([MemImage::holding(valid_image())]);
+
+    assert_eq!(
+        driver.release_reset(ComponentId::new(9)),
+        Err(DriverError::UnknownComponent)
+    );
+    assert_eq!(
+        driver.assert_reset(ComponentId::new(9)),
+        Err(DriverError::UnknownComponent)
+    );
+}
+
+#[test]
+fn reset_line_fault_is_reported() {
+    let mut control = MockReset::new();
+    control.fail = true;
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
+        images: [MemImage::holding(valid_image())],
+        verifier: XorVerifier { fault: false },
+        boot_controls: [control],
+    });
+
+    assert_eq!(driver.release_reset(C0), Err(DriverError::BootControlFault));
+    assert_eq!(driver.assert_reset(C0), Err(DriverError::BootControlFault));
 }
 
 // Undrained verdicts eventually fill the queue; the overflow is reported,

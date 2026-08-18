@@ -7,6 +7,7 @@
 use openprot_orchestrator_sm::{ComponentId, Effect, EffectError, Event, Platform};
 
 use crate::board::{Board, BoardCapabilities, ImageSource, Verdict, Verifier};
+use orchestrator_capabilities::BootControl;
 
 /// Queue bound. Executors produce at most one event per effect, the event loop
 /// drains it after every dispatch, and the largest SM effect batch today is
@@ -29,6 +30,8 @@ pub enum DriverError {
     /// The verifier could not perform the check (a failed image is a
     /// [`Verdict`], not an error).
     VerifierFault,
+    /// The component's boot control could not actuate the reset line.
+    BootControlFault,
     /// The event queue overflowed; dropping events breaks the SM's
     /// honest-feedback contract.
     QueueFull,
@@ -42,6 +45,7 @@ impl core::fmt::Display for DriverError {
             DriverError::ImageUnavailable => "image source could not be opened",
             DriverError::NotStaged => "no image staged for this component",
             DriverError::VerifierFault => "verifier could not perform the check",
+            DriverError::BootControlFault => "boot control could not actuate the reset",
             DriverError::QueueFull => "event queue full",
         })
     }
@@ -118,17 +122,29 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         })
     }
 
-    /// Release `id` from reset, then walk its boot checkpoints; feed back
-    /// one `Event::ComponentReady(id)` (Active) or `Event::Booted(id)`
-    /// (Passive), or `Event::Timeout(id)` on window expiry.
-    pub fn release_reset(&mut self, _id: ComponentId) -> Result<(), DriverError> {
-        Err(DriverError::NotImplemented)
+    /// `id`'s reset actuator.
+    fn boot_control(&mut self, id: ComponentId) -> Result<&mut B::BootControl, DriverError> {
+        self.board
+            .boot_controls
+            .get_mut(id.get() as usize)
+            .ok_or(DriverError::UnknownComponent)
+    }
+
+    /// Release `id` from reset. The boot-checkpoint walk that feeds back
+    /// `Event::ComponentReady(id)`/`Event::Booted(id)`/`Event::Timeout(id)`
+    /// belongs to the BootWatch seam, not yet composed.
+    pub fn release_reset(&mut self, id: ComponentId) -> Result<(), DriverError> {
+        self.boot_control(id)?
+            .release()
+            .map_err(|_| DriverError::BootControlFault)
     }
 
     /// Hold `id` in reset — a durable quiesce, not a pulse; at-rest
     /// verification and the recovery re-walk depend on it.
-    pub fn assert_reset(&mut self, _id: ComponentId) -> Result<(), DriverError> {
-        Err(DriverError::NotImplemented)
+    pub fn assert_reset(&mut self, id: ComponentId) -> Result<(), DriverError> {
+        self.boot_control(id)?
+            .hold_in_reset()
+            .map_err(|_| DriverError::BootControlFault)
     }
 
     /// Restore `id` from its configured recovery source (the mechanism is
