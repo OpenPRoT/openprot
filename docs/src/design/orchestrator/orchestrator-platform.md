@@ -12,12 +12,14 @@ responsibility boundary.
 
 ## Structure
 
-Three board-agnostic layers:
+At the core sits the [state machine](./orchestrator-machine.md)
+(`services/orchestrator/sm`), a pure reducer that consumes events
+(verification results, boot signals, update requests, timeouts) and
+emits effects (verify this image, release that reset, restore golden
+image), performing no I/O itself. It is the policy half, not part of
+the platform. The platform contributes two board-agnostic layers
+inside the orchestrator process:
 
-- **Policy state machine** (`services/orchestrator/sm`) — a pure reducer
-  that consumes events (verification results, boot signals, update requests,
-  timeouts) and emits effects (verify this image, release that reset,
-  restore golden image). It performs no I/O itself.
 - **Device capabilities** (`services/orchestrator/capabilities`) — the narrow contracts
   the state machine's effects are executed against, e.g. `BootControl`
   (hold a device in reset / release it). HAL bindings live in
