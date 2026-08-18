@@ -1,10 +1,10 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::otp::common::{
+use self::common::{
     AspeedChipVersion, AspeedOtpRegion, Logger, OtpError, SessionInfo, StrapStatus,
 };
-use ast1060_pac::{Scu, Secure};
+use ast1060_pac::Secure;
 use core::fmt::Write;
 use embedded_hal::delay::DelayNs;
 
@@ -15,9 +15,13 @@ pub mod common;
 struct DummyDelay;
 
 impl DelayNs for DummyDelay {
+    // Timing calibrated for AST1060 at 200MHz; host builds spin_loop with no real delay.
     fn delay_ns(&mut self, ns: u32) {
         for _ in 0..(ns / 100) {
+            #[cfg(target_arch = "arm")]
             cortex_m::asm::nop();
+            #[cfg(not(target_arch = "arm"))]
+            core::hint::spin_loop();
         }
     }
 }
@@ -31,17 +35,16 @@ pub enum OtpSoak {
 }
 
 pub struct OtpController<L: Logger> {
-    pub sb: &'static SbRegBlock,
-    pub scu: Scu,
-    pub locked: bool,
-    pub session_active: bool,
+    sb: &'static SbRegBlock,
+    scu_base: *const ast1060_pac::scu::RegisterBlock,
+    locked: bool,
     pub logger: L,
 }
 
 macro_rules! otp_debug {
     ($logger:expr, $($arg:tt)*) => {
         let mut buf: heapless::String<64> = heapless::String::new();
-        write!(buf, $($arg)*).unwrap();
+        let _ = write!(buf, $($arg)*); // truncate rather than panic on overflow
         $logger.debug(buf.as_str());
     };
 }
@@ -49,7 +52,7 @@ macro_rules! otp_debug {
 macro_rules! otp_error {
     ($logger:expr, $($arg:tt)*) => {
         let mut buf: heapless::String<64> = heapless::String::new();
-        write!(buf, $($arg)*).unwrap();
+        let _ = write!(buf, $($arg)*); // truncate rather than panic on overflow
         $logger.error(buf.as_str());
     };
 }
@@ -83,13 +86,13 @@ const OTP_OP_RETRIES: u8 = 20;
 ///
 /// OTP region protection
 pub const OTP_CONF_OFFSET: u32 = 0x800;
-pub const OTP_MEM_LOCK_ENBLE: u32 = 1 << 31;
-pub const OTP_KEY_PROT_ENBLE: u32 = 1 << 29;
-pub const OTP_STRAP_PROT_ENBLE: u32 = 1 << 25;
-pub const OTP_CONF_PROT_ENBLE: u32 = 1 << 24;
+pub const OTP_MEM_LOCK_ENABLE: u32 = 1 << 31;
+pub const OTP_KEY_PROT_ENABLE: u32 = 1 << 29;
+pub const OTP_STRAP_PROT_ENABLE: u32 = 1 << 25;
+pub const OTP_CONF_PROT_ENABLE: u32 = 1 << 24;
 //data secure,user,ecc
-pub const OTP_USER_ECC_PROT_ENBLE: u32 = 1 << 23;
-const OTP_SECURE_PROT_ENBLE: u32 = 1 << 22;
+pub const OTP_USER_ECC_PROT_ENABLE: u32 = 1 << 23;
+const OTP_SECURE_PROT_ENABLE: u32 = 1 << 22;
 pub const OTP_SECURE_SIZE_BIT_POS: u32 = 16;
 const OTP_SECURE_SIZE_MASK: u32 = 0x3f;
 
@@ -145,17 +148,11 @@ pub static SOAK_PROG_SOAK: &[SoakProInfo] = &[
 ];
 
 pub struct RegionInfo {
-    region_type: AspeedOtpRegion,
-    start: usize,
-    cdw_size: usize,
-    alignment: usize, //data aligment
+    pub region_type: AspeedOtpRegion,
+    pub start: usize,
+    pub cdw_size: usize,
+    pub alignment: usize,
 }
-pub static REGION_IDS: &[AspeedOtpRegion] = &[
-    AspeedOtpRegion::Data,
-    AspeedOtpRegion::Configuration,
-    AspeedOtpRegion::Strap,
-    AspeedOtpRegion::ScuProtection,
-];
 
 pub static REGION_INFO: &[RegionInfo] = &[
     RegionInfo {
@@ -186,23 +183,27 @@ pub static REGION_INFO: &[RegionInfo] = &[
         alignment: 4,
     },
 ];
+// INVARIANT: REGION_INFO must be ordered by AspeedOtpRegion discriminant (Data=0, Configuration=1,
+// Strap=2, ScuProtection=3) because several functions index it directly by `region as usize`.
 
 impl<L: Logger> OtpController<L> {
-    pub fn new(scu: Scu, logger: L) -> Self {
-        let locked: bool = false;
-        let session_active = false;
-        let sb = unsafe { &*Secure::PTR };
+    /// # Safety
+    /// `scu_base` must point to a valid SCU register block for the lifetime of this controller.
+    pub unsafe fn new(scu_base: *const ast1060_pac::scu::RegisterBlock, logger: L) -> Self {
         Self {
-            sb,
-            scu,
-            locked,
-            session_active,
+            sb: unsafe { &*Secure::PTR },
+            scu_base,
+            locked: false,
             logger,
         }
     }
+
+    fn scu_regs(&self) -> &ast1060_pac::scu::RegisterBlock {
+        unsafe { &*self.scu_base }
+    }
     pub fn chip_version(&self) -> AspeedChipVersion {
-        let revid0 = self.scu.scu004().read().bits();
-        let revid1 = self.scu.scu014().read().bits();
+        let revid0 = self.scu_regs().scu004().read().bits();
+        let revid1 = self.scu_regs().scu014().read().bits();
 
         if revid0 == ID0_AST1060A1 && revid1 == ID1_AST1060A1 {
             return AspeedChipVersion::Ast1060A1;
@@ -221,20 +222,17 @@ impl<L: Logger> OtpController<L> {
 
         //check if OTP controller is idle (1)
         //OTP memory is idle
-        while !self.sb.secure014().read().otpctrl_sts().bit()
-            || !self.sb.secure014().read().otpmemory_sts().bit()
-        {
+        loop {
+            let sts = self.sb.secure014().read();
+            if sts.otpctrl_sts().bit() && sts.otpmemory_sts().bit() {
+                return true;
+            }
             tries -= 1;
             if tries == 0 {
-                break;
+                return false;
             }
+            delay.delay_ns(1_000); // 1us between polls so 1000 retries span real time
         }
-        if self.sb.secure014().read().otpctrl_sts().bit()
-            && self.sb.secure014().read().otpmemory_sts().bit()
-        {
-            return true;
-        }
-        false
     }
 
     pub fn otp_write(&self, otp_addr: u32, data: u32) -> bool {
@@ -246,35 +244,34 @@ impl<L: Logger> OtpController<L> {
         self.wait_complete()
     }
 
-    pub fn otp_soak(&self, otp_soak: OtpSoak) -> bool {
+    pub fn otp_soak(&self, otp_soak: OtpSoak) {
         match otp_soak {
             OtpSoak::Default => {
-                self.otp_write(SOAK_PROG_DEFAULT[0].address, SOAK_PROG_DEFAULT[0].data);
-                self.otp_write(SOAK_PROG_DEFAULT[1].address, SOAK_PROG_DEFAULT[1].data);
-                self.otp_write(SOAK_PROG_DEFAULT[2].address, SOAK_PROG_DEFAULT[2].data);
+                // MRA/MRB/MR register writes are best-effort timing setup; errors are not actionable
+                let _ = self.otp_write(SOAK_PROG_DEFAULT[0].address, SOAK_PROG_DEFAULT[0].data);
+                let _ = self.otp_write(SOAK_PROG_DEFAULT[1].address, SOAK_PROG_DEFAULT[1].data);
+                let _ = self.otp_write(SOAK_PROG_DEFAULT[2].address, SOAK_PROG_DEFAULT[2].data);
             }
             OtpSoak::NormalProg => {
-                self.otp_write(SOAK_PROG_NORMAL[0].address, SOAK_PROG_NORMAL[0].data);
-                self.otp_write(SOAK_PROG_NORMAL[1].address, SOAK_PROG_NORMAL[1].data);
-                self.otp_write(SOAK_PROG_NORMAL[2].address, SOAK_PROG_NORMAL[2].data);
+                let _ = self.otp_write(SOAK_PROG_NORMAL[0].address, SOAK_PROG_NORMAL[0].data);
+                let _ = self.otp_write(SOAK_PROG_NORMAL[1].address, SOAK_PROG_NORMAL[1].data);
+                let _ = self.otp_write(SOAK_PROG_NORMAL[2].address, SOAK_PROG_NORMAL[2].data);
                 self.sb
                     .secure008()
                     .write(|w| unsafe { w.bits(OTP_TIMING_200US) });
             }
             OtpSoak::SoakProg => {
-                self.otp_write(SOAK_PROG_SOAK[0].address, SOAK_PROG_SOAK[0].data);
-                self.otp_write(SOAK_PROG_SOAK[1].address, SOAK_PROG_SOAK[1].data);
-                self.otp_write(SOAK_PROG_SOAK[2].address, SOAK_PROG_SOAK[2].data);
+                let _ = self.otp_write(SOAK_PROG_SOAK[0].address, SOAK_PROG_SOAK[0].data);
+                let _ = self.otp_write(SOAK_PROG_SOAK[1].address, SOAK_PROG_SOAK[1].data);
+                let _ = self.otp_write(SOAK_PROG_SOAK[2].address, SOAK_PROG_SOAK[2].data);
                 self.sb
                     .secure008()
                     .write(|w| unsafe { w.bits(OTP_TIMING_600US) });
             }
         }
-        self.wait_complete()
+        self.wait_complete();
     }
-    ///
     /// Read 2 DWORD data
-    ///
     pub fn otp_read_data(&self, otp_addr: u32, buffer: &mut [u32]) -> Result<(), OtpError> {
         if buffer.len() < 2 {
             return Err(OtpError::ReadFailed);
@@ -290,9 +287,7 @@ impl<L: Logger> OtpController<L> {
         buffer[1] = self.sb.secure024().read().bits();
         Ok(())
     }
-    ///
-    /// Read configruation
-    ///
+    /// Read configuration register at raw address
     fn otp_read_conf(&self, addr: u32) -> Result<u32, OtpError> {
         self.sb.secure010().write(|w| unsafe { w.bits(addr) });
         self.sb
@@ -337,9 +332,7 @@ impl<L: Logger> OtpController<L> {
             Err(OtpError::WriteFailed)
         }
     }
-    ///
-    /// Inverse the data
-    ///
+    /// Program one bit, inverting for the even/odd address polarity convention
     fn otp_prog_bit_helper(
         &mut self,
         value: u32,
@@ -359,10 +352,10 @@ impl<L: Logger> OtpController<L> {
                 prog_bit = 0x1 << bit_offset;
             }
         }
-        if prog_bit > 0 {
+        if prog_bit != 0 {
             self.otp_prog(address, prog_bit)
         } else {
-            Err(OtpError::Timeout)
+            Ok(())
         }
     }
     //lock registers
@@ -403,10 +396,8 @@ impl<L: Logger> OtpController<L> {
         Ok(())
     }
 
-    ///
-    /// bit program
-    ///
-    pub fn otp_prog_dc_b(
+    /// Program one bit with normal→soak retry loop
+    pub(crate) fn otp_prog_dc_b(
         &mut self,
         value: u32,
         address: u32,
@@ -423,7 +414,6 @@ impl<L: Logger> OtpController<L> {
                 if self.verify_bit(value, address, bit_offset).is_ok() {
                     self.otp_soak(OtpSoak::NormalProg);
                 } else {
-                    pass = true;
                     break;
                 }
             } else {
@@ -441,7 +431,6 @@ impl<L: Logger> OtpController<L> {
     /// * `ignore` - bit position mask. don't program the bits shown in the mask
     ///
     fn otp_prog_dw(&mut self, value: u32, ignore: u32, address: u32) -> Result<(), OtpError> {
-        let mut result: Result<(), OtpError>;
         let mut bit_value: u32;
         let mut prog_bit: u32;
         //1-bit at a time
@@ -463,18 +452,19 @@ impl<L: Logger> OtpController<L> {
             } else {
                 prog_bit = 0x1 << bit_pos;
             }
-            result = self.otp_prog(address, prog_bit);
-            if result != Ok(()) {
-                return result;
-            }
+            self.otp_prog(address, prog_bit)?;
         }
         Ok(())
     }
 
-    ///
-    /// verify 1 DWORD from odd/even address
-    ///
-    pub fn verify_dw(&self, address: u32, data: u32, ignore: u32, compare: &mut u32) -> bool {
+    /// Verify one DWORD against `data`; `*compare` encoding differs by parity: even→0/xor, odd→!0/!xor.
+    pub(crate) fn verify_dw(
+        &self,
+        address: u32,
+        data: u32,
+        ignore: u32,
+        compare: &mut u32,
+    ) -> bool {
         let mut ret: [u32; 2] = [0, 0];
 
         let otp_addr = address & !(1 << 15);
@@ -484,7 +474,7 @@ impl<L: Logger> OtpController<L> {
         } else {
             otp_addr - 1
         };
-        if self.otp_read_data(addr, &mut ret) != Ok(()) {
+        if self.otp_read_data(addr, &mut ret).is_err() {
             return false;
         }
         if otp_addr & 0x1 == 0 {
@@ -506,10 +496,8 @@ impl<L: Logger> OtpController<L> {
         }
     }
 
-    ///
-    /// verify 2 DWORD
-    ///
-    pub fn verify_2dw(
+    /// Verify up to 2 DWORDs; delegates to `verify_dw` when `num_dw == 1`
+    pub(crate) fn verify_2dw(
         &mut self,
         address: u32,
         value: &[u32],
@@ -525,7 +513,7 @@ impl<L: Logger> OtpController<L> {
             return self.verify_dw(address, value[0], ignore[0], &mut compare[0]);
         } else if num_dw == 2 {
             //otp_addr should already be even
-            if self.otp_read_data(otp_addr, &mut ret) != Ok(()) {
+            if self.otp_read_data(otp_addr, &mut ret).is_err() {
                 return false;
             }
             if (value[0] & !ignore[0]) == (ret[0] & !ignore[0])
@@ -541,10 +529,8 @@ impl<L: Logger> OtpController<L> {
         false
     }
 
-    ///
-    /// Check if prorammed data is valid
-    ///
-    pub fn is_program_data_valid(&mut self, addr: u32, otp_data: u32, buffer_data: u32) -> bool {
+    /// Return false if `buffer_data` would require programming a bit in the wrong direction
+    pub(crate) fn is_program_data_valid(addr: u32, otp_data: u32, buffer_data: u32) -> bool {
         for i in 0..32 {
             if addr & 0x1 == 0 {
                 //even location, default is 0x0000_0000
@@ -559,9 +545,7 @@ impl<L: Logger> OtpController<L> {
         }
         true
     }
-    ///
-    /// Program 2 DWORD and verify in data region
-    ///
+    /// Program and verify 2 DWORDs with normal→soak retry, skipping already-matching words
     pub fn otp_prog_verify_2dw(
         &mut self,
         address: u32,
@@ -597,18 +581,16 @@ impl<L: Logger> OtpController<L> {
             return Ok(());
         }
         if ignore_mask[0] != 0xffff_ffff
-            && !self.is_program_data_valid(address, data0_masked, buf0_masked)
+            && !Self::is_program_data_valid(address, data0_masked, buf0_masked)
         {
             return Err(OtpError::WriteFailed);
         }
         if ignore_mask[1] != 0xffff_ffff
-            && !self.is_program_data_valid(address + 1, data1_masked, buf1_masked)
+            && !Self::is_program_data_valid(address + 1, data1_masked, buf1_masked)
         {
             return Err(OtpError::WriteFailed);
         }
-        if !self.otp_soak(OtpSoak::NormalProg) {
-            return Err(OtpError::Timeout);
-        }
+        self.otp_soak(OtpSoak::NormalProg);
 
         //ignore
         if ignore_mask[0] != 0xffff_ffff {
@@ -645,9 +627,7 @@ impl<L: Logger> OtpController<L> {
         Ok(())
     }
 
-    ///
-    /// bit programing retry
-    ///
+    /// Verify a DWORD then reprogram mismatched bits with soak retry; returns true on success
     pub fn otp_prog_verify_retry(&mut self, addr: u32, data: u32, ignore: u32) -> bool {
         let mut compare: u32 = 0;
         let mut pass: bool = false;
@@ -670,51 +650,17 @@ impl<L: Logger> OtpController<L> {
         }
         pass
     }
-    ///
-    /// Program OTP data region
-    /// starts from "address" with "buffer" contents
-    ///
-    #[allow(clippy::needless_range_loop)]
-    pub fn aspeed_otp_prog_data(
-        &mut self,
-        address: usize,
-        buffer: &mut [u32],
-    ) -> Result<(), OtpError> {
-        let mut result = Ok(());
-        let ignore: u32 = 0; //ignore bits mask
-        let mut addr: u32;
-        let len: usize = buffer.len();
-        let mut pass: bool;
-
-        if address + len > OTP_MEM_LIMIT_DATA || address & 0x3 != 0 {
-            return Err(OtpError::InvalidAddress);
-        }
-        self.otp_unlock_reg();
-
-        for i in 0..len {
-            addr = u32::try_from(address + i).unwrap();
-            self.otp_soak(OtpSoak::NormalProg);
-            result = self.otp_prog_dw(buffer[i], ignore, addr);
-            if result != Ok(()) {
-                return result;
-            }
-            pass = self.otp_prog_verify_retry(buffer[i], ignore, addr);
-            if !pass {
-                self.otp_soak(OtpSoak::Default);
-                result = Err(OtpError::WriteFailed);
-                break;
-            }
-        }
-        self.otp_lock_reg();
-        result
-    }
     //lock otp memory
     pub fn otp_lock_mem(&mut self) -> Result<(), OtpError> {
         if self.is_otp_locked() {
             self.locked = true;
             return Ok(());
         }
-        self.otp_prog(0, 31)?;
+        self.otp_unlock_reg();
+        self.otp_soak(OtpSoak::NormalProg);
+        self.otp_prog_dw(OTP_MEM_LOCK_ENABLE, 0, OTP_CONF_OFFSET)?;
+        self.otp_soak(OtpSoak::Default);
+        self.otp_lock_reg();
         if !self.is_otp_locked() {
             return Err(OtpError::LockFailed);
         }
@@ -723,11 +669,11 @@ impl<L: Logger> OtpController<L> {
     }
     pub fn is_otp_locked(&self) -> bool {
         let otp_conf: u32 = self.otp_read_conf_idx(0).unwrap_or_default();
-        otp_conf & OTP_MEM_LOCK_ENBLE == OTP_MEM_LOCK_ENBLE
+        otp_conf & OTP_MEM_LOCK_ENABLE == OTP_MEM_LOCK_ENABLE
     }
     pub fn is_key_protected(&self) -> bool {
         let otp_conf: u32 = self.otp_read_conf_idx(0).unwrap_or_default();
-        otp_conf & OTP_KEY_PROT_ENBLE == OTP_KEY_PROT_ENBLE
+        otp_conf & OTP_KEY_PROT_ENABLE == OTP_KEY_PROT_ENABLE
     }
 
     pub fn update_prot_info(&self, session: &mut SessionInfo) {
@@ -745,17 +691,17 @@ impl<L: Logger> OtpController<L> {
         }
         let otp_conf: u32 = self.otp_read_conf_idx(0).unwrap_or_default();
         session.protection_status.memory_locked =
-            otp_conf & OTP_MEM_LOCK_ENBLE == OTP_MEM_LOCK_ENBLE;
+            otp_conf & OTP_MEM_LOCK_ENABLE == OTP_MEM_LOCK_ENABLE;
         session.protection_status.strap_protected =
-            otp_conf & OTP_STRAP_PROT_ENBLE == OTP_STRAP_PROT_ENBLE;
+            otp_conf & OTP_STRAP_PROT_ENABLE == OTP_STRAP_PROT_ENABLE;
         session.protection_status.user_ecc_protected =
-            otp_conf & OTP_USER_ECC_PROT_ENBLE == OTP_USER_ECC_PROT_ENBLE;
+            otp_conf & OTP_USER_ECC_PROT_ENABLE == OTP_USER_ECC_PROT_ENABLE;
 
         session.protection_status.security_protected =
-            otp_conf & OTP_SECURE_PROT_ENBLE == OTP_SECURE_PROT_ENBLE;
+            otp_conf & OTP_SECURE_PROT_ENABLE == OTP_SECURE_PROT_ENABLE;
         let mut secure_size = otp_conf >> OTP_SECURE_SIZE_BIT_POS;
         if secure_size != 0 {
-            secure_size = (secure_size & (OTP_SECURE_SIZE_MASK + 1)) << 5;
+            secure_size = (secure_size & OTP_SECURE_SIZE_MASK) << 5;
         }
         session.protection_status.security_size = secure_size;
     }
@@ -763,13 +709,11 @@ impl<L: Logger> OtpController<L> {
         sw_rid[0] = self.sb.secure068().read().bits();
         sw_rid[1] = self.sb.secure06c().read().bits();
     }
-    pub fn get_tool_verion(&self) -> &[u8] {
-        return OTP_VER.as_bytes();
+    pub fn get_tool_version(&self) -> &str {
+        OTP_VER
     }
     pub fn get_key_count(&self) -> u8 {
-        let key_num = self.sb.secure078().read().sec_boot_key_number_regs().bits();
-
-        key_num
+        self.sb.secure078().read().sec_boot_key_number_regs().bits()
     }
     #[allow(clippy::needless_range_loop)]
     pub fn otp_strap_status(&self, os: &mut [StrapStatus]) -> Result<(), OtpError> {
@@ -833,17 +777,18 @@ impl<L: Logger> OtpController<L> {
         Ok(())
     }
 
-    ///
-    /// Read from data region
-    ///
+    /// Read from the OTP data region; `offset` must be 4-DWORD aligned and `buffer` must have even length
     pub fn aspeed_otp_read_data(&self, offset: usize, buffer: &mut [u32]) -> Result<(), OtpError> {
         let mut temp: [u32; 2] = [0, 0];
         let cdw_len: usize = buffer.len();
         if cdw_len + offset > OTP_MEM_LIMIT_DATA {
             return Err(OtpError::BoundaryError);
         }
-        if offset & 0x4 != 0 {
+        if offset & 0x3 != 0 {
             return Err(OtpError::AlignmentError);
+        }
+        if cdw_len % 2 != 0 {
+            return Err(OtpError::InvalidBufSize);
         }
         for i in (offset..offset + cdw_len).step_by(2) {
             let idx = i - offset;
@@ -858,20 +803,18 @@ impl<L: Logger> OtpController<L> {
         Ok(())
     }
 
-    ///
-    /// Read from configuration region
-    ///
-    pub fn aspeed_otp_read_conf(&self, offset: u32, buffer: &mut [u32]) -> Result<(), OtpError> {
+    /// Read from the OTP configuration region; `offset` is in DWORDs from OTPCFG0
+    pub fn aspeed_otp_read_conf(&self, offset: usize, buffer: &mut [u32]) -> Result<(), OtpError> {
         let mut result: Result<(), OtpError> = Ok(());
-        let cdw_len = u32::try_from(buffer.len()).unwrap();
+        let cdw_len = buffer.len();
         if cdw_len + offset > 32 {
             return Err(OtpError::BoundaryError);
         }
         self.otp_unlock_reg();
         self.otp_soak(OtpSoak::Default);
         for i in offset..offset + cdw_len {
-            let idx = (i - offset) as usize;
-            buffer[idx] = match self.otp_read_conf_idx(i) {
+            let idx = i - offset;
+            buffer[idx] = match self.otp_read_conf_idx(u32::try_from(i).unwrap()) {
                 Ok(value) => value,
                 Err(e) => {
                     result = Err(e);
@@ -882,44 +825,7 @@ impl<L: Logger> OtpController<L> {
         self.otp_lock_reg();
         result
     }
-    ///
-    ///Read OTP strap into buffer.
-    ///buf: output OTP strap into buffer.
-    ///
-    #[allow(dead_code)]
-    fn aspeed_otp_read_strap(&self, offset: usize, buf: &mut [u32]) -> Result<(), OtpError> {
-        let mut strap_status: [StrapStatus; 64] = [StrapStatus {
-            value: false,
-            protected: false,
-            options: [0; 7],
-            remaining_writes: 6,
-            writable_option: 0xff,
-        }; 64];
-        let cdw_len = buf.len();
-
-        if cdw_len + offset > 2 {
-            return Err(OtpError::BoundaryError);
-        }
-        self.otp_unlock_reg();
-        let result = self.otp_strap_status(&mut strap_status);
-        if result == Ok(()) {
-            for i in offset..offset + cdw_len {
-                let idx = i - offset;
-                buf[idx] = 0;
-                for j in 0..32 {
-                    buf[idx] |= u32::from(strap_status[i * 32 + j].value) << j;
-                }
-            }
-        }
-        self.otp_lock_reg();
-        result
-    }
-
-    ///
-    ///Read OTP protect into buffer.
-    ///offset-offset to scu protect region
-    ///OTPCFG28,OTPCFG29
-    ///
+    /// Read SCU protection region (OTPCFG28/29) into buffer
     pub fn aspeed_otp_read_scuprot(
         &self,
         offset: usize,
@@ -933,25 +839,21 @@ impl<L: Logger> OtpController<L> {
         }
         self.otp_unlock_reg();
 
-        if result == Ok(()) {
-            for i in offset..offset + cdw_len {
-                let idx = i - offset;
-                buffer[idx] = match self.otp_read_conf_idx(28 + u32::try_from(offset).unwrap()) {
-                    Ok(value) => value,
-                    Err(e) => {
-                        result = Err(e);
-                        break;
-                    }
-                };
-            }
+        for i in offset..offset + cdw_len {
+            let idx = i - offset;
+            buffer[idx] = match self.otp_read_conf_idx(28 + u32::try_from(i).unwrap()) {
+                Ok(value) => value,
+                Err(e) => {
+                    result = Err(e);
+                    break;
+                }
+            };
         }
         self.otp_lock_reg();
         result
     }
 
-    ///
-    /// Write data to data region
-    ///
+    /// Write `data` into the OTP data region starting at `offset`
     pub fn otp_prog_data(&mut self, offset: usize, data: &[u32]) -> Result<(), OtpError> {
         let mut result: Result<(), OtpError> = Ok(());
         let ignore: [u32; 2] = [0, 0];
@@ -968,9 +870,8 @@ impl<L: Logger> OtpController<L> {
         let mut scratch: [u32; 2] = [0, 0];
         for i in (offset..offset + cdw_len).step_by(2) {
             let idx0 = i - offset;
-            let idx1 = i;
-            result = self.otp_read_data(u32::try_from(idx1).unwrap(), &mut scratch);
-            if result != Ok(()) {
+            result = self.otp_read_data(u32::try_from(i).unwrap(), &mut scratch);
+            if result.is_err() {
                 otp_debug!(
                     self.logger,
                     "otp_prog_data: read fail {:?}",
@@ -978,14 +879,19 @@ impl<L: Logger> OtpController<L> {
                 );
                 break;
             }
-            otp_debug!(self.logger, "otp_prog_data: idx0={:}, idx1={:}", idx0, idx1);
+            otp_debug!(
+                self.logger,
+                "otp_prog_data: idx0={:}, idx1={:}",
+                idx0,
+                idx0 + 1
+            );
             result = self.otp_prog_verify_2dw(
                 u32::try_from(i).unwrap(),
                 &scratch,
                 &data[idx0..idx0 + 2],
                 &ignore,
             );
-            if result != Ok(()) {
+            if result.is_err() {
                 break;
             }
         }
@@ -995,19 +901,29 @@ impl<L: Logger> OtpController<L> {
         result
     }
 
+    /// Extract the requested value of strap bit `i` from the caller's `strap` words.
+    fn strap_target_bit(strap: &[u32], start_bit: usize, i: usize) -> u32 {
+        if i < 32 {
+            let offset = u32::try_from(i).unwrap();
+            (strap[0] >> (offset - u32::try_from(start_bit).unwrap())) & 0x1
+        } else {
+            let offset = u32::try_from(i - 32).unwrap();
+            if i - start_bit < 32 {
+                (strap[0] >> u32::try_from(i - start_bit).unwrap()) & 0x1
+            } else {
+                (strap[1] >> (offset - u32::try_from(start_bit).unwrap())) & 0x1
+            }
+        }
+    }
+
+    /// Program strap bits; every unprotected bit that differs from its current value is burned.
     ///
-    /// Program strap bits
-    /// All non proteced bits will be programmed
-    ///
+    /// Fuses cannot be un-burned, so this validates the whole request first: if any
+    /// bit that needs to change is protected or out of write attempts, it returns
+    /// `RegionProtected`/`WriteExhausted` before burning anything. Once the burn pass
+    /// starts, a `Timeout`/hardware verify failure can still leave a partial write.
     #[allow(clippy::needless_range_loop)]
     pub fn otp_prog_strap(&mut self, start_bit: usize, strap: &[u32]) -> Result<(), OtpError> {
-        let mut prog_address: u32;
-        let mut bit: u32;
-        let mut offset: u32;
-        let mut prog_flag: u32;
-        let mut count_prot: u32 = 0;
-        let mut count_cant_write: u32 = 0;
-
         if start_bit > 63 {
             return Err(OtpError::InvalidAddress);
         }
@@ -1019,73 +935,63 @@ impl<L: Logger> OtpController<L> {
             remaining_writes: 6,
             writable_option: 0xff,
         }; 64];
-
         self.otp_strap_status(&mut os)?;
-        //all strap bits
+
+        // Pre-flight: refuse the entire request before burning any fuse if a bit that
+        // must change is protected or has no write attempts left. The strap snapshot is
+        // read once and unaffected by the burns, so this decision is exact.
+        let mut count_prot: u32 = 0;
+        let mut count_cant_write: u32 = 0;
         for i in start_bit..64 {
-            prog_address = OTP_CONF_OFFSET;
-            if i < 32 {
-                offset = u32::try_from(i).unwrap();
-                bit = (strap[0] >> (offset - u32::try_from(start_bit).unwrap())) & 0x1;
-                prog_address |= ((u32::from(os[i].writable_option) * 2 + 16) / 8) * 0x200;
-                prog_address |= ((u32::from(os[i].writable_option) * 2 + 16) % 8) * 0x2;
-            } else {
-                offset = u32::try_from(i - 32).unwrap();
-                if i - start_bit < 32 {
-                    bit = (strap[0] >> offset) & 0x1;
-                } else {
-                    bit = (strap[1] >> (offset - u32::try_from(start_bit).unwrap())) & 0x1;
-                }
-                prog_address |= ((u32::from(os[i].writable_option) * 2 + 17) / 8) * 0x200;
-                prog_address |= ((u32::from(os[i].writable_option) * 2 + 17) % 8) * 0x2;
+            if Self::strap_target_bit(strap, start_bit, i) == u32::from(os[i].value) {
+                continue;
             }
-            //check if program bit value is the same as the programmed bit value
-            if bit == u32::from(os[i].value) {
-                prog_flag = 0; //no need to proram
-                otp_debug!(self.logger, "otp_prog_strap: bit {:} no need to program", i);
-            } else {
-                prog_flag = 1;
-                otp_debug!(
-                    self.logger,
-                    "otp_prog_strap: program bit {:} from {:} to {:}",
-                    i,
-                    u32::from(os[i].value),
-                    bit
-                );
-            }
-            //bit to be prgrammed is protected
-            if os[i].protected && prog_flag == 1 {
+            if os[i].protected {
                 count_prot += 1;
-                continue;
-            }
-            if os[i].remaining_writes == 0 && prog_flag == 1 {
+            } else if os[i].remaining_writes == 0 {
                 count_cant_write += 1;
+            }
+        }
+        if count_prot > 0 {
+            return Err(OtpError::RegionProtected);
+        }
+        if count_cant_write > 0 {
+            return Err(OtpError::WriteExhausted);
+        }
+
+        // Every differing bit is now known to be writable; burn them.
+        for i in start_bit..64 {
+            let bit = Self::strap_target_bit(strap, start_bit, i);
+            if bit == u32::from(os[i].value) {
+                otp_debug!(self.logger, "otp_prog_strap: bit {:} no need to program", i);
                 continue;
             }
-            if prog_flag == 1 {
-                match self.otp_prog_dc_b(1, prog_address, offset) {
-                    Ok(()) => {}
-                    Err(e) => {
-                        return Err(e);
-                    }
-                }
-            }
+            otp_debug!(
+                self.logger,
+                "otp_prog_strap: program bit {:} from {:} to {:}",
+                i,
+                u32::from(os[i].value),
+                bit
+            );
+            let offset = u32::try_from(i % 32).unwrap();
+            let slot = if i < 32 {
+                u32::from(os[i].writable_option) * 2 + 16
+            } else {
+                u32::from(os[i].writable_option) * 2 + 17
+            };
+            let prog_address = OTP_CONF_OFFSET | ((slot / 8) * 0x200) | ((slot % 8) * 0x2);
+            self.otp_prog_dc_b(1, prog_address, offset)?;
         }
         self.otp_soak(OtpSoak::Default);
-        if count_prot > 0 || count_cant_write > 0 {
-            //return Err()
-        }
         Ok(())
     }
 
-    ///
-    /// OTP conf
-    ///
+    /// Program OTP configuration registers starting at `start_conf`
     pub fn otp_prog_conf(&mut self, start_conf: usize, conf: &[u32]) -> Result<(), OtpError> {
         let mut result: Result<(), OtpError> = Ok(());
         let conf_ignore: u32 = 0;
         let mut otp_conf: u32;
-        let mut pass: bool = false;
+        let mut pass: bool = true;
         let mut addr: usize;
         let mut data_masked: u32;
         let mut buf_masked: u32;
@@ -1119,7 +1025,7 @@ impl<L: Logger> OtpController<L> {
             }
             self.otp_soak(OtpSoak::NormalProg);
             result = self.otp_prog_dw(conf[idx], conf_ignore, u32::try_from(addr).unwrap());
-            if result != Ok(()) {
+            if result.is_err() {
                 break;
             }
             pass = self.otp_prog_verify_retry(u32::try_from(addr).unwrap(), conf[idx], conf_ignore);
@@ -1136,9 +1042,7 @@ impl<L: Logger> OtpController<L> {
         result
     }
 
-    ///
-    /// SCU protect
-    ///
+    /// Program SCU protection registers
     #[allow(clippy::needless_range_loop)]
     pub fn otp_prog_scu_protect(&mut self, start: usize, otp_scu: &[u32]) -> Result<(), OtpError> {
         let mut scu_pro: [u32; 2] = [0; 2];
@@ -1161,7 +1065,7 @@ impl<L: Logger> OtpController<L> {
 
         for i in start..start + cdw_size {
             let idx = i - start;
-            data_masked = scu_pro[i] & !ignore;
+            data_masked = scu_pro[idx] & !ignore;
             buf_masked = otp_scu[idx] & !ignore;
             addr = scupro_start + i * 2;
             if data_masked == buf_masked {
@@ -1209,19 +1113,19 @@ impl<L: Logger> OtpController<L> {
         self.otp_lock_reg();
         match region {
             AspeedOtpRegion::Data => {
-                if otp_conf & OTP_USER_ECC_PROT_ENBLE == OTP_USER_ECC_PROT_ENBLE
-                    && otp_conf & OTP_SECURE_PROT_ENBLE == OTP_SECURE_PROT_ENBLE
+                if otp_conf & OTP_USER_ECC_PROT_ENABLE == OTP_USER_ECC_PROT_ENABLE
+                    && otp_conf & OTP_SECURE_PROT_ENABLE == OTP_SECURE_PROT_ENABLE
                 {
                     protected = true;
                 }
             }
             AspeedOtpRegion::Configuration => {
-                if otp_conf & OTP_CONF_PROT_ENBLE == OTP_CONF_PROT_ENBLE {
+                if otp_conf & OTP_CONF_PROT_ENABLE == OTP_CONF_PROT_ENABLE {
                     protected = true;
                 }
             }
             AspeedOtpRegion::Strap => {
-                if otp_conf & OTP_STRAP_PROT_ENBLE == OTP_STRAP_PROT_ENBLE {
+                if otp_conf & OTP_STRAP_PROT_ENABLE == OTP_STRAP_PROT_ENABLE {
                     protected = true;
                 }
             }
@@ -1230,14 +1134,7 @@ impl<L: Logger> OtpController<L> {
         Ok(protected)
     }
 
-    /// Enable protection for a specific region
-    ///
-    /// # Parameters
-    /// - `region`: The region to protect
-    ///
-    /// # Returns
-    /// - `Ok(())`: Protection enabled successfully
-    /// - `Err(Self::Error)`: Failed to enable protection
+    /// Enable write protection for a specific OTP region
     pub fn enable_region_protection(&mut self, region: AspeedOtpRegion) -> Result<(), OtpError> {
         let mut value: [u32; 1] = [0; 1];
 
@@ -1246,35 +1143,477 @@ impl<L: Logger> OtpController<L> {
         }
         match region {
             AspeedOtpRegion::Data => {
-                value[0] = OTP_USER_ECC_PROT_ENBLE | OTP_SECURE_PROT_ENBLE;
+                value[0] = OTP_USER_ECC_PROT_ENABLE | OTP_SECURE_PROT_ENABLE;
             }
             AspeedOtpRegion::Configuration => {
-                value[0] = OTP_CONF_PROT_ENBLE;
+                value[0] = OTP_CONF_PROT_ENABLE;
             }
             AspeedOtpRegion::Strap => {
-                value[0] = OTP_STRAP_PROT_ENBLE;
+                value[0] = OTP_STRAP_PROT_ENABLE;
             }
             AspeedOtpRegion::ScuProtection => {}
         }
         self.otp_prog_conf(0, &value)
     }
-    #[allow(clippy::unused_self)]
-    #[allow(clippy::unnecessary_wraps)]
-    pub fn is_feature_supported(&self, _feature: &str) -> Result<bool, OtpError> {
-        Ok(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::common::{NoOpLogger, ProtectionStatus};
+    use super::*;
+
+    #[test]
+    fn region_info_ordering_matches_discriminants() {
+        assert_eq!(
+            REGION_INFO[AspeedOtpRegion::Data as usize].region_type,
+            AspeedOtpRegion::Data
+        );
+        assert_eq!(
+            REGION_INFO[AspeedOtpRegion::Configuration as usize].region_type,
+            AspeedOtpRegion::Configuration
+        );
+        assert_eq!(
+            REGION_INFO[AspeedOtpRegion::Strap as usize].region_type,
+            AspeedOtpRegion::Strap
+        );
+        assert_eq!(
+            REGION_INFO[AspeedOtpRegion::ScuProtection as usize].region_type,
+            AspeedOtpRegion::ScuProtection
+        );
     }
-    #[allow(clippy::unused_self)]
-    #[allow(clippy::unnecessary_wraps)]
-    pub fn list_regions(&self) -> Result<&[AspeedOtpRegion], OtpError> {
-        Ok(REGION_IDS)
-    }
-    #[allow(clippy::unused_self)]
-    pub fn get_region_info(&self, region: AspeedOtpRegion) -> Result<(usize, usize, usize), OtpError> {
-        for each in REGION_INFO {
-            if each.region_type == region {
-                return Ok((each.start, each.cdw_size, each.alignment));
-            }
+
+    // Tests only touch the first 10 words; buffer must cover the full struct for the pointer cast to be valid.
+    const SECURE_WORDS: usize = core::mem::size_of::<SbRegBlock>().div_ceil(4);
+    static FAKE_SECURE: [u32; SECURE_WORDS] = [0u32; SECURE_WORDS];
+    static FAKE_SCU: [u32; 16] = [0u32; 16];
+
+    // Read-only paths only; writing the non-mut FAKE_SECURE static is UB.
+    unsafe fn make_ctrl() -> OtpController<NoOpLogger> {
+        OtpController {
+            sb: unsafe { &*(FAKE_SECURE.as_ptr() as *const SbRegBlock) },
+            scu_base: FAKE_SCU.as_ptr() as *const _,
+            locked: false,
+            logger: NoOpLogger,
         }
-        Err(OtpError::Unknown)
+    }
+
+    // Secure register buffer indices (byte offset / 4):
+    //   buf[5]  = secure014: status bits — bit1=otpmemory_sts, bit2=otpctrl_sts
+    //   buf[8]  = secure020: data word 0 returned by otp_read_data
+    const STATUS_IDX: usize = 5; // secure014
+    const DATA0_IDX: usize = 8; // secure020
+    const STATUS_IDLE: u32 = 0x6; // otpmemory_sts(bit1)=1, otpctrl_sts(bit2)=1
+
+    // Returns a fresh mutable 'static buffer and a controller pointing at it.
+    // Uses Box::leak so the buffer is 'static (required by the sb field type)
+    // without sharing state between tests. Memory is reclaimed when the test
+    // process exits.
+    unsafe fn make_ctrl_buf() -> (OtpController<NoOpLogger>, &'static mut [u32; SECURE_WORDS]) {
+        let buf: &'static mut [u32; SECURE_WORDS] = Box::leak(Box::new([0u32; SECURE_WORDS]));
+        buf[STATUS_IDX] = STATUS_IDLE;
+        let ctrl = OtpController {
+            sb: unsafe { &*(buf.as_ptr() as *const SbRegBlock) },
+            scu_base: FAKE_SCU.as_ptr() as *const _,
+            locked: false,
+            logger: NoOpLogger,
+        };
+        (ctrl, buf)
+    }
+
+    // otp_prog_verify_2dw -----------------------------------------------------
+
+    #[test]
+    fn otp_prog_verify_2dw_skip_when_already_matches() {
+        // otp_data == buffer under the mask → early Ok(()) before any soak.
+        // Both dwords equal: data0_masked==buf0_masked AND data1_masked==buf1_masked.
+        let mut ctrl = unsafe { make_ctrl() };
+        assert_eq!(
+            ctrl.otp_prog_verify_2dw(0, &[0xABCD, 0x1234], &[0xABCD, 0x1234], &[0, 0]),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn otp_prog_verify_2dw_rejects_invalid_direction() {
+        // otp_data[0]=1, buffer[0]=0 at even addr=0 → is_program_data_valid(0,1,0)=false.
+        // Returns Err(WriteFailed) before touching any soak register.
+        let mut ctrl = unsafe { make_ctrl() };
+        assert_eq!(
+            ctrl.otp_prog_verify_2dw(0, &[1, 0], &[0, 0], &[0, 0]),
+            Err(OtpError::WriteFailed)
+        );
+    }
+
+    #[test]
+    fn otp_prog_verify_2dw_one_dword_ok() {
+        // dw1 needs programming (otp_data[1]=0xFFFF_FFFF→buffer[1]=0, valid on odd addr=1).
+        // dw0 matches → ignore_mask[0]=0xFFFF_FFFF, verify_size=1.
+        // verify_2dw(num_dw=1) delegates to verify_dw(address=0, buffer[0],
+        // ignore_mask[0]=0xFFFF_FFFF, compare[0]): masking with !0xFFFF_FFFF=0 makes both
+        // sides 0 regardless of what otp_prog_dw wrote to buf[8]. Trivially returns true.
+        let (mut ctrl, _buf) = unsafe { make_ctrl_buf() };
+        assert_eq!(
+            ctrl.otp_prog_verify_2dw(0, &[7, 0xFFFF_FFFF], &[7, 0], &[0, 0]),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn otp_prog_verify_2dw_verify_always_fails_returns_write_failed() {
+        // Both dwords differ, both need programming (verify_size=2).
+        // otp_prog_dw writes prog_bit to buf[8]; verify reads buf[8] expecting buffer[0].
+        // prog_bit != buffer[0], so every verify iteration fails. After OTP_OP_RETRIES
+        // exhausted, the method soaks to Default and returns Err(WriteFailed).
+        let (mut ctrl, _buf) = unsafe { make_ctrl_buf() };
+        assert_eq!(
+            ctrl.otp_prog_verify_2dw(0, &[0, 0], &[1, 0], &[0, 0]),
+            Err(OtpError::WriteFailed)
+        );
+    }
+
+    // chip_version ------------------------------------------------------------
+    // scu004 is at byte offset 4 → scu_buf[1]; scu014 at offset 0x14 → scu_buf[5].
+    // Stack-local buffers are used so parallel tests don't race on a shared static.
+
+    // otp_strap_status --------------------------------------------------------
+    // All conf reads go through otp_read_conf_idx → secure020 (buf[8]).
+    // Every option row (indices 16..28) and the protection rows (30, 31) read
+    // the same buf[8]. Options 0–5 each see identical data.
+
+    fn blank_straps() -> [StrapStatus; 64] {
+        core::array::from_fn(|_| StrapStatus {
+            value: false,
+            options: [0u8; 7],
+            remaining_writes: 6,
+            writable_option: 0xff,
+            protected: false,
+        })
+    }
+
+    #[test]
+    fn strap_status_all_zero_conf_sets_defaults() {
+        // buf[8]=0: every bit is 0 across all 6 option rows.
+        // remaining_writes stays 6 (never decremented).
+        // writable_option for strap 0 → set to option 0 on first row (bit is 0).
+        // value stays false (XOR of six 0s = 0). protected stays false.
+        let (ctrl, _buf) = unsafe { make_ctrl_buf() };
+        let mut os = blank_straps();
+        assert_eq!(ctrl.otp_strap_status(&mut os), Ok(()));
+        assert!(!os[0].value);
+        assert_eq!(os[0].remaining_writes, 6);
+        assert_eq!(os[0].writable_option, 0); // first option where bit was 0
+        assert!(!os[0].protected);
+    }
+
+    // aspeed_otp_read_data / aspeed_otp_read_conf ----------------------------
+
+    #[test]
+    fn read_data_boundary_error() {
+        let ctrl = unsafe { make_ctrl() };
+        let mut buf = [0u32; 2];
+        // offset=2047 + len=2 = 2049 > OTP_MEM_LIMIT_DATA(2048)
+        assert_eq!(
+            ctrl.aspeed_otp_read_data(2047, &mut buf),
+            Err(OtpError::BoundaryError)
+        );
+    }
+
+    #[test]
+    fn read_data_alignment_error_offset_1() {
+        let ctrl = unsafe { make_ctrl() };
+        let mut buf = [0u32; 2];
+        assert_eq!(
+            ctrl.aspeed_otp_read_data(1, &mut buf),
+            Err(OtpError::AlignmentError)
+        );
+    }
+
+    #[test]
+    fn read_data_aligned_offset_passes_boundary() {
+        let (ctrl, _buf) = unsafe { make_ctrl_buf() };
+        let mut out = [0u32; 2];
+        // offset=4 is 4-byte aligned and within bounds; read succeeds
+        assert_eq!(ctrl.aspeed_otp_read_data(4, &mut out), Ok(()));
+    }
+
+    #[test]
+    fn read_conf_boundary_error() {
+        let ctrl = unsafe { make_ctrl() };
+        let mut buf = [0u32; 2];
+        // offset=31 + len=2 = 33 > 32
+        assert_eq!(
+            ctrl.aspeed_otp_read_conf(31, &mut buf),
+            Err(OtpError::BoundaryError)
+        );
+    }
+
+    #[test]
+    fn read_conf_success_fills_every_word() {
+        // soak(Default) writes 0 into secure020, so each conf read returns 0;
+        // a valid in-bounds read must overwrite every sentinel slot and return Ok.
+        let (ctrl, _buf) = unsafe { make_ctrl_buf() };
+        let mut out = [0xFFFF_FFFFu32; 2];
+        assert_eq!(ctrl.aspeed_otp_read_conf(0, &mut out), Ok(()));
+        assert_eq!(out, [0, 0]);
+    }
+
+    // otp_prog_scu_protect ----------------------------------------------------
+
+    #[test]
+    fn scu_protect_boundary_error() {
+        let mut ctrl = unsafe { make_ctrl() };
+        assert_eq!(
+            ctrl.otp_prog_scu_protect(2, &[0]),
+            Err(OtpError::BoundaryError)
+        );
+        assert_eq!(
+            ctrl.otp_prog_scu_protect(0, &[0, 0, 0]),
+            Err(OtpError::BoundaryError)
+        );
+    }
+
+    #[test]
+    fn scu_protect_already_matches_returns_ok() {
+        // scu_pro[0] and [1] both read 0 from buf[8] after soak clears it.
+        // otp_scu=[0, 0] matches → pass=true for both, Ok(()) without programming.
+        let (mut ctrl, _buf) = unsafe { make_ctrl_buf() };
+        assert_eq!(ctrl.otp_prog_scu_protect(0, &[0, 0]), Ok(()));
+    }
+
+    #[test]
+    fn scu_protect_needs_programming_verify_fails() {
+        // scu_pro[0]=0 (from buf[8] after soak), otp_scu[0]=1 → mismatch, prog runs.
+        // Fake buffer: verify always fails → Err(WriteFailed).
+        let (mut ctrl, _buf) = unsafe { make_ctrl_buf() };
+        assert_eq!(
+            ctrl.otp_prog_scu_protect(0, &[1]),
+            Err(OtpError::WriteFailed)
+        );
+    }
+
+    // otp_lock_mem / is_otp_locked -------------------------------------------
+    // is_otp_locked reads otp_read_conf_idx(0) → secure020 (buf[8]).
+    // OTP_MEM_LOCK_ENABLE = 1<<31.
+
+    #[test]
+    fn otp_lock_mem_already_locked_returns_ok() {
+        // Pre-set lock bit → is_otp_locked() true on first call → fast-path Ok(()).
+        let (mut ctrl, buf) = unsafe { make_ctrl_buf() };
+        buf[DATA0_IDX] = OTP_MEM_LOCK_ENABLE;
+        assert_eq!(ctrl.otp_lock_mem(), Ok(()));
+        assert!(ctrl.locked);
+    }
+
+    #[test]
+    fn otp_lock_mem_latch_fails_returns_lock_failed() {
+        // buf[8] has no lock bit. otp_prog_dw writes to secure020 then otp_soak(Default)
+        // zeroes it, so is_otp_locked() reads 0 → false → Err(LockFailed).
+        let (mut ctrl, _buf) = unsafe { make_ctrl_buf() };
+        assert_eq!(ctrl.otp_lock_mem(), Err(OtpError::LockFailed));
+        assert!(!ctrl.locked);
+    }
+
+    #[test]
+    fn chip_version_ast1060a1() {
+        let mut scu_buf = [0u32; 16];
+        scu_buf[1] = ID0_AST1060A1;
+        scu_buf[5] = ID1_AST1060A1;
+        let ctrl = unsafe {
+            OtpController {
+                sb: &*(FAKE_SECURE.as_ptr() as *const SbRegBlock),
+                scu_base: scu_buf.as_ptr() as *const _,
+                locked: false,
+                logger: NoOpLogger,
+            }
+        };
+        assert_eq!(ctrl.chip_version(), AspeedChipVersion::Ast1060A1);
+    }
+
+    #[test]
+    fn chip_version_ast1060a2() {
+        let mut scu_buf = [0u32; 16];
+        scu_buf[1] = ID0_AST1060A2;
+        scu_buf[5] = ID1_AST1060A2;
+        let ctrl = unsafe {
+            OtpController {
+                sb: &*(FAKE_SECURE.as_ptr() as *const SbRegBlock),
+                scu_base: scu_buf.as_ptr() as *const _,
+                locked: false,
+                logger: NoOpLogger,
+            }
+        };
+        assert_eq!(ctrl.chip_version(), AspeedChipVersion::Ast1060A2);
+    }
+
+    #[test]
+    fn chip_version_unknown() {
+        let ctrl = unsafe { make_ctrl() }; // FAKE_SCU all-zeros → no ID match
+        assert_eq!(ctrl.chip_version(), AspeedChipVersion::Unknown);
+    }
+
+    // update_prot_info --------------------------------------------------------
+    // otp_read_conf_idx(0) reads secure020 (buf[8]) after a wait_complete on buf[5].
+
+    #[test]
+    fn update_prot_info_sets_version_name_and_flags() {
+        let (ctrl, buf) = unsafe { make_ctrl_buf() };
+        // otp_conf: bit31=mem_locked, bit25=strap_prot, bit23=user_ecc_prot,
+        //           bit22=sec_prot, bits[21:16]=secure_size_field
+        // Set mem_locked and strap_protected; leave others clear.
+        buf[DATA0_IDX] = OTP_MEM_LOCK_ENABLE | OTP_STRAP_PROT_ENABLE;
+        let mut session = SessionInfo {
+            chip_version: AspeedChipVersion::Unknown,
+            version_name: [0u8; 10],
+            protection_status: ProtectionStatus::default(),
+            tool_version: [0u8; 32],
+            software_revision: 0,
+            key_count: 0,
+        };
+        ctrl.update_prot_info(&mut session);
+        assert_eq!(session.chip_version, AspeedChipVersion::Unknown);
+        assert_eq!(&session.version_name, b"ASUnknown\0");
+        assert!(session.protection_status.memory_locked);
+        assert!(session.protection_status.strap_protected);
+        assert!(!session.protection_status.user_ecc_protected);
+        assert!(!session.protection_status.security_protected);
+        assert_eq!(session.protection_status.security_size, 0);
+    }
+
+    // otp_prog_data ----------------------------------------------------------
+
+    #[test]
+    fn prog_data_boundary_error() {
+        let mut ctrl = unsafe { make_ctrl() };
+        assert_eq!(
+            ctrl.otp_prog_data(OTP_MEM_LIMIT_DATA, &[0, 0]),
+            Err(OtpError::BoundaryError)
+        );
+    }
+
+    #[test]
+    fn prog_data_alignment_error() {
+        let mut ctrl = unsafe { make_ctrl() };
+        assert_eq!(
+            ctrl.otp_prog_data(1, &[0, 0]),
+            Err(OtpError::AlignmentError)
+        );
+    }
+
+    #[test]
+    fn prog_data_verify_always_fails_returns_write_failed() {
+        // word 0 needs a valid 0→1 burn; against the fake buffer verify never
+        // matches, so retries exhaust and the whole program returns WriteFailed.
+        let (mut ctrl, _buf) = unsafe { make_ctrl_buf() };
+        assert_eq!(ctrl.otp_prog_data(0, &[1, 0]), Err(OtpError::WriteFailed));
+    }
+
+    #[test]
+    fn update_prot_info_security_size_nonzero() {
+        let (ctrl, buf) = unsafe { make_ctrl_buf() };
+        // secure_size is the 6-bit field bits[21:16]. Set it to 0x05.
+        // Expected: (0x05 & 0x3f) << 5 = 0xA0.
+        buf[DATA0_IDX] = 0x05 << OTP_SECURE_SIZE_BIT_POS;
+        let mut session = SessionInfo {
+            chip_version: AspeedChipVersion::Unknown,
+            version_name: [0u8; 10],
+            protection_status: ProtectionStatus::default(),
+            tool_version: [0u8; 32],
+            software_revision: 0,
+            key_count: 0,
+        };
+        ctrl.update_prot_info(&mut session);
+        assert_eq!(session.protection_status.security_size, 0xA0);
+    }
+
+    // Error/boundary paths for the program helpers not otherwise exercised.
+
+    #[test]
+    fn prog_strap_invalid_address() {
+        let mut ctrl = unsafe { make_ctrl() };
+        assert_eq!(
+            ctrl.otp_prog_strap(64, &[0, 0]),
+            Err(OtpError::InvalidAddress)
+        );
+    }
+
+    #[test]
+    fn prog_strap_no_change_burns_nothing() {
+        // Fake straps read all-zero; requesting all-zero means no bit differs, so the
+        // burn pass never runs and the call succeeds without touching a fuse.
+        let (mut ctrl, _buf) = unsafe { make_ctrl_buf() };
+        assert_eq!(ctrl.otp_prog_strap(0, &[0, 0]), Ok(()));
+    }
+
+    #[test]
+    fn prog_strap_needs_burn_reaches_prog_and_times_out() {
+        // Bit 0 must change 0→1; it is neither protected nor exhausted, so pre-flight
+        // passes and the burn runs. The fake buffer can't satisfy verify, so
+        // otp_prog_dc_b exhausts retries → Timeout (proves the burn pass executed).
+        let (mut ctrl, _buf) = unsafe { make_ctrl_buf() };
+        assert_eq!(ctrl.otp_prog_strap(0, &[1, 0]), Err(OtpError::Timeout));
+    }
+
+    #[test]
+    fn prog_strap_nonzero_start_reads_correct_word_bit() {
+        // start_bit=16, strap packed relative to it: strap[0] bit 16 is absolute
+        // strap 32, which must be burned. Against the fake buffer the burn can't
+        // verify, so a correct driver reaches the burn pass and returns Timeout.
+        // The old i-32 shift read strap[0] bit 0 (zero) for absolute bit 32, saw
+        // nothing to change, and wrongly returned Ok — this test catches that.
+        let (mut ctrl, _buf) = unsafe { make_ctrl_buf() };
+        assert_eq!(
+            ctrl.otp_prog_strap(16, &[1 << 16, 0]),
+            Err(OtpError::Timeout)
+        );
+    }
+
+    #[test]
+    fn prog_conf_boundary_error() {
+        let mut ctrl = unsafe { make_ctrl() };
+        // start_conf=31 + len=2 = 33 > 32
+        assert_eq!(
+            ctrl.otp_prog_conf(31, &[0, 0]),
+            Err(OtpError::BoundaryError)
+        );
+    }
+
+    #[test]
+    fn prog_conf_already_matches_returns_ok() {
+        // soak(Default) leaves secure020=0, so each conf reads back 0; requesting 0
+        // matches → no burn, pass stays true → Ok(()).
+        let (mut ctrl, _buf) = unsafe { make_ctrl_buf() };
+        assert_eq!(ctrl.otp_prog_conf(0, &[0, 0]), Ok(()));
+    }
+
+    #[test]
+    fn read_scuprot_boundary_error() {
+        let ctrl = unsafe { make_ctrl() };
+        let mut buf = [0u32; 2];
+        // offset=1 + len=2 = 3 > 2
+        assert_eq!(
+            ctrl.aspeed_otp_read_scuprot(1, &mut buf),
+            Err(OtpError::BoundaryError)
+        );
+    }
+
+    #[test]
+    fn read_scuprot_success_returns_conf28_29() {
+        // No soak on this path, so secure020 keeps its preset; OTPCFG28/29 both read it.
+        let (ctrl, buf) = unsafe { make_ctrl_buf() };
+        buf[DATA0_IDX] = 0xDEAD_BEEF;
+        let mut out = [0u32; 2];
+        assert_eq!(ctrl.aspeed_otp_read_scuprot(0, &mut out), Ok(()));
+        assert_eq!(out, [0xDEAD_BEEF, 0xDEAD_BEEF]);
+    }
+
+    #[test]
+    fn enable_region_protection_already_protected_returns_ok() {
+        // Configuration region already protected → early Ok(()) before any program.
+        let (mut ctrl, buf) = unsafe { make_ctrl_buf() };
+        buf[DATA0_IDX] = OTP_CONF_PROT_ENABLE;
+        assert_eq!(
+            ctrl.enable_region_protection(AspeedOtpRegion::Configuration),
+            Ok(())
+        );
     }
 }
