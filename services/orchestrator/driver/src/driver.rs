@@ -80,15 +80,19 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             .map_err(|_| DriverError::QueueFull)
     }
 
+    /// `id`'s image source. Takes the array rather than `&mut self` so the
+    /// caller can borrow `board.verifier` alongside the returned image.
+    fn source(images: &mut [B::Image; N], id: ComponentId) -> Result<&mut B::Image, DriverError> {
+        images
+            .get_mut(id.get() as usize)
+            .ok_or(DriverError::UnknownComponent)
+    }
+
     /// Stage `id`'s image: open its source so
     /// [`verify_firmware`](Self::verify_firmware) can read it.
     pub fn stage_firmware(&mut self, id: ComponentId) -> Result<(), DriverError> {
         self.staged = None;
-        let source = self
-            .board
-            .images
-            .get_mut(id.get() as usize)
-            .ok_or(DriverError::UnknownComponent)?;
+        let source = Self::source(&mut self.board.images, id)?;
         source.open().map_err(|_| DriverError::ImageUnavailable)?;
         self.staged = Some(id);
         Ok(())
@@ -100,11 +104,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         if self.staged != Some(id) {
             return Err(DriverError::NotStaged);
         }
-        let source = self
-            .board
-            .images
-            .get_mut(id.get() as usize)
-            .ok_or(DriverError::UnknownComponent)?;
+        let source = Self::source(&mut self.board.images, id)?;
         let verdict = self
             .board
             .verifier
