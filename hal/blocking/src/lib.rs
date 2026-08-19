@@ -25,6 +25,8 @@ pub mod gpio_port;
 pub mod i2c_device;
 /// I2C hardware controller traits (hardware abstraction layer)
 pub mod i2c_hardware;
+/// I3C hardware controller traits (hardware abstraction layer)
+pub mod i3c_hardware;
 /// Message Authentication Code (MAC) traits and implementations
 pub mod mac;
 /// Reset and clocking traits for OpenPRoT HAL
