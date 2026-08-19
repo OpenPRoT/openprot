@@ -11,8 +11,6 @@
 
 use core::num::NonZero;
 
-use ast10x0_peripherals::scu::pinctrl::PINCTRL_FMC_QUAD;
-use ast10x0_peripherals::scu::ScuRegisters;
 use ast10x0_peripherals::smc::{
     ChipSelect, FlashConfig, FmcReady, FmcUninit, SmcConfig, SmcController, SmcError, SmcTopology,
     SpiNorFlash, SpiNorFlashDevice,
@@ -74,14 +72,12 @@ impl Ast10x0FmcFlashDriver {
     ///
     /// # Safety
     /// The calling process must be the sole owner of the FMC controller
-    /// (MMIO 0x7e62_0000), its CS0 flash window (0x8000_0000), and must have
-    /// the SCU (0x7e6e_2000) mapped for pinctrl, per the system.json5 of the
-    /// image this runs in. Call at most once per process.
+    /// (MMIO 0x7e62_0000) and its CS0 flash window (0x8000_0000), per the
+    /// system.json5 of the image this runs in. The FMC pinmux
+    /// (`PINCTRL_FMC_QUAD`) must already have been applied by the kernel
+    /// target's pre-task init; this driver never touches the shared SCU.
+    /// Call at most once per process.
     pub unsafe fn new() -> Result<Self, ErrorCode> {
-        // SAFETY: sole ownership of the SCU mapping per the contract above.
-        let scu = unsafe { ScuRegisters::new_global_unlocked() };
-        scu.apply_pinctrl_group(PINCTRL_FMC_QUAD);
-
         let config = SmcConfig {
             controller_id: SmcController::Fmc,
             cs0: Some(CS0_CONFIG),
@@ -93,7 +89,8 @@ impl Ast10x0FmcFlashDriver {
         // SAFETY: sole ownership of the FMC hardware block per the contract above.
         let uninit = unsafe { FmcUninit::new(config) }.map_err(map_smc_error)?;
         let mut fmc = uninit.init().map_err(map_smc_error)?;
-        fmc.spi_nor_read_init(ChipSelect::Cs0).map_err(map_smc_error)?;
+        fmc.spi_nor_read_init(ChipSelect::Cs0)
+            .map_err(map_smc_error)?;
         Ok(Self { fmc })
     }
 
