@@ -10,6 +10,7 @@ rust_library(
         "src/boot_watch.rs",
         "src/evidence.rs",
         "src/lib.rs",
+        "src/lockdown_latch.rs",
         "src/svn_floor.rs",
     ],
     edition = "2024",
