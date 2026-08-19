@@ -17,8 +17,10 @@ pub trait ImageSource {
     /// Idempotent; a later `open` re-stages the image.
     fn open(&mut self) -> Result<(), Self::Error>;
 
-    /// Image length in bytes.
-    fn size(&mut self) -> Result<usize, Self::Error>;
+    /// Image length in bytes. Only meaningful after a successful `open`;
+    /// sources that learn the size during `open` cache it and report the
+    /// cached value here.
+    fn size(&self) -> Result<usize, Self::Error>;
 
     /// Reads `buf.len()` bytes starting at byte `offset` of the image.
     fn read_at(&mut self, offset: usize, buf: &mut [u8]) -> Result<(), Self::Error>;
@@ -33,7 +35,7 @@ impl<S: ImageSource> ImageSource for &mut S {
     }
 
     #[inline(always)]
-    fn size(&mut self) -> Result<usize, Self::Error> {
+    fn size(&self) -> Result<usize, Self::Error> {
         (**self).size()
     }
 

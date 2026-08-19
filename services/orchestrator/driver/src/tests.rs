@@ -62,7 +62,7 @@ impl ImageSource for MemImage {
         Ok(())
     }
 
-    fn size(&mut self) -> Result<usize, MemFault> {
+    fn size(&self) -> Result<usize, MemFault> {
         Ok(self.data.len())
     }
 
