@@ -19,8 +19,6 @@ const EVENT_CAP: usize = 4;
 /// Why the driver could not carry out an effect.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DriverError {
-    /// The executor for this effect has not been written yet.
-    NotImplemented,
     /// The effect names a component the driver has no device for.
     UnknownComponent,
     /// The component's image source could not be opened.
@@ -40,7 +38,6 @@ pub enum DriverError {
 impl core::fmt::Display for DriverError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(match self {
-            DriverError::NotImplemented => "executor not implemented",
             DriverError::UnknownComponent => "no device for this component id",
             DriverError::ImageUnavailable => "image source could not be opened",
             DriverError::NotStaged => "no image staged for this component",
@@ -146,78 +143,6 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             .hold_in_reset()
             .map_err(|_| DriverError::BootControlFault)
     }
-
-    /// Restore `id` from its configured recovery source (the mechanism is
-    /// board config); feed back `Event::Restored(id)` or
-    /// `Event::RecoveryFailed`. `attempt` is the core's consecutive-recovery
-    /// count, letting the driver pick a different source per attempt.
-    pub fn recover_component(&mut self, _id: ComponentId, _attempt: u8) -> Result<(), DriverError> {
-        Err(DriverError::NotImplemented)
-    }
-
-    /// Authenticate the staged update; feed back `Event::UpdateVerified` or
-    /// `Event::UpdateRejected`.
-    pub fn authenticate_update(&mut self) -> Result<(), DriverError> {
-        Err(DriverError::NotImplemented)
-    }
-
-    /// Write the incoming update image into the staging region.
-    pub fn stage_update(&mut self) -> Result<(), DriverError> {
-        Err(DriverError::NotImplemented)
-    }
-
-    /// Trial-boot the staged image and arm the commit watchdog; feed back
-    /// `Event::BootConfirmed(id)` or `Event::CommitTimeout`.
-    pub fn activate_update(&mut self) -> Result<(), DriverError> {
-        Err(DriverError::NotImplemented)
-    }
-
-    /// Discard the staged image.
-    pub fn discard_staged(&mut self) -> Result<(), DriverError> {
-        Err(DriverError::NotImplemented)
-    }
-
-    /// Advance the SVN floor past `id`'s confirmed image; cancels the
-    /// commit watchdog armed by [`activate_update`](Self::activate_update).
-    pub fn commit_svn_floor(&mut self, _id: ComponentId) -> Result<(), DriverError> {
-        Err(DriverError::NotImplemented)
-    }
-
-    /// Produce a signed attestation for the pending challenge.
-    pub fn sign_attestation(&mut self) -> Result<(), DriverError> {
-        Err(DriverError::NotImplemented)
-    }
-
-    /// Report `id` gated and the platform degraded (CSA degraded-mode
-    /// clause).
-    pub fn report_isolated(&mut self, _id: ComponentId) -> Result<(), DriverError> {
-        Err(DriverError::NotImplemented)
-    }
-
-    /// Report that `id` exhausted recovery, immediately before the machine
-    /// latches `Locked`.
-    pub fn report_recovery_failed(&mut self, _id: ComponentId) -> Result<(), DriverError> {
-        Err(DriverError::NotImplemented)
-    }
-
-    /// Answer the requester: update declined, machine busy (e.g. a PLDM
-    /// "retry later" completion code).
-    pub fn report_update_deferred(&mut self) -> Result<(), DriverError> {
-        Err(DriverError::NotImplemented)
-    }
-
-    /// Answer the requester: its in-flight update was superseded by
-    /// recovery.
-    pub fn report_update_aborted(&mut self) -> Result<(), DriverError> {
-        Err(DriverError::NotImplemented)
-    }
-
-    /// Latch the terminal safe state. A failure here is a hard fault: the
-    /// SM believes it is `Locked`, so the real executor must halt, not
-    /// recover.
-    pub fn latch_lockdown(&mut self) -> Result<(), DriverError> {
-        Err(DriverError::NotImplemented)
-    }
 }
 
 impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
@@ -231,18 +156,27 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
             Effect::VerifyFirmware(id) => self.verify_firmware(id),
             Effect::ReleaseReset(id) => self.release_reset(id),
             Effect::AssertReset(id) => self.assert_reset(id),
-            Effect::RecoverComponent { id, attempt } => self.recover_component(id, attempt),
-            Effect::AuthenticateUpdate => self.authenticate_update(),
-            Effect::StageUpdate => self.stage_update(),
-            Effect::ActivateUpdate => self.activate_update(),
-            Effect::DiscardStaged => self.discard_staged(),
-            Effect::CommitSvnFloor(id) => self.commit_svn_floor(id),
-            Effect::SignAttestation => self.sign_attestation(),
-            Effect::ReportIsolated(id) => self.report_isolated(id),
-            Effect::ReportRecoveryFailed(id) => self.report_recovery_failed(id),
-            Effect::ReportUpdateDeferred => self.report_update_deferred(),
-            Effect::ReportUpdateAborted => self.report_update_aborted(),
-            Effect::LatchLockdown => self.latch_lockdown(),
+            // No board capability is composed for these seams yet, so they
+            // fail closed here instead of behind stub methods. Each group
+            // gains an executor when its capability joins
+            // [`BoardCapabilities`], as BootControl did above: recovery
+            // sourcing for RecoverComponent; update staging, authentication
+            // and trial activation for the update quartet; anti-rollback
+            // commit for CommitSvnFloor; evidence signing for
+            // SignAttestation; the management reporting path for the Report
+            // effects; the terminal latch for LatchLockdown.
+            Effect::RecoverComponent { .. }
+            | Effect::AuthenticateUpdate
+            | Effect::StageUpdate
+            | Effect::ActivateUpdate
+            | Effect::DiscardStaged
+            | Effect::CommitSvnFloor(_)
+            | Effect::SignAttestation
+            | Effect::ReportIsolated(_)
+            | Effect::ReportRecoveryFailed(_)
+            | Effect::ReportUpdateDeferred
+            | Effect::ReportUpdateAborted
+            | Effect::LatchLockdown => return Err(EffectError),
             // Emit is consumed by the orchestrator; receiving one is a
             // driver bug.
             Effect::Emit(_) => return Err(EffectError),

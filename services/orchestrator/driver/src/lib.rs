@@ -4,11 +4,11 @@
 //! `openprot_orchestrator_driver` — the effect-executing layer around the
 //! orchestrator state machine.
 //!
-//! [`PlatformDriver`] implements the SM's [`Platform`] seam: one method per `Effect`,
-//! each documenting its obligation from the platform-boundary contract
-//! (`docs/src/design/orchestrator/orchestrator-model.md` §6). Unimplemented
-//! executors return [`DriverError::NotImplemented`]; the SM fail-closes on
-//! them.
+//! [`PlatformDriver`] implements the SM's [`Platform`] seam, delegating each
+//! `Effect` to a board-composed capability per the platform-boundary contract
+//! (`docs/src/design/orchestrator/orchestrator-model.md` §6). Effects whose
+//! capability is not composed yet fail closed in `execute`; the driver grows
+//! an executor only when the capability it delegates to exists.
 //!
 //! Executor-produced events queue in the driver; the event loop drains them
 //! via [`PlatformDriver::take_event`] and dispatches each.
