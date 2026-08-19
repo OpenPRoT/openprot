@@ -42,13 +42,8 @@
                             kernel_stack_size_bytes: 4096,  // 4KB stack
                         },],
                     memory_mappings: [
-                        {
-                            // SCU — needed once at init for FMC pinctrl.
-                            name: "scu",
-                            type: "device",
-                            start_address: 0x7e6e2000,
-                            size_bytes: 0x1000,
-                        },
+                        // FMC pinctrl is applied by the kernel target's
+                        // pre-task init, so the server does not map the SCU.
                         {
                             // FMC controller registers.
                             name: "fmc_regs",

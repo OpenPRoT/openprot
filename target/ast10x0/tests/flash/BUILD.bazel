@@ -40,6 +40,7 @@ rust_binary(
         ":codegen",
         ":linker_script",
         "//target/ast10x0:entry",
+        "//target/ast10x0/peripherals",
         "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
         "@pigweed//pw_kernel/kernel",
         "@pigweed//pw_kernel/subsys/console:console_backend",
@@ -66,4 +67,56 @@ rust_app(
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
     ],
+)
+
+rust_app(
+    name = "flash_client_app",
+    srcs = ["client_main.rs"],
+    codegen_crate_name = "app_flash_client",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//hal/blocking/flash:flash",
+        "//services/flash:client",
+        "//util/ipc",
+        "//util/types",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
+system_image(
+    name = "flash",
+    apps = [
+        ":flash_server_bin",
+        ":flash_client_app",
+    ],
+    kernel = ":target",
+    platform = "//target/ast10x0",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+)
+
+# FMC flash is not modeled under QEMU in this repo (same restriction as
+# //target/ast10x0/tests/smc/...): run on EVB hardware.
+system_image_test(
+    name = "flash_evb_test",
+    image = ":flash",
+    tags = ["hardware"],
+    target_compatible_with = select({
+        "//target/ast10x0:qemu_enabled": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:public"],
+)
+
+rust_binary_no_panics_test(
+    name = "no_panics_test",
+    binary = ":flash",
+    tags = ["kernel"],
 )
