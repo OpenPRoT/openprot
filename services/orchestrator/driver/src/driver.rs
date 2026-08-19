@@ -149,8 +149,9 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
 
     /// Restore `id` from its configured recovery source (the mechanism is
     /// board config); feed back `Event::Restored(id)` or
-    /// `Event::RecoveryFailed`.
-    pub fn recover_component(&mut self, _id: ComponentId) -> Result<(), DriverError> {
+    /// `Event::RecoveryFailed`. `attempt` is the core's consecutive-recovery
+    /// count, letting the driver pick a different source per attempt.
+    pub fn recover_component(&mut self, _id: ComponentId, _attempt: u8) -> Result<(), DriverError> {
         Err(DriverError::NotImplemented)
     }
 
@@ -230,7 +231,7 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
             Effect::VerifyFirmware(id) => self.verify_firmware(id),
             Effect::ReleaseReset(id) => self.release_reset(id),
             Effect::AssertReset(id) => self.assert_reset(id),
-            Effect::RecoverComponent(id) => self.recover_component(id),
+            Effect::RecoverComponent { id, attempt } => self.recover_component(id, attempt),
             Effect::AuthenticateUpdate => self.authenticate_update(),
             Effect::StageUpdate => self.stage_update(),
             Effect::ActivateUpdate => self.activate_update(),
