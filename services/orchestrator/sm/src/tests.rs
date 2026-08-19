@@ -1643,7 +1643,7 @@ impl Platform for FailOn {
     }
 }
 
-/// A failed reset actuation is fail-closed: the driver injects `EffectFailed`
+/// A failed reset actuation is fail-closed: the orchestrator injects `EffectFailed`
 /// and the machine latches to `Locked`, emitting `LatchLockdown`.
 #[test]
 fn effect_failure_latches_lockdown() {

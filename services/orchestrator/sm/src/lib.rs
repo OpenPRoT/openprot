@@ -879,7 +879,7 @@ impl<const N: usize, const E: usize> Rot<N, E> {
 
 /// Signals that the platform driver could not carry out an [`Effect`]. The machine does
 /// not need the driver's error detail — **every** actuation failure is treated
-/// the same, fail-closed: the driver injects [`Event::EffectFailed`] and the
+/// the same, fail-closed: the orchestrator injects [`Event::EffectFailed`] and the
 /// machine latches to [`State::Locked`]. This blanket policy is deliberate and
 /// is what lets the failure signal stay a payload-less marker; a future design
 /// that needs per-effect recovery must add a *new*, descriptive event rather
@@ -892,11 +892,12 @@ pub struct EffectError;
 /// [`Effect::Emit`] — the orchestrator consumes those internally.
 ///
 /// `Ok(Some(event))` feeds back what the effect produced synchronously (e.g.
-/// a verification verdict); the driver queues it and settles it in the same
-/// dispatch run. At most one event per effect. Synchronous results belong
+/// a verification verdict); the orchestrator queues it and settles it in the
+/// same dispatch run. At most one event per effect. Synchronous results belong
 /// here, not in a driver-side queue — one feedback path keeps ordering honest.
-/// Never block in `execute`: results that arrive later (boot progress, timer
-/// expiry) are delivered as their own outside events via `dispatch`.
+/// `execute` may block until the effect completes; results that only arrive
+/// later (boot progress, timer expiry) are delivered as their own outside
+/// events via `dispatch`.
 ///
 /// Failure stays on the error channel, never in a returned event: `Err` is
 /// checked between effects, so a failed actuation aborts the rest of the
@@ -1008,7 +1009,7 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
     /// follow-up and every event the executors return — calling `on_effect`
     /// for each external effect in order. One call runs to quiescence.
     ///
-    /// If `on_effect` reports an [`EffectError`], the driver injects an
+    /// If `on_effect` reports an [`EffectError`], the orchestrator injects an
     /// [`Event::EffectFailed`] at the *front* of the queue, so a failed
     /// actuation is handled fail-closed: the latch settles next, and feedback
     /// still queued behind it drains into [`State::Locked`] (discarded)
