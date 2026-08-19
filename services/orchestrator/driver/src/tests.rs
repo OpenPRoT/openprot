@@ -201,7 +201,8 @@ fn orchestrator() -> Orchestrator<1, 4> {
 }
 
 // PowerGood drives ReadFirmware + VerifyFirmware into the driver; the
-// verdict comes back as an event.
+// verdict returns through execute and the SM settles it in the same
+// dispatch run, carrying a passive component all the way to Ready.
 #[test]
 fn boot_verifies_the_first_component() {
     let mut orch = orchestrator();
@@ -209,9 +210,7 @@ fn boot_verifies_the_first_component() {
 
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
 
-    assert_eq!(driver.take_event(), Some(Event::VerificationPassed(C0)));
-    assert_eq!(driver.take_event(), None);
-    assert_eq!(orch.state(), State::PreSupervision);
+    assert_eq!(orch.state(), State::Ready);
 }
 
 #[test]
@@ -221,9 +220,11 @@ fn corrupt_image_fails_verification() {
     let mut driver = driver([MemImage::holding(corrupt)]);
 
     driver.stage_firmware(C0).unwrap();
-    driver.verify_firmware(C0).unwrap();
 
-    assert_eq!(driver.take_event(), Some(Event::VerificationFailed(C0)));
+    assert_eq!(
+        driver.verify_firmware(C0),
+        Ok(Event::VerificationFailed(C0))
+    );
 }
 
 #[test]
@@ -231,7 +232,6 @@ fn verify_without_read_is_refused() {
     let mut driver = driver([MemImage::holding(valid_image())]);
 
     assert_eq!(driver.verify_firmware(C0), Err(DriverError::NotStaged));
-    assert_eq!(driver.take_event(), None);
 }
 
 // An unopenable source is a failed actuation, not a verdict: the SM
@@ -246,7 +246,6 @@ fn unopenable_source_fails_closed() {
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
 
     assert_eq!(orch.state(), State::Locked);
-    assert_eq!(driver.take_event(), None);
 }
 
 // A source that opens but cannot be read fails the same way, via the
@@ -261,7 +260,6 @@ fn unreadable_source_fails_closed() {
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
 
     assert_eq!(orch.state(), State::Locked);
-    assert_eq!(driver.take_event(), None);
 }
 
 // So does a verifier that cannot run its check.
@@ -277,7 +275,6 @@ fn verifier_fault_fails_closed() {
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
 
     assert_eq!(orch.state(), State::Locked);
-    assert_eq!(driver.take_event(), None);
 }
 
 const C1: ComponentId = ComponentId::new(1);
@@ -364,26 +361,6 @@ fn reset_line_fault_is_reported() {
     assert_eq!(driver.assert_reset(C0), Err(DriverError::BootControlFault));
 }
 
-// Undrained verdicts eventually fill the queue; the overflow is reported,
-// not silently dropped.
-#[test]
-fn event_queue_overflow_is_reported() {
-    let mut driver = driver([MemImage::holding(valid_image())]);
-
-    let mut queued = 0;
-    loop {
-        driver.stage_firmware(C0).unwrap();
-        match driver.verify_firmware(C0) {
-            Ok(()) => queued += 1,
-            Err(e) => {
-                assert_eq!(e, DriverError::QueueFull);
-                break;
-            }
-        }
-        assert!(queued < 64, "queue never filled");
-    }
-}
-
 // Effect::Emit is the orchestrator's internal channel and must never reach
 // a Platform; the driver refuses it rather than acting on it.
 #[test]
@@ -396,5 +373,18 @@ fn emit_is_refused() {
         driver.execute(Effect::Emit(Event::UpdateRequest)),
         Err(EffectError)
     );
-    assert_eq!(driver.take_event(), None);
+}
+
+// The verdict is the returned event of the VerifyFirmware effect.
+#[test]
+fn execute_returns_the_verdict_event() {
+    use openprot_orchestrator_sm::{Effect, Platform};
+
+    let mut driver = driver([MemImage::holding(valid_image())]);
+
+    assert_eq!(driver.execute(Effect::ReadFirmware(C0)), Ok(None));
+    assert_eq!(
+        driver.execute(Effect::VerifyFirmware(C0)),
+        Ok(Some(Event::VerificationPassed(C0)))
+    );
 }

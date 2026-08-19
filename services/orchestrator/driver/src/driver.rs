@@ -9,13 +9,6 @@ use openprot_orchestrator_sm::{ComponentId, Effect, EffectError, Event, Platform
 use crate::board::{Board, BoardCapabilities, ImageSource, Verdict, Verifier};
 use orchestrator_capabilities::BootControl;
 
-/// Queue bound. Executors produce at most one event per effect, the event loop
-/// drains it after every dispatch, and the largest SM effect batch today is
-/// two (ReadFirmware + VerifyFirmware) — 4 is that worst case with
-/// headroom. Overflow is reported ([`DriverError::QueueFull`]), never
-/// silent loss.
-const EVENT_CAP: usize = 4;
-
 /// Why the driver could not carry out an effect.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DriverError {
@@ -30,9 +23,6 @@ pub enum DriverError {
     VerifierFault,
     /// The component's boot control could not actuate the reset line.
     BootControlFault,
-    /// The event queue overflowed; dropping events breaks the SM's
-    /// honest-feedback contract.
-    QueueFull,
 }
 
 impl core::fmt::Display for DriverError {
@@ -43,7 +33,6 @@ impl core::fmt::Display for DriverError {
             DriverError::NotStaged => "no image staged for this component",
             DriverError::VerifierFault => "verifier could not perform the check",
             DriverError::BootControlFault => "boot control could not actuate the reset",
-            DriverError::QueueFull => "event queue full",
         })
     }
 }
@@ -56,8 +45,6 @@ pub struct PlatformDriver<B: BoardCapabilities, const N: usize> {
     board: Board<B, N>,
     /// Component whose image is staged (source opened) for verification.
     staged: Option<ComponentId>,
-    /// Events awaiting [`take_event`](Self::take_event).
-    pending: heapless::Deque<Event, EVENT_CAP>,
 }
 
 impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
@@ -65,20 +52,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         Self {
             board,
             staged: None,
-            pending: heapless::Deque::new(),
         }
-    }
-
-    /// Next event owed to the SM; the event loop drains this after each
-    /// dispatch.
-    pub fn take_event(&mut self) -> Option<Event> {
-        self.pending.pop_front()
-    }
-
-    fn enqueue(&mut self, event: Event) -> Result<(), DriverError> {
-        self.pending
-            .push_back(event)
-            .map_err(|_| DriverError::QueueFull)
     }
 
     /// `id`'s image source. Takes the array rather than `&mut self` so the
@@ -99,9 +73,9 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         Ok(())
     }
 
-    /// Judge the staged image via the [`Verifier`] and queue the verdict:
+    /// Judge the staged image via the [`Verifier`] and return the verdict:
     /// `Event::VerificationPassed(id)` or `Event::VerificationFailed(id)`.
-    pub fn verify_firmware(&mut self, id: ComponentId) -> Result<(), DriverError> {
+    pub fn verify_firmware(&mut self, id: ComponentId) -> Result<Event, DriverError> {
         // Id validity first: an unknown component is UnknownComponent even
         // though it can never be staged.
         let source = Self::source(&mut self.board.images, id)?;
@@ -113,7 +87,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             .verifier
             .verify(id, source)
             .map_err(|_| DriverError::VerifierFault)?;
-        self.enqueue(match verdict {
+        Ok(match verdict {
             Verdict::Authenticated => Event::VerificationPassed(id),
             Verdict::Rejected => Event::VerificationFailed(id),
         })
@@ -147,15 +121,16 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
 
 impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
     /// Routes each effect to its executor. Exhaustive: a new [`Effect`]
-    /// variant must get an executor before this compiles. Every executor
-    /// error reports as [`EffectError`] — the SM treats all actuation
-    /// failures the same, fail-closed.
-    fn execute(&mut self, effect: Effect) -> Result<(), EffectError> {
+    /// variant must get an executor before this compiles. Synchronous
+    /// results (the verification verdict) come back as the returned event;
+    /// every executor error reports as [`EffectError`] — the SM treats all
+    /// actuation failures the same, fail-closed.
+    fn execute(&mut self, effect: Effect) -> Result<Option<Event>, EffectError> {
         match effect {
-            Effect::ReadFirmware(id) => self.stage_firmware(id),
-            Effect::VerifyFirmware(id) => self.verify_firmware(id),
-            Effect::ReleaseReset(id) => self.release_reset(id),
-            Effect::AssertReset(id) => self.assert_reset(id),
+            Effect::ReadFirmware(id) => self.stage_firmware(id).map(|_| None),
+            Effect::VerifyFirmware(id) => self.verify_firmware(id).map(Some),
+            Effect::ReleaseReset(id) => self.release_reset(id).map(|_| None),
+            Effect::AssertReset(id) => self.assert_reset(id).map(|_| None),
             // No board capability is composed for these seams yet, so they
             // fail closed here instead of behind stub methods. Each group
             // gains an executor when its capability joins

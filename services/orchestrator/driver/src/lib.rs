@@ -10,8 +10,9 @@
 //! capability is not composed yet fail closed in `execute`; the driver grows
 //! an executor only when the capability it delegates to exists.
 //!
-//! Executor-produced events queue in the driver; the event loop drains them
-//! via [`PlatformDriver::take_event`] and dispatches each.
+//! Synchronous results (the verification verdict) return through `execute`;
+//! the SM queues and settles them within the same dispatch run. There is no
+//! driver-side event queue.
 //!
 //! Everything device-specific arrives through the seams in [`board`]:
 //! image access ([`ImageSource`]), image judgment ([`Verifier`]) and reset
