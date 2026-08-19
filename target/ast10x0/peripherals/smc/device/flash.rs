@@ -45,6 +45,21 @@ fn encode_addr_cmd(opcode: u8, offset: u32, width: AddressWidth) -> ([u8; 5], us
     }
 }
 
+/// Validate a single page-program operation.
+///
+/// SPI NOR page program wraps at page boundaries, so a write that crosses one
+/// would silently corrupt the start of the page; reject it instead. Unaligned
+/// starts *within* a page are legal.
+fn validate_page_program_bounds(page_size: usize, offset: u32, len: usize) -> Result<(), SmcError> {
+    if page_size == 0 || len == 0 || len > page_size {
+        return Err(SmcError::InvalidCapacity);
+    }
+    if (offset as usize) % page_size + len > page_size {
+        return Err(SmcError::InvalidCapacity);
+    }
+    Ok(())
+}
+
 /// Minimal SPI NOR flash device API.
 pub trait SpiNorFlashDevice {
     /// Read bytes from flash at `offset` into `buf`.
@@ -436,13 +451,7 @@ impl<'a> SpiNorFlash<'a> {
     }
 
     fn validate_page_program(&self, offset: u32, data: &[u8]) -> Result<(), SmcError> {
-        let page_size = self.cfg.page_size as usize;
-        if page_size == 0 || data.is_empty() || data.len() > page_size {
-            return Err(SmcError::InvalidCapacity);
-        }
-        if (offset as usize) % page_size != 0 {
-            return Err(SmcError::InvalidCapacity);
-        }
+        validate_page_program_bounds(self.cfg.page_size as usize, offset, data.len())?;
         self.validate_range(offset, data.len())
     }
 
@@ -693,6 +702,45 @@ mod tests {
         assert_eq!(
             expect_jedec_match(actual, expected),
             Err(SmcError::HardwareError)
+        );
+    }
+
+    #[test]
+    fn page_program_bounds_accepts_aligned_full_page() {
+        assert_eq!(super::validate_page_program_bounds(256, 0x100, 256), Ok(()));
+    }
+
+    #[test]
+    fn page_program_bounds_accepts_unaligned_within_page() {
+        assert_eq!(super::validate_page_program_bounds(256, 0x105, 37), Ok(()));
+        assert_eq!(super::validate_page_program_bounds(256, 0x1ff, 1), Ok(()));
+    }
+
+    #[test]
+    fn page_program_bounds_rejects_page_crossing() {
+        assert_eq!(
+            super::validate_page_program_bounds(256, 0x1ff, 2),
+            Err(SmcError::InvalidCapacity)
+        );
+        assert_eq!(
+            super::validate_page_program_bounds(256, 0x10, 256),
+            Err(SmcError::InvalidCapacity)
+        );
+    }
+
+    #[test]
+    fn page_program_bounds_rejects_empty_and_oversized() {
+        assert_eq!(
+            super::validate_page_program_bounds(256, 0x100, 0),
+            Err(SmcError::InvalidCapacity)
+        );
+        assert_eq!(
+            super::validate_page_program_bounds(256, 0x100, 257),
+            Err(SmcError::InvalidCapacity)
+        );
+        assert_eq!(
+            super::validate_page_program_bounds(0, 0x100, 16),
+            Err(SmcError::InvalidCapacity)
         );
     }
 }
