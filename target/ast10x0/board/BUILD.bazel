@@ -7,6 +7,7 @@ load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
 rust_library(
     name = "ast10x0_board",
     srcs = [
+        "src/board.rs",
         "src/lib.rs",
         "src/spi_monitor.rs",
         "src/spim_wiring.rs",
@@ -16,6 +17,8 @@ rust_library(
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],
     deps = [
+        "//hal",
+        "//hal/blocking",
         "//target/ast10x0/backend/i2c:i2c_backend_ast10x0",
         "//target/ast10x0/peripherals",
         "@ast1060_pac",

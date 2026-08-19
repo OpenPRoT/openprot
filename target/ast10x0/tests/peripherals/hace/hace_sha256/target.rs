@@ -138,7 +138,6 @@ fn run_hace_sha2_kats() -> Result<(), &'static str> {
 
     let board = Ast10x0Board::new(Ast10x0BoardDescriptor {
         pinctrl_groups: &[],
-        i2c_buses: &[],
     });
     // SAFETY: test runs once at boot with exclusive access to the board.
     unsafe {

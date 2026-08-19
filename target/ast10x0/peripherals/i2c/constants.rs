@@ -60,6 +60,46 @@ pub const DEFAULT_TIMEOUT_US: u32 = 1_000_000;
 pub const MAX_RETRY_ATTEMPTS: u32 = 3;
 
 // ============================================================================
+// Register offsets (byte offsets into the I2C controller block)
+// ============================================================================
+/// Function control register.
+pub const I2CC00: u32 = 0x00;
+/// AC timing register.
+pub const I2CC04: u32 = 0x04;
+/// Byte buffer / line status register.
+pub const I2CC08: u32 = 0x08;
+/// Pool buffer control register.
+pub const I2CC0C: u32 = 0x0c;
+/// Master interrupt control register.
+pub const I2CM10: u32 = 0x10;
+/// Master interrupt status register (write-to-clear).
+pub const I2CM14: u32 = 0x14;
+/// Master command register.
+pub const I2CM18: u32 = 0x18;
+/// Master DMA length register.
+pub const I2CM1C: u32 = 0x1c;
+/// Slave interrupt control register.
+pub const I2CS20: u32 = 0x20;
+/// Slave interrupt status register (write-to-clear).
+pub const I2CS24: u32 = 0x24;
+/// Slave command register.
+pub const I2CS28: u32 = 0x28;
+/// Slave DMA length register.
+pub const I2CS2C: u32 = 0x2c;
+/// Master DMA TX buffer base address.
+pub const I2CM30: u32 = 0x30;
+/// Master DMA RX buffer base address.
+pub const I2CM34: u32 = 0x34;
+/// Slave DMA RX buffer base address.
+pub const I2CS38: u32 = 0x38;
+/// Slave DMA RX buffer base address (second).
+pub const I2CS3C: u32 = 0x3c;
+/// Slave device address register.
+pub const I2CS40: u32 = 0x40;
+/// Slave DMA RX actual-length register.
+pub const I2CS4C: u32 = 0x4c;
+
+// ============================================================================
 // Register bit definitions
 // Reference: aspeed-rust/src/i2c/ast1060_i2c.rs lines 55-100
 // ============================================================================
@@ -67,6 +107,8 @@ pub const MAX_RETRY_ATTEMPTS: u32 = 3;
 // Function Control Register (I2CC00)
 /// Enable slave function
 pub const AST_I2CC_SLAVE_EN: u32 = 1 << 1;
+/// Enable bus auto-release on SCL-low/SDA-low or slave-mode inactive timeout
+pub const AST_I2CC_BUS_AUTO_RELEASE: u32 = 1 << 17;
 /// Enable master function
 pub const AST_I2CC_MASTER_EN: u32 = 1 << 0;
 /// Disable multi-master capability
@@ -174,6 +216,51 @@ pub const AST_I2CS_WAIT_RX_DMA: u32 = 1 << 24;
 /// Helper to build packet mode address field
 #[inline]
 #[must_use]
-pub fn ast_i2cm_pkt_addr(addr: u8) -> u32 {
-    u32::from(addr & 0x7F) << 24
+pub const fn ast_i2cm_pkt_addr(addr: u8) -> u32 {
+    ((addr & 0x7F) as u32) << 24
 }
+
+/// This SoC's I2C master command/status map: fill the HAL's named slots with AST1060 values.
+#[derive(Clone, Copy)]
+pub struct AstMasterBits;
+
+impl openprot_hal::i2c_cmd_words::I2cMasterCmdBits for AstMasterBits {
+    const OFFSET: u32 = I2CM18;
+    const PACKET: u32 = AST_I2CM_PKT_EN;
+    const START: u32 = AST_I2CM_START_CMD;
+    const STOP: u32 = AST_I2CM_STOP_CMD;
+    const TX: u32 = AST_I2CM_TX_CMD;
+    const RX: u32 = AST_I2CM_RX_CMD;
+    const RX_LAST: u32 = AST_I2CM_RX_CMD_LAST;
+    const TX_BUFF: u32 = AST_I2CM_TX_BUFF_EN;
+    const RX_BUFF: u32 = AST_I2CM_RX_BUFF_EN;
+    const TX_DMA: u32 = AST_I2CM_TX_DMA_EN;
+    const RX_DMA: u32 = AST_I2CM_RX_DMA_EN;
+    const RECOVER: u32 = 1 << 11;
+    fn pkt_addr(addr: u8) -> u32 {
+        ast_i2cm_pkt_addr(addr)
+    }
+}
+
+impl openprot_hal::i2c_cmd_words::I2cMasterStatusBits for AstMasterBits {
+    const OFFSET: u32 = I2CM14;
+    const TX_ACK: u32 = AST_I2CM_TX_ACK;
+    const TX_NAK: u32 = AST_I2CM_TX_NAK;
+    const RX_DONE: u32 = AST_I2CM_RX_DONE;
+    const ARBIT_LOSS: u32 = AST_I2CM_ARBIT_LOSS;
+    const NORMAL_STOP: u32 = AST_I2CM_NORMAL_STOP;
+    const ABNORMAL: u32 = AST_I2CM_ABNORMAL;
+    const SCL_LOW_TO: u32 = AST_I2CM_SCL_LOW_TO;
+    const PKT_DONE: u32 = AST_I2CM_PKT_DONE;
+    const PKT_ERROR: u32 = AST_I2CM_PKT_ERROR;
+    const BUS_RECOVER: u32 = AST_I2CM_BUS_RECOVER;
+    const BUS_RECOVER_FAIL: u32 = AST_I2CM_BUS_RECOVER_FAIL;
+    const SDA_DL_TO: u32 = AST_I2CM_SDA_DL_TO;
+}
+
+/// AST1060 master command builder — the HAL type filled with this chip's bit values.
+pub type I2cMasterCommand = openprot_hal::i2c_cmd_words::I2cMasterCmd<AstMasterBits>;
+/// AST1060 master status flag-set — the HAL type filled with this chip's bit values.
+pub type I2cMasterStatus = openprot_hal::i2c_cmd_words::I2cMasterStatus<AstMasterBits>;
+
+pub use openprot_hal::i2c_cmd_words::{I2cCmd, I2cStat};

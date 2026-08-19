@@ -10,28 +10,14 @@
 //! decoded wire transaction straight through it with **no typestate shim**.
 //!
 //! All this crate adds is:
-//!  1. the bus-index → `(I2C, I2CBUFF)` register-pointer mapping for the 14
-//!     AST1060 controllers,
-//!  2. [`init_bus`] — the per-controller hardware bring-up the board calls
-//!     eagerly for **every** wired bus, and
-//!  3. per-bus open constructors ([`open_bus`] / [`open_bus_dma`]) that wrap an
-//!     already-initialized controller (no re-init).
+//!  1. [`i2c_bus`] — const-wire a bus from its two SCL/SDA pin tokens, and
+//!  2. [`open_bus_dma`] — bring up a server's DmaMode controller from its two pin tokens (init hardware,
+//!     then wrap with non-cached DMA buffers) in one step, so a driver can never front an uninit controller.
 //!
-//! ## Initialization split (settled)
-//!
-//! Per-controller config (`I2CC00` master-enable, `configure_timing`,
-//! interrupts) depends on each bus's [`I2cConfig`], which is **board
-//! topology**, so it now lives in the board descriptor. `Ast10x0Board::init()`
-//! does subsystem bring-up (pin-mux / SCU clock+reset / `init_i2c_global`)
-//! **and then eagerly calls [`init_bus`] for every wired bus** (DMA buses
-//! included — `init_hardware()` does not touch the DMA buffer). The server
-//! therefore opens each bus with the cheap no-init [`Ast1060I2c::from_initialized`]
-//! path; `new()` is no longer used.
-//!
-//! DMA exception: the non-cached SRAM transfer buffer cannot live in a
-//! `&'static` descriptor, so DMA buses are opened with [`open_bus_dma`], which
-//! takes a server-owned `&'static mut` `.ram_nc` buffer. Register init for DMA
-//! buses still happens in [`init_bus`] like any other bus.
+//! Per-controller config (`I2CC00` master-enable, `configure_timing`, interrupts) depends on each bus's
+//! [`I2cConfig`] (board topology), so each server brings up its own bus — the board does not. The DMA
+//! buffers are non-cached SRAM (`&'static mut` `.ram_nc`), which cannot live in a `&'static` descriptor,
+//! so the server hands them to [`open_bus_dma`].
 //!
 //! The server holds **one driver instance per bus it owns** (one IPC channel
 //! per bus — see `i2c_server`). Slave/target mode is intentionally absent: the
@@ -39,9 +25,11 @@
 
 #![no_std]
 
-use ast1060_pac::{i2c::RegisterBlock, i2cbuff::RegisterBlock as BuffRegisterBlock};
+use ast10x0_peripherals::scu::{scu414_30, scu414_31, scu418_0, scu418_1};
 use embedded_hal::i2c::{ErrorType, I2c, Operation, SevenBitAddress};
 use i2c_api::seam::I2cSlaveEvent;
+use openprot_hal::i2c::{I2cBus, I2cScl, I2cSda};
+use openprot_hal::resource::{Pin, Routes};
 use openprot_hal_blocking::i2c_hardware::slave::{I2cIsrEvent, I2cSlaveBuffer, I2cSlaveCore};
 use openprot_hal_blocking::i2c_hardware::I2cBusRecovery;
 
@@ -59,11 +47,67 @@ pub type Yield = fn(u32);
 /// The concrete driver type the server owns, one per bus.
 pub type BusDriver = Ast1060I2cBackend;
 
-/// Highest AST1060 I2C controller index (controllers 0..=13).
-pub const MAX_BUS: u8 = 13;
+/// Controller 1's bus: SCL2/SDA2 on SCU414[30:31], base carried by the pins (silicon-fixed).
+pub type I2c1Bus = I2cBus<scu414_30, scu414_31, Ast1060I2cRegisters>;
+
+/// Controller 2's bus: SCL3/SDA3 on SCU418[0:1], base carried by the pins (silicon-fixed).
+pub type I2c2Bus = I2cBus<scu418_0, scu418_1, Ast1060I2cRegisters>;
+
+/// A DMA transfer buffer proven to sit in non-cached SRAM and be uniquely owned — the type-level
+/// discharge of [`open_bus_dma`]'s buffer contract. Mint one only via [`non_cached_buf!`].
+pub struct NonCachedBuf(&'static mut [u8]);
+
+impl NonCachedBuf {
+    /// Wrap a `.ram_nc` buffer; the macro is the sole caller and upholds placement + take-once.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn __from_ram_nc(buf: &'static mut [u8]) -> Self {
+        Self(buf)
+    }
+}
+
+/// Declare a `.ram_nc` DMA buffer of `$len` bytes and mint its [`NonCachedBuf`] once (`None` on any
+/// later call). The only `unsafe` for a server's DMA buffers, authored here so the binary has none.
+#[macro_export]
+macro_rules! non_cached_buf {
+    ($len:expr) => {{
+        #[unsafe(link_section = ".ram_nc")]
+        static mut BUF: [u8; $len] = [0u8; $len];
+        static TAKEN: ::core::sync::atomic::AtomicBool =
+            ::core::sync::atomic::AtomicBool::new(false);
+        if TAKEN.swap(true, ::core::sync::atomic::Ordering::AcqRel) {
+            ::core::option::Option::None
+        } else {
+            // SAFETY: the take-once guard yields a single &'static mut, and `.ram_nc` places it in
+            // non-cached SRAM — exactly the two facts `NonCachedBuf` stands for.
+            ::core::option::Option::Some($crate::NonCachedBuf::__from_ram_nc(unsafe {
+                &mut *::core::ptr::addr_of_mut!(BUF)
+            }))
+        }
+    }};
+}
 
 fn spin(_ns: u32) {
     core::hint::spin_loop();
+}
+
+/// Per-controller register bring-up over an already-minted handle (safe).
+///
+/// Runs `init_hardware()` (`I2CC00` master-enable, `configure_timing`, interrupt enable). The
+/// transient driver is dropped; only the hardware registers persist.
+fn init_regs(mmio: Ast1060I2cRegisters, config: &I2cConfig) -> Result<(), I2cError> {
+    let mut i2c = Ast1060I2c::from_initialized(mmio, config, spin as Yield);
+    i2c.init_hardware(config)
+}
+
+/// Bind an I2C bus from its two SCL/SDA pin tokens; the bus's routes ride in via `MuxRoutes`, applied by `route`.
+#[must_use]
+pub const fn i2c_bus<Scl: Routes<I2cScl> + Pin, Sda: Routes<I2cSda> + Pin>(
+    scl: Scl,
+    sda: Sda,
+) -> I2cBus<Scl, Sda, Ast1060I2cRegisters> {
+    let regs = Ast1060I2cRegisters::from_pins(&scl, &sda);
+    I2cBus::new(scl, sda, regs)
 }
 
 /// AST10x0 I2C backend — owns MMIO pointers and DMA buffers for one bus,
@@ -74,6 +118,7 @@ fn spin(_ns: u32) {
 /// method boundaries. DMA buffers are reborrowed for each driver's lifetime
 /// and released when the transient driver is dropped at end of call.
 pub struct Ast1060I2cBackend {
+    /// This bus's controller register façade, bound from the pin tokens the server holds.
     regs: Ast1060I2cRegisters,
     config: I2cConfig,
     /// Master DMA staging buffer; `None` for buffer-mode (non-DMA) buses.
@@ -210,127 +255,23 @@ impl I2cSlaveEvent for Ast1060I2cBackend {
     }
 }
 
-/// Resolve a bus index to its `(I2C, I2CBUFF)` register-block pointers.
-///
-/// AST1060 exposes 14 controllers; instances 1..=13 are `derivedFrom` I2C0 in
-/// the PAC, so every `::ptr()` is the same `*const RegisterBlock` type.
-fn regs_for(bus: u8) -> Option<(*const RegisterBlock, *const BuffRegisterBlock)> {
-    use ast1060_pac as p;
-    Some(match bus {
-        0 => (p::I2c::ptr(), p::I2cbuff::ptr()),
-        1 => (p::I2c1::ptr(), p::I2cbuff1::ptr()),
-        2 => (p::I2c2::ptr(), p::I2cbuff2::ptr()),
-        3 => (p::I2c3::ptr(), p::I2cbuff3::ptr()),
-        4 => (p::I2c4::ptr(), p::I2cbuff4::ptr()),
-        5 => (p::I2c5::ptr(), p::I2cbuff5::ptr()),
-        6 => (p::I2c6::ptr(), p::I2cbuff6::ptr()),
-        7 => (p::I2c7::ptr(), p::I2cbuff7::ptr()),
-        8 => (p::I2c8::ptr(), p::I2cbuff8::ptr()),
-        9 => (p::I2c9::ptr(), p::I2cbuff9::ptr()),
-        10 => (p::I2c10::ptr(), p::I2cbuff10::ptr()),
-        11 => (p::I2c11::ptr(), p::I2cbuff11::ptr()),
-        12 => (p::I2c12::ptr(), p::I2cbuff12::ptr()),
-        13 => (p::I2c13::ptr(), p::I2cbuff13::ptr()),
-        _ => return None,
-    })
-}
-
-/// Per-controller hardware bring-up for one bus.
-///
-/// Runs `init_hardware()` (controller.rs:193-240: `I2CC00` master-enable,
-/// `configure_timing`, interrupt enable) against controller `bus`. Called
-/// **by the board**, eagerly, for every wired bus — including DMA buses,
-/// since register init is independent of the DMA buffer.
-///
-/// The transient driver is dropped; only the hardware registers persist. The
-/// server later re-wraps the same registers via [`open_bus`] /
-/// [`open_bus_dma`] with no re-init.
-///
-/// # Precondition
-///
-/// Subsystem bring-up (pin-mux / SCU clock+reset / `init_i2c_global`) has
-/// already run — i.e. called from `Ast10x0Board::init()` after that sequence.
-///
-/// # Safety
-///
-/// Exclusive access to controller `bus` for the duration of the call; `bus`
-/// must be `<= MAX_BUS`.
-pub unsafe fn init_bus(bus: u8, config: &I2cConfig) -> Result<(), I2cError> {
-    let (regs, buff) = regs_for(bus).ok_or(I2cError::Invalid)?;
-    // SAFETY: the single MMIO-pointer perimeter — PAC pointers for the same
-    // controller `bus`, valid for the program; caller upholds exclusive
-    // access and prior subsystem init.
-    let mmio = unsafe { Ast1060I2cRegisters::new(regs, buff) };
-    let mut i2c = Ast1060I2c::from_initialized(mmio, config, spin as Yield);
-    i2c.init_hardware(config)
-}
-
-/// Open a BufferMode controller the board has already initialized.
-///
-/// Cheap no-init wrap ([`Ast1060I2c::from_initialized`]): [`init_bus`] (called
-/// by the board for this bus) already did the per-controller register
-/// config. Returns the bare [`Ast1060I2c`], which already satisfies
-/// `embedded_hal::i2c::I2c<SevenBitAddress>` — the server is generic over that
-/// trait and never names this type.
-///
-/// `config` must be the **same** entry the board used for this bus (it sets
-/// the driver struct's mode fields; mismatch would desync struct vs hardware).
-///
-/// For DMA-mode buses use [`open_bus_dma`] instead.
-///
-/// # Precondition
-///
-/// `Ast10x0Board::init()` (which calls [`init_bus`] for every wired bus) has
-/// run exactly once before this call.
-///
-/// # Safety
-///
-/// The caller must guarantee exclusive ownership of controller `bus` for the
-/// returned driver's lifetime (the i2c server thread is the sole owner). `bus`
-/// must be `<= MAX_BUS`.
-pub unsafe fn open_bus(bus: u8, config: &I2cConfig) -> Result<BusDriver, I2cError> {
-    let (regs, buff) = regs_for(bus).ok_or(I2cError::Invalid)?;
-    // SAFETY: single MMIO-pointer perimeter; caller upholds exclusive
-    // ownership and prior board init (incl. `init_bus`).
-    let mmio = unsafe { Ast1060I2cRegisters::new(regs, buff) };
-    Ok(Ast1060I2cBackend {
-        regs: mmio,
-        config: *config,
-        master_dma_buf: None,
-        slave_dma_buf: None,
-        slave_enabled: false,
-        slave_addr: None,
-    })
-}
-
-/// Open a DmaMode controller the board has already initialized, attaching a
-/// caller-owned non-cached SRAM transfer buffer.
-///
-/// Same no-init wrap as [`open_bus`] ([`Ast1060I2c::from_initialized_with_dma`]);
-/// the only addition is the DMA buffer, which **cannot** live in the
-/// `&'static` board descriptor and so is owned by the server binary (one
-/// `#[link_section = ".ram_nc"]` buffer per DMA bus).
-///
-/// # Safety
-///
-/// As [`open_bus`], plus: `dma_buf` must reside in non-cached SRAM the DMA
-/// engine and CPU see coherently, and be uniquely owned by this bus for the
-/// driver's lifetime.
-pub unsafe fn open_bus_dma(
-    bus: u8,
+/// Bring up and open a DmaMode bus from its two pin tokens in one step — init hardware (master-enable,
+/// timing, interrupts) then wrap with the caller's non-cached DMA buffers, so a driver can never front
+/// an uninitialized controller; naming the SCL/SDA pins binds that already-muxed controller at compile time.
+pub fn open_bus_dma<Scl: Routes<I2cScl>, Sda: Routes<I2cSda>>(
+    scl: Scl,
+    sda: Sda,
     config: &I2cConfig,
-    master_dma_buf: &'static mut [u8],
-    slave_dma_buf: &'static mut [u8],
+    master_dma_buf: NonCachedBuf,
+    slave_dma_buf: NonCachedBuf,
 ) -> Result<BusDriver, I2cError> {
-    let (regs, buff) = regs_for(bus).ok_or(I2cError::Invalid)?;
-    // SAFETY: single MMIO-pointer perimeter; both buffers are non-cached +
-    // uniquely owned per the contract.
-    let mmio = unsafe { Ast1060I2cRegisters::new(regs, buff) };
+    let regs = Ast1060I2cRegisters::from_pins(&scl, &sda);
+    init_regs(regs, config)?;
     Ok(Ast1060I2cBackend {
-        regs: mmio,
+        regs,
         config: *config,
-        master_dma_buf: Some(master_dma_buf),
-        slave_dma_buf: Some(slave_dma_buf),
+        master_dma_buf: Some(master_dma_buf.0),
+        slave_dma_buf: Some(slave_dma_buf.0),
         slave_enabled: false,
         slave_addr: None,
     })

@@ -9,6 +9,7 @@ use ast10x0_peripherals::i2c::{
     Ast1060I2c, Ast1060I2cRegisters, ClockConfig, I2cConfig, I2cError, I2cSpeed, I2cXferMode,
 };
 use ast10x0_peripherals::scu::pinctrl;
+use ast10x0_peripherals::{create_pins, PinTokens};
 use codegen as _;
 use console_backend::console_backend_write_all;
 use entry as _;
@@ -314,12 +315,14 @@ fn run_i2c_init_smoke_test() -> Result<(), &'static str> {
 
     let board = Ast10x0Board::new(Ast10x0BoardDescriptor {
         pinctrl_groups: &[pinctrl::PINCTRL_I2C1],
-        i2c_buses: &[],
     });
 
     // SAFETY: Test target runs once at boot with exclusive access to the board.
     unsafe { board.init() }.expect("board init failed");
     pw_log::info!("Board-level I2C global init complete");
+
+    // SAFETY: sole pin creation site in this binary, at boot; the pins! table is this chip's true pin map.
+    let pins = unsafe { create_pins() };
 
     run_init_case(
         "standard",
@@ -331,6 +334,7 @@ fn run_i2c_init_smoke_test() -> Result<(), &'static str> {
             smbus_alert: false,
             clock_config: ClockConfig::ast1060_default(),
         },
+        &pins,
     )?;
     run_init_case(
         "fast",
@@ -342,6 +346,7 @@ fn run_i2c_init_smoke_test() -> Result<(), &'static str> {
             smbus_alert: false,
             clock_config: ClockConfig::ast1060_default(),
         },
+        &pins,
     )?;
     run_init_case(
         "fast-plus",
@@ -353,6 +358,7 @@ fn run_i2c_init_smoke_test() -> Result<(), &'static str> {
             smbus_alert: false,
             clock_config: ClockConfig::ast1060_default(),
         },
+        &pins,
     )?;
     run_init_case_dma(
         "dma-fast",
@@ -364,20 +370,18 @@ fn run_i2c_init_smoke_test() -> Result<(), &'static str> {
             smbus_alert: false,
             clock_config: ClockConfig::ast1060_default(),
         },
+        &pins,
     )?;
 
     pw_log::info!("=== AST10x0 I2C init smoke test complete ===");
     Ok(())
 }
 
-fn run_init_case(name: &str, config: I2cConfig) -> Result<(), &'static str> {
+fn run_init_case(name: &str, config: I2cConfig, pins: &PinTokens) -> Result<(), &'static str> {
     pw_log::info!("Instantiating controller 1 in {} mode", name as &str);
 
-    // SAFETY: single MMIO-pointer perimeter — the test owns I2C1 for the process lifetime.
-    let result = unsafe {
-        let mmio = Ast1060I2cRegisters::new(ast1060_pac::I2c1::ptr(), ast1060_pac::I2cbuff1::ptr());
-        Ast1060I2c::new(mmio, &config, |_| core::hint::spin_loop())
-    };
+    let mmio = Ast1060I2cRegisters::from_pins(&pins.scu414_30, &pins.scu414_31);
+    let result = Ast1060I2c::new(mmio, &config, |_| core::hint::spin_loop());
 
     match result {
         Ok(_i2c) => {
@@ -394,7 +398,7 @@ fn run_init_case(name: &str, config: I2cConfig) -> Result<(), &'static str> {
     }
 }
 
-fn run_init_case_dma(name: &str, config: I2cConfig) -> Result<(), &'static str> {
+fn run_init_case_dma(name: &str, config: I2cConfig, pins: &PinTokens) -> Result<(), &'static str> {
     pw_log::info!(
         "Instantiating controller 1 in {} mode (new_with_dma)",
         name as &str
@@ -403,9 +407,8 @@ fn run_init_case_dma(name: &str, config: I2cConfig) -> Result<(), &'static str> 
     let mut master_dma_buf = [0u8; 64];
     let mut slave_dma_buf = [0u8; 64];
 
-    // SAFETY: single MMIO-pointer perimeter — the test owns I2C1 for the process lifetime.
-    let result = unsafe {
-        let mmio = Ast1060I2cRegisters::new(ast1060_pac::I2c1::ptr(), ast1060_pac::I2cbuff1::ptr());
+    let mmio = Ast1060I2cRegisters::from_pins(&pins.scu414_30, &pins.scu414_31);
+    let result = {
         Ast1060I2c::new_with_dma(
             mmio,
             &config,
