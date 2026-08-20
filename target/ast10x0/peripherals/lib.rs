@@ -12,3 +12,4 @@ pub mod sgpiom;
 pub mod smc;
 pub mod spimonitor;
 pub mod uart;
+pub mod wdt;
