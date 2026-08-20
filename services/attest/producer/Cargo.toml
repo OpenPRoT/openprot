@@ -1,0 +1,22 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "openprot-attest-producer"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Concrete OCP-EAT attestation producer for OpenPRoT"
+
+[features]
+default = []
+test-support = []
+
+[dependencies]
+openprot-attest-api = { path = "../api" }
+ciborium  = { version = "0.2", default-features = false }
+thiserror = "1"
+zeroize   = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+ciborium = { version = "0.2", default-features = false }

@@ -1,0 +1,12 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "openprot-attest-api"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Platform-independent API for the OpenPRoT attestation producer service"
+
+[dependencies]
+thiserror = "1"
