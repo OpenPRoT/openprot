@@ -7,7 +7,7 @@ load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
-load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH", "flash_system_image_test")
 
 filegroup(
     name = "system_config",
@@ -59,7 +59,7 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "//hal/blocking/flash:flash",
+        "//hal/blocking/flash",
         "//services/flash:server",
         "//target/ast10x0/backend/flash:flash_backend_ast10x0",
         "//util/ipc",
@@ -78,7 +78,7 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "//hal/blocking/flash:flash",
+        "//hal/blocking/flash",
         "//services/flash:client",
         "//util/ipc",
         "//util/types",
@@ -112,6 +112,18 @@ system_image_test(
         "//target/ast10x0:qemu_enabled": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    visibility = ["//visibility:public"],
+)
+
+# QEMU variant: the runner seeds an 8 MiB erased image and attaches it as the
+# FMC CS0 flash (if=mtd), so program/erase/read-back can run under emulation.
+#   bazelisk test --config=virt_ast10x0 //target/ast10x0/tests/flash:flash_qemu_test
+flash_system_image_test(
+    name = "flash_qemu_test",
+    flash_image = "cs0.img",
+    image = ":flash",
+    tags = ["qemu_only"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],
 )
 

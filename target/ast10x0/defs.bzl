@@ -36,10 +36,52 @@ def _system_image_test_impl(ctx):
         runfiles = runfiles,
     )]
 
+def _flash_system_image_test_impl(ctx):
+    default_info = _system_image_test_impl(ctx)[0]
+    providers = [default_info]
+    if ctx.attr.flash_image:
+        # The qemu_runner seeds a fresh erased image at $TEST_TMPDIR/<name>
+        # and attaches it as the FMC CS0 flash (if=mtd).
+        providers.append(RunEnvironmentInfo(environment = {
+            "AST10X0_FLASH_IMAGE": ctx.attr.flash_image,
+            "AST10X0_FLASH_SIZE": str(ctx.attr.flash_size),
+        }))
+    return providers
+
 system_image_test = rule(
     implementation = _system_image_test_impl,
     test = True,
     attrs = {
+        "image": attr.label(
+            doc = "The system_image target to test.",
+            mandatory = True,
+            providers = [SystemImageInfo],
+            executable = True,
+            cfg = "target",
+        ),
+        "slave_image": attr.label(
+            doc = "Optional slave system_image for paired two-device tests.",
+            mandatory = False,
+            default = None,
+            providers = [SystemImageInfo],
+            cfg = "target",
+        ),
+    },
+)
+
+flash_system_image_test = rule(
+    implementation = _flash_system_image_test_impl,
+    test = True,
+    attrs = {
+        "flash_image": attr.string(
+            doc = "Basename of the SPI-NOR image the qemu_runner seeds in " +
+                  "$TEST_TMPDIR and attaches as FMC CS0 flash (if=mtd).",
+            default = "cs0.img",
+        ),
+        "flash_size": attr.int(
+            doc = "Size in bytes of the seeded flash image.",
+            default = 8 * 1024 * 1024,
+        ),
         "image": attr.label(
             doc = "The system_image target to test.",
             mandatory = True,
