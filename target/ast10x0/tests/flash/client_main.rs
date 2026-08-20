@@ -12,6 +12,9 @@ use userspace::syscall;
 use util_ipc::IpcHandle;
 
 /// 1 MiB in: same offset the on-hardware smc write test uses; clear of code.
+/// The test is non-destructive on hardware: the whole sector is backed up
+/// before the first erase and restored + verified at the end, exactly as
+/// //target/ast10x0/tests/smc/write does.
 const TEST_OFFSET: u32 = 0x0010_0000;
 const SECTOR: usize = 4096;
 
@@ -46,12 +49,25 @@ fn entry() {
         fail("erase bitmap");
     }
 
+    // Back up the whole sector before any destructive op so the test restores
+    // the original contents on real hardware (mirrors smc/write).
+    let mut backup = [0u8; SECTOR];
+    if flash
+        .read(FlashAddress::new(TEST_OFFSET), &mut backup)
+        .is_err()
+    {
+        fail("backup read");
+    }
+
     // 2. Erase one sector, verify it reads back erased.
     if flash.erase(FlashAddress::new(TEST_OFFSET), page).is_err() {
         fail("erase");
     }
     let mut buf = [0u8; 64];
-    if flash.read(FlashAddress::new(TEST_OFFSET), &mut buf).is_err() {
+    if flash
+        .read(FlashAddress::new(TEST_OFFSET), &mut buf)
+        .is_err()
+    {
         fail("read after erase");
     }
     if buf.iter().any(|&b| b != 0xff) {
@@ -100,11 +116,30 @@ fn entry() {
         fail("erase size not rejected");
     }
     let mut oob = [0u8; 16];
-    if flash
-        .read(FlashAddress::new(0x0100_0000), &mut oob)
-        .is_ok()
-    {
+    if flash.read(FlashAddress::new(0x0100_0000), &mut oob).is_ok() {
         fail("oob read not rejected");
+    }
+
+    // Restore the original sector contents and verify (mirrors smc/write's
+    // restore_sector: erase -> program original -> read-back compare).
+    if flash.erase(FlashAddress::new(TEST_OFFSET), page).is_err() {
+        fail("restore erase");
+    }
+    if flash
+        .program(FlashAddress::new(TEST_OFFSET), &backup)
+        .is_err()
+    {
+        fail("restore program");
+    }
+    let mut restored = [0u8; SECTOR];
+    if flash
+        .read(FlashAddress::new(TEST_OFFSET), &mut restored)
+        .is_err()
+    {
+        fail("restore read");
+    }
+    if restored != backup {
+        fail("restore verify");
     }
 
     pw_log::info!("flash client PASS");
