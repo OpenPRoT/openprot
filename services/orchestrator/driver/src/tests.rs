@@ -76,15 +76,15 @@ impl ImageSource for MemImage {
 }
 
 #[derive(Debug)]
-struct VerifierBroken;
+struct VerifierError;
 
-impl core::fmt::Display for VerifierBroken {
+impl core::fmt::Display for VerifierError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("verifier broken")
     }
 }
 
-impl core::error::Error for VerifierBroken {}
+impl core::error::Error for VerifierError {}
 
 /// The magic + XOR-zero check as a board-supplied verifier, reading in
 /// chunks.
@@ -93,17 +93,17 @@ struct XorVerifier {
 }
 
 impl Verifier for XorVerifier {
-    type Error = VerifierBroken;
+    type Error = VerifierError;
 
     fn verify(
         &mut self,
         _id: ComponentId,
         image: &mut impl ImageSource,
-    ) -> Result<Verdict, VerifierBroken> {
+    ) -> Result<Verdict, VerifierError> {
         if self.fault {
-            return Err(VerifierBroken);
+            return Err(VerifierError);
         }
-        let len = image.size().map_err(|_| VerifierBroken)?;
+        let len = image.size().map_err(|_| VerifierError)?;
         let mut magic = [0u8; 4];
         let mut xor = 0u8;
         let mut offset = 0;
@@ -112,7 +112,7 @@ impl Verifier for XorVerifier {
             let take = chunk.len().min(len - offset);
             image
                 .read_at(offset, &mut chunk[..take])
-                .map_err(|_| VerifierBroken)?;
+                .map_err(|_| VerifierError)?;
             if offset == 0 && take >= 4 {
                 magic.copy_from_slice(&chunk[..4]);
             }
@@ -398,13 +398,13 @@ struct LineWatchingVerifier {
 }
 
 impl Verifier for LineWatchingVerifier {
-    type Error = VerifierBroken;
+    type Error = VerifierError;
 
     fn verify(
         &mut self,
         id: ComponentId,
         image: &mut impl ImageSource,
-    ) -> Result<Verdict, VerifierBroken> {
+    ) -> Result<Verdict, VerifierError> {
         self.held_during_verify.set(self.line.get());
         self.inner.verify(id, image)
     }
