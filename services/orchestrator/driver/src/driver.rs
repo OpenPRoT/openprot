@@ -6,8 +6,8 @@
 
 use openprot_orchestrator_sm::{ComponentId, ComponentKind, Effect, EffectError, Event, Platform};
 
-use crate::board::{Board, BoardCapabilities, ImageSource, Verdict, Verifier};
-use orchestrator_capabilities::{BootControl, BootWatch, WalkVerdict};
+use crate::board::{Board, BoardCapabilities, ImageSource, SvnFloorBinding, Verdict, Verifier};
+use orchestrator_capabilities::{BootControl, BootWatch, Svn, SvnFloor, WalkVerdict};
 
 /// Why the driver could not carry out an effect.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -23,6 +23,11 @@ pub enum DriverError {
     VerifierFault,
     /// The component's boot control could not actuate the reset line.
     BootControlFault,
+    /// A floor commit was asked for a component with no verified image —
+    /// the SVN to advance to is unknown; fail closed.
+    NoVerifiedImage,
+    /// The component's SVN floor could not be advanced.
+    SvnFloorFault,
 }
 
 impl core::fmt::Display for DriverError {
@@ -33,6 +38,8 @@ impl core::fmt::Display for DriverError {
             DriverError::NotStaged => "no image staged for this component",
             DriverError::VerifierFault => "verifier could not perform the check",
             DriverError::BootControlFault => "boot control could not actuate the reset",
+            DriverError::NoVerifiedImage => "no verified image to commit the floor to",
+            DriverError::SvnFloorFault => "svn floor could not be advanced",
         })
     }
 }
@@ -50,6 +57,10 @@ pub struct PlatformDriver<B: BoardCapabilities, const N: usize> {
     /// terminal verdict. Only watched walks are polled, so a finished or
     /// quiesced walk emits no stale event.
     watching: [bool; N],
+    /// `verified_svn[i]` is the manifest SVN of `ComponentId(i)`'s last
+    /// authenticated image — the only value a floor commit may trust.
+    /// `None` until a verification passes; cleared again on rejection.
+    verified_svn: [Option<Svn>; N],
 }
 
 impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
@@ -60,7 +71,17 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             board,
             staged: None,
             watching: [false; N],
+            verified_svn: [None; N],
         }
+    }
+
+    /// The board wiring, read-only, for the tests: they observe a
+    /// capability after it moved into the driver, instead of every mock
+    /// smuggling out a shared handle. Real consumers get targeted queries
+    /// when they exist — not this.
+    #[cfg(test)]
+    pub(crate) fn board(&self) -> &Board<B, N> {
+        &self.board
     }
 
     /// `id`'s image source. Takes the array rather than `&mut self` so the
@@ -95,10 +116,35 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             .verifier
             .verify(id, source)
             .map_err(|_| DriverError::VerifierFault)?;
+        let idx = id.get() as usize;
         Ok(match verdict {
-            Verdict::Authenticated => Event::VerificationPassed(id),
-            Verdict::Rejected => Event::VerificationFailed(id),
+            Verdict::Authenticated { svn } => {
+                self.verified_svn[idx] = Some(svn);
+                Event::VerificationPassed(id)
+            }
+            Verdict::Rejected => {
+                self.verified_svn[idx] = None;
+                Event::VerificationFailed(id)
+            }
         })
+    }
+
+    /// Advance `id`'s anti-rollback floor to its verified image's SVN.
+    /// A self-managed component keeps its own floor; the commit is a
+    /// no-op. A target at or below the current floor is the capability's
+    /// documented no-op, so a replayed commit is harmless.
+    pub fn commit_svn_floor(&mut self, id: ComponentId) -> Result<(), DriverError> {
+        let idx = id.get() as usize;
+        let SvnFloorBinding::Erot(floor) = self
+            .board
+            .svn_floors
+            .get_mut(idx)
+            .ok_or(DriverError::UnknownComponent)?
+        else {
+            return Ok(());
+        };
+        let svn = self.verified_svn[idx].ok_or(DriverError::NoVerifiedImage)?;
+        floor.advance(svn).map_err(|_| DriverError::SvnFloorFault)
     }
 
     /// `id`'s reset actuator.
@@ -212,21 +258,20 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
             Effect::VerifyFirmware(id) => self.verify_firmware(id).map(Some),
             Effect::ReleaseReset(id) => self.release_reset(id).map(|_| None),
             Effect::AssertReset(id) => self.assert_reset(id).map(|_| None),
+            Effect::CommitSvnFloor(id) => self.commit_svn_floor(id).map(|_| None),
             // No board capability is composed for these seams yet, so they
             // fail closed here instead of behind stub methods. Each group
             // gains an executor when its capability joins
             // [`BoardCapabilities`], as BootControl did above: recovery
             // sourcing for RecoverComponent; update staging, authentication
-            // and trial activation for the update quartet; anti-rollback
-            // commit for CommitSvnFloor; evidence signing for
-            // SignAttestation; the management reporting path for the Report
-            // effects; the terminal latch for LatchLockdown.
+            // and trial activation for the update quartet; evidence signing
+            // for SignAttestation; the management reporting path for the
+            // Report effects; the terminal latch for LatchLockdown.
             Effect::RecoverComponent { .. }
             | Effect::AuthenticateUpdate
             | Effect::StageUpdate
             | Effect::ActivateUpdate
             | Effect::DiscardStaged
-            | Effect::CommitSvnFloor(_)
             | Effect::SignAttestation
             | Effect::ReportIsolated(_)
             | Effect::ReportRecoveryFailed(_)

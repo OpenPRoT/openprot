@@ -7,6 +7,7 @@
 use openprot_orchestrator_sm::{ComponentId, ComponentKind};
 
 pub use orchestrator_capabilities::{BootControl, BootWatch};
+use orchestrator_capabilities::{Svn, SvnFloor};
 
 /// Access to one component's active firmware image, however it is reached —
 /// interposed flash, a PLDM/MCTP transfer, a RAM copy in tests.
@@ -46,8 +47,8 @@ impl<S: ImageSource> ImageSource for &mut S {
     }
 }
 
-/// Judges a component's firmware image; board wiring decides what
-/// "authentic" means.
+/// Judges a component's firmware image; board wiring decides what counts
+/// as authenticated.
 pub trait Verifier {
     /// The error type reported by this verifier.
     type Error: core::error::Error;
@@ -83,8 +84,15 @@ impl<V: Verifier> Verifier for &mut V {
 /// A [`Verifier`]'s judgment of one image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verdict {
-    /// Reported as `Event::VerificationPassed`.
-    Authenticated,
+    /// Reported as `Event::VerificationPassed`. Carries the image's
+    /// manifest SVN: verification is the only authenticated reading of the
+    /// manifest, so this is the one value the anti-rollback commit
+    /// ([`Effect::CommitSvnFloor`](openprot_orchestrator_sm::Effect)) may
+    /// trust.
+    Authenticated {
+        /// The verified image's security version number.
+        svn: Svn,
+    },
     /// Reported as `Event::VerificationFailed`.
     Rejected,
 }
@@ -154,7 +162,23 @@ pub trait BoardCapabilities {
     type BootControl: BootControl;
     /// Boot-checkpoint supervision for the managed components.
     type BootWatch: BootWatch;
+    /// The anti-rollback floor of the managed components. The SVN number
+    /// survives reset and power loss, otherwise a power cycle would
+    /// re-admit images below the floor.
+    type SvnFloor: SvnFloor;
     // Later seams: Recovery, Staging.
+}
+
+/// Who keeps one component's anti-rollback floor. Spelled as its own type
+/// so a board must state the choice; an eRoT floor and a device tracking
+/// its own SVN are different wirings, not a present or absent value.
+pub enum SvnFloorBinding<F: SvnFloor> {
+    /// The eRoT holds the floor and `CommitSvnFloor` advances it.
+    Erot(F),
+    /// The component tracks its own SVN (iRoT, or a PLDM device
+    /// committing internally). The eRoT keeps no second floor and its
+    /// `CommitSvnFloor` is a no-op.
+    SelfManaged,
 }
 
 /// Everything the board supplies, built once at bring-up and handed to
@@ -168,6 +192,7 @@ pub trait BoardCapabilities {
 ///     type Verifier = ManifestVerifier;   // signature + SVN via the crypto engine
 ///     type BootControl = ExtrstGpio;      // per-component reset line
 ///     type BootWatch = CheckpointWalk;    // GPIO checkpoint walk over the boot window
+///     type SvnFloor = OtpSvnFloor;        // fuse-backed anti-rollback floor
 /// }
 /// let board = Board::<Ast1060Board, 2> {
 ///     images: [bmc_image, cpld_image],
@@ -175,6 +200,7 @@ pub trait BoardCapabilities {
 ///     boot_controls: [bmc_reset, cpld_reset],
 ///     boot_watches: [bmc_walk, cpld_walk],
 ///     component_kinds: [ComponentKind::Active, ComponentKind::Passive],
+///     svn_floors: [SvnFloorBinding::Erot(bmc_floor), SvnFloorBinding::SelfManaged],
 /// };
 /// ```
 pub struct Board<B: BoardCapabilities, const N: usize> {
@@ -193,5 +219,8 @@ pub struct Board<B: BoardCapabilities, const N: usize> {
     /// `ComponentReady` for `Active`, `Booted` for `Passive`. Comes from
     /// the same board table as the SM's chain, so both sides agree.
     pub component_kinds: [ComponentKind; N],
+    /// `svn_floors[i]` says who keeps `ComponentId(i)`'s anti-rollback
+    /// floor, same indexing as `images`.
+    pub svn_floors: [SvnFloorBinding<B::SvnFloor>; N],
     // Later seams add fields, e.g. recovery: [B::Recovery; N].
 }
