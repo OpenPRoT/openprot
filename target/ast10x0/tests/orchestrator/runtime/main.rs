@@ -7,15 +7,16 @@
 //! watchdog keeper (`orchestrator-timer`), and the board device table
 //! ([`DeviceConfig`], `orchestrator-config`).
 //!
-//! The runtime owns the clock and the mapping, so the shell stays thin:
+//! The runtime owns the clock and the mapping, so the platform driver stays
+//! thin:
 //!   - boot windows come from the device table ([`BootCheckpoint::timeout`]);
-//!     the shell only converts `core::time::Duration` to the kernel's
-//!     [`Duration`] at the arm site.
+//!     the platform driver only converts `core::time::Duration` to the
+//!     kernel's [`Duration`] at the arm site.
 //!   - [`BootWatchdogs::arm_boot`] takes that *relative* window; the runtime
 //!     computes the absolute deadline.
 //!   - [`BootWatchdogs::wait_deadline`] is handed straight to `object_wait`.
 //!   - [`BootWatchdogs::poll_expired`] yields the `Event`s the core consumes —
-//!     no mapping in the shell.
+//!     no mapping in the platform driver.
 //!
 //! Coverage: the *inner checkpoint walk* (`bl1` → `kernel`, re-armed through the
 //! runtime) for a single component, the *outer component walk* across a
@@ -66,7 +67,7 @@ const SOC: DeviceConfig<u8, u8> = DeviceConfig::new(
 );
 
 /// The device table speaks `core::time::Duration`; the runtime speaks the
-/// kernel's [`Duration`]. Converting is the shell's job.
+/// kernel's [`Duration`]. Converting is the platform driver's job.
 fn window(timeout: core::time::Duration) -> Duration {
     Duration::from_millis(timeout.as_millis() as u64)
 }

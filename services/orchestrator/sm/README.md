@@ -8,14 +8,14 @@ Pure-reducer eRoT boot-sequence state machine. Walks the platform trust chain
 then governs the operational lifecycle (attestation, firmware update, corruption
 recovery).
 
-**No I/O, no hardware.** Every action is an [`Effect`] the surrounding shell
-carries out. Every piece of outside information arrives as an [`Event`].
+**No I/O, no hardware.** Every action is an [`Effect`] the surrounding
+platform driver carries out. Every piece of outside information arrives as an [`Event`].
 
 ## Key types
 
 | Type | Role |
 |---|---|
-| `ComponentId` | Opaque `u8` — the shell maps it to hardware; the core never inspects it. |
+| `ComponentId` | Opaque `u8` — the platform driver maps it to hardware; the core never inspects it. |
 | `ComponentKind` | `Active` (eRoT + iRoT gates) or `Passive` (eRoT gate only). |
 | `ComponentAttrs` | `kind` + `required`: if `false`, a failed component is skipped (held in reset) rather than triggering recovery. |
 | `Orchestrator<N>` | Public handle for the caller's event loop. Call `dispatch` or `dispatch_with` once per event. |

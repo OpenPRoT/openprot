@@ -40,7 +40,8 @@ pub enum WalkVerdict {
         deadline_millis: u64,
     },
     /// Every checkpoint passed — the device is up. Which state-machine
-    /// event this becomes is the shell's mapping, by component kind:
+    /// event this becomes is the platform driver's mapping, by component
+    /// kind:
     /// `ComponentReady` for an iRoT-backed device, `Booted` for a
     /// symbiont.
     Complete,
