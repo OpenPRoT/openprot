@@ -56,6 +56,19 @@ def _parse_args():
         "--qemu-args", nargs="*", help="Extra arguments to pass to qemu"
     )
     parser.add_argument(
+        "--flash-image",
+        type=str,
+        help="Path to a raw SPI-NOR image to attach as the FMC CS0 flash "
+        "(if=mtd). Re-seeded to an erased (0xFF) state of --flash-size bytes "
+        "on every run so tests start from a known device state.",
+    )
+    parser.add_argument(
+        "--flash-size",
+        type=int,
+        default=8 * 1024 * 1024,
+        help="Size in bytes of the --flash-image backing store (default: 8 MiB).",
+    )
+    parser.add_argument(
         "--timeout",
         type=int,
         default=30,
@@ -118,11 +131,43 @@ def _sentinel_watcher(
         print(f"Exception watching sentinel: {e}", file=sys.stderr)
 
 
+def _seed_flash_image(path: str, size: int) -> None:
+    """Create/overwrite `path` with `size` bytes of 0xFF (erased NOR state)."""
+    with open(path, "wb") as f:
+        f.write(b"\xff" * size)
+
+
+def _resolve_flash_image(args):
+    """Return (path, size) for the FMC CS0 backing image, or (None, 0).
+
+    An explicit --flash-image wins. Otherwise a flash_system_image_test sets
+    AST10X0_FLASH_IMAGE (basename) + AST10X0_FLASH_SIZE, resolved against
+    $TEST_TMPDIR so each test run gets a private, freshly-seeded image.
+    """
+    if args.flash_image:
+        return args.flash_image, args.flash_size
+    name = os.environ.get("AST10X0_FLASH_IMAGE")
+    if not name:
+        return None, 0
+    base = os.environ.get("TEST_TMPDIR", tempfile.gettempdir())
+    size = int(os.environ.get("AST10X0_FLASH_SIZE", str(args.flash_size)))
+    return os.path.join(base, name), size
+
+
 def _main(args) -> None:
+    flash_path, flash_size = _resolve_flash_image(args)
+
+    machine = args.machine
+    if flash_path:
+        # ast1030-evb defaults its FMC CS0 chip to a 1 MiB w25q80bl; the FMC
+        # backend drives an 8 MiB W25Q64-class device, so model the matching
+        # chip (and size the backing image to it below).
+        machine = f"{machine},fmc-model=w25q64"
+
     qemu_args = [
         _QEMU_ARM,
         "-machine",
-        args.machine,
+        machine,
         "-cpu",
         args.cpu,
         "-bios",
@@ -135,6 +180,13 @@ def _main(args) -> None:
         "-kernel",
         args.image,
     ]
+
+    if flash_path:
+        _seed_flash_image(flash_path, flash_size)
+        qemu_args += [
+            "-drive",
+            f"file={flash_path},format=raw,if=mtd",
+        ]
 
     if args.qemu_args:
         qemu_args.extend(args.qemu_args)
