@@ -27,11 +27,16 @@ MEMORY
    * expects to execute at flash SlotA address 0x20000000 (no remapping), and
    * it configures the remap window for 0xA000000 (which is what the real
    * ROM_EXT would do).
-   */
+  /* OpenTitan Ibex flash remap window base (0xA0000000) and slot capacity (512 KiB = 0x80000) */
+  {% set FLASH_REMAP_BASE = 0xA0000000 %}
+  {% set FLASH_SLOT_SIZE = 0x80000 %}
+  {% set rom_ext_len = kernel.flash_start_address - FLASH_REMAP_BASE %}
+  {% set flash_len = FLASH_SLOT_SIZE - rom_ext_len %}
+
   /* ROM_EXT */
-  ROM_EXT(rx) : ORIGIN = 0xA0000000, LENGTH = 0x10000
+  ROM_EXT(rx) : ORIGIN = 0xA0000000, LENGTH = {{ rom_ext_len | hex }}
   /* Internal Flash */
-  FLASH(rx) :   ORIGIN = 0xA0010000, LENGTH = 0x70000
+  FLASH(rx) :   ORIGIN = {{ kernel.flash_start_address | hex }}, LENGTH = {{ flash_len | hex }}
   /* Internal SRAM */
   RAM(rw) : ORIGIN = 0x10000000, LENGTH = 0x20000
 

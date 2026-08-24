@@ -104,3 +104,10 @@ py_binary(
         requirement("hjson"),
     ],
 )
+
+py_binary(
+    name = "system_config_override",
+    srcs = ["system_config_override.py"],
+    main = "system_config_override.py",
+    visibility = ["//visibility:public"],
+)
