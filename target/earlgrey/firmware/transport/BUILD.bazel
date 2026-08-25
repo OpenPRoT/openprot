@@ -11,6 +11,7 @@ load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
 load("//target/earlgrey/signing/keys:defs.bzl", "FPGA_ECDSA_KEY", "SILICON_ECDSA_KEY")
 load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_test")
+load("//target/earlgrey/tooling:system_config.bzl", "system_config_variant")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -250,6 +251,68 @@ rust_binary(
         "@pigweed//pw_kernel/target:target_common",
         "@pigweed//pw_log/rust:pw_log",
     ],
+)
+
+#
+# 88 KiB ROM_EXT / 88 KiB offset variant
+#
+system_config_variant(
+    name = "system_config_88k",
+    base = ":system_config",
+    flash_start_address = "0xA0016000",
+)
+
+target_linker_script(
+    name = "linker_script_88k",
+    system_config = ":system_config_88k",
+    tags = ["kernel"],
+    template = "//target/earlgrey:linker_script_template",
+)
+
+target_codegen(
+    name = "codegen_88k",
+    arch = "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+    crate_name = "codegen",
+    system_config = ":system_config_88k",
+)
+
+rust_binary(
+    name = "target_88k",
+    srcs = [
+        "target.rs",
+    ],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":codegen_88k",
+        ":linker_script_88k",
+        "//target/earlgrey:entry",
+        "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/subsys/console:console_backend",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)
+
+system_image(
+    name = "transport_firmware_88k",
+    apps = [
+        ":transport",
+    ],
+    kernel = ":target_88k",
+    platform = "//target/earlgrey",
+    system_config = ":system_config_88k",
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+)
+
+rust_binary_no_panics_test(
+    name = "no_panics_88k",
+    apps = ["transport"],
+    binary = ":transport_firmware_88k",
+    tags = ["no_panics"],
 )
 
 opentitan_test(

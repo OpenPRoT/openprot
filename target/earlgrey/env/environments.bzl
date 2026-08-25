@@ -48,6 +48,12 @@ def _fpga_prepare(ctx, env, firmware_bin, tools):
             outputs = [boot_image_file],
             inputs = [env.rom_ext, firmware_bin],
             executable = tools.opentitantool,
+            # Workaround: When HOME is unset, opentitantool invokes getpwuid_r() to locate its
+            # default config directory, which dynamically dlopens host NSS libraries. In static glibc
+            # binaries, this causes a SIGSEGV if the static glibc version differs from the host glibc.
+            # Setting HOME prevents the NSS lookup.
+            # TODO(antchen): remove this workaround once upstream opentitantool handles missing HOME or fixes static NSS lookup.
+            env = {"HOME": "/tmp"},
             arguments = [
                 "image",
                 "assemble",
