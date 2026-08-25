@@ -825,6 +825,62 @@ fn boot_timeout_fails_closed_without_recovery() {
     assert_eq!(orch.state(), State::Locked);
 }
 
+#[test]
+fn submit_update_refuses_an_unknown_component() {
+    let mut driver = driver([MemImage::holding(valid_image())]);
+
+    assert_eq!(
+        driver.submit_update(ComponentId::new(9)),
+        Err(DriverError::UnknownComponent)
+    );
+    assert_eq!(driver.pending_update(), None);
+}
+
+// Single update in flight by construction: a second submit is refused and
+// the first job's target survives untouched.
+#[test]
+fn submit_update_refuses_a_second_in_flight() {
+    let mut driver = driver([MemImage::holding(valid_image())]);
+
+    driver.submit_update(C0).unwrap();
+    assert_eq!(driver.submit_update(C0), Err(DriverError::UpdateBusy));
+    assert_eq!(driver.pending_update(), Some(C0));
+}
+
+// The frontend connection end to end: request_update records the job and
+// the SM receives UpdateRequest. Ready accepts it and enters Updating,
+// whose entry effects (AuthenticateUpdate, StageUpdate) have no executors
+// yet, so the machine latches Locked — that latch is the proof the event
+// arrived. Flips to an Updating/Ready assertion when the pump lands.
+#[test]
+fn request_update_reaches_the_sm() {
+    let mut orch = orchestrator();
+    let mut driver = driver([MemImage::holding(valid_image())]);
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    assert_eq!(orch.state(), State::Ready);
+
+    request_update(&mut orch, &mut driver, C0).unwrap();
+
+    assert_eq!(driver.pending_update(), Some(C0));
+    assert_eq!(orch.state(), State::Locked);
+}
+
+// A refused submit injects nothing: no job, no event, the SM stays Ready.
+#[test]
+fn refused_request_update_injects_no_event() {
+    let mut orch = orchestrator();
+    let mut driver = driver([MemImage::holding(valid_image())]);
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+
+    assert_eq!(
+        request_update(&mut orch, &mut driver, ComponentId::new(9)),
+        Err(DriverError::UnknownComponent)
+    );
+
+    assert_eq!(driver.pending_update(), None);
+    assert_eq!(orch.state(), State::Ready);
+}
+
 // The Updatable seam is wired but not yet driven: no executor exists until
 // the update pump lands. This pins the mock against the trait's ordering
 // rule so the wiring cannot rot in the meantime.
