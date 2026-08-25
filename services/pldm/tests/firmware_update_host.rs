@@ -26,6 +26,8 @@ use mctp::Eid;
 use mctp_lib::Sender;
 use openprot_mctp_api::Handle;
 use openprot_mctp_server::Server;
+use openprot_orchestrator_pldm_adapter::UpdateRequestLatch;
+use openprot_orchestrator_sm::Event;
 use openprot_pldm_service::firmware_device::{FirmwareDevice, RunTerminusResult};
 use openprot_pldm_service::{MctpPldmTransport, PldmServiceError};
 use pldm_common::codec::{PldmCodec, PldmCodecWithLifetime};
@@ -51,7 +53,8 @@ use pldm_common::protocol::base::{
 };
 use pldm_common::protocol::firmware_update::{
     ComponentClassification, ComponentResponseCode, Descriptor, FirmwareDeviceState, FwUpdateCmd,
-    PldmFirmwareString, UpdateOptionFlags, VersionStringType, PLDM_FWUP_IMAGE_SET_VER_STR_MAX_LEN,
+    FwUpdateCompletionCode, PldmFirmwareString, UpdateOptionFlags, VersionStringType,
+    PLDM_FWUP_IMAGE_SET_VER_STR_MAX_LEN,
 };
 use pldm_common::util::fw_component::FirmwareComponent;
 use pldm_interface::firmware_device::fd_ops::{ComponentOperation, FdOps, FdOpsError};
@@ -312,6 +315,10 @@ fn firmware_update_full_flow_via_requester() {
     ));
     let fd_buf = RefCell::new([0u8; 1024]);
 
+    // Orchestrator-facing latch: `run_terminus` marks it on each accepted
+    // RequestUpdate; the assertions below drain it as `Event::UpdateRequest`.
+    let update_events = RefCell::new(UpdateRequestLatch::new());
+
     // Run one full UA->FD->UA command round-trip and return the PLDM response
     // payload (without the MCTP framing byte).
     let ua_transact = |req_pldm: &[u8]| -> Vec<u8> {
@@ -332,6 +339,7 @@ fn firmware_update_full_flow_via_requester() {
             &mut fd_buf.borrow_mut()[..],
             TIMEOUT_MILLIS,
             TIMEOUT_MILLIS,
+            &mut *update_events.borrow_mut(),
         ) {
             RunTerminusResult::Completed => {}
             RunTerminusResult::StoppedByError(PldmServiceError::Mctp(e)) if e.is_timeout() => {}
@@ -370,6 +378,42 @@ fn firmware_update_full_flow_via_requester() {
     assert_eq!(
         resp[3], 0,
         "RequestUpdate completion code should be success"
+    );
+    assert_eq!(
+        update_events.borrow_mut().take(),
+        Some(Event::UpdateRequest),
+        "accepted RequestUpdate should latch exactly one orchestrator event"
+    );
+    assert_eq!(
+        update_events.borrow_mut().take(),
+        None,
+        "the latch must not re-fire once drained"
+    );
+
+    // ---- Duplicate RequestUpdate: rejected, must not latch an event ----
+    instance_id += 1;
+    let dup_update = RequestUpdateRequest::new(
+        instance_id,
+        PldmMsgType::Request,
+        IMAGE_SIZE,
+        1,
+        1,
+        0,
+        &comp_ver,
+    );
+    let len = dup_update
+        .encode(&mut buf)
+        .expect("encode duplicate RequestUpdate");
+    let resp = ua_transact(&buf[..len]);
+    assert_eq!(
+        resp[3],
+        FwUpdateCompletionCode::AlreadyInUpdateMode as u8,
+        "second RequestUpdate should be rejected while in update mode"
+    );
+    assert_eq!(
+        update_events.borrow_mut().take(),
+        None,
+        "a rejected RequestUpdate must not latch an orchestrator event"
     );
 
     // ---- PassComponentTable (Start+End): move to ReadyXfer ----
@@ -451,6 +495,11 @@ fn firmware_update_full_flow_via_requester() {
     );
     assert!(fd_ops.verified.get(), "firmware should have been verified");
     assert!(fd_ops.applied.get(), "firmware should have been applied");
+    assert_eq!(
+        update_events.borrow_mut().take(),
+        None,
+        "no command after the accepted RequestUpdate should latch an event"
+    );
 
     println!(
         "Firmware update host test completed: downloaded {} bytes, verified={}, applied={}",
