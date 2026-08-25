@@ -62,6 +62,29 @@ pub const FD_MAX_MSG: usize = 1024;
 /// within this window is expected and is not treated as an error.
 const RESPONDER_POLL_TIMEOUT_MILLIS: u32 = 1;
 
+/// Receiver for update-lifecycle notifications out of the PLDM FD state
+/// machine.
+///
+/// [`FirmwareDevice::run_terminus`] owns the PLDM state machine but has no
+/// knowledge of the platform's update orchestration; this trait is the seam
+/// between the two. It is deliberately PLDM-flavored (no orchestrator types)
+/// so that depending on this crate never pulls in the orchestrator stack —
+/// the mapping to an orchestrator event lives in an adapter crate, following
+/// the same rule as the orchestrator's HAL adapters.
+pub trait UpdateEventSink {
+    /// The Update Agent's `RequestUpdate` was accepted: the FD moved out of
+    /// `Idle` (into `LearnComponents`) and the success response has already
+    /// been sent. Called exactly once per accepted `RequestUpdate`; rejected
+    /// ones (`ALREADY_IN_UPDATE_MODE`, bad transfer size) never reach here
+    /// because they leave the FD state unchanged.
+    fn update_requested(&mut self);
+}
+
+/// Drop update notifications, for callers with no orchestration to notify.
+impl UpdateEventSink for () {
+    fn update_requested(&mut self) {}
+}
+
 /// Outcome of [`FirmwareDevice::run_terminus`].
 pub enum RunTerminusResult {
     /// The loop exited normally (currently unreachable: `run_terminus` only
@@ -151,6 +174,11 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
     /// responder path to stay live even during a stalled FD-initiated
     /// request should pass a bounded value instead.
     ///
+    /// `sink` receives [`UpdateEventSink::update_requested`] once per
+    /// accepted `RequestUpdate` (the FD's only `Idle` → non-`Idle`
+    /// transition), after the success response has been sent. Callers with
+    /// nothing to notify pass `&mut ()`.
+    ///
     /// [`should_start_initiator_mode`]: pldm_interface::firmware_device::fd_context::FirmwareDeviceContext
     pub fn run_terminus(
         &mut self,
@@ -158,8 +186,15 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
         buf: &mut [u8],
         timeout_millis: u32,
         requester_timeout_millis: u32,
+        sink: &mut impl UpdateEventSink,
     ) -> RunTerminusResult {
-        match self.run_terminus_inner(remote_eid, buf, timeout_millis, requester_timeout_millis) {
+        match self.run_terminus_inner(
+            remote_eid,
+            buf,
+            timeout_millis,
+            requester_timeout_millis,
+            sink,
+        ) {
             Ok(()) => RunTerminusResult::Completed,
             Err(e) => RunTerminusResult::StoppedByError(e),
         }
@@ -171,6 +206,7 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
         buf: &mut [u8],
         timeout_millis: u32,
         requester_timeout_millis: u32,
+        sink: &mut impl UpdateEventSink,
     ) -> Result<(), PldmServiceError> {
         let mut responder_listener = self
             .responder_transport
@@ -220,6 +256,11 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
                 timeout_millis
             };
             responder_listener.set_timeout(poll_timeout);
+            // Sampled around the responder poll: `RequestUpdate` is the only
+            // command that takes the FD out of `Idle`, so the false→true edge
+            // of `is_update_mode()` identifies exactly one accepted
+            // `RequestUpdate` (the initiator phase above never leaves `Idle`).
+            let was_update_mode = self.cmd_interface.fd_ctx.is_update_mode();
             match self.responder_transport.respond_once(
                 &mut responder_listener,
                 buf,
@@ -234,7 +275,11 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
                         .map_err(PldmServiceError::MsgHandler)
                 },
             ) {
-                Ok(()) => {}
+                Ok(()) => {
+                    if !was_update_mode && self.cmd_interface.fd_ctx.is_update_mode() {
+                        sink.update_requested();
+                    }
+                }
                 // A short poll timeout while an initiator request is active
                 // just means no UA command arrived in that window; keep
                 // looping so the transfer can continue.
