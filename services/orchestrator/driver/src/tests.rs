@@ -273,6 +273,23 @@ impl MockFloor {
     }
 }
 
+/// Update adapter without a HAL. Wiring-only for now: it stages the whole
+/// payload in one step. The update pump replaces it with a stepping mock
+/// when the executors land.
+struct MockUpdatable {
+    ready: bool,
+    active: bool,
+}
+
+impl MockUpdatable {
+    fn new() -> Self {
+        Self {
+            ready: false,
+            active: false,
+        }
+    }
+}
+
 impl orchestrator_capabilities::SvnFloor for MockFloor {
     type Error = FloorFaultInjected;
 
@@ -292,6 +309,29 @@ impl orchestrator_capabilities::SvnFloor for MockFloor {
     }
 }
 
+impl orchestrator_capabilities::Updatable for MockUpdatable {
+    fn poll_stage(
+        &mut self,
+        _payload: &dyn orchestrator_capabilities::PayloadSource,
+    ) -> Result<orchestrator_capabilities::StageProgress, orchestrator_capabilities::UpdateError>
+    {
+        self.ready = true;
+        Ok(orchestrator_capabilities::StageProgress::Ready)
+    }
+
+    fn abandon(&mut self) {
+        self.ready = false;
+    }
+
+    fn activate(&mut self) -> Result<(), orchestrator_capabilities::UpdateError> {
+        if !self.ready {
+            return Err(orchestrator_capabilities::UpdateError::NothingStaged);
+        }
+        self.active = true;
+        Ok(())
+    }
+}
+
 /// The test board's type choices.
 struct MockBoard;
 
@@ -302,6 +342,7 @@ impl BoardCapabilities for MockBoard {
     type BootWatch = MockWalk;
     type SvnFloor = MockFloor;
     type ReportSink = RecordingSink;
+    type Updatable = MockUpdatable;
 }
 
 /// The SVN `mock_board`'s verifier vouches for. Tests that read the floor
@@ -322,6 +363,7 @@ fn mock_board<const N: usize>() -> Board<MockBoard, N> {
         component_kinds: core::array::from_fn(|_| ComponentKind::Passive),
         svn_floors: core::array::from_fn(|_| SvnFloorBinding::Erot(MockFloor::new())),
         report_sink: RecordingSink::new(),
+        updatables: core::array::from_fn(|_| MockUpdatable::new()),
     }
 }
 
@@ -548,6 +590,7 @@ impl BoardCapabilities for WatchBoard {
     type SvnFloor = MockFloor;
     // A board with nothing to tell: exercises the no-op sink.
     type ReportSink = ();
+    type Updatable = MockUpdatable;
 }
 
 // The at-rest guarantee end to end: the component is still held while its
@@ -572,6 +615,7 @@ fn release_follows_verification() {
         component_kinds: [ComponentKind::Passive],
         svn_floors: [SvnFloorBinding::Erot(MockFloor::new())],
         report_sink: (),
+        updatables: [MockUpdatable::new()],
     });
     let mut orch = orchestrator();
 
@@ -1074,4 +1118,42 @@ fn reporting_an_isolated_component_does_not_lock_the_platform() {
 
     assert_eq!(orch.state(), State::Ready, "contained, not locked");
     assert_eq!(driver.board().report_sink.seen, [Report::Isolated(C1)]);
+}
+
+// The Updatable seam is wired but not yet driven: no executor exists until
+// the update pump lands. This pins the mock against the trait's ordering
+// rule so the wiring cannot rot in the meantime.
+#[test]
+fn updatable_seam_is_satisfiable_by_the_mock() {
+    use orchestrator_capabilities::{PayloadReadError, PayloadSource, StageProgress, Updatable};
+
+    struct SlicePayload(&'static [u8]);
+
+    impl PayloadSource for SlicePayload {
+        fn len(&self) -> u64 {
+            self.0.len() as u64
+        }
+
+        fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<(), PayloadReadError> {
+            let start = usize::try_from(offset).map_err(|_| PayloadReadError::OutOfRange)?;
+            let end = start
+                .checked_add(buf.len())
+                .ok_or(PayloadReadError::OutOfRange)?;
+            buf.copy_from_slice(self.0.get(start..end).ok_or(PayloadReadError::OutOfRange)?);
+            Ok(())
+        }
+    }
+
+    let mut dev = MockUpdatable::new();
+
+    assert_eq!(
+        dev.activate(),
+        Err(orchestrator_capabilities::UpdateError::NothingStaged)
+    );
+    assert_eq!(
+        dev.poll_stage(&SlicePayload(b"image")),
+        Ok(StageProgress::Ready)
+    );
+    dev.activate().expect("activate failed");
+    assert!(dev.active);
 }

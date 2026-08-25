@@ -5,6 +5,7 @@
 //! Boards (or test mocks) implement these.
 
 use openprot_orchestrator_sm::{BootFailureKind, ComponentId, ComponentKind};
+use orchestrator_capabilities::Updatable;
 
 pub use orchestrator_capabilities::{BootControl, BootWatch};
 use orchestrator_capabilities::{Svn, SvnFloor};
@@ -176,7 +177,9 @@ pub trait BoardCapabilities {
     type SvnFloor: SvnFloor;
     /// Where reports go. `()` for a board with no management side to tell.
     type ReportSink: ReportSink;
-    // Later seams: Recovery, Staging.
+    /// Stages and activates update payloads on the managed components.
+    type Updatable: Updatable;
+    // Later seams: Recovery.
 }
 
 /// Who keeps one component's anti-rollback floor. Spelled as its own type
@@ -204,6 +207,7 @@ pub enum SvnFloorBinding<F: SvnFloor> {
 ///     type BootWatch = CheckpointWalk;    // GPIO checkpoint walk over the boot window
 ///     type SvnFloor = OtpSvnFloor;        // fuse-backed anti-rollback floor
 ///     type ReportSink = MctpReports;      // reports out over the management transport
+///     type Updatable = PldmDevice;        // device pulls its own chunks
 /// }
 /// let board = Board::<Ast1060Board, 2> {
 ///     images: [bmc_image, cpld_image],
@@ -213,6 +217,7 @@ pub enum SvnFloorBinding<F: SvnFloor> {
 ///     component_kinds: [ComponentKind::Active, ComponentKind::Passive],
 ///     svn_floors: [SvnFloorBinding::Erot(bmc_floor), SvnFloorBinding::SelfManaged],
 ///     report_sink,
+///     updatables: [bmc_update, cpld_update],
 /// };
 /// ```
 pub struct Board<B: BoardCapabilities, const N: usize> {
@@ -237,5 +242,9 @@ pub struct Board<B: BoardCapabilities, const N: usize> {
     /// Where the driver hands the SM's reports. One per platform, not one
     /// per component: two of the four reports name no component.
     pub report_sink: B::ReportSink,
+    /// `updatables[i]` stages updates for `ComponentId(i)`, same indexing
+    /// as `images`. A device without an update path wires an adapter whose
+    /// `poll_stage` errors.
+    pub updatables: [B::Updatable; N],
     // Later seams add fields, e.g. recovery: [B::Recovery; N].
 }
