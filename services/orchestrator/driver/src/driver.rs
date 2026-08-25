@@ -5,7 +5,7 @@
 //! the SM through the [`Platform`] impl.
 
 use openprot_orchestrator_sm::{
-    BootFailureKind, ComponentId, ComponentKind, Effect, EffectError, Event, Platform,
+    BootFailureKind, ComponentId, ComponentKind, Effect, EffectError, Event, Orchestrator, Platform,
 };
 
 use crate::board::{
@@ -32,6 +32,9 @@ pub enum DriverError {
     NoVerifiedImage,
     /// The component's SVN floor could not be advanced.
     SvnFloorFault,
+    /// An update is already in flight; the frontend answers the requester
+    /// over its own protocol, the SM never sees the refused request.
+    UpdateBusy,
 }
 
 impl core::fmt::Display for DriverError {
@@ -44,6 +47,7 @@ impl core::fmt::Display for DriverError {
             DriverError::BootControlFault => "boot control could not actuate the reset",
             DriverError::NoVerifiedImage => "no verified image to commit the floor to",
             DriverError::SvnFloorFault => "svn floor could not be advanced",
+            DriverError::UpdateBusy => "an update is already in flight",
         })
     }
 }
@@ -65,6 +69,15 @@ pub struct PlatformDriver<B: BoardCapabilities, const N: usize> {
     /// authenticated image — the only value a floor commit may trust.
     /// `None` until a verification passes; cleared again on rejection.
     verified_svn: [Option<Svn>; N],
+    /// The update job submitted by the frontend, target only for now; the
+    /// pump state joins it when the executors land. Held until the update
+    /// is activated or discarded.
+    pending_update: Option<UpdateJob>,
+}
+
+/// One in-flight update, recorded by [`PlatformDriver::submit_update`].
+struct UpdateJob {
+    target: ComponentId,
 }
 
 impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
@@ -76,6 +89,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             staged: None,
             watching: [false; N],
             verified_svn: [None; N],
+            pending_update: None,
         }
     }
 
@@ -86,6 +100,29 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     #[cfg(test)]
     pub(crate) fn board(&self) -> &Board<B, N> {
         &self.board
+    }
+
+    /// The frontend half of the update handshake: record `target` as the
+    /// component the staged candidate is for. Must succeed BEFORE
+    /// [`Event::UpdateRequest`] is dispatched; `StageUpdate` with no stored
+    /// job fails closed. Refuses an unknown id and a second submit while
+    /// one update is in flight; nothing is stored on refusal, so a refused
+    /// request can never surface as an update event.
+    pub fn submit_update(&mut self, target: ComponentId) -> Result<(), DriverError> {
+        self.board
+            .updatables
+            .get(target.get() as usize)
+            .ok_or(DriverError::UnknownComponent)?;
+        if self.pending_update.is_some() {
+            return Err(DriverError::UpdateBusy);
+        }
+        self.pending_update = Some(UpdateJob { target });
+        Ok(())
+    }
+
+    /// Target of the in-flight update, if one was submitted.
+    pub fn pending_update(&self) -> Option<ComponentId> {
+        self.pending_update.as_ref().map(|job| job.target)
     }
 
     /// `id`'s image source. Takes the array rather than `&mut self` so the
@@ -329,4 +366,20 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
         }
         .map_err(|_| EffectError)
     }
+}
+
+/// The connection between an update frontend and the SM: called (by the
+/// event loop, on the frontend's behalf) once a complete candidate for
+/// `target` sits in the staging region. Records the job first, then injects
+/// [`Event::UpdateRequest`]; that order is load-bearing, `StageUpdate` can
+/// never run without a target. On refusal no event is injected and the
+/// frontend answers the requester over its own protocol.
+pub fn request_update<B: BoardCapabilities, const N: usize, const E: usize>(
+    orchestrator: &mut Orchestrator<N, E>,
+    driver: &mut PlatformDriver<B, N>,
+    target: ComponentId,
+) -> Result<(), DriverError> {
+    driver.submit_update(target)?;
+    orchestrator.dispatch(driver, Event::UpdateRequest);
+    Ok(())
 }
