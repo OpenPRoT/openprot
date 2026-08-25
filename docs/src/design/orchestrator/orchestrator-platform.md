@@ -23,7 +23,7 @@ inside the orchestrator process:
 - **Device capabilities** (`services/orchestrator/capabilities`) — the narrow contracts
   the state machine's effects are executed against, e.g. `BootControl`
   (hold a device in reset / release it). HAL bindings live in
-  `services/orchestrator/hal-adapters`.
+  `services/orchestrator/adapters/hal`.
 - **Board device table** (`services/orchestrator/config`, schema; values in
   `target/<board>/devices.rs`) — declares the managed devices: reset signal,
   boot checkpoints and windows, commit policy. Validated at compile time, so
