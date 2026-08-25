@@ -224,6 +224,46 @@ impl BootWatch for MockWalk {
     }
 }
 
+/// Update adapter without a HAL. Wiring-only for now: it stages the whole
+/// payload in one step. The update pump replaces it with a stepping mock
+/// when the executors land.
+struct MockUpdatable {
+    ready: bool,
+    active: bool,
+}
+
+impl MockUpdatable {
+    fn new() -> Self {
+        Self {
+            ready: false,
+            active: false,
+        }
+    }
+}
+
+impl orchestrator_capabilities::Updatable for MockUpdatable {
+    fn poll_stage(
+        &mut self,
+        _payload: &dyn orchestrator_capabilities::PayloadSource,
+    ) -> Result<orchestrator_capabilities::StageProgress, orchestrator_capabilities::UpdateError>
+    {
+        self.ready = true;
+        Ok(orchestrator_capabilities::StageProgress::Ready)
+    }
+
+    fn abandon(&mut self) {
+        self.ready = false;
+    }
+
+    fn activate(&mut self) -> Result<(), orchestrator_capabilities::UpdateError> {
+        if !self.ready {
+            return Err(orchestrator_capabilities::UpdateError::NothingStaged);
+        }
+        self.active = true;
+        Ok(())
+    }
+}
+
 /// The test board's type choices.
 struct MockBoard;
 
@@ -232,6 +272,7 @@ impl BoardCapabilities for MockBoard {
     type Verifier = XorVerifier;
     type BootControl = MockReset;
     type BootWatch = MockWalk;
+    type Updatable = MockUpdatable;
 }
 
 fn driver(images: [MemImage; 1]) -> PlatformDriver<MockBoard, 1> {
@@ -241,6 +282,7 @@ fn driver(images: [MemImage; 1]) -> PlatformDriver<MockBoard, 1> {
         boot_controls: [MockReset::new()],
         boot_watches: [MockWalk::idle()],
         component_kinds: [ComponentKind::Passive],
+        updatables: [MockUpdatable::new()],
     })
 }
 
@@ -324,6 +366,7 @@ fn verifier_fault_fails_closed() {
         boot_controls: [MockReset::new()],
         boot_watches: [MockWalk::idle()],
         component_kinds: [ComponentKind::Passive],
+        updatables: [MockUpdatable::new()],
     });
 
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
@@ -344,6 +387,7 @@ fn verify_for_a_different_component_is_refused() {
         boot_controls: [MockReset::new(), MockReset::new()],
         boot_watches: [MockWalk::idle(), MockWalk::idle()],
         component_kinds: [ComponentKind::Passive, ComponentKind::Passive],
+        updatables: [MockUpdatable::new(), MockUpdatable::new()],
     });
 
     driver.stage_firmware(C0).unwrap();
@@ -382,6 +426,7 @@ fn reset_release_and_assert_reach_the_boot_control() {
         boot_controls: [control],
         boot_watches: [MockWalk::idle()],
         component_kinds: [ComponentKind::Passive],
+        updatables: [MockUpdatable::new()],
     });
 
     driver.release_reset(C0).unwrap();
@@ -415,6 +460,7 @@ fn reset_line_fault_is_reported() {
         boot_controls: [control],
         boot_watches: [MockWalk::idle()],
         component_kinds: [ComponentKind::Passive],
+        updatables: [MockUpdatable::new()],
     });
 
     assert_eq!(driver.release_reset(C0), Err(DriverError::BootControlFault));
@@ -477,6 +523,7 @@ impl BoardCapabilities for WatchBoard {
     type Verifier = LineWatchingVerifier;
     type BootControl = MockReset;
     type BootWatch = MockWalk;
+    type Updatable = MockUpdatable;
 }
 
 // The at-rest guarantee end to end: the component is still held while its
@@ -496,6 +543,7 @@ fn release_follows_verification() {
         boot_controls: [control],
         boot_watches: [MockWalk::idle()],
         component_kinds: [ComponentKind::Passive],
+        updatables: [MockUpdatable::new()],
     });
     let mut orch = orchestrator();
 
@@ -522,6 +570,7 @@ fn failed_release_fails_closed() {
         boot_controls: [control],
         boot_watches: [MockWalk::idle()],
         component_kinds: [ComponentKind::Passive],
+        updatables: [MockUpdatable::new()],
     });
     let mut orch = orchestrator();
 
@@ -550,6 +599,7 @@ fn walk_driver(
         boot_controls: [MockReset::new(), MockReset::new()],
         boot_watches: walks,
         component_kinds,
+        updatables: [MockUpdatable::new(), MockUpdatable::new()],
     })
 }
 
@@ -733,6 +783,7 @@ fn booted_walk_settles_in_ready() {
         boot_controls: [MockReset::new()],
         boot_watches: [MockWalk::scripted(std::vec![WalkVerdict::Complete])],
         component_kinds: [ComponentKind::Passive],
+        updatables: [MockUpdatable::new()],
     });
 
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
@@ -761,6 +812,7 @@ fn boot_timeout_fails_closed_without_recovery() {
             cause: FailureCause::TimedOut,
         }])],
         component_kinds: [ComponentKind::Passive],
+        updatables: [MockUpdatable::new()],
     });
 
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
@@ -771,4 +823,42 @@ fn boot_timeout_fails_closed_without_recovery() {
     orch.dispatch(&mut driver, event);
 
     assert_eq!(orch.state(), State::Locked);
+}
+
+// The Updatable seam is wired but not yet driven: no executor exists until
+// the update pump lands. This pins the mock against the trait's ordering
+// rule so the wiring cannot rot in the meantime.
+#[test]
+fn updatable_seam_is_satisfiable_by_the_mock() {
+    use orchestrator_capabilities::{PayloadReadError, PayloadSource, StageProgress, Updatable};
+
+    struct SlicePayload(&'static [u8]);
+
+    impl PayloadSource for SlicePayload {
+        fn len(&self) -> u64 {
+            self.0.len() as u64
+        }
+
+        fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<(), PayloadReadError> {
+            let start = usize::try_from(offset).map_err(|_| PayloadReadError::OutOfRange)?;
+            let end = start
+                .checked_add(buf.len())
+                .ok_or(PayloadReadError::OutOfRange)?;
+            buf.copy_from_slice(self.0.get(start..end).ok_or(PayloadReadError::OutOfRange)?);
+            Ok(())
+        }
+    }
+
+    let mut dev = MockUpdatable::new();
+
+    assert_eq!(
+        dev.activate(),
+        Err(orchestrator_capabilities::UpdateError::NothingStaged)
+    );
+    assert_eq!(
+        dev.poll_stage(&SlicePayload(b"image")),
+        Ok(StageProgress::Ready)
+    );
+    dev.activate().expect("activate failed");
+    assert!(dev.active);
 }
