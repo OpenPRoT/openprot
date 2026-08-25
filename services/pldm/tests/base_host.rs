@@ -207,7 +207,7 @@ fn base_full_chain_via_firmware_device() {
     // which point it returns Mctp(TimedOut); that terminating timeout means
     // "done", not a failure.
     let mut run_fd_once =
-        || match fd.run_terminus(UA_EID, &mut fd_buf, TIMEOUT_MILLIS, TIMEOUT_MILLIS) {
+        || match fd.run_terminus(UA_EID, &mut fd_buf, TIMEOUT_MILLIS, TIMEOUT_MILLIS, &mut ()) {
             RunTerminusResult::Completed => {}
             RunTerminusResult::StoppedByError(PldmServiceError::Mctp(e)) if e.is_timeout() => {}
             RunTerminusResult::StoppedByError(e) => panic!("firmware device failed: {e:?}"),
