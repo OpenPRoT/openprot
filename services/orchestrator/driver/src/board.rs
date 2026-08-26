@@ -4,9 +4,9 @@
 //! What the board supplies to the driver: traits and wiring data only.
 //! Boards (or test mocks) implement these.
 
-use openprot_orchestrator_sm::ComponentId;
+use openprot_orchestrator_sm::{ComponentId, ComponentKind};
 
-pub use orchestrator_capabilities::BootControl;
+pub use orchestrator_capabilities::{BootControl, BootWatch};
 
 /// Access to one component's active firmware image, however it is reached —
 /// interposed flash, a PLDM/MCTP transfer, a RAM copy in tests.
@@ -99,7 +99,9 @@ pub trait BoardCapabilities {
     type Verifier: Verifier;
     /// Reset actuation for the managed components.
     type BootControl: BootControl;
-    // Later seams: Evidence (checkpoint walk), Recovery, Staging.
+    /// Boot-checkpoint supervision for the managed components.
+    type BootWatch: BootWatch;
+    // Later seams: Recovery, Staging.
 }
 
 /// Everything the board supplies, built once at bring-up and handed to
@@ -112,11 +114,14 @@ pub trait BoardCapabilities {
 ///     type Image = SpiFlashImage;         // interposed flash, offsets from the slot layout
 ///     type Verifier = ManifestVerifier;   // signature + SVN via the crypto engine
 ///     type BootControl = ExtrstGpio;      // per-component reset line
+///     type BootWatch = CheckpointWalk;    // GPIO checkpoint walk over the boot window
 /// }
 /// let board = Board::<Ast1060Board, 2> {
 ///     images: [bmc_image, cpld_image],
 ///     verifier,
 ///     boot_controls: [bmc_reset, cpld_reset],
+///     boot_watches: [bmc_walk, cpld_walk],
+///     component_kinds: [ComponentKind::Active, ComponentKind::Passive],
 /// };
 /// ```
 pub struct Board<B: BoardCapabilities, const N: usize> {
@@ -128,5 +133,12 @@ pub struct Board<B: BoardCapabilities, const N: usize> {
     /// `boot_controls[i]` actuates `ComponentId(i)`'s reset, same indexing
     /// as `images`.
     pub boot_controls: [B::BootControl; N],
-    // Later seams add fields, e.g. evidence: [B::Evidence; N].
+    /// `boot_watches[i]` supervises `ComponentId(i)`'s boot walk, same
+    /// indexing as `images`.
+    pub boot_watches: [B::BootWatch; N],
+    /// `component_kinds[i]` classifies `ComponentId(i)`: a completed walk becomes
+    /// `ComponentReady` for `Active`, `Booted` for `Passive`. Comes from
+    /// the same board table as the SM's chain, so both sides agree.
+    pub component_kinds: [ComponentKind; N],
+    // Later seams add fields, e.g. recovery: [B::Recovery; N].
 }

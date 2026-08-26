@@ -4,10 +4,10 @@
 //! The [`PlatformDriver`]: one executor method per [`Effect`] variant, routed from
 //! the SM through the [`Platform`] impl.
 
-use openprot_orchestrator_sm::{ComponentId, Effect, EffectError, Event, Platform};
+use openprot_orchestrator_sm::{ComponentId, ComponentKind, Effect, EffectError, Event, Platform};
 
 use crate::board::{Board, BoardCapabilities, ImageSource, Verdict, Verifier};
-use orchestrator_capabilities::BootControl;
+use orchestrator_capabilities::{BootControl, BootWatch, WalkVerdict};
 
 /// Why the driver could not carry out an effect.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -45,6 +45,11 @@ pub struct PlatformDriver<B: BoardCapabilities, const N: usize> {
     board: Board<B, N>,
     /// Component whose image is staged (source opened) for verification.
     staged: Option<ComponentId>,
+    /// `watching[i]`: `ComponentId(i)` is out of reset with a walk in
+    /// flight. Set on `ReleaseReset`, cleared on `AssertReset` and on a
+    /// terminal verdict. Only watched walks are polled, so a finished or
+    /// quiesced walk emits no stale event.
+    watching: [bool; N],
 }
 
 impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
@@ -52,6 +57,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         Self {
             board,
             staged: None,
+            watching: [false; N],
         }
     }
 
@@ -101,22 +107,95 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             .ok_or(DriverError::UnknownComponent)
     }
 
-    /// Release `id` from reset. The boot-checkpoint walk that feeds back
-    /// `Event::ComponentReady(id)`/`Event::Booted(id)`/`Event::Timeout(id)`
-    /// belongs to the BootWatch seam, not yet composed.
+    /// Release `id` from reset and arm its boot walk;
+    /// [`poll_boot_walks`](Self::poll_boot_walks) feeds the verdict back
+    /// as `ComponentReady(id)`/`Booted(id)`/`Timeout(id)`. Arms on every
+    /// release: a retry re-release starts a fresh walk.
     pub fn release_reset(&mut self, id: ComponentId) -> Result<(), DriverError> {
         self.boot_control(id)?
             .release()
-            .map_err(|_| DriverError::BootControlFault)
+            .map_err(|_| DriverError::BootControlFault)?;
+        let idx = id.get() as usize;
+        // In bounds: boot_control(id) above already rejected unknown ids.
+        self.board.boot_watches[idx].arm();
+        self.watching[idx] = true;
+        Ok(())
     }
 
     /// Hold `id` in reset — a durable quiesce, not a pulse; at-rest
-    /// verification and the recovery re-walk depend on it.
+    /// verification and the recovery re-walk depend on it. Also stops the
+    /// boot walk: a held device produces no boot signal, so polling it
+    /// could only yield a stale `Timeout`.
     pub fn assert_reset(&mut self, id: ComponentId) -> Result<(), DriverError> {
         self.boot_control(id)?
             .hold_in_reset()
-            .map_err(|_| DriverError::BootControlFault)
+            .map_err(|_| DriverError::BootControlFault)?;
+        self.watching[id.get() as usize] = false;
+        Ok(())
     }
+
+    /// Polls every watched walk at `now_millis` and returns the first
+    /// terminal verdict as its event: [`WalkVerdict::Complete`] becomes
+    /// `ComponentReady(id)` (`Active`) or `Booted(id)` (`Passive`),
+    /// [`WalkVerdict::Failed`] becomes `Timeout(id)` regardless of cause —
+    /// retry budgeting is the SM's. The finished walk stops being watched;
+    /// each verdict is delivered once.
+    ///
+    /// Returns at the first event; drain by calling until
+    /// [`BootWalkPoll::event`] is `None`. Only that last poll carries a
+    /// complete [`next_deadline_millis`](BootWalkPoll::next_deadline_millis)
+    /// — the earliest deadline among the still-waiting walks.
+    pub fn poll_boot_walks(&mut self, now_millis: u64) -> BootWalkPoll {
+        let mut next_deadline_millis: Option<u64> = None;
+        for idx in 0..N {
+            if !self.watching[idx] {
+                continue;
+            }
+            let id = ComponentId::new(idx as u8);
+            match self.board.boot_watches[idx].poll(now_millis) {
+                WalkVerdict::Waiting { deadline_millis } => {
+                    next_deadline_millis = Some(match next_deadline_millis {
+                        Some(d) => d.min(deadline_millis),
+                        None => deadline_millis,
+                    });
+                }
+                WalkVerdict::Complete => {
+                    self.watching[idx] = false;
+                    let event = match self.board.component_kinds[idx] {
+                        ComponentKind::Active => Event::ComponentReady(id),
+                        ComponentKind::Passive => Event::Booted(id),
+                    };
+                    return BootWalkPoll {
+                        event: Some(event),
+                        next_deadline_millis,
+                    };
+                }
+                WalkVerdict::Failed { .. } => {
+                    self.watching[idx] = false;
+                    return BootWalkPoll {
+                        event: Some(Event::Timeout(id)),
+                        next_deadline_millis,
+                    };
+                }
+            }
+        }
+        BootWalkPoll {
+            event: None,
+            next_deadline_millis,
+        }
+    }
+}
+
+/// One [`PlatformDriver::poll_boot_walks`] round.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct BootWalkPoll {
+    /// The first terminal verdict's event; `None` when every watched walk
+    /// is still waiting.
+    pub event: Option<Event>,
+    /// Earliest deadline among walks seen waiting this round. Complete only
+    /// when [`event`](Self::event) is `None`: an early return skips the
+    /// walks after the finished one.
+    pub next_deadline_millis: Option<u64>,
 }
 
 impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {

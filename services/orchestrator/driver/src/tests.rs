@@ -5,8 +5,9 @@ extern crate std;
 
 use crate::*;
 use openprot_orchestrator_sm::{
-    ComponentAttrs, ComponentId, Event, Orchestrator, PowerOnResult, State,
+    ComponentAttrs, ComponentId, ComponentKind, Event, Orchestrator, PowerOnResult, State,
 };
+use orchestrator_capabilities::{BootWatch, FailureCause, WalkVerdict};
 
 const C0: ComponentId = ComponentId::new(0);
 
@@ -175,6 +176,54 @@ impl orchestrator_capabilities::BootControl for MockReset {
     }
 }
 
+/// Boot walk without a device; scripted verdicts. An exhausted script
+/// holds its last verdict; an empty script waits forever. `arm` rewinds
+/// to the script start, so a fresh attempt is observable from the
+/// verdicts alone — no poll or arm counters needed.
+struct MockWalk {
+    verdicts: std::vec::Vec<WalkVerdict>,
+    next: usize,
+}
+
+const IDLE_DEADLINE: u64 = 60_000;
+
+impl MockWalk {
+    fn scripted(verdicts: std::vec::Vec<WalkVerdict>) -> Self {
+        Self { verdicts, next: 0 }
+    }
+
+    /// A walk that reports "still waiting" forever.
+    fn idle() -> Self {
+        Self::scripted(std::vec::Vec::new())
+    }
+}
+
+impl BootWatch for MockWalk {
+    fn arm(&mut self) {
+        self.next = 0;
+    }
+
+    fn poll(&mut self, _now_millis: u64) -> WalkVerdict {
+        match self.verdicts.get(self.next) {
+            Some(v) => {
+                self.next += 1;
+                *v
+            }
+            // Exhausted: repeat the last verdict, like a real finished
+            // walk. A driver bug that re-polls one then shows up as a
+            // duplicate event in the exactly-once assertions instead of
+            // panicking here.
+            None => self
+                .verdicts
+                .last()
+                .copied()
+                .unwrap_or(WalkVerdict::Waiting {
+                    deadline_millis: IDLE_DEADLINE,
+                }),
+        }
+    }
+}
+
 /// The test board's type choices.
 struct MockBoard;
 
@@ -182,6 +231,7 @@ impl BoardCapabilities for MockBoard {
     type Image = MemImage;
     type Verifier = XorVerifier;
     type BootControl = MockReset;
+    type BootWatch = MockWalk;
 }
 
 fn driver(images: [MemImage; 1]) -> PlatformDriver<MockBoard, 1> {
@@ -189,6 +239,8 @@ fn driver(images: [MemImage; 1]) -> PlatformDriver<MockBoard, 1> {
         images,
         verifier: XorVerifier { fault: false },
         boot_controls: [MockReset::new()],
+        boot_watches: [MockWalk::idle()],
+        component_kinds: [ComponentKind::Passive],
     })
 }
 
@@ -270,6 +322,8 @@ fn verifier_fault_fails_closed() {
         images: [MemImage::holding(valid_image())],
         verifier: XorVerifier { fault: true },
         boot_controls: [MockReset::new()],
+        boot_watches: [MockWalk::idle()],
+        component_kinds: [ComponentKind::Passive],
     });
 
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
@@ -288,6 +342,8 @@ fn verify_for_a_different_component_is_refused() {
         ],
         verifier: XorVerifier { fault: false },
         boot_controls: [MockReset::new(), MockReset::new()],
+        boot_watches: [MockWalk::idle(), MockWalk::idle()],
+        component_kinds: [ComponentKind::Passive, ComponentKind::Passive],
     });
 
     driver.stage_firmware(C0).unwrap();
@@ -324,6 +380,8 @@ fn reset_release_and_assert_reach_the_boot_control() {
         images: [MemImage::holding(valid_image())],
         verifier: XorVerifier { fault: false },
         boot_controls: [control],
+        boot_watches: [MockWalk::idle()],
+        component_kinds: [ComponentKind::Passive],
     });
 
     driver.release_reset(C0).unwrap();
@@ -355,6 +413,8 @@ fn reset_line_fault_is_reported() {
         images: [MemImage::holding(valid_image())],
         verifier: XorVerifier { fault: false },
         boot_controls: [control],
+        boot_watches: [MockWalk::idle()],
+        component_kinds: [ComponentKind::Passive],
     });
 
     assert_eq!(driver.release_reset(C0), Err(DriverError::BootControlFault));
@@ -416,6 +476,7 @@ impl BoardCapabilities for WatchBoard {
     type Image = MemImage;
     type Verifier = LineWatchingVerifier;
     type BootControl = MockReset;
+    type BootWatch = MockWalk;
 }
 
 // The at-rest guarantee end to end: the component is still held while its
@@ -433,6 +494,8 @@ fn release_follows_verification() {
             held_during_verify: held_during_verify.clone(),
         },
         boot_controls: [control],
+        boot_watches: [MockWalk::idle()],
+        component_kinds: [ComponentKind::Passive],
     });
     let mut orch = orchestrator();
 
@@ -457,6 +520,8 @@ fn failed_release_fails_closed() {
         images: [MemImage::holding(valid_image())],
         verifier: XorVerifier { fault: false },
         boot_controls: [control],
+        boot_watches: [MockWalk::idle()],
+        component_kinds: [ComponentKind::Passive],
     });
     let mut orch = orchestrator();
 
@@ -464,4 +529,246 @@ fn failed_release_fails_closed() {
 
     assert_eq!(orch.state(), State::Locked);
     assert!(held.get(), "never left reset");
+}
+
+// ---------------------------------------------------------------------------
+// Boot-walk supervision.
+// ---------------------------------------------------------------------------
+
+/// A 2-component driver with per-component scripted walks and kinds;
+/// everything else is the happy-path mock.
+fn walk_driver(
+    walks: [MockWalk; 2],
+    component_kinds: [ComponentKind; 2],
+) -> PlatformDriver<MockBoard, 2> {
+    PlatformDriver::new(Board {
+        images: [
+            MemImage::holding(valid_image()),
+            MemImage::holding(valid_image()),
+        ],
+        verifier: XorVerifier { fault: false },
+        boot_controls: [MockReset::new(), MockReset::new()],
+        boot_watches: walks,
+        component_kinds,
+    })
+}
+
+// A completed walk becomes ComponentReady for Active, Booted for Passive.
+// One event per call, drained in index order; a finished walk never
+// reports twice.
+#[test]
+fn completed_walks_report_by_kind() {
+    let mut driver = walk_driver(
+        [
+            MockWalk::scripted(std::vec![WalkVerdict::Complete]),
+            MockWalk::scripted(std::vec![WalkVerdict::Complete]),
+        ],
+        [ComponentKind::Active, ComponentKind::Passive],
+    );
+    driver.release_reset(C0).unwrap();
+    driver.release_reset(C1).unwrap();
+
+    assert_eq!(
+        driver.poll_boot_walks(0).event,
+        Some(Event::ComponentReady(C0))
+    );
+    assert_eq!(driver.poll_boot_walks(0).event, Some(Event::Booted(C1)));
+
+    let quiet = driver.poll_boot_walks(0);
+    assert_eq!(quiet.event, None, "verdicts are delivered exactly once");
+    assert_eq!(quiet.next_deadline_millis, None, "no walk left waiting");
+}
+
+// A failed walk becomes Timeout(id) regardless of cause — the retry
+// decision is the SM's.
+// TODO: the SM only knows Timeout, so DeviceFatal still spends retry
+// budget. Add a fatal, unrecoverable-error event to the SM in a later PR.
+#[test]
+fn failed_walks_map_to_timeout() {
+    let mut driver = walk_driver(
+        [
+            MockWalk::scripted(std::vec![WalkVerdict::Failed {
+                checkpoint: "heartbeat",
+                cause: FailureCause::TimedOut,
+            }]),
+            MockWalk::scripted(std::vec![WalkVerdict::Failed {
+                checkpoint: "self-test",
+                cause: FailureCause::DeviceFatal,
+            }]),
+        ],
+        [ComponentKind::Active, ComponentKind::Passive],
+    );
+    driver.release_reset(C0).unwrap();
+    driver.release_reset(C1).unwrap();
+
+    assert_eq!(driver.poll_boot_walks(0).event, Some(Event::Timeout(C0)));
+    assert_eq!(driver.poll_boot_walks(0).event, Some(Event::Timeout(C1)));
+    assert_eq!(driver.poll_boot_walks(0).event, None);
+}
+
+// An event-carrying poll returns before visiting later walks, so its
+// deadline is partial and must not be trusted; the drain's final,
+// event-free poll visits every remaining walk and reports the earliest
+// deadline.
+#[test]
+fn deadline_is_authoritative_only_when_no_event() {
+    let mut driver = walk_driver(
+        [
+            MockWalk::scripted(std::vec![WalkVerdict::Complete]),
+            MockWalk::scripted(std::vec![WalkVerdict::Waiting {
+                deadline_millis: 1_000,
+            }]),
+        ],
+        [ComponentKind::Passive, ComponentKind::Passive],
+    );
+    driver.release_reset(C0).unwrap();
+    driver.release_reset(C1).unwrap();
+
+    let first = driver.poll_boot_walks(0);
+    assert_eq!(first.event, Some(Event::Booted(C0)));
+    assert_eq!(
+        first.next_deadline_millis, None,
+        "returned before the waiting walk was visited"
+    );
+
+    let last = driver.poll_boot_walks(0);
+    assert_eq!(last.event, None);
+    assert_eq!(last.next_deadline_millis, Some(1_000));
+}
+
+// While every watched walk waits, the poll carries the earliest deadline
+// as the run loop's next wake-up.
+#[test]
+fn waiting_walks_report_the_earliest_deadline() {
+    let mut driver = walk_driver(
+        [
+            MockWalk::scripted(std::vec![WalkVerdict::Waiting {
+                deadline_millis: 9_000,
+            }]),
+            MockWalk::scripted(std::vec![WalkVerdict::Waiting {
+                deadline_millis: 4_000,
+            }]),
+        ],
+        [ComponentKind::Passive, ComponentKind::Passive],
+    );
+    driver.release_reset(C0).unwrap();
+    driver.release_reset(C1).unwrap();
+
+    let poll = driver.poll_boot_walks(0);
+    assert_eq!(poll.event, None);
+    assert_eq!(poll.next_deadline_millis, Some(4_000));
+}
+
+// A walk is watched only between release and terminal verdict. The script's
+// terminal verdict would surface as an event if the gate were missing: no
+// event before release, no stale event after assert_reset, and the verdict
+// still arrives once the device is actually released.
+#[test]
+fn only_released_components_are_watched() {
+    let mut driver = walk_driver(
+        [
+            MockWalk::scripted(std::vec![WalkVerdict::Complete]),
+            MockWalk::idle(),
+        ],
+        [ComponentKind::Passive, ComponentKind::Passive],
+    );
+
+    assert_eq!(
+        driver.poll_boot_walks(0).event,
+        None,
+        "unreleased: no event"
+    );
+
+    driver.release_reset(C0).unwrap();
+    driver.assert_reset(C0).unwrap();
+    assert_eq!(
+        driver.poll_boot_walks(0).event,
+        None,
+        "back in reset: no stale event"
+    );
+
+    driver.release_reset(C0).unwrap();
+    assert_eq!(driver.poll_boot_walks(0).event, Some(Event::Booted(C0)));
+}
+
+// Every release re-arms the walk: a retry judges a new attempt from the
+// first checkpoint, not the failed one resumed. With a script of
+// [Failed, Complete], a resumed walk would report Complete on the second
+// attempt; a fresh one reports Failed again.
+#[test]
+fn rerelease_arms_a_fresh_walk() {
+    let mut driver = walk_driver(
+        [
+            MockWalk::scripted(std::vec![
+                WalkVerdict::Failed {
+                    checkpoint: "heartbeat",
+                    cause: FailureCause::TimedOut,
+                },
+                WalkVerdict::Complete,
+            ]),
+            MockWalk::idle(),
+        ],
+        [ComponentKind::Passive, ComponentKind::Passive],
+    );
+
+    driver.release_reset(C0).unwrap();
+    assert_eq!(driver.poll_boot_walks(0).event, Some(Event::Timeout(C0)));
+
+    driver.release_reset(C0).unwrap();
+    assert_eq!(
+        driver.poll_boot_walks(0).event,
+        Some(Event::Timeout(C0)),
+        "fresh attempt from the first checkpoint, not the old walk resumed"
+    );
+}
+
+// End to end: a passive component is released speculatively (Ready), its
+// walk completes, and the Booted event settles cleanly.
+#[test]
+fn booted_walk_settles_in_ready() {
+    let mut orch = orchestrator();
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
+        images: [MemImage::holding(valid_image())],
+        verifier: XorVerifier { fault: false },
+        boot_controls: [MockReset::new()],
+        boot_watches: [MockWalk::scripted(std::vec![WalkVerdict::Complete])],
+        component_kinds: [ComponentKind::Passive],
+    });
+
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    assert_eq!(orch.state(), State::Ready);
+
+    let event = driver.poll_boot_walks(0).event.expect("walk completed");
+    assert_eq!(event, Event::Booted(C0));
+    orch.dispatch(&mut driver, event);
+
+    assert_eq!(orch.state(), State::Ready);
+}
+
+// End to end, failure path: the released component never reports in, its
+// Timeout enters recovery, and with no recovery capability composed yet
+// the machine fails closed. The Recovery PR replaces this test with the
+// recovery-path one — its failure there is the reminder.
+#[test]
+fn boot_timeout_fails_closed_without_recovery() {
+    let mut orch = orchestrator();
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
+        images: [MemImage::holding(valid_image())],
+        verifier: XorVerifier { fault: false },
+        boot_controls: [MockReset::new()],
+        boot_watches: [MockWalk::scripted(std::vec![WalkVerdict::Failed {
+            checkpoint: "heartbeat",
+            cause: FailureCause::TimedOut,
+        }])],
+        component_kinds: [ComponentKind::Passive],
+    });
+
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    assert_eq!(orch.state(), State::Ready);
+
+    let event = driver.poll_boot_walks(0).event.expect("walk failed");
+    assert_eq!(event, Event::Timeout(C0));
+    orch.dispatch(&mut driver, event);
+
+    assert_eq!(orch.state(), State::Locked);
 }
