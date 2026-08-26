@@ -56,13 +56,6 @@
 ///   `activate` may be called. `activate` in any other staging state is
 ///   an error.
 pub trait Updatable {
-    /// The error type of this device's update path.
-    ///
-    /// Bounded by [`core::error::Error`] so the orchestrator gets
-    /// `Display` and a `source()` cause chain, not just a `Debug` dump.
-    /// Error categories are implementation-defined.
-    type Error: core::error::Error;
-
     /// Advances staging by one step, pulling from `payload`.
     ///
     /// A step is bounded: at most one pull from `payload` and at most one
@@ -77,12 +70,15 @@ pub trait Updatable {
     /// PLDM device requests its own chunks, including retransmits);
     /// `payload` must serve any in-range read.
     ///
-    /// Generic for static dispatch, which makes `Updatable` itself
-    /// non-dyn-compatible; the associated `Error` type effectively
-    /// already did.
+    /// Dyn-compatible on purpose: a heterogeneous fleet (flash and PLDM
+    /// devices side by side, the usual board) sits behind
+    /// `&mut dyn Updatable`, so the payload is a trait object and the
+    /// error is the erased [`UpdateError`]. A board preferring static
+    /// dispatch wraps its devices in an enum and matches, as with
+    /// `BootWatch`.
     ///
     /// [`Ready`]: StageProgress::Ready
-    fn poll_stage(&mut self, payload: &impl PayloadSource) -> Result<StageProgress, Self::Error>;
+    fn poll_stage(&mut self, payload: &dyn PayloadSource) -> Result<StageProgress, UpdateError>;
 
     /// Discards the in-progress transfer or staged, unactivated payload.
     ///
@@ -99,7 +95,7 @@ pub trait Updatable {
     /// idempotent: a repeated call succeeds.
     ///
     /// [`Ready`]: StageProgress::Ready
-    fn activate(&mut self) -> Result<(), Self::Error>;
+    fn activate(&mut self) -> Result<(), UpdateError>;
 }
 
 /// What one [`Updatable::poll_stage`] step established.
@@ -121,6 +117,45 @@ pub enum StageProgress {
     },
     /// The device holds the complete payload; `activate` may be called.
     Ready,
+}
+
+/// Why an update operation failed, erased of device detail.
+///
+/// Carries the distinctions the orchestrator's policy needs and nothing
+/// more (mirroring `BootWatch`): the adapter logs the concrete device
+/// error while it is still in scope. Implements [`core::error::Error`],
+/// so callers still get `Display` and a `source()` chain for the
+/// payload fault.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdateError {
+    /// A payload read failed. Carries the read fault, so out-of-range
+    /// (a bug on the pulling side) stays distinct from storage (maybe
+    /// transient).
+    Payload(PayloadReadError),
+    /// The device failed or refused the step; staging anew may succeed.
+    Device,
+    /// `activate` without a staged, [`Ready`](StageProgress::Ready)
+    /// payload — a caller bug.
+    NothingStaged,
+}
+
+impl core::fmt::Display for UpdateError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            UpdateError::Payload(_) => f.write_str("staging pull failed"),
+            UpdateError::Device => f.write_str("device failed the update step"),
+            UpdateError::NothingStaged => f.write_str("nothing staged"),
+        }
+    }
+}
+
+impl core::error::Error for UpdateError {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        match self {
+            UpdateError::Payload(fault) => Some(fault),
+            UpdateError::Device | UpdateError::NothingStaged => None,
+        }
+    }
 }
 
 /// Chunked, random-access read seam [`Updatable::poll_stage`] pulls from.
@@ -222,36 +257,11 @@ mod tests {
         }
     }
 
-    #[derive(Debug, PartialEq, Eq)]
-    enum MockFault {
-        Pull(PayloadReadError),
-        NothingStaged,
-        ExceedsSlot,
-    }
-
-    impl core::fmt::Display for MockFault {
-        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-            match self {
-                MockFault::Pull(_) => f.write_str("staging pull failed"),
-                MockFault::NothingStaged => f.write_str("nothing staged"),
-                MockFault::ExceedsSlot => f.write_str("payload exceeds the slot"),
-            }
-        }
-    }
-
-    impl core::error::Error for MockFault {
-        fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
-            match self {
-                MockFault::Pull(fault) => Some(fault),
-                MockFault::NothingStaged | MockFault::ExceedsSlot => None,
-            }
-        }
-    }
-
     impl Updatable for MockDevice {
-        type Error = MockFault;
-
-        fn poll_stage(&mut self, payload: &impl PayloadSource) -> Result<StageProgress, MockFault> {
+        fn poll_stage(
+            &mut self,
+            payload: &dyn PayloadSource,
+        ) -> Result<StageProgress, UpdateError> {
             if self.ready {
                 self.abandon(); // a poll after Ready starts a new transfer
             }
@@ -264,7 +274,7 @@ mod tests {
                 payload.read_at(self.count as u64, &mut self.staged[self.count..end])
             {
                 self.abandon();
-                return Err(MockFault::Pull(fault));
+                return Err(UpdateError::Payload(fault));
             }
             self.count = end;
             if self.count == total {
@@ -284,17 +294,18 @@ mod tests {
             self.ready = false;
         }
 
-        fn activate(&mut self) -> Result<(), MockFault> {
+        fn activate(&mut self) -> Result<(), UpdateError> {
             if !self.ready {
-                return Err(MockFault::NothingStaged);
+                return Err(UpdateError::NothingStaged);
             }
             self.active = true;
             Ok(())
         }
     }
 
-    /// Polls to completion — the orchestrator's staging loop shape.
-    fn stage_all<D: Updatable>(dev: &mut D, payload: &impl PayloadSource) -> Result<(), D::Error> {
+    /// Polls to completion — the orchestrator's staging loop shape,
+    /// written against the erased seam.
+    fn stage_all(dev: &mut dyn Updatable, payload: &dyn PayloadSource) -> Result<(), UpdateError> {
         loop {
             if let StageProgress::Ready = dev.poll_stage(payload)? {
                 return Ok(());
@@ -352,8 +363,8 @@ mod tests {
 
         let err = stage_all(&mut dev, &Lying).expect_err("expected the pull fault");
 
-        assert_eq!(err, MockFault::Pull(PayloadReadError::OutOfRange));
-        // The cause chain carries the fault, per the Error bound.
+        assert_eq!(err, UpdateError::Payload(PayloadReadError::OutOfRange));
+        // The cause chain carries the fault, per the UpdateError impl.
         assert!(err.source().is_some());
 
         // Staging anew after a fault is always allowed.
@@ -369,7 +380,7 @@ mod tests {
         dev.poll_stage(&payload).expect("first step failed");
         dev.abandon();
 
-        assert_eq!(dev.activate(), Err(MockFault::NothingStaged));
+        assert_eq!(dev.activate(), Err(UpdateError::NothingStaged));
         // A fresh transfer starts from byte zero.
         assert_eq!(
             dev.poll_stage(&payload),
@@ -403,12 +414,10 @@ mod tests {
         }
 
         impl Updatable for BusyDevice {
-            type Error = MockFault;
-
             fn poll_stage(
                 &mut self,
-                payload: &impl PayloadSource,
-            ) -> Result<StageProgress, MockFault> {
+                payload: &dyn PayloadSource,
+            ) -> Result<StageProgress, UpdateError> {
                 self.busy = !self.busy;
                 if self.busy {
                     return Ok(StageProgress::Transferring {
@@ -423,7 +432,7 @@ mod tests {
                 self.inner.abandon();
             }
 
-            fn activate(&mut self) -> Result<(), MockFault> {
+            fn activate(&mut self) -> Result<(), UpdateError> {
                 self.inner.activate()
             }
         }
@@ -484,9 +493,10 @@ mod tests {
     }
 
     impl Updatable for MockPldmDevice {
-        type Error = MockFault;
-
-        fn poll_stage(&mut self, payload: &impl PayloadSource) -> Result<StageProgress, MockFault> {
+        fn poll_stage(
+            &mut self,
+            payload: &dyn PayloadSource,
+        ) -> Result<StageProgress, UpdateError> {
             if self.ready {
                 self.abandon();
             }
@@ -504,7 +514,7 @@ mod tests {
             let len = PLDM_CHUNK.min(total - request);
             payload
                 .read_at(request as u64, &mut self.staged[request..request + len])
-                .map_err(MockFault::Pull)?;
+                .map_err(UpdateError::Payload)?;
             if request == self.offset {
                 self.offset += len;
             }
@@ -526,9 +536,9 @@ mod tests {
             self.ready = false;
         }
 
-        fn activate(&mut self) -> Result<(), MockFault> {
+        fn activate(&mut self) -> Result<(), UpdateError> {
             if !self.ready {
-                return Err(MockFault::NothingStaged);
+                return Err(UpdateError::NothingStaged);
             }
             self.active = true;
             Ok(())
@@ -599,9 +609,10 @@ mod tests {
     }
 
     impl Updatable for MockFlashDevice {
-        type Error = MockFault;
-
-        fn poll_stage(&mut self, payload: &impl PayloadSource) -> Result<StageProgress, MockFault> {
+        fn poll_stage(
+            &mut self,
+            payload: &dyn PayloadSource,
+        ) -> Result<StageProgress, UpdateError> {
             if self.ready {
                 self.abandon();
             }
@@ -609,7 +620,7 @@ mod tests {
             // An oversized payload is a device error, not a caller bug:
             // rejected before anything is erased or written.
             if total > self.slot.len() {
-                return Err(MockFault::ExceedsSlot);
+                return Err(UpdateError::Device);
             }
             let sector = self.count / FLASH_SECTOR;
             if !self.erased[sector] {
@@ -623,7 +634,7 @@ mod tests {
             let end = (self.count + FLASH_PAGE).min(total);
             payload
                 .read_at(self.count as u64, &mut self.slot[self.count..end])
-                .map_err(MockFault::Pull)?;
+                .map_err(UpdateError::Payload)?;
             self.count = end;
             if self.count == total {
                 self.ready = true;
@@ -642,9 +653,9 @@ mod tests {
             self.ready = false;
         }
 
-        fn activate(&mut self) -> Result<(), MockFault> {
+        fn activate(&mut self) -> Result<(), UpdateError> {
             if !self.ready {
-                return Err(MockFault::NothingStaged);
+                return Err(UpdateError::NothingStaged);
             }
             self.active = true;
             Ok(())
@@ -702,11 +713,32 @@ mod tests {
     }
 
     #[test]
+    fn a_heterogeneous_fleet_stages_through_one_seam() {
+        // The dyn-compatibility use case: the usual board mixes
+        // archetypes, and the fleet view must not force one concrete
+        // type per board.
+        let mut flash = MockFlashDevice::idle();
+        let mut pldm = MockPldmDevice::idle();
+        let flash_payload = SliceSource(b"8 bytes!");
+        let pldm_payload = SliceSource(b"chunked");
+
+        let fleet: [(&mut dyn Updatable, &dyn PayloadSource); 2] =
+            [(&mut flash, &flash_payload), (&mut pldm, &pldm_payload)];
+        for (dev, payload) in fleet {
+            stage_all(dev, payload).expect("staging failed");
+            dev.activate().expect("activate failed");
+        }
+
+        assert_eq!(&flash.slot, b"8 bytes!");
+        assert_eq!(pldm.staged, b"chunked");
+    }
+
+    #[test]
     fn a_payload_beyond_the_slot_is_rejected_before_any_flash_op() {
         let mut dev = MockFlashDevice::idle();
         let payload = SliceSource(b"ninebytes");
 
-        assert_eq!(dev.poll_stage(&payload), Err(MockFault::ExceedsSlot));
+        assert_eq!(dev.poll_stage(&payload), Err(UpdateError::Device));
         assert!(!dev.erased[0], "nothing was erased");
     }
 
