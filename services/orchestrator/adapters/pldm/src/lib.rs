@@ -4,7 +4,7 @@
 //! PLDM-backed adapter for the Boot Orchestrator's update-request input.
 //!
 //! [`UpdateRequestLatch`] binds the PLDM firmware-device service's
-//! [`UpdateEventSink`] seam to the orchestrator's
+//! [`FdEventSink`] seam to the orchestrator's
 //! [`Event::UpdateRequest`]: the PLDM run loop notifies the latch when the
 //! Update Agent's `RequestUpdate` is accepted, and the orchestrator run loop
 //! drains it with [`take`](UpdateRequestLatch::take). This crate depends on
@@ -17,7 +17,7 @@
 #![warn(missing_docs)]
 
 use openprot_orchestrator_sm::Event;
-use openprot_pldm_service::firmware_device::UpdateEventSink;
+use openprot_pldm_service::firmware_device::{FdEvent, FdEventSink};
 
 /// Latches an accepted PLDM `RequestUpdate` until the orchestrator run loop
 /// drains it as [`Event::UpdateRequest`].
@@ -50,9 +50,14 @@ impl UpdateRequestLatch {
     }
 }
 
-impl UpdateEventSink for UpdateRequestLatch {
-    fn update_requested(&mut self) {
-        self.pending = true;
+/// Latches [`FdEvent::UpdateRequested`]; other FD lifecycle events have no
+/// orchestrator mapping yet and are dropped here by design.
+impl FdEventSink for UpdateRequestLatch {
+    fn notify(&mut self, event: FdEvent) {
+        match event {
+            FdEvent::UpdateRequested => self.pending = true,
+            _ => {}
+        }
     }
 }
 
@@ -68,7 +73,7 @@ mod tests {
     #[test]
     fn accepted_request_yields_one_event() {
         let mut latch = UpdateRequestLatch::new();
-        latch.update_requested();
+        latch.notify(FdEvent::UpdateRequested);
         assert_eq!(latch.take(), Some(Event::UpdateRequest));
         assert_eq!(latch.take(), None, "a drained latch must not re-fire");
     }
@@ -76,8 +81,8 @@ mod tests {
     #[test]
     fn undrained_notifications_coalesce() {
         let mut latch = UpdateRequestLatch::new();
-        latch.update_requested();
-        latch.update_requested();
+        latch.notify(FdEvent::UpdateRequested);
+        latch.notify(FdEvent::UpdateRequested);
         assert_eq!(latch.take(), Some(Event::UpdateRequest));
         assert_eq!(latch.take(), None);
     }
