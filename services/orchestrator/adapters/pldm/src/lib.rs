@@ -54,9 +54,8 @@ impl UpdateRequestLatch {
 /// orchestrator mapping yet and are dropped here by design.
 impl FdEventSink for UpdateRequestLatch {
     fn notify(&mut self, event: FdEvent) {
-        match event {
-            FdEvent::UpdateRequested => self.pending = true,
-            _ => {}
+        if matches!(event, FdEvent::UpdateRequested) {
+            self.pending = true;
         }
     }
 }
