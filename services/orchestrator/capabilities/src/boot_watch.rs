@@ -12,6 +12,13 @@
 /// its walks in an enum and matches, without touching anything below the
 /// seam.
 pub trait BootWatch {
+    /// Starts a fresh attempt: previous progress is discarded and the walk
+    /// judges from its first checkpoint again. The driver calls this on
+    /// every reset release, retries included. Takes no timestamp — reset
+    /// actuation has no clock; the attempt starts at the next
+    /// [`poll`](BootWatch::poll)'s `now_millis`.
+    fn arm(&mut self);
+
     /// Judges the walk at `now_millis` (monotonic). Never sleeps — time is
     /// injected, so every decision is host-testable.
     fn poll(&mut self, now_millis: u64) -> WalkVerdict;
@@ -86,6 +93,10 @@ mod tests {
     }
 
     impl BootWatch for ScriptedWalk {
+        fn arm(&mut self) {
+            self.next = 0;
+        }
+
         fn poll(&mut self, _now_millis: u64) -> WalkVerdict {
             let v = self.verdicts[self.next];
             self.next += 1;
