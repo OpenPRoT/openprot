@@ -61,7 +61,7 @@
 //! // FD-initiated requests (e.g. RequestFirmwareData) once an update begins.
 //! // It returns only on error; a `timeout_millis`/`requester_timeout_millis`
 //! // of `0` blocks indefinitely while idle. The final argument is an
-//! // `UpdateEventSink` notified once per accepted RequestUpdate; `&mut ()`
+//! // `FdEventSink` notified once per accepted RequestUpdate; `&mut ()`
 //! // drops the notifications.
 //! if let Err(e) = fd.run_terminus(UA_EID, &mut buf, 0, 0, &mut ()) {
 //!     // handle or log error
