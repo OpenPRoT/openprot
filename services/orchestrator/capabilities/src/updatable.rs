@@ -24,12 +24,13 @@
 /// What this trait deliberately does not claim:
 ///
 /// - **Verification** runs on the candidate before staging as
-///   orchestrator policy; post-write read-back is the optional
-///   `ReadBack` capability.
+///   orchestrator policy. Post-write readback is no capability either:
+///   it is the implementor's staging discipline (see `Ready` below).
 /// - **Commit.** Activation is always tentative: it proposes the staged
 ///   image as the preferred boot target, never commits it. The commit
-///   gate is the optional `TrialBoot` capability, which resolves what
-///   `activate` proposed; there is no second slot-selection owner.
+///   gate is the orchestrator's confirmed-boot flow (`BootConfirmed`
+///   gating `SvnFloor::advance`, or the device committing internally);
+///   there is no second slot-selection owner.
 /// - **Booting.** Resetting the device into the candidate is
 ///   [`BootControl`](crate::BootControl). When activation takes effect
 ///   (next reset, or a device-internal restart on self-activating
@@ -52,9 +53,16 @@
 ///   [`abandon`](Self::abandon) instead of waiting out a blocked call.
 ///   Liveness policy stays with the caller: it watches `written` and
 ///   abandons a transfer that stalls too long, on its own clock.
-/// - **`Ready` means ready.** The device holds the complete payload and
-///   `activate` may be called. `activate` in any other staging state is
-///   an error.
+/// - **`Ready` means ready.** The device holds the complete payload,
+///   verified to its archetype's discipline: a direct-flash adapter
+///   reads written data back and re-verifies before reporting `Ready`,
+///   a PLDM device runs its own verify step after the transfer:
+///   `FdOps::verify` in pldm-lib, reported to the update agent as
+///   `VerifyComplete`. A mismatch fails the step as
+///   [`ReadbackMismatch`](UpdateError::ReadbackMismatch), kept apart
+///   from [`Device`](UpdateError::Device) so a caller can retire a slot
+///   that keeps mismatching. `activate` may be called; in any other
+///   staging state it is an error.
 pub trait Updatable {
     /// Advances staging by one step, pulling from `payload`.
     ///
@@ -120,7 +128,8 @@ pub enum StageProgress {
         /// Total payload bytes.
         total: u64,
     },
-    /// The device holds the complete payload; `activate` may be called.
+    /// The device holds the complete, verified payload; `activate` may
+    /// be called.
     Ready,
 }
 
@@ -139,6 +148,12 @@ pub enum UpdateError {
     Payload(PayloadReadError),
     /// The device failed or refused the step; staging anew may succeed.
     Device,
+    /// Written data did not read back as written. Distinct from
+    /// [`Device`](Self::Device) because the cause is narrower — the write
+    /// path reported success and the storage still disagrees — so a
+    /// caller can count it separately and retire a slot that keeps
+    /// mismatching instead of retrying forever.
+    ReadbackMismatch,
     /// `poll_stage` with an empty payload, a caller bug: an empty image
     /// must never stage to [`Ready`](StageProgress::Ready).
     EmptyPayload,
@@ -152,6 +167,7 @@ impl core::fmt::Display for UpdateError {
         match self {
             UpdateError::Payload(_) => f.write_str("staging pull failed"),
             UpdateError::Device => f.write_str("device failed the update step"),
+            UpdateError::ReadbackMismatch => f.write_str("readback mismatch"),
             UpdateError::EmptyPayload => f.write_str("empty payload"),
             UpdateError::NothingStaged => f.write_str("nothing staged"),
         }
@@ -162,7 +178,10 @@ impl core::error::Error for UpdateError {
     fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
         match self {
             UpdateError::Payload(fault) => Some(fault),
-            UpdateError::Device | UpdateError::EmptyPayload | UpdateError::NothingStaged => None,
+            UpdateError::Device
+            | UpdateError::ReadbackMismatch
+            | UpdateError::EmptyPayload
+            | UpdateError::NothingStaged => None,
         }
     }
 }
@@ -482,12 +501,17 @@ mod tests {
     // shape: one fixed-size chunk request per step, at offsets the device
     // picks, including a retransmit. Out-of-range reads are a fault, so
     // the adapter clamps the device's last request to the payload end.
+    // A finished transfer does not mean `Ready`: the device runs its own
+    // verify first, one further step, the way a PLDM firmware device
+    // enters VERIFY and reports the outcome in `VerifyComplete`.
     const PLDM_CHUNK: usize = 3;
 
     struct MockPldmDevice {
         staged: Vec<u8>,
         offset: usize,
         retransmitted: bool,
+        // The whole image is transferred and its verify step is due.
+        verifying: bool,
         ready: bool,
         active: bool,
     }
@@ -498,6 +522,7 @@ mod tests {
                 staged: Vec::new(),
                 offset: 0,
                 retransmitted: false,
+                verifying: false,
                 ready: false,
                 active: false,
             }
@@ -519,6 +544,13 @@ mod tests {
             if self.staged.len() != total {
                 self.staged = vec![0; total];
             }
+            // The device's own verify, the step that earns `Ready`. It
+            // transfers nothing, so no chunk is requested.
+            if self.verifying {
+                self.verifying = false;
+                self.ready = true;
+                return Ok(StageProgress::Ready);
+            }
             // The device re-requests the previous chunk once mid-transfer.
             let request = if self.offset == 2 * PLDM_CHUNK && !self.retransmitted {
                 self.retransmitted = true;
@@ -534,20 +566,19 @@ mod tests {
                 self.offset += len;
             }
             if self.offset == total {
-                self.ready = true;
-                Ok(StageProgress::Ready)
-            } else {
-                Ok(StageProgress::Transferring {
-                    written: self.offset as u64,
-                    total: total as u64,
-                })
+                self.verifying = true;
             }
+            Ok(StageProgress::Transferring {
+                written: self.offset as u64,
+                total: total as u64,
+            })
         }
 
         fn abandon(&mut self) {
             self.staged = Vec::new();
             self.offset = 0;
             self.retransmitted = false;
+            self.verifying = false;
             self.ready = false;
         }
 
@@ -590,6 +621,16 @@ mod tests {
                 total,
             })
         );
+        // The short last chunk completes the transfer. Still not `Ready`:
+        // the device's verify has not run.
+        assert_eq!(
+            dev.poll_stage(&payload),
+            Ok(StageProgress::Transferring {
+                written: total,
+                total
+            })
+        );
+        // The verify step earns `Ready`.
         assert_eq!(dev.poll_stage(&payload), Ok(StageProgress::Ready));
 
         dev.activate().expect("activate failed");
@@ -597,18 +638,30 @@ mod tests {
     }
 
     // A direct-flash adapter, the erase-before-write shape: one step is
-    // one flash operation, either erasing the next sector or programming
-    // the next page. Erase steps pull nothing and hold `written` still.
+    // one flash operation, erasing the next sector, programming the next
+    // page, or reading a written page back. Erase and write steps hold
+    // `written` still; only a page that passed readback advances it, so
+    // `written` counts verified bytes. This is the readback discipline the
+    // `Ready` contract prescribes for direct-flash devices.
     const FLASH_PAGE: usize = 2; // bytes programmed per write step
     const FLASH_SECTOR: usize = 4; // bytes erased per erase step
     const FLASH_SECTORS: usize = 2; // sectors in the slot
 
+    // What a page written last step must read back as.
+    struct ExpectedReadback {
+        start: usize,
+        expected: Vec<u8>,
+    }
+
     struct MockFlashDevice {
         slot: [u8; FLASH_SECTORS * FLASH_SECTOR],
         erased: [bool; FLASH_SECTORS],
+        pending: Option<ExpectedReadback>,
         count: usize,
         ready: bool,
         active: bool,
+        // Test knob: corrupt the next written page so its readback fails.
+        corrupt_next_write: bool,
     }
 
     impl MockFlashDevice {
@@ -616,9 +669,11 @@ mod tests {
             MockFlashDevice {
                 slot: [0; FLASH_SECTORS * FLASH_SECTOR],
                 erased: [false; FLASH_SECTORS],
+                pending: None,
                 count: 0,
                 ready: false,
                 active: false,
+                corrupt_next_write: false,
             }
         }
     }
@@ -640,6 +695,24 @@ mod tests {
             if total > self.slot.len() {
                 return Err(UpdateError::Device);
             }
+            // Readback: re-verify the page written last step. Only now
+            // does the page count as staged.
+            if let Some(ExpectedReadback { start, expected }) = self.pending.take() {
+                if self.slot[start..start + expected.len()] != expected[..] {
+                    self.abandon();
+                    return Err(UpdateError::ReadbackMismatch);
+                }
+                self.count = start + expected.len();
+                return if self.count == total {
+                    self.ready = true;
+                    Ok(StageProgress::Ready)
+                } else {
+                    Ok(StageProgress::Transferring {
+                        written: self.count as u64,
+                        total: total as u64,
+                    })
+                };
+            }
             let sector = self.count / FLASH_SECTOR;
             if !self.erased[sector] {
                 self.slot[sector * FLASH_SECTOR..(sector + 1) * FLASH_SECTOR].fill(0xff);
@@ -650,23 +723,28 @@ mod tests {
                 });
             }
             let end = (self.count + FLASH_PAGE).min(total);
+            let mut page = vec![0; end - self.count];
             payload
-                .read_at(self.count as u64, &mut self.slot[self.count..end])
+                .read_at(self.count as u64, &mut page)
                 .map_err(UpdateError::Payload)?;
-            self.count = end;
-            if self.count == total {
-                self.ready = true;
-                Ok(StageProgress::Ready)
-            } else {
-                Ok(StageProgress::Transferring {
-                    written: self.count as u64,
-                    total: total as u64,
-                })
+            self.slot[self.count..end].copy_from_slice(&page);
+            if self.corrupt_next_write {
+                self.corrupt_next_write = false;
+                self.slot[self.count] ^= 0xff;
             }
+            self.pending = Some(ExpectedReadback {
+                start: self.count,
+                expected: page,
+            });
+            Ok(StageProgress::Transferring {
+                written: self.count as u64,
+                total: total as u64,
+            })
         }
 
         fn abandon(&mut self) {
             self.erased = [false; FLASH_SECTORS];
+            self.pending = None;
             self.count = 0;
             self.ready = false;
         }
@@ -690,40 +768,25 @@ mod tests {
         let sector = FLASH_SECTOR as u64;
         assert_eq!(total as usize, FLASH_SECTORS * FLASH_SECTOR);
 
-        // Erase sector 0: a step with no pull, `written` holds still.
-        assert_eq!(
-            dev.poll_stage(&payload),
-            Ok(StageProgress::Transferring { written: 0, total })
-        );
-        assert_eq!(
-            dev.poll_stage(&payload),
-            Ok(StageProgress::Transferring {
-                written: page,
-                total
-            })
-        );
-        assert_eq!(
-            dev.poll_stage(&payload),
-            Ok(StageProgress::Transferring {
-                written: sector,
-                total
-            })
-        );
-        // Erase sector 1.
-        assert_eq!(
-            dev.poll_stage(&payload),
-            Ok(StageProgress::Transferring {
-                written: sector,
-                total
-            })
-        );
-        assert_eq!(
-            dev.poll_stage(&payload),
-            Ok(StageProgress::Transferring {
-                written: sector + page,
-                total,
-            })
-        );
+        // `written` after each step; it advances only on a passed readback.
+        let expected = [
+            0,             // erase sector 0
+            0,             // program page 0
+            page,          // page 0 readback passed
+            page,          // program page 1
+            sector,        // page 1 readback passed
+            sector,        // erase sector 1
+            sector,        // program page 2
+            sector + page, // page 2 readback passed
+            sector + page, // program page 3
+        ];
+        for written in expected {
+            assert_eq!(
+                dev.poll_stage(&payload),
+                Ok(StageProgress::Transferring { written, total })
+            );
+        }
+        // The final readback completes staging.
         assert_eq!(dev.poll_stage(&payload), Ok(StageProgress::Ready));
 
         dev.activate().expect("activate failed");
@@ -749,6 +812,21 @@ mod tests {
 
         assert_eq!(&flash.slot, b"8 bytes!");
         assert_eq!(pldm.staged, b"chunked");
+    }
+
+    #[test]
+    fn a_readback_mismatch_is_a_staging_error() {
+        let mut dev = MockFlashDevice::idle();
+        dev.corrupt_next_write = true;
+        let payload = SliceSource(b"8 bytes!");
+
+        let err = stage_all(&mut dev, &payload).expect_err("expected the readback mismatch");
+        assert_eq!(err, UpdateError::ReadbackMismatch);
+
+        // Staging anew after the fault is allowed and verifies clean.
+        stage_all(&mut dev, &payload).expect("re-staging failed");
+        assert_eq!(&dev.slot, b"8 bytes!");
+        dev.activate().expect("activate after re-staging failed");
     }
 
     #[test]
