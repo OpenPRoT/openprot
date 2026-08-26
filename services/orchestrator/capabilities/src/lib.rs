@@ -50,4 +50,4 @@ pub use boot_watch::{BootWatch, FailureCause, WalkVerdict};
 pub use evidence::{BootStatus, EvidenceReader};
 pub use lockdown_latch::LockdownLatch;
 pub use svn_floor::{Svn, SvnFloor};
-pub use updatable::{PayloadReadError, PayloadSource, StageProgress, Updatable};
+pub use updatable::{PayloadReadError, PayloadSource, StageProgress, Updatable, UpdateError};
