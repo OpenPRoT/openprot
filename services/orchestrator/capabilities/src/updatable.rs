@@ -70,6 +70,11 @@ pub trait Updatable {
     /// PLDM device requests its own chunks, including retransmits);
     /// `payload` must serve any in-range read.
     ///
+    /// An empty payload is a caller bug: there is no image, so [`Ready`]
+    /// must not be reachable vacuously. Implementations return
+    /// [`EmptyPayload`](UpdateError::EmptyPayload) before touching the
+    /// device or their own staging state.
+    ///
     /// Dyn-compatible on purpose: a heterogeneous fleet (flash and PLDM
     /// devices side by side, the usual board) sits behind
     /// `&mut dyn Updatable`, so the payload is a trait object and the
@@ -134,6 +139,9 @@ pub enum UpdateError {
     Payload(PayloadReadError),
     /// The device failed or refused the step; staging anew may succeed.
     Device,
+    /// `poll_stage` with an empty payload, a caller bug: an empty image
+    /// must never stage to [`Ready`](StageProgress::Ready).
+    EmptyPayload,
     /// `activate` without a staged, [`Ready`](StageProgress::Ready)
     /// payload — a caller bug.
     NothingStaged,
@@ -144,6 +152,7 @@ impl core::fmt::Display for UpdateError {
         match self {
             UpdateError::Payload(_) => f.write_str("staging pull failed"),
             UpdateError::Device => f.write_str("device failed the update step"),
+            UpdateError::EmptyPayload => f.write_str("empty payload"),
             UpdateError::NothingStaged => f.write_str("nothing staged"),
         }
     }
@@ -153,7 +162,7 @@ impl core::error::Error for UpdateError {
     fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
         match self {
             UpdateError::Payload(fault) => Some(fault),
-            UpdateError::Device | UpdateError::NothingStaged => None,
+            UpdateError::Device | UpdateError::EmptyPayload | UpdateError::NothingStaged => None,
         }
     }
 }
@@ -262,6 +271,9 @@ mod tests {
             &mut self,
             payload: &dyn PayloadSource,
         ) -> Result<StageProgress, UpdateError> {
+            if payload.is_empty() {
+                return Err(UpdateError::EmptyPayload);
+            }
             if self.ready {
                 self.abandon(); // a poll after Ready starts a new transfer
             }
@@ -497,6 +509,9 @@ mod tests {
             &mut self,
             payload: &dyn PayloadSource,
         ) -> Result<StageProgress, UpdateError> {
+            if payload.is_empty() {
+                return Err(UpdateError::EmptyPayload);
+            }
             if self.ready {
                 self.abandon();
             }
@@ -613,6 +628,9 @@ mod tests {
             &mut self,
             payload: &dyn PayloadSource,
         ) -> Result<StageProgress, UpdateError> {
+            if payload.is_empty() {
+                return Err(UpdateError::EmptyPayload);
+            }
             if self.ready {
                 self.abandon();
             }
@@ -740,6 +758,41 @@ mod tests {
 
         assert_eq!(dev.poll_stage(&payload), Err(UpdateError::Device));
         assert!(!dev.erased[0], "nothing was erased");
+    }
+
+    #[test]
+    fn an_empty_payload_is_rejected_and_never_ready() {
+        // Without the guard, the `written == total` termination check
+        // holds vacuously on the first poll and an image-less staging
+        // reaches Ready.
+        let mut plain = MockDevice::idle();
+        let mut pldm = MockPldmDevice::idle();
+        let mut flash = MockFlashDevice::idle();
+
+        let fleet: [&mut dyn Updatable; 3] = [&mut plain, &mut pldm, &mut flash];
+        for dev in fleet {
+            assert_eq!(
+                dev.poll_stage(&SliceSource(b"")),
+                Err(UpdateError::EmptyPayload)
+            );
+            assert_eq!(dev.activate(), Err(UpdateError::NothingStaged));
+        }
+    }
+
+    #[test]
+    fn a_rejected_empty_poll_leaves_a_ready_staging_intact() {
+        let mut dev = MockDevice::idle();
+        stage_all(&mut dev, &SliceSource(b"image")).expect("staging failed");
+
+        // The guard rejects before touching staging state, so this
+        // caller bug cannot destroy a completed staging.
+        assert_eq!(
+            dev.poll_stage(&SliceSource(b"")),
+            Err(UpdateError::EmptyPayload)
+        );
+        dev.activate()
+            .expect("activate after the rejected poll failed");
+        assert_eq!(dev.staged, b"image");
     }
 
     #[test]
