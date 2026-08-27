@@ -129,8 +129,6 @@ test/runner tooling.
 - `target/earlgrey/` — OpenTitan Earl Grey. QEMU tests run on every PR;
   Verilator-driven tests are gated behind the `verilator` tag and the
   corresponding workflow group (see `workflows.json`).
-- `target/mock/` — a non-hardware board description used by host tests and
-  QEMU runs to exercise the orchestrator's supported device archetypes.
 - `target/veer/` — Caliptra VeeR-EL2. Built on `pw_kernel` and exercised
   on the Caliptra emulator via `target/veer/tooling/caliptra_runner.bzl`.
 
