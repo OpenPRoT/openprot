@@ -166,6 +166,8 @@ pub trait BoardCapabilities {
     /// survives reset and power loss, otherwise a power cycle would
     /// re-admit images below the floor.
     type SvnFloor: SvnFloor;
+    /// Where reports go. `()` for a board with no management side to tell.
+    type ReportSink: ReportSink;
     // Later seams: Recovery, Staging.
 }
 
@@ -193,6 +195,7 @@ pub enum SvnFloorBinding<F: SvnFloor> {
 ///     type BootControl = ExtrstGpio;      // per-component reset line
 ///     type BootWatch = CheckpointWalk;    // GPIO checkpoint walk over the boot window
 ///     type SvnFloor = OtpSvnFloor;        // fuse-backed anti-rollback floor
+///     type ReportSink = MctpReports;      // reports out over the management transport
 /// }
 /// let board = Board::<Ast1060Board, 2> {
 ///     images: [bmc_image, cpld_image],
@@ -201,6 +204,7 @@ pub enum SvnFloorBinding<F: SvnFloor> {
 ///     boot_watches: [bmc_walk, cpld_walk],
 ///     component_kinds: [ComponentKind::Active, ComponentKind::Passive],
 ///     svn_floors: [SvnFloorBinding::Erot(bmc_floor), SvnFloorBinding::SelfManaged],
+///     report_sink,
 /// };
 /// ```
 pub struct Board<B: BoardCapabilities, const N: usize> {
@@ -222,5 +226,8 @@ pub struct Board<B: BoardCapabilities, const N: usize> {
     /// `svn_floors[i]` says who keeps `ComponentId(i)`'s anti-rollback
     /// floor, same indexing as `images`.
     pub svn_floors: [SvnFloorBinding<B::SvnFloor>; N],
+    /// Where the driver hands the SM's reports. One per platform, not one
+    /// per component: two of the four reports name no component.
+    pub report_sink: B::ReportSink,
     // Later seams add fields, e.g. recovery: [B::Recovery; N].
 }

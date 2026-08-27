@@ -301,6 +301,7 @@ impl BoardCapabilities for MockBoard {
     type BootControl = MockReset;
     type BootWatch = MockWalk;
     type SvnFloor = MockFloor;
+    type ReportSink = RecordingSink;
 }
 
 fn driver(images: [MemImage; 1]) -> PlatformDriver<MockBoard, 1> {
@@ -314,6 +315,7 @@ fn driver(images: [MemImage; 1]) -> PlatformDriver<MockBoard, 1> {
         boot_watches: [MockWalk::idle()],
         component_kinds: [ComponentKind::Passive],
         svn_floors: [SvnFloorBinding::Erot(MockFloor::new())],
+        report_sink: RecordingSink::new(),
     })
 }
 
@@ -401,6 +403,7 @@ fn verifier_fault_fails_closed() {
         boot_watches: [MockWalk::idle()],
         component_kinds: [ComponentKind::Passive],
         svn_floors: [SvnFloorBinding::Erot(MockFloor::new())],
+        report_sink: RecordingSink::new(),
     });
 
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
@@ -428,6 +431,7 @@ fn verify_for_a_different_component_is_refused() {
             SvnFloorBinding::Erot(MockFloor::new()),
             SvnFloorBinding::Erot(MockFloor::new()),
         ],
+        report_sink: RecordingSink::new(),
     });
 
     driver.stage_firmware(C0).unwrap();
@@ -468,6 +472,7 @@ fn reset_release_and_assert_reach_the_boot_control() {
         boot_watches: [MockWalk::idle()],
         component_kinds: [ComponentKind::Passive],
         svn_floors: [SvnFloorBinding::Erot(MockFloor::new())],
+        report_sink: RecordingSink::new(),
     });
 
     driver.release_reset(C0).unwrap();
@@ -505,6 +510,7 @@ fn reset_line_fault_is_reported() {
         boot_watches: [MockWalk::idle()],
         component_kinds: [ComponentKind::Passive],
         svn_floors: [SvnFloorBinding::Erot(MockFloor::new())],
+        report_sink: RecordingSink::new(),
     });
 
     assert_eq!(driver.release_reset(C0), Err(DriverError::BootControlFault));
@@ -568,6 +574,8 @@ impl BoardCapabilities for WatchBoard {
     type BootControl = MockReset;
     type BootWatch = MockWalk;
     type SvnFloor = MockFloor;
+    // A board with nothing to tell: exercises the no-op sink.
+    type ReportSink = ();
 }
 
 // The at-rest guarantee end to end: the component is still held while its
@@ -591,6 +599,7 @@ fn release_follows_verification() {
         boot_watches: [MockWalk::idle()],
         component_kinds: [ComponentKind::Passive],
         svn_floors: [SvnFloorBinding::Erot(MockFloor::new())],
+        report_sink: (),
     });
     let mut orch = orchestrator();
 
@@ -621,6 +630,7 @@ fn failed_release_fails_closed() {
         boot_watches: [MockWalk::idle()],
         component_kinds: [ComponentKind::Passive],
         svn_floors: [SvnFloorBinding::Erot(MockFloor::new())],
+        report_sink: RecordingSink::new(),
     });
     let mut orch = orchestrator();
 
@@ -656,6 +666,7 @@ fn walk_driver(
             SvnFloorBinding::Erot(MockFloor::new()),
             SvnFloorBinding::Erot(MockFloor::new()),
         ],
+        report_sink: RecordingSink::new(),
     })
 }
 
@@ -843,6 +854,7 @@ fn booted_walk_settles_in_ready() {
         boot_watches: [MockWalk::scripted(std::vec![WalkVerdict::Complete])],
         component_kinds: [ComponentKind::Passive],
         svn_floors: [SvnFloorBinding::Erot(MockFloor::new())],
+        report_sink: RecordingSink::new(),
     });
 
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
@@ -875,6 +887,7 @@ fn boot_timeout_fails_closed_without_recovery() {
         }])],
         component_kinds: [ComponentKind::Passive],
         svn_floors: [SvnFloorBinding::Erot(MockFloor::new())],
+        report_sink: RecordingSink::new(),
     });
 
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
@@ -890,18 +903,16 @@ fn boot_timeout_fails_closed_without_recovery() {
 // ---------------------------------------------------------------------------
 // Report sink.
 // ---------------------------------------------------------------------------
-
 /// Records what it is handed: the seam satisfied without a management
-/// transport.
+/// transport. Tests read `seen` back through `PlatformDriver::board`.
+#[derive(Default)]
 struct RecordingSink {
     seen: std::vec::Vec<Report>,
 }
 
 impl RecordingSink {
     fn new() -> Self {
-        Self {
-            seen: std::vec::Vec::new(),
-        }
+        Self::default()
     }
 }
 
@@ -956,6 +967,7 @@ fn commit_advances_the_floor_to_the_verified_svn() {
         boot_watches: [MockWalk::idle()],
         component_kinds: [ComponentKind::Passive],
         svn_floors: [SvnFloorBinding::Erot(MockFloor::new())],
+        report_sink: RecordingSink::new(),
     });
 
     driver
@@ -992,6 +1004,7 @@ fn commit_without_an_erot_floor_is_a_no_op() {
         boot_watches: [MockWalk::idle()],
         component_kinds: [ComponentKind::Passive],
         svn_floors: [SvnFloorBinding::SelfManaged],
+        report_sink: RecordingSink::new(),
     });
 
     assert_eq!(driver.execute(Effect::CommitSvnFloor(C0)), Ok(None));
@@ -1023,6 +1036,7 @@ fn rejected_image_clears_the_verified_svn() {
         boot_watches: [MockWalk::idle()],
         component_kinds: [ComponentKind::Passive],
         svn_floors: [SvnFloorBinding::Erot(MockFloor::new())],
+        report_sink: RecordingSink::new(),
     });
 
     driver.stage_firmware(C0).expect("stage failed");
@@ -1059,10 +1073,83 @@ fn floor_fault_is_reported() {
         boot_watches: [MockWalk::idle()],
         component_kinds: [ComponentKind::Passive],
         svn_floors: [SvnFloorBinding::Erot(mock)],
+        report_sink: RecordingSink::new(),
     });
 
     driver.stage_firmware(C0).expect("stage failed");
     driver.verify_firmware(C0).expect("verify failed");
 
     assert_eq!(driver.commit_svn_floor(C0), Err(DriverError::SvnFloorFault));
+}
+
+// Every report effect reaches the board's sink, in emission order, and none
+// hands back an error for the SM to fail closed on.
+#[test]
+fn reports_reach_the_board_sink() {
+    use openprot_orchestrator_sm::{Effect, Platform};
+
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
+        images: [MemImage::holding(valid_image())],
+        verifier: XorVerifier {
+            fault: false,
+            svn: 0,
+        },
+        boot_controls: [MockReset::new()],
+        boot_watches: [MockWalk::idle()],
+        component_kinds: [ComponentKind::Passive],
+        svn_floors: [SvnFloorBinding::Erot(MockFloor::new())],
+        report_sink: RecordingSink::new(),
+    });
+
+    for effect in [
+        Effect::ReportIsolated(C0),
+        Effect::ReportRecoveryFailed(C0),
+        Effect::ReportUpdateDeferred,
+        Effect::ReportUpdateAborted,
+    ] {
+        assert_eq!(driver.execute(effect), Ok(None));
+    }
+
+    assert_eq!(driver.board().report_sink.seen, every_report());
+}
+
+// An Isolable component is contained and reported, and the platform keeps
+// running: executing a report returns no error, so it never reaches the
+// fail-closed path.
+#[test]
+fn reporting_an_isolated_component_does_not_lock_the_platform() {
+    let mut driver = PlatformDriver::<MockBoard, 2>::new(Board {
+        images: [
+            MemImage::holding(valid_image()),
+            MemImage::holding(valid_image()),
+        ],
+        verifier: XorVerifier {
+            fault: false,
+            svn: 0,
+        },
+        boot_controls: [MockReset::new(), MockReset::new()],
+        boot_watches: [MockWalk::idle(), MockWalk::idle()],
+        component_kinds: [ComponentKind::Passive, ComponentKind::Passive],
+        svn_floors: [
+            SvnFloorBinding::Erot(MockFloor::new()),
+            SvnFloorBinding::Erot(MockFloor::new()),
+        ],
+        report_sink: RecordingSink::new(),
+    });
+    let mut chain = heapless::Vec::<_, 2>::new();
+    chain
+        .push((C0, ComponentAttrs::passive_required()))
+        .unwrap();
+    chain
+        .push((C1, ComponentAttrs::passive_isolable()))
+        .unwrap();
+    let mut orch = Orchestrator::<2, 6>::new(chain.try_into().unwrap(), 3);
+
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    assert_eq!(orch.state(), State::Ready, "both components verified");
+
+    orch.dispatch(&mut driver, Event::CorruptionDetected(C1));
+
+    assert_eq!(orch.state(), State::Ready, "contained, not locked");
+    assert_eq!(driver.board().report_sink.seen, [Report::Isolated(C1)]);
 }
