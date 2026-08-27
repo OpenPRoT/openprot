@@ -8,7 +8,7 @@
 //! Invariants are enforced in the `const fn` constructors, so an invalid
 //! table is a build error and there is no validate step to forget. Checks
 //! on board-defined types belong next to the table that gives them
-//! meaning (`target/mock/devices.rs` shows the pattern).
+//! meaning (`services/orchestrator/test/devices.rs` shows the pattern).
 
 #![cfg_attr(not(test), no_std)]
 
