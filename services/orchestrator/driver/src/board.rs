@@ -89,6 +89,59 @@ pub enum Verdict {
     Rejected,
 }
 
+/// One fact about the platform running degraded, carried outward to
+/// management software. `#[non_exhaustive]`: a sink routes what it
+/// recognises and ignores the rest, so a new report is not a trait break.
+///
+/// Payloads stay `Copy` and lifetime-free, like the effects these mirror. A
+/// report names a component only where the effect it mirrors does.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Report {
+    /// Held in reset and out of the trust chain, so the platform runs
+    /// degraded. Reported once per component, as it is gated.
+    Isolated(ComponentId),
+    /// Recovery attempts exhausted and the platform halts. Reported before
+    /// the lockdown latch, while there is still a platform to report from.
+    RecoveryFailed(ComponentId),
+    /// An update request declined because the platform was busy. Nothing
+    /// staged, and the requester may ask again. Platform-wide, not
+    /// per-component: the machine supervises one update at a time and
+    /// `Event::UpdateRequest` names no component.
+    UpdateDeferred,
+    /// An update in flight superseded by recovery. Its staged image is
+    /// discarded and no verdict for that request follows. Platform-wide for
+    /// the same reason as [`Report::UpdateDeferred`].
+    UpdateAborted,
+}
+
+/// Where the driver hands its [`Report`]s. What a report becomes, a log
+/// entry, a management transport message, a fault line, is board wiring.
+///
+/// Infallible by design: a report names something that already happened, so
+/// an undeliverable one costs information, not containment. An error channel
+/// would put reports on the fail-closed path, letting the act of reporting a
+/// contained failure escalate it.
+pub trait ReportSink {
+    /// Receives one report. A sink that cannot deliver immediately queues on
+    /// its own side rather than stalling the effect batch.
+    fn report(&mut self, report: Report);
+}
+
+/// Drops every report, for a board with no management side to tell. Losing
+/// reports costs visibility only, so this is a wiring choice, not a stub.
+impl ReportSink for () {
+    #[inline(always)]
+    fn report(&mut self, _report: Report) {}
+}
+
+impl<S: ReportSink> ReportSink for &mut S {
+    #[inline(always)]
+    fn report(&mut self, report: Report) {
+        (**self).report(report)
+    }
+}
+
 /// The set of platform capabilities one board composes into the
 /// `PlatformDriver`, named by a marker type. A new seam adds an associated
 /// type here and a field on [`Board`] — never another parameter.

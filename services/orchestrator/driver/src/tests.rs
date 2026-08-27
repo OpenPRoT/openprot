@@ -772,3 +772,54 @@ fn boot_timeout_fails_closed_without_recovery() {
 
     assert_eq!(orch.state(), State::Locked);
 }
+
+// ---------------------------------------------------------------------------
+// Report sink.
+// ---------------------------------------------------------------------------
+
+/// Records what it is handed: the seam satisfied without a management
+/// transport.
+struct RecordingSink {
+    seen: std::vec::Vec<Report>,
+}
+
+impl RecordingSink {
+    fn new() -> Self {
+        Self {
+            seen: std::vec::Vec::new(),
+        }
+    }
+}
+
+impl ReportSink for RecordingSink {
+    fn report(&mut self, report: Report) {
+        self.seen.push(report);
+    }
+}
+
+/// One of each report, so a test covers the whole enum.
+fn every_report() -> [Report; 4] {
+    [
+        Report::Isolated(C0),
+        Report::RecoveryFailed(C0),
+        Report::UpdateDeferred,
+        Report::UpdateAborted,
+    ]
+}
+
+// Every report is deliverable through the seam alone, in the order handed
+// over; the unit sink is a wiring choice and satisfies the same caller.
+#[test]
+fn every_report_reaches_a_sink() {
+    fn tell<S: ReportSink>(sink: &mut S, reports: [Report; 4]) {
+        for report in reports {
+            sink.report(report);
+        }
+    }
+
+    let mut recording = RecordingSink::new();
+    tell(&mut recording, every_report());
+    assert_eq!(recording.seen, every_report());
+
+    tell(&mut (), every_report());
+}
