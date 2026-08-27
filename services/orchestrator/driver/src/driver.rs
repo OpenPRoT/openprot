@@ -54,6 +54,8 @@ pub struct PlatformDriver<B: BoardCapabilities, const N: usize> {
 
 impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     pub fn new(board: Board<B, N>) -> Self {
+        // ComponentId is a u8, so ids for N > 256 components would wrap.
+        const { assert!(N <= 256) };
         Self {
             board,
             staged: None,
@@ -151,7 +153,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             if !self.watching[idx] {
                 continue;
             }
-            let id = ComponentId::new(idx as u8);
+            let id: ComponentId = (idx as u8).into();
             match self.board.boot_watches[idx].poll(now_millis) {
                 WalkVerdict::Waiting { deadline_millis } => {
                     next_deadline_millis = Some(match next_deadline_millis {

@@ -20,6 +20,12 @@ impl ComponentId {
     }
 }
 
+impl From<u8> for ComponentId {
+    fn from(value: u8) -> Self {
+        Self(value)
+    }
+}
+
 /// How a component in the trust chain is classified. The board supplies one
 /// [`ComponentKind`] per [`ComponentId`] when building the chain.
 ///
