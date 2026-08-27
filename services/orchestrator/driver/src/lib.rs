@@ -34,5 +34,5 @@ mod driver;
 #[cfg(test)]
 mod tests;
 
-pub use board::{Board, BoardCapabilities, ImageSource, Verdict, Verifier};
+pub use board::{Board, BoardCapabilities, ImageSource, Report, ReportSink, Verdict, Verifier};
 pub use driver::{BootWalkPoll, DriverError, PlatformDriver};
