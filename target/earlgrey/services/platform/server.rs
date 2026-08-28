@@ -34,6 +34,10 @@ impl PlatformServer {
         }
     }
 
+    pub fn gpio_mut(&mut self) -> &mut EarlGreyGpio {
+        &mut self.gpio
+    }
+
     pub fn state(&self) -> TargetCpuState {
         self.reset_policy.state()
     }

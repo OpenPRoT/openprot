@@ -154,6 +154,10 @@
               ]
             },
             {
+              name: "platform_wait_group",
+              type: "wait_group"
+            },
+            {
               name: "platform_thread",
               kernel_stack_size_bytes: 2048,
               type: "thread"
