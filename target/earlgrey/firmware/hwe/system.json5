@@ -44,10 +44,20 @@
               type: "channel_handler"
             },
             {
+              name: "cli_platform",
+              type: "channel_handler"
+            },
+            {
+              name: "cli_usb",
+              type: "channel_handler"
+            },
+            {
               name: "uart0_interrupts",
               type: "interrupt",
               irqs: [
-                { name: "uart0_tx_done", number: 3 }
+                { name: "uart0_rx_watermark", number: 2 },
+                { name: "uart0_tx_done", number: 3 },
+                { name: "uart0_rx_timeout", number: 7 }
               ]
             },
             {
@@ -121,6 +131,12 @@
               type: "channel_initiator",
               handler_process: "logmgr",
               handler_object_name: "logger_platform"
+            },
+            {
+              name: "cli_platform",
+              type: "channel_initiator",
+              handler_process: "logmgr",
+              handler_object_name: "cli_platform"
             },
             {
               name: "sysmgr_platform",
@@ -265,6 +281,12 @@
               type: "channel_initiator",
               handler_process: "flash_server",
               handler_object_name: "eflash_usb_service"
+            },
+            {
+              name: "cli_usb",
+              type: "channel_initiator",
+              handler_process: "logmgr",
+              handler_object_name: "cli_usb"
             },
             {
               name: "sysmgr_usb",

@@ -1,6 +1,7 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@pigweed//pw_kernel/tooling:multi_process_app.bzl", "multi_process_app")
 load("@pigweed//pw_kernel/tooling:rust_process.bzl", "rust_process")
 load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
@@ -12,12 +13,28 @@ load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
 load("//target/earlgrey/signing/keys:defs.bzl", "FPGA_ECDSA_KEY", "SILICON_ECDSA_KEY")
 load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_test")
 
+bool_flag(
+    name = "cli",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "cli_enabled",
+    flag_values = {
+        ":cli": "true",
+    },
+)
+
 rust_process(
     name = "logmgr",
     srcs = [
         "logmgr.rs",
     ],
     codegen_crate_name = "logmgr_codegen",
+    crate_features = select({
+        ":cli_enabled": ["cli"],
+        "//conditions:default": [],
+    }),
     edition = "2024",
     system_config = "@pigweed//pw_kernel/target:system_config_file",
     tags = ["kernel"],
@@ -43,6 +60,10 @@ rust_process(
         "usbmgr.rs",
     ],
     codegen_crate_name = "usbmgr_codegen",
+    crate_features = select({
+        ":cli_enabled": ["cli"],
+        "//conditions:default": [],
+    }),
     edition = "2024",
     system_config = "@pigweed//pw_kernel/target:system_config_file",
     tags = ["kernel"],

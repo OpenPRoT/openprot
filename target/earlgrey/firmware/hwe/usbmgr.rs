@@ -33,6 +33,8 @@ use earlgrey_sysmgr_client::SysmgrClient;
 use protocol_usb_cdc_acm::{CdcAcm, CdcAcmBuilder};
 use protocol_usb_dfu::{DfuBuilder, DfuClass};
 use services_flash_client::FlashIpcClient;
+#[cfg(feature = "cli")]
+use util_ipc::IpcChannel;
 use util_ipc::IpcHandle;
 
 use util_error::{AsStatus, ErrorCode};
@@ -285,35 +287,54 @@ fn handle_usb() -> Result<(), ErrorCode> {
                 action.run(&mut usb);
             }
             let _ = syscall::interrupt_ack(handle::USBDEV_INTERRUPTS, wait_return.pending_signals);
-        } else if wakeup == handle::LOGGER_USB {
+            continue;
+        }
+
+        if wakeup == handle::LOGGER_USB {
             // If we got a wakeup signal from the logger task, ack it and note that we have events
             // pending.
             util_zfmt::logger().clear_notifier()?;
             log_events_pending = true;
         }
 
-        // TODO: this just echos CDC-ACM input back into the output.
-        // Decide what to do with input.
+        #[cfg(feature = "cli")]
+        {
+            let slice = cdc_acm.rx_queue.as_slice();
+            if !slice.is_empty() {
+                // Reuse `event` [256 bytes] as a scratch buffer for receiving cooked echo bytes.
+                let cli_usb = IpcHandle::new(handle::CLI_USB);
+                if let Ok(echo_len) = cli_usb.transact(slice, &mut event, Instant::MAX) {
+                    cdc_acm.rx_queue.consume(slice.len());
+                    let echo = &event[..echo_len];
+                    let _ = cdc_acm.tx_queue.push_slice(echo);
+                }
+            }
+        }
+        #[cfg(not(feature = "cli"))]
         while let Some(byte) = cdc_acm.rx_queue.pop() {
             let _ = cdc_acm.tx_queue.push(byte);
         }
 
         // If the CDC-ACM queue is empty and if we have more log events,
         // process them.
-        if log_events_pending && cdc_acm.tx_queue.is_empty() {
+        while log_events_pending && cdc_acm.tx_queue.is_empty() {
             let (cursor, ev) = util_zfmt::logger().get_event(log_cursor, &mut event)?;
             log_cursor = cursor;
             if ev.is_empty() {
                 // No more events.
                 log_events_pending = false;
+                break;
+            }
+            // Render to text and advance the cursor.
+            let mut buf = FixedBuf::<254>::new();
+            if let Some(len) = render_event(ev, &mut buf) {
+                let _ = cdc_acm.tx_queue.push_slice(buf.as_slice());
+                log_cursor += len as u64;
+                break;
             } else {
-                // Render to text and advance the cursor.
-                let mut buf = FixedBuf::<254>::new();
-                if let Some(len) = render_event(ev, &mut buf) {
-                    let _ = cdc_acm.tx_queue.push_slice(buf.as_slice());
-                    let _ = cdc_acm.tx_queue.push_slice(b"\r\n");
-                    log_cursor += len as u64;
-                }
+                // Event cannot be rendered as text (e.g. structured zfmt event);
+                // advance log_cursor by raw event length to avoid stalling.
+                log_cursor += ev.len() as u64;
             }
         }
 
