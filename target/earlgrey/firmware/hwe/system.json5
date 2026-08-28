@@ -17,7 +17,7 @@
   apps: [
     {
       name: "hwe",
-      flash_size_bytes: 49152,
+      flash_size_bytes: 65536,
       processes: [
         {
           name: "logmgr",
@@ -169,8 +169,24 @@
               handler_object_name: "logger_flash"
             },
             {
-              name: "flash_service",
+              name: "eflash_updatemgr_service",
               type: "channel_handler"
+            },
+            {
+              name: "eflash_usb_service",
+              type: "channel_handler"
+            },
+            {
+              name: "spi_flash_updatemgr_service",
+              type: "channel_handler"
+            },
+            {
+              name: "spi_flash_usb_service",
+              type: "channel_handler"
+            },
+            {
+              name: "flash_wait_group",
+              type: "wait_group"
             },
             {
               name: "flash_interrupts",
@@ -196,6 +212,12 @@
               type: "device",
               start_address: 0x41000000,
               size_bytes: 0x200
+            },
+            {
+              name: "spi_host0",
+              type: "device",
+              start_address: 0x40300000,
+              size_bytes: 0x1000
             }
           ]
         },
@@ -242,7 +264,7 @@
               name: "flash_usb",
               type: "channel_initiator",
               handler_process: "flash_server",
-              handler_object_name: "flash_service"
+              handler_object_name: "eflash_usb_service"
             },
             {
               name: "sysmgr_usb",
