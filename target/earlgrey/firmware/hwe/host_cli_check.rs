@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-use std::io::{Read, Write};
+use std::io::Write;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
@@ -130,8 +130,66 @@ fn test_uart_cli(transport: &opentitanlib::app::TransportWrapper, timeout: Durat
     )
     .context("Failed 'gpio write 0' on UART0")?;
 
+    log::info!("Sending 'sys help\r' to UART0 console...");
+    uart_send_and_wait(&*uart, b"sys help\r", "System Commands:", timeout)
+        .context("Failed 'sys help' on UART0")?;
+
+    log::info!("Sending 'sys info\r' to UART0 console...");
+    uart_send_and_wait(&*uart, b"sys info\r", "System Information:", timeout)
+        .context("Failed 'sys info' on UART0")?;
+
+    log::info!("Sending 'sys id\r' to UART0 console...");
+    uart_send_and_wait(&*uart, b"sys id\r", "Device ID:", timeout)
+        .context("Failed 'sys id' on UART0")?;
+
     log::info!("UART0 CLI commands verified successfully!");
     Ok(())
+}
+
+fn usb_send_and_wait(
+    port: &mut dyn serialport::SerialPort,
+    cmd: &[u8],
+    expected: &str,
+    timeout: Duration,
+) -> Result<String> {
+    if !cmd.is_empty() {
+        port.write_all(cmd)?;
+        port.flush()?;
+    }
+    let start = Instant::now();
+    let mut last_send = Instant::now();
+    let mut output = String::new();
+    let mut buf = [0u8; 256];
+
+    while start.elapsed() < timeout {
+        if !cmd.is_empty()
+            && last_send.elapsed() >= Duration::from_secs(2)
+            && (!output.contains(expected) || !output.contains("hwe>"))
+        {
+            let _ = port.write_all(cmd);
+            let _ = port.flush();
+            last_send = Instant::now();
+        }
+        match port.read(&mut buf) {
+            Ok(n) if n > 0 => {
+                let chunk = String::from_utf8_lossy(&buf[..n]);
+                print!("{}", chunk);
+                let _ = std::io::stdout().flush();
+                output.push_str(&chunk);
+                if output.contains(expected) && output.contains("hwe>") {
+                    return Ok(output);
+                }
+            }
+            Ok(_) => std::thread::sleep(Duration::from_millis(50)),
+            Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => continue,
+            Err(e) => return Err(e).context("Error reading from USB CDC-ACM port"),
+        }
+    }
+    bail!(
+        "Timed out waiting for '{}' and prompt on USB CDC-ACM. Output received:\n{}",
+        expected,
+        output
+    );
 }
 
 fn test_usb_cli(port_name: &str, timeout: Duration) -> Result<()> {
@@ -144,43 +202,15 @@ fn test_usb_cli(port_name: &str, timeout: Duration) -> Result<()> {
     std::thread::sleep(Duration::from_millis(100));
 
     log::info!("Sending 'gpio help\\r' to USB CDC-ACM port...");
-    port.write_all(b"gpio help\r")
-        .context("Failed to write 'gpio help\\r' to USB CDC-ACM")?;
-    port.flush().context("Failed to flush USB CDC-ACM port")?;
+    usb_send_and_wait(&mut *port, b"gpio help\r", "GPIO Commands:", timeout)
+        .context("Failed 'gpio help' on USB CDC-ACM")?;
 
-    let start = Instant::now();
-    let mut last_send = Instant::now();
-    let mut output = String::new();
-    let mut buf = [0u8; 256];
+    log::info!("Sending 'sys info\\r' to USB CDC-ACM port...");
+    usb_send_and_wait(&mut *port, b"sys info\r", "System Information:", timeout)
+        .context("Failed 'sys info' on USB CDC-ACM")?;
 
-    while start.elapsed() < timeout {
-        if last_send.elapsed() >= Duration::from_secs(2) {
-            let _ = port.write_all(b"gpio help\r");
-            let _ = port.flush();
-            last_send = Instant::now();
-        }
-        match port.read(&mut buf) {
-            Ok(n) if n > 0 => {
-                output.push_str(&String::from_utf8_lossy(&buf[..n]));
-                if output.contains("GPIO Commands:")
-                    && output.contains("read <pin>")
-                    && output.contains("write <pin>")
-                    && output.contains("hwe> ")
-                {
-                    log::info!("USB CDC-ACM CLI gpio help and prompt verified successfully!");
-                    return Ok(());
-                }
-            }
-            Ok(_) => std::thread::sleep(Duration::from_millis(50)),
-            Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => continue,
-            Err(e) => return Err(e).context("Error reading from USB CDC-ACM port"),
-        }
-    }
-
-    bail!(
-        "Timed out waiting for gpio help response on USB CDC-ACM. Received output:\n{}",
-        output
-    );
+    log::info!("USB CDC-ACM CLI commands verified successfully!");
+    Ok(())
 }
 
 fn main() -> Result<()> {

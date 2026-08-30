@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 pub mod gpio;
+pub mod sys;
 
 use earlgrey_gpio::EarlGreyGpio;
 use earlgrey_sysmgr_client::SysmgrClient;
 use gpio::GpioCommandHandler;
+use sys::SysCommandHandler;
 use util_ipc::IpcHandle;
 
 /// Zero-allocation whitespace-separated token iterator for CLI parsing.
@@ -75,12 +77,14 @@ pub trait CommandHandler {
 /// Root CLI dispatcher for the platform service.
 pub struct CliDispatcher {
     gpio_handler: GpioCommandHandler,
+    sys_handler: SysCommandHandler,
 }
 
 impl CliDispatcher {
     pub const fn new() -> Self {
         Self {
             gpio_handler: GpioCommandHandler::new(),
+            sys_handler: SysCommandHandler::new(),
         }
     }
 
@@ -107,7 +111,7 @@ impl CliDispatcher {
                 let _ = self.gpio_handler.execute(&mut tokens, context);
             }
             "sys" => {
-                util_zfmt::debug!("sys: not implemented yet");
+                let _ = self.sys_handler.execute(&mut tokens, context);
             }
             "usb" => {
                 util_zfmt::debug!("usb: not implemented yet");
