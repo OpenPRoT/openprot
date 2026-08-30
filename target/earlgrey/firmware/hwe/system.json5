@@ -17,7 +17,7 @@
   apps: [
     {
       name: "hwe",
-      flash_size_bytes: 65536,
+      flash_size_bytes: 131072,
       processes: [
         {
           name: "logmgr",

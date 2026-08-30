@@ -1,8 +1,11 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
+pub mod gpio;
+
 use earlgrey_gpio::EarlGreyGpio;
 use earlgrey_sysmgr_client::SysmgrClient;
+use gpio::GpioCommandHandler;
 use util_ipc::IpcHandle;
 
 /// Zero-allocation whitespace-separated token iterator for CLI parsing.
@@ -70,11 +73,15 @@ pub trait CommandHandler {
 }
 
 /// Root CLI dispatcher for the platform service.
-pub struct CliDispatcher;
+pub struct CliDispatcher {
+    gpio_handler: GpioCommandHandler,
+}
 
 impl CliDispatcher {
     pub const fn new() -> Self {
-        Self
+        Self {
+            gpio_handler: GpioCommandHandler::new(),
+        }
     }
 
     pub fn print_help(&self) {
@@ -86,7 +93,7 @@ impl CliDispatcher {
         util_zfmt::debug!("  help  - Display this help message");
     }
 
-    pub fn dispatch(&mut self, line: &str, _context: &mut CliContext<'_>) {
+    pub fn dispatch(&mut self, line: &str, context: &mut CliContext<'_>) {
         let mut tokens = TokenIter::new(line);
         let Some(cmd) = tokens.next_token() else {
             return;
@@ -97,7 +104,7 @@ impl CliDispatcher {
                 self.print_help();
             }
             "gpio" => {
-                util_zfmt::debug!("gpio: not implemented yet");
+                let _ = self.gpio_handler.execute(&mut tokens, context);
             }
             "sys" => {
                 util_zfmt::debug!("sys: not implemented yet");

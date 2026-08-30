@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use clap::Parser;
+use opentitanlib::io::console::ConsoleExt;
 use opentitanlib::test_utils::init::InitializeTest;
 use opentitanlib::uart::console::UartConsole;
 use usb::UsbOpts;
@@ -43,20 +44,93 @@ fn wait_for_usb_serial(
     bail!("USB CDC-ACM serial port not found within timeout");
 }
 
+fn uart_send_and_wait(
+    uart: &dyn opentitanlib::io::uart::Uart,
+    cmd: &[u8],
+    expected: &str,
+    timeout: Duration,
+) -> Result<String> {
+    if !cmd.is_empty() {
+        uart.write(cmd)?;
+    }
+    let start = Instant::now();
+    let mut last_send = Instant::now();
+    let mut output = String::new();
+    let mut buf = [0u8; 256];
+
+    while start.elapsed() < timeout {
+        if !cmd.is_empty()
+            && last_send.elapsed() >= Duration::from_secs(2)
+            && (!output.contains(expected) || !output.contains("hwe>"))
+        {
+            let _ = uart.write(cmd);
+            last_send = Instant::now();
+        }
+        let n = uart.read_timeout(&mut buf, Duration::from_millis(50))?;
+        if n > 0 {
+            let chunk = String::from_utf8_lossy(&buf[..n]);
+            print!("{}", chunk);
+            let _ = std::io::stdout().flush();
+            output.push_str(&chunk);
+            if output.contains(expected) && output.contains("hwe>") {
+                return Ok(output);
+            }
+        }
+    }
+    bail!(
+        "Timed out waiting for '{}' and prompt on UART0. Output received:\n{}",
+        expected,
+        output
+    );
+}
+
 fn test_uart_cli(transport: &opentitanlib::app::TransportWrapper, timeout: Duration) -> Result<()> {
     log::info!("Testing UART0 hardware console CLI...");
     let uart = transport.uart("console")?;
 
+    log::info!("Testing empty Enter liveness probe on UART0 console...");
+    uart_send_and_wait(&*uart, b"\r", "hwe>", timeout).context("Failed liveness probe on UART0")?;
+
     log::info!("Sending 'help\\r' to UART0 console...");
-    uart.write(b"help\r")
-        .context("Failed to write 'help\\r' to UART0")?;
+    uart_send_and_wait(&*uart, b"help\r", "Platform CLI Commands:", timeout)
+        .context("Failed 'help' on UART0")?;
 
-    UartConsole::wait_for(&*uart, r"Platform CLI Commands:", timeout)
-        .context("Did not receive 'Platform CLI Commands:' on UART0")?;
-    UartConsole::wait_for(&*uart, r"help  - Display this help message", timeout)
-        .context("Did not receive help message description on UART0")?;
+    log::info!("Sending 'gpio help\\r' to UART0 console...");
+    uart_send_and_wait(&*uart, b"gpio help\r", "GPIO Commands:", timeout)
+        .context("Failed 'gpio help' on UART0")?;
 
-    log::info!("UART0 CLI help command verified successfully!");
+    log::info!("Sending 'gpio list\\r' to UART0 console...");
+    uart_send_and_wait(&*uart, b"gpio list\r", "GPIO Pin Status:", timeout)
+        .context("Failed 'gpio list' on UART0")?;
+
+    log::info!("Sending 'gpio read RST_CTRL0_N\\r' to UART0 console...");
+    uart_send_and_wait(
+        &*uart,
+        b"gpio read RST_CTRL0_N\r",
+        "GPIO RST_CTRL0_N: in=",
+        timeout,
+    )
+    .context("Failed 'gpio read' on UART0")?;
+
+    log::info!("Sending 'gpio write EXT_DEBUG_N 1\\r' to UART0 console...");
+    uart_send_and_wait(
+        &*uart,
+        b"gpio write EXT_DEBUG_N 1\r",
+        "GPIO EXT_DEBUG_N written 1 -> readback: out=1",
+        timeout,
+    )
+    .context("Failed 'gpio write 1' on UART0")?;
+
+    log::info!("Sending 'gpio write EXT_DEBUG_N 0\\r' to UART0 console...");
+    uart_send_and_wait(
+        &*uart,
+        b"gpio write EXT_DEBUG_N 0\r",
+        "GPIO EXT_DEBUG_N written 0 -> readback: out=0",
+        timeout,
+    )
+    .context("Failed 'gpio write 0' on UART0")?;
+
+    log::info!("UART0 CLI commands verified successfully!");
     Ok(())
 }
 
@@ -67,23 +141,33 @@ fn test_usb_cli(port_name: &str, timeout: Duration) -> Result<()> {
         .open()
         .context("Failed to open USB CDC-ACM serial port")?;
 
-    log::info!("Sending 'help\\r' to USB CDC-ACM port...");
-    port.write_all(b"help\r")
-        .context("Failed to write 'help\\r' to USB CDC-ACM")?;
+    std::thread::sleep(Duration::from_millis(100));
+
+    log::info!("Sending 'gpio help\\r' to USB CDC-ACM port...");
+    port.write_all(b"gpio help\r")
+        .context("Failed to write 'gpio help\\r' to USB CDC-ACM")?;
     port.flush().context("Failed to flush USB CDC-ACM port")?;
 
     let start = Instant::now();
+    let mut last_send = Instant::now();
     let mut output = String::new();
     let mut buf = [0u8; 256];
 
     while start.elapsed() < timeout {
+        if last_send.elapsed() >= Duration::from_secs(2) {
+            let _ = port.write_all(b"gpio help\r");
+            let _ = port.flush();
+            last_send = Instant::now();
+        }
         match port.read(&mut buf) {
             Ok(n) if n > 0 => {
                 output.push_str(&String::from_utf8_lossy(&buf[..n]));
-                if output.contains("Platform CLI Commands:")
-                    && output.contains("help  - Display this help message")
+                if output.contains("GPIO Commands:")
+                    && output.contains("read <pin>")
+                    && output.contains("write <pin>")
+                    && output.contains("hwe> ")
                 {
-                    log::info!("USB CDC-ACM CLI help command verified successfully!");
+                    log::info!("USB CDC-ACM CLI gpio help and prompt verified successfully!");
                     return Ok(());
                 }
             }
@@ -94,7 +178,7 @@ fn test_usb_cli(port_name: &str, timeout: Duration) -> Result<()> {
     }
 
     bail!(
-        "Timed out waiting for help response on USB CDC-ACM. Received output:\n{}",
+        "Timed out waiting for gpio help response on USB CDC-ACM. Received output:\n{}",
         output
     );
 }
