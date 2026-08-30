@@ -14,12 +14,15 @@ use zfmt::Zfmt;
 
 use earlgrey_util::EarlgreyFlashAddress;
 use eflash_driver::{EmbeddedFlash, Permission};
+use embedded_hal::spi::SpiDevice;
 use hal_flash::{BlockingFlash, FlashAddress};
+use services_flash_opcode::{JedecIdResp, IPC_OP_FLASH_READ_ID};
 use services_flash_server::FlashIpcServer;
 use spi_flash::SpiFlash;
-use spi_host::SpiHost0;
-use util_ipc::IpcHandle;
-use util_types::Blocking;
+use spi_host::{SpiHost0, SpiHost1};
+use util_ipc::{IpcChannel, IpcHandle};
+use util_types::{Blocking, Opcode};
+use zerocopy::{FromBytes, IntoBytes};
 
 #[derive(Zfmt)]
 #[zfmt(format = "SPI Host init failed: {code:08x}")]
@@ -83,6 +86,14 @@ fn flash_server() -> Result<(), ErrorCode> {
     }
     let mut spi_flash_server = FlashIpcServer::new(spi_flash);
 
+    let mmio1 = unsafe { spi_host::RegisterBlock::new(SpiHost1::PTR) };
+    let mut spi_host1 = unsafe { earlgrey_spi_host::SpiHost::new(mmio1) };
+    if let Err(e) = spi_host1.init(&earlgrey_spi_host::SpiConfig::DEFAULT_SPI1) {
+        let code = u32::from(ErrorCode::from(e));
+        util_zfmt::error!(SpiHostInitFailed { code });
+        return Err(ErrorCode::from(e));
+    }
+
     syscall::wait_group_add(
         handle::FLASH_WAIT_GROUP,
         handle::EFLASH_UPDATEMGR_SERVICE,
@@ -115,11 +126,20 @@ fn flash_server() -> Result<(), ErrorCode> {
     )
     .map_err(ErrorCode::kernel_error)?;
 
+    syscall::wait_group_add(
+        handle::FLASH_WAIT_GROUP,
+        handle::FLASH_PLATFORM_SERVICE,
+        syscall::Signals::READABLE,
+        handle::FLASH_PLATFORM_SERVICE as usize,
+    )
+    .map_err(ErrorCode::kernel_error)?;
+
     let mut buf = [0u8; 2064];
     let eflash_updatemgr_ipc = IpcHandle::new(handle::EFLASH_UPDATEMGR_SERVICE);
     let eflash_usb_ipc = IpcHandle::new(handle::EFLASH_USB_SERVICE);
     let spi_flash_updatemgr_ipc = IpcHandle::new(handle::SPI_FLASH_UPDATEMGR_SERVICE);
     let spi_flash_usb_ipc = IpcHandle::new(handle::SPI_FLASH_USB_SERVICE);
+    let flash_platform_ipc = IpcHandle::new(handle::FLASH_PLATFORM_SERVICE);
 
     loop {
         let wait_result = syscall::object_wait(
@@ -138,6 +158,42 @@ fn flash_server() -> Result<(), ErrorCode> {
             spi_flash_server.handle_one(&spi_flash_updatemgr_ipc, &mut buf)?;
         } else if channel == handle::SPI_FLASH_USB_SERVICE {
             spi_flash_server.handle_one(&spi_flash_usb_ipc, &mut buf)?;
+        } else if channel == handle::FLASH_PLATFORM_SERVICE {
+            let n = flash_platform_ipc
+                .read(0, &mut buf)
+                .map_err(ErrorCode::kernel_error)?;
+            if n >= core::mem::size_of::<Opcode>() {
+                let (op_bytes, req_data) = buf.split_at_mut(core::mem::size_of::<Opcode>());
+                let op = Opcode::read_from_bytes(op_bytes).unwrap_or(Opcode::new(*b"\0\0\0\0"));
+                if op == IPC_OP_FLASH_READ_ID {
+                    let eeprom_idx = req_data.first().copied().unwrap_or(0);
+                    let mut jedec = JedecIdResp::default();
+                    let mut raw = [0u8; 3];
+                    let res = if eeprom_idx == 0 {
+                        spi_flash_server.flash_mut().read_jedec_id(&mut raw)
+                    } else if eeprom_idx == 1 {
+                        let mut ops = [
+                            embedded_hal::spi::Operation::Write(&[0x9F]),
+                            embedded_hal::spi::Operation::Read(&mut raw),
+                        ];
+                        spi_host1
+                            .transaction(&mut ops)
+                            .map_err(|_| util_error::FLASH_GENERIC_BUSY)
+                    } else {
+                        Err(util_error::FLASH_GENERIC_INVALID_SIZE)
+                    };
+                    let status = match res {
+                        Ok(()) => {
+                            jedec.manufacturer = raw[0];
+                            jedec.memory_type = raw[1];
+                            jedec.capacity_code = raw[2];
+                            0u32
+                        }
+                        Err(e) => e.0.get(),
+                    };
+                    let _ = flash_platform_ipc.respond(&[status.as_bytes(), jedec.as_bytes()]);
+                }
+            }
         }
     }
 }

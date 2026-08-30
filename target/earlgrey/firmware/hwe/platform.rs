@@ -171,7 +171,11 @@ fn platform_server() -> Result<(), ErrorCode> {
                         .map_err(ErrorCode::kernel_error)?;
                     if let Ok(cmd_str) = core::str::from_utf8(&cmd_buf[..n]) {
                         util_zfmt::debug!("[cli] {cmd}", cmd = cmd_str);
-                        let mut context = server.cli_context(&sysmgr, straps);
+                        let mut context = server.cli_context(
+                            &sysmgr,
+                            IpcHandle::new(handle::FLASH_PLATFORM),
+                            straps,
+                        );
                         cli_dispatcher.dispatch(cmd_str, &mut context);
                         util_zfmt::raw!("hwe> ");
                         let _ = cli_platform.transact(b"DONE", &mut cmd_buf, Instant::MAX);

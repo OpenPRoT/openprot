@@ -145,6 +145,12 @@
               handler_object_name: "sysmgr_service"
             },
             {
+              name: "flash_platform",
+              type: "channel_initiator",
+              handler_process: "flash_server",
+              handler_object_name: "flash_platform_service"
+            },
+            {
               name: "platform_interrupts",
               type: "interrupt",
               irqs: [
@@ -205,6 +211,10 @@
               type: "channel_handler"
             },
             {
+              name: "flash_platform_service",
+              type: "channel_handler"
+            },
+            {
               name: "flash_wait_group",
               type: "wait_group"
             },
@@ -237,6 +247,12 @@
               name: "spi_host0",
               type: "device",
               start_address: 0x40300000,
+              size_bytes: 0x1000
+            },
+            {
+              name: "spi_host1",
+              type: "device",
+              start_address: 0x40310000,
               size_bytes: 0x1000
             }
           ]

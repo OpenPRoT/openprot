@@ -87,3 +87,37 @@ screen /dev/serial/by-id/usb-Google_Inc._OpenPRoT_Earlgrey_*-if00 115200
 ```
 
 To disconnect and kill `screen`: press `Ctrl-A`, followed by `\` (or `Ctrl-A` then `k`).
+
+---
+
+## Supported CLI Commands
+
+### Root Commands
+- `help`: Displays root command hierarchy overview.
+
+### 1. `gpio` Hierarchy
+- `gpio help`: Displays GPIO command summary.
+- `gpio list`: Lists all configured GPIO pins with current direction, input level, and output level.
+- `gpio read <pin>`: Reads GPIO input, output, and OE levels (supports numeric index, signal name e.g. `RST_CTRL0_N`, or pad name e.g. `IOA0`).
+- `gpio write <pin> <0|1>`: Drives GPIO output level with immediate readback.
+- `gpio config <pin> <in|out|inout> [none|pullup|pulldown]`: Configures pin direction and internal pull resistor.
+- `gpio attr <pin> <od|pp>`: Configures pad open-drain or push-pull mode.
+
+### 2. `sys` Hierarchy
+- `sys help`: Displays system command summary.
+- `sys info`: Displays OpenTitan chip ID, ROM_EXT slot/version, active application slot, and reset reason.
+- `sys id`: Displays 256-bit OpenTitan hardware device ID.
+- `sys reset`: Triggers a software system reboot via `sysmgr`.
+
+### 3. `usb` Hierarchy
+- `usb help`: Displays USB command summary.
+- `usb info`: Displays USB cable presence state, multiplexer routing, and hardware pin mappings.
+- `usb mux <host|device>`: Manually switches the physical USB multiplexer (`USB_MUX_CTRL`).
+
+### 4. `flash` Hierarchy
+- `flash help`: Displays SPI flash command summary.
+- `flash info`: Displays external SPI flash multiplexer state, routing, and pin mappings.
+- `flash mux <en|dis>`: Enables or disables the external SPI multiplexer (`SPI_MUX_EN_N`).
+- `flash route <target|host>`: Switches SPI multiplexer route between target and host (`SPI_MUX_CTRL`).
+- `flash read-id [0|1]`: Reads the JEDEC ID, manufacturer name, device model, and density from the external SPI flash. When the argument is omitted, automatically reads the EEPROM not currently routed to the upstream device to avoid bus conflicts.
+

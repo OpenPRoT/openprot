@@ -235,7 +235,7 @@ fn handle_usb() -> Result<(), ErrorCode> {
 
     let mut usb = usb_driver::Usb::new(unsafe { usbdev::Usbdev::new() }, USB_CONFIG);
     let mut ep0 = usb_stack::SimpleEp0::new();
-    let mut cdc_acm = CdcAcm::<256, 256>::new(CDC_BUILDER);
+    let mut cdc_acm = CdcAcm::<256, 1024>::new(CDC_BUILDER);
 
     syscall::wait_group_add(
         handle::USB_WAIT_GROUP,
@@ -287,10 +287,7 @@ fn handle_usb() -> Result<(), ErrorCode> {
                 action.run(&mut usb);
             }
             let _ = syscall::interrupt_ack(handle::USBDEV_INTERRUPTS, wait_return.pending_signals);
-            continue;
-        }
-
-        if wakeup == handle::LOGGER_USB {
+        } else if wakeup == handle::LOGGER_USB {
             // If we got a wakeup signal from the logger task, ack it and note that we have events
             // pending.
             util_zfmt::logger().clear_notifier()?;

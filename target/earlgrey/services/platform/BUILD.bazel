@@ -8,6 +8,7 @@ package(default_visibility = ["//visibility:public"])
 rust_library(
     name = "platform",
     srcs = [
+        "cli/flash.rs",
         "cli/gpio.rs",
         "cli/mod.rs",
         "cli/sys.rs",
@@ -22,6 +23,7 @@ rust_library(
     edition = "2024",
     deps = [
         "//hal/blocking",
+        "//services/flash:opcode",
         "//target/earlgrey/drivers:gpio",
         "//target/earlgrey/drivers:pinmux",
         "//target/earlgrey/registers:top_earlgrey",

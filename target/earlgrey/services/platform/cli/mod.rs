@@ -1,13 +1,16 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
+pub mod flash;
 pub mod gpio;
 pub mod sys;
 pub mod usb;
 
+use crate::spimux::SpiMuxHandler;
 use crate::usbmux::UsbMuxHandler;
 use earlgrey_gpio::EarlGreyGpio;
 use earlgrey_sysmgr_client::SysmgrClient;
+use flash::FlashCommandHandler;
 use gpio::GpioCommandHandler;
 use sys::SysCommandHandler;
 use usb::UsbCommandHandler;
@@ -64,6 +67,8 @@ pub struct CliContext<'a> {
     pub gpio: &'a mut EarlGreyGpio,
     pub sysmgr: &'a SysmgrClient<IpcHandle>,
     pub usb_mux: &'a mut UsbMuxHandler,
+    pub spi_mux: &'a mut SpiMuxHandler,
+    pub flash_ipc: IpcHandle,
     pub straps: u32,
 }
 
@@ -83,6 +88,7 @@ pub struct CliDispatcher {
     gpio_handler: GpioCommandHandler,
     sys_handler: SysCommandHandler,
     usb_handler: UsbCommandHandler,
+    flash_handler: FlashCommandHandler,
 }
 
 impl CliDispatcher {
@@ -91,6 +97,7 @@ impl CliDispatcher {
             gpio_handler: GpioCommandHandler::new(),
             sys_handler: SysCommandHandler::new(),
             usb_handler: UsbCommandHandler::new(),
+            flash_handler: FlashCommandHandler::new(),
         }
     }
 
@@ -123,7 +130,7 @@ impl CliDispatcher {
                 let _ = self.usb_handler.execute(&mut tokens, context);
             }
             "flash" => {
-                util_zfmt::debug!("flash: not implemented yet");
+                let _ = self.flash_handler.execute(&mut tokens, context);
             }
             _ => {
                 util_zfmt::debug!("Unknown command. Type 'help' for available commands.");

@@ -107,6 +107,7 @@ rust_process(
         "//drivers/flash:spi_flash",
         "//hal/blocking/flash",
         "//hal/blocking/flash:driver",
+        "//services/flash:opcode",
         "//services/flash:server",
         "//target/earlgrey/drivers:eflash_driver",
         "//target/earlgrey/drivers:spi_host",
@@ -120,6 +121,7 @@ rust_process(
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_status/rust:pw_status",
         "@rust_crates//:embedded-hal",
+        "@rust_crates//:zerocopy",
         "@zfmt//zfmt",
     ],
 )
