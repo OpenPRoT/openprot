@@ -27,6 +27,7 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         ":driver",
+        "//util/blocking",
         "//util/io",
         "//util/types",
     ],
