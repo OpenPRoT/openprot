@@ -142,6 +142,23 @@ fn test_uart_cli(transport: &opentitanlib::app::TransportWrapper, timeout: Durat
     uart_send_and_wait(&*uart, b"sys id\r", "Device ID:", timeout)
         .context("Failed 'sys id' on UART0")?;
 
+    log::info!("Sending 'usb help\r' to UART0 console...");
+    uart_send_and_wait(&*uart, b"usb help\r", "USB Commands:", timeout)
+        .context("Failed 'usb help' on UART0")?;
+
+    log::info!("Sending 'usb info\r' to UART0 console...");
+    uart_send_and_wait(&*uart, b"usb info\r", "USB Status:", timeout)
+        .context("Failed 'usb info' on UART0")?;
+
+    log::info!("Sending 'usb mux device\r' to UART0 console...");
+    uart_send_and_wait(
+        &*uart,
+        b"usb mux device\r",
+        "USB multiplexer routed to device",
+        timeout,
+    )
+    .context("Failed 'usb mux device' on UART0")?;
+
     log::info!("UART0 CLI commands verified successfully!");
     Ok(())
 }
@@ -201,13 +218,17 @@ fn test_usb_cli(port_name: &str, timeout: Duration) -> Result<()> {
 
     std::thread::sleep(Duration::from_millis(100));
 
-    log::info!("Sending 'gpio help\\r' to USB CDC-ACM port...");
+    log::info!("Sending 'gpio help\r' to USB CDC-ACM port...");
     usb_send_and_wait(&mut *port, b"gpio help\r", "GPIO Commands:", timeout)
         .context("Failed 'gpio help' on USB CDC-ACM")?;
 
-    log::info!("Sending 'sys info\\r' to USB CDC-ACM port...");
+    log::info!("Sending 'sys info\r' to USB CDC-ACM port...");
     usb_send_and_wait(&mut *port, b"sys info\r", "System Information:", timeout)
         .context("Failed 'sys info' on USB CDC-ACM")?;
+
+    log::info!("Sending 'usb info\r' to USB CDC-ACM port...");
+    usb_send_and_wait(&mut *port, b"usb info\r", "USB Status:", timeout)
+        .context("Failed 'usb info' on USB CDC-ACM")?;
 
     log::info!("USB CDC-ACM CLI commands verified successfully!");
     Ok(())

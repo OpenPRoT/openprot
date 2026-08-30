@@ -11,6 +11,7 @@ rust_library(
         "cli/gpio.rs",
         "cli/mod.rs",
         "cli/sys.rs",
+        "cli/usb.rs",
         "lib.rs",
         "reset.rs",
         "server.rs",

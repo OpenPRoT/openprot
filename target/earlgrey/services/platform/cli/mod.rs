@@ -3,11 +3,14 @@
 
 pub mod gpio;
 pub mod sys;
+pub mod usb;
 
+use crate::usbmux::UsbMuxHandler;
 use earlgrey_gpio::EarlGreyGpio;
 use earlgrey_sysmgr_client::SysmgrClient;
 use gpio::GpioCommandHandler;
 use sys::SysCommandHandler;
+use usb::UsbCommandHandler;
 use util_ipc::IpcHandle;
 
 /// Zero-allocation whitespace-separated token iterator for CLI parsing.
@@ -60,6 +63,7 @@ pub enum CliError {
 pub struct CliContext<'a> {
     pub gpio: &'a mut EarlGreyGpio,
     pub sysmgr: &'a SysmgrClient<IpcHandle>,
+    pub usb_mux: &'a mut UsbMuxHandler,
     pub straps: u32,
 }
 
@@ -78,6 +82,7 @@ pub trait CommandHandler {
 pub struct CliDispatcher {
     gpio_handler: GpioCommandHandler,
     sys_handler: SysCommandHandler,
+    usb_handler: UsbCommandHandler,
 }
 
 impl CliDispatcher {
@@ -85,6 +90,7 @@ impl CliDispatcher {
         Self {
             gpio_handler: GpioCommandHandler::new(),
             sys_handler: SysCommandHandler::new(),
+            usb_handler: UsbCommandHandler::new(),
         }
     }
 
@@ -114,7 +120,7 @@ impl CliDispatcher {
                 let _ = self.sys_handler.execute(&mut tokens, context);
             }
             "usb" => {
-                util_zfmt::debug!("usb: not implemented yet");
+                let _ = self.usb_handler.execute(&mut tokens, context);
             }
             "flash" => {
                 util_zfmt::debug!("flash: not implemented yet");
