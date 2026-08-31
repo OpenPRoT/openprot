@@ -87,6 +87,7 @@ register_toolchains(
     "@pigweed//pw_toolchain/arm_clang:arm_clang_cc_toolchain_cortex-m4",
     "@pigweed//pw_toolchain/riscv_clang:riscv_clang_cc_toolchain_rv32imc",
     "@pw_rust_toolchains//:all",
+    "@lowrisc_opentitan//third_party/rust:bindgen_toolchain",
 )
 
 crate = use_extension("@rules_rust//crate_universe:extension.bzl", "crate")
