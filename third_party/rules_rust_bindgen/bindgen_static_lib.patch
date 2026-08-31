@@ -24,3 +24,8 @@ diff -ur a/private/bindgen.bzl b/private/bindgen.bzl
 -        args.add("--rust-edition=%s" % rust_toolchain.default_edition)
 +        edition = rust_toolchain.default_edition or "2024"
 +        args.add("--rust-edition=%s" % edition)
+@@ -287,3 +291,3 @@
+     resource_dir = _get_resource_dir(cc_toolchain)
+-    if resource_dir:
++    if resource_dir and not any([f.startswith("-resource-dir") or f == "-no-resource-dir" for f in ctx.attr.clang_flags]):
+         args.add("-resource-dir=%s" % resource_dir)

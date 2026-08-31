@@ -1,0 +1,22 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "otcrypto_bindgen",
+    srcs = ["src/main.rs"],
+    edition = "2024",
+    deps = [
+        "@rust_crates//:clap",
+        "@rust_crates//:quote",
+        "@rust_crates//:syn",
+    ],
+)
+
+rust_test(
+    name = "otcrypto_bindgen_test",
+    crate = ":otcrypto_bindgen",
+)
