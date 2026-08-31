@@ -6,8 +6,9 @@
 //! `HwAttestProducer` — backed by a real `HwSigner` (mailbox driver).
 //! `SoftwareAttestProducer` — software-only stub, available under `test-support`.
 
-use alloc::{boxed::Box, sync::Arc, vec, vec::Vec};
+use heapless::Vec;
 
+use openprot_attest_api::consts::{MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_MEASUREMENTS, MAX_TOKEN_SIZE};
 use openprot_attest_api::{
     AttestConfig, AttestError, AttestProducer, CertChain, HwSigner, MeasurementProvider,
 };
@@ -17,14 +18,14 @@ use crate::{builder, dice_identity, measurements};
 // ── Hardware-backed producer ──────────────────────────────────────────────────
 
 /// Attestation producer backed by a platform hardware signer.
-pub struct HwAttestProducer {
-    signer: Arc<dyn HwSigner>,
+pub struct HwAttestProducer<'a> {
+    signer: &'a dyn HwSigner,
     config: AttestConfig,
-    providers: Vec<Box<dyn MeasurementProvider>>,
+    providers: Vec<&'a dyn MeasurementProvider, 8>,
 }
 
-impl HwAttestProducer {
-    pub fn new(signer: Arc<dyn HwSigner>, config: AttestConfig) -> Self {
+impl<'a> HwAttestProducer<'a> {
+    pub fn new(signer: &'a dyn HwSigner, config: AttestConfig) -> Self {
         Self {
             signer,
             config,
@@ -32,20 +33,29 @@ impl HwAttestProducer {
         }
     }
 
-    /// Register an additional measurement provider (UEFI, BMC, etc.).
-    pub fn add_provider(&mut self, provider: Box<dyn MeasurementProvider>) {
-        self.providers.push(provider);
+    pub fn add_provider(&mut self, provider: &'a dyn MeasurementProvider) -> Result<(), ()> {
+        self.providers.push(provider).map_err(|_| ())
     }
 }
 
-impl AttestProducer for HwAttestProducer {
-    fn generate_token(&self, nonce: &[u8], evidence: &[u8], iat: u64) -> Result<Vec<u8>, AttestError> {
-        let meas = measurements::collect(vec![], &self.providers)?;
-        builder::build(&self.config, &*self.signer, &meas, nonce, evidence, iat)
+impl<'a> AttestProducer for HwAttestProducer<'a> {
+    fn generate_token(
+        &self,
+        nonce: &[u8],
+        evidence: &[u8],
+        iat: u64,
+        out: &mut Vec<u8, MAX_TOKEN_SIZE>,
+    ) -> Result<(), AttestError> {
+        let mut meas: Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS> = Vec::new();
+        measurements::collect(&[], &self.providers, &mut meas)?;
+        builder::build(&self.config, self.signer, &meas, nonce, evidence, iat, out)
     }
 
-    fn cert_chain(&self) -> Result<CertChain, AttestError> {
-        dice_identity::cert_chain(&*self.signer)
+    fn cert_chain(
+        &self,
+        buf: &mut Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN>,
+    ) -> Result<(), AttestError> {
+        dice_identity::cert_chain(self.signer).map(|c| *buf = c.0)
     }
 }
 
@@ -53,8 +63,7 @@ impl AttestProducer for HwAttestProducer {
 
 /// Software-backed attestation producer for use in tests.
 ///
-/// Uses a deterministic P-384 key; produces structurally valid COSE_Sign1
-/// tokens without any Caliptra hardware.
+/// Produces structurally valid COSE_Sign1 tokens without any hardware.
 #[cfg(feature = "test-support")]
 pub struct SoftwareAttestProducer {
     config: AttestConfig,
@@ -69,13 +78,29 @@ impl SoftwareAttestProducer {
 
 #[cfg(feature = "test-support")]
 impl AttestProducer for SoftwareAttestProducer {
-    fn generate_token(&self, nonce: &[u8], evidence: &[u8], iat: u64) -> Result<Vec<u8>, AttestError> {
+    fn generate_token(
+        &self,
+        nonce: &[u8],
+        evidence: &[u8],
+        iat: u64,
+        out: &mut Vec<u8, MAX_TOKEN_SIZE>,
+    ) -> Result<(), AttestError> {
         let meas = measurements::test_caliptra_measurements();
-        builder::build(&self.config, &StubSigner, &meas, nonce, evidence, iat)
+        builder::build(&self.config, &StubSigner, &meas, nonce, evidence, iat, out)
     }
 
-    fn cert_chain(&self) -> Result<CertChain, AttestError> {
-        Ok(CertChain(vec![stub_leaf_cert(), stub_ca_cert()]))
+    fn cert_chain(
+        &self,
+        buf: &mut Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN>,
+    ) -> Result<(), AttestError> {
+        let mut leaf: Vec<u8, MAX_CERT_SIZE> = Vec::new();
+        leaf.extend_from_slice(&[0x30, 0x00])
+            .map_err(|_| AttestError::BufferFull)?;
+        let mut ca: Vec<u8, MAX_CERT_SIZE> = Vec::new();
+        ca.extend_from_slice(&[0x30, 0x00])
+            .map_err(|_| AttestError::BufferFull)?;
+        buf.push(leaf).map_err(|_| AttestError::BufferFull)?;
+        buf.push(ca).map_err(|_| AttestError::BufferFull)
     }
 }
 
@@ -89,22 +114,19 @@ impl HwSigner for StubSigner {
     fn sign(&self, _payload: &[u8]) -> Result<[u8; 96], AttestError> {
         Ok([0u8; 96])
     }
-
-    fn leaf_cert_der(&self) -> Result<Vec<u8>, AttestError> {
-        Ok(stub_leaf_cert())
+    fn leaf_cert_der(&self, buf: &mut Vec<u8, MAX_CERT_SIZE>) -> Result<(), AttestError> {
+        buf.extend_from_slice(&[0x30, 0x00])
+            .map_err(|_| AttestError::BufferFull)
     }
-
-    fn cert_chain_der(&self) -> Result<Vec<Vec<u8>>, AttestError> {
-        Ok(vec![stub_leaf_cert(), stub_ca_cert()])
+    fn cert_chain_der(
+        &self,
+        buf: &mut Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN>,
+    ) -> Result<(), AttestError> {
+        let mut leaf: Vec<u8, MAX_CERT_SIZE> = Vec::new();
+        leaf.extend_from_slice(&[0x30, 0x00]).unwrap();
+        let mut ca: Vec<u8, MAX_CERT_SIZE> = Vec::new();
+        ca.extend_from_slice(&[0x30, 0x00]).unwrap();
+        buf.push(leaf).map_err(|_| AttestError::BufferFull)?;
+        buf.push(ca).map_err(|_| AttestError::BufferFull)
     }
-}
-
-#[cfg(feature = "test-support")]
-fn stub_leaf_cert() -> Vec<u8> {
-    vec![0x30, 0x00]
-}
-
-#[cfg(feature = "test-support")]
-fn stub_ca_cert() -> Vec<u8> {
-    vec![0x30, 0x00]
 }

@@ -4,11 +4,13 @@
 #[derive(Debug, thiserror::Error)]
 pub enum AttestError {
     #[error("Caliptra mailbox error: {0}")]
-    Caliptra(String),
-    #[error("CBOR encoding error: {0}")]
-    Cbor(String),
-    #[error("COSE signing error: {0}")]
-    Cose(String),
+    Caliptra(&'static str),
+    #[error("CBOR encoding error")]
+    Cbor,
+    #[error("Fixed-size buffer capacity exceeded")]
+    BufferFull,
+    #[error("COSE signing error")]
+    Cose,
     #[error("Measurement provider error: {0}")]
-    Provider(String),
+    Provider(&'static str),
 }

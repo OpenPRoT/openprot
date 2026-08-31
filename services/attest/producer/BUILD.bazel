@@ -11,7 +11,8 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         "//services/attest/api:attest_api",
-        "@rust_crates//:ciborium",
+        "@rust_crates//:heapless",
+        "@rust_crates//:minicbor",
         "@rust_crates//:thiserror",
         "@rust_crates//:zeroize",
     ],
@@ -23,7 +24,6 @@ rust_test(
     features = ["test-support"],
     deps = [
         "//services/attest/api:attest_api",
-        "@rust_crates//:ciborium",
     ],
 )
 

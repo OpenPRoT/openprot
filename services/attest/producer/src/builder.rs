@@ -18,9 +18,13 @@
 //!
 //! Claim key numbers follow RFC 9711 and the OCP-EAT profile.
 
-use alloc::{vec, vec::Vec};
+use heapless::Vec;
+use minicbor::encode::Write as CborWrite;
+use minicbor::Encoder;
 
-use ciborium::value::Value;
+use openprot_attest_api::consts::{
+    MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_MEASUREMENTS, MAX_TOKEN_SIZE,
+};
 use openprot_attest_api::{AttestConfig, AttestError, DigestAlgorithm, HwSigner, Measurement};
 
 // Registered EAT claim keys (RFC 9711 / RFC 8392)
@@ -34,162 +38,189 @@ const CLAIM_HWVER: i64 = 260;
 const CLAIM_DBGSTAT: i64 = 263;
 const CLAIM_SWNAME: i64 = 14;
 const CLAIM_SWVER: i64 = 15;
-
-// OCP-EAT private claim labels
 const CLAIM_MEASUREMENTS: i64 = -70000;
 const CLAIM_EVIDENCE: i64 = -70001;
 
-// COSE algorithm identifier for ES384
 const ALG_ES384: i64 = -35;
-// COSE header key for x5chain
 const HDR_X5CHAIN: i64 = 33;
 
-/// Build and sign a complete OCP-EAT token.
+// Fixed scratch buffers used during token construction.
+const SCRATCH: usize = MAX_TOKEN_SIZE;
+
+/// Writer over a fixed `[u8]` slice; tracks how many bytes have been written.
+struct BufWriter<'a> {
+    buf: &'a mut [u8],
+    pos: usize,
+}
+
+impl<'a> BufWriter<'a> {
+    fn new(buf: &'a mut [u8]) -> Self {
+        Self { buf, pos: 0 }
+    }
+    fn written(&self) -> &[u8] {
+        &self.buf[..self.pos]
+    }
+}
+
+impl<'a> CborWrite for BufWriter<'a> {
+    type Error = AttestError;
+    fn write_all(&mut self, data: &[u8]) -> Result<(), AttestError> {
+        let end = self.pos + data.len();
+        if end > self.buf.len() {
+            return Err(AttestError::BufferFull);
+        }
+        self.buf[self.pos..end].copy_from_slice(data);
+        self.pos = end;
+        Ok(())
+    }
+}
+
+/// Build and sign a complete OCP-EAT token into `out`.
 ///
-/// `evidence_cbor` is a raw CBOR byte slice from the verifier service.
-/// Pass an empty slice when no peer evidence is available.
 /// `iat` is a Unix timestamp (seconds since epoch) supplied by the caller.
 pub(crate) fn build(
     config: &AttestConfig,
     signer: &dyn HwSigner,
-    measurements: &[Measurement],
+    measurements: &Vec<Measurement, MAX_MEASUREMENTS>,
     nonce: &[u8],
     evidence_cbor: &[u8],
     iat: u64,
-) -> Result<Vec<u8>, AttestError> {
-    let chain = signer.cert_chain_der()?;
+    out: &mut Vec<u8, MAX_TOKEN_SIZE>,
+) -> Result<(), AttestError> {
+    // Fetch cert chain into a stack buffer.
+    let mut chain: Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN> = Vec::new();
+    signer.cert_chain_der(&mut chain)?;
 
-    let mut claims: Vec<(Value, Value)> = Vec::new();
+    // ── Encode CWT claims map ──────────────────────────────────────────────
+    let mut payload_scratch = [0u8; SCRATCH];
+    let payload_len = {
+        let mut w = BufWriter::new(&mut payload_scratch);
+        let n_claims = 9 + usize::from(!evidence_cbor.is_empty());
+        let mut e = Encoder::new(&mut w);
+        e.map(n_claims as u64).map_err(|_| AttestError::Cbor)?;
 
-    claims.push((
-        Value::Integer(CLAIM_ISS.into()),
-        Value::Text("https://openprot.example/caliptra/device".into()),
-    ));
+        e.i64(CLAIM_ISS).map_err(|_| AttestError::Cbor)?;
+        e.str("https://openprot.example/caliptra/device")
+            .map_err(|_| AttestError::Cbor)?;
 
-    claims.push((
-        Value::Integer(CLAIM_IAT.into()),
-        Value::Integer((iat as i64).into()),
-    ));
+        e.i64(CLAIM_IAT).map_err(|_| AttestError::Cbor)?;
+        e.i64(iat as i64).map_err(|_| AttestError::Cbor)?;
 
-    claims.push((
-        Value::Integer(CLAIM_NONCE.into()),
-        Value::Bytes(nonce.to_vec()),
-    ));
+        e.i64(CLAIM_NONCE).map_err(|_| AttestError::Cbor)?;
+        e.bytes(nonce).map_err(|_| AttestError::Cbor)?;
 
-    // UEID: type RAND (0x01 prefix) + 28 placeholder bytes
-    let mut ueid = vec![0x01u8];
-    ueid.extend_from_slice(&[0u8; 28]);
-    claims.push((Value::Integer(CLAIM_UEID.into()), Value::Bytes(ueid)));
+        // UEID: type RAND (0x01) + 28 placeholder bytes
+        let mut ueid = [0u8; 29];
+        ueid[0] = 0x01;
+        e.i64(CLAIM_UEID).map_err(|_| AttestError::Cbor)?;
+        e.bytes(&ueid).map_err(|_| AttestError::Cbor)?;
 
-    claims.push((
-        Value::Integer(CLAIM_OEMID.into()),
-        Value::Bytes(config.oemid.0.clone()),
-    ));
+        e.i64(CLAIM_OEMID).map_err(|_| AttestError::Cbor)?;
+        e.bytes(&config.oemid.0).map_err(|_| AttestError::Cbor)?;
 
-    claims.push((
-        Value::Integer(CLAIM_HWMODEL.into()),
-        Value::Text(config.hw_model.clone()),
-    ));
-    claims.push((
-        Value::Integer(CLAIM_HWVER.into()),
-        Value::Array(vec![
-            Value::Text(config.hw_version.clone()),
-            Value::Integer(1i64.into()),
-        ]),
-    ));
+        e.i64(CLAIM_HWMODEL).map_err(|_| AttestError::Cbor)?;
+        e.str(&config.hw_model).map_err(|_| AttestError::Cbor)?;
 
-    // dbgstat = 3 (disabled)
-    claims.push((
-        Value::Integer(CLAIM_DBGSTAT.into()),
-        Value::Integer(3i64.into()),
-    ));
+        e.i64(CLAIM_HWVER).map_err(|_| AttestError::Cbor)?;
+        e.array(2).map_err(|_| AttestError::Cbor)?;
+        e.str(&config.hw_version).map_err(|_| AttestError::Cbor)?;
+        e.i64(1).map_err(|_| AttestError::Cbor)?;
 
-    let sw_names: Vec<Value> = measurements
-        .iter()
-        .map(|m| Value::Text(m.component.clone()))
-        .collect();
-    let sw_vers: Vec<Value> = measurements
-        .iter()
-        .map(|m| {
-            Value::Array(vec![
-                Value::Text(m.version.clone()),
-                Value::Integer(1i64.into()),
-            ])
-        })
-        .collect();
-    claims.push((Value::Integer(CLAIM_SWNAME.into()), Value::Array(sw_names)));
-    claims.push((Value::Integer(CLAIM_SWVER.into()), Value::Array(sw_vers)));
+        // dbgstat = 3 (disabled)
+        e.i64(CLAIM_DBGSTAT).map_err(|_| AttestError::Cbor)?;
+        e.i64(3).map_err(|_| AttestError::Cbor)?;
 
-    let meas_array: Vec<Value> = measurements
-        .iter()
-        .map(|m| {
+        // sw-name array
+        e.i64(CLAIM_SWNAME).map_err(|_| AttestError::Cbor)?;
+        e.array(measurements.len() as u64)
+            .map_err(|_| AttestError::Cbor)?;
+        for m in measurements {
+            e.str(&m.component).map_err(|_| AttestError::Cbor)?;
+        }
+
+        // sw-version array
+        e.i64(CLAIM_SWVER).map_err(|_| AttestError::Cbor)?;
+        e.array(measurements.len() as u64)
+            .map_err(|_| AttestError::Cbor)?;
+        for m in measurements {
+            e.array(2).map_err(|_| AttestError::Cbor)?;
+            e.str(&m.version).map_err(|_| AttestError::Cbor)?;
+            e.i64(1).map_err(|_| AttestError::Cbor)?;
+        }
+
+        // measurements array
+        e.i64(CLAIM_MEASUREMENTS)
+            .map_err(|_| AttestError::Cbor)?;
+        e.array(measurements.len() as u64)
+            .map_err(|_| AttestError::Cbor)?;
+        for m in measurements {
             let alg: i64 = match m.digest_alg {
                 DigestAlgorithm::Sha384 => -43,
                 DigestAlgorithm::Sha512 => -44,
             };
-            Value::Array(vec![
-                Value::Text(m.component.clone()),
-                Value::Integer(alg.into()),
-                Value::Bytes(m.digest.clone()),
-            ])
-        })
-        .collect();
-    claims.push((
-        Value::Integer(CLAIM_MEASUREMENTS.into()),
-        Value::Array(meas_array),
-    ));
+            e.array(3).map_err(|_| AttestError::Cbor)?;
+            e.str(&m.component).map_err(|_| AttestError::Cbor)?;
+            e.i64(alg).map_err(|_| AttestError::Cbor)?;
+            e.bytes(&m.digest).map_err(|_| AttestError::Cbor)?;
+        }
 
-    // Embed pre-serialized verifier evidence verbatim
-    if !evidence_cbor.is_empty() {
-        claims.push((
-            Value::Integer(CLAIM_EVIDENCE.into()),
-            Value::Bytes(evidence_cbor.to_vec()),
-        ));
-    }
+        if !evidence_cbor.is_empty() {
+            e.i64(CLAIM_EVIDENCE).map_err(|_| AttestError::Cbor)?;
+            e.bytes(evidence_cbor).map_err(|_| AttestError::Cbor)?;
+        }
 
-    // CBOR-encode CWT payload
-    let mut payload_bytes = Vec::new();
-    ciborium::ser::into_writer(&Value::Map(claims), &mut payload_bytes)
-        .map_err(|e| AttestError::Cbor(e.to_string()))?;
+        w.pos
+    };
+    let payload_bytes = &payload_scratch[..payload_len];
 
-    let sig = signer.sign(&payload_bytes)?;
+    // ── Sign ──────────────────────────────────────────────────────────────
+    let sig = signer.sign(payload_bytes)?;
 
-    // Protected header: { alg: ES384, x5chain: [cert-chain] }
-    let protected_header = Value::Map(vec![
-        (
-            Value::Integer(1i64.into()),
-            Value::Integer(ALG_ES384.into()),
-        ),
-        (
-            Value::Integer(HDR_X5CHAIN.into()),
-            Value::Array(chain.into_iter().map(Value::Bytes).collect()),
-        ),
-    ]);
-    let mut protected_header_bytes = Vec::new();
-    ciborium::ser::into_writer(&protected_header, &mut protected_header_bytes)
-        .map_err(|e| AttestError::Cbor(e.to_string()))?;
+    // ── Encode protected header ────────────────────────────────────────────
+    let mut phdr_scratch = [0u8; 128];
+    let phdr_len = {
+        let mut w = BufWriter::new(&mut phdr_scratch);
+        let mut e = Encoder::new(&mut w);
+        e.map(2).map_err(|_| AttestError::Cbor)?;
+        e.i64(1).map_err(|_| AttestError::Cbor)?;
+        e.i64(ALG_ES384).map_err(|_| AttestError::Cbor)?;
+        e.i64(HDR_X5CHAIN).map_err(|_| AttestError::Cbor)?;
+        e.array(chain.len() as u64)
+            .map_err(|_| AttestError::Cbor)?;
+        for cert in &chain {
+            e.bytes(cert).map_err(|_| AttestError::Cbor)?;
+        }
+        w.pos
+    };
+    let phdr_bytes = &phdr_scratch[..phdr_len];
 
-    // COSE_Sign1 = [protected-bstr, unprotected-map, payload-bstr, sig-bstr]
-    let cose_sign1 = Value::Array(vec![
-        Value::Bytes(protected_header_bytes),
-        Value::Map(vec![]),
-        Value::Bytes(payload_bytes),
-        Value::Bytes(sig.to_vec()),
-    ]);
+    // ── Assemble COSE_Sign1 ────────────────────────────────────────────────
+    let mut cose_scratch = [0u8; SCRATCH];
+    let cose_len = {
+        let mut w = BufWriter::new(&mut cose_scratch);
+        let mut e = Encoder::new(&mut w);
+        e.array(4).map_err(|_| AttestError::Cbor)?;
+        e.bytes(phdr_bytes).map_err(|_| AttestError::Cbor)?;
+        e.map(0).map_err(|_| AttestError::Cbor)?;   // empty unprotected header
+        e.bytes(payload_bytes).map_err(|_| AttestError::Cbor)?;
+        e.bytes(&sig).map_err(|_| AttestError::Cbor)?;
+        w.pos
+    };
 
-    let mut out = Vec::new();
-    ciborium::ser::into_writer(&cose_sign1, &mut out)
-        .map_err(|e| AttestError::Cbor(e.to_string()))?;
-
-    Ok(out)
+    out.extend_from_slice(&cose_scratch[..cose_len])
+        .map_err(|_| AttestError::BufferFull)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::vec;
     use core::time::Duration;
-    use openprot_attest_api::{DigestAlgorithm, MeasurementAuthority, OemId};
+    use heapless::{String, Vec};
+    use openprot_attest_api::consts::{
+        MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_COMPONENT_LEN, MAX_DIGEST_LEN, MAX_MEASUREMENTS,
+        MAX_TOKEN_SIZE, MAX_VERSION_LEN,
+    };
+    use openprot_attest_api::{AttestError, DigestAlgorithm, MeasurementAuthority, OemId};
 
     struct TestSigner;
 
@@ -197,82 +228,143 @@ mod tests {
         fn sign(&self, _: &[u8]) -> Result<[u8; 96], AttestError> {
             Ok([0u8; 96])
         }
-        fn leaf_cert_der(&self) -> Result<Vec<u8>, AttestError> {
-            Ok(vec![0x30, 0x00])
+        fn leaf_cert_der(&self, buf: &mut Vec<u8, MAX_CERT_SIZE>) -> Result<(), AttestError> {
+            buf.extend_from_slice(&[0x30, 0x00])
+                .map_err(|_| AttestError::BufferFull)
         }
-        fn cert_chain_der(&self) -> Result<Vec<Vec<u8>>, AttestError> {
-            Ok(vec![vec![0x30, 0x00], vec![0x30, 0x00]])
+        fn cert_chain_der(
+            &self,
+            buf: &mut Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN>,
+        ) -> Result<(), AttestError> {
+            let mut c0: Vec<u8, MAX_CERT_SIZE> = Vec::new();
+            c0.extend_from_slice(&[0x30, 0x00]).unwrap();
+            let mut c1: Vec<u8, MAX_CERT_SIZE> = Vec::new();
+            c1.extend_from_slice(&[0x30, 0x00]).unwrap();
+            buf.push(c0).map_err(|_| AttestError::BufferFull)?;
+            buf.push(c1).map_err(|_| AttestError::BufferFull)?;
+            Ok(())
         }
     }
 
-    fn config() -> AttestConfig {
-        AttestConfig {
-            oemid: OemId(vec![0x00, 0x01, 0x47, 0xae]),
-            hw_model: "TestModel".into(),
-            hw_version: "1.0.0".into(),
+    fn config() -> openprot_attest_api::AttestConfig {
+        let mut hw_model: String<64> = String::new();
+        hw_model.push_str("TestModel").unwrap();
+        let mut hw_version: String<32> = String::new();
+        hw_version.push_str("1.0.0").unwrap();
+        let mut oemid_bytes: Vec<u8, 16> = Vec::new();
+        oemid_bytes
+            .extend_from_slice(&[0x00, 0x01, 0x47, 0xae])
+            .unwrap();
+        openprot_attest_api::AttestConfig {
+            oemid: OemId(oemid_bytes),
+            hw_model,
+            hw_version,
             cert_cache_ttl: Duration::from_secs(3600),
         }
     }
 
-    fn meas() -> Vec<Measurement> {
-        vec![Measurement {
-            component: "Test ROM".into(),
-            version: "1.0.0".into(),
+    fn meas() -> Vec<Measurement, MAX_MEASUREMENTS> {
+        let mut v = Vec::new();
+        let mut component: String<MAX_COMPONENT_LEN> = String::new();
+        component.push_str("Test ROM").unwrap();
+        let mut version: String<MAX_VERSION_LEN> = String::new();
+        version.push_str("1.0.0").unwrap();
+        let mut digest: Vec<u8, MAX_DIGEST_LEN> = Vec::new();
+        digest.extend_from_slice(&[0xAAu8; 48]).unwrap();
+        v.push(Measurement {
+            component,
+            version,
             digest_alg: DigestAlgorithm::Sha384,
-            digest: vec![0xAAu8; 48],
+            digest,
             authority: MeasurementAuthority::Caliptra,
-        }]
+        })
+        .unwrap();
+        v
     }
 
-    fn decode_payload(token: &[u8]) -> Vec<(Value, Value)> {
-        let outer: Value = ciborium::de::from_reader(token).unwrap();
-        let payload_bytes = outer.as_array().unwrap()[2].as_bytes().unwrap().clone();
-        let payload: Value = ciborium::de::from_reader(payload_bytes.as_slice()).unwrap();
-        payload.as_map().unwrap().clone()
+    fn build_token(evidence: &[u8]) -> Vec<u8, MAX_TOKEN_SIZE> {
+        let mut out = Vec::new();
+        build(&config(), &TestSigner, &meas(), b"nonce", evidence, 0, &mut out).unwrap();
+        out
     }
 
-    fn find_claim(map: &[(Value, Value)], key: i64) -> Option<&Value> {
-        map.iter()
-            .find(|(k, _)| k.as_integer().and_then(|i| i64::try_from(i).ok()) == Some(key))
-            .map(|(_, v)| v)
+    fn decode_outer(token: &[u8]) -> (Vec<u8, 256>, Vec<u8, 256>) {
+        // Minimal CBOR decode: array(4) → [phdr-bstr, {}, payload-bstr, sig-bstr]
+        // Use ciborium only in tests (std available in test harness).
+        // Return (payload_bytes, sig_bytes).
+        let mut d = minicbor::Decoder::new(token);
+        d.array().unwrap(); // outer array len
+        let phdr = d.bytes().unwrap();
+        let mut phdr_v: Vec<u8, 256> = Vec::new();
+        phdr_v.extend_from_slice(phdr).unwrap();
+        d.skip().unwrap(); // empty map
+        let payload = d.bytes().unwrap();
+        let mut payload_v: Vec<u8, 256> = Vec::new();
+        payload_v.extend_from_slice(payload).unwrap();
+        (phdr_v, payload_v)
+    }
+
+    fn find_claim_bytes<'a>(payload: &'a [u8], key: i64) -> Option<&'a [u8]> {
+        let mut d = minicbor::Decoder::new(payload);
+        let n = d.map().unwrap().unwrap_or(0);
+        for _ in 0..n {
+            let k = d.i64().unwrap();
+            if k == key {
+                return Some(d.bytes().unwrap());
+            }
+            d.skip().unwrap();
+        }
+        None
+    }
+
+    fn find_claim_str<'a>(payload: &'a [u8], key: i64) -> Option<&'a str> {
+        let mut d = minicbor::Decoder::new(payload);
+        let n = d.map().unwrap().unwrap_or(0);
+        for _ in 0..n {
+            let k = d.i64().unwrap();
+            if k == key {
+                return Some(d.str().unwrap());
+            }
+            d.skip().unwrap();
+        }
+        None
     }
 
     #[test]
     fn output_is_four_element_cbor_array() {
-        let token = build(&config(), &TestSigner, &meas(), b"nonce", &[], 0).unwrap();
-        let value: Value = ciborium::de::from_reader(token.as_slice()).unwrap();
-        assert_eq!(value.as_array().unwrap().len(), 4);
+        let token = build_token(&[]);
+        let mut d = minicbor::Decoder::new(&token);
+        assert_eq!(d.array().unwrap(), Some(4));
     }
 
     #[test]
     fn nonce_appears_in_payload() {
-        let token = build(&config(), &TestSigner, &meas(), b"testnonce", &[], 0).unwrap();
-        let map = decode_payload(&token);
-        let v = find_claim(&map, 10).unwrap(); // CLAIM_NONCE = 10
-        assert_eq!(v.as_bytes().unwrap(), b"testnonce");
+        let mut out = Vec::<u8, MAX_TOKEN_SIZE>::new();
+        build(&config(), &TestSigner, &meas(), b"testnonce", &[], 0, &mut out).unwrap();
+        let (_, payload) = decode_outer(&out);
+        assert_eq!(find_claim_bytes(&payload, CLAIM_NONCE), Some(b"testnonce" as &[u8]));
     }
 
     #[test]
     fn empty_evidence_omits_evidence_claim() {
-        let token = build(&config(), &TestSigner, &meas(), b"n", &[], 0).unwrap();
-        let map = decode_payload(&token);
-        assert!(find_claim(&map, -70001).is_none());
+        let token = build_token(&[]);
+        let (_, payload) = decode_outer(&token);
+        assert!(find_claim_bytes(&payload, CLAIM_EVIDENCE).is_none());
     }
 
     #[test]
     fn non_empty_evidence_included_verbatim() {
-        let evidence = vec![0xDE, 0xAD, 0xBE, 0xEF];
-        let token = build(&config(), &TestSigner, &meas(), b"n", &evidence, 0).unwrap();
-        let map = decode_payload(&token);
-        let v = find_claim(&map, -70001).unwrap();
-        assert_eq!(v.as_bytes().unwrap(), &evidence);
+        let evidence = [0xDE, 0xAD, 0xBE, 0xEF];
+        let mut out = Vec::<u8, MAX_TOKEN_SIZE>::new();
+        build(&config(), &TestSigner, &meas(), b"n", &evidence, 0, &mut out).unwrap();
+        let (_, payload) = decode_outer(&out);
+        assert_eq!(find_claim_bytes(&payload, CLAIM_EVIDENCE), Some(&evidence[..]));
     }
 
     #[test]
     fn hw_model_in_payload() {
-        let token = build(&config(), &TestSigner, &meas(), b"n", &[], 0).unwrap();
-        let map = decode_payload(&token);
-        let v = find_claim(&map, 259).unwrap(); // CLAIM_HWMODEL = 259
-        assert_eq!(v.as_text().unwrap(), "TestModel");
+        let token = build_token(&[]);
+        let (_, payload) = decode_outer(&token);
+        assert_eq!(find_claim_str(&payload, CLAIM_HWMODEL), Some("TestModel"));
     }
 }
