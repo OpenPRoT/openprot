@@ -31,7 +31,7 @@ pub mod server;
 
 pub use buffer::LogBuffer;
 pub use server::LogServer;
-pub use zfmt::events::StreamStart;
+pub use zfmt::events::{DebugMessage, StreamStart};
 pub use zfmt::FixedBuf;
 pub use zfmt::Write;
 pub use zfmt::ZfmtU64;
@@ -170,4 +170,22 @@ macro_rules! error {
     ($event:expr) => {
         zfmt::log_error!(*$crate::logger(), $event);
     };
+}
+
+/// Log a bare unstructured text event without EventHeader (no timestamp or log level).
+#[cfg(not(test))]
+#[macro_export]
+macro_rules! raw {
+    ($msg:expr) => {{
+        let _msg = $crate::DebugMessage { message: $msg };
+        ::zfmt::output::send_bare_event($crate::logger(), &_msg);
+    }};
+}
+
+#[cfg(test)]
+#[macro_export]
+macro_rules! raw {
+    ($msg:expr) => {{
+        let _ = &$msg;
+    }};
 }

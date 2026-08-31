@@ -11,7 +11,7 @@ use userspace::syscall::Signals;
 use userspace::time::Instant;
 use userspace::{process_entry, syscall};
 use util_ipc::{IpcChannel, IpcHandle};
-use util_zfmt::{render::render_event, FixedBuf, LogServer, StreamStart, Write, ZfmtU64};
+use util_zfmt::{render::render_event, FixedBuf, LogServer, StreamStart, ZfmtU64};
 use zerocopy::IntoBytes;
 
 use earlgrey_uart_driver::UartDriver;
@@ -25,7 +25,6 @@ use usart_api::backend::{BackendError, IrqMask, Parity, UsartBackend, UsartConfi
 enum TxState {
     Idle,
     Body,
-    Newline,
 }
 
 struct ActiveLog {
@@ -69,8 +68,8 @@ fn service_uart_tx<const N: usize>(
     uart_cursor: &mut u64,
 ) -> Result<(), Error> {
     loop {
-        // 1. Transmit current buffer (body or newline)
-        if active_log.state == TxState::Body || active_log.state == TxState::Newline {
+        // 1. Transmit current buffer
+        if active_log.state == TxState::Body {
             let data = active_log.buf.as_slice();
             // We maintain the invariant that active_log.sent <= data.len() and
             // should never get None. If we do, we halt transmission.
@@ -85,16 +84,7 @@ fn service_uart_tx<const N: usize>(
                 Ok(n) => {
                     active_log.sent += n;
                     if active_log.sent == data.len() {
-                        if active_log.state == TxState::Body {
-                            // Body sent, load newline into buffer
-                            active_log.buf.clear();
-                            let _ = active_log.buf.write_str("\r\n");
-                            active_log.sent = 0;
-                            active_log.state = TxState::Newline;
-                            continue; // Loop again to send newline
-                        } else {
-                            active_log.state = TxState::Idle;
-                        }
+                        active_log.state = TxState::Idle;
                     } else {
                         // Partial write, FIFO full. Enable interrupt and wait.
                         uart.enable_interrupts(IrqMask::TX_IDLE)
