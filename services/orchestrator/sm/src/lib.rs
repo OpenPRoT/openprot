@@ -541,7 +541,30 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 // exists in the first place. `AttestationChallenge` is left
                 // unhandled here (falls through to `Outcome::Super` and is
                 // discarded) — that's a separate question.
-                Event::CorruptionDetected(id) => self.handle_corruption(*id, ctx),
+                Event::CorruptionDetected(id) => {
+                    let outcome = self.handle_corruption(*id, ctx);
+                    // The cascade can gate the component under verification,
+                    // leaving the cursor on it. Release keys off
+                    // `chain[cursor]` alone, so a `VerificationPassed` already
+                    // in flight would take an isolated component back out of
+                    // reset. Moving the cursor past it makes that verdict a
+                    // mismatch in the `VerificationPassed` arm, which drops it.
+                    // A `Required` corruption gates nothing and transitions to
+                    // `Recovering`; that outcome stands.
+                    let cursor_gated = self
+                        .chain
+                        .get(self.cursor as usize)
+                        .is_some_and(|(c, _)| self.is_gated(*c));
+                    if !matches!(outcome, Outcome::Handled) || !cursor_gated {
+                        return outcome;
+                    }
+                    let next_idx = (self.cursor as usize).saturating_add(1);
+                    if self.advance_to_next_ungated(ctx, next_idx) {
+                        Outcome::Handled
+                    } else {
+                        Outcome::Transition(State::Ready)
+                    }
+                }
                 // Boot-progress liveness for a passive component released
                 // speculatively earlier in this same walk. Clear its watchdog
                 // even though `PreSupervision` is unsupervised — acting on a
