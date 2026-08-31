@@ -6,6 +6,8 @@
 //! Aggregates Caliptra-internal measurements (ROM, FMC, RT digests) with any
 //! platform-registered [`MeasurementProvider`] instances.
 
+use alloc::{boxed::Box, format, string::String, vec::Vec};
+
 use openprot_attest_api::{AttestError, Measurement, MeasurementProvider};
 
 /// Collect all measurements: Caliptra-internal first, then registered providers.

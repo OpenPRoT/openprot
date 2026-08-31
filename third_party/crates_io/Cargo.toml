@@ -40,7 +40,7 @@ zerocopy = { version = "0.8.48", default-features = false, features = ["derive"]
 zeroize = { version = "1.8", default-features = false, features = ["derive"] }
 
 cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
-cortex-m-rt = "=0.7.5"
+cortex-m-rt = "0.7.5"
 cortex-m-semihosting = "0.5.0"
 critical-section = "1.2"
 embedded-hal = "1.0"

@@ -3,28 +3,28 @@
 
 //! Concrete [`AttestProducer`] implementations.
 //!
-//! `HwAttestProducer` — backed by a real `CaliptraSigner` (mailbox driver).
+//! `HwAttestProducer` — backed by a real `HwSigner` (mailbox driver).
 //! `SoftwareAttestProducer` — software-only stub, available under `test-support`.
 
-use std::sync::Arc;
+use alloc::{boxed::Box, sync::Arc, vec, vec::Vec};
 
 use openprot_attest_api::{
-    AttestConfig, AttestError, AttestProducer, CaliptraSigner, CertChain, MeasurementProvider,
+    AttestConfig, AttestError, AttestProducer, CertChain, HwSigner, MeasurementProvider,
 };
 
 use crate::{builder, dice_identity, measurements};
 
 // ── Hardware-backed producer ──────────────────────────────────────────────────
 
-/// Attestation producer backed by a Caliptra hardware signer.
+/// Attestation producer backed by a platform hardware signer.
 pub struct HwAttestProducer {
-    signer: Arc<dyn CaliptraSigner>,
+    signer: Arc<dyn HwSigner>,
     config: AttestConfig,
     providers: Vec<Box<dyn MeasurementProvider>>,
 }
 
 impl HwAttestProducer {
-    pub fn new(signer: Arc<dyn CaliptraSigner>, config: AttestConfig) -> Self {
+    pub fn new(signer: Arc<dyn HwSigner>, config: AttestConfig) -> Self {
         Self {
             signer,
             config,
@@ -39,9 +39,9 @@ impl HwAttestProducer {
 }
 
 impl AttestProducer for HwAttestProducer {
-    fn generate_token(&self, nonce: &[u8], evidence: &[u8]) -> Result<Vec<u8>, AttestError> {
+    fn generate_token(&self, nonce: &[u8], evidence: &[u8], iat: u64) -> Result<Vec<u8>, AttestError> {
         let meas = measurements::collect(vec![], &self.providers)?;
-        builder::build(&self.config, &*self.signer, &meas, nonce, evidence)
+        builder::build(&self.config, &*self.signer, &meas, nonce, evidence, iat)
     }
 
     fn cert_chain(&self) -> Result<CertChain, AttestError> {
@@ -69,9 +69,9 @@ impl SoftwareAttestProducer {
 
 #[cfg(feature = "test-support")]
 impl AttestProducer for SoftwareAttestProducer {
-    fn generate_token(&self, nonce: &[u8], evidence: &[u8]) -> Result<Vec<u8>, AttestError> {
+    fn generate_token(&self, nonce: &[u8], evidence: &[u8], iat: u64) -> Result<Vec<u8>, AttestError> {
         let meas = measurements::test_caliptra_measurements();
-        builder::build(&self.config, &StubSigner, &meas, nonce, evidence)
+        builder::build(&self.config, &StubSigner, &meas, nonce, evidence, iat)
     }
 
     fn cert_chain(&self) -> Result<CertChain, AttestError> {
@@ -85,13 +85,12 @@ impl AttestProducer for SoftwareAttestProducer {
 struct StubSigner;
 
 #[cfg(feature = "test-support")]
-impl CaliptraSigner for StubSigner {
-    fn sign_es384(&self, _payload: &[u8]) -> Result<[u8; 96], AttestError> {
-        // Deterministic all-zero signature — structurally valid for token format tests.
+impl HwSigner for StubSigner {
+    fn sign(&self, _payload: &[u8]) -> Result<[u8; 96], AttestError> {
         Ok([0u8; 96])
     }
 
-    fn alias_cert_der(&self) -> Result<Vec<u8>, AttestError> {
+    fn leaf_cert_der(&self) -> Result<Vec<u8>, AttestError> {
         Ok(stub_leaf_cert())
     }
 
@@ -100,13 +99,11 @@ impl CaliptraSigner for StubSigner {
     }
 }
 
-/// Minimal 1-byte DER placeholder representing the leaf certificate.
 #[cfg(feature = "test-support")]
 fn stub_leaf_cert() -> Vec<u8> {
-    vec![0x30, 0x00] // SEQUENCE {} — placeholder, not a real X.509 cert
+    vec![0x30, 0x00]
 }
 
-/// Minimal 1-byte DER placeholder representing the CA certificate.
 #[cfg(feature = "test-support")]
 fn stub_ca_cert() -> Vec<u8> {
     vec![0x30, 0x00]

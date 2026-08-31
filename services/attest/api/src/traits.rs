@@ -1,6 +1,8 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
+use alloc::vec::Vec;
+
 use crate::{AttestError, CertChain};
 
 /// Platform-independent attestation producer interface.
@@ -20,7 +22,8 @@ pub trait AttestProducer: Send + Sync {
     /// available.
     ///
     /// Returns the complete COSE_Sign1 structure as a byte vector.
-    fn generate_token(&self, nonce: &[u8], evidence: &[u8]) -> Result<Vec<u8>, AttestError>;
+    /// `iat` is a Unix timestamp (seconds since epoch) supplied by the caller.
+    fn generate_token(&self, nonce: &[u8], evidence: &[u8], iat: u64) -> Result<Vec<u8>, AttestError>;
 
     /// Return the current DICE certificate chain, ordered leaf → root.
     fn cert_chain(&self) -> Result<CertChain, AttestError>;

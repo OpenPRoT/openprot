@@ -8,7 +8,10 @@
 //! [`SoftwareAttestProducer`] provides a fully software-backed substitute
 //! that requires no Caliptra hardware.
 
+#![no_std]
 #![forbid(unsafe_code)]
+
+extern crate alloc;
 
 pub mod builder;
 pub mod dice_identity;

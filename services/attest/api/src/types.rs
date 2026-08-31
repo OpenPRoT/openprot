@@ -1,7 +1,10 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-use std::time::Duration;
+extern crate alloc;
+
+use alloc::{string::String, vec::Vec};
+use core::time::Duration;
 
 use crate::error::AttestError;
 
@@ -44,14 +47,14 @@ pub struct AttestConfig {
 
 /// Hardware-backed signing operations.
 ///
-/// Production: implemented by a Caliptra mailbox driver.
+/// Production: implemented by a platform mailbox driver.
 /// Testing: implement with a software key (`SoftwareAttestProducer` in the
 /// producer crate behind `test-support`).
-pub trait CaliptraSigner: Send + Sync {
-    /// Sign `payload` with the Alias Key (ES384). Returns raw (r‖s) bytes.
-    fn sign_es384(&self, payload: &[u8]) -> Result<[u8; 96], AttestError>;
-    /// Return the DER-encoded Alias (leaf) certificate.
-    fn alias_cert_der(&self) -> Result<Vec<u8>, AttestError>;
+pub trait HwSigner: Send + Sync {
+    /// Sign `payload` with the platform alias key. Returns raw (r‖s) bytes.
+    fn sign(&self, payload: &[u8]) -> Result<[u8; 96], AttestError>;
+    /// Return the DER-encoded leaf certificate.
+    fn leaf_cert_der(&self) -> Result<Vec<u8>, AttestError>;
     /// Return the full DER-encoded certificate chain, leaf → root.
     fn cert_chain_der(&self) -> Result<Vec<Vec<u8>>, AttestError>;
 }

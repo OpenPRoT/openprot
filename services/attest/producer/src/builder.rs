@@ -18,10 +18,10 @@
 //!
 //! Claim key numbers follow RFC 9711 and the OCP-EAT profile.
 
+use alloc::{vec, vec::Vec};
+
 use ciborium::value::Value;
-use openprot_attest_api::{
-    AttestConfig, AttestError, CaliptraSigner, DigestAlgorithm, Measurement,
-};
+use openprot_attest_api::{AttestConfig, AttestError, DigestAlgorithm, HwSigner, Measurement};
 
 // Registered EAT claim keys (RFC 9711 / RFC 8392)
 const CLAIM_ISS: i64 = 1;
@@ -48,12 +48,14 @@ const HDR_X5CHAIN: i64 = 33;
 ///
 /// `evidence_cbor` is a raw CBOR byte slice from the verifier service.
 /// Pass an empty slice when no peer evidence is available.
+/// `iat` is a Unix timestamp (seconds since epoch) supplied by the caller.
 pub(crate) fn build(
     config: &AttestConfig,
-    signer: &dyn CaliptraSigner,
+    signer: &dyn HwSigner,
     measurements: &[Measurement],
     nonce: &[u8],
     evidence_cbor: &[u8],
+    iat: u64,
 ) -> Result<Vec<u8>, AttestError> {
     let chain = signer.cert_chain_der()?;
 
@@ -64,10 +66,6 @@ pub(crate) fn build(
         Value::Text("https://openprot.example/caliptra/device".into()),
     ));
 
-    let iat = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
     claims.push((
         Value::Integer(CLAIM_IAT.into()),
         Value::Integer((iat as i64).into()),
@@ -154,8 +152,7 @@ pub(crate) fn build(
     ciborium::ser::into_writer(&Value::Map(claims), &mut payload_bytes)
         .map_err(|e| AttestError::Cbor(e.to_string()))?;
 
-    // Sign with Caliptra Alias Key
-    let sig = signer.sign_es384(&payload_bytes)?;
+    let sig = signer.sign(&payload_bytes)?;
 
     // Protected header: { alg: ES384, x5chain: [cert-chain] }
     let protected_header = Value::Map(vec![
@@ -190,16 +187,17 @@ pub(crate) fn build(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
+    use core::time::Duration;
     use openprot_attest_api::{DigestAlgorithm, MeasurementAuthority, OemId};
-    use std::time::Duration;
 
     struct TestSigner;
 
-    impl CaliptraSigner for TestSigner {
-        fn sign_es384(&self, _: &[u8]) -> Result<[u8; 96], AttestError> {
+    impl HwSigner for TestSigner {
+        fn sign(&self, _: &[u8]) -> Result<[u8; 96], AttestError> {
             Ok([0u8; 96])
         }
-        fn alias_cert_der(&self) -> Result<Vec<u8>, AttestError> {
+        fn leaf_cert_der(&self) -> Result<Vec<u8>, AttestError> {
             Ok(vec![0x30, 0x00])
         }
         fn cert_chain_der(&self) -> Result<Vec<Vec<u8>>, AttestError> {
@@ -241,14 +239,14 @@ mod tests {
 
     #[test]
     fn output_is_four_element_cbor_array() {
-        let token = build(&config(), &TestSigner, &meas(), b"nonce", &[]).unwrap();
+        let token = build(&config(), &TestSigner, &meas(), b"nonce", &[], 0).unwrap();
         let value: Value = ciborium::de::from_reader(token.as_slice()).unwrap();
         assert_eq!(value.as_array().unwrap().len(), 4);
     }
 
     #[test]
     fn nonce_appears_in_payload() {
-        let token = build(&config(), &TestSigner, &meas(), b"testnonce", &[]).unwrap();
+        let token = build(&config(), &TestSigner, &meas(), b"testnonce", &[], 0).unwrap();
         let map = decode_payload(&token);
         let v = find_claim(&map, 10).unwrap(); // CLAIM_NONCE = 10
         assert_eq!(v.as_bytes().unwrap(), b"testnonce");
@@ -256,7 +254,7 @@ mod tests {
 
     #[test]
     fn empty_evidence_omits_evidence_claim() {
-        let token = build(&config(), &TestSigner, &meas(), b"n", &[]).unwrap();
+        let token = build(&config(), &TestSigner, &meas(), b"n", &[], 0).unwrap();
         let map = decode_payload(&token);
         assert!(find_claim(&map, -70001).is_none());
     }
@@ -264,7 +262,7 @@ mod tests {
     #[test]
     fn non_empty_evidence_included_verbatim() {
         let evidence = vec![0xDE, 0xAD, 0xBE, 0xEF];
-        let token = build(&config(), &TestSigner, &meas(), b"n", &evidence).unwrap();
+        let token = build(&config(), &TestSigner, &meas(), b"n", &evidence, 0).unwrap();
         let map = decode_payload(&token);
         let v = find_claim(&map, -70001).unwrap();
         assert_eq!(v.as_bytes().unwrap(), &evidence);
@@ -272,7 +270,7 @@ mod tests {
 
     #[test]
     fn hw_model_in_payload() {
-        let token = build(&config(), &TestSigner, &meas(), b"n", &[]).unwrap();
+        let token = build(&config(), &TestSigner, &meas(), b"n", &[], 0).unwrap();
         let map = decode_payload(&token);
         let v = find_claim(&map, 259).unwrap(); // CLAIM_HWMODEL = 259
         assert_eq!(v.as_text().unwrap(), "TestModel");

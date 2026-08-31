@@ -23,7 +23,10 @@
 //! └───────────────────────────────────────────────┘
 //! ```
 
+#![no_std]
 #![forbid(unsafe_code)]
+
+extern crate alloc;
 
 mod error;
 mod traits;
@@ -32,6 +35,6 @@ mod types;
 pub use error::AttestError;
 pub use traits::AttestProducer;
 pub use types::{
-    AttestConfig, CaliptraSigner, CertChain, DigestAlgorithm, Measurement, MeasurementAuthority,
+    AttestConfig, CertChain, DigestAlgorithm, HwSigner, Measurement, MeasurementAuthority,
     MeasurementProvider, OemId,
 };

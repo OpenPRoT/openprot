@@ -6,13 +6,13 @@
 //! The chain is assembled by Caliptra during boot:
 //!   Vendor CA → IDevID → LDevID → AliasFMC → AliasRT  (leaf)
 //!
-//! In production the `CaliptraSigner` implementation delegates to the
+//! In production the `HwSigner` implementation delegates to the
 //! `caliptra-sw` Rust driver.  Tests use a software-backed stub.
 
-use openprot_attest_api::{AttestError, CaliptraSigner, CertChain};
+use openprot_attest_api::{AttestError, CertChain, HwSigner};
 
-/// Retrieve the full DICE certificate chain from Caliptra, ordered leaf → root.
-pub fn cert_chain(signer: &dyn CaliptraSigner) -> Result<CertChain, AttestError> {
+/// Retrieve the full DICE certificate chain from the signer, ordered leaf → root.
+pub fn cert_chain(signer: &dyn HwSigner) -> Result<CertChain, AttestError> {
     let chain = signer.cert_chain_der()?;
     if chain.len() < 2 {
         return Err(AttestError::Caliptra(
@@ -22,38 +22,34 @@ pub fn cert_chain(signer: &dyn CaliptraSigner) -> Result<CertChain, AttestError>
     Ok(CertChain(chain))
 }
 
-/// Return just the DER-encoded Alias (leaf) certificate.
-pub fn alias_cert(signer: &dyn CaliptraSigner) -> Result<Vec<u8>, AttestError> {
-    signer.alias_cert_der()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     struct OneCert;
     struct TwoCerts;
 
-    impl CaliptraSigner for OneCert {
-        fn sign_es384(&self, _: &[u8]) -> Result<[u8; 96], AttestError> {
+    impl HwSigner for OneCert {
+        fn sign(&self, _: &[u8]) -> Result<[u8; 96], AttestError> {
             Ok([0u8; 96])
         }
-        fn alias_cert_der(&self) -> Result<Vec<u8>, AttestError> {
+        fn leaf_cert_der(&self) -> Result<alloc::vec::Vec<u8>, AttestError> {
             Ok(vec![0x30, 0x00])
         }
-        fn cert_chain_der(&self) -> Result<Vec<Vec<u8>>, AttestError> {
+        fn cert_chain_der(&self) -> Result<alloc::vec::Vec<alloc::vec::Vec<u8>>, AttestError> {
             Ok(vec![vec![0x30, 0x00]])
         }
     }
 
-    impl CaliptraSigner for TwoCerts {
-        fn sign_es384(&self, _: &[u8]) -> Result<[u8; 96], AttestError> {
+    impl HwSigner for TwoCerts {
+        fn sign(&self, _: &[u8]) -> Result<[u8; 96], AttestError> {
             Ok([0u8; 96])
         }
-        fn alias_cert_der(&self) -> Result<Vec<u8>, AttestError> {
+        fn leaf_cert_der(&self) -> Result<alloc::vec::Vec<u8>, AttestError> {
             Ok(vec![0x30, 0x00])
         }
-        fn cert_chain_der(&self) -> Result<Vec<Vec<u8>>, AttestError> {
+        fn cert_chain_der(&self) -> Result<alloc::vec::Vec<alloc::vec::Vec<u8>>, AttestError> {
             Ok(vec![vec![0x30, 0x00], vec![0x30, 0x01]])
         }
     }
@@ -67,10 +63,5 @@ mod tests {
     fn accepts_chain_with_two_certs() {
         let chain = cert_chain(&TwoCerts).unwrap();
         assert_eq!(chain.0.len(), 2);
-    }
-
-    #[test]
-    fn alias_cert_returns_leaf() {
-        assert_eq!(alias_cert(&TwoCerts).unwrap(), vec![0x30, 0x00]);
     }
 }
