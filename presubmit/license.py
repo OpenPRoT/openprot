@@ -48,6 +48,7 @@ _EXCLUDE_FROM_LICENSE_CHECK: Sequence[str] = (
     # keep-sorted: end
     # Data files
     # keep-sorted: start
+    r"\.a$",
     r"\.bin$",
     r"\.csv$",
     r"\.der$",
@@ -77,6 +78,7 @@ _EXCLUDE_FROM_LICENSE_CHECK: Sequence[str] = (
     # keep-sorted: end
     # Generated files
     # keep-sorted: start
+    r"\btarget/earlgrey/cryptolib/src/otcrypto_sys\.rs$",
     r"\btarget/earlgrey/registers/.*",
     # keep-sorted: end
     # Generated third-party files

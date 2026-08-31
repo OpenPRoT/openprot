@@ -1,0 +1,79 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@rules_rust_bindgen//:defs.bzl", "rust_bindgen")
+load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "otcrypto_headers",
+    hdrs = [
+        "@lowrisc_opentitan//sw/device/lib/base/freestanding:assert.h",
+        "@lowrisc_opentitan//sw/device/lib/base/freestanding:float.h",
+        "@lowrisc_opentitan//sw/device/lib/base/freestanding:iso646.h",
+        "@lowrisc_opentitan//sw/device/lib/base/freestanding:limits.h",
+        "@lowrisc_opentitan//sw/device/lib/base/freestanding:stdalign.h",
+        "@lowrisc_opentitan//sw/device/lib/base/freestanding:stdarg.h",
+        "@lowrisc_opentitan//sw/device/lib/base/freestanding:stdbool.h",
+        "@lowrisc_opentitan//sw/device/lib/base/freestanding:stddef.h",
+        "@lowrisc_opentitan//sw/device/lib/base/freestanding:stdint.h",
+        "@lowrisc_opentitan//sw/device/lib/base/freestanding:stdnoreturn.h",
+        "@lowrisc_opentitan//sw/device/lib/base/freestanding:string.h",
+    ],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "@lowrisc_opentitan//sw/device/lib/crypto/include:crypto_hdrs",
+    ],
+)
+
+rust_bindgen(
+    name = "otcrypto_raw",
+    bindgen_flags = [
+        "--use-core",
+        "--default-enum-style=rust",
+        "--allowlist-item=otcrypto_.*|hardened_bool.*|status_t.*|status",
+        "--no-layout-tests",
+    ],
+    cc_lib = ":otcrypto_headers",
+    clang_flags = [
+        "-target",
+        "riscv32-unknown-none-elf",
+        "-nostdinc",
+        "-isystem",
+        "external/lowrisc_opentitan+/sw/device/lib/base/freestanding",
+    ],
+    header = "@lowrisc_opentitan//sw/device/lib/crypto/include:otcrypto.h",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+cc_import(
+    name = "libotcrypto",
+    static_library = "libotcrypto.a",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+genrule(
+    name = "otcrypto_sys_gen",
+    srcs = [":otcrypto_raw"],
+    outs = ["src/otcrypto_sys.rs"],
+    cmd = "$(location //tools/otcrypto_bindgen) --input $< --out $@",
+    tools = ["//tools/otcrypto_bindgen"],
+)
+
+rust_library(
+    name = "cryptolib",
+    srcs = [
+        "src/lib.rs",
+        ":otcrypto_sys_gen",
+    ],
+    crate_name = "earlgrey_cryptolib",
+    edition = "2024",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":libotcrypto",
+        "@rust_crates//:zerocopy",
+    ],
+)
