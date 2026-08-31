@@ -34,6 +34,15 @@ rust_library(
     ],
 )
 
+rust_test(
+    name = "pinmux_test",
+    crate = ":pinmux",
+    rustc_flags = [
+        "-C",
+        "debug-assertions",
+    ],
+)
+
 rust_library(
     name = "eflash_driver",
     srcs = ["eflash_driver.rs"],

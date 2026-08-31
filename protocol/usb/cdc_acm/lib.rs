@@ -277,7 +277,7 @@ impl CdcAcmBuilder {
                 },
                 EpIn {
                     num: self.data_in_ep,
-                    buf_pool_size: 1,
+                    buf_pool_size: 4,
                 },
             ],
             [EpOut {

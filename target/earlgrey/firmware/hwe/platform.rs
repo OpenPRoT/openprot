@@ -21,7 +21,12 @@ fn platform_server() -> Result<(), ErrorCode> {
     use earlgrey_sysmgr_client::{ResetInfo, SysmgrClient};
     use platform_codegen::{handle, signals};
     use userspace::syscall::Signals;
+    #[cfg(feature = "cli")]
+    use userspace::time::Instant;
+    #[cfg(not(feature = "cli"))]
     use userspace::time::{Clock, Duration, SystemClock};
+    #[cfg(feature = "cli")]
+    use util_ipc::IpcChannel;
     use util_ipc::IpcHandle;
 
     // SAFETY: the platform process has exclusive access to the GPIO & Pinmux peripherals.
@@ -93,37 +98,90 @@ fn platform_server() -> Result<(), ErrorCode> {
         }
     };
 
+    #[cfg(feature = "cli")]
+    use earlgrey_platform::cli::CliDispatcher;
+
     let mut server = PlatformServer::new(gpio, usb_mux, spi_mux, reset_policy);
+    #[cfg(not(feature = "cli"))]
     server.set_exit_deadline(SystemClock::now() + Duration::from_secs(10));
+    #[cfg(feature = "cli")]
+    server.set_exit_deadline(Instant::MAX);
     server.start(is_low_power)?;
+
+    #[cfg(feature = "cli")]
+    let mut cli_dispatcher = CliDispatcher::new();
+
+    #[cfg(feature = "cli")]
+    syscall::wait_group_add(
+        handle::PLATFORM_WAIT_GROUP,
+        handle::CLI_PLATFORM,
+        Signals::USER,
+        handle::CLI_PLATFORM as usize,
+    )
+    .map_err(ErrorCode::kernel_error)?;
+
+    syscall::wait_group_add(
+        handle::PLATFORM_WAIT_GROUP,
+        handle::PLATFORM_INTERRUPTS,
+        usb_sig | rst0_sig | rst1_sig,
+        handle::PLATFORM_INTERRUPTS as usize,
+    )
+    .map_err(ErrorCode::kernel_error)?;
+
+    #[cfg(feature = "cli")]
+    let mut cmd_buf = [0u8; 128];
+
+    #[cfg(feature = "cli")]
+    util_zfmt::raw!("hwe> ");
 
     loop {
         if server.should_exit() {
             return Ok(());
         }
         let deadline = server.next_deadline();
-        let wait_res = syscall::object_wait(
-            handle::PLATFORM_INTERRUPTS,
-            usb_sig | rst0_sig | rst1_sig,
-            deadline,
-        );
+        let wait_res =
+            syscall::object_wait(handle::PLATFORM_WAIT_GROUP, Signals::READABLE, deadline);
 
         match wait_res {
             Ok(wait_return) => {
-                let signals = wait_return.pending_signals;
+                let active = wait_return.user_data as u32;
+                if active == handle::PLATFORM_INTERRUPTS {
+                    let signals = wait_return.pending_signals;
 
-                if (signals & usb_sig) != Signals::empty() {
-                    server.handle_usb_presence_interrupt()?;
-                }
-                if (signals & rst0_sig) != Signals::empty() {
-                    server.handle_rst_mon_interrupt(0)?;
-                }
-                if (signals & rst1_sig) != Signals::empty() {
-                    server.handle_rst_mon_interrupt(1)?;
+                    if (signals & usb_sig) != Signals::empty() {
+                        server.handle_usb_presence_interrupt()?;
+                    }
+                    if (signals & rst0_sig) != Signals::empty() {
+                        server.handle_rst_mon_interrupt(0)?;
+                    }
+                    if (signals & rst1_sig) != Signals::empty() {
+                        server.handle_rst_mon_interrupt(1)?;
+                    }
+
+                    syscall::interrupt_ack(handle::PLATFORM_INTERRUPTS, signals)
+                        .map_err(ErrorCode::kernel_error)?;
+                    continue;
                 }
 
-                syscall::interrupt_ack(handle::PLATFORM_INTERRUPTS, signals)
-                    .map_err(ErrorCode::kernel_error)?;
+                #[cfg(feature = "cli")]
+                if active == handle::CLI_PLATFORM {
+                    let cli_platform = IpcHandle::new(handle::CLI_PLATFORM);
+                    let n = cli_platform
+                        .transact(&[0u8; 0], &mut cmd_buf, Instant::MAX)
+                        .map_err(ErrorCode::kernel_error)?;
+                    if let Ok(cmd_str) = core::str::from_utf8(&cmd_buf[..n]) {
+                        util_zfmt::debug!("[cli] {cmd}", cmd = cmd_str);
+                        let mut context = server.cli_context(
+                            &sysmgr,
+                            IpcHandle::new(handle::FLASH_PLATFORM),
+                            straps,
+                        );
+                        cli_dispatcher.dispatch(cmd_str, &mut context);
+                        util_zfmt::raw!("hwe> ");
+                        let _ = cli_platform.transact(b"DONE", &mut cmd_buf, Instant::MAX);
+                    }
+                    continue;
+                }
             }
             Err(Error::DeadlineExceeded) => {
                 if server.should_exit() {

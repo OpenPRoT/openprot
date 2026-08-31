@@ -90,3 +90,10 @@ stateDiagram-v2
 *   **Running**: Main loop. Listens for interrupts:
     *   `RST_MON0_N` / `RST_MON1_N` falling edge: Transitions back to `LatchReset` to execute a reset.
     *   `USB_PRESENCE_N` edge: Updates the `USB_MUX_CTRL` output (High on unplug/rising edge, Low on plug-in/falling edge).
+
+## Command Line Interface (CLI)
+
+The Platform Service hosts an interactive hierarchical CLI dispatcher accessible over physical UART0 and USB CDC-ACM virtual serial when compiled with the `cli` feature.
+
+See [CLI Interface & Connection Guide](cli/README.md) for serial port identification, connection instructions (via `minicom` or `screen`), and command hierarchy details.
+

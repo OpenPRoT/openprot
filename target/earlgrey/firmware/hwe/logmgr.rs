@@ -11,7 +11,7 @@ use userspace::syscall::Signals;
 use userspace::time::Instant;
 use userspace::{process_entry, syscall};
 use util_ipc::{IpcChannel, IpcHandle};
-use util_zfmt::{render::render_event, FixedBuf, LogServer, StreamStart, Write, ZfmtU64};
+use util_zfmt::{render::render_event, FixedBuf, LogServer, StreamStart, ZfmtU64};
 use zerocopy::IntoBytes;
 
 use earlgrey_uart_driver::UartDriver;
@@ -25,7 +25,6 @@ use usart_api::backend::{BackendError, IrqMask, Parity, UsartBackend, UsartConfi
 enum TxState {
     Idle,
     Body,
-    Newline,
 }
 
 struct ActiveLog {
@@ -69,8 +68,8 @@ fn service_uart_tx<const N: usize>(
     uart_cursor: &mut u64,
 ) -> Result<(), Error> {
     loop {
-        // 1. Transmit current buffer (body or newline)
-        if active_log.state == TxState::Body || active_log.state == TxState::Newline {
+        // 1. Transmit current buffer
+        if active_log.state == TxState::Body {
             let data = active_log.buf.as_slice();
             // We maintain the invariant that active_log.sent <= data.len() and
             // should never get None. If we do, we halt transmission.
@@ -85,16 +84,7 @@ fn service_uart_tx<const N: usize>(
                 Ok(n) => {
                     active_log.sent += n;
                     if active_log.sent == data.len() {
-                        if active_log.state == TxState::Body {
-                            // Body sent, load newline into buffer
-                            active_log.buf.clear();
-                            let _ = active_log.buf.write_str("\r\n");
-                            active_log.sent = 0;
-                            active_log.state = TxState::Newline;
-                            continue; // Loop again to send newline
-                        } else {
-                            active_log.state = TxState::Idle;
-                        }
+                        active_log.state = TxState::Idle;
                     } else {
                         // Partial write, FIFO full. Enable interrupt and wait.
                         uart.enable_interrupts(IrqMask::TX_IDLE)
@@ -145,10 +135,153 @@ fn service_uart_tx<const N: usize>(
                     }
                 }
             }
-            // No more logs to load
             break;
         }
     }
+    Ok(())
+}
+
+#[cfg(feature = "cli")]
+pub const CMDLINE_MAX_LINE_LEN: usize = 128;
+
+#[cfg(feature = "cli")]
+#[derive(Debug, PartialEq, Eq)]
+pub struct CommandLineBuffer<const N: usize> {
+    buf: [u8; N],
+    len: usize,
+    ready: bool,
+}
+
+#[cfg(feature = "cli")]
+impl<const N: usize> CommandLineBuffer<N> {
+    pub const fn new() -> Self {
+        Self {
+            buf: [0; N],
+            len: 0,
+            ready: false,
+        }
+    }
+
+    pub fn is_ready(&self) -> bool {
+        self.ready
+    }
+
+    pub fn push_char(&mut self, ch: u8) -> bool {
+        if self.ready || self.len >= N {
+            false
+        } else {
+            self.buf[self.len] = ch;
+            self.len += 1;
+            true
+        }
+    }
+
+    pub fn pop_char(&mut self) -> bool {
+        if self.ready || self.len == 0 {
+            false
+        } else {
+            self.len -= 1;
+            true
+        }
+    }
+
+    pub fn finish_line(&mut self) -> bool {
+        if self.ready {
+            false
+        } else {
+            self.ready = true;
+            true
+        }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.buf[..self.len]
+    }
+
+    pub fn is_blank(&self) -> bool {
+        self.len == 0
+            || self.buf[..self.len]
+                .iter()
+                .all(|&b| b == b' ' || b == b'\t')
+    }
+
+    pub fn clear(&mut self) {
+        self.len = 0;
+        self.ready = false;
+    }
+}
+
+#[cfg(feature = "cli")]
+fn process_input_char<const N: usize, F>(
+    ch: u8,
+    cmd_buf: &mut CommandLineBuffer<N>,
+    cli_platform: &IpcHandle,
+    last_was_cr: &mut bool,
+    mut echo: F,
+) where
+    F: FnMut(&[u8]),
+{
+    if ch == b'\n' && *last_was_cr {
+        *last_was_cr = false;
+        return;
+    }
+    *last_was_cr = ch == b'\r';
+
+    if ch == b'\r' || ch == b'\n' {
+        if cmd_buf.is_blank() {
+            cmd_buf.clear();
+            echo(b"\r\nhwe> ");
+        } else {
+            echo(b"\r\n");
+            cmd_buf.finish_line();
+            let _ = cli_platform.set_peer_user_signal(true);
+        }
+    } else if ch == 0x08 || ch == 0x7f {
+        if cmd_buf.pop_char() {
+            echo(b"\x08 \x08");
+        }
+    } else if (0x20..0x7f).contains(&ch) {
+        if cmd_buf.push_char(ch) {
+            echo(&[ch]);
+        }
+    }
+}
+
+#[cfg(feature = "cli")]
+fn uart_write_all(uart: &mut UartDriver, mut data: &[u8]) {
+    while !data.is_empty() {
+        match uart.write(data) {
+            Ok(0) => continue,
+            Ok(n) => data = &data[n..],
+            Err(BackendError::WouldBlock) => continue,
+            Err(_) => break,
+        }
+    }
+}
+
+#[cfg(feature = "cli")]
+fn service_uart_rx(
+    uart: &mut UartDriver,
+    cmd_buf: &mut CommandLineBuffer<CMDLINE_MAX_LINE_LEN>,
+    cli_platform: &IpcHandle,
+    last_was_cr: &mut bool,
+    rx_buf: &mut [u8],
+) -> Result<(), Error> {
+    loop {
+        match uart.read(rx_buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                for &byte in &rx_buf[..n] {
+                    process_input_char(byte, cmd_buf, cli_platform, last_was_cr, |echo_slice| {
+                        uart_write_all(uart, echo_slice);
+                    });
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    uart.enable_interrupts(IrqMask::RX_DATA_AVAILABLE)
+        .map_err(|_| Error::Internal)?;
     Ok(())
 }
 
@@ -164,6 +297,10 @@ fn logmgr_server() -> Result<(), Error> {
         stop_bits: 1,
     })
     .map_err(|_| Error::Internal)?;
+
+    #[cfg(feature = "cli")]
+    uart.enable_interrupts(IrqMask::RX_DATA_AVAILABLE)
+        .map_err(|_| Error::Internal)?;
 
     syscall::wait_group_add(
         handle::LOGMGR_WAIT_GROUP,
@@ -183,23 +320,52 @@ fn logmgr_server() -> Result<(), Error> {
         Signals::READABLE,
         handle::LOGGER_FLASH as usize,
     )?;
-    // Add UART interrupt to wait group
-    syscall::wait_group_add(
-        handle::LOGMGR_WAIT_GROUP,
-        handle::UART0_INTERRUPTS,
-        signals::UART0_TX_DONE,
-        handle::UART0_INTERRUPTS as usize,
-    )?;
     syscall::wait_group_add(
         handle::LOGMGR_WAIT_GROUP,
         handle::LOGGER_SYSMGR,
         Signals::READABLE,
         handle::LOGGER_SYSMGR as usize,
     )?;
+    #[cfg(feature = "cli")]
+    syscall::wait_group_add(
+        handle::LOGMGR_WAIT_GROUP,
+        handle::CLI_PLATFORM,
+        Signals::READABLE,
+        handle::CLI_PLATFORM as usize,
+    )?;
+    #[cfg(feature = "cli")]
+    syscall::wait_group_add(
+        handle::LOGMGR_WAIT_GROUP,
+        handle::CLI_USB,
+        Signals::READABLE,
+        handle::CLI_USB as usize,
+    )?;
+    #[cfg(feature = "cli")]
+    let uart0_irq_signals =
+        signals::UART0_TX_DONE | signals::UART0_RX_WATERMARK | signals::UART0_RX_TIMEOUT;
+    #[cfg(not(feature = "cli"))]
+    let uart0_irq_signals = signals::UART0_TX_DONE;
+
+    syscall::wait_group_add(
+        handle::LOGMGR_WAIT_GROUP,
+        handle::UART0_INTERRUPTS,
+        uart0_irq_signals,
+        handle::UART0_INTERRUPTS as usize,
+    )?;
 
     let mut server = LogServer::<2048>::new();
     let mut active_log = ActiveLog::new();
     let mut uart_cursor = 0u64;
+    #[cfg(feature = "cli")]
+    let mut cmd_buf_uart = CommandLineBuffer::<CMDLINE_MAX_LINE_LEN>::new();
+    #[cfg(feature = "cli")]
+    let mut cmd_buf_usb = CommandLineBuffer::<CMDLINE_MAX_LINE_LEN>::new();
+    #[cfg(feature = "cli")]
+    let cli_platform_handle = IpcHandle::new(handle::CLI_PLATFORM);
+    #[cfg(feature = "cli")]
+    let mut last_was_cr_uart = false;
+    #[cfg(feature = "cli")]
+    let mut last_was_cr_usb = false;
 
     // Log StreamStart event to the buffer on startup.
     let ss = StreamStart {
@@ -227,29 +393,108 @@ fn logmgr_server() -> Result<(), Error> {
         let active_handle = wait_result.user_data as u32;
 
         if active_handle == handle::UART0_INTERRUPTS {
-            // Clear interrupt by re-enabling it (our implementation clears on enable)
-            uart.enable_interrupts(IrqMask::TX_IDLE)
-                .map_err(|_| Error::Internal)?;
-            service_uart_tx(&mut uart, &mut active_log, &server, &mut uart_cursor)?;
-            let _ = syscall::interrupt_ack(handle::UART0_INTERRUPTS, wait_result.pending_signals);
-        } else {
-            // IPC request
-            let channel = IpcHandle::new(active_handle);
-            let n = channel.read(0, &mut req)?;
-            let n = n.min(req.len());
-            let raise = match server.handle_request(&channel, &mut req[..n]) {
-                Ok(processed) => processed,
-                Err(e) => {
-                    channel.respond(e.as_bytes())?;
-                    false
-                }
-            };
-            if raise {
-                // Try to service TX (load new logs if idle)
-                service_uart_tx(&mut uart, &mut active_log, &server, &mut uart_cursor)?;
-                // Signal the USB task that there are logs available.
-                let _ = syscall::object_set_peer_user_signal(handle::LOGGER_USB, raise);
+            #[cfg(feature = "cli")]
+            if (wait_result.pending_signals
+                & (signals::UART0_RX_WATERMARK | signals::UART0_RX_TIMEOUT))
+                != Signals::empty()
+            {
+                service_uart_rx(
+                    &mut uart,
+                    &mut cmd_buf_uart,
+                    &cli_platform_handle,
+                    &mut last_was_cr_uart,
+                    &mut req[..32],
+                )?;
             }
+            if (wait_result.pending_signals & signals::UART0_TX_DONE) != Signals::empty() {
+                uart.enable_interrupts(IrqMask::TX_IDLE)
+                    .map_err(|_| Error::Internal)?;
+                service_uart_tx(&mut uart, &mut active_log, &server, &mut uart_cursor)?;
+            }
+            let _ = syscall::interrupt_ack(handle::UART0_INTERRUPTS, wait_result.pending_signals);
+            continue;
+        }
+
+        #[cfg(feature = "cli")]
+        if active_handle == handle::CLI_PLATFORM {
+            let channel = IpcHandle::new(handle::CLI_PLATFORM);
+            let n = channel.read(0, &mut req)?;
+            if n > 0 && &req[..n] == b"DONE" {
+                channel.respond(&[0u8; 0])?;
+                service_uart_tx(&mut uart, &mut active_log, &server, &mut uart_cursor)?;
+                continue;
+            }
+
+            if cmd_buf_uart.is_ready() {
+                let line = cmd_buf_uart.as_bytes();
+                channel.respond(line)?;
+                cmd_buf_uart.clear();
+            } else if cmd_buf_usb.is_ready() {
+                let line = cmd_buf_usb.as_bytes();
+                channel.respond(line)?;
+                cmd_buf_usb.clear();
+            } else {
+                channel.respond(&[0u8; 0])?;
+            }
+            if !cmd_buf_uart.is_ready() && !cmd_buf_usb.is_ready() {
+                let _ = cli_platform_handle.set_peer_user_signal(false);
+            }
+            continue;
+        }
+
+        #[cfg(feature = "cli")]
+        if active_handle == handle::CLI_USB {
+            let channel = IpcHandle::new(handle::CLI_USB);
+            // Split `req` [260 bytes] into:
+            // - `echo_buf` (196 bytes): Destination for cooked echo characters.
+            // - `input_buf` (64 bytes): Source for raw input characters (matches USB FS max packet size).
+            //
+            // Worst-case character expansion occurs on backspace ('\x08' or '\x7f' [1 byte] ->
+            // "\x08 \x08" [3 bytes]) to visually erase characters on standard VT100/ANSI terminals.
+            // With 64 bytes input, maximum echo is 64 * 3 = 192 bytes <= 196 bytes, guaranteeing
+            // that `echo_buf` will never overflow or drop echo characters.
+            const MAX_INPUT: usize = 64;
+            let mid = req.len() - MAX_INPUT;
+            let (echo_buf, input_buf) = req.split_at_mut(mid);
+            let n = channel.read(0, input_buf)?;
+            let input_slice = &input_buf[..n.min(input_buf.len())];
+
+            let mut echo_len = 0;
+            for &byte in input_slice {
+                process_input_char(
+                    byte,
+                    &mut cmd_buf_usb,
+                    &cli_platform_handle,
+                    &mut last_was_cr_usb,
+                    |echo_slice| {
+                        if echo_len + echo_slice.len() <= echo_buf.len() {
+                            echo_buf[echo_len..echo_len + echo_slice.len()]
+                                .copy_from_slice(echo_slice);
+                            echo_len += echo_slice.len();
+                        }
+                    },
+                );
+            }
+            let _ = channel.respond(&echo_buf[..echo_len]);
+            continue;
+        }
+
+        // IPC request from a logger client
+        let channel = IpcHandle::new(active_handle);
+        let n = channel.read(0, &mut req)?;
+        let n = n.min(req.len());
+        let raise = match server.handle_request(&channel, &mut req[..n]) {
+            Ok(processed) => processed,
+            Err(e) => {
+                channel.respond(e.as_bytes())?;
+                false
+            }
+        };
+        if raise {
+            // Try to service TX (load new logs if idle)
+            service_uart_tx(&mut uart, &mut active_log, &server, &mut uart_cursor)?;
+            // Signal the USB task that there are logs available.
+            let _ = syscall::object_set_peer_user_signal(handle::LOGGER_USB, raise);
         }
     }
 }

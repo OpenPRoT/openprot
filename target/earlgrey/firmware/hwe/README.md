@@ -97,7 +97,7 @@ graph TD
     *   Flash: `0xA0010000` (Size: 64 KiB)
     *   RAM: `0x10000000` (Size: 32 KiB)
 *   **Application (`hwe`)**:
-    *   Flash Size: 48 KiB
+    *   Flash Size: 64 KiB
     *   Process RAM allocations:
         *   `logmgr`: 4 KiB (Stack: 2 KiB)
         *   `sysmgr`: 4 KiB (Stack: 2 KiB)

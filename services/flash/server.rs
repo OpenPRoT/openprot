@@ -26,6 +26,14 @@ impl<TFlash: Flash<Error = ErrorCode>> FlashIpcServer<TFlash> {
         Self { flash }
     }
 
+    pub fn flash(&self) -> &TFlash {
+        &self.flash
+    }
+
+    pub fn flash_mut(&mut self) -> &mut TFlash {
+        &mut self.flash
+    }
+
     /// Handles the `IPC_OP_FLASH_GET_INFO` request.
     ///
     /// Writes the flash geometry into the provided buffer and returns it.

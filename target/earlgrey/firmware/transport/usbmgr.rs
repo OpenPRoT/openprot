@@ -323,7 +323,6 @@ fn handle_usb() -> Result<(), ErrorCode> {
                 let mut buf = FixedBuf::<254>::new();
                 if let Some(len) = render_event(ev, &mut buf) {
                     let _ = cdc_acm.tx_queue.push_slice(buf.as_slice());
-                    let _ = cdc_acm.tx_queue.push_slice(b"\r\n");
                     log_cursor += len as u64;
                 }
             }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use earlgrey_gpio::GpioPin;
-use earlgrey_pinmux::{Pad, PadConfig, Pull};
+use earlgrey_pinmux::{DriveStrength, Pad, PadConfig, Pull, SlewRate};
 use top_earlgrey::{PinmuxOutsel as Outsel, PinmuxPeripheralIn as PeriphIn};
 
 pub enum Config {
@@ -141,29 +141,41 @@ pub const IN_PULL_NONE: PadConfig = PadConfig {
     pull: Pull::None,
     open_drain: false,
     invert: false,
+    slew_rate: SlewRate::Slowest,
+    drive_strength: DriveStrength::Drive0,
 };
 pub const IN_PULL_UP: PadConfig = PadConfig {
     pull: Pull::Up,
     open_drain: false,
     invert: false,
+    slew_rate: SlewRate::Slowest,
+    drive_strength: DriveStrength::Drive0,
 };
 pub const IN_PULL_DOWN: PadConfig = PadConfig {
     pull: Pull::Down,
     open_drain: false,
     invert: false,
+    slew_rate: SlewRate::Slowest,
+    drive_strength: DriveStrength::Drive0,
 };
 pub const OUT_PUSH_PULL: PadConfig = PadConfig {
     pull: Pull::None,
     open_drain: false,
     invert: false,
+    slew_rate: SlewRate::Slowest,
+    drive_strength: DriveStrength::Drive0,
 };
 pub const OUT_PULL_UP: PadConfig = PadConfig {
     pull: Pull::Up,
     open_drain: true,
     invert: false,
+    slew_rate: SlewRate::Slowest,
+    drive_strength: DriveStrength::Drive0,
 };
 pub const OUT_PULL_DOWN: PadConfig = PadConfig {
     pull: Pull::Down,
     open_drain: true,
     invert: false,
+    slew_rate: SlewRate::Slowest,
+    drive_strength: DriveStrength::Drive0,
 };

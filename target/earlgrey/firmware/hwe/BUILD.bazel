@@ -1,6 +1,7 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("@pigweed//pw_kernel/tooling:multi_process_app.bzl", "multi_process_app")
 load("@pigweed//pw_kernel/tooling:rust_process.bzl", "rust_process")
 load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
@@ -11,6 +12,20 @@ load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/earlgrey:defs.bzl", "TARGET_COMPATIBLE_WITH")
 load("//target/earlgrey/signing/keys:defs.bzl", "FPGA_ECDSA_KEY", "SILICON_ECDSA_KEY")
 load("//target/earlgrey/tooling:opentitan_runner.bzl", "opentitan_test")
+load("//third_party/lowrisc_opentitan:defs.bzl", "opentitan_rust_binary")
+load(":cli_image.bzl", "cli_system_image")
+
+bool_flag(
+    name = "cli",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "cli_enabled",
+    flag_values = {
+        ":cli": "true",
+    },
+)
 
 rust_process(
     name = "logmgr",
@@ -18,6 +33,10 @@ rust_process(
         "logmgr.rs",
     ],
     codegen_crate_name = "logmgr_codegen",
+    crate_features = select({
+        ":cli_enabled": ["cli"],
+        "//conditions:default": [],
+    }),
     edition = "2024",
     system_config = "@pigweed//pw_kernel/target:system_config_file",
     tags = ["kernel"],
@@ -43,6 +62,10 @@ rust_process(
         "usbmgr.rs",
     ],
     codegen_crate_name = "usbmgr_codegen",
+    crate_features = select({
+        ":cli_enabled": ["cli"],
+        "//conditions:default": [],
+    }),
     edition = "2024",
     system_config = "@pigweed//pw_kernel/target:system_config_file",
     tags = ["kernel"],
@@ -81,10 +104,15 @@ rust_process(
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
+        "//drivers/flash:spi_flash",
         "//hal/blocking/flash",
+        "//hal/blocking/flash:driver",
+        "//services/flash:opcode",
         "//services/flash:server",
         "//target/earlgrey/drivers:eflash_driver",
+        "//target/earlgrey/drivers:spi_host",
         "//target/earlgrey/registers:flash_ctrl_core",
+        "//target/earlgrey/registers:spi_host",
         "//target/earlgrey/util",
         "//util/error",
         "//util/ipc",
@@ -92,6 +120,8 @@ rust_process(
         "//util/zfmt",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:embedded-hal",
+        "@rust_crates//:zerocopy",
         "@zfmt//zfmt",
     ],
 )
@@ -123,6 +153,10 @@ rust_process(
         "platform.rs",
     ],
     codegen_crate_name = "platform_codegen",
+    crate_features = select({
+        ":cli_enabled": ["cli"],
+        "//conditions:default": [],
+    }),
     edition = "2024",
     system_config = "@pigweed//pw_kernel/target:system_config_file",
     tags = ["kernel"],
@@ -259,4 +293,56 @@ opentitan_test(
         "hardware",
     ],
     target = ":hwe_firmware",
+)
+
+opentitan_rust_binary(
+    name = "host_cli_check",
+    srcs = ["host_cli_check.rs"],
+    edition = "2024",
+    rustc_flags = [
+        "-C",
+        "link-arg=-Wl,--allow-shlib-undefined",
+    ],
+    deps = [
+        "//third_party/lowrisc_opentitan:opentitanlib",
+        "//third_party/lowrisc_opentitan:usb_test_helper",
+        "@ot_crate_index//:anyhow",
+        "@ot_crate_index//:clap",
+        "@ot_crate_index//:humantime",
+        "@ot_crate_index//:log",
+        "@ot_crate_index//:serialport",
+    ],
+)
+
+cli_system_image(
+    name = "hwe_cli_firmware",
+    target = ":hwe_firmware",
+)
+
+opentitan_test(
+    name = "hwe_cli_hyper310_test",
+    ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper310",
+    interface = "hyper310",
+    tags = [
+        "hardware",
+        "hyper310",
+    ],
+    target = ":hwe_cli_firmware",
+    test_cmd = "--logging=info",
+    test_harness = ":host_cli_check",
+)
+
+opentitan_test(
+    name = "hwe_cli_hyper340_test",
+    ecdsa_key = FPGA_ECDSA_KEY,
+    environment = "//target/earlgrey/env:hyper340",
+    interface = "hyper340",
+    tags = [
+        "hardware",
+        "hyper340",
+    ],
+    target = ":hwe_cli_firmware",
+    test_cmd = "--logging=info",
+    test_harness = ":host_cli_check",
 )

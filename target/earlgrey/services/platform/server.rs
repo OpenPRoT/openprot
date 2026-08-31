@@ -34,6 +34,42 @@ impl PlatformServer {
         }
     }
 
+    pub fn gpio_mut(&mut self) -> &mut EarlGreyGpio {
+        &mut self.gpio
+    }
+
+    pub fn usb_mux(&self) -> &UsbMuxHandler {
+        &self.usb_mux
+    }
+
+    pub fn usb_mux_mut(&mut self) -> &mut UsbMuxHandler {
+        &mut self.usb_mux
+    }
+
+    pub fn spi_mux(&self) -> &SpiMuxHandler {
+        &self.spi_mux
+    }
+
+    pub fn spi_mux_mut(&mut self) -> &mut SpiMuxHandler {
+        &mut self.spi_mux
+    }
+
+    pub fn cli_context<'a>(
+        &'a mut self,
+        sysmgr: &'a earlgrey_sysmgr_client::SysmgrClient<util_ipc::IpcHandle>,
+        flash_ipc: util_ipc::IpcHandle,
+        straps: u32,
+    ) -> crate::cli::CliContext<'a> {
+        crate::cli::CliContext {
+            gpio: &mut self.gpio,
+            sysmgr,
+            usb_mux: &mut self.usb_mux,
+            spi_mux: &mut self.spi_mux,
+            flash_ipc,
+            straps,
+        }
+    }
+
     pub fn state(&self) -> TargetCpuState {
         self.reset_policy.state()
     }

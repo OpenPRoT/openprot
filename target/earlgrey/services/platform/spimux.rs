@@ -35,6 +35,48 @@ impl SpiMuxHandler {
         }
     }
 
+    pub fn is_mux_enabled(&self, gpio: &EarlGreyGpio) -> Result<bool, ErrorCode> {
+        let pin_mask = GpioMask::from(self.spi_mux_en_n);
+        let is_high = gpio
+            .read_output()
+            .map_err(ErrorCode::from)?
+            .contains(pin_mask);
+        Ok(!is_high)
+    }
+
+    pub fn is_route_host(&self, gpio: &EarlGreyGpio) -> Result<bool, ErrorCode> {
+        let pin_mask = GpioMask::from(self.spi_mux_ctrl);
+        let is_high = gpio
+            .read_output()
+            .map_err(ErrorCode::from)?
+            .contains(pin_mask);
+        Ok(is_high)
+    }
+
+    pub fn set_mux_enabled(&self, gpio: &mut EarlGreyGpio, enabled: bool) -> Result<(), ErrorCode> {
+        let pin_mask = GpioMask::from(self.spi_mux_en_n);
+        if enabled {
+            gpio.set_reset(GpioMask::empty(), pin_mask)
+                .map_err(ErrorCode::from)?;
+        } else {
+            gpio.set_reset(pin_mask, GpioMask::empty())
+                .map_err(ErrorCode::from)?;
+        }
+        Ok(())
+    }
+
+    pub fn set_route_host(&self, gpio: &mut EarlGreyGpio, host: bool) -> Result<(), ErrorCode> {
+        let pin_mask = GpioMask::from(self.spi_mux_ctrl);
+        if host {
+            gpio.set_reset(pin_mask, GpioMask::empty())
+                .map_err(ErrorCode::from)?;
+        } else {
+            gpio.set_reset(GpioMask::empty(), pin_mask)
+                .map_err(ErrorCode::from)?;
+        }
+        Ok(())
+    }
+
     pub fn handle_event(
         &mut self,
         event: SpiMuxEvent,

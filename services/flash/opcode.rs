@@ -49,3 +49,25 @@ pub struct ReadOp {
     /// The number of bytes to read.
     pub length: u32,
 }
+
+/// IPC opcode for reading JEDEC ID from flash.
+pub const IPC_OP_FLASH_READ_ID: Opcode = Opcode::new(*b"FLID");
+
+/// Arguments for the `IPC_OP_FLASH_READ_ID` request.
+#[derive(FromBytes, IntoBytes, KnownLayout, Immutable)]
+#[repr(C)]
+pub struct ReadIdOp {
+    /// Index of the SPI EEPROM (0 or 1).
+    pub eeprom_index: u8,
+}
+
+/// Response returned by `IPC_OP_FLASH_READ_ID`.
+#[derive(
+    FromBytes, IntoBytes, KnownLayout, Immutable, Default, Clone, Copy, Debug, PartialEq, Eq,
+)]
+#[repr(C)]
+pub struct JedecIdResp {
+    pub manufacturer: u8,
+    pub memory_type: u8,
+    pub capacity_code: u8,
+}

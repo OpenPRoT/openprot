@@ -131,10 +131,79 @@ pub enum Pull {
     Down,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(u32)]
+pub enum SlewRate {
+    #[default]
+    Slowest = 0,
+    Slow = 1,
+    Fast = 2,
+    Fastest = 3,
+}
+
+impl SlewRate {
+    pub const fn from_raw(val: u32) -> Self {
+        match val & 3 {
+            0 => Self::Slowest,
+            1 => Self::Slow,
+            2 => Self::Fast,
+            _ => Self::Fastest,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(u32)]
+pub enum DriveStrength {
+    #[default]
+    Drive0 = 0,
+    Drive1 = 1,
+    Drive2 = 2,
+    Drive3 = 3,
+    Drive4 = 4,
+    Drive5 = 5,
+    Drive6 = 6,
+    Drive7 = 7,
+    Drive8 = 8,
+    Drive9 = 9,
+    Drive10 = 10,
+    Drive11 = 11,
+    Drive12 = 12,
+    Drive13 = 13,
+    Drive14 = 14,
+    Drive15 = 15,
+}
+
+impl DriveStrength {
+    pub const fn from_raw(val: u32) -> Self {
+        match val & 0xf {
+            0 => Self::Drive0,
+            1 => Self::Drive1,
+            2 => Self::Drive2,
+            3 => Self::Drive3,
+            4 => Self::Drive4,
+            5 => Self::Drive5,
+            6 => Self::Drive6,
+            7 => Self::Drive7,
+            8 => Self::Drive8,
+            9 => Self::Drive9,
+            10 => Self::Drive10,
+            11 => Self::Drive11,
+            12 => Self::Drive12,
+            13 => Self::Drive13,
+            14 => Self::Drive14,
+            _ => Self::Drive15,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PadConfig {
     pub pull: Pull,
     pub open_drain: bool,
     pub invert: bool,
+    pub slew_rate: SlewRate,
+    pub drive_strength: DriveStrength,
 }
 
 impl Default for PadConfig {
@@ -143,7 +212,36 @@ impl Default for PadConfig {
             pull: Pull::None,
             open_drain: false,
             invert: false,
+            slew_rate: SlewRate::Slowest,
+            drive_strength: DriveStrength::Drive0,
         }
+    }
+}
+
+impl PadConfig {
+    pub const fn with_pull(mut self, pull: Pull) -> Self {
+        self.pull = pull;
+        self
+    }
+
+    pub const fn with_open_drain(mut self, open_drain: bool) -> Self {
+        self.open_drain = open_drain;
+        self
+    }
+
+    pub const fn with_invert(mut self, invert: bool) -> Self {
+        self.invert = invert;
+        self
+    }
+
+    pub const fn with_slew_rate(mut self, slew_rate: SlewRate) -> Self {
+        self.slew_rate = slew_rate;
+        self
+    }
+
+    pub const fn with_drive_strength(mut self, drive_strength: DriveStrength) -> Self {
+        self.drive_strength = drive_strength;
+        self
     }
 }
 
@@ -202,6 +300,8 @@ impl EarlGreyPinmux {
                     })
                     .od_en(config.open_drain)
                     .invert(config.invert)
+                    .slew_rate(config.slew_rate as u32)
+                    .drive_strength(config.drive_strength as u32)
             });
             Ok(())
         } else if let Some(mio_idx) = pad.mio_index() {
@@ -216,6 +316,8 @@ impl EarlGreyPinmux {
                     })
                     .od_en(config.open_drain)
                     .invert(config.invert)
+                    .slew_rate(config.slew_rate as u32)
+                    .drive_strength(config.drive_strength as u32)
             });
             Ok(())
         } else if pad.as_insel().is_some() {
@@ -225,5 +327,90 @@ impl EarlGreyPinmux {
         } else {
             Err(EG_PINMUX_INVALID_PAD)
         }
+    }
+
+    pub fn get_pad_config(&self, pad: Pad) -> Result<PadConfig, ErrorCode> {
+        let (pull_en, pull_sel, od_en, invert, slew_rate, drive_strength) =
+            if let Some(dio_idx) = pad.dio_index() {
+                let reg = self.registers.dio_pad_attr().at(dio_idx).read();
+                (
+                    reg.pull_en(),
+                    reg.pull_select(),
+                    reg.od_en(),
+                    reg.invert(),
+                    reg.slew_rate(),
+                    reg.drive_strength(),
+                )
+            } else if let Some(mio_idx) = pad.mio_index() {
+                let reg = self.registers.mio_pad_attr().at(mio_idx).read();
+                (
+                    reg.pull_en(),
+                    reg.pull_select(),
+                    reg.od_en(),
+                    reg.invert(),
+                    reg.slew_rate(),
+                    reg.drive_strength(),
+                )
+            } else if pad.as_insel().is_some() {
+                // Constant pads (ConstantZero, ConstantOne) have valid input selectors
+                // but no physical pad attributes to configure.
+                return Ok(PadConfig::default());
+            } else {
+                return Err(EG_PINMUX_INVALID_PAD);
+            };
+
+        let pull = if !pull_en {
+            Pull::None
+        } else if pull_sel == pinmux::enums::PullSelect::PullUp {
+            Pull::Up
+        } else {
+            Pull::Down
+        };
+
+        Ok(PadConfig {
+            pull,
+            open_drain: od_en,
+            invert,
+            slew_rate: SlewRate::from_raw(slew_rate),
+            drive_strength: DriveStrength::from_raw(drive_strength),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_slew_rate_from_raw() {
+        assert_eq!(SlewRate::from_raw(0), SlewRate::Slowest);
+        assert_eq!(SlewRate::from_raw(1), SlewRate::Slow);
+        assert_eq!(SlewRate::from_raw(2), SlewRate::Fast);
+        assert_eq!(SlewRate::from_raw(3), SlewRate::Fastest);
+        assert_eq!(SlewRate::from_raw(4), SlewRate::Slowest);
+    }
+
+    #[test]
+    fn test_drive_strength_from_raw() {
+        assert_eq!(DriveStrength::from_raw(0), DriveStrength::Drive0);
+        assert_eq!(DriveStrength::from_raw(5), DriveStrength::Drive5);
+        assert_eq!(DriveStrength::from_raw(15), DriveStrength::Drive15);
+        assert_eq!(DriveStrength::from_raw(16), DriveStrength::Drive0);
+    }
+
+    #[test]
+    fn test_pad_config_builder() {
+        let config = PadConfig::default()
+            .with_pull(Pull::Up)
+            .with_open_drain(true)
+            .with_invert(true)
+            .with_slew_rate(SlewRate::Fast)
+            .with_drive_strength(DriveStrength::Drive7);
+
+        assert_eq!(config.pull, Pull::Up);
+        assert!(config.open_drain);
+        assert!(config.invert);
+        assert_eq!(config.slew_rate, SlewRate::Fast);
+        assert_eq!(config.drive_strength, DriveStrength::Drive7);
     }
 }

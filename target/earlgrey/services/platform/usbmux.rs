@@ -41,6 +41,36 @@ impl UsbMuxHandler {
         Ok(())
     }
 
+    pub fn is_present(&self, gpio: &EarlGreyGpio) -> Result<bool, ErrorCode> {
+        let pin_mask = GpioMask::from(self.usb_presence_n);
+        let is_high = gpio
+            .read_input()
+            .map_err(ErrorCode::from)?
+            .contains(pin_mask);
+        Ok(!is_high)
+    }
+
+    pub fn is_host_routed(&self, gpio: &EarlGreyGpio) -> Result<bool, ErrorCode> {
+        let pin_mask = GpioMask::from(self.usb_mux_ctrl);
+        let is_high = gpio
+            .read_output()
+            .map_err(ErrorCode::from)?
+            .contains(pin_mask);
+        Ok(is_high)
+    }
+
+    pub fn set_host_route(&self, gpio: &mut EarlGreyGpio, host: bool) -> Result<(), ErrorCode> {
+        let usb_mux = GpioMask::from(self.usb_mux_ctrl);
+        if host {
+            gpio.set_reset(usb_mux, GpioMask::empty())
+                .map_err(ErrorCode::from)?;
+        } else {
+            gpio.set_reset(GpioMask::empty(), usb_mux)
+                .map_err(ErrorCode::from)?;
+        }
+        Ok(())
+    }
+
     pub fn handle_event(
         &mut self,
         event: UsbMuxEvent,
