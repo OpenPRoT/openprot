@@ -306,7 +306,7 @@ mod tests {
         (phdr_v, payload_v)
     }
 
-    fn find_claim_bytes<'a>(payload: &'a [u8], key: i64) -> Option<&'a [u8]> {
+    fn find_claim_bytes(payload: &[u8], key: i64) -> Option<&[u8]> {
         let mut d = minicbor::Decoder::new(payload);
         let n = d.map().unwrap().unwrap_or(0);
         for _ in 0..n {
@@ -319,7 +319,7 @@ mod tests {
         None
     }
 
-    fn find_claim_str<'a>(payload: &'a [u8], key: i64) -> Option<&'a str> {
+    fn find_claim_str(payload: &[u8], key: i64) -> Option<&str> {
         let mut d = minicbor::Decoder::new(payload);
         let n = d.map().unwrap().unwrap_or(0);
         for _ in 0..n {
