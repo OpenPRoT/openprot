@@ -9,6 +9,9 @@
 //! `util_error` codes in place of `std::io`/`thiserror`.
 
 #![no_std]
+#![feature(adt_const_params)]
+
+use core::marker::ConstParamTy;
 
 use util_error::{
     ErrorCode, FLASH_GENERIC_SFDP_INVALID_MEMORY_DENSITY, FLASH_GENERIC_SFDP_INVALID_SIGNATURE,
@@ -31,14 +34,22 @@ pub const BFP_ID_MSB: u8 = 0xFF;
 /// Maximum number of erase types a BFP table defines (DW8/DW9).
 pub const NUM_ERASE_TYPES: usize = 4;
 
-/// Read a little-endian u32 from a 4-byte window at `off`.
-const fn le_u32(bytes: &[u8], off: usize) -> u32 {
-    u32::from_le_bytes([bytes[off], bytes[off + 1], bytes[off + 2], bytes[off + 3]])
+/// Read a little-endian u32 from a 4-byte window at `off`, or `None` if the
+/// window runs past the end of `bytes`.
+fn le_u32(bytes: &[u8], off: usize) -> Option<u32> {
+    let end = off.checked_add(4)?;
+    let arr: [u8; 4] = bytes.get(off..end)?.try_into().ok()?;
+    Some(u32::from_le_bytes(arr))
 }
 
 /// Extract a `size`-bit field at `offset` from `word` (size < 32).
 const fn field(word: u32, offset: u32, size: u32) -> u32 {
-    (word >> offset) & ((1u32 << size) - 1)
+    let mask = if size >= 32 {
+        u32::MAX
+    } else {
+        (1u32 << size) - 1
+    };
+    word.wrapping_shr(offset) & mask
 }
 
 /// The 8-byte SFDP header: signature, revision, and parameter-header count.
@@ -57,7 +68,7 @@ impl SfdpHeader {
         if bytes.len() < SFDP_HEADER_LEN {
             return Err(FLASH_GENERIC_SFDP_PARAMETERS_TOO_SHORT);
         }
-        let signature = le_u32(bytes, 0);
+        let signature = le_u32(bytes, 0).ok_or(FLASH_GENERIC_SFDP_PARAMETERS_TOO_SHORT)?;
         if signature != SFDP_SIGNATURE {
             return Err(FLASH_GENERIC_SFDP_INVALID_SIGNATURE);
         }
@@ -152,7 +163,7 @@ impl<'a> BasicFlashParams<'a> {
         if idx == 0 || idx > self.dwords {
             return None;
         }
-        Some(le_u32(self.data, (idx - 1) * 4))
+        le_u32(self.data, (idx - 1) * 4)
     }
 
     /// Device density in bits, decoded from DW2 (JESD216 rule).
@@ -162,10 +173,8 @@ impl<'a> BasicFlashParams<'a> {
             .ok_or(FLASH_GENERIC_SFDP_PARAMETERS_TOO_SHORT)?;
         if dw2 & (1 << 31) != 0 {
             let exp = field(dw2, 0, 31);
-            if exp >= 64 {
-                return Err(FLASH_GENERIC_SFDP_INVALID_MEMORY_DENSITY);
-            }
-            Ok(1u64 << exp)
+            1u64.checked_shl(exp)
+                .ok_or(FLASH_GENERIC_SFDP_INVALID_MEMORY_DENSITY)
         } else {
             Ok(1u64 + dw2 as u64)
         }
@@ -179,7 +188,7 @@ impl<'a> BasicFlashParams<'a> {
     /// Programmable page size in bytes from DW11; defaults to 256 pre-JESD216A.
     pub fn page_size(&self) -> u32 {
         match self.dword(11) {
-            Some(dw11) => 1u32 << field(dw11, 4, 4),
+            Some(dw11) => 1u32.checked_shl(field(dw11, 4, 4)).unwrap_or(256),
             None => 256,
         }
     }
@@ -196,9 +205,10 @@ impl<'a> BasicFlashParams<'a> {
         if exp == 0 {
             return None;
         }
+        let size = 1u32.checked_shl(exp as u32)?;
         Some(EraseType {
             opcode: ((half >> 8) & 0xFF) as u8,
-            size: 1u32 << exp,
+            size,
         })
     }
 
@@ -219,7 +229,7 @@ impl<'a> BasicFlashParams<'a> {
 
 /// Geometry a controller needs to configure a flash device, all derived from
 /// SFDP. Fields SFDP does not encode (e.g. desired clock) are the caller's.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ConstParamTy)]
 pub struct FlashGeometry {
     pub capacity_bytes: u64,
     pub page_size: u32,
@@ -238,7 +248,10 @@ pub fn find_bfp_header(header: &[u8], param_headers: &[u8]) -> Result<ParameterH
         return Err(FLASH_GENERIC_SFDP_PARAMETERS_TOO_SHORT);
     }
     for i in 0..count {
-        let ph = ParameterHeader::parse(&param_headers[i * PARAM_HEADER_LEN..])?;
+        let window = param_headers
+            .get(i * PARAM_HEADER_LEN..)
+            .ok_or(FLASH_GENERIC_SFDP_PARAMETERS_TOO_SHORT)?;
+        let ph = ParameterHeader::parse(window)?;
         if ph.is_basic_flash() {
             return Ok(ph);
         }
@@ -261,6 +274,31 @@ pub fn geometry_from_bfp(bfp: &BasicFlashParams) -> Result<FlashGeometry, ErrorC
         sector_size: sector.size,
         block_size: block.size,
     })
+}
+
+/// Decode [`FlashGeometry`] from a raw SFDP image read from address 0.
+///
+/// Walks the header, the parameter-header directory, and the Basic Flash
+/// Parameter table by indexing into `image`, so the caller performs exactly one
+/// SPI read (opcode `0x5A`) of a sufficiently large blob. Out-of-range pointers
+/// and short tables return an error rather than panicking, so over-reading SFDP
+/// space is safe.
+pub fn decode_geometry(image: &[u8]) -> Result<FlashGeometry, ErrorCode> {
+    let header = image
+        .get(0..SFDP_HEADER_LEN)
+        .ok_or(FLASH_GENERIC_SFDP_PARAMETERS_TOO_SHORT)?;
+    let params = image
+        .get(SFDP_HEADER_LEN..)
+        .ok_or(FLASH_GENERIC_SFDP_PARAMETERS_TOO_SHORT)?;
+    let bfp = find_bfp_header(header, params)?;
+    let start = bfp.pointer as usize;
+    let end = start
+        .checked_add(bfp.dwords as usize * 4)
+        .ok_or(FLASH_GENERIC_SFDP_PARAMETERS_TOO_SHORT)?;
+    let table = image
+        .get(start..end)
+        .ok_or(FLASH_GENERIC_SFDP_PARAMETERS_TOO_SHORT)?;
+    geometry_from_bfp(&BasicFlashParams::parse(table)?)
 }
 
 #[cfg(test)]
@@ -310,19 +348,6 @@ mod tests {
         for (i, w) in dwords.iter().enumerate() {
             buf[at + i * 4..at + i * 4 + 4].copy_from_slice(&w.to_le_bytes());
         }
-    }
-
-    /// Drive the full caller path from a raw image: parse the header, walk the
-    /// parameter headers to the BFP, then read its table at the advertised pointer.
-    fn decode_geometry(image: &[u8]) -> Result<FlashGeometry, ErrorCode> {
-        let header = &image[0..SFDP_HEADER_LEN];
-        let hdr = SfdpHeader::parse(header)?;
-        let count = hdr.num_param_headers();
-        let params = &image[SFDP_HEADER_LEN..SFDP_HEADER_LEN + count * PARAM_HEADER_LEN];
-        let bfp = find_bfp_header(header, params)?;
-        let start = bfp.pointer as usize;
-        let end = start + bfp.dwords as usize * 4;
-        geometry_from_bfp(&BasicFlashParams::parse(&image[start..end])?)
     }
 
     #[test]
