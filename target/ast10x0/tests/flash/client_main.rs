@@ -39,7 +39,7 @@ fn entry() {
     let Ok((total, page, bitmap)) = flash.geometry() else {
         fail("geometry");
     };
-    if total.get() != 8 * 1024 * 1024 {
+    if total.get() != 0x0400_0000 {
         fail("total size");
     }
     if page.get() != SECTOR {
@@ -116,7 +116,10 @@ fn entry() {
         fail("erase size not rejected");
     }
     let mut oob = [0u8; 16];
-    if flash.read(FlashAddress::new(0x0100_0000), &mut oob).is_ok() {
+    if flash
+        .read(FlashAddress::new(total.get() as u32), &mut oob)
+        .is_ok()
+    {
         fail("oob read not rejected");
     }
 

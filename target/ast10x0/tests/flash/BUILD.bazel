@@ -46,7 +46,6 @@ rust_binary(
         "@pigweed//pw_kernel/subsys/console:console_backend",
         "@pigweed//pw_kernel/target:target_common",
         "@pigweed//pw_kernel/userspace",
-        "@rust_crates//:cortex-m-semihosting",
     ],
 )
 
@@ -115,12 +114,17 @@ system_image_test(
     visibility = ["//visibility:public"],
 )
 
-# QEMU variant: the runner seeds an 8 MiB erased image and attaches it as the
-# FMC CS0 flash (if=mtd), so program/erase/read-back can run under emulation.
+# QEMU variant: the runner seeds 1 MiB erased images on both FMC chip selects
+# (if=mtd), emulating the EVB where CS0 boot flash and the external W25Q512 on
+# CS1 are both present. The flash service binds CS1, so program/erase/read-back
+# runs there under emulation; CS0 is attached but untouched.
 #   bazelisk test --config=virt_ast10x0 //target/ast10x0/tests/flash:flash_qemu_test
 flash_system_image_test(
     name = "flash_qemu_test",
-    flash_image = "cs0.img",
+    cs0_image = "cs0.img",
+    cs1_image = "cs1.img",
+    flash_size = 64 * 1024 * 1024,
+    fmc_model = "w25q512jv",
     image = ":flash",
     tags = ["qemu_only"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,

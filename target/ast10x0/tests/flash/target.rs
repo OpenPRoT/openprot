@@ -11,9 +11,9 @@
 
 use ast10x0_peripherals::scu::pinctrl::PINCTRL_FMC_QUAD;
 use ast10x0_peripherals::scu::ScuRegisters;
-use cortex_m_semihosting::debug::{exit, EXIT_FAILURE, EXIT_SUCCESS};
+use console_backend::console_backend_write_all;
+use entry as _;
 use target_common::{declare_target, TargetInterface};
-use {console_backend as _, entry as _};
 
 pub struct Target {}
 
@@ -35,12 +35,12 @@ impl TargetInterface for Target {
     }
 
     fn shutdown(code: u32) -> ! {
-        let status = if code == 0 {
-            EXIT_SUCCESS
+        let sentinel: &[u8] = if code == 0 {
+            b"TEST_RESULT:PASS\n"
         } else {
-            EXIT_FAILURE
+            b"TEST_RESULT:FAIL\n"
         };
-        exit(status);
+        let _ = console_backend_write_all(sentinel);
         #[expect(clippy::empty_loop)]
         loop {}
     }

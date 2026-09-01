@@ -58,6 +58,16 @@
                             start_address: 0x80000000,
                             size_bytes: 0x800000,
                         },
+                        {
+                            // FMC CS1 memory-mapped flash read window (64 MiB).
+                            // With both CS0 and CS1 present the 256 MiB FMC
+                            // aperture is split in half, relocating the served
+                            // CS1 window to 0x88000000.
+                            name: "fmc_cs1_window",
+                            type: "device",
+                            start_address: 0x88000000,
+                            size_bytes: 0x04000000,
+                        },
                     ],
                 },
             ],
