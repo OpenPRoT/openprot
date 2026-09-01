@@ -19,8 +19,15 @@ One update, from the source's side:
 
 1. `offer(target, total)` reserves the staging region.
 2. `write(offset, bytes)` fills it, at most 512 bytes per call, in any order.
-3. `complete()` hands the state machine the update request.
+3. `complete()` declares the candidate complete, which is what starts the
+   update.
 4. `poll()` until `Activated` or `Failed`.
+
+What backs the staging region is the board's choice. Where the eRoT sits in
+the target's flash path there is no room to hold a copy, so a write goes
+straight into that device's inactive slot and the eRoT authenticates by
+reading the slot back. The phase order follows from that and is not fixed:
+see the `IntakeStatus` docs before assuming one.
 
 `abort()` drops the job from any phase. Activation needs no call: the state
 machine activates on its own verdict once the candidate authenticates.
