@@ -5,6 +5,7 @@
 //! Boards (or test mocks) implement these.
 
 use openprot_orchestrator_sm::{ComponentId, ComponentKind};
+use orchestrator_capabilities::Updatable;
 
 pub use orchestrator_capabilities::{BootControl, BootWatch};
 
@@ -101,7 +102,9 @@ pub trait BoardCapabilities {
     type BootControl: BootControl;
     /// Boot-checkpoint supervision for the managed components.
     type BootWatch: BootWatch;
-    // Later seams: Recovery, Staging.
+    /// Stages and activates update payloads on the managed components.
+    type Updatable: Updatable;
+    // Later seams: Recovery.
 }
 
 /// Everything the board supplies, built once at bring-up and handed to
@@ -115,6 +118,7 @@ pub trait BoardCapabilities {
 ///     type Verifier = ManifestVerifier;   // signature + SVN via the crypto engine
 ///     type BootControl = ExtrstGpio;      // per-component reset line
 ///     type BootWatch = CheckpointWalk;    // GPIO checkpoint walk over the boot window
+///     type Updatable = PldmDevice;        // device pulls its own chunks
 /// }
 /// let board = Board::<Ast1060Board, 2> {
 ///     images: [bmc_image, cpld_image],
@@ -122,6 +126,7 @@ pub trait BoardCapabilities {
 ///     boot_controls: [bmc_reset, cpld_reset],
 ///     boot_watches: [bmc_walk, cpld_walk],
 ///     component_kinds: [ComponentKind::Active, ComponentKind::Passive],
+///     updatables: [bmc_update, cpld_update],
 /// };
 /// ```
 pub struct Board<B: BoardCapabilities, const N: usize> {
@@ -140,5 +145,9 @@ pub struct Board<B: BoardCapabilities, const N: usize> {
     /// `ComponentReady` for `Active`, `Booted` for `Passive`. Comes from
     /// the same board table as the SM's chain, so both sides agree.
     pub component_kinds: [ComponentKind; N],
+    /// `updatables[i]` stages updates for `ComponentId(i)`, same indexing
+    /// as `images`. A device without an update path wires an adapter whose
+    /// `poll_stage` errors.
+    pub updatables: [B::Updatable; N],
     // Later seams add fields, e.g. recovery: [B::Recovery; N].
 }
