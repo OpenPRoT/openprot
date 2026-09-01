@@ -90,7 +90,7 @@ pub(crate) fn build(
     let mut payload_scratch = [0u8; SCRATCH];
     let payload_len = {
         let mut w = BufWriter::new(&mut payload_scratch);
-        let n_claims = 9 + usize::from(!evidence_cbor.is_empty());
+        let n_claims = 11 + usize::from(!evidence_cbor.is_empty());
         let mut e = Encoder::new(&mut w);
         e.map(n_claims as u64).map_err(|_| AttestError::Cbor)?;
 
