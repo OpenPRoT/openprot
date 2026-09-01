@@ -27,21 +27,34 @@ pub struct Progress {
 /// [`Staging`](Self::Staging) into apply progress, and
 /// [`Failed`](Self::Failed) into the matching result code.
 ///
+/// The order is not fixed and a source must not assume one. A board that
+/// writes through to the target's inactive slot authenticates by reading
+/// that slot back, so it runs [`Receiving`](Self::Receiving),
+/// [`Authenticating`](Self::Authenticating), [`Activated`](Self::Activated).
+/// A target whose gate is a signed manifest is authenticated before any byte
+/// moves, which swaps the first two.
+///
 /// Intentionally exhaustive: adding a phase is a breaking change, so every
 /// source handles each one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntakeStatus {
     /// No job: none offered, or the last one collected by a fresh offer.
     Idle,
-    /// The source is writing the candidate into the staging region.
-    /// `written` counts what the orchestrator took, so a source that lost
-    /// track can resume.
+    /// The source is writing the candidate into the staging region, which
+    /// on a write-through board is the target's inactive slot. `written`
+    /// counts what the orchestrator took, so a source that lost track can
+    /// resume.
     Receiving(Progress),
     /// The orchestrator is authenticating the complete candidate. No
     /// counters: authentication is one verdict, not a transfer.
     Authenticating,
     /// The candidate authenticated; the orchestrator is pushing it to the
     /// target device, one polled step at a time.
+    ///
+    /// Only a board that stages into its own region ever reports this. Under
+    /// write-through there is nothing left to push, so the phase goes
+    /// straight from [`Authenticating`](Self::Authenticating) to
+    /// [`Activated`](Self::Activated).
     Staging(Progress),
     /// The staged image is the device's boot candidate, tentatively. The
     /// commit gate is orchestrator policy, so this is the last phase a

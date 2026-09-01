@@ -29,6 +29,13 @@
 //!   the phase changes. That is a nudge carrying no data, and the syscall
 //!   does not block on the peer.
 //!
+//! What backs the staging region is the board's choice and never the
+//! source's. On a passive device the eRoT sits in the flash path, so the
+//! region is that device's inactive slot and a write goes straight into it;
+//! the eRoT then authenticates by reading the slot back. A board with its
+//! own staging flash copies first instead. Either way the source offers,
+//! writes at offsets, and completes.
+//!
 //! This is the `api` layer of the pattern `services/i2c` and
 //! `services/mctp` established. The orchestrator-side dispatch and the
 //! source-side [`UpdateIntake`] impl over `channel_transact` are separate
