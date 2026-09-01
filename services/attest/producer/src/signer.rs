@@ -10,7 +10,7 @@ use heapless::Vec;
 
 use openprot_attest_api::consts::{MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_MEASUREMENTS, MAX_TOKEN_SIZE};
 use openprot_attest_api::{
-    AttestConfig, AttestError, AttestProducer, CertChain, HwSigner, MeasurementProvider,
+    AttestConfig, AttestError, AttestProducer, HwSigner, MeasurementProvider,
 };
 
 use crate::{builder, dice_identity, measurements};
@@ -33,8 +33,13 @@ impl<'a> HwAttestProducer<'a> {
         }
     }
 
-    pub fn add_provider(&mut self, provider: &'a dyn MeasurementProvider) -> Result<(), ()> {
-        self.providers.push(provider).map_err(|_| ())
+    pub fn add_provider(
+        &mut self,
+        provider: &'a dyn MeasurementProvider,
+    ) -> Result<(), AttestError> {
+        self.providers
+            .push(provider)
+            .map_err(|_| AttestError::BufferFull)
     }
 }
 

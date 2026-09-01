@@ -55,9 +55,6 @@ impl<'a> BufWriter<'a> {
     fn new(buf: &'a mut [u8]) -> Self {
         Self { buf, pos: 0 }
     }
-    fn written(&self) -> &[u8] {
-        &self.buf[..self.pos]
-    }
 }
 
 impl<'a> CborWrite for BufWriter<'a> {
