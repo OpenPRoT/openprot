@@ -1,4 +1,4 @@
-# Orchestrator State Machine
+# Orchestrator
 
 The orchestrator is the eRoT's boot-sequence controller. It walks the platform
 trust chain — verifying each component's firmware and releasing it from reset in
@@ -28,6 +28,10 @@ avoid the two drifting apart.
 - [**Platform Architecture**](./orchestrator-platform.md): The platform half around
   the core — surrounding services, capability contracts, the board device table,
   and the fail-safe rules at the responsibility boundary.
+- [**Runtime**](./orchestrator-runtime.md): How the runtime loop
+  gathers hardware interrupts, IPC channel messages, and watchdog deadlines into
+  the core's event stream, and carries the resulting effects and decisions back
+  out.
 
 ## Design Principles
 
@@ -47,6 +51,22 @@ hiding them as implicit state changes. See the
 **Board-supplied policy.** The core hard-codes no deployment-specific values.
 The platform supplies the trust chain (component ids, kinds, and required/optional
 policy) and the recovery-retry cap at startup.
+
+## Board composition
+
+*Board composition* (or *system composition*) is the per-target choice — described
+declaratively in a [`system.json5`](../../architecture.md) file, assembled by
+Pigweed at build time — of how the platform's functions are split across
+processes and which resources each process owns: hardware register blocks and the
+kernel [interrupt objects and IPC channels](../pw-kernel-ipc.md) built on top of
+them. It is separate from the
+board-supplied *policy* above: policy is *what* to verify (the trust chain);
+composition is *how* the surrounding services are wired. The orchestrator core
+and its platform-agnostic crates are the same across every composition — a driver
+may own a GPIO bank and forward boot-progress over a channel in one image, while
+the orchestrator holds the pins directly in another. That choice changes which
+inbound sources the [runtime](./orchestrator-runtime.md) sees and who owns each
+device, but never the core's states or the loop that serves them.
 
 ## Relationship to CSA Architecture
 
