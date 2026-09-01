@@ -12,7 +12,7 @@ use ast10x0_peripherals::scu::{
     ScuExtMuxSelect, ScuRegisters, SpiMonitorInstance, SpiMonitorPassthrough, SpiMonitorSource,
 };
 use ast10x0_peripherals::smc::{
-    ChipSelect, FlashConfig, SmcConfig, SmcController, SmcError, SmcTopology, SpiTransaction,
+    FlashConfig, SmcConfig, SmcController, SmcError, SmcInstance, SmcTopology, SpiTransaction,
     SpiUninit, TransferMode,
 };
 use console_backend::console_backend_write_all;
@@ -23,13 +23,20 @@ use {console_backend as _, entry as _};
 mod target_debug;
 use target_debug::{dump_smc_read, dump_smc_register};
 
-const SPI_FLASH_CONFIG: FlashConfig = FlashConfig {
-    capacity_mb: 32,
-    page_size: 256,
-    sector_size: 4096,
-    block_size: 65536,
-    spi_clock_mhz: 25,
-};
+/// Compile-time SPI2 descriptor: single CS0 device at 25 MHz on the normal-SPI
+/// interface (master_idx 2), geometry discovered over SFDP at init.
+struct Spi2Instance;
+
+impl SmcInstance for Spi2Instance {
+    const CONTROLLER: SmcController = SmcController::Spi2;
+    const CONFIG: SmcConfig = SmcConfig {
+        cs0: Some(FlashConfig { spi_clock_mhz: 25 }),
+        cs1: None,
+        dma_enabled: true,
+        enable_interrupts: false,
+        topology: SmcTopology::NormalSpi { master_idx: 2 },
+    };
+}
 
 pub struct Target {}
 
@@ -59,19 +66,8 @@ fn config_spi2_master_controller() -> Result<(), SmcError> {
 fn run_spi2_read_test() -> Result<(), SmcError> {
     config_spi2_master_controller()?;
 
-    let config = SmcConfig {
-        controller_id: SmcController::Spi2,
-        cs0: Some(SPI_FLASH_CONFIG),
-        cs1: None,
-        dma_enabled: true,
-        enable_interrupts: false,
-        topology: SmcTopology::NormalSpi { master_idx: 2 },
-    };
-
     pw_log::info!("=== AST10x0 SMC SPI2 read test ===");
-    let spi = unsafe { SpiUninit::new(SmcController::Spi2, config)? };
-    let mut spi = spi.init()?;
-    spi.spi_nor_read_init(ChipSelect::Cs0)?;
+    let mut spi = unsafe { SpiUninit::<Spi2Instance>::new()? }.init()?;
 
     if !spi.is_ready() {
         return Err(SmcError::HardwareError);
@@ -88,9 +84,8 @@ fn run_spi2_read_test() -> Result<(), SmcError> {
     dump_smc_register(0x7E78_0070, 2);
     let mut jedec = [0u8; 3];
     SpiTransaction::transceive_user_with_spim(
-        &mut spi,
+        spi.cs0()?,
         SpiMonitorInstance::Spim2,
-        ChipSelect::Cs0,
         &[0x9f],
         &[],
         &mut jedec,
@@ -110,13 +105,7 @@ fn run_spi2_read_test() -> Result<(), SmcError> {
 
     pw_log::info!("=== SPI2 read ===");
     let mut buf = [0u8; 64];
-    let n = SpiTransaction::read_with_spim(
-        &mut spi,
-        SpiMonitorInstance::Spim2,
-        ChipSelect::Cs0,
-        0x0,
-        &mut buf,
-    )?;
+    let n = SpiTransaction::read_with_spim(spi.cs0()?, SpiMonitorInstance::Spim2, 0x0, &mut buf)?;
     if n != buf.len() {
         return Err(SmcError::HardwareError);
     }
@@ -125,9 +114,8 @@ fn run_spi2_read_test() -> Result<(), SmcError> {
     pw_log::info!("=== SPI2 DMA read @ 0x00000000 ===");
     let dma_buf = unsafe { core::slice::from_raw_parts_mut(0x41500 as *mut u8, 256) };
     let mut dma_txn = SpiTransaction::dma_read_with_spim(
-        &mut spi,
+        spi.cs0()?,
         SpiMonitorInstance::Spim2,
-        ChipSelect::Cs0,
         0x0,
         0x41500usize,
         dma_buf.len() as u32,

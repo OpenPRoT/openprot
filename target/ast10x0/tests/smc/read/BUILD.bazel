@@ -6,7 +6,7 @@ load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
-load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH", "flash_system_image_test")
 
 filegroup(
     name = "system_config",
@@ -184,4 +184,22 @@ rust_binary_no_panics_test(
     name = "no_panics_test",
     binary = ":smc_read_test",
     tags = ["kernel"],
+)
+
+# QEMU variant: default 1 MiB w25q80bl model controller-wide, with both chip
+# selects backed by distinctly-filled images (CS0 = 0x11, CS1 = 0x22) so a
+# read/DMA dump reveals which CS the firmware decoded. The current test pins
+# cs0: None, collapsing CS1 to 0x8000_0000, so it reads out 0x22 (CS1).
+#   bazelisk run --config=virt_ast10x0 //target/ast10x0/tests/smc/read:smc_read_qemu_test
+flash_system_image_test(
+    name = "smc_read_qemu_test",
+    cs0_fill = 0x11,
+    cs0_image = "cs0.img",
+    cs1_fill = 0x22,
+    cs1_image = "cs1.img",
+    flash_size = 1 * 1024 * 1024,
+    image = ":smc_read_test",
+    tags = ["qemu_only"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
 )

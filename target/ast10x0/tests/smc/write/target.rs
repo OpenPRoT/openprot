@@ -10,7 +10,7 @@
 use ast10x0_peripherals::scu::pinctrl::PINCTRL_FMC_QUAD;
 use ast10x0_peripherals::scu::ScuRegisters;
 use ast10x0_peripherals::smc::{
-    ChipSelect, FlashConfig, FmcUninit, SmcConfig, SmcController, SmcError, SmcTopology,
+    FlashConfig, FmcUninit, SmcConfig, SmcController, SmcError, SmcInstance, SmcTopology,
     SpiNorFlash, SpiNorFlashDevice,
 };
 use console_backend::console_backend_write_all;
@@ -21,21 +21,20 @@ use {console_backend as _, entry as _};
 mod target_debug;
 use target_debug::{dump_smc_read, dump_smc_register};
 
-const CS0_CONFIG: FlashConfig = FlashConfig {
-    capacity_mb: 8,
-    page_size: 256,
-    sector_size: 4096,
-    block_size: 65536,
-    spi_clock_mhz: 50,
-};
+/// Compile-time FMC descriptor: both CS driven on the EVB at 50 MHz, geometry
+/// discovered over SFDP at init.
+struct FmcInstance;
 
-const CS1_CONFIG: FlashConfig = FlashConfig {
-    capacity_mb: 64,
-    page_size: 256,
-    sector_size: 4096,
-    block_size: 65536,
-    spi_clock_mhz: 50,
-};
+impl SmcInstance for FmcInstance {
+    const CONTROLLER: SmcController = SmcController::Fmc;
+    const CONFIG: SmcConfig = SmcConfig {
+        cs0: Some(FlashConfig { spi_clock_mhz: 50 }),
+        cs1: Some(FlashConfig { spi_clock_mhz: 50 }),
+        dma_enabled: true,
+        enable_interrupts: false,
+        topology: SmcTopology::BootSpi { master_idx: 0 },
+    };
+}
 
 const TEST_OFFSET: u32 = 0x10_0000;
 const TEST_LEN: usize = 256;
@@ -80,26 +79,15 @@ fn run_smc_fmc_cs1_write_test() -> Result<(), SmcError> {
     let scu = unsafe { ScuRegisters::new_global_unlocked() };
     scu.apply_pinctrl_group(PINCTRL_FMC_QUAD);
 
-    let config = SmcConfig {
-        controller_id: SmcController::Fmc,
-        cs0: Some(CS0_CONFIG),
-        cs1: Some(CS1_CONFIG),
-        dma_enabled: true,
-        enable_interrupts: false,
-        topology: SmcTopology::BootSpi { master_idx: 0 },
-    };
-
     pw_log::info!("=== AST10x0 SMC FMC CS1 write test ===");
-    let fmc = unsafe { FmcUninit::new(config)? };
-    let mut fmc = fmc.init()?;
-    fmc.spi_nor_read_init(ChipSelect::Cs1)?;
+    let mut fmc = unsafe { FmcUninit::<FmcInstance>::new()? }.init()?;
 
     if !fmc.is_ready() {
         return Err(SmcError::HardwareError);
     }
 
     let jedec = {
-        let flash = SpiNorFlash::from_fmc_cs(&mut fmc, CS1_CONFIG, ChipSelect::Cs1)?;
+        let flash = SpiNorFlash::new(fmc.cs1()?)?;
         flash.jedec_id()?
     };
     pw_log::info!(
@@ -111,23 +99,21 @@ fn run_smc_fmc_cs1_write_test() -> Result<(), SmcError> {
 
     pw_log::info!("=== backup CS1 sector ===");
     let original = unsafe { core::slice::from_raw_parts_mut(0x41000 as *mut u8, TEST_SECTOR_LEN) };
-    fmc.dma_read(
-        ChipSelect::Cs1,
-        TEST_OFFSET,
-        0x41000usize,
-        TEST_SECTOR_LEN as u32,
-    )?;
-    loop {
-        match fmc.poll_dma_completion() {
-            core::task::Poll::Pending => {}
-            core::task::Poll::Ready(result) => {
-                result?;
-                break;
+    {
+        let mut cs1 = fmc.cs1()?;
+        cs1.dma_read(TEST_OFFSET, 0x41000usize, TEST_SECTOR_LEN as u32)?;
+        loop {
+            match cs1.poll_dma_completion() {
+                core::task::Poll::Pending => {}
+                core::task::Poll::Ready(result) => {
+                    result?;
+                    break;
+                }
             }
         }
     }
 
-    let mut flash = SpiNorFlash::from_fmc_cs(&mut fmc, CS1_CONFIG, ChipSelect::Cs1)?;
+    let mut flash = SpiNorFlash::new(fmc.cs1()?)?;
 
     pw_log::info!("=== erase CS1 sector ===");
     flash.erase_sector(TEST_OFFSET)?;

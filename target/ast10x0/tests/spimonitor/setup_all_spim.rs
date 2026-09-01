@@ -19,8 +19,8 @@ use ast10x0_peripherals::scu::{
     pinctrl::PINCTRL_SPI1_QUAD, ScuExtMuxSelect, ScuRegisters, SpiMonitorInstance, SpiMonitorSource,
 };
 use ast10x0_peripherals::smc::{
-    ChipSelect, FlashConfig, SmcConfig, SmcController, SmcError, SmcTopology, SpiReady, SpiUninit,
-    TransferMode,
+    ChipSelect, FlashConfig, FlashGeometry, Pinned, SmcConfig, SmcController, SmcError,
+    SmcInstance, SmcTopology, SpiReady, SpiUninit, TransferMode,
 };
 use ast10x0_peripherals::spimonitor::registers::SpiMonitorRegisters;
 use ast10x0_peripherals::spimonitor::{
@@ -73,13 +73,30 @@ const BMC_CSIN_RECOVERY_TIMEOUT_US: u32 = 500_000;
 const BMC_RECOVERY_RETRY_DELAY_US: u32 = 1_000_000;
 const BMC_CSIN_MASK: u32 = (1 << 0) | (1 << 14);
 const ENABLE_RUNTIME_DEBUG_LOGS: bool = false;
-const BMC_FLASH_CONFIG: FlashConfig = FlashConfig {
-    capacity_mb: 128,
+const BMC_FLASH_CONFIG: FlashConfig = FlashConfig { spi_clock_mhz: 25 };
+const BMC_FLASH_GEOMETRY: FlashGeometry = FlashGeometry {
+    capacity_bytes: 0x0400_0000,
     page_size: 256,
     sector_size: 4096,
     block_size: 65536,
-    spi_clock_mhz: 25,
 };
+
+/// Compile-time SPI1 descriptor for the two BMC flashes: both CS at 25 MHz,
+/// geometry pinned so the pre-reset probe never issues an SFDP read.
+struct Spi1Instance;
+
+impl SmcInstance for Spi1Instance {
+    const CONTROLLER: SmcController = SmcController::Spi1;
+    const CONFIG: SmcConfig = SmcConfig {
+        cs0: Some(BMC_FLASH_CONFIG),
+        cs1: Some(BMC_FLASH_CONFIG),
+        dma_enabled: false,
+        enable_interrupts: false,
+        topology: SmcTopology::HostSpi { master_idx: 0 },
+    };
+    type Cs0Geometry = Pinned<BMC_FLASH_GEOMETRY>;
+    type Cs1Geometry = Pinned<BMC_FLASH_GEOMETRY>;
+}
 const ALLOW_COMMANDS: [u8; 32] = [
     0x03, 0x13, 0x0b, 0x0c, 0x6b, 0x6c, 0x01, 0x05, 0x35, 0x06, 0x04, 0x20, 0x21, 0x9f, 0x5a, 0xb7,
     0xe9, 0x32, 0x34, 0xd8, 0xdc, 0x02, 0x12, 0x3b, 0x3c, 0x70, 0xbb, 0xbc, 0x50, 0xeb, 0xec, 0xc2,
@@ -364,7 +381,7 @@ fn monitor_spim_violations(
 
 fn reset_one_bmc_flash(
     scu: &ScuRegisters,
-    spi: &SpiReady,
+    spi: &mut SpiReady<Spi1Instance>,
     monitor: SpiMonitorInstance,
     chip_select: ChipSelect,
 ) -> Result<[u8; 3], SmcError> {
@@ -373,14 +390,18 @@ fn reset_one_bmc_flash(
     let proprietary_state = scu.spim_proprietary_pre_config();
 
     let result = (|| {
-        spi.transceive_user(chip_select, &[0x66], &[], &mut [], TransferMode::Mode111)?;
+        let cs = match chip_select {
+            ChipSelect::Cs0 => spi.cs0()?,
+            ChipSelect::Cs1 => spi.cs1()?,
+        };
+        cs.transceive_user(&[0x66], &[], &mut [], TransferMode::Mode111)?;
         delay_us(10_000);
-        spi.transceive_user(chip_select, &[0x99], &[], &mut [], TransferMode::Mode111)?;
+        cs.transceive_user(&[0x99], &[], &mut [], TransferMode::Mode111)?;
         delay_us(50_000);
-        spi.transceive_user(chip_select, &[0xe9], &[], &mut [], TransferMode::Mode111)?;
+        cs.transceive_user(&[0xe9], &[], &mut [], TransferMode::Mode111)?;
 
         let mut jedec = [0u8; 3];
-        spi.transceive_user(chip_select, &[0x9f], &[], &mut jedec, TransferMode::Mode111)?;
+        cs.transceive_user(&[0x9f], &[], &mut jedec, TransferMode::Mode111)?;
         Ok(jedec)
     })();
 
@@ -393,21 +414,13 @@ fn reset_one_bmc_flash(
 
 fn reset_bmc_flashes(scu: &ScuRegisters, log_jedec: bool) -> Result<(), SmcError> {
     scu.apply_pinctrl_group(PINCTRL_SPI1_QUAD);
-    let config = SmcConfig {
-        controller_id: SmcController::Spi1,
-        cs0: Some(BMC_FLASH_CONFIG),
-        cs1: Some(BMC_FLASH_CONFIG),
-        dma_enabled: false,
-        enable_interrupts: false,
-        topology: SmcTopology::HostSpi { master_idx: 0 },
-    };
-    let spi = unsafe { SpiUninit::new(SmcController::Spi1, config)? }.init()?;
+    let mut spi = unsafe { SpiUninit::<Spi1Instance>::new()? }.init()?;
 
     for (index, monitor, chip_select) in [
         (0u32, SpiMonitorInstance::Spim0, ChipSelect::Cs0),
         (1u32, SpiMonitorInstance::Spim1, ChipSelect::Cs1),
     ] {
-        let jedec = reset_one_bmc_flash(scu, &spi, monitor, chip_select)?;
+        let jedec = reset_one_bmc_flash(scu, &mut spi, monitor, chip_select)?;
         if log_jedec {
             pw_log::info!(
                 "spi1@{} reset complete, JEDEC ID: {:02x} {:02x} {:02x}",
