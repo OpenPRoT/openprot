@@ -29,9 +29,15 @@ fn config() -> AttestConfig {
     }
 }
 
-fn generate(producer: &SoftwareAttestProducer, nonce: &[u8], evidence: &[u8]) -> Vec<u8, MAX_TOKEN_SIZE> {
+fn generate(
+    producer: &SoftwareAttestProducer,
+    nonce: &[u8],
+    evidence: &[u8],
+) -> Vec<u8, MAX_TOKEN_SIZE> {
     let mut out = Vec::new();
-    producer.generate_token(nonce, evidence, 0, &mut out).unwrap();
+    producer
+        .generate_token(nonce, evidence, 0, &mut out)
+        .unwrap();
     out
 }
 
@@ -51,8 +57,7 @@ fn decode_outer(token: &[u8]) -> (Vec<u8, 4096>, Vec<u8, 4096>) {
 
 fn decode_payload(token: &[u8]) -> Vec<(ciborium::value::Value, ciborium::value::Value), 32> {
     let (payload, _) = decode_outer(token);
-    let map: ciborium::value::Value =
-        ciborium::de::from_reader(payload.as_slice()).unwrap();
+    let map: ciborium::value::Value = ciborium::de::from_reader(payload.as_slice()).unwrap();
     let mut v = Vec::new();
     for pair in map.as_map().unwrap() {
         v.push(pair.clone()).unwrap();

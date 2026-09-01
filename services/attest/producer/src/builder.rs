@@ -22,9 +22,7 @@ use heapless::Vec;
 use minicbor::encode::Write as CborWrite;
 use minicbor::Encoder;
 
-use openprot_attest_api::consts::{
-    MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_MEASUREMENTS, MAX_TOKEN_SIZE,
-};
+use openprot_attest_api::consts::{MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_MEASUREMENTS, MAX_TOKEN_SIZE};
 use openprot_attest_api::{AttestConfig, AttestError, DigestAlgorithm, HwSigner, Measurement};
 
 // Registered EAT claim keys (RFC 9711 / RFC 8392)
@@ -149,8 +147,7 @@ pub(crate) fn build(
         }
 
         // measurements array
-        e.i64(CLAIM_MEASUREMENTS)
-            .map_err(|_| AttestError::Cbor)?;
+        e.i64(CLAIM_MEASUREMENTS).map_err(|_| AttestError::Cbor)?;
         e.array(measurements.len() as u64)
             .map_err(|_| AttestError::Cbor)?;
         for m in measurements {
@@ -185,8 +182,7 @@ pub(crate) fn build(
         e.i64(1).map_err(|_| AttestError::Cbor)?;
         e.i64(ALG_ES384).map_err(|_| AttestError::Cbor)?;
         e.i64(HDR_X5CHAIN).map_err(|_| AttestError::Cbor)?;
-        e.array(chain.len() as u64)
-            .map_err(|_| AttestError::Cbor)?;
+        e.array(chain.len() as u64).map_err(|_| AttestError::Cbor)?;
         for cert in &chain {
             e.bytes(cert).map_err(|_| AttestError::Cbor)?;
         }
@@ -201,7 +197,7 @@ pub(crate) fn build(
         let mut e = Encoder::new(&mut w);
         e.array(4).map_err(|_| AttestError::Cbor)?;
         e.bytes(phdr_bytes).map_err(|_| AttestError::Cbor)?;
-        e.map(0).map_err(|_| AttestError::Cbor)?;   // empty unprotected header
+        e.map(0).map_err(|_| AttestError::Cbor)?; // empty unprotected header
         e.bytes(payload_bytes).map_err(|_| AttestError::Cbor)?;
         e.bytes(&sig).map_err(|_| AttestError::Cbor)?;
         w.pos
@@ -284,7 +280,16 @@ mod tests {
 
     fn build_token(evidence: &[u8]) -> Vec<u8, MAX_TOKEN_SIZE> {
         let mut out = Vec::new();
-        build(&config(), &TestSigner, &meas(), b"nonce", evidence, 0, &mut out).unwrap();
+        build(
+            &config(),
+            &TestSigner,
+            &meas(),
+            b"nonce",
+            evidence,
+            0,
+            &mut out,
+        )
+        .unwrap();
         out
     }
 
@@ -340,9 +345,21 @@ mod tests {
     #[test]
     fn nonce_appears_in_payload() {
         let mut out = Vec::<u8, MAX_TOKEN_SIZE>::new();
-        build(&config(), &TestSigner, &meas(), b"testnonce", &[], 0, &mut out).unwrap();
+        build(
+            &config(),
+            &TestSigner,
+            &meas(),
+            b"testnonce",
+            &[],
+            0,
+            &mut out,
+        )
+        .unwrap();
         let (_, payload) = decode_outer(&out);
-        assert_eq!(find_claim_bytes(&payload, CLAIM_NONCE), Some(b"testnonce" as &[u8]));
+        assert_eq!(
+            find_claim_bytes(&payload, CLAIM_NONCE),
+            Some(b"testnonce" as &[u8])
+        );
     }
 
     #[test]
@@ -356,9 +373,21 @@ mod tests {
     fn non_empty_evidence_included_verbatim() {
         let evidence = [0xDE, 0xAD, 0xBE, 0xEF];
         let mut out = Vec::<u8, MAX_TOKEN_SIZE>::new();
-        build(&config(), &TestSigner, &meas(), b"n", &evidence, 0, &mut out).unwrap();
+        build(
+            &config(),
+            &TestSigner,
+            &meas(),
+            b"n",
+            &evidence,
+            0,
+            &mut out,
+        )
+        .unwrap();
         let (_, payload) = decode_outer(&out);
-        assert_eq!(find_claim_bytes(&payload, CLAIM_EVIDENCE), Some(&evidence[..]));
+        assert_eq!(
+            find_claim_bytes(&payload, CLAIM_EVIDENCE),
+            Some(&evidence[..])
+        );
     }
 
     #[test]

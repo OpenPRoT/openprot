@@ -71,8 +71,6 @@ pub trait HwSigner: Send + Sync {
 /// wants to measure beyond Caliptra-internal measurements.
 pub trait MeasurementProvider: Send + Sync {
     fn component_name(&self) -> &str;
-    fn measurements(
-        &self,
-        out: &mut Vec<Measurement, MAX_MEASUREMENTS>,
-    ) -> Result<(), AttestError>;
+    fn measurements(&self, out: &mut Vec<Measurement, MAX_MEASUREMENTS>)
+        -> Result<(), AttestError>;
 }

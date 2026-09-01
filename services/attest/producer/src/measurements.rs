@@ -126,7 +126,10 @@ mod tests {
 
     #[test]
     fn provider_measurements_are_appended() {
-        let p = StubProvider { name: "UEFI", fail: false };
+        let p = StubProvider {
+            name: "UEFI",
+            fail: false,
+        };
         let mut out = Vec::new();
         collect(&[rom()], &[&p as &dyn MeasurementProvider], &mut out).unwrap();
         assert_eq!(out.len(), 2);
@@ -135,16 +138,33 @@ mod tests {
 
     #[test]
     fn multiple_providers_all_appended() {
-        let p1 = StubProvider { name: "UEFI", fail: false };
-        let p2 = StubProvider { name: "BMC", fail: false };
+        let p1 = StubProvider {
+            name: "UEFI",
+            fail: false,
+        };
+        let p2 = StubProvider {
+            name: "BMC",
+            fail: false,
+        };
         let mut out = Vec::new();
-        collect(&[], &[&p1 as &dyn MeasurementProvider, &p2 as &dyn MeasurementProvider], &mut out).unwrap();
+        collect(
+            &[],
+            &[
+                &p1 as &dyn MeasurementProvider,
+                &p2 as &dyn MeasurementProvider,
+            ],
+            &mut out,
+        )
+        .unwrap();
         assert_eq!(out.len(), 2);
     }
 
     #[test]
     fn failing_provider_propagates_error() {
-        let p = StubProvider { name: "BMC", fail: true };
+        let p = StubProvider {
+            name: "BMC",
+            fail: true,
+        };
         let mut out = Vec::new();
         let err = collect(&[], &[&p as &dyn MeasurementProvider], &mut out).unwrap_err();
         assert!(matches!(err, AttestError::Provider(_)));
