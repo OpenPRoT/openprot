@@ -5,12 +5,9 @@
 
 use core::convert::TryFrom;
 
-use crate::smc::types::ChipSelect;
-use crate::smc::types::FlashConfig;
-use crate::smc::types::SmcConfig;
 use crate::smc::types::SmcError;
 
-const SMC_WINDOW_SIZE_BYTES: usize = 256 * 1024 * 1024;
+pub(crate) const SMC_WINDOW_SIZE_BYTES: usize = 256 * 1024 * 1024;
 const DMA_MAX_TRANSFER_LENGTH: u32 = 0x20_0000; // 32MBytes
 pub(crate) const SPI_CTRL_FREQ_MASK: u32 = 0x0F00_0F00;
 
@@ -62,41 +59,6 @@ pub(crate) struct ValidatedDmaRead {
     /// Value to write to the DMA length register (transfer length minus one).
     /// [0:24] 0x1F_FFFF:32Mbytes
     pub dma_len_reg: u32,
-}
-
-pub(crate) fn flash_capacity_bytes(config: Option<FlashConfig>) -> Result<usize, SmcError> {
-    match config {
-        Some(config) => (config.capacity_mb as usize)
-            .checked_mul(1024 * 1024)
-            .ok_or(SmcError::InvalidCapacity),
-        None => Ok(0),
-    }
-}
-
-pub(crate) fn cs_capacity_bytes(config: &SmcConfig, cs: ChipSelect) -> Result<usize, SmcError> {
-    let slot = match cs {
-        ChipSelect::Cs0 => config.cs0,
-        ChipSelect::Cs1 => config.cs1,
-    };
-    match slot {
-        Some(_) => flash_capacity_bytes(slot),
-        None => Err(SmcError::InvalidChipSelect),
-    }
-}
-
-pub(crate) fn total_capacity_bytes(
-    cs0: Option<FlashConfig>,
-    cs1: Option<FlashConfig>,
-) -> Result<usize, SmcError> {
-    let cs0_size = flash_capacity_bytes(cs0)?;
-    let cs1_size = flash_capacity_bytes(cs1)?;
-    let total = cs0_size
-        .checked_add(cs1_size)
-        .ok_or(SmcError::InvalidCapacity)?;
-    if total > SMC_WINDOW_SIZE_BYTES {
-        return Err(SmcError::InvalidCapacity);
-    }
-    Ok(total)
 }
 
 pub(crate) fn validate_mapped_range(
@@ -167,7 +129,7 @@ pub(crate) fn validate_dma_read(
 /// Encode an FMC memory segment into hardware register format.
 ///
 /// FMC decode fields use 512 KiB alignment. `end` is exclusive.
-pub(crate) fn encode_fmc_segment(start: usize, end: usize) -> Result<u32, SmcError> {
+pub(crate) const fn encode_fmc_segment(start: usize, end: usize) -> Result<u32, SmcError> {
     if end == 0 || end <= start {
         return Err(SmcError::InvalidCapacity);
     }
@@ -180,7 +142,7 @@ pub(crate) fn encode_fmc_segment(start: usize, end: usize) -> Result<u32, SmcErr
 /// Encode an SPI1/SPI2 memory segment into hardware register format.
 ///
 /// SPI decode fields use 1 MiB alignment. `end` is exclusive.
-pub(crate) fn encode_spi_segment(start: usize, end: usize) -> Result<u32, SmcError> {
+pub(crate) const fn encode_spi_segment(start: usize, end: usize) -> Result<u32, SmcError> {
     if end == 0 || end <= start {
         return Err(SmcError::InvalidCapacity);
     }
@@ -342,27 +304,6 @@ mod tests {
     #[test]
     fn test_segment_overflow() {
         let result = encode_fmc_segment(0, 512 * 1024 * 1024);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_total_capacity_overflow() {
-        let result = total_capacity_bytes(
-            Some(FlashConfig {
-                capacity_mb: 128,
-                page_size: 256,
-                sector_size: 4096,
-                block_size: 65536,
-                spi_clock_mhz: 25,
-            }),
-            Some(FlashConfig {
-                capacity_mb: 129,
-                page_size: 256,
-                sector_size: 4096,
-                block_size: 65536,
-                spi_clock_mhz: 25,
-            }),
-        );
         assert!(result.is_err());
     }
 

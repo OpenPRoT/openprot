@@ -7,9 +7,9 @@ use core::ops::FnMut;
 use core::result::Result;
 use core::result::Result::{Err, Ok};
 
-use crate::smc::fmc::FmcReady;
-use crate::smc::spi::SpiReady;
-use crate::smc::types::{AddressWidth, ChipSelect, FlashConfig, SmcError, TransferMode};
+use crate::smc::controller::Cs;
+use crate::smc::types::{AddressWidth, SmcError, TransferMode};
+use util_sfdp::FlashGeometry;
 
 /// Build a command byte array: opcode followed by address bytes selected by
 /// `width`. Returns a fixed-size buffer and the valid length.
@@ -191,11 +191,6 @@ fn poll_delay() {
     }
 }
 
-enum FlashBackend<'a> {
-    Fmc(&'a FmcReady),
-    Spi(&'a SpiReady),
-}
-
 /// Decoded JEDEC identifier returned by `READ_ID` (`0x9F`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct JedecId {
@@ -229,11 +224,10 @@ fn expect_jedec_match(actual: JedecId, expected: JedecId) -> Result<JedecId, Smc
 
 /// Wrapper-aware SPI NOR flash facade.
 pub struct SpiNorFlash<'a> {
-    backend: FlashBackend<'a>,
+    /// Per-chip handle; the chip select is baked in.
+    cs: Cs<'a>,
     // Validated metadata for Phase 3B alignment/policy checks.
-    cfg: FlashConfig,
-    /// Chip select this flash device sits on.
-    cs: ChipSelect,
+    cfg: FlashGeometry,
     /// IO mode used for all SPI command transactions (WREN, RDSR, PP, SE).
     /// Defaults to `Mode111` (single-wire cmd/addr/data).
     cmd_mode: TransferMode,
@@ -244,46 +238,17 @@ pub struct SpiNorFlash<'a> {
 }
 
 impl<'a> SpiNorFlash<'a> {
-    /// Build a flash facade from an initialized FMC controller wrapper.
-    pub fn from_fmc(fmc: &'a mut FmcReady, cfg: FlashConfig) -> Result<Self, SmcError> {
-        Self::from_fmc_cs(fmc, cfg, ChipSelect::Cs0)
-    }
-
-    /// Build a flash facade from an initialized FMC controller wrapper with explicit CS.
-    pub fn from_fmc_cs(
-        fmc: &'a mut FmcReady,
-        cfg: FlashConfig,
-        cs: ChipSelect,
-    ) -> Result<Self, SmcError> {
+    /// Build a flash facade from a per-chip [`Cs`] handle.
+    ///
+    /// The handle already carries the resolved flash geometry (pinned or
+    /// SFDP-discovered) and the chip select, so no `ChipSelect` argument is
+    /// needed here.
+    pub fn new(cs: Cs<'a>) -> Result<Self, SmcError> {
+        let cfg = cs.geometry();
         let addressing_policy = Self::default_addressing_for_cfg(cfg);
-        Self::validate_capacity_cfg(cfg, fmc.cs_config(cs)?)?;
         Ok(Self {
-            backend: FlashBackend::Fmc(fmc),
-            cfg,
             cs,
-            cmd_mode: TransferMode::Mode111,
-            addressing_policy,
-            command_profile: FlashCommandProfile::for_addressing(addressing_policy),
-        })
-    }
-
-    /// Build a flash facade from an initialized SPI1/SPI2 controller wrapper.
-    pub fn from_spi(spi: &'a mut SpiReady, cfg: FlashConfig) -> Result<Self, SmcError> {
-        Self::from_spi_cs(spi, cfg, ChipSelect::Cs0)
-    }
-
-    /// Build a flash facade from an initialized SPI1/SPI2 controller wrapper with explicit CS.
-    pub fn from_spi_cs(
-        spi: &'a mut SpiReady,
-        cfg: FlashConfig,
-        cs: ChipSelect,
-    ) -> Result<Self, SmcError> {
-        let addressing_policy = Self::default_addressing_for_cfg(cfg);
-        Self::validate_capacity_cfg(cfg, spi.cs_config(cs)?)?;
-        Ok(Self {
-            backend: FlashBackend::Spi(spi),
             cfg,
-            cs,
             cmd_mode: TransferMode::Mode111,
             addressing_policy,
             command_profile: FlashCommandProfile::for_addressing(addressing_policy),
@@ -398,19 +363,17 @@ impl<'a> SpiNorFlash<'a> {
         Ok(written)
     }
 
-    fn validate_capacity_cfg(cfg: FlashConfig, expected: FlashConfig) -> Result<(), SmcError> {
-        if cfg != expected {
-            return Err(SmcError::InvalidCapacity);
-        }
-        Ok(())
-    }
-
-    fn default_addressing_for_cfg(cfg: FlashConfig) -> FlashAddressingPolicy {
-        if cfg.capacity_mb > 16 {
+    fn default_addressing_for_cfg(cfg: FlashGeometry) -> FlashAddressingPolicy {
+        if cfg.capacity_bytes > 16 * 1024 * 1024 {
             FlashAddressingPolicy::FourByteCommands
         } else {
             FlashAddressingPolicy::ThreeByteOnly
         }
+    }
+
+    /// Return the SFDP-discovered geometry for this device.
+    pub fn geometry(&self) -> FlashGeometry {
+        self.cfg
     }
 
     pub fn addr_width(&self) -> AddressWidth {
@@ -423,8 +386,8 @@ impl<'a> SpiNorFlash<'a> {
 
     /// Validate a device-local offset before handing it to the controller.
     ///
-    /// `FmcReady::read` / `SpiReady::read` already select the per-CS AHB
-    /// window from the chip-select argument, so offsets stay CS-local here.
+    /// The `Cs` handle already selects the per-CS AHB window, so offsets stay
+    /// CS-local here.
     fn device_to_controller_offset(&self, device_offset: u32) -> Result<u32, SmcError> {
         let cs_cap = self.capacity_bytes()?;
         if (device_offset as usize) >= cs_cap {
@@ -456,38 +419,23 @@ impl<'a> SpiNorFlash<'a> {
     }
 
     fn issue_command(&mut self, cmd: &[u8], payload: &[u8]) -> Result<(), SmcError> {
-        let cs = self.cs;
         let mode = self.cmd_mode;
-        match &self.backend {
-            FlashBackend::Fmc(fmc) => fmc.transceive_user(cs, cmd, payload, &mut [], mode),
-            FlashBackend::Spi(spi) => spi.transceive_user(cs, cmd, payload, &mut [], mode),
-        }
+        self.cs.transceive_user(cmd, payload, &mut [], mode)
     }
 
     fn read_status_impl(&self) -> Result<u8, SmcError> {
-        let cs = self.cs;
         let mode = self.cmd_mode;
         let opcode = self.command_profile().read_status;
         let mut status = [0u8; 1];
-        match &self.backend {
-            FlashBackend::Fmc(fmc) => fmc.transceive_user(cs, &[opcode], &[], &mut status, mode)?,
-            FlashBackend::Spi(spi) => spi.transceive_user(cs, &[opcode], &[], &mut status, mode)?,
-        }
+        self.cs.transceive_user(&[opcode], &[], &mut status, mode)?;
         Ok(status[0])
     }
 
     fn read_jedec_id_impl(&self) -> Result<[u8; 3], SmcError> {
-        let cs = self.cs;
         let mode = self.cmd_mode;
         let mut id = [0u8; 3];
-        match &self.backend {
-            FlashBackend::Fmc(fmc) => {
-                fmc.transceive_user(cs, &[commands::READ_ID], &[], &mut id, mode)?
-            }
-            FlashBackend::Spi(spi) => {
-                spi.transceive_user(cs, &[commands::READ_ID], &[], &mut id, mode)?
-            }
-        }
+        self.cs
+            .transceive_user(&[commands::READ_ID], &[], &mut id, mode)?;
         Ok(id)
     }
 
@@ -516,20 +464,13 @@ impl SpiNorFlashDevice for SpiNorFlash<'_> {
         // the controller-window address before issuing the segment-routed read.
         self.validate_range(offset, buf.len())?;
         let translated = self.device_to_controller_offset(offset)?;
-        let cs = self.cs;
         //TODO: need to add dma_read variant if buf.len() is above some threshold
         // and dma is enabled
-        match &self.backend {
-            FlashBackend::Fmc(fmc) => fmc.read(cs, translated, buf),
-            FlashBackend::Spi(spi) => spi.read(cs, translated, buf),
-        }
+        self.cs.read(translated, buf)
     }
 
     fn capacity_bytes(&self) -> Result<usize, SmcError> {
-        match &self.backend {
-            FlashBackend::Fmc(fmc) => fmc.cs_capacity_bytes(self.cs),
-            FlashBackend::Spi(spi) => spi.cs_capacity_bytes(self.cs),
-        }
+        Ok(self.cs.capacity_bytes())
     }
 
     fn erase_sector(&mut self, offset: u32) -> Result<(), SmcError> {
@@ -575,7 +516,8 @@ mod tests {
         commands, compare_chunked, encode_addr_cmd, expect_jedec_match, FlashAddressingPolicy,
         FlashCommandProfile, JedecId, SpiNorFlash,
     };
-    use crate::smc::types::{AddressWidth, FlashConfig, SmcError};
+    use crate::smc::types::{AddressWidth, SmcError};
+    use util_sfdp::FlashGeometry;
 
     #[test]
     fn encode_addr_cmd_none_emits_opcode_only() {
@@ -621,23 +563,21 @@ mod tests {
     #[test]
     fn default_addressing_policy_derives_from_capacity() {
         assert_eq!(
-            SpiNorFlash::default_addressing_for_cfg(FlashConfig {
-                capacity_mb: 8,
+            SpiNorFlash::default_addressing_for_cfg(FlashGeometry {
+                capacity_bytes: 8 * 1024 * 1024,
                 page_size: 256,
                 sector_size: 4096,
                 block_size: 65536,
-                spi_clock_mhz: 25,
             }),
             FlashAddressingPolicy::ThreeByteOnly
         );
 
         assert_eq!(
-            SpiNorFlash::default_addressing_for_cfg(FlashConfig {
-                capacity_mb: 32,
+            SpiNorFlash::default_addressing_for_cfg(FlashGeometry {
+                capacity_bytes: 32 * 1024 * 1024,
                 page_size: 256,
                 sector_size: 4096,
                 block_size: 65536,
-                spi_clock_mhz: 25,
             }),
             FlashAddressingPolicy::FourByteCommands
         );
