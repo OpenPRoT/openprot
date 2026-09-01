@@ -4,7 +4,7 @@
 use heapless::Vec;
 
 use crate::consts::{MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_TOKEN_SIZE};
-use crate::{AttestError, CertChain};
+use crate::AttestError;
 
 /// Platform-independent attestation producer interface.
 ///
