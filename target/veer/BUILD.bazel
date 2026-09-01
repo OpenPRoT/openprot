@@ -4,7 +4,7 @@
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@pigweed//pw_build:merge_flags.bzl", "flags_from_dict")
 load("@pigweed//pw_kernel:flags.bzl", "KERNEL_DEVICE_COMMON_FLAGS")
-load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
 load("//target/veer:defs.bzl", "TARGET_COMPATIBLE_WITH")
 
 platform(
@@ -83,6 +83,22 @@ rust_library(
         "@pigweed//pw_kernel/kernel",
         "@pigweed//pw_kernel/lib/memory_config",
         "@rust_crates//:riscv-rt",
+    ],
+)
+
+rust_binary(
+    name = "caliptra_emulator",
+    srcs = ["caliptra_emulator_main.rs"],
+    aliases = {
+        "//third_party/caliptra/caliptra-mcu-sw:emulator_lib": "emulator",
+    },
+    edition = "2021",
+    visibility = [":__subpackages__"],
+    deps = [
+        "//third_party/caliptra/caliptra-mcu-sw:emulator_lib",
+        "//third_party/caliptra/caliptra-mcu-sw:mcu_testing_common",
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_cpu",
+        "@rust_caliptra_crates_host//:clap",
     ],
 )
 

@@ -1,0 +1,22 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// Same memory layout as the unittest_runner (kernel-only, no apps).
+// IRQ 19 is the primary flash controller's error interrupt
+// (McuRootBus::PRIMARY_FLASH_CTRL_ERROR_IRQ).
+{
+  arch: {
+    type: "riscv",
+  },
+  kernel: {
+    flash_start_address: 0x40000000,
+    flash_size_bytes: 65536,
+    ram_start_address: 0x40040000,
+    ram_size_bytes: 32768,
+    interrupt_table: {
+      table: {
+        "19": "flash_error_handler",
+      }
+    },
+  },
+}

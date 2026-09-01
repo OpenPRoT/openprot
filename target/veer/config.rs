@@ -55,6 +55,10 @@ pub struct VeerPicConfig;
 impl VeerPicConfigInterface for VeerPicConfig {
     const PIC_BASE_ADDRESS: usize = PIC_BASE;
     const MAX_IRQS: u32 = 256;
+    // The VeeR core requires the external-interrupt redirect table to live
+    // in DCCM; this image does not otherwise use DCCM. 256 IRQs * 4 bytes
+    // fits well within the 16KiB DCCM.
+    const MEIVT_BASE_ADDRESS: usize = 0x5000_0000;
 }
 
 pub struct TimerConfig;

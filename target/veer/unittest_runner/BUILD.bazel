@@ -24,7 +24,12 @@ target_linker_script(
 caliptra_test(
     name = "emulator_test",
     interface = "emulator",
-    tags = ["emulator"],
+    # caliptra_runner.py hardcodes --i3c-port=65534, so caliptra emulator
+    # tests cannot run in parallel without an EADDRINUSE collision.
+    tags = [
+        "emulator",
+        "exclusive",
+    ],
     target = ":unittest_runner",
 )
 

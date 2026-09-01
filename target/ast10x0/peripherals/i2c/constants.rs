@@ -56,6 +56,11 @@ pub const I2C_BUF_SIZE: u8 = 0x20;
 /// Default timeout in microseconds
 pub const DEFAULT_TIMEOUT_US: u32 = 1_000_000;
 
+/// Secondary timeout (loop iterations) for waiting on the master engine to
+/// quiesce after a DMA transaction is aborted. Bounds the idle-poll in
+/// `abort_master_dma` so a wedged controller cannot hang the caller.
+pub const ABORT_TIMEOUT_US: u32 = 10_000;
+
 /// Maximum retry attempts for operations
 pub const MAX_RETRY_ATTEMPTS: u32 = 3;
 

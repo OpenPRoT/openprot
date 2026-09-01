@@ -210,7 +210,7 @@ fn mctp_server_loop() -> Result<()> {
                             Instant::MAX
                         } else {
                             SystemClock::now()
-                                .checked_add_duration(Duration::from_millis(timeout_millis as i64))
+                                .checked_add_duration(Duration::from_millis(timeout_millis as u64))
                                 .unwrap_or(Instant::MAX)
                         };
                         pending_recv = Some(PendingRecv {

@@ -23,6 +23,19 @@ rust_library(
     ],
 )
 
+# no_std register definitions for Caliptra-SS peripherals (I3C, DMA, fuses, …).
+rust_library(
+    name = "firmware_registers_generated",
+    srcs = ["@caliptra_mcu_sw//:all_files"],
+    crate_name = "caliptra_mcu_registers_generated",
+    crate_root = "@caliptra_mcu_sw//:registers/generated-firmware/src/lib.rs",
+    edition = "2021",
+    deps = [
+        "//third_party/caliptra:crate_tock-registers",
+        "//third_party/caliptra:crate_zeroize",
+    ],
+)
+
 rust_library(
     name = "emulator_bmc",
     srcs = ["@caliptra_mcu_sw//:emulator_bmc_srcs"],

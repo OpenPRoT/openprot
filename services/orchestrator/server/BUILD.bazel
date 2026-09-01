@@ -1,0 +1,23 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "orchestrator_server",
+    srcs = [
+        "src/lib.rs",
+        "src/runtime.rs",
+    ],
+    crate_name = "openprot_orchestrator_server",
+    edition = "2024",
+    tags = ["kernel"],
+    # Any pw_kernel userspace target (ast10x0, earlgrey, veer); not the host.
+    target_compatible_with = ["@platforms//os:none"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/orchestrator/sm:orchestrator_sm",
+        "//services/orchestrator/timer:orchestrator_timer",
+        "@pigweed//pw_kernel/userspace",
+    ],
+)

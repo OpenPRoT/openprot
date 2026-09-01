@@ -12,8 +12,8 @@ mod types;
 
 pub use registers::GpioRegisters;
 pub use types::{
-    Floating, GpioError, GpioExt, Input, InputMode, InterruptMode, OpenDrain, OpenDrainMode,
-    Output, OutputMode, PullDown, PullUp, PushPull, Tristate,
+    ActiveHigh, ActiveLow, Floating, GpioError, GpioExt, Input, InputMode, InterruptMode,
+    OpenDrain, OpenDrainMode, Output, OutputMode, PullDown, PullUp, PushPull, Tristate,
 };
 
 macro_rules! gpio_macro {
@@ -137,10 +137,16 @@ macro_rules! gpio_macro {
                     {
                         let p = unsafe { &*device::Gpio::ptr() };
                         p.$data_val_reg().modify(|r, w| unsafe {
-                            w.bits(r.bits() | (1u32 << ($pos + $i)))
+                            let mask = 1u32 << ($pos + $i);
+                            w.bits(if ODM::ACTIVE_HIGH {
+                                r.bits() | mask
+                            } else {
+                                r.bits() & !mask
+                            })
                         });
+                        // Start released in the inactive state.
                         p.$dir_reg().modify(|r, w| unsafe {
-                            w.bits(r.bits() | (1u32 << ($pos + $i)))
+                            w.bits(r.bits() & !(1u32 << ($pos + $i)))
                         });
                         $PXi { _mode: PhantomData }
                     }
@@ -159,10 +165,7 @@ macro_rules! gpio_macro {
                     }
                 }
 
-                impl<MODE> StatefulOutputPin for $PXi<Output<MODE>>
-                where
-                    MODE: OutputMode,
-                {
+                impl StatefulOutputPin for $PXi<Output<PushPull>> {
                     fn is_set_high(&mut self) -> Result<bool, Self::Error> {
                         let p = unsafe { &*device::Gpio::ptr() };
                         Ok(
@@ -176,10 +179,7 @@ macro_rules! gpio_macro {
                     }
                 }
 
-                impl<MODE> OutputPin for $PXi<Output<MODE>>
-                where
-                    MODE: OutputMode,
-                {
+                impl OutputPin for $PXi<Output<PushPull>> {
                     fn set_high(&mut self) -> Result<(), Self::Error> {
                         let p = unsafe { &*device::Gpio::ptr() };
                         p.$data_val_reg().modify(|r, w| unsafe {
@@ -197,6 +197,53 @@ macro_rules! gpio_macro {
                     }
                 }
 
+                impl<ODM> StatefulOutputPin for $PXi<Output<OpenDrain<ODM>>>
+                where
+                    ODM: OpenDrainMode,
+                {
+                    fn is_set_high(&mut self) -> Result<bool, Self::Error> {
+                        let p = unsafe { &*device::Gpio::ptr() };
+                        let is_output =
+                            (p.$dir_reg().read().bits() & (1u32 << ($pos + $i))) != 0;
+                        Ok(is_output == ODM::ACTIVE_HIGH)
+                    }
+
+                    fn is_set_low(&mut self) -> Result<bool, Self::Error> {
+                        self.is_set_high().map(|v| !v)
+                    }
+                }
+
+                impl<ODM> OutputPin for $PXi<Output<OpenDrain<ODM>>>
+                where
+                    ODM: OpenDrainMode,
+                {
+                    fn set_high(&mut self) -> Result<(), Self::Error> {
+                        let p = unsafe { &*device::Gpio::ptr() };
+                        p.$dir_reg().modify(|r, w| unsafe {
+                            let mask = 1u32 << ($pos + $i);
+                            w.bits(if ODM::ACTIVE_HIGH {
+                                r.bits() | mask
+                            } else {
+                                r.bits() & !mask
+                            })
+                        });
+                        Ok(())
+                    }
+
+                    fn set_low(&mut self) -> Result<(), Self::Error> {
+                        let p = unsafe { &*device::Gpio::ptr() };
+                        p.$dir_reg().modify(|r, w| unsafe {
+                            let mask = 1u32 << ($pos + $i);
+                            w.bits(if ODM::ACTIVE_HIGH {
+                                r.bits() & !mask
+                            } else {
+                                r.bits() | mask
+                            })
+                        });
+                        Ok(())
+                    }
+                }
+
                 impl<MODE> InputPin for $PXi<Input<MODE>>
                 where
                     MODE: InputMode,
@@ -204,7 +251,7 @@ macro_rules! gpio_macro {
                     fn is_high(&mut self) -> Result<bool, Self::Error> {
                         let p = unsafe { &*device::Gpio::ptr() };
                         Ok(
-                            (p.$data_read_reg().read().bits() & (1u32 << ($pos + $i)))
+                            (p.$data_val_reg().read().bits() & (1u32 << ($pos + $i)))
                                 == (1u32 << ($pos + $i)),
                         )
                     }
@@ -274,10 +321,8 @@ macro_rules! gpio_macro {
                                 p.$int_sen_t2().modify(|r, w| unsafe {
                                     w.bits(r.bits() & !(1u32 << ($pos + $i)))
                                 });
-                                // Note: original uses `| !` (OR with NOT) here, preserved
-                                // faithfully.
                                 p.$int_en_reg().modify(|r, w| unsafe {
-                                    w.bits(r.bits() | !(1u32 << ($pos + $i)))
+                                    w.bits(r.bits() | (1u32 << ($pos + $i)))
                                 });
                             }
                             InterruptMode::EdgeBoth => {

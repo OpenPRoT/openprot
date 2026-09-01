@@ -1,0 +1,29 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "devices",
+    srcs = ["devices.rs"],
+    crate_name = "board_devices",
+    edition = "2024",
+    deps = ["//services/orchestrator/config:orchestrator_config"],
+)
+
+rust_library(
+    name = "otp",
+    srcs = ["otp.rs"],
+    crate_name = "board_otp",
+    edition = "2024",
+    deps = ["//services/orchestrator/capabilities:orchestrator_capabilities"],
+)
+
+# Host tests: build on the host platform, no kernel/QEMU.
+rust_test(
+    name = "otp_test",
+    crate = ":otp",
+    edition = "2024",
+)

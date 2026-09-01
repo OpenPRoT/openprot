@@ -24,6 +24,7 @@ rust_library(
         "hace/registers.rs",
         "i2c/constants.rs",
         "i2c/controller.rs",
+        "i2c/dma.rs",
         "i2c/error.rs",
         "i2c/global.rs",
         "i2c/hal_impl.rs",
@@ -48,6 +49,8 @@ rust_library(
         "i3c/registers.rs",
         "i3c/types.rs",
         "lib.rs",
+        "otp/common.rs",
+        "otp/mod.rs",
         "scu/cache.rs",
         "scu/clock.rs",
         "scu/mod.rs",
@@ -106,6 +109,26 @@ rust_library(
         "@rust_crates//:heapless",
         "@rust_crates//:nb",
         "@rust_crates//:zerocopy",
+    ],
+)
+
+rust_test(
+    name = "otp_test",
+    srcs = [
+        "otp/common.rs",
+        "otp/mod.rs",
+    ],
+    crate_name = "otp_test",
+    crate_root = "otp/mod.rs",
+    edition = "2024",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        "@ast1060_pac",
+        "@rust_crates//:embedded-hal",
+        "@rust_crates//:heapless",
     ],
 )
 

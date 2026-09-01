@@ -45,7 +45,7 @@ pw_py_importable_runfile(
 
 pw_py_importable_runfile(
     name = "emulator-exe-runfiles",
-    src = "//third_party/caliptra/caliptra-mcu-sw:emulator",
+    src = "//target/veer:caliptra_emulator",
     executable = True,
     import_location = "caliptra.emulator_exe",
 )

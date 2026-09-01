@@ -104,8 +104,8 @@
         "build_type": "bazel",
         "args": [
           "--keep_going",
-          "--build_tag_filters=+emulator",
-          "--test_tag_filters=+emulator",
+          "--build_tag_filters=+emulator,-disabled",
+          "--test_tag_filters=+emulator,-disabled",
           "--test_output=streamed"
         ],
         "driver_options": {
@@ -199,11 +199,12 @@
     },
     {
       "name": "ci",
-      "description": "Execute CI tests plus dedicated AST10x0 and Earlgrey QEMU coverage",
+      "description": "Execute CI tests plus dedicated AST10x0, Earlgrey QEMU and Caliptra emulator coverage",
       "builds": [
         "ci_tests",
         "ast10x0_qemu_tests",
-        "earlgrey_qemu_tests"
+        "earlgrey_qemu_tests",
+        "caliptra_emulator_tests"
       ]
     },
     {

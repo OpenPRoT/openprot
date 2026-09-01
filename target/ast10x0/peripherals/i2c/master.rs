@@ -28,7 +28,9 @@
 //! - **i2cm14** (Interrupt Status Register): Read status, write-to-clear
 //!   - Reference: `ast1060_i2c.rs:849-870` (`aspeed_i2c_master_irq`)
 
-use super::{constants, controller::Ast1060I2c, error::I2cError, types::I2cXferMode};
+use super::{
+    constants, controller::Ast1060I2c, dma::ArmedDma, error::I2cError, types::I2cXferMode,
+};
 
 impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
     /// Write bytes to an I2C device
@@ -500,19 +502,9 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
                 dma_buf.as_ptr() as u32
             };
 
-            // Set DMA TX length in i2cm1c (len - 1)
-            #[allow(clippy::cast_possible_truncation)]
-            self.regs().i2cm1c().write(|w| unsafe {
-                w.dmatx_buf_len_byte()
-                    .bits((chunk_len - 1) as u16)
-                    .dmatx_buf_len_wr_enbl_for_cur_write_cmd()
-                    .set_bit()
-            });
-
-            // Set DMA TX buffer base address in i2cm30
-            self.regs()
-                .i2cm30()
-                .write(|w| unsafe { w.sdramdmabuffer_base_addr().bits(phy_addr) });
+            // Arm the DMA engine (i2cm1c length + i2cm30 base addr). The guard
+            // tears the engine down automatically if we return before commit.
+            let dma = ArmedDma::arm_tx(self.mmio(), phy_addr, chunk_len);
 
             self.clear_interrupts(0xffff_ffff);
             self.completion = false;
@@ -532,7 +524,12 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
 
             self.regs().i2cm18().write(|w| unsafe { w.bits(cmd) });
 
-            self.wait_completion(constants::DEFAULT_TIMEOUT_US)?;
+            match self.wait_completion(constants::DEFAULT_TIMEOUT_US) {
+                // STOP issued; the engine quiesced normally.
+                Ok(()) => dma.commit(),
+                // Timeout: `dma` drops here, soft-resetting the live engine.
+                Err(e) => return Err(e),
+            }
 
             let status = self.regs().i2cm14().read().bits();
             if status & constants::AST_I2CM_PKT_ERROR != 0 {
@@ -581,19 +578,9 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
                 dma_buf.as_ptr() as u32
             };
 
-            // Set DMA RX length in i2cm1c (len - 1)
-            #[allow(clippy::cast_possible_truncation)]
-            self.regs().i2cm1c().modify(|_, w| unsafe {
-                w.dmarx_buf_len_byte()
-                    .bits((chunk_len - 1) as u16)
-                    .dmarx_buf_len_wr_enbl_for_cur_write_cmd()
-                    .set_bit()
-            });
-
-            // Set DMA RX buffer base address in i2cm34
-            self.regs()
-                .i2cm34()
-                .modify(|_, w| unsafe { w.sdramdmabuffer_base_addr1().bits(phy_addr) });
+            // Arm the DMA engine (i2cm1c length + i2cm34 base addr). The guard
+            // tears the engine down automatically if we return before commit.
+            let dma = ArmedDma::arm_rx(self.mmio(), phy_addr, chunk_len);
 
             self.clear_interrupts(0xffff_ffff);
             self.completion = false;
@@ -612,7 +599,12 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
 
             self.regs().i2cm18().write(|w| unsafe { w.bits(cmd) });
 
-            self.wait_completion(constants::DEFAULT_TIMEOUT_US)?;
+            match self.wait_completion(constants::DEFAULT_TIMEOUT_US) {
+                // STOP issued; the engine quiesced normally.
+                Ok(()) => dma.commit(),
+                // Timeout: `dma` drops here, soft-resetting the live engine.
+                Err(e) => return Err(e),
+            }
 
             let status = self.regs().i2cm14().read().bits();
             if status & constants::AST_I2CM_PKT_ERROR != 0 {
