@@ -498,12 +498,7 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
                     .write(|w| w.bits(constants::AST_I2CS_PKT_DONE));
             }
             let sts = status & (!(constants::AST_I2CS_PKT_DONE | constants::AST_I2CS_PKT_ERROR));
-            if sts == constants::AST_I2CS_SLAVE_MATCH
-                || sts == constants::AST_I2CS_SLAVE_MATCH | constants::AST_I2CS_RX_DONE
-            {
-                // S: Sw
-                return Some(SlaveEvent::WriteRequest);
-            } else if sts == constants::AST_I2CS_SLAVE_MATCH | constants::AST_I2CS_WAIT_RX_DMA
+            if sts == constants::AST_I2CS_SLAVE_MATCH | constants::AST_I2CS_WAIT_RX_DMA
                 || sts
                     == constants::AST_I2CS_SLAVE_MATCH
                         | constants::AST_I2CS_RX_DONE
@@ -517,6 +512,24 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
                 return Some(SlaveEvent::DataReceived {
                     len: self.slave_rx_len(),
                 });
+            } else if sts == constants::AST_I2CS_SLAVE_MATCH | constants::AST_I2CS_RX_DONE {
+                // S: Sw|D (buffer mode — no WAIT_RX_DMA bit)
+                self.arm_slave_receive(&mut cmd);
+                unsafe {
+                    self.regs().i2cs28().write(|w| w.bits(cmd));
+                }
+                return Some(SlaveEvent::DataReceived {
+                    len: self.slave_rx_len(),
+                });
+            } else if sts == constants::AST_I2CS_SLAVE_MATCH {
+                // S: Sw — address match only (e.g. SMBus quick probe); re-arm and
+                // clear status so the bus does not clock-stretch until timeout.
+                self.arm_slave_receive(&mut cmd);
+                unsafe {
+                    self.regs().i2cs28().write(|w| w.bits(cmd));
+                    self.regs().i2cs24().write(|w| w.bits(sts));
+                }
+                return Some(SlaveEvent::WriteRequest);
             } else if sts == constants::AST_I2CS_SLAVE_MATCH | constants::AST_I2CS_STOP {
                 // S: Sw|P
                 self.arm_slave_receive(&mut cmd);
