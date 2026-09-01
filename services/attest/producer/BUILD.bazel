@@ -13,8 +13,6 @@ rust_library(
         "//services/attest/api:attest_api",
         "@rust_crates//:heapless",
         "@rust_crates//:minicbor",
-        "@rust_crates//:thiserror",
-        "@rust_crates//:zeroize",
     ],
 )
 

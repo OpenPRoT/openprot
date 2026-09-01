@@ -77,8 +77,6 @@ and the `x5chain` certificate chain. The CWT payload includes:
 |---|---|
 | `openprot-attest-api` | Trait and type definitions (`AttestProducer`, `CaliptraSigner`, etc.) |
 | `ciborium` | CBOR encoding of token claims and evidence embedding |
-| `thiserror` | `AttestError` derivation |
-| `zeroize` | Zero-on-drop for intermediate key material and sensitive buffers |
 
 ## Cargo build
 
