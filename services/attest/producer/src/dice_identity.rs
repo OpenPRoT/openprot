@@ -30,7 +30,7 @@ pub fn cert_chain(signer: &dyn HwSigner) -> Result<CertChain, AttestError> {
 mod tests {
     use super::*;
     use heapless::Vec;
-    use openprot_attest_api::consts::{MAX_CERT_SIZE, MAX_CHAIN_LEN};
+    use openprot_attest_api::consts::{MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_MEASUREMENTS};
     use openprot_attest_api::AttestError;
 
     struct OneCert;
@@ -52,6 +52,12 @@ mod tests {
             c.extend_from_slice(&[0x30, 0x00]).unwrap();
             buf.push(c).map_err(|_| AttestError::BufferFull)
         }
+        fn caliptra_measurements(
+            &self,
+            _out: &mut Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS>,
+        ) -> Result<(), AttestError> {
+            Ok(())
+        }
     }
 
     impl HwSigner for TwoCerts {
@@ -72,6 +78,12 @@ mod tests {
             c1.extend_from_slice(&[0x30, 0x01]).unwrap();
             buf.push(c0).map_err(|_| AttestError::BufferFull)?;
             buf.push(c1).map_err(|_| AttestError::BufferFull)
+        }
+        fn caliptra_measurements(
+            &self,
+            _out: &mut Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS>,
+        ) -> Result<(), AttestError> {
+            Ok(())
         }
     }
 

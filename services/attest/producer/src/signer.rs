@@ -51,8 +51,11 @@ impl<'a> AttestProducer for HwAttestProducer<'a> {
         iat: u64,
         out: &mut Vec<u8, MAX_TOKEN_SIZE>,
     ) -> Result<(), AttestError> {
+        let mut caliptra_meas: Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS> =
+            Vec::new();
+        self.signer.caliptra_measurements(&mut caliptra_meas)?;
         let mut meas: Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS> = Vec::new();
-        measurements::collect(&[], &self.providers, &mut meas)?;
+        measurements::collect(&caliptra_meas, &self.providers, &mut meas)?;
         builder::build(&self.config, self.signer, &meas, nonce, evidence, iat, out)
     }
 
@@ -133,5 +136,15 @@ impl HwSigner for StubSigner {
         ca.extend_from_slice(&[0x30, 0x00]).unwrap();
         buf.push(leaf).map_err(|_| AttestError::BufferFull)?;
         buf.push(ca).map_err(|_| AttestError::BufferFull)
+    }
+    fn caliptra_measurements(
+        &self,
+        out: &mut Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS>,
+    ) -> Result<(), AttestError> {
+        let stub = measurements::test_caliptra_measurements();
+        for m in stub {
+            out.push(m).map_err(|_| AttestError::BufferFull)?;
+        }
+        Ok(())
     }
 }

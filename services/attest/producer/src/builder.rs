@@ -44,6 +44,9 @@ const HDR_X5CHAIN: i64 = 33;
 
 // Fixed scratch buffers used during token construction.
 const SCRATCH: usize = MAX_TOKEN_SIZE;
+// Sized to hold CBOR-encoded cert chain: each cert is bstr(MAX_CERT_SIZE) ≈ MAX_CERT_SIZE+3 bytes,
+// plus the alg/x5chain map overhead.
+const PHDR_SCRATCH: usize = MAX_CHAIN_LEN * (MAX_CERT_SIZE + 3) + 32;
 
 /// Writer over a fixed `[u8]` slice; tracks how many bytes have been written.
 struct BufWriter<'a> {
@@ -86,12 +89,31 @@ pub(crate) fn build(
     let mut chain: Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN> = Vec::new();
     signer.cert_chain_der(&mut chain)?;
 
+    // ── Encode protected header ────────────────────────────────────────────
+    // Must be encoded before signing so it can be included in Sig_Structure.
+    let mut phdr_scratch = [0u8; PHDR_SCRATCH];
+    let phdr_len = {
+        let mut w = BufWriter::new(&mut phdr_scratch);
+        let mut e = Encoder::new(&mut w);
+        e.map(2).map_err(|_| AttestError::Cbor)?;
+        e.i64(1).map_err(|_| AttestError::Cbor)?;
+        e.i64(ALG_ES384).map_err(|_| AttestError::Cbor)?;
+        e.i64(HDR_X5CHAIN).map_err(|_| AttestError::Cbor)?;
+        e.array(chain.len() as u64).map_err(|_| AttestError::Cbor)?;
+        for cert in &chain {
+            e.bytes(cert).map_err(|_| AttestError::Cbor)?;
+        }
+        w.pos
+    };
+    let phdr_bytes = &phdr_scratch[..phdr_len];
+
     // ── Encode CWT claims map ──────────────────────────────────────────────
     let mut payload_scratch = [0u8; SCRATCH];
     let payload_len = {
         let mut w = BufWriter::new(&mut payload_scratch);
         let n_claims = 11 + usize::from(!evidence_cbor.is_empty());
         let mut e = Encoder::new(&mut w);
+        e.tag(minicbor::data::Tag::new(61)).map_err(|_| AttestError::Cbor)?;
         e.map(n_claims as u64).map_err(|_| AttestError::Cbor)?;
 
         e.i64(CLAIM_ISS).map_err(|_| AttestError::Cbor)?;
@@ -168,30 +190,29 @@ pub(crate) fn build(
     let payload_bytes = &payload_scratch[..payload_len];
 
     // ── Sign ──────────────────────────────────────────────────────────────
-    let sig = signer.sign(payload_bytes)?;
-
-    // ── Encode protected header ────────────────────────────────────────────
-    let mut phdr_scratch = [0u8; 128];
-    let phdr_len = {
-        let mut w = BufWriter::new(&mut phdr_scratch);
-        let mut e = Encoder::new(&mut w);
-        e.map(2).map_err(|_| AttestError::Cbor)?;
-        e.i64(1).map_err(|_| AttestError::Cbor)?;
-        e.i64(ALG_ES384).map_err(|_| AttestError::Cbor)?;
-        e.i64(HDR_X5CHAIN).map_err(|_| AttestError::Cbor)?;
-        e.array(chain.len() as u64).map_err(|_| AttestError::Cbor)?;
-        for cert in &chain {
-            e.bytes(cert).map_err(|_| AttestError::Cbor)?;
-        }
-        w.pos
+    // RFC 9052 §4.4: signature input is Sig_Structure =
+    //   ["Signature1", phdr_bstr, h'', payload_bstr]
+    let sig = {
+        let mut sig_scratch = [0u8; SCRATCH];
+        let sig_input_len = {
+            let mut w = BufWriter::new(&mut sig_scratch);
+            let mut e = Encoder::new(&mut w);
+            e.array(4).map_err(|_| AttestError::Cbor)?;
+            e.str("Signature1").map_err(|_| AttestError::Cbor)?;
+            e.bytes(phdr_bytes).map_err(|_| AttestError::Cbor)?;
+            e.bytes(b"").map_err(|_| AttestError::Cbor)?; // aad = h''
+            e.bytes(payload_bytes).map_err(|_| AttestError::Cbor)?;
+            w.pos
+        };
+        signer.sign(&sig_scratch[..sig_input_len])?
     };
-    let phdr_bytes = &phdr_scratch[..phdr_len];
 
     // ── Assemble COSE_Sign1 ────────────────────────────────────────────────
     let mut cose_scratch = [0u8; SCRATCH];
     let cose_len = {
         let mut w = BufWriter::new(&mut cose_scratch);
         let mut e = Encoder::new(&mut w);
+        e.tag(minicbor::data::Tag::new(18)).map_err(|_| AttestError::Cbor)?;
         e.array(4).map_err(|_| AttestError::Cbor)?;
         e.bytes(phdr_bytes).map_err(|_| AttestError::Cbor)?;
         e.map(0).map_err(|_| AttestError::Cbor)?; // empty unprotected header
@@ -235,6 +256,12 @@ mod tests {
             c1.extend_from_slice(&[0x30, 0x00]).unwrap();
             buf.push(c0).map_err(|_| AttestError::BufferFull)?;
             buf.push(c1).map_err(|_| AttestError::BufferFull)?;
+            Ok(())
+        }
+        fn caliptra_measurements(
+            &self,
+            _out: &mut Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS>,
+        ) -> Result<(), AttestError> {
             Ok(())
         }
     }
@@ -291,10 +318,10 @@ mod tests {
     }
 
     fn decode_outer(token: &[u8]) -> (Vec<u8, 256>, Vec<u8, 256>) {
-        // Minimal CBOR decode: array(4) → [phdr-bstr, {}, payload-bstr, sig-bstr]
-        // Use ciborium only in tests (std available in test harness).
-        // Return (payload_bytes, sig_bytes).
+        // Minimal CBOR decode: 18([phdr-bstr, {}, payload-bstr, sig-bstr])
+        // Return (phdr_bytes, payload_bytes).
         let mut d = minicbor::Decoder::new(token);
+        d.tag().unwrap(); // tag(18)
         d.array().unwrap(); // outer array len
         let phdr = d.bytes().unwrap();
         let mut phdr_v: Vec<u8, 256> = Vec::new();
@@ -308,6 +335,7 @@ mod tests {
 
     fn find_claim_bytes(payload: &[u8], key: i64) -> Option<&[u8]> {
         let mut d = minicbor::Decoder::new(payload);
+        d.tag().unwrap(); // tag(61) CWT
         let n = d.map().unwrap().unwrap_or(0);
         for _ in 0..n {
             let k = d.i64().unwrap();
@@ -321,6 +349,7 @@ mod tests {
 
     fn find_claim_str(payload: &[u8], key: i64) -> Option<&str> {
         let mut d = minicbor::Decoder::new(payload);
+        d.tag().unwrap(); // tag(61) CWT
         let n = d.map().unwrap().unwrap_or(0);
         for _ in 0..n {
             let k = d.i64().unwrap();
@@ -336,6 +365,7 @@ mod tests {
     fn output_is_four_element_cbor_array() {
         let token = build_token(&[]);
         let mut d = minicbor::Decoder::new(&token);
+        assert_eq!(d.tag().unwrap(), minicbor::data::Tag::new(18)); // COSE_Sign1
         assert_eq!(d.array().unwrap(), Some(4));
     }
 
