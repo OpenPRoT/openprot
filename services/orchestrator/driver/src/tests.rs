@@ -76,15 +76,15 @@ impl ImageSource for MemImage {
 }
 
 #[derive(Debug)]
-struct VerifierBroken;
+struct VerifierError;
 
-impl core::fmt::Display for VerifierBroken {
+impl core::fmt::Display for VerifierError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("verifier broken")
     }
 }
 
-impl core::error::Error for VerifierBroken {}
+impl core::error::Error for VerifierError {}
 
 /// The magic + XOR-zero check as a board-supplied verifier, reading in
 /// chunks.
@@ -93,17 +93,17 @@ struct XorVerifier {
 }
 
 impl Verifier for XorVerifier {
-    type Error = VerifierBroken;
+    type Error = VerifierError;
 
     fn verify(
         &mut self,
         _id: ComponentId,
         image: &mut impl ImageSource,
-    ) -> Result<Verdict, VerifierBroken> {
+    ) -> Result<Verdict, VerifierError> {
         if self.fault {
-            return Err(VerifierBroken);
+            return Err(VerifierError);
         }
-        let len = image.size().map_err(|_| VerifierBroken)?;
+        let len = image.size().map_err(|_| VerifierError)?;
         let mut magic = [0u8; 4];
         let mut xor = 0u8;
         let mut offset = 0;
@@ -112,7 +112,7 @@ impl Verifier for XorVerifier {
             let take = chunk.len().min(len - offset);
             image
                 .read_at(offset, &mut chunk[..take])
-                .map_err(|_| VerifierBroken)?;
+                .map_err(|_| VerifierError)?;
             if offset == 0 && take >= 4 {
                 magic.copy_from_slice(&chunk[..4]);
             }
@@ -387,4 +387,81 @@ fn execute_returns_the_verdict_event() {
         driver.execute(Effect::VerifyFirmware(C0)),
         Ok(Some(Event::VerificationPassed(C0)))
     );
+}
+
+/// Wraps [`XorVerifier`] and snapshots the reset line as the check runs,
+/// so the test can see the line state inside the verification window.
+struct LineWatchingVerifier {
+    inner: XorVerifier,
+    line: std::rc::Rc<core::cell::Cell<bool>>,
+    held_during_verify: std::rc::Rc<core::cell::Cell<bool>>,
+}
+
+impl Verifier for LineWatchingVerifier {
+    type Error = VerifierError;
+
+    fn verify(
+        &mut self,
+        id: ComponentId,
+        image: &mut impl ImageSource,
+    ) -> Result<Verdict, VerifierError> {
+        self.held_during_verify.set(self.line.get());
+        self.inner.verify(id, image)
+    }
+}
+
+struct WatchBoard;
+
+impl BoardCapabilities for WatchBoard {
+    type Image = MemImage;
+    type Verifier = LineWatchingVerifier;
+    type BootControl = MockReset;
+}
+
+// The at-rest guarantee end to end: the component is still held while its
+// image is verified, and the line is released only on the passing verdict.
+#[test]
+fn release_follows_verification() {
+    let control = MockReset::new();
+    let held = control.held.clone();
+    let held_during_verify = std::rc::Rc::new(core::cell::Cell::new(false));
+    let mut driver = PlatformDriver::<WatchBoard, 1>::new(Board {
+        images: [MemImage::holding(valid_image())],
+        verifier: LineWatchingVerifier {
+            inner: XorVerifier { fault: false },
+            line: held.clone(),
+            held_during_verify: held_during_verify.clone(),
+        },
+        boot_controls: [control],
+    });
+    let mut orch = orchestrator();
+
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+
+    assert_eq!(orch.state(), State::Ready);
+    assert!(
+        held_during_verify.get(),
+        "held while its image was verified"
+    );
+    assert!(!held.get(), "released after the verdict");
+}
+
+// A dead reset line is a failed actuation, not a verdict: the SM fails
+// closed and the component stays quiesced.
+#[test]
+fn failed_release_fails_closed() {
+    let mut control = MockReset::new();
+    control.fail = true;
+    let held = control.held.clone();
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
+        images: [MemImage::holding(valid_image())],
+        verifier: XorVerifier { fault: false },
+        boot_controls: [control],
+    });
+    let mut orch = orchestrator();
+
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+
+    assert_eq!(orch.state(), State::Locked);
+    assert!(held.get(), "never left reset");
 }

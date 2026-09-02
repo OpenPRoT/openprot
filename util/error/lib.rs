@@ -77,6 +77,15 @@ impl ErrorCode {
     pub fn kernel_error(e: pw_status::Error) -> Self {
         KERNEL_ERROR.error(e as u16)
     }
+
+    /// Checks a wire status word: zero is success, any non-zero value is the
+    /// corresponding error code.
+    pub const fn check_status(status: u32) -> Result<(), ErrorCode> {
+        match NonZero::new(status) {
+            None => Ok(()),
+            Some(val) => Err(ErrorCode(val)),
+        }
+    }
 }
 
 impl From<ErrorCode> for u32 {

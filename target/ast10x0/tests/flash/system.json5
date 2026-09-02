@@ -1,0 +1,88 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 Flash Service Configuration
+// ARM Cortex-M4 @ 200 MHz with 768KB SRAM (0x00000000 - 0x000BFFFF)
+// NOTE: AST10x0 does not support XIP - firmware executes from RAM.
+//
+// PMSAv7-Friendly Memory Layout (same as ../usart/system.json5):
+//   0x00000000 - 0x00000500: Vector table (1280 bytes)
+//   0x00000500 - 0x00020000: Kernel code (~126KB, ends at 128KB boundary)
+//   0x00020000 - 0x00060000: Flash server + client app flash (256KB)
+//   0x00060000 - 0x00080000: Kernel RAM (128KB)
+//   0x00080000 - 0x000A0000: App RAM (128KB)
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,  // 0x500
+    },
+    kernel: {
+        flash_start_address: 0x00000500,  // After vector table
+        flash_size_bytes: 129792,         // ~126KB (ends at 0x00020000)
+        ram_start_address: 0x00060000,    // After all flash regions
+        ram_size_bytes: 131072,           // 128KB
+    },
+    apps: [
+        {
+            name: "flash_server_bin",
+            flash_size_bytes: 131072,     // 128KB for server code
+            processes: [
+                {
+                    name: "flash_server_process",
+                    ram_size_bytes: 65536,        // 64KB RAM (holds the 4KB+ IPC buffer)
+                    objects: [
+                        {
+                            name: "flash",
+                            type: "channel_handler",  // Server side of client→server channel
+                        },
+                        {
+                            type: "thread",
+                            name: "flash_server_thread",
+                            kernel_stack_size_bytes: 4096,  // 4KB stack
+                        },],
+                    memory_mappings: [
+                        // FMC pinctrl is applied by the kernel target's
+                        // pre-task init, so the server does not map the SCU.
+                        {
+                            // FMC controller registers.
+                            name: "fmc_regs",
+                            type: "device",
+                            start_address: 0x7e620000,
+                            size_bytes: 0x1000,
+                        },
+                        {
+                            // FMC CS0 memory-mapped flash read window (8 MiB).
+                            name: "fmc_cs0_window",
+                            type: "device",
+                            start_address: 0x80000000,
+                            size_bytes: 0x800000,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            name: "flash_client_app",
+            flash_size_bytes: 65536,      // 64KB for client code
+            processes: [
+                {
+                    name: "flash_client_process",
+                    ram_size_bytes: 32768,        // 32KB RAM
+                    objects: [
+                        {
+                            name: "flash",
+                            type: "channel_initiator",
+                            handler_process: "flash_server_process",
+                            handler_object_name: "flash",
+                        },
+                        {
+                            type: "thread",
+                            name: "flash_client_thread",
+                            kernel_stack_size_bytes: 2048,
+                        },],
+                },
+            ],
+        },
+    ],
+}
