@@ -51,8 +51,7 @@ impl<'a> AttestProducer for HwAttestProducer<'a> {
         iat: u64,
         out: &mut Vec<u8, MAX_TOKEN_SIZE>,
     ) -> Result<(), AttestError> {
-        let mut caliptra_meas: Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS> =
-            Vec::new();
+        let mut caliptra_meas: Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS> = Vec::new();
         self.signer.caliptra_measurements(&mut caliptra_meas)?;
         let mut meas: Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS> = Vec::new();
         measurements::collect(&caliptra_meas, &self.providers, &mut meas)?;

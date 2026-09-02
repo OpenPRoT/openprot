@@ -113,7 +113,8 @@ pub(crate) fn build(
         let mut w = BufWriter::new(&mut payload_scratch);
         let n_claims = 11 + usize::from(!evidence_cbor.is_empty());
         let mut e = Encoder::new(&mut w);
-        e.tag(minicbor::data::Tag::new(61)).map_err(|_| AttestError::Cbor)?;
+        e.tag(minicbor::data::Tag::new(61))
+            .map_err(|_| AttestError::Cbor)?;
         e.map(n_claims as u64).map_err(|_| AttestError::Cbor)?;
 
         e.i64(CLAIM_ISS).map_err(|_| AttestError::Cbor)?;
@@ -212,7 +213,8 @@ pub(crate) fn build(
     let cose_len = {
         let mut w = BufWriter::new(&mut cose_scratch);
         let mut e = Encoder::new(&mut w);
-        e.tag(minicbor::data::Tag::new(18)).map_err(|_| AttestError::Cbor)?;
+        e.tag(minicbor::data::Tag::new(18))
+            .map_err(|_| AttestError::Cbor)?;
         e.array(4).map_err(|_| AttestError::Cbor)?;
         e.bytes(phdr_bytes).map_err(|_| AttestError::Cbor)?;
         e.map(0).map_err(|_| AttestError::Cbor)?; // empty unprotected header
