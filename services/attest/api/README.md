@@ -20,9 +20,10 @@ in hardware dependencies.
 
 | File | Contents |
 |---|---|
-| `src/lib.rs` | Public re-exports. `#![forbid(unsafe_code)]`. |
+| `src/lib.rs` | Public re-exports. `#![no_std]` `#![forbid(unsafe_code)]`. |
 | `src/traits.rs` | `AttestProducer` trait. |
-| `src/types.rs` | `Measurement`, `DigestAlgorithm`, `MeasurementAuthority`, `CertChain`, `AttestConfig`, `OemId`, `CaliptraSigner` trait, `MeasurementProvider` trait. |
+| `src/types.rs` | `Measurement`, `DigestAlgorithm`, `MeasurementAuthority`, `AttestConfig`, `OemId`, `HwSigner` trait, `MeasurementProvider` trait. |
+| `src/consts.rs` | Fixed-capacity constants (`MAX_CERT_SIZE`, `MAX_CHAIN_LEN`, etc.). |
 | `src/error.rs` | `AttestError` — shared error type for both service crates. |
 
 ## Key traits
@@ -34,25 +35,44 @@ The primary interface implemented by `HwAttestProducer` (and the
 
 ```rust
 pub trait AttestProducer: Send + Sync {
-    fn generate_token(&self, nonce: &[u8], evidence: &[u8]) -> Result<Vec<u8>, AttestError>;
-    fn cert_chain(&self) -> Result<CertChain, AttestError>;
+    fn generate_token(
+        &self,
+        nonce: &[u8],
+        evidence: &[u8],
+        iat: u64,
+        out: &mut Vec<u8, MAX_TOKEN_SIZE>,
+    ) -> Result<(), AttestError>;
+
+    fn cert_chain(
+        &self,
+        buf: &mut Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN>,
+    ) -> Result<(), AttestError>;
 }
 ```
 
 `evidence` is the raw CBOR output of the verifier service. Pass an empty slice
 when no peer attestation has been performed. The bytes are embedded verbatim as
-the `concise-evidence` claim (key `-70001`) in the OCP-EAT token.
+the `concise-evidence` claim (key `-70001`) in the OCP-EAT token. `iat` is a
+Unix timestamp (seconds since epoch) supplied by the caller. The encoded token
+is appended to the caller-supplied `out` buffer.
 
-### `CaliptraSigner`
+### `HwSigner`
 
-Abstracts signing operations that must execute inside the Caliptra hardware
-boundary.
+Abstracts signing and certificate operations that execute inside the Caliptra
+hardware boundary.
 
 ```rust
-pub trait CaliptraSigner: Send + Sync {
-    fn sign_es384(&self, payload: &[u8]) -> Result<[u8; 96], AttestError>;
-    fn alias_cert_der(&self) -> Result<Vec<u8>, AttestError>;
-    fn cert_chain_der(&self) -> Result<Vec<Vec<u8>>, AttestError>;
+pub trait HwSigner: Send + Sync {
+    fn sign(&self, payload: &[u8]) -> Result<[u8; 96], AttestError>;
+    fn leaf_cert_der(&self, buf: &mut Vec<u8, MAX_CERT_SIZE>) -> Result<(), AttestError>;
+    fn cert_chain_der(
+        &self,
+        buf: &mut Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN>,
+    ) -> Result<(), AttestError>;
+    fn caliptra_measurements(
+        &self,
+        out: &mut Vec<Measurement, MAX_MEASUREMENTS>,
+    ) -> Result<(), AttestError>;
 }
 ```
 
@@ -67,7 +87,10 @@ beyond the Caliptra-internal measurements.
 ```rust
 pub trait MeasurementProvider: Send + Sync {
     fn component_name(&self) -> &str;
-    fn measurements(&self) -> Result<Vec<Measurement>, AttestError>;
+    fn measurements(
+        &self,
+        out: &mut Vec<Measurement, MAX_MEASUREMENTS>,
+    ) -> Result<(), AttestError>;
 }
 ```
 
@@ -78,8 +101,8 @@ pub trait MeasurementProvider: Send + Sync {
 | `Measurement` | Single firmware measurement: component name, version, digest algorithm, digest bytes, measurement authority. |
 | `DigestAlgorithm` | `Sha384` or `Sha512`. |
 | `MeasurementAuthority` | `Caliptra` (hardware-measured) or `Platform` (software-registered). |
-| `CertChain` | DER-encoded certificate chain ordered leaf → root. |
 | `AttestConfig` | Producer configuration: `oemid`, `hw_model`, `hw_version`, `cert_cache_ttl`. |
+| `OemId` | OEM identifier (IANA Private Enterprise Number or UUID form). |
 
 ## Cargo
 
@@ -88,5 +111,6 @@ pub trait MeasurementProvider: Send + Sync {
 openprot-attest-api = { path = "services/attest/api" }
 ```
 
-No additional features are required. The crate has a single dependency:
-`thiserror` for `AttestError` derivation.
+No additional features are required. The crate is `no_std` and depends on
+`heapless` for fixed-capacity collections and `thiserror` for `AttestError`
+derivation.

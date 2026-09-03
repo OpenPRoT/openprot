@@ -23,15 +23,16 @@ and a software stub for testing without physical hardware.
 
 ### `HwAttestProducer` (production)
 
-Backed by a `CaliptraSigner` implementation from the Caliptra mailbox driver.
+Backed by an `HwSigner` implementation from the Caliptra mailbox driver.
 All ES384 signing operations occur inside the Caliptra hardware boundary; the
 private Alias Key is never exposed to host software.
 
 ```rust
-let producer = HwAttestProducer::new(Arc::new(caliptra_driver), config);
-producer.add_provider(Box::new(UefiFirmwareMeasurements));
+let mut producer = HwAttestProducer::new(&caliptra_driver, config);
+producer.add_provider(&uefi_measurements)?;
 
-let token: Vec<u8> = producer.generate_token(&nonce, &evidence_cbor)?;
+let mut out: Vec<u8, MAX_TOKEN_SIZE> = Vec::new();
+producer.generate_token(&nonce, &evidence_cbor, iat, &mut out)?;
 ```
 
 ### `SoftwareAttestProducer` (feature = `test-support`)
@@ -43,7 +44,8 @@ hardware or driver is required.
 ```rust
 #[cfg(feature = "test-support")]
 let producer = SoftwareAttestProducer::new(config);
-let token = producer.generate_token(&nonce, &[])?;
+let mut out: Vec<u8, MAX_TOKEN_SIZE> = Vec::new();
+producer.generate_token(&nonce, &[], 0, &mut out)?;
 ```
 
 Enable the feature in `Cargo.toml`:
@@ -76,8 +78,8 @@ and the `x5chain` certificate chain. The CWT payload includes:
 
 | Crate | Purpose |
 |---|---|
-| `openprot-attest-api` | Trait and type definitions (`AttestProducer`, `CaliptraSigner`, etc.) |
-| `ciborium` | CBOR encoding of token claims and evidence embedding |
+| `openprot-attest-api` | Trait and type definitions (`AttestProducer`, `HwSigner`, etc.) |
+| `minicbor` | CBOR encoding of token claims and COSE_Sign1 envelope |
 
 ## Cargo build
 
