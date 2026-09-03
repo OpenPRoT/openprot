@@ -12,8 +12,7 @@ rust_library(
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
-        "//services/orchestrator/sm:orchestrator_sm",
-        "//services/pldm:pldm_service",
+        "//services/pldm/notify-api:pldm_notify_api",
     ],
 )
 
