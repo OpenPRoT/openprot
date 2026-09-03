@@ -28,9 +28,15 @@ fn config() -> AttestConfig {
     }
 }
 
-fn generate(producer: &SoftwareAttestProducer, nonce: &[u8], evidence: &[u8]) -> Vec<u8, MAX_TOKEN_SIZE> {
+fn generate(
+    producer: &SoftwareAttestProducer,
+    nonce: &[u8],
+    evidence: &[u8],
+) -> Vec<u8, MAX_TOKEN_SIZE> {
     let mut out: Vec<u8, MAX_TOKEN_SIZE> = Vec::new();
-    producer.generate_token(nonce, evidence, 0, &mut out).unwrap();
+    producer
+        .generate_token(nonce, evidence, 0, &mut out)
+        .unwrap();
     out
 }
 
@@ -41,7 +47,9 @@ fn unwrap_cose_sign1(token: &[u8]) -> std::vec::Vec<ciborium::value::Value> {
     inner.as_array().unwrap().clone()
 }
 
-fn decode_payload_map(token: &[u8]) -> std::vec::Vec<(ciborium::value::Value, ciborium::value::Value)> {
+fn decode_payload_map(
+    token: &[u8],
+) -> std::vec::Vec<(ciborium::value::Value, ciborium::value::Value)> {
     let arr = unwrap_cose_sign1(token);
     let payload_bytes = arr[2].as_bytes().unwrap().clone();
     // payload bytes decode to tag(61, map{...})
