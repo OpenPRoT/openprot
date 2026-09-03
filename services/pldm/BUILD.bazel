@@ -55,8 +55,6 @@ rust_test(
         ":pldm_service",
         "//services/mctp/api:mctp_api",
         "//services/mctp/server:mctp_server_lib",
-        "//services/orchestrator/adapters/pldm:orchestrator_pldm_adapter",
-        "//services/orchestrator/sm:orchestrator_sm",
         "@rust_crates//:mctp",
         "@rust_crates//:mctp-lib",
         "@rust_crates//:pldm-common",

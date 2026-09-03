@@ -26,9 +26,9 @@ use mctp::Eid;
 use mctp_lib::Sender;
 use openprot_mctp_api::Handle;
 use openprot_mctp_server::Server;
-use openprot_orchestrator_pldm_adapter::UpdateRequestLatch;
-use openprot_orchestrator_sm::Event;
-use openprot_pldm_service::firmware_device::{FirmwareDevice, RunTerminusResult};
+use openprot_pldm_service::firmware_device::{
+    FdEvent, FdEventSink, FirmwareDevice, RunTerminusResult,
+};
 use openprot_pldm_service::{MctpPldmTransport, PldmServiceError};
 use pldm_common::codec::{PldmCodec, PldmCodecWithLifetime};
 use pldm_common::message::firmware_update::apply_complete::{ApplyCompleteResponse, ApplyResult};
@@ -179,6 +179,29 @@ impl FdOps for MockFdOps {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Counts `FdEvent::UpdateRequested` out of `run_terminus`.
+///
+/// Implemented for the reference so `run_terminus` can take the sink while the
+/// assertions still read the same counter.
+#[derive(Default)]
+struct UpdateRequestCounter {
+    notifies: Cell<u32>,
+}
+
+impl UpdateRequestCounter {
+    fn count(&self) -> u32 {
+        self.notifies.get()
+    }
+}
+
+impl FdEventSink for &UpdateRequestCounter {
+    fn notify(&mut self, event: FdEvent) {
+        if matches!(event, FdEvent::UpdateRequested) {
+            self.notifies.set(self.notifies.get() + 1);
+        }
+    }
+}
+
 /// Build a fixed-size PLDM firmware version string.
 fn fw_string(s: &str) -> PldmFirmwareString {
     let bytes = s.as_bytes();
@@ -315,9 +338,9 @@ fn firmware_update_full_flow_via_requester() {
     ));
     let fd_buf = RefCell::new([0u8; 1024]);
 
-    // Orchestrator-facing latch: `run_terminus` marks it on each accepted
-    // RequestUpdate; the assertions below drain it as `Event::UpdateRequest`.
-    let update_events = RefCell::new(UpdateRequestLatch::new());
+    // Counts what `run_terminus` reports to the orchestrator, so the
+    // assertions below can pin down which commands notify and which do not.
+    let update_events = UpdateRequestCounter::default();
 
     // Run one full UA->FD->UA command round-trip and return the PLDM response
     // payload (without the MCTP framing byte).
@@ -339,7 +362,7 @@ fn firmware_update_full_flow_via_requester() {
             &mut fd_buf.borrow_mut()[..],
             TIMEOUT_MILLIS,
             TIMEOUT_MILLIS,
-            &mut *update_events.borrow_mut(),
+            &mut &update_events,
         ) {
             RunTerminusResult::Completed => {}
             RunTerminusResult::StoppedByError(PldmServiceError::Mctp(e)) if e.is_timeout() => {}
@@ -380,14 +403,9 @@ fn firmware_update_full_flow_via_requester() {
         "RequestUpdate completion code should be success"
     );
     assert_eq!(
-        update_events.borrow_mut().take(),
-        Some(Event::UpdateRequest),
-        "accepted RequestUpdate should latch exactly one orchestrator event"
-    );
-    assert_eq!(
-        update_events.borrow_mut().take(),
-        None,
-        "the latch must not re-fire once drained"
+        update_events.count(),
+        1,
+        "accepted RequestUpdate should notify the orchestrator exactly once"
     );
 
     // ---- Duplicate RequestUpdate: rejected, must not latch an event ----
@@ -411,9 +429,9 @@ fn firmware_update_full_flow_via_requester() {
         "second RequestUpdate should be rejected while in update mode"
     );
     assert_eq!(
-        update_events.borrow_mut().take(),
-        None,
-        "a rejected RequestUpdate must not latch an orchestrator event"
+        update_events.count(),
+        1,
+        "a rejected RequestUpdate must not notify the orchestrator"
     );
 
     // ---- PassComponentTable (Start+End): move to ReadyXfer ----
@@ -496,9 +514,9 @@ fn firmware_update_full_flow_via_requester() {
     assert!(fd_ops.verified.get(), "firmware should have been verified");
     assert!(fd_ops.applied.get(), "firmware should have been applied");
     assert_eq!(
-        update_events.borrow_mut().take(),
-        None,
-        "no command after the accepted RequestUpdate should latch an event"
+        update_events.count(),
+        1,
+        "no command after the accepted RequestUpdate should notify again"
     );
 
     println!(
