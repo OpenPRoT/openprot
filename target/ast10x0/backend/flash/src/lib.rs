@@ -12,8 +12,8 @@
 use core::num::NonZero;
 
 use ast10x0_peripherals::smc::{
-    FlashConfig, FlashGeometry, FmcReady, FmcUninit, SmcConfig, SmcController, SmcError,
-    SmcInstance, SmcTopology, SpiNorFlash, SpiNorFlashDevice,
+    FlashConfig, FlashGeometry, FmcReady, FmcUninit, GeometrySource, SmcConfig, SmcController,
+    SmcError, SmcInstance, SmcTopology, SpiNorFlash, SpiNorFlashDevice,
 };
 use hal_flash_driver::{FlashAddress, FlashDriver};
 use util_error::{self as error, ErrorCode};
@@ -32,6 +32,10 @@ impl SmcInstance for FmcInstance {
         topology: SmcTopology::BootSpi { master_idx: 0 },
     };
 }
+
+/// Geometry source for the served chip (CS1). `Pinned` here makes the reported
+/// geometry a compile-time constant; `Discover` reports the SFDP-read value.
+type Cs1Geometry = <FmcInstance as SmcInstance>::Cs1Geometry;
 
 fn map_smc_error(e: SmcError) -> ErrorCode {
     match e {
@@ -106,27 +110,32 @@ impl Ast10x0FmcFlashDriver {
 impl FlashDriver for Ast10x0FmcFlashDriver {
     type Error = ErrorCode;
 
+    // PAGE_SIZE / PROGRAM_WINDOW_SIZE are defaulted to 0, geometry is discovered instead
     const MAX_READ_SIZE: usize = 4096;
     const READ_ALIGNMENT: usize = 4;
     const PROGRAM_ALIGNMENT: usize = 1;
 
     fn size(&self) -> NonZero<usize> {
-        NonZero::new(self.geometry.capacity_bytes as usize).expect("capacity validated in new()")
+        NonZero::new(Cs1Geometry::geometry(&self.geometry).capacity_bytes as usize)
+            .expect("capacity validated in new()")
     }
 
     /// Default erase page: one SFDP-discovered sector.
     fn page_size(&self) -> usize {
-        self.geometry.sector_size as usize
+        Cs1Geometry::geometry(&self.geometry).sector_size as usize
     }
 
     /// SPI NOR program page: writes must not cross this boundary.
     fn program_window_size(&self) -> usize {
-        self.geometry.page_size as usize
+        Cs1Geometry::geometry(&self.geometry).page_size as usize
     }
 
     fn erasable_sizes_bitmap(&mut self) -> Result<u32, Self::Error> {
         // Only sector erase is implemented by the peripheral driver.
-        Ok(1u32 << self.geometry.sector_size.trailing_zeros())
+        Ok(1u32
+            << Cs1Geometry::geometry(&self.geometry)
+                .sector_size
+                .trailing_zeros())
     }
 
     fn read(&mut self, start_addr: FlashAddress, buf: &mut [u8]) -> Result<(), Self::Error> {

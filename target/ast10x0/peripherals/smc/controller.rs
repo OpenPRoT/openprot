@@ -7,15 +7,15 @@ use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 
 use crate::smc::helpers::{
-    SMC_WINDOW_SIZE_BYTES, SPI_CTRL_FREQ_MASK, SPI_DMA_CALC_CKSUM, SPI_DMA_CALIB_MODE,
-    SPI_DMA_ENABLE, SPI_DMA_RAM_MAP_BASE, encode_fmc_segment, encode_spi_segment,
-    get_mid_point_of_longest_one, spi_calibration_enable, spi_freq_div, validate_dma_read,
-    validate_mapped_range,
+    encode_fmc_segment, encode_spi_segment, get_mid_point_of_longest_one, spi_calibration_enable,
+    spi_freq_div, validate_dma_read, validate_mapped_range, SMC_WINDOW_SIZE_BYTES,
+    SPI_CTRL_FREQ_MASK, SPI_DMA_CALC_CKSUM, SPI_DMA_CALIB_MODE, SPI_DMA_ENABLE,
+    SPI_DMA_RAM_MAP_BASE,
 };
 use crate::smc::interrupts::{SmcInterrupt, SmcInterruptDecoder};
 use crate::smc::registers::SmcRegisters;
 use crate::smc::types::*;
-use util_sfdp::{FlashGeometry, decode_geometry};
+use util_sfdp::{decode_geometry, FlashGeometry};
 
 /// Internal controller state
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -93,6 +93,12 @@ pub trait GeometrySource {
         window_base: usize,
         baseline_ctrl: u32,
     ) -> Result<FlashGeometry, SmcError>;
+
+    /// Geometry to report to callers: the SFDP-discovered value for
+    /// [`Discover`], the const `G` for [`Pinned`] (folded at compile time).
+    fn geometry(discovered: &FlashGeometry) -> FlashGeometry {
+        *discovered
+    }
 }
 
 impl GeometrySource for Discover {
@@ -134,6 +140,10 @@ impl<const G: FlashGeometry> GeometrySource for Pinned<G> {
         _baseline_ctrl: u32,
     ) -> Result<FlashGeometry, SmcError> {
         Ok(G)
+    }
+
+    fn geometry(_discovered: &FlashGeometry) -> FlashGeometry {
+        G
     }
 }
 
@@ -924,8 +934,8 @@ unsafe fn spi_write_data(ahb_addr: *mut u32, write_arr: &[u8]) {
 #[cfg(test)]
 mod tests {
     use super::{
-        SPI_NOR_4B_READ_THRESHOLD_BYTES, SPI_NOR_CMD_QREAD, SPI_NOR_CMD_QREAD_4B,
-        spi_nor_addr_width_reg, spi_nor_qread_cmd_for_capacity,
+        spi_nor_addr_width_reg, spi_nor_qread_cmd_for_capacity, SPI_NOR_4B_READ_THRESHOLD_BYTES,
+        SPI_NOR_CMD_QREAD, SPI_NOR_CMD_QREAD_4B,
     };
     use crate::smc::types::ChipSelect;
 
