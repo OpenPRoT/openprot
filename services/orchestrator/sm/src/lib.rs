@@ -424,6 +424,42 @@ impl<const N: usize, const E: usize> Rot<N, E> {
         }
     }
 
+    /// Whether a `VerificationPassed(id)` may release `id`. Two conditions, and
+    /// both release sites check them through here so they cannot drift apart:
+    ///
+    /// - `id` is the component currently under verification (`chain[cursor]`,
+    ///   whose `VerifyFirmware` was just emitted). A verdict for any other id is
+    ///   stale or out-of-turn (cf. INV9 for `ComponentReady`).
+    /// - `id` is not gated. Gating does not move the cursor off the component,
+    ///   so a component isolated *while its verification was in flight* is still
+    ///   `chain[cursor]` when that verdict lands — and a stale pass must not
+    ///   undo the `AssertReset` that just held it (INV8).
+    fn may_release(&self, id: ComponentId) -> bool {
+        self.chain.get(self.cursor as usize).map(|(c, _)| c) == Some(&id) && !self.is_gated(id)
+    }
+
+    /// Recovery of `target` has run out of options. Gate it per policy:
+    /// `Isolable`/`Cascading` are skipped and the walk continues, while
+    /// `Required` (or an unknown id) reports the component and latches
+    /// [`State::Locked`]. Both exhaustion paths — the retry cap
+    /// ([`Event::Restored`] past `max_retry`) and the platform's
+    /// [`Event::RecoveryUnavailable`] — share this so they cannot diverge.
+    fn exhaust_recovery(&mut self, ctx: &mut Sink<E>, target: ComponentId) -> Outcome {
+        match self.gate_by_policy(ctx, target) {
+            Gating::Gated => {
+                self.clear_retry(target);
+                Outcome::Transition(State::PreSupervision)
+            }
+            // The report precedes the internal `Emit`, so it is actuated before
+            // the machine moves toward `Locked`.
+            Gating::NotGated => {
+                ctx.emit(Effect::ReportRecoveryFailed(target));
+                ctx.emit(Effect::Emit(Event::RecoveryFailed));
+                Outcome::Handled
+            }
+        }
+    }
+
     /// Shared `CorruptionDetected` handling, called from both `PreSupervision`
     /// (directly) and `SupervisingPlatform` (via its superstate handler).
     /// Delegates the policy interpretation to [`gate_by_policy`](Self::gate_by_policy)
@@ -498,13 +534,9 @@ impl<const N: usize, const E: usize> Rot<N, E> {
             // Cursor walk via Outcome::Handled — a self-transition would reset cursor.
             State::PreSupervision => match event {
                 Event::VerificationPassed(id) => {
-                    // Only the component currently under verification
-                    // (`chain[cursor]`, whose `VerifyFirmware` was just emitted)
-                    // may be released. A verdict for any other id is stale or
-                    // out-of-turn and is dropped, so a misordered or hostile
-                    // report cannot release an unverified component (cf. INV9
-                    // for `ComponentReady`).
-                    if self.chain.get(self.cursor as usize).map(|(c, _)| c) != Some(id) {
+                    // A misordered, stale, or hostile verdict cannot release an
+                    // unverified or already-isolated component.
+                    if !self.may_release(*id) {
                         return Outcome::Handled;
                     }
                     // The component passed its check — it has recovered, so its
@@ -596,11 +628,8 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                     }
                 }
                 Event::VerificationPassed(id) => {
-                    // Only the component currently under verification
-                    // (`chain[cursor]`) may be released; a verdict for any other
-                    // id is stale or out-of-turn and is dropped (cf. INV9 for
-                    // `ComponentReady`).
-                    if self.chain.get(self.cursor as usize).map(|(c, _)| c) != Some(id) {
+                    // Same guard as the `PreSupervision` release site.
+                    if !self.may_release(*id) {
                         return Outcome::Handled;
                     }
                     // The component passed its check — it has recovered, so its
@@ -707,26 +736,19 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                     if attempts < self.max_retry {
                         Outcome::Transition(State::PreSupervision)
                     } else {
-                        // Retries exhausted: gate via the same `gate_by_policy`
-                        // the runtime-corruption path uses, so the two can never
-                        // disagree. Gated → continue the walk; NotGated
-                        // (Required/unknown) → lock down.
-                        match self.gate_by_policy(ctx, failed) {
-                            Gating::Gated => {
-                                self.clear_retry(failed);
-                                Outcome::Transition(State::PreSupervision)
-                            }
-                            // `Required`, or an unknown/missing id: report the
-                            // component that forced the halt, then lock down.
-                            // The report precedes the internal `Emit`, so it is
-                            // actuated before the machine moves toward `Locked`.
-                            Gating::NotGated => {
-                                ctx.emit(Effect::ReportRecoveryFailed(failed));
-                                ctx.emit(Effect::Emit(Event::RecoveryFailed));
-                                Outcome::Handled
-                            }
-                        }
+                        self.exhaust_recovery(ctx, failed)
                     }
+                }
+                Event::RecoveryUnavailable(id) => {
+                    // Same target guard as `Restored`: a verdict for a
+                    // component other than the one under recovery is dropped.
+                    if *id != failed {
+                        return Outcome::Handled;
+                    }
+                    // No `bump_retry`: the platform is authoritative about being
+                    // out of sources, so this short-circuits the cap rather than
+                    // waiting for it to run out on non-progressing restores.
+                    self.exhaust_recovery(ctx, failed)
                 }
                 Event::RecoveryFailed => Outcome::Transition(State::Locked),
                 _ => Outcome::Super,
@@ -918,6 +940,13 @@ pub struct EffectError;
 ///   `VerifyFirmware` covers code that cannot run or rewrite its own flash
 ///   between the check and the release. A reset that merely pulses would let a
 ///   component resume before verification and void that guarantee.
+/// - **`EffectError` means actuation failed, not "policy says no".** It is
+///   fail-closed: it latches [`State::Locked`] from any state. In particular,
+///   an [`Effect::RecoverComponent`] with no untried recovery source left is
+///   *not* an error — the driver returns `Ok` and reports
+///   [`Event::RecoveryUnavailable`], which routes through [`FailurePolicy`].
+///   Returning `Err` there locks the whole platform down for a component the
+///   board may have classified `Isolable`.
 /// - **A failed [`Effect::LatchLockdown`] is a hard fault.** Lockdown is the top
 ///   of the escalation ladder — the core has nothing stronger to emit and
 ///   will *believe* it is `Locked`. The driver must treat that failure as

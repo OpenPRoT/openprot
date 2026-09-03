@@ -49,9 +49,11 @@ pub enum ComponentKind {
     Passive,
 }
 
-/// Recovery-failure classification: what the machine does once a required
-/// component's restore attempts are **exhausted** (its per-component retry
-/// count reaches `max_retry`). Every verification or corruption failure enters
+/// Recovery-failure classification: what the machine does once a component's
+/// recovery is **exhausted** — either its per-component retry count reaches
+/// `max_retry`, or the platform reports [`Event::RecoveryUnavailable`] because
+/// it has no remaining recovery source. Every verification or corruption
+/// failure enters
 /// [`State::Recovering`] and is retried first, regardless of this
 /// classification — CSA's "recover first" principle. This value is consulted
 /// only after retries are exhausted.
@@ -219,6 +221,11 @@ pub enum Event {
     CorruptionDetected(ComponentId),
     /// This component has been restored from its configured recovery source.
     Restored(ComponentId),
+    /// The platform driver is out of recovery sources for this component.
+    /// Routed through [`FailurePolicy`] (gate, not the fail-closed
+    /// [`Event::EffectFailed`] lockdown). Authoritative: exhausts recovery at
+    /// once, bypassing the retry cap.
+    RecoveryUnavailable(ComponentId),
     /// A required component's recovery was exhausted.
     RecoveryFailed,
     /// The platform driver's boot-progress watchdog fired: `id` did not report its
@@ -267,6 +274,7 @@ impl Event {
             | Event::BootConfirmed(id)
             | Event::CorruptionDetected(id)
             | Event::Restored(id)
+            | Event::RecoveryUnavailable(id)
             | Event::Timeout(id) => Some(*id),
             Event::PowerGood(_)
             | Event::AttestationChallenge
@@ -312,6 +320,14 @@ pub enum Effect {
     /// deferred to the [`Platform`](crate::Platform) driver, which resolves it
     /// per configuration policy. The core only names the component to
     /// recover; it does not encode how recovery is performed.
+    ///
+    /// Two-phase: this starts recovery, and the driver later reports the
+    /// verdict as an event — [`Event::Restored`] once it has swapped in an
+    /// untried image, or [`Event::RecoveryUnavailable`] when it has none left.
+    /// "Out of images" is a verdict, not an actuation failure: returning
+    /// `EffectError` for it would latch [`State::Locked`] regardless of the
+    /// component's [`FailurePolicy`]. Reserve `EffectError` for a genuine swap
+    /// fault (bus error, hardware fault).
     ///
     /// `attempt` is this component's consecutive-recovery count (0 on the first
     /// attempt), taken straight from the core's own retry counter — the same

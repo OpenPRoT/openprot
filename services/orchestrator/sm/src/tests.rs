@@ -1031,6 +1031,196 @@ fn required_exhaustion_reports_before_lockdown() {
     );
 }
 
+/// The platform reporting "no recovery source left" for an `Isolable`
+/// component gates it exactly like count-driven exhaustion does — the walk
+/// continues and the platform boots degraded rather than locking down.
+#[test]
+fn isolable_recovery_unavailable_skips() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_required()),
+            (C1, ComponentAttrs::passive_isolable()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::VerificationFailed(C1),  // → Recovering(C1)
+            Event::RecoveryUnavailable(C1), // platform: no image left
+            Event::VerificationPassed(C0),  // re-walk from the top
+        ],
+    );
+    assert_eq!(state, State::Ready);
+    assert!(effects.contains(&Effect::RecoverComponent { id: C1, attempt: 0 }));
+    assert!(effects.contains(&Effect::AssertReset(C1)));
+    assert!(effects.contains(&Effect::ReportIsolated(C1)));
+    assert!(!effects.contains(&Effect::ReleaseReset(C1)));
+    assert!(!effects.contains(&Effect::LatchLockdown));
+}
+
+/// The same platform signal on a `Required` component is *not* graceful: it
+/// names the component and latches, exactly as count-driven exhaustion does.
+#[test]
+fn required_recovery_unavailable_locks() {
+    let (effects, state) = drive(
+        passive_required(&[C0]),
+        &[
+            BOOT,
+            Event::VerificationFailed(C0), // → Recovering(C0)
+            Event::RecoveryUnavailable(C0),
+        ],
+    );
+    assert_eq!(state, State::Locked);
+    let report = effects
+        .iter()
+        .position(|e| *e == Effect::ReportRecoveryFailed(C0))
+        .expect("the component that forced the halt is reported");
+    let latch = effects
+        .iter()
+        .position(|e| *e == Effect::LatchLockdown)
+        .expect("the platform latches");
+    assert!(
+        report < latch,
+        "the report must be actuated before the latch"
+    );
+}
+
+/// A `Cascading` component the platform can no longer restore takes its
+/// transitive dependents down with it, exactly as count-driven exhaustion does.
+#[test]
+fn cascading_recovery_unavailable_cascades() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_required()),
+            (C1, ComponentAttrs::passive_cascading()),
+            (C2, ComponentAttrs::passive_required().with_depends_on(C1)),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::VerificationFailed(C1),
+            Event::RecoveryUnavailable(C1),
+            Event::VerificationPassed(C0),
+        ],
+    );
+    assert_eq!(state, State::Ready);
+    assert!(effects.contains(&Effect::AssertReset(C1)));
+    assert!(effects.contains(&Effect::AssertReset(C2)));
+    assert!(effects.contains(&Effect::ReportIsolated(C1)));
+    assert!(effects.contains(&Effect::ReportIsolated(C2)));
+    assert!(!effects.contains(&Effect::LatchLockdown));
+}
+
+/// The platform's verdict is authoritative: one `RecoveryUnavailable` exhausts
+/// recovery immediately, without burning the retry budget on restores the
+/// platform has already said it cannot perform.
+#[test]
+fn recovery_unavailable_short_circuits_retry_budget() {
+    let mut c = heapless::Vec::<(ComponentId, ComponentAttrs), CAPACITY>::new();
+    c.push((C0, ComponentAttrs::passive_required()))
+        .expect("fits");
+    c.push((C1, ComponentAttrs::passive_isolable()))
+        .expect("fits");
+    let mut orch = Orchestrator::<CAPACITY, ECAP>::new(c.try_into().expect("valid chain"), 200);
+    let mut effects = Vec::new();
+    for ev in [
+        BOOT,
+        Event::VerificationPassed(C0),
+        Event::VerificationFailed(C1),
+        Event::RecoveryUnavailable(C1),
+        Event::VerificationPassed(C0),
+    ] {
+        orch.dispatch_with(ev, |e| {
+            effects.push(e);
+            Ok(None)
+        });
+    }
+    assert_eq!(orch.state(), State::Ready);
+    assert_eq!(
+        effects
+            .iter()
+            .filter(|e| matches!(e, Effect::RecoverComponent { id, .. } if *id == C1))
+            .count(),
+        1,
+        "the cap was never consulted, so recovery is attempted exactly once",
+    );
+    assert!(effects.contains(&Effect::ReportIsolated(C1)));
+}
+
+/// Same target guard as `Restored`: a verdict naming a component other than the
+/// one under recovery is not credited to this episode.
+#[test]
+fn recovery_unavailable_other_component_dropped() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_required()),
+            (C1, ComponentAttrs::passive_isolable()),
+            (C2, ComponentAttrs::passive_isolable()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::VerificationFailed(C1), // → Recovering(C1)
+            Event::RecoveryUnavailable(C2),
+        ],
+    );
+    assert_eq!(state, State::Recovering(C1));
+    assert!(!effects.contains(&Effect::AssertReset(C2)));
+    assert!(!effects.contains(&Effect::ReportIsolated(C2)));
+}
+
+/// The new variant names a component, so it must be listed in
+/// `Event::component_id` — that is the single enumeration the dispatch boundary
+/// consults to drop off-chain ids before any handler runs. Asserted directly:
+/// end to end the `Recovering` target guard would mask an unlisted variant, so
+/// only this can catch the omission.
+#[test]
+fn recovery_unavailable_names_its_component() {
+    assert_eq!(Event::RecoveryUnavailable(C3).component_id(), Some(C3));
+}
+
+/// INV8: an isolated component is never released, however good the verdict.
+/// Gating a component does not move the cursor off it, so the in-flight
+/// `VerifyFirmware` issued before the corruption report can still be answered
+/// — and that stale pass must not undo the `AssertReset` that just held it.
+#[test]
+fn stale_verdict_never_releases_an_isolated_component() {
+    let (effects, _state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_required()),
+            (C1, ComponentAttrs::passive_isolable()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0), // → VerifyFirmware(C1) in flight
+            Event::CorruptionDetected(C1), // → AssertReset(C1), isolated
+            Event::VerificationPassed(C1), // the in-flight verdict, now stale
+        ],
+    );
+    assert!(effects.contains(&Effect::AssertReset(C1)));
+    assert!(!effects.contains(&Effect::ReleaseReset(C1)));
+}
+
+/// Same hole on the supervised release site: a component isolated while the
+/// walk is parked in `AwaitingReady` must not be released by the verdict for
+/// the verification that was already in flight.
+#[test]
+fn stale_verdict_never_releases_an_isolated_component_in_awaiting_ready() {
+    let (effects, _state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::active_required()),
+            (C1, ComponentAttrs::passive_isolable()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0), // → AwaitingReady(C0); VerifyFirmware(C1) in flight
+            Event::CorruptionDetected(C1), // → AssertReset(C1), isolated
+            Event::VerificationPassed(C1), // the in-flight verdict, now stale
+        ],
+    );
+    assert!(effects.contains(&Effect::AssertReset(C1)));
+    assert!(!effects.contains(&Effect::ReleaseReset(C1)));
+}
+
 /// A component that recovers within its retry budget is not degraded, so
 /// nothing is reported — reports mark components taken *out of service*, not
 /// every transient failure.
@@ -1884,7 +2074,7 @@ impl SplitMix64 {
 /// Build one random event over the given id palette. Id-less events ignore it.
 fn random_event(rng: &mut SplitMix64, ids: &[ComponentId]) -> Event {
     let id = ids[rng.below(ids.len() as u32) as usize];
-    match rng.below(15) {
+    match rng.below(16) {
         0 => Event::VerificationPassed(id),
         1 => Event::VerificationFailed(id),
         2 => Event::ComponentReady(id),
@@ -1899,6 +2089,7 @@ fn random_event(rng: &mut SplitMix64, ids: &[ComponentId]) -> Event {
         11 => Event::UpdateRejected,
         12 => Event::RecoveryFailed,
         13 => Event::CommitTimeout,
+        14 => Event::RecoveryUnavailable(id),
         _ => Event::EffectFailed,
     }
 }

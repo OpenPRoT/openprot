@@ -65,11 +65,16 @@ verification.
 
 ```
 Required   — attempt recovery; re-walk the chain after `Restored`; latch
-             `Locked` if the retry cap is reached
+             `Locked` once recovery is exhausted
 Isolable   — hold the component in reset; advance past it; continue the walk
 Cascading  — same as Isolable, and additionally hold in reset any component
              whose `depends_on` names this one
 ```
+
+Recovery is *exhausted* either when the retry cap is reached or when the
+platform reports `RecoveryUnavailable` — both run the same policy branch, so a
+platform that is out of recovery images gates an `Isolable` component rather
+than halting the platform.
 
 ### `RegionId`
 
@@ -361,7 +366,10 @@ names **what** must happen to **which** component; the platform decides **how**.
 For example, `Effect::RecoverComponent(id)` says only "recover this component" —
 whether that resolves to a golden-image restore, an A/B slot swap, a streamed
 image, or a vendor-specific scheme is a platform/configuration decision, never
-encoded in the core.
+encoded in the core. The platform reports the outcome as an event: `Restored`
+once it has swapped in an untried image, `RecoveryUnavailable` when it has none
+left. Both are verdicts; `EffectError` stays reserved for a genuine actuation
+fault, which fails closed to `Locked` regardless of policy.
 
 The core never reads flash, never checks signatures, never observes reset lines.
 It only emits descriptions. The complete split:
