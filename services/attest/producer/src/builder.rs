@@ -25,6 +25,8 @@ use minicbor::Encoder;
 use openprot_attest_api::consts::{MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_TOKEN_SIZE};
 use openprot_attest_api::{AttestConfig, AttestError, DigestAlgorithm, HwSigner, Measurement};
 
+use crate::cert_ueid::UEID_LEN;
+
 // Registered EAT claim keys (RFC 9711 / RFC 8392)
 const CLAIM_ISS: i64 = 1;
 const CLAIM_IAT: i64 = 6;
@@ -65,6 +67,7 @@ fn cbor_err(e: minicbor::encode::Error<EndOfSlice>) -> AttestError {
 pub(crate) fn build(
     config: &AttestConfig,
     signer: &dyn HwSigner,
+    ueid: &[u8; UEID_LEN],
     measurements: &[Measurement],
     nonce: &[u8],
     evidence_cbor: &[u8],
@@ -115,11 +118,8 @@ pub(crate) fn build(
         e.i64(CLAIM_NONCE)?;
         e.bytes(nonce)?;
 
-        // UEID: type RAND (0x01) + 28 placeholder bytes
-        let mut ueid = [0u8; 29];
-        ueid[0] = 0x01;
         e.i64(CLAIM_UEID)?;
-        e.bytes(&ueid)?;
+        e.bytes(ueid)?;
 
         e.i64(CLAIM_OEMID)?;
         e.bytes(&config.oemid.0)?;
@@ -291,11 +291,14 @@ mod tests {
         v
     }
 
+    const STUB_UEID: [u8; crate::cert_ueid::UEID_LEN] = [0x01u8; crate::cert_ueid::UEID_LEN];
+
     fn build_token(evidence: &[u8]) -> Vec<u8, MAX_TOKEN_SIZE> {
         let mut out = Vec::new();
         build(
             &config(),
             &TestSigner,
+            &STUB_UEID,
             &meas(),
             b"nonce",
             evidence,
@@ -364,6 +367,7 @@ mod tests {
         build(
             &config(),
             &TestSigner,
+            &STUB_UEID,
             &meas(),
             b"testnonce",
             &[],
@@ -392,6 +396,7 @@ mod tests {
         build(
             &config(),
             &TestSigner,
+            &STUB_UEID,
             &meas(),
             b"n",
             &evidence,

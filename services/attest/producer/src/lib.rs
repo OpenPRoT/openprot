@@ -11,6 +11,7 @@
 #![forbid(unsafe_code)]
 
 pub mod builder;
+pub mod cert_ueid;
 pub mod dice_identity;
 pub mod measurements;
 mod signer;

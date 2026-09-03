@@ -15,6 +15,7 @@ and a software stub for testing without physical hardware.
 | `src/lib.rs` | Public re-exports; feature gates. |
 | `src/signer.rs` | `HwAttestProducer` and `SoftwareAttestProducer` (feature = `test-support`). |
 | `src/builder.rs` | Assembles the CBOR claim map, embeds raw evidence bytes, constructs the `COSE_Sign1` envelope. No verifier dependency. |
+| `src/cert_ueid.rs` | Minimal DER walker: extracts the TCG UEID (OID 2.23.133.5.4.4) from the Caliptra DER certificate chain and verifies consistency across all certs that carry it. |
 | `src/dice_identity.rs` | Wraps the Caliptra mailbox calls that return the DER-encoded DICE certificate chain. |
 | `src/measurements.rs` | Aggregates Caliptra-internal firmware measurements with platform-registered `MeasurementProvider` outputs. |
 
@@ -63,7 +64,7 @@ and the `x5chain` certificate chain. The CWT payload includes:
 | `iss` | 1 | Issuer derived from Caliptra device identity |
 | `iat` | 6 | Token creation timestamp |
 | `eat_nonce` | 10 | Caller-supplied freshness nonce (min 32 bytes) |
-| `ueid` | 256 | Unique Entity Identifier from Caliptra CDI |
+| `ueid` | 256 | Device UEID extracted from the TCG UEID extension (OID 2.23.133.5.4.4) in the Caliptra AliasRT certificate. All certs in the chain that carry this extension are verified to agree before token assembly. |
 | `oemid` | 258 | OEM identifier (IANA PEN form) |
 | `hwmodel` | 259 | Hardware model string |
 | `hwversion` | 260 | Hardware version string |

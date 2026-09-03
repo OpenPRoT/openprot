@@ -15,7 +15,7 @@ use openprot_attest_api::{
     AttestConfig, AttestError, AttestProducer, HwSigner, MeasurementProvider,
 };
 
-use crate::{builder, dice_identity, measurements};
+use crate::{builder, cert_ueid, dice_identity, measurements};
 
 // ── Hardware-backed producer ──────────────────────────────────────────────────
 
@@ -53,11 +53,15 @@ impl AttestProducer for HwAttestProducer<'_> {
         iat: u64,
         out: &mut Vec<u8, MAX_TOKEN_SIZE>,
     ) -> Result<(), AttestError> {
+        let mut chain: Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN> = Vec::new();
+        self.signer.cert_chain_der(&mut chain)?;
+        let ueid = cert_ueid::extract_and_verify(&chain)?;
+
         let mut caliptra_meas: Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS> = Vec::new();
         self.signer.caliptra_measurements(&mut caliptra_meas)?;
         let mut meas: Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS> = Vec::new();
         measurements::collect(&caliptra_meas, &self.providers, &mut meas)?;
-        builder::build(&self.config, self.signer, &meas, nonce, evidence, iat, out)
+        builder::build(&self.config, self.signer, &ueid, &meas, nonce, evidence, iat, out)
     }
 
     fn cert_chain(
@@ -94,8 +98,22 @@ impl AttestProducer for SoftwareAttestProducer {
         iat: u64,
         out: &mut Vec<u8, MAX_TOKEN_SIZE>,
     ) -> Result<(), AttestError> {
+        // Stub UEID: type EAT_RAND (0x01) followed by 16 deterministic bytes.
+        let stub_ueid = [
+            0x01, 0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x11, 0x22, 0x33, 0x44,
+            0x55, 0x66, 0x77,
+        ];
         let meas = measurements::test_caliptra_measurements();
-        builder::build(&self.config, &StubSigner, &meas, nonce, evidence, iat, out)
+        builder::build(
+            &self.config,
+            &StubSigner,
+            &stub_ueid,
+            &meas,
+            nonce,
+            evidence,
+            iat,
+            out,
+        )
     }
 
     fn cert_chain(
