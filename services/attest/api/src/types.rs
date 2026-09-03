@@ -37,9 +37,6 @@ pub struct Measurement {
     pub authority: MeasurementAuthority,
 }
 
-/// DER-encoded certificate chain ordered leaf → root.
-pub struct CertChain(pub Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN>);
-
 /// Producer configuration, set once at platform initialisation.
 pub struct AttestConfig {
     pub oemid: OemId,

@@ -12,10 +12,12 @@
 use heapless::Vec;
 
 use openprot_attest_api::consts::{MAX_CERT_SIZE, MAX_CHAIN_LEN};
-use openprot_attest_api::{AttestError, CertChain, HwSigner};
+use openprot_attest_api::{AttestError, HwSigner};
 
 /// Retrieve the full DICE certificate chain from the signer, ordered leaf → root.
-pub fn cert_chain(signer: &dyn HwSigner) -> Result<CertChain, AttestError> {
+pub fn cert_chain(
+    signer: &dyn HwSigner,
+) -> Result<Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN>, AttestError> {
     let mut buf: Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN> = Vec::new();
     signer.cert_chain_der(&mut buf)?;
     if buf.len() < 2 {
@@ -23,7 +25,7 @@ pub fn cert_chain(signer: &dyn HwSigner) -> Result<CertChain, AttestError> {
             "DICE chain must have at least two certificates (leaf + one CA)",
         ));
     }
-    Ok(CertChain(buf))
+    Ok(buf)
 }
 
 #[cfg(test)]
@@ -95,6 +97,6 @@ mod tests {
     #[test]
     fn accepts_chain_with_two_certs() {
         let chain = cert_chain(&TwoCerts).unwrap();
-        assert_eq!(chain.0.len(), 2);
+        assert_eq!(chain.len(), 2);
     }
 }

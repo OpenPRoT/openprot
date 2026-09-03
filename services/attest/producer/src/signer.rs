@@ -77,7 +77,7 @@ impl AttestProducer for HwAttestProducer<'_> {
         &self,
         buf: &mut Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN>,
     ) -> Result<(), AttestError> {
-        dice_identity::cert_chain(self.signer).map(|c| *buf = c.0)
+        dice_identity::cert_chain(self.signer).map(|c| *buf = c)
     }
 }
 
