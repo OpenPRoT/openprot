@@ -61,7 +61,16 @@ impl AttestProducer for HwAttestProducer<'_> {
         self.signer.caliptra_measurements(&mut caliptra_meas)?;
         let mut meas: Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS> = Vec::new();
         measurements::collect(&caliptra_meas, &self.providers, &mut meas)?;
-        builder::build(&self.config, self.signer, &ueid, &meas, nonce, evidence, iat, out)
+        builder::build(
+            &self.config,
+            self.signer,
+            &ueid,
+            &meas,
+            nonce,
+            evidence,
+            iat,
+            out,
+        )
     }
 
     fn cert_chain(

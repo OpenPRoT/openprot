@@ -11,8 +11,8 @@
 //! only the tags and length fields needed to reach the extension value. It is
 //! intentionally narrow: it only handles the cert structures Caliptra emits.
 
-use openprot_attest_api::{AttestError, consts::MAX_CHAIN_LEN, consts::MAX_CERT_SIZE};
 use heapless::Vec;
+use openprot_attest_api::{consts::MAX_CERT_SIZE, consts::MAX_CHAIN_LEN, AttestError};
 
 /// DER tag bytes.
 const TAG_SEQUENCE: u8 = 0x30;
@@ -38,8 +38,8 @@ pub fn extract(cert_der: &[u8]) -> Result<Option<[u8; UEID_LEN]>, AttestError> {
     let tbs_body = sequence_body(tbs).ok_or(AttestError::Caliptra("cert: bad TBS SEQUENCE"))?;
 
     // Walk TBS fields to find the [3] EXPLICIT extensions wrapper (tag 0xa3).
-    let extensions_wrapper = find_tag(tbs_body, 0xa3)
-        .ok_or(AttestError::Caliptra("cert: no extensions"))?;
+    let extensions_wrapper =
+        find_tag(tbs_body, 0xa3).ok_or(AttestError::Caliptra("cert: no extensions"))?;
 
     // [3] wraps a SEQUENCE of Extension SEQUENCEs.
     let ext_seq = sequence_body(extensions_wrapper)
@@ -48,8 +48,8 @@ pub fn extract(cert_der: &[u8]) -> Result<Option<[u8; UEID_LEN]>, AttestError> {
     // Walk each Extension SEQUENCE looking for the TCG UEID OID.
     let mut remaining = ext_seq;
     while !remaining.is_empty() {
-        let (ext_body, rest) = take_sequence(remaining)
-            .ok_or(AttestError::Caliptra("cert: bad extension entry"))?;
+        let (ext_body, rest) =
+            take_sequence(remaining).ok_or(AttestError::Caliptra("cert: bad extension entry"))?;
         remaining = rest;
 
         // Extension ::= SEQUENCE { extnID OBJECT IDENTIFIER, extnValue OCTET STRING }
@@ -65,8 +65,8 @@ pub fn extract(cert_der: &[u8]) -> Result<Option<[u8; UEID_LEN]>, AttestError> {
                 .ok_or(AttestError::Caliptra("ueid: bad extnValue OCTET STRING"))?;
 
             // Contents: SEQUENCE { OCTET STRING(ueid_bytes) }
-            let inner_seq = sequence_body(contents)
-                .ok_or(AttestError::Caliptra("ueid: bad inner SEQUENCE"))?;
+            let inner_seq =
+                sequence_body(contents).ok_or(AttestError::Caliptra("ueid: bad inner SEQUENCE"))?;
             let ueid_bytes = octet_string_body(inner_seq)
                 .ok_or(AttestError::Caliptra("ueid: bad inner OCTET STRING"))?;
 
@@ -94,8 +94,9 @@ pub fn extract_and_verify(
     }
 
     // The leaf cert (index 0) must carry the UEID extension.
-    let leaf_ueid = extract(&chain[0])?
-        .ok_or(AttestError::Caliptra("leaf cert missing TCG UEID extension"))?;
+    let leaf_ueid = extract(&chain[0])?.ok_or(AttestError::Caliptra(
+        "leaf cert missing TCG UEID extension",
+    ))?;
 
     // Every other cert that carries the extension must match.
     for cert in chain.iter().skip(1) {
@@ -309,7 +310,9 @@ mod tests {
         let mut tbs_body: heapless::Vec<u8, 128> = heapless::Vec::new();
         tbs_body.extend_from_slice(&tbs_version).unwrap();
         tbs_body.extend_from_slice(&tbs_serial).unwrap();
-        for _ in 0..5 { tbs_body.extend_from_slice(&[0x30, 0x00]).unwrap(); }
+        for _ in 0..5 {
+            tbs_body.extend_from_slice(&[0x30, 0x00]).unwrap();
+        }
         tbs_body.extend_from_slice(&exts_wrapper).unwrap();
         let tbs = der_tlv(TAG_SEQUENCE, &tbs_body);
 

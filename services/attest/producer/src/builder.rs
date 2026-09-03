@@ -64,6 +64,7 @@ fn cbor_err(e: minicbor::encode::Error<EndOfSlice>) -> AttestError {
 /// Build and sign a complete OCP-EAT token into `out`.
 ///
 /// `iat` is a Unix timestamp (seconds since epoch) supplied by the caller.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build(
     config: &AttestConfig,
     signer: &dyn HwSigner,
