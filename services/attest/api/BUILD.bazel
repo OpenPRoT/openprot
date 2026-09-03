@@ -1,0 +1,21 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "attest_api",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "openprot_attest_api",
+    edition = "2021",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@rust_crates//:heapless",
+        "@rust_crates//:thiserror",
+    ],
+)
+
+rust_test(
+    name = "attest_api_test",
+    crate = ":attest_api",
+)

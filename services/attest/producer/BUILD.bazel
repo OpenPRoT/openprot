@@ -1,0 +1,38 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "attest_producer",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "openprot_attest_producer",
+    edition = "2021",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/attest/api:attest_api",
+        "@rust_crates//:heapless",
+        "@rust_crates//:minicbor",
+    ],
+)
+
+rust_test(
+    name = "attest_producer_unit_test",
+    crate = ":attest_producer",
+    features = ["test-support"],
+    deps = [
+        "//services/attest/api:attest_api",
+    ],
+)
+
+rust_test(
+    name = "attest_producer_integration_test",
+    srcs = ["tests/producer_integration.rs"],
+    edition = "2021",
+    features = ["test-support"],
+    deps = [
+        ":attest_producer",
+        "//services/attest/api:attest_api",
+        "@rust_crates//:ciborium",
+    ],
+)

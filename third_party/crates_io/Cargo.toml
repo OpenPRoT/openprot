@@ -82,6 +82,10 @@ aes-gcm = { version = "0.10", default-features = false, features = ["aes"] }
 cipher = { version = "0.4", default-features = false }
 
 # Host tool crates needed by pigweed pw_kernel/tooling
+ciborium = { version = "0.2", default-features = false }
+
+# CBOR encoder for the attestation producer (no_std, production dependency)
+minicbor = { version = "0.21", default-features = false }
 anyhow = "1.0.103"
 clap = { version = "4.5.40", features = ["derive", "env", "wrap_help"] }
 futures = "0.3"
