@@ -181,18 +181,17 @@ pub(crate) fn build(
     //   ["Signature1", phdr_bstr, h'', payload_bstr]
     let sig = {
         let mut sig_scratch = [0u8; SCRATCH];
-        let sig_input_len =
-            (|| -> Result<usize, minicbor::encode::Error<EndOfSlice>> {
-                let mut w = BufWriter::new(&mut sig_scratch[..]);
-                let mut e = Encoder::new(&mut w);
-                e.array(4)?;
-                e.str("Signature1")?;
-                e.bytes(phdr_bytes)?;
-                e.bytes(b"")?; // aad = h''
-                e.bytes(payload_bytes)?;
-                Ok(w.position())
-            })()
-            .map_err(cbor_err)?;
+        let sig_input_len = (|| -> Result<usize, minicbor::encode::Error<EndOfSlice>> {
+            let mut w = BufWriter::new(&mut sig_scratch[..]);
+            let mut e = Encoder::new(&mut w);
+            e.array(4)?;
+            e.str("Signature1")?;
+            e.bytes(phdr_bytes)?;
+            e.bytes(b"")?; // aad = h''
+            e.bytes(payload_bytes)?;
+            Ok(w.position())
+        })()
+        .map_err(cbor_err)?;
         signer.sign(&sig_scratch[..sig_input_len])?
     };
 
