@@ -19,10 +19,10 @@
 //! Claim key numbers follow RFC 9711 and the OCP-EAT profile.
 
 use heapless::Vec;
-use minicbor::encode::Write as CborWrite;
+use minicbor::encode::write::EndOfSlice;
 use minicbor::Encoder;
 
-use openprot_attest_api::consts::{MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_MEASUREMENTS, MAX_TOKEN_SIZE};
+use openprot_attest_api::consts::{MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_TOKEN_SIZE};
 use openprot_attest_api::{AttestConfig, AttestError, DigestAlgorithm, HwSigner, Measurement};
 
 // Registered EAT claim keys (RFC 9711 / RFC 8392)
@@ -49,27 +49,13 @@ const SCRATCH: usize = MAX_TOKEN_SIZE;
 const PHDR_SCRATCH: usize = MAX_CHAIN_LEN * (MAX_CERT_SIZE + 3) + 32;
 
 /// Writer over a fixed `[u8]` slice; tracks how many bytes have been written.
-struct BufWriter<'a> {
-    buf: &'a mut [u8],
-    pos: usize,
-}
+type BufWriter<'a> = minicbor::encode::write::Cursor<&'a mut [u8]>;
 
-impl<'a> BufWriter<'a> {
-    fn new(buf: &'a mut [u8]) -> Self {
-        Self { buf, pos: 0 }
-    }
-}
-
-impl<'a> CborWrite for BufWriter<'a> {
-    type Error = AttestError;
-    fn write_all(&mut self, data: &[u8]) -> Result<(), AttestError> {
-        let end = self.pos + data.len();
-        if end > self.buf.len() {
-            return Err(AttestError::BufferFull);
-        }
-        self.buf[self.pos..end].copy_from_slice(data);
-        self.pos = end;
-        Ok(())
+fn cbor_err(e: minicbor::encode::Error<EndOfSlice>) -> AttestError {
+    if e.is_write() {
+        AttestError::BufferFull
+    } else {
+        AttestError::Cbor
     }
 }
 
@@ -79,7 +65,7 @@ impl<'a> CborWrite for BufWriter<'a> {
 pub(crate) fn build(
     config: &AttestConfig,
     signer: &dyn HwSigner,
-    measurements: &Vec<Measurement, MAX_MEASUREMENTS>,
+    measurements: &[Measurement],
     nonce: &[u8],
     evidence_cbor: &[u8],
     iat: u64,
@@ -92,102 +78,102 @@ pub(crate) fn build(
     // ── Encode protected header ────────────────────────────────────────────
     // Must be encoded before signing so it can be included in Sig_Structure.
     let mut phdr_scratch = [0u8; PHDR_SCRATCH];
-    let phdr_len = {
-        let mut w = BufWriter::new(&mut phdr_scratch);
+    let phdr_len = (|| -> Result<usize, minicbor::encode::Error<EndOfSlice>> {
+        let mut w = BufWriter::new(&mut phdr_scratch[..]);
         let mut e = Encoder::new(&mut w);
-        e.map(2).map_err(|_| AttestError::Cbor)?;
-        e.i64(1).map_err(|_| AttestError::Cbor)?;
-        e.i64(ALG_ES384).map_err(|_| AttestError::Cbor)?;
-        e.i64(HDR_X5CHAIN).map_err(|_| AttestError::Cbor)?;
-        e.array(chain.len() as u64).map_err(|_| AttestError::Cbor)?;
+        e.map(2)?;
+        e.i64(1)?;
+        e.i64(ALG_ES384)?;
+        e.i64(HDR_X5CHAIN)?;
+        e.array(chain.len() as u64)?;
         for cert in &chain {
-            e.bytes(cert).map_err(|_| AttestError::Cbor)?;
+            e.bytes(cert)?;
         }
-        w.pos
-    };
+        Ok(w.position())
+    })()
+    .map_err(cbor_err)?;
     let phdr_bytes = &phdr_scratch[..phdr_len];
 
     // ── Encode CWT claims map ──────────────────────────────────────────────
     let mut payload_scratch = [0u8; SCRATCH];
-    let payload_len = {
-        let mut w = BufWriter::new(&mut payload_scratch);
-        let n_claims = 11 + usize::from(!evidence_cbor.is_empty());
+    let payload_len = (|| -> Result<usize, minicbor::encode::Error<EndOfSlice>> {
+        // Fixed claims: iss, iat, nonce, ueid, oemid, hwmodel, hwver, dbgstat,
+        // sw-name, sw-version, measurements. Update when adding a claim below.
+        const FIXED_CLAIMS: usize = 11;
+        let n_claims = FIXED_CLAIMS + usize::from(!evidence_cbor.is_empty());
+        let mut w = BufWriter::new(&mut payload_scratch[..]);
         let mut e = Encoder::new(&mut w);
-        e.tag(minicbor::data::Tag::new(61))
-            .map_err(|_| AttestError::Cbor)?;
-        e.map(n_claims as u64).map_err(|_| AttestError::Cbor)?;
+        e.tag(minicbor::data::Tag::new(61))?;
+        e.map(n_claims as u64)?;
 
-        e.i64(CLAIM_ISS).map_err(|_| AttestError::Cbor)?;
-        e.str("https://openprot.example/caliptra/device")
-            .map_err(|_| AttestError::Cbor)?;
+        e.i64(CLAIM_ISS)?;
+        e.str("https://openprot.example/caliptra/device")?;
 
-        e.i64(CLAIM_IAT).map_err(|_| AttestError::Cbor)?;
-        e.i64(iat as i64).map_err(|_| AttestError::Cbor)?;
+        e.i64(CLAIM_IAT)?;
+        e.u64(iat)?;
 
-        e.i64(CLAIM_NONCE).map_err(|_| AttestError::Cbor)?;
-        e.bytes(nonce).map_err(|_| AttestError::Cbor)?;
+        e.i64(CLAIM_NONCE)?;
+        e.bytes(nonce)?;
 
         // UEID: type RAND (0x01) + 28 placeholder bytes
         let mut ueid = [0u8; 29];
         ueid[0] = 0x01;
-        e.i64(CLAIM_UEID).map_err(|_| AttestError::Cbor)?;
-        e.bytes(&ueid).map_err(|_| AttestError::Cbor)?;
+        e.i64(CLAIM_UEID)?;
+        e.bytes(&ueid)?;
 
-        e.i64(CLAIM_OEMID).map_err(|_| AttestError::Cbor)?;
-        e.bytes(&config.oemid.0).map_err(|_| AttestError::Cbor)?;
+        e.i64(CLAIM_OEMID)?;
+        e.bytes(&config.oemid.0)?;
 
-        e.i64(CLAIM_HWMODEL).map_err(|_| AttestError::Cbor)?;
-        e.str(&config.hw_model).map_err(|_| AttestError::Cbor)?;
+        e.i64(CLAIM_HWMODEL)?;
+        e.str(&config.hw_model)?;
 
-        e.i64(CLAIM_HWVER).map_err(|_| AttestError::Cbor)?;
-        e.array(2).map_err(|_| AttestError::Cbor)?;
-        e.str(&config.hw_version).map_err(|_| AttestError::Cbor)?;
-        e.i64(1).map_err(|_| AttestError::Cbor)?;
+        e.i64(CLAIM_HWVER)?;
+        e.array(2)?;
+        e.str(&config.hw_version)?;
+        e.i64(1)?;
 
         // dbgstat = 3 (disabled)
-        e.i64(CLAIM_DBGSTAT).map_err(|_| AttestError::Cbor)?;
-        e.i64(3).map_err(|_| AttestError::Cbor)?;
+        e.i64(CLAIM_DBGSTAT)?;
+        e.i64(3)?;
 
         // sw-name array
-        e.i64(CLAIM_SWNAME).map_err(|_| AttestError::Cbor)?;
-        e.array(measurements.len() as u64)
-            .map_err(|_| AttestError::Cbor)?;
+        e.i64(CLAIM_SWNAME)?;
+        e.array(measurements.len() as u64)?;
         for m in measurements {
-            e.str(&m.component).map_err(|_| AttestError::Cbor)?;
+            e.str(&m.component)?;
         }
 
         // sw-version array
-        e.i64(CLAIM_SWVER).map_err(|_| AttestError::Cbor)?;
-        e.array(measurements.len() as u64)
-            .map_err(|_| AttestError::Cbor)?;
+        e.i64(CLAIM_SWVER)?;
+        e.array(measurements.len() as u64)?;
         for m in measurements {
-            e.array(2).map_err(|_| AttestError::Cbor)?;
-            e.str(&m.version).map_err(|_| AttestError::Cbor)?;
-            e.i64(1).map_err(|_| AttestError::Cbor)?;
+            e.array(2)?;
+            e.str(&m.version)?;
+            e.i64(1)?;
         }
 
         // measurements array
-        e.i64(CLAIM_MEASUREMENTS).map_err(|_| AttestError::Cbor)?;
-        e.array(measurements.len() as u64)
-            .map_err(|_| AttestError::Cbor)?;
+        e.i64(CLAIM_MEASUREMENTS)?;
+        e.array(measurements.len() as u64)?;
         for m in measurements {
             let alg: i64 = match m.digest_alg {
                 DigestAlgorithm::Sha384 => -43,
                 DigestAlgorithm::Sha512 => -44,
             };
-            e.array(3).map_err(|_| AttestError::Cbor)?;
-            e.str(&m.component).map_err(|_| AttestError::Cbor)?;
-            e.i64(alg).map_err(|_| AttestError::Cbor)?;
-            e.bytes(&m.digest).map_err(|_| AttestError::Cbor)?;
+            e.array(3)?;
+            e.str(&m.component)?;
+            e.i64(alg)?;
+            e.bytes(&m.digest)?;
         }
 
         if !evidence_cbor.is_empty() {
-            e.i64(CLAIM_EVIDENCE).map_err(|_| AttestError::Cbor)?;
-            e.bytes(evidence_cbor).map_err(|_| AttestError::Cbor)?;
+            e.i64(CLAIM_EVIDENCE)?;
+            e.bytes(evidence_cbor)?;
         }
 
-        w.pos
-    };
+        Ok(w.position())
+    })()
+    .map_err(cbor_err)?;
     let payload_bytes = &payload_scratch[..payload_len];
 
     // ── Sign ──────────────────────────────────────────────────────────────
@@ -195,33 +181,35 @@ pub(crate) fn build(
     //   ["Signature1", phdr_bstr, h'', payload_bstr]
     let sig = {
         let mut sig_scratch = [0u8; SCRATCH];
-        let sig_input_len = {
-            let mut w = BufWriter::new(&mut sig_scratch);
-            let mut e = Encoder::new(&mut w);
-            e.array(4).map_err(|_| AttestError::Cbor)?;
-            e.str("Signature1").map_err(|_| AttestError::Cbor)?;
-            e.bytes(phdr_bytes).map_err(|_| AttestError::Cbor)?;
-            e.bytes(b"").map_err(|_| AttestError::Cbor)?; // aad = h''
-            e.bytes(payload_bytes).map_err(|_| AttestError::Cbor)?;
-            w.pos
-        };
+        let sig_input_len =
+            (|| -> Result<usize, minicbor::encode::Error<EndOfSlice>> {
+                let mut w = BufWriter::new(&mut sig_scratch[..]);
+                let mut e = Encoder::new(&mut w);
+                e.array(4)?;
+                e.str("Signature1")?;
+                e.bytes(phdr_bytes)?;
+                e.bytes(b"")?; // aad = h''
+                e.bytes(payload_bytes)?;
+                Ok(w.position())
+            })()
+            .map_err(cbor_err)?;
         signer.sign(&sig_scratch[..sig_input_len])?
     };
 
     // ── Assemble COSE_Sign1 ────────────────────────────────────────────────
     let mut cose_scratch = [0u8; SCRATCH];
-    let cose_len = {
-        let mut w = BufWriter::new(&mut cose_scratch);
+    let cose_len = (|| -> Result<usize, minicbor::encode::Error<EndOfSlice>> {
+        let mut w = BufWriter::new(&mut cose_scratch[..]);
         let mut e = Encoder::new(&mut w);
-        e.tag(minicbor::data::Tag::new(18))
-            .map_err(|_| AttestError::Cbor)?;
-        e.array(4).map_err(|_| AttestError::Cbor)?;
-        e.bytes(phdr_bytes).map_err(|_| AttestError::Cbor)?;
-        e.map(0).map_err(|_| AttestError::Cbor)?; // empty unprotected header
-        e.bytes(payload_bytes).map_err(|_| AttestError::Cbor)?;
-        e.bytes(&sig).map_err(|_| AttestError::Cbor)?;
-        w.pos
-    };
+        e.tag(minicbor::data::Tag::new(18))?;
+        e.array(4)?;
+        e.bytes(phdr_bytes)?;
+        e.map(0)?; // empty unprotected header
+        e.bytes(payload_bytes)?;
+        e.bytes(&sig)?;
+        Ok(w.position())
+    })()
+    .map_err(cbor_err)?;
 
     out.extend_from_slice(&cose_scratch[..cose_len])
         .map_err(|_| AttestError::BufferFull)

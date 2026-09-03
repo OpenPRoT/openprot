@@ -6,6 +6,7 @@ pub const MAX_CHAIN_LEN: usize = 5;
 pub const MAX_CERT_SIZE: usize = 2048;
 
 pub const MAX_MEASUREMENTS: usize = 16;
+pub const MAX_PROVIDERS: usize = 8;
 pub const MAX_COMPONENT_LEN: usize = 64;
 pub const MAX_VERSION_LEN: usize = 32;
 pub const MAX_DIGEST_LEN: usize = 64; // SHA-512
