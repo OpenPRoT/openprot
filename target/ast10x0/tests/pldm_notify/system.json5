@@ -1,0 +1,77 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 PLDM notification channel system image.
+//
+// Two-process layout, the shape the eRoT will use:
+//
+//   pldm:         channel_initiator; sends one UpdateRequested notification
+//   orchestrator: channel_handler; decodes it and answers
+//
+// The pldm process reports pass/fail once the whole round trip is done, so
+// PASS means the notification encoded, crossed the channel, decoded to
+// Event::UpdateRequest, was answered, and the answer decoded.
+//
+// Memory map (AST10x0: 768 KB SRAM, no XIP):
+//   0x00000000 - 0x00000500  vector table (1280 B)
+//   0x00000500 - 0x00020500  kernel flash (~128 KB)
+//   0x00020500 - 0x00060500  app flash (256 KB total; 128 KB per app)
+//   0x00060000 - 0x00080000  kernel RAM (128 KB)
+//   0x00080000 - 0x000A0000  app RAM (128 KB total; 64 KB per process)
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,
+    },
+    kernel: {
+        flash_start_address: 0x00000500,
+        flash_size_bytes: 129792,
+        ram_start_address: 0x00060000,
+        ram_size_bytes: 131072,
+    },
+    apps: [
+        {
+            name: "orchestrator",
+            flash_size_bytes: 131072,
+            processes: [
+                {
+                    name: "orchestrator_process",
+                    ram_size_bytes: 65536,
+                    objects: [
+                        {
+                            name: "pldm_notify",
+                            type: "channel_handler",
+                        },
+                        {
+                            type: "thread",
+                            name: "orchestrator_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },],
+                },
+            ],
+        },
+        {
+            name: "pldm",
+            flash_size_bytes: 131072,
+            processes: [
+                {
+                    name: "pldm_process",
+                    ram_size_bytes: 65536,
+                    objects: [
+                        {
+                            name: "pldm_notify",
+                            type: "channel_initiator",
+                            handler_process: "orchestrator_process",
+                            handler_object_name: "pldm_notify",
+                        },
+                        {
+                            type: "thread",
+                            name: "pldm_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },],
+                },
+            ],
+        },
+    ],
+}
