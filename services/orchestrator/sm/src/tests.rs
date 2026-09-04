@@ -979,6 +979,101 @@ fn cascading_runtime_corruption_cascades_transitively() {
     assert!(!effects.contains(&Effect::LatchLockdown));
 }
 
+/// A cascade that fires mid-walk gates components the cursor has not reached
+/// yet, and the walk then skips them: corruption of C1 arrives while the walk
+/// is still verifying C0, so C1 -> C2 -> C3 are all gated before their turn.
+/// No `ReadFirmware` is ever emitted for them, and the walk reaches the end of
+/// the chain and goes to `Ready`. The post-walk cascade tests cannot cover this:
+/// there the cursor is already past every component when the cascade fires.
+#[test]
+fn mid_walk_cascade_skips_unreached_dependents() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_required()),
+            (C1, ComponentAttrs::passive_cascading()),
+            (C2, ComponentAttrs::passive_required().with_depends_on(C1)),
+            (C3, ComponentAttrs::passive_required().with_depends_on(C2)),
+        ]),
+        &[
+            BOOT,                          // walk starts at C0
+            Event::CorruptionDetected(C1), // cascade C1 -> C2 -> C3, cursor still on C0
+            Event::VerificationPassed(C0), // advance: nothing ungated is left
+        ],
+    );
+    // The rest of the chain is gated, so the walk is done.
+    assert_eq!(state, State::Ready);
+    // The whole two-hop chain is isolated and reported, though the walk never
+    // reached any of it.
+    for id in [C1, C2, C3] {
+        assert!(effects.contains(&Effect::AssertReset(id)));
+        assert!(effects.contains(&Effect::ReportIsolated(id)));
+    }
+    // Verification is never requested for a gated component, at any depth.
+    for id in [C1, C2, C3] {
+        assert!(!effects.contains(&Effect::ReadFirmware(id)));
+        assert!(!effects.contains(&Effect::VerifyFirmware(id)));
+        assert!(!effects.contains(&Effect::ReleaseReset(id)));
+    }
+    // C0 is untouched by the cascade: it verifies and is released as usual.
+    assert!(effects.contains(&Effect::ReleaseReset(C0)));
+    assert!(!effects.contains(&Effect::AssertReset(C0)));
+}
+
+/// A component gated while it is under verification is never released by its
+/// own in-flight verdict. Release keys off `chain[cursor]` alone, so leaving
+/// the cursor on a component the cascade just isolated would take it out of
+/// reset. The cursor moves past it instead and the walk continues to C2.
+#[test]
+fn gating_the_component_under_verification_never_releases_it() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_cascading()),
+            (C1, ComponentAttrs::passive_required().with_depends_on(C0)),
+            (C2, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,                          // cursor on C0, awaiting its verdict
+            Event::CorruptionDetected(C0), // gates C0 and C1, cursor moves to C2
+            Event::VerificationPassed(C0), // in flight before the gating: must not release
+            Event::VerificationPassed(C2),
+        ],
+    );
+    assert_eq!(state, State::Ready);
+    // Both are gated and reported before the cursor moves.
+    assert!(effects.contains(&Effect::ReportIsolated(C0)));
+    assert!(effects.contains(&Effect::ReportIsolated(C1)));
+    // Neither isolated component is taken out of reset.
+    assert!(!effects.contains(&Effect::ReleaseReset(C0)));
+    assert!(!effects.contains(&Effect::ReleaseReset(C1)));
+    // The walk carries on past them rather than stalling on C0's verdict.
+    assert!(effects.contains(&Effect::ReadFirmware(C2)));
+    assert!(effects.contains(&Effect::ReleaseReset(C2)));
+    assert!(!effects.contains(&Effect::ReadFirmware(C1)));
+}
+
+/// The same gating with the rest of the chain gated too: the walk has no
+/// component to move on to, so it ends in `Ready` with everything held in
+/// reset. A non-`Required` cascade never escalates to lockdown.
+#[test]
+fn gating_the_last_ungated_component_ends_the_walk() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_cascading()),
+            (C1, ComponentAttrs::passive_required().with_depends_on(C0)),
+        ]),
+        &[
+            BOOT,
+            Event::CorruptionDetected(C0), // gates the whole chain
+            Event::VerificationPassed(C0), // in flight before the gating
+        ],
+    );
+    assert_eq!(state, State::Ready);
+    assert!(!effects.contains(&Effect::ReleaseReset(C0)));
+    assert!(!effects.contains(&Effect::ReleaseReset(C1)));
+    assert!(!effects.contains(&Effect::ReadFirmware(C1)));
+    assert!(!effects.contains(&Effect::LatchLockdown));
+}
+
 /// Runtime corruption under a non-`Required` policy reports too. This path
 /// never enters recovery at all, so without its own report the isolation would
 /// be silent.
