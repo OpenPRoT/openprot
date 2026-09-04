@@ -6,7 +6,9 @@
 
 use openprot_orchestrator_sm::{ComponentId, ComponentKind, Effect, EffectError, Event, Platform};
 
-use crate::board::{Board, BoardCapabilities, ImageSource, SvnFloorBinding, Verdict, Verifier};
+use crate::board::{
+    Board, BoardCapabilities, ImageSource, Report, ReportSink, SvnFloorBinding, Verdict, Verifier,
+};
 use orchestrator_capabilities::{BootControl, BootWatch, Svn, SvnFloor, WalkVerdict};
 
 /// Why the driver could not carry out an effect.
@@ -232,6 +234,13 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             next_deadline_millis,
         }
     }
+
+    /// Hands one report to the board's sink. Cannot fail, so reporting stays
+    /// off the fail-closed path; reports arrive in the order the SM emitted
+    /// them.
+    pub fn report(&mut self, report: Report) {
+        self.board.report_sink.report(report);
+    }
 }
 
 /// One [`PlatformDriver::poll_boot_walks`] round.
@@ -259,24 +268,37 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
             Effect::ReleaseReset(id) => self.release_reset(id).map(|_| None),
             Effect::AssertReset(id) => self.assert_reset(id).map(|_| None),
             Effect::CommitSvnFloor(id) => self.commit_svn_floor(id).map(|_| None),
+            // Reports carry no error, so they never reach the fail-closed
+            // group below.
+            Effect::ReportIsolated(id) => {
+                self.report(Report::Isolated(id));
+                Ok(None)
+            }
+            Effect::ReportRecoveryFailed(id) => {
+                self.report(Report::RecoveryFailed(id));
+                Ok(None)
+            }
+            Effect::ReportUpdateDeferred => {
+                self.report(Report::UpdateDeferred);
+                Ok(None)
+            }
+            Effect::ReportUpdateAborted => {
+                self.report(Report::UpdateAborted);
+                Ok(None)
+            }
             // No board capability is composed for these seams yet, so they
             // fail closed here instead of behind stub methods. Each group
             // gains an executor when its capability joins
             // [`BoardCapabilities`], as BootControl did above: recovery
             // sourcing for RecoverComponent; update staging, authentication
             // and trial activation for the update quartet; evidence signing
-            // for SignAttestation; the management reporting path for the
-            // Report effects; the terminal latch for LatchLockdown.
+            // for SignAttestation; the terminal latch for LatchLockdown.
             Effect::RecoverComponent { .. }
             | Effect::AuthenticateUpdate
             | Effect::StageUpdate
             | Effect::ActivateUpdate
             | Effect::DiscardStaged
             | Effect::SignAttestation
-            | Effect::ReportIsolated(_)
-            | Effect::ReportRecoveryFailed(_)
-            | Effect::ReportUpdateDeferred
-            | Effect::ReportUpdateAborted
             | Effect::LatchLockdown => return Err(EffectError),
             // Emit is consumed by the orchestrator; receiving one is a
             // driver bug.
