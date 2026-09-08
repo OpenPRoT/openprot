@@ -166,17 +166,18 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
     /// and do not cross window boundaries. Each chunk is programmed asynchronously,
     /// and the thread blocks until it completes before starting the next chunk.
     fn program(&mut self, start_addr: FlashAddress, mut data: &[u8]) -> Result<(), Self::Error> {
+        let program_window_size = self.driver.program_window_size();
         assert!(
-            TDriver::PROGRAM_WINDOW_SIZE.count_ones() == 1,
-            "TDriver::PROGRAM_WINDOW_SIZE must be a power of 2"
+            program_window_size.count_ones() == 1,
+            "program_window_size() must be a power of 2"
         );
-        let window_mask = TDriver::PROGRAM_WINDOW_SIZE - 1;
+        let window_mask = program_window_size - 1;
         let mut addr = start_addr;
         while !data.is_empty() {
             // Calculate bytes remaining in the current program window
             let chunk = &data[..min(
                 data.len(),
-                TDriver::PROGRAM_WINDOW_SIZE - ((addr.offset() & window_mask as u32) as usize),
+                program_window_size - ((addr.offset() & window_mask as u32) as usize),
             )];
             self.driver.start_program(addr, chunk)?;
             self.blocking.wait_for_notification();
@@ -263,15 +264,15 @@ mod test {
             data: &[u8],
         ) -> Result<(), Self::Error> {
             let start_addr = start_addr.offset() as usize;
+            let program_window_size = self.program_window_size();
             assert!(start_addr.checked_add(data.len()).unwrap() <= self.data.len());
             assert!(
-                data.len() <= Self::PROGRAM_WINDOW_SIZE,
+                data.len() <= program_window_size,
                 "Program window violation"
             );
             let end_addr = start_addr.wrapping_add(data.len());
             assert!(
-                start_addr / Self::PROGRAM_WINDOW_SIZE
-                    == (end_addr - 1) / Self::PROGRAM_WINDOW_SIZE,
+                start_addr / program_window_size == (end_addr - 1) / program_window_size,
                 "Program window violation"
             );
             for (dest, src) in self.data[start_addr..end_addr].iter_mut().zip(data) {
