@@ -27,6 +27,10 @@
 //! activated image once its boot was judged, or drop it. It sits on every
 //! device whose slots the eRoT drives, the eRoT's own image included.
 //!
+//! `IncrementalVerifier` is the polled verification seam: `start`
+//! consumes the verifier into a `VerifySession` whose `poll` does one
+//! bounded hash step per call. See the trait docs for the full lifecycle.
+//!
 //! `BootWatch` is the seam the orchestrator polls: one device's boot walk,
 //! erased of every device-specific type, answering with a `WalkVerdict`.
 //!
@@ -50,6 +54,7 @@
 mod boot_control;
 mod boot_watch;
 mod evidence;
+mod incremental_verifier;
 mod lockdown_latch;
 mod recovery;
 mod svn_floor;
@@ -59,6 +64,7 @@ mod updatable;
 pub use boot_control::BootControl;
 pub use boot_watch::{BootWatch, FailureCause, WalkVerdict};
 pub use evidence::{BootStatus, EvidenceReader};
+pub use incremental_verifier::{IncrementalVerifier, PollOutcome, VerifySession};
 pub use lockdown_latch::LockdownLatch;
 pub use recovery::{Recovery, RestoreOutcome};
 pub use svn_floor::{Svn, SvnFloor};
