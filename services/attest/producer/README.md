@@ -69,7 +69,6 @@ and the `x5chain` certificate chain. The CWT payload includes:
 | `ueid` | 256 | Device UEID extracted from the TCG UEID extension (OID 2.23.133.5.4.4) in the Caliptra AliasRT certificate. All certs in the chain that carry this extension are verified to agree before token assembly. |
 | `oemid` | 258 | OEM identifier (IANA PEN form) |
 | `hwmodel` | 259 | Hardware model string |
-| `hwversion` | 260 | Hardware version string |
 | `dbgstat` | 263 | Debug status |
 | `measurements` | -70000 | Per-component firmware measurement records |
 | `concise-evidence` | -70001 | CBOR-serialized verifier appraisal results (omitted if no peer attestation) |

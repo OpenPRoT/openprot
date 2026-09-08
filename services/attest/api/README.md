@@ -101,7 +101,7 @@ pub trait MeasurementProvider: Send + Sync {
 | `Measurement` | Single firmware measurement: component name, version, digest algorithm, digest bytes, measurement authority. |
 | `DigestAlgorithm` | `Sha384` or `Sha512`. |
 | `MeasurementAuthority` | `Caliptra` (hardware-measured) or `Platform` (software-registered). |
-| `AttestConfig` | Producer configuration: `oemid`, `hw_model`, `hw_version`, `cert_cache_ttl`. |
+| `AttestConfig` | Producer configuration: `oemid`, `hw_model`, `cert_cache_ttl`. |
 | `OemId` | OEM identifier (IANA Private Enterprise Number or UUID form). |
 
 ## Cargo

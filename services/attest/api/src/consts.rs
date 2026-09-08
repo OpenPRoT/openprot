@@ -13,7 +13,6 @@ pub const MAX_DIGEST_LEN: usize = 64; // SHA-512
 
 pub const MAX_OEMID_LEN: usize = 16;
 pub const MAX_HW_MODEL_LEN: usize = 64;
-pub const MAX_HW_VERSION_LEN: usize = 32;
 
 // Upper bound for a fully-populated COSE_Sign1 token
 pub const MAX_TOKEN_SIZE: usize = 8192;

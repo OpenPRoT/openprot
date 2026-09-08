@@ -14,8 +14,6 @@ use std::time::Duration;
 fn config() -> AttestConfig {
     let mut hw_model: String<64> = String::new();
     hw_model.push_str("TestPlatform").unwrap();
-    let mut hw_version: String<32> = String::new();
-    hw_version.push_str("0.1.0").unwrap();
     let mut oemid_bytes: Vec<u8, 16> = Vec::new();
     oemid_bytes
         .extend_from_slice(&[0x00, 0x01, 0x47, 0xae])
@@ -23,7 +21,6 @@ fn config() -> AttestConfig {
     AttestConfig {
         oemid: OemId(oemid_bytes),
         hw_model,
-        hw_version,
         cert_cache_ttl: Duration::from_secs(3600),
     }
 }

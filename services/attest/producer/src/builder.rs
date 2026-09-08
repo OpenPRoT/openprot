@@ -34,7 +34,6 @@ const CLAIM_NONCE: i64 = 10;
 const CLAIM_UEID: i64 = 256;
 const CLAIM_OEMID: i64 = 258;
 const CLAIM_HWMODEL: i64 = 259;
-const CLAIM_HWVER: i64 = 260;
 const CLAIM_DBGSTAT: i64 = 263;
 const CLAIM_SWNAME: i64 = 14;
 const CLAIM_SWVER: i64 = 15;
@@ -101,9 +100,9 @@ pub(crate) fn build(
     // ── Encode CWT claims map ──────────────────────────────────────────────
     let mut payload_scratch = [0u8; SCRATCH];
     let payload_len = (|| -> Result<usize, minicbor::encode::Error<EndOfSlice>> {
-        // Fixed claims: iss, iat, nonce, ueid, oemid, hwmodel, hwver, dbgstat,
+        // Fixed claims: iss, iat, nonce, ueid, oemid, hwmodel, dbgstat,
         // sw-name, sw-version, measurements. Update when adding a claim below.
-        const FIXED_CLAIMS: usize = 11;
+        const FIXED_CLAIMS: usize = 10;
         let n_claims = FIXED_CLAIMS + usize::from(!evidence_cbor.is_empty());
         let mut w = BufWriter::new(&mut payload_scratch[..]);
         let mut e = Encoder::new(&mut w);
@@ -127,11 +126,6 @@ pub(crate) fn build(
 
         e.i64(CLAIM_HWMODEL)?;
         e.str(&config.hw_model)?;
-
-        e.i64(CLAIM_HWVER)?;
-        e.array(2)?;
-        e.str(&config.hw_version)?;
-        e.i64(1)?;
 
         // dbgstat = 3 (disabled)
         e.i64(CLAIM_DBGSTAT)?;
@@ -257,8 +251,6 @@ mod tests {
     fn config() -> openprot_attest_api::AttestConfig {
         let mut hw_model: String<64> = String::new();
         hw_model.push_str("TestModel").unwrap();
-        let mut hw_version: String<32> = String::new();
-        hw_version.push_str("1.0.0").unwrap();
         let mut oemid_bytes: Vec<u8, 16> = Vec::new();
         oemid_bytes
             .extend_from_slice(&[0x00, 0x01, 0x47, 0xae])
@@ -266,7 +258,6 @@ mod tests {
         openprot_attest_api::AttestConfig {
             oemid: OemId(oemid_bytes),
             hw_model,
-            hw_version,
             cert_cache_ttl: Duration::from_secs(3600),
         }
     }

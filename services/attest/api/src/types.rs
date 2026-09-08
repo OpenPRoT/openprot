@@ -7,7 +7,7 @@ use heapless::{String, Vec};
 
 use crate::consts::{
     MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_COMPONENT_LEN, MAX_DIGEST_LEN, MAX_HW_MODEL_LEN,
-    MAX_HW_VERSION_LEN, MAX_MEASUREMENTS, MAX_OEMID_LEN, MAX_VERSION_LEN,
+    MAX_MEASUREMENTS, MAX_OEMID_LEN, MAX_VERSION_LEN,
 };
 use crate::error::AttestError;
 
@@ -41,7 +41,6 @@ pub struct Measurement {
 pub struct AttestConfig {
     pub oemid: OemId,
     pub hw_model: String<MAX_HW_MODEL_LEN>,
-    pub hw_version: String<MAX_HW_VERSION_LEN>,
     pub cert_cache_ttl: Duration,
 }
 
