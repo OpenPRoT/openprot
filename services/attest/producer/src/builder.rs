@@ -234,10 +234,6 @@ mod tests {
         fn sign(&self, _: &[u8]) -> Result<[u8; 96], AttestError> {
             Ok([0u8; 96])
         }
-        fn leaf_cert_der(&self, buf: &mut Vec<u8, MAX_CERT_SIZE>) -> Result<(), AttestError> {
-            buf.extend_from_slice(&STUB_CERT)
-                .map_err(|_| AttestError::BufferFull)
-        }
         fn cert_chain_der(
             &self,
             buf: &mut Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN>,

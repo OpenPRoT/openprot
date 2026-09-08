@@ -50,11 +50,9 @@ pub struct AttestConfig {
 /// Production: implemented by a platform mailbox driver.
 /// Testing: implement with a software key (`SoftwareAttestProducer` in the
 /// producer crate behind `test-support`).
-pub trait HwSigner: Send + Sync {
+pub trait HwSigner {
     /// Sign `payload` with the platform alias key. Returns raw (r‖s) bytes.
     fn sign(&self, payload: &[u8]) -> Result<[u8; 96], AttestError>;
-    /// Return the DER-encoded leaf certificate.
-    fn leaf_cert_der(&self, buf: &mut Vec<u8, MAX_CERT_SIZE>) -> Result<(), AttestError>;
     /// Return the full DER-encoded certificate chain, leaf → root.
     fn cert_chain_der(
         &self,
@@ -71,8 +69,7 @@ pub trait HwSigner: Send + Sync {
 ///
 /// Implement for each firmware component (UEFI, BMC, etc.) the platform
 /// wants to measure beyond Caliptra-internal measurements.
-pub trait MeasurementProvider: Send + Sync {
-    fn component_name(&self) -> &str;
+pub trait MeasurementProvider {
     fn measurements(&self, out: &mut Vec<Measurement, MAX_MEASUREMENTS>)
         -> Result<(), AttestError>;
 }

@@ -73,9 +73,6 @@ mod tests {
     }
 
     impl MeasurementProvider for StubProvider {
-        fn component_name(&self) -> &str {
-            self.name
-        }
         fn measurements(
             &self,
             out: &mut Vec<Measurement, MAX_MEASUREMENTS>,

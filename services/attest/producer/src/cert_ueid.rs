@@ -29,7 +29,7 @@ pub const UEID_LEN: usize = 17;
 /// Returns `None` if the cert does not carry the TCG UEID extension (e.g. a
 /// root CA cert that pre-dates the DICE chain). Returns an error if the DER is
 /// malformed or the UEID field has an unexpected length.
-pub fn extract(cert_der: &[u8]) -> Result<Option<[u8; UEID_LEN]>, AttestError> {
+fn extract(cert_der: &[u8]) -> Result<Option<[u8; UEID_LEN]>, AttestError> {
     // cert DER: SEQUENCE { TBSCertificate, AlgorithmIdentifier, BIT STRING }
     let tbs = sequence_body(cert_der).ok_or(AttestError::Caliptra("cert: bad outer SEQUENCE"))?;
 

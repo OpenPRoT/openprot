@@ -15,7 +15,7 @@ use crate::AttestError;
 /// The `evidence` parameter is a raw CBOR byte slice from the verifier service.
 /// Passing it as bytes rather than a typed struct keeps this crate free of any
 /// verifier or spdm-lib dependency.
-pub trait AttestProducer: Send + Sync {
+pub trait AttestProducer {
     /// Generate a signed OCP-EAT COSE_Sign1 token bound to `nonce`.
     ///
     /// `evidence` is a CBOR-encoded blob from the verifier service, embedded
