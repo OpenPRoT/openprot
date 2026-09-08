@@ -12,24 +12,26 @@
 use core::num::NonZero;
 
 use ast10x0_peripherals::smc::{
-    ChipSelect, FlashConfig, FmcReady, FmcUninit, SmcConfig, SmcController, SmcError, SmcTopology,
-    SpiNorFlash, SpiNorFlashDevice,
+    FlashConfig, FlashGeometry, FmcReady, FmcUninit, SmcConfig, SmcController, SmcError,
+    SmcInstance, SmcTopology, SpiNorFlash, SpiNorFlashDevice,
 };
 use hal_flash_driver::{FlashAddress, FlashDriver};
 use util_error::{self as error, ErrorCode};
 use util_types::{Blocking, PowerOf2Usize};
 
-/// CS0 flash device configuration (W25Q64-class, 8 MiB).
-///
-/// Matches the hardware-verified configuration used by
-/// //target/ast10x0/tests/smc/write.
-const CS0_CONFIG: FlashConfig = FlashConfig {
-    capacity_mb: 8,
-    page_size: 256,
-    sector_size: 4096,
-    block_size: 65536,
-    spi_clock_mhz: 50,
-};
+/// Compile-time descriptor for the wired FMC controller this backend drives.
+struct FmcInstance;
+
+impl SmcInstance for FmcInstance {
+    const CONTROLLER: SmcController = SmcController::Fmc;
+    const CONFIG: SmcConfig = SmcConfig {
+        cs0: Some(FlashConfig { spi_clock_mhz: 50 }),
+        cs1: Some(FlashConfig { spi_clock_mhz: 50 }),
+        dma_enabled: false,
+        enable_interrupts: false,
+        topology: SmcTopology::BootSpi { master_idx: 0 },
+    };
+}
 
 fn map_smc_error(e: SmcError) -> ErrorCode {
     match e {
@@ -59,9 +61,10 @@ impl Blocking for NoWaitBlocking {
     fn wait_for_notification(&self) {}
 }
 
-/// FMC CS0 flash driver.
+/// FMC flash driver.
 pub struct Ast10x0FmcFlashDriver {
-    fmc: FmcReady,
+    fmc: FmcReady<FmcInstance>,
+    geometry: FlashGeometry,
 }
 
 /// Stable alias used by the server binary for compile-time backend selection.
@@ -72,51 +75,58 @@ impl Ast10x0FmcFlashDriver {
     ///
     /// # Safety
     /// The calling process must be the sole owner of the FMC controller
-    /// (MMIO 0x7e62_0000) and its CS0 flash window (0x8000_0000), per the
+    /// (MMIO 0x7e62_0000) and its CS flash windows: with both CS0 and CS1
+    /// present the 256 MiB aperture is split in half, so CS0 decodes at
+    /// 0x8000_0000 and the served CS1 flash at 0x8800_0000, per the
     /// system.json5 of the image this runs in. The FMC pinmux
     /// (`PINCTRL_FMC_QUAD`) must already have been applied by the kernel
     /// target's pre-task init; this driver never touches the shared SCU.
     /// Call at most once per process.
     pub unsafe fn new() -> Result<Self, ErrorCode> {
-        let config = SmcConfig {
-            controller_id: SmcController::Fmc,
-            cs0: Some(CS0_CONFIG),
-            cs1: None,
-            dma_enabled: false,
-            enable_interrupts: false,
-            topology: SmcTopology::BootSpi { master_idx: 0 },
-        };
         // SAFETY: sole ownership of the FMC hardware block per the contract above.
-        let uninit = unsafe { FmcUninit::new(config) }.map_err(map_smc_error)?;
+        let uninit = unsafe { FmcUninit::<FmcInstance>::new() }.map_err(map_smc_error)?;
         let mut fmc = uninit.init().map_err(map_smc_error)?;
-        fmc.spi_nor_read_init(ChipSelect::Cs0)
-            .map_err(map_smc_error)?;
-        Ok(Self { fmc })
+        // Geometry was discovered over SFDP during `init()`; read it back off the
+        // CS1 handle (no rediscovery, no recalibration).
+        let geometry = {
+            let cs1 = fmc.cs1().map_err(map_smc_error)?;
+            cs1.geometry()
+        };
+        NonZero::new(geometry.capacity_bytes as usize)
+            .ok_or(error::FLASH_AST10X0_INVALID_CAPACITY)?;
+        Ok(Self { fmc, geometry })
     }
 
     fn device(&mut self) -> Result<SpiNorFlash<'_>, ErrorCode> {
-        SpiNorFlash::from_fmc_cs(&mut self.fmc, CS0_CONFIG, ChipSelect::Cs0).map_err(map_smc_error)
+        let cs = self.fmc.cs1().map_err(map_smc_error)?;
+        SpiNorFlash::new(cs).map_err(map_smc_error)
     }
 }
 
 impl FlashDriver for Ast10x0FmcFlashDriver {
     type Error = ErrorCode;
 
-    /// Default erase page: one 4 KiB sector.
-    const PAGE_SIZE: usize = CS0_CONFIG.sector_size as usize;
-    /// SPI NOR program page: writes must not cross a 256-byte boundary.
-    const PROGRAM_WINDOW_SIZE: usize = CS0_CONFIG.page_size as usize;
     const MAX_READ_SIZE: usize = 4096;
     const READ_ALIGNMENT: usize = 4;
     const PROGRAM_ALIGNMENT: usize = 1;
 
     fn size(&self) -> NonZero<usize> {
-        NonZero::new(CS0_CONFIG.capacity_mb as usize * 1024 * 1024).unwrap()
+        NonZero::new(self.geometry.capacity_bytes as usize).expect("capacity validated in new()")
+    }
+
+    /// Default erase page: one SFDP-discovered sector.
+    fn page_size(&self) -> usize {
+        self.geometry.sector_size as usize
+    }
+
+    /// SPI NOR program page: writes must not cross this boundary.
+    fn program_window_size(&self) -> usize {
+        self.geometry.page_size as usize
     }
 
     fn erasable_sizes_bitmap(&mut self) -> Result<u32, Self::Error> {
-        // Only 4 KiB sector erase is implemented by the peripheral driver.
-        Ok(1u32 << CS0_CONFIG.sector_size.trailing_zeros())
+        // Only sector erase is implemented by the peripheral driver.
+        Ok(1u32 << self.geometry.sector_size.trailing_zeros())
     }
 
     fn read(&mut self, start_addr: FlashAddress, buf: &mut [u8]) -> Result<(), Self::Error> {
@@ -136,7 +146,7 @@ impl FlashDriver for Ast10x0FmcFlashDriver {
         start_addr: FlashAddress,
         size: PowerOf2Usize,
     ) -> Result<(), Self::Error> {
-        if size.get() != CS0_CONFIG.sector_size as usize {
+        if size.get() != self.geometry.sector_size as usize {
             return Err(error::FLASH_GENERIC_ERASE_INVALID_SIZE);
         }
         // Blocks until the device's WIP bit clears; see `NoWaitBlocking`.

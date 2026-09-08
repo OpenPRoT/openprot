@@ -39,13 +39,23 @@ def _system_image_test_impl(ctx):
 def _flash_system_image_test_impl(ctx):
     default_info = _system_image_test_impl(ctx)[0]
     providers = [default_info]
-    if ctx.attr.flash_image:
-        # The qemu_runner seeds a fresh erased image at $TEST_TMPDIR/<name>
-        # and attaches it as the FMC CS0 flash (if=mtd).
-        providers.append(RunEnvironmentInfo(environment = {
-            "AST10X0_FLASH_IMAGE": ctx.attr.flash_image,
-            "AST10X0_FLASH_SIZE": str(ctx.attr.flash_size),
-        }))
+
+    # fmc_model describes the QEMU FMC device uniformly (JEDEC ID + SFDP
+    # geometry), shared by both chip selects. The qemu_runner seeds fresh
+    # images at $TEST_TMPDIR/<name> and attaches each present CS image as
+    # FMC flash (if=mtd): cs0_image at index 0, cs1_image at index 1.
+    env = {
+        "AST10X0_FLASH_SIZE": str(ctx.attr.flash_size),
+        "AST10X0_FMC_MODEL": ctx.attr.fmc_model,
+    }
+    if ctx.attr.cs0_image:
+        env["AST10X0_CS0_IMAGE"] = ctx.attr.cs0_image
+        env["AST10X0_CS0_FILL"] = str(ctx.attr.cs0_fill)
+    if ctx.attr.cs1_image:
+        env["AST10X0_CS1_IMAGE"] = ctx.attr.cs1_image
+        env["AST10X0_CS1_FILL"] = str(ctx.attr.cs1_fill)
+    if ctx.attr.cs0_image or ctx.attr.cs1_image:
+        providers.append(RunEnvironmentInfo(environment = env))
     return providers
 
 system_image_test = rule(
@@ -73,14 +83,32 @@ flash_system_image_test = rule(
     implementation = _flash_system_image_test_impl,
     test = True,
     attrs = {
-        "flash_image": attr.string(
-            doc = "Basename of the SPI-NOR image the qemu_runner seeds in " +
-                  "$TEST_TMPDIR and attaches as FMC CS0 flash (if=mtd).",
-            default = "cs0.img",
+        "cs0_fill": attr.int(
+            doc = "Byte value the qemu_runner seeds cs0_image with (default 0xFF, erased).",
+            default = 0xFF,
+        ),
+        "cs0_image": attr.string(
+            doc = "Basename of the SPI-NOR image seeded in $TEST_TMPDIR and " +
+                  "attached as FMC CS0 flash (if=mtd, index=0).",
+            default = "",
+        ),
+        "cs1_fill": attr.int(
+            doc = "Byte value the qemu_runner seeds cs1_image with (default 0xFF, erased).",
+            default = 0xFF,
+        ),
+        "cs1_image": attr.string(
+            doc = "Basename of the SPI-NOR image seeded in $TEST_TMPDIR and " +
+                  "attached as FMC CS1 flash (if=mtd, index=1).",
+            default = "",
         ),
         "flash_size": attr.int(
-            doc = "Size in bytes of the seeded flash image.",
+            doc = "Size in bytes of each seeded flash image.",
             default = 8 * 1024 * 1024,
+        ),
+        "fmc_model": attr.string(
+            doc = "QEMU fmc-model applied controller-wide (JEDEC ID + SFDP " +
+                  "geometry). Default is the 1 MiB w25q80bl.",
+            default = "w25q80bl",
         ),
         "image": attr.label(
             doc = "The system_image target to test.",
