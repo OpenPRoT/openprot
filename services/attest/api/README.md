@@ -34,7 +34,7 @@ The primary interface implemented by `HwAttestProducer` (and the
 `SoftwareAttestProducer` stub in the producer crate).
 
 ```rust
-pub trait AttestProducer: Send + Sync {
+pub trait AttestProducer {
     fn generate_token(
         &self,
         nonce: &[u8],
@@ -62,9 +62,8 @@ Abstracts signing and certificate operations that execute inside the Caliptra
 hardware boundary.
 
 ```rust
-pub trait HwSigner: Send + Sync {
+pub trait HwSigner {
     fn sign(&self, payload: &[u8]) -> Result<[u8; 96], AttestError>;
-    fn leaf_cert_der(&self, buf: &mut Vec<u8, MAX_CERT_SIZE>) -> Result<(), AttestError>;
     fn cert_chain_der(
         &self,
         buf: &mut Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN>,
@@ -85,8 +84,7 @@ Plug in platform-specific firmware measurement sources (UEFI, BMC, etc.)
 beyond the Caliptra-internal measurements.
 
 ```rust
-pub trait MeasurementProvider: Send + Sync {
-    fn component_name(&self) -> &str;
+pub trait MeasurementProvider {
     fn measurements(
         &self,
         out: &mut Vec<Measurement, MAX_MEASUREMENTS>,

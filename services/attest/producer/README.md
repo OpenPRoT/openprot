@@ -17,7 +17,7 @@ and a software stub for testing without physical hardware.
 | `src/builder.rs` | Assembles the CBOR claim map, embeds raw evidence bytes, constructs the `COSE_Sign1` envelope. No verifier dependency. |
 | `src/cert_ueid.rs` | Minimal DER walker: extracts the TCG UEID (OID 2.23.133.5.4.4) from the Caliptra DER certificate chain and verifies consistency across all certs that carry it. |
 | `src/dice_identity.rs` | Wraps the Caliptra mailbox calls that return the DER-encoded DICE certificate chain. |
-| `src/measurements.rs` | Aggregates Caliptra-internal firmware measurements with platform-registered `MeasurementProvider` outputs. |
+| `src/measurements.rs` | Appends platform-registered `MeasurementProvider` outputs into the measurement buffer. Caliptra-internal measurements are written directly by `HwSigner::caliptra_measurements` before `collect()` is called. |
 
 ## Implementations
 
@@ -70,6 +70,8 @@ and the `x5chain` certificate chain. The CWT payload includes:
 | `oemid` | 258 | OEM identifier (IANA PEN form) |
 | `hwmodel` | 259 | Hardware model string |
 | `dbgstat` | 263 | Debug status |
+| `sw-name` | 14 | Software component name |
+| `sw-version` | 15 | Software component version |
 | `measurements` | -70000 | Per-component firmware measurement records |
 | `concise-evidence` | -70001 | CBOR-serialized verifier appraisal results (omitted if no peer attestation) |
 

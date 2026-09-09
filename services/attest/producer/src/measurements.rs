@@ -11,15 +11,11 @@ use heapless::Vec;
 use openprot_attest_api::consts::MAX_MEASUREMENTS;
 use openprot_attest_api::{AttestError, Measurement, MeasurementProvider};
 
-/// Collect all measurements: `caliptra` first, then registered providers.
+/// Append measurements from all registered providers into `out`.
 pub fn collect(
-    caliptra: &[Measurement],
     providers: &[&dyn MeasurementProvider],
     out: &mut Vec<Measurement, MAX_MEASUREMENTS>,
 ) -> Result<(), AttestError> {
-    for m in caliptra {
-        out.push(m.clone()).map_err(|_| AttestError::BufferFull)?;
-    }
     for p in providers {
         p.measurements(out)?;
     }
@@ -114,9 +110,10 @@ mod tests {
     }
 
     #[test]
-    fn no_providers_returns_caliptra_measurements_unchanged() {
+    fn no_providers_leaves_out_unchanged() {
         let mut out = Vec::new();
-        collect(&[rom()], &[], &mut out).unwrap();
+        out.push(rom()).unwrap();
+        collect(&[], &mut out).unwrap();
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].component.as_str(), "ROM");
     }
@@ -128,7 +125,8 @@ mod tests {
             fail: false,
         };
         let mut out = Vec::new();
-        collect(&[rom()], &[&p as &dyn MeasurementProvider], &mut out).unwrap();
+        out.push(rom()).unwrap();
+        collect(&[&p as &dyn MeasurementProvider], &mut out).unwrap();
         assert_eq!(out.len(), 2);
         assert_eq!(out[1].component.as_str(), "UEFI");
     }
@@ -145,7 +143,6 @@ mod tests {
         };
         let mut out = Vec::new();
         collect(
-            &[],
             &[
                 &p1 as &dyn MeasurementProvider,
                 &p2 as &dyn MeasurementProvider,
@@ -163,7 +160,31 @@ mod tests {
             fail: true,
         };
         let mut out = Vec::new();
-        let err = collect(&[], &[&p as &dyn MeasurementProvider], &mut out).unwrap_err();
+        let err = collect(&[&p as &dyn MeasurementProvider], &mut out).unwrap_err();
         assert!(matches!(err, AttestError::Provider(_)));
+    }
+
+    #[test]
+    fn later_provider_failure_preserves_earlier_entries() {
+        let good = StubProvider {
+            name: "UEFI",
+            fail: false,
+        };
+        let bad = StubProvider {
+            name: "BMC",
+            fail: true,
+        };
+        let mut out = Vec::new();
+        let err = collect(
+            &[
+                &good as &dyn MeasurementProvider,
+                &bad as &dyn MeasurementProvider,
+            ],
+            &mut out,
+        )
+        .unwrap_err();
+        assert!(matches!(err, AttestError::Provider(_)));
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].component.as_str(), "UEFI");
     }
 }
