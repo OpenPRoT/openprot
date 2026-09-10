@@ -109,15 +109,11 @@ impl ParameterHeader {
         if bytes.len() < PARAM_HEADER_LEN {
             return Err(FLASH_GENERIC_SFDP_PARAMETERS_TOO_SHORT);
         }
-        let major = bytes[2];
-        if major != SUPPORTED_MAJOR_REV {
-            return Err(FLASH_GENERIC_SFDP_UNSUPPORTED_PARAMS_MAJOR_REV);
-        }
         let pointer = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], 0]);
         Ok(Self {
             id_lsb: bytes[0],
             minor: bytes[1],
-            major,
+            major: bytes[2],
             dwords: bytes[3],
             pointer,
             id_msb: bytes[7],
@@ -253,6 +249,10 @@ pub fn find_bfp_header(header: &[u8], param_headers: &[u8]) -> Result<ParameterH
             .ok_or(FLASH_GENERIC_SFDP_PARAMETERS_TOO_SHORT)?;
         let ph = ParameterHeader::parse(window)?;
         if ph.is_basic_flash() {
+            // Rev-check only the table this decoder reads.
+            if ph.major != SUPPORTED_MAJOR_REV {
+                return Err(FLASH_GENERIC_SFDP_UNSUPPORTED_PARAMS_MAJOR_REV);
+            }
             return Ok(ph);
         }
     }
@@ -443,6 +443,35 @@ mod tests {
         assert_eq!(g.page_size, 256); // no DW11 -> default
         assert_eq!(g.sector_size, 4096);
         assert_eq!(g.block_size, 65536);
+    }
+
+    #[test]
+    fn vendor_header_unknown_rev_does_not_block_bfp() {
+        // Same layout as above, but the vendor header reports a major rev this
+        // decoder does not know. It is never decoded, so the BFP behind it must
+        // still be found.
+        let mut img = [0u8; 72];
+        write_header(&mut img, 1);
+        img[8..16].copy_from_slice(&param_header(0x81, 0x00, 4, 0));
+        img[10] = 2; // vendor header major rev != SUPPORTED_MAJOR_REV
+        img[16..24].copy_from_slice(&param_header(BFP_ID_LSB, BFP_ID_MSB, 9, 0x20));
+        let dwords = [0, 0x01FF_FFFF, 0, 0, 0, 0, 0, 0x520F_200C, 0x0000_D810];
+        put_dwords(&mut img, 0x20, &dwords);
+        let g = decode_geometry(&img).unwrap();
+        assert_eq!(g.capacity_bytes, 4 * 1024 * 1024);
+        assert_eq!(g.sector_size, 4096);
+    }
+
+    #[test]
+    fn bfp_header_unknown_rev_rejected() {
+        let mut img = [0u8; 60];
+        write_header(&mut img, 0);
+        img[8..16].copy_from_slice(&param_header(BFP_ID_LSB, BFP_ID_MSB, 9, 16));
+        img[10] = 2; // BFP header major rev != SUPPORTED_MAJOR_REV
+        assert_eq!(
+            find_bfp_header(&img[0..8], &img[8..16]),
+            Err(FLASH_GENERIC_SFDP_UNSUPPORTED_PARAMS_MAJOR_REV)
+        );
     }
 
     #[test]
