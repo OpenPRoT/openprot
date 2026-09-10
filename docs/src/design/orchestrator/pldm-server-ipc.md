@@ -1,312 +1,458 @@
-# PLDM Service as IPC Server
+# PLDM-FD as IPC Server
 
-How the PLDM service and the orchestrator communicate when the PLDM service
-runs as an IPC server and the orchestrator is its client. Modeled on the MCTP
-server/client split: the PLDM process owns a dispatch loop that decodes IPC
-requests and routes them to the firmware-device state machine, and the
-orchestrator talks to it through synchronous `channel_transact` calls.
+How the PLDM Firmware Device (FD) and the orchestrator communicate when the
+FD runs as an IPC server and the orchestrator is its client. Modeled on the
+MCTP server/client split: the FD process owns a dispatch loop that decodes
+IPC requests and routes them to the firmware-device state machine, and the
+orchestrator talks to it through synchronous `channel_transact` calls with
+small named timeouts (consts, not magic numbers).
 
-The orchestrator is synchronous: verify and apply are blocking calls that
-return when the operation completes, not polled in steps. In-transport, PLDM
-pulls chunks from the UA and writes them to flash through `FdOps`.
-Out-of-transport, the orchestrator writes the image to the staging region
-itself and tells PLDM when done.
-PLDM nudges the orchestrator with a USER signal when state changes; the
-orchestrator wakes and queries the server for details.
+The FD drives the PLDM protocol and executes firmware operations through
+FdOps callbacks: `fw_data_download` writes chunks to flash via the device
+server, `verify` delegates to the crypto service (which reads the staged image directly from the device server), `apply` commits
+the staged image via the device server, `activate` finalizes the boot
+preference via the device server. The platform driver owns slot logic and
+knows where each component's image belongs. Before each phase (download via AcceptOffer,
+verify, apply, activate), the FD nudges the orchestrator and waits for a
+grant. The orchestrator is a gatekeeper: it can block any phase (e.g. deny
+verify for an isolated component with DenyVerify; the FD surfaces it to
+the UA as a verify failure), but it does not execute the operations itself. FdOps callbacks must not block for long
+because the UA can send CancelUpdate asynchronously, and the FD's
+responder path needs to stay live to handle it. PLDM is blocked during
+update because of the protocol: the UA cannot send another RequestUpdate
+while one is active.
+
+Out-of-transport, a third party writes the image to staging before the PLDM
+session begins. The platform driver knows the staging address; the orchestrator
+communicates it to the third party. The FD does not pull
+firmware bytes but still runs verify and apply through FdOps.
 
 Design decisions:
 
-- Blocking direction: orchestrator to PLDM. The orchestrator blocks on
-  `channel_transact`; PLDM never blocks on the orchestrator. The reverse of
-  the notify/intake design in PR #458, and the same direction as MCTP
-  client-to-server.
-- Nudges are PLDM to orchestrator, level-triggered USER signals (same Pigweed
-  kernel mechanism as #458, reversed). PLDM raises the signal when something
-  the orchestrator cares about has happened (offer ready, transfer done,
-  activation requested). The orchestrator lowers it after reading the current
-  state.
-- Verify and Apply are synchronous IPC calls. The orchestrator issues one
-  `channel_transact` for Verify; the PLDM dispatch returns `Pending`, and
-  PLDM's main loop advances `FdOps::verify` in slices interleaved with MCTP
-  polls; `drive_pending` sends the deferred reply when verify finishes. Same
-  for Apply. While a Verify or Apply is pending, the orchestrator's
-  `object_wait` loop is blocked and services nothing: corruption reports,
-  boot events, and other signals queue until the call returns. That is the
-  deliberate trade for sync simplicity vs the polled approach in #458.
+- Blocking direction: orchestrator to FD. The orchestrator blocks on
+  `channel_transact` with small named timeouts; the FD never blocks on a
+  channel_transact toward the orchestrator. While awaiting a grant the FD
+  parks but keeps servicing its dispatch loop and MCTP responder. Same
+  direction as MCTP client-to-server.
+- The FD executes download, verify, and apply through FdOps callbacks. Our
+  verification code goes in FdOps::verify, which calls the crypto service
+  over IPC (a separate process holds the keys). The crypto service reads
+  the staged image directly from the device server, so the FD never
+  relays image data. The orchestrator does not read flash or check
+  signatures itself.
+- Gatekeeper pattern: before verify, apply, and activate, the FD nudges the
+  orchestrator and waits for a grant or deny. The orchestrator can reject
+  any phase (e.g. component is isolated, update policy violation) and the FD
+  returns the rejection to the UA via FdOps return value. This keeps the
+  orchestrator lightweight and non-blocking.
+- Nudges are FD to orchestrator only, level-triggered USER signals (same
+  Pigweed kernel mechanism as #458, reversed). The FD raises the signal
+  when the orchestrator needs to act (offer ready, grant needed, phase
+  complete). The orchestrator lowers it after reading the current state.
+- All orchestrator-to-FD IPC ops get an immediate `Reply`, no
+  `DispatchOutcome::Pending`.
 - Dispatch follows the MCTP server pattern: `dispatch_pldm_op` decodes a
-  request header, calls the appropriate method, encodes the response. Pending
-  operations (Verify, Apply) use `DispatchOutcome::Pending` and
-  `drive_pending` delivers the result when the operation completes.
+  request header, calls the appropriate method, encodes the response.
 - In-transport vs out-of-transport is the transfer mechanism, not the IPC
-  protocol. The IPC ops are the same; what differs is who writes firmware bytes
-  to flash and when the orchestrator issues Verify.
+  protocol. The IPC ops are the same; what differs is who writes firmware
+  bytes to flash.
+- Minimal copies: firmware lands in its final staging region and is verified
+  in place. FdOps::fw_data_download writes directly to the staging address;
+  FdOps::verify reads from there. No intermediate buffers or extra copies
+  between download, verify, and apply.
 
 ## In-transport image transfer
 
-PLDM pulls firmware chunks from the UA over MCTP and writes them to the
-staging region via `FdOps::download_fw_data`. The orchestrator does not see
-firmware bytes. After the transfer completes, the orchestrator drives verify,
-apply, and activation through synchronous IPC calls.
+The FD pulls firmware chunks from the UA over MCTP. Each chunk is written to
+the staging region by FdOps::fw_data_download, which calls the flash device
+server over IPC. Firmware bytes do not pass through the orchestrator. After
+transfer, the FD asks the orchestrator for permission to verify, then runs
+FdOps::verify (which delegates to the crypto service; the crypto service
+reads the staged image directly from the device server). The orchestrator
+also grants apply before the FD commits the image. The orchestrator
+handles activation and SVN.
 
 ```mermaid
 sequenceDiagram
     participant UA as UA (BMC)<br/>remote, over MCTP
-    participant PLDM as PLDM Service (server)<br/>dispatch loop + run_terminus
-    participant Orch as Orchestrator (client)<br/>object_wait + channel_transact
-    participant Flash as Shared Storage<br/>ext. SPI flash
+    participant FD as PLDM-FD (server)<br/>dispatch loop + run_terminus
+    participant Orch as Orchestrator (client)<br/>channel_transact
+    participant DevSrv as Device Server<br/>manages the SPI flash
+    participant Crypto as Crypto Service<br/>hash + signature verification
+
+    Note over UA, Crypto: Blue background: orchestrator IPC. Green background: FdOps service IPC.
 
     Note over UA, Orch: NEGOTIATION (PLDM protocol, MCTP only)
 
-    UA->>PLDM: RequestUpdate (MCTP)
-    PLDM-->>UA: RequestUpdate response (accepted)
-    UA->>PLDM: PassComponentTable (MCTP)
-    PLDM-->>UA: PassComponentTable response
-    UA->>PLDM: UpdateComponent (MCTP)
-    PLDM-->>UA: UpdateComponent response
+    UA->>FD: RequestUpdate (MCTP)
+    FD-->>UA: RequestUpdate response (accepted)
+    UA->>FD: PassComponentTable (MCTP)
+    FD-->>UA: PassComponentTable response
+    UA->>FD: UpdateComponent (MCTP)
+    FD-->>UA: UpdateComponent response
 
-    Note over PLDM, Orch: PLDM has an offer, nudge the orchestrator
+    Note over FD, Orch: FD has an offer, nudge the orchestrator
 
-    PLDM->>Orch: object_set_peer_user_signal<br/>(nudge: offer ready)
+    FD->>Orch: USER signal (nudge: offer ready)
 
+    rect rgb(230, 240, 255)
     activate Orch
-    Orch->>PLDM: channel_transact: QueryOffer
-    Note left of PLDM: read FD state:<br/>target, total, InTransport
-    PLDM-->>Orch: Offer { target, total, mode: InTransport }
-    Note right of Orch: validate target + total,<br/>reserve staging,<br/>open SMC write filter
-    Orch->>PLDM: channel_transact: AcceptOffer { base: FlashAddress }
-    PLDM-->>Orch: Ok
+    Orch->>FD: channel_transact: QueryStatus
+    FD-->>Orch: Status::OfferPending { target, total, mode: InTransport }
+    Note right of Orch: validate target + total,<br/>platform driver picks<br/>staging address,<br/>reserve staging,<br/>open SMC write filter
+    Orch->>FD: channel_transact: AcceptOffer { base: FlashAddress }
+    FD-->>Orch: Ok
     deactivate Orch
-
-    Note over UA, Flash: TRANSFER (PLDM pulls from UA, writes via FdOps)
-
-    loop FD pulls chunks from UA via RequestFirmwareData
-        PLDM->>UA: RequestFirmwareData (MCTP)
-        UA-->>PLDM: firmware chunk response
-        PLDM->>Flash: FdOps::download_fw_data
-        Note right of PLDM: tracks write progress locally
     end
 
-    Note over PLDM, Orch: transfer done, nudge the orchestrator
+    Note over UA, DevSrv: TRANSFER (FD pulls from UA, FdOps writes to flash)
 
-    PLDM->>UA: TransferComplete (MCTP)
-    PLDM->>Orch: object_set_peer_user_signal<br/>(nudge: transfer complete)
+    rect rgb(230, 255, 230)
+    loop FdOps::fw_data_download per chunk
+        FD->>UA: RequestFirmwareData (MCTP)
+        UA-->>FD: firmware chunk
+        FD->>DevSrv: FdOps::fw_data_download: write chunk
+    end
+    end
 
-    Note over UA, Flash: VERIFY + APPLY (orchestrator drives, sync)
+    Note over FD, Orch: transfer done, ask orchestrator to grant verify
 
+    FD->>UA: TransferComplete (MCTP)
+    FD->>Orch: USER signal (nudge: verify pending)
+
+    rect rgb(230, 240, 255)
     activate Orch
-    Orch->>PLDM: channel_transact: Verify
-    activate PLDM
-    PLDM->>Flash: FdOps::verify (runs to completion)
-    Flash-->>PLDM: verify result
-    PLDM->>UA: VerifyComplete (MCTP)
-    PLDM-->>Orch: VerifyResult::Ok | Failed
-    deactivate PLDM
-
-    Orch->>PLDM: channel_transact: Apply
-    activate PLDM
-    PLDM->>Flash: FdOps::apply (runs to completion)
-    Flash-->>PLDM: apply result
-    PLDM->>UA: ApplyComplete (MCTP)
-    PLDM-->>Orch: ApplyResult::Ok | Failed
-    deactivate PLDM
+    Orch->>FD: channel_transact: QueryStatus
+    FD-->>Orch: Status::VerifyPending
+    Note right of Orch: check isolation, update policy
+    Orch->>FD: channel_transact: GrantVerify
+    FD-->>Orch: Ok
     deactivate Orch
+    end
 
-    Note over UA, Orch: ACTIVATION (UA initiates, orchestrator decides)
+    Note over FD, Crypto: FdOps::verify
 
-    UA->>PLDM: ActivateFirmware (MCTP)
-    PLDM->>Orch: object_set_peer_user_signal<br/>(nudge: activation requested)
+    rect rgb(230, 255, 230)
+    FD->>Crypto: FdOps::verify: verify staged image
+    Crypto->>DevSrv: read staged image
+    DevSrv-->>Crypto: image data
+    Crypto-->>FD: verification result
+    end
+    FD->>UA: VerifyComplete (MCTP)
 
+    Note over FD, Orch: verify done, ask orchestrator to grant apply
+
+    FD->>Orch: USER signal (nudge: apply pending)
+
+    rect rgb(230, 240, 255)
     activate Orch
-    Orch->>PLDM: channel_transact: QueryStatus
-    PLDM-->>Orch: Status::ActivationPending
-    Note right of Orch: bump SVN in OTP (irreversible),<br/>close SMC write filter
-    Orch->>PLDM: channel_transact: Activate
-    PLDM-->>Orch: Ok
+    Orch->>FD: channel_transact: QueryStatus
+    FD-->>Orch: Status::ApplyPending { verify_ok: true }
+    Orch->>FD: channel_transact: GrantApply
+    FD-->>Orch: Ok
     deactivate Orch
+    end
 
-    PLDM-->>UA: ActivateFirmware response (accepted)
+    Note over FD, DevSrv: FdOps::apply
+
+    rect rgb(230, 255, 230)
+    FD->>DevSrv: FdOps::apply: commit staged image
+    DevSrv-->>FD: Ok
+    end
+    FD->>UA: ApplyComplete (MCTP)
+
+    Note over FD, Orch: ACTIVATION (FdOps::activate)
+
+    UA->>FD: ActivateFirmware (MCTP)
+    FD->>Orch: USER signal (nudge: activation requested)
+
+    rect rgb(230, 240, 255)
+    activate Orch
+    Orch->>FD: channel_transact: QueryStatus
+    FD-->>Orch: Status::ActivationPending
+    Note right of Orch: bump SVN (irreversible),<br/>close SMC write filter
+    Orch->>FD: channel_transact: Activate
+    FD-->>Orch: Ok
+    deactivate Orch
+    end
+
+    rect rgb(230, 255, 230)
+    FD->>DevSrv: FdOps::activate: set boot preference
+    DevSrv-->>FD: Ok
+    end
+
+    FD-->>UA: ActivateFirmware response (accepted)
 
     Note over UA, Orch: CANCEL (between AcceptOffer and Activate)
-    UA->>PLDM: CancelUpdate (MCTP)
-    PLDM->>Orch: object_set_peer_user_signal<br/>(nudge: cancelled)
+    UA->>FD: CancelUpdate (MCTP)
+    FD->>Orch: USER signal (nudge: cancelled)
+    rect rgb(230, 240, 255)
     activate Orch
-    Orch->>PLDM: channel_transact: QueryStatus
-    PLDM-->>Orch: Status::Cancelled
+    Orch->>FD: channel_transact: QueryStatus
+    FD-->>Orch: Status::Cancelled
     Note right of Orch: release staging,<br/>close SMC write filter
-    Orch->>PLDM: channel_transact: AckCancel
-    PLDM-->>Orch: Ok
+    Orch->>FD: channel_transact: AckCancel
+    FD-->>Orch: Ok
     deactivate Orch
-    PLDM-->>UA: CancelUpdate response
+    end
+    FD-->>UA: CancelUpdate response
 ```
 
 ## Out-of-transport image transfer
 
-The firmware image arrives outside the PLDM protocol (delivered to the staging
-region by another channel, e.g. the orchestrator itself, a separate file
-transfer, or an image already resident on flash). PLDM handles the PLDM
-protocol signaling with the UA but does not pull firmware bytes. The
-orchestrator writes the image to flash, then drives verify and apply through
-PLDM's FdOps.
+The firmware image is already in the staging region before the PLDM session
+starts (written by a third party). The platform driver knows where each
+component's image belongs; the orchestrator communicates the staging
+address to the third party service that does the copy. The FD does not pull firmware bytes. The verify
+and apply phases still run through FdOps with the same gatekeeper pattern.
 
 ```mermaid
 sequenceDiagram
     participant UA as UA (BMC)<br/>remote, over MCTP
-    participant PLDM as PLDM Service (server)<br/>dispatch loop + run_terminus
-    participant Orch as Orchestrator (client)<br/>object_wait + channel_transact
-    participant Flash as Shared Storage<br/>ext. SPI flash
+    participant FD as PLDM-FD (server)<br/>dispatch loop + run_terminus
+    participant Orch as Orchestrator (client)<br/>channel_transact
+    participant DevSrv as Device Server<br/>manages the SPI flash
+    participant Crypto as Crypto Service<br/>hash + signature verification
+
+    Note over UA, Crypto: Blue background: orchestrator IPC. Green background: FdOps service IPC.
 
     Note over UA, Orch: NEGOTIATION (same as in-transport)
 
-    UA->>PLDM: RequestUpdate (MCTP)
-    PLDM-->>UA: RequestUpdate response (accepted)
-    UA->>PLDM: PassComponentTable (MCTP)
-    PLDM-->>UA: PassComponentTable response
-    UA->>PLDM: UpdateComponent (MCTP, out-of-transport)
-    PLDM-->>UA: UpdateComponent response
+    UA->>FD: RequestUpdate (MCTP)
+    FD-->>UA: RequestUpdate response (accepted)
+    UA->>FD: PassComponentTable (MCTP)
+    FD-->>UA: PassComponentTable response
+    UA->>FD: UpdateComponent (MCTP, out-of-transport)
+    FD-->>UA: UpdateComponent response
 
-    Note over PLDM, Orch: PLDM has an offer, nudge the orchestrator
+    Note over FD, Orch: FD has an offer, nudge the orchestrator
 
-    PLDM->>Orch: object_set_peer_user_signal<br/>(nudge: offer ready)
+    FD->>Orch: USER signal (nudge: offer ready)
 
+    rect rgb(230, 240, 255)
     activate Orch
-    Orch->>PLDM: channel_transact: QueryOffer
-    Note left of PLDM: read FD state:<br/>target, total, OutOfTransport
-    PLDM-->>Orch: Offer { target, total, mode: OutOfTransport }
-    Note right of Orch: validate target + total,<br/>reserve staging
-    Orch->>PLDM: channel_transact: AcceptOffer { base: FlashAddress }
-    PLDM-->>Orch: Ok
+    Orch->>FD: channel_transact: QueryStatus
+    FD-->>Orch: Status::OfferPending { target, total, mode: OutOfTransport }
+    Note right of Orch: validate target + total,<br/>platform driver picks<br/>staging address
+    Orch->>FD: channel_transact: AcceptOffer { base: FlashAddress }
+    Note left of FD: FD does not write in<br/>out-of-transport, but the<br/>orchestrator communicates the<br/>base address to the third party<br/>that pre-stages the image
+    FD-->>Orch: Ok
     deactivate Orch
-
-    Note over Orch, Flash: TRANSFER (orchestrator writes, not PLDM)
-
-    loop orchestrator writes image to staging
-        Orch->>Flash: PayloadSource::read_at + flash write
-        Note right of Orch: writes directly to staging region
     end
 
+    Note over FD, Orch: no transfer phase, image already staged
+
+    FD->>UA: TransferComplete (MCTP)
+
+    Note over FD, Orch: ask orchestrator to grant verify
+
+    FD->>Orch: USER signal (nudge: verify pending)
+
+    rect rgb(230, 240, 255)
     activate Orch
-    Orch->>PLDM: channel_transact: TransferDone { written: u64 }
-    PLDM-->>Orch: Ok
+    Orch->>FD: channel_transact: QueryStatus
+    FD-->>Orch: Status::VerifyPending
+    Note right of Orch: check isolation, update policy
+    Orch->>FD: channel_transact: GrantVerify
+    FD-->>Orch: Ok
     deactivate Orch
+    end
 
-    PLDM->>UA: TransferComplete (MCTP)
+    Note over FD, Crypto: FdOps::verify
 
-    Note over UA, Flash: VERIFY + APPLY (same as in-transport)
+    rect rgb(230, 255, 230)
+    FD->>Crypto: FdOps::verify: verify staged image
+    Crypto->>DevSrv: read staged image
+    DevSrv-->>Crypto: image data
+    Crypto-->>FD: verification result
+    end
+    FD->>UA: VerifyComplete (MCTP)
 
+    Note over FD, Orch: verify done, ask orchestrator to grant apply
+
+    FD->>Orch: USER signal (nudge: apply pending)
+
+    rect rgb(230, 240, 255)
     activate Orch
-    Orch->>PLDM: channel_transact: Verify
-    activate PLDM
-    PLDM->>Flash: FdOps::verify (runs to completion)
-    Flash-->>PLDM: verify result
-    PLDM->>UA: VerifyComplete (MCTP)
-    PLDM-->>Orch: VerifyResult::Ok | Failed
-    deactivate PLDM
-
-    Orch->>PLDM: channel_transact: Apply
-    activate PLDM
-    PLDM->>Flash: FdOps::apply (runs to completion)
-    Flash-->>PLDM: apply result
-    PLDM->>UA: ApplyComplete (MCTP)
-    PLDM-->>Orch: ApplyResult::Ok | Failed
-    deactivate PLDM
+    Orch->>FD: channel_transact: QueryStatus
+    FD-->>Orch: Status::ApplyPending { verify_ok: true }
+    Orch->>FD: channel_transact: GrantApply
+    FD-->>Orch: Ok
     deactivate Orch
+    end
 
-    Note over UA, Orch: ACTIVATION (same as in-transport)
+    Note over FD, DevSrv: FdOps::apply
 
-    UA->>PLDM: ActivateFirmware (MCTP)
-    PLDM->>Orch: object_set_peer_user_signal<br/>(nudge: activation requested)
+    rect rgb(230, 255, 230)
+    FD->>DevSrv: FdOps::apply: commit staged image
+    DevSrv-->>FD: Ok
+    end
+    FD->>UA: ApplyComplete (MCTP)
 
+    Note over FD, Orch: ACTIVATION (FdOps::activate, same as in-transport)
+
+    UA->>FD: ActivateFirmware (MCTP)
+    FD->>Orch: USER signal (nudge: activation requested)
+
+    rect rgb(230, 240, 255)
     activate Orch
-    Orch->>PLDM: channel_transact: QueryStatus
-    PLDM-->>Orch: Status::ActivationPending
-    Note right of Orch: bump SVN in OTP (irreversible)
-    Orch->>PLDM: channel_transact: Activate
-    PLDM-->>Orch: Ok
+    Orch->>FD: channel_transact: QueryStatus
+    FD-->>Orch: Status::ActivationPending
+    Note right of Orch: bump SVN (irreversible)
+    Orch->>FD: channel_transact: Activate
+    FD-->>Orch: Ok
     deactivate Orch
+    end
 
-    PLDM-->>UA: ActivateFirmware response (accepted)
+    rect rgb(230, 255, 230)
+    FD->>DevSrv: FdOps::activate: set boot preference
+    DevSrv-->>FD: Ok
+    end
+
+    FD-->>UA: ActivateFirmware response (accepted)
 
     Note over UA, Orch: CANCEL (between AcceptOffer and Activate)
-    UA->>PLDM: CancelUpdate (MCTP)
-    PLDM->>Orch: object_set_peer_user_signal<br/>(nudge: cancelled)
+    UA->>FD: CancelUpdate (MCTP)
+    FD->>Orch: USER signal (nudge: cancelled)
+    rect rgb(230, 240, 255)
     activate Orch
-    Orch->>PLDM: channel_transact: QueryStatus
-    PLDM-->>Orch: Status::Cancelled
-    Note right of Orch: release staging
-    Orch->>PLDM: channel_transact: AckCancel
-    PLDM-->>Orch: Ok
+    Orch->>FD: channel_transact: QueryStatus
+    FD-->>Orch: Status::Cancelled
+    Note right of Orch: discard the accepted offer
+    Orch->>FD: channel_transact: AckCancel
+    FD-->>Orch: Ok
     deactivate Orch
-    PLDM-->>UA: CancelUpdate response
+    end
+    FD-->>UA: CancelUpdate response
 ```
 
 ## IPC operations
 
-The orchestrator's IPC vocabulary, modeled on the MCTP server's `MctpOp` enum.
-Each is a `channel_transact` call: request in, response out, no state kept on
-the wire.
+The orchestrator's IPC vocabulary. Each is a `channel_transact` call with a
+named timeout constant: request in, response out, no state kept on the wire.
+Every op returns immediately.
 
-| Op | Direction | Blocks? | Purpose |
-|---|---|---|---|
-| QueryOffer | orch -> pldm | no | Read the pending offer (target, total, transfer mode) |
-| AcceptOffer | orch -> pldm | no | Accept with a staging base address |
-| RejectOffer | orch -> pldm | no | Reject (PLDM tells UA in the next response) |
-| TransferDone | orch -> pldm | no | Out-of-transport only: orchestrator finished writing |
-| Verify | orch -> pldm | yes | Run FdOps::verify to completion, return result |
-| Apply | orch -> pldm | yes | Run FdOps::apply to completion, return result |
-| QueryStatus | orch -> pldm | no | Read current FD state |
-| Activate | orch -> pldm | no | Mark the staged image as the boot candidate |
-| AckCancel | orch -> pldm | no | Acknowledge a cancel, release orchestrator-side resources |
-
-Verify and Apply are the only blocking operations. The dispatch loop uses
-`DispatchOutcome::Pending` for them (same as the MCTP server's deferred Recv),
-and `drive_pending` delivers the result when `FdOps` completes. While pending,
-PLDM's main loop continues to advance MCTP polls interleaved with `FdOps`
-slices.
+| Op | Direction | Purpose |
+|---|---|---|
+| AcceptOffer | orch -> FD | Accept with a staging base address |
+| RejectOffer | orch -> FD | Reject (FD tells UA in the next response) |
+| GrantVerify | orch -> FD | Authorize FD to run FdOps::verify |
+| DenyVerify | orch -> FD | Block verify (e.g. isolated component); FD returns failure to UA |
+| GrantApply | orch -> FD | Authorize FD to run FdOps::apply |
+| DenyApply | orch -> FD | Block apply; FD returns failure to UA |
+| QueryStatus | orch -> FD | Read current FD state (phase, result, error); when OfferPending, includes offer data (target, total, transfer mode) |
+| Activate | orch -> FD | Authorize activation, after orchestrator bumps SVN |
+| AckCancel | orch -> FD | Acknowledge cancel, release orchestrator-side resources |
 
 ## Nudges
 
-PLDM raises a USER signal on the orchestrator's `WaitGroup` when state changes.
-Level-triggered (OR'd into active_signals, persists until lowered), same
-mechanism as the MCTP server uses for drive_pending notifications. The
-orchestrator lowers the signal after reading the new state via QueryStatus or
-QueryOffer.
+The FD raises a USER signal on the orchestrator's `WaitGroup` when state
+changes. Level-triggered (OR'd into active_signals, persists until lowered),
+same mechanism as the MCTP server uses for drive_pending notifications. The
+orchestrator lowers the signal after reading the new state via QueryStatus.
 
 Events that trigger a nudge:
-- Offer ready (UA sent UpdateComponent, PLDM has target + total)
-- Transfer complete (in-transport: all chunks written to flash)
+- Offer ready (UA sent UpdateComponent, FD has target + total)
+- Verify pending (transfer complete, FD waiting for GrantVerify)
+- Apply pending (verify complete, FD waiting for GrantApply)
 - Activation requested (UA sent ActivateFirmware)
 - Cancelled (UA sent CancelUpdate)
 - Error (FD entered an error state)
 
-The nudge is dataless. The orchestrator always follows up with a QueryOffer or
-QueryStatus to learn what happened. One bit, no framing, no lost messages. The
-orchestrator reads current state from the server, not from a stale event.
+The nudge is dataless. The orchestrator always follows up with QueryStatus
+to learn what happened. One bit, no framing, no lost
+messages. The parentheticals in the diagrams (e.g. "nudge: offer ready")
+name the state the orchestrator will find via QueryStatus, not data on the
+signal.
+
+## FdOps and IPC services
+
+FdOps callbacks run inside the FD process and make their own outbound IPC
+calls to the services they need. The orchestrator does not sit in any of
+these data paths.
+
+| Callback | Calls | Purpose |
+|---|---|---|
+| fw_data_download | flash device server | Write a firmware chunk to the staging region |
+| verify | crypto service | Hash and signature check; crypto reads the staged image directly from the device server |
+| apply | flash device server | Commit the staged image (swap active slot) |
+| activate | flash device server | Finalize activation (e.g. set boot preference) |
+| cancel_update_component | flash device server | Abort in-flight device server operations, discard FD transfer state |
+
+The crypto service runs in a separate process because it holds the
+verification keys. Verification is invoked over IPC, not inline.
 
 ## Comparison with the notify/intake design (PR #458)
 
-| Aspect | PR #458 (PLDM as client) | This design (PLDM as server) |
+| Aspect | PR #458 (PLDM as client) | This design (PLDM-FD as server) |
 |---|---|---|
 | IPC initiator | PLDM | Orchestrator |
-| Blocking direction | PLDM blocks on channel_transact | Orchestrator blocks on channel_transact |
-| Verify/Apply | Polled via poll_stage (one step per call) | Sync (one blocking call, runs to completion) |
-| Nudge direction | Orchestrator -> PLDM | PLDM -> Orchestrator |
-| Transfer (in-transport) | PLDM writes via FdOps, zero-IPC | Same |
-| Transfer (out-of-transport) | Not covered | Orchestrator writes, then tells PLDM |
-| Channel count | 2 (notify + intake) | 1 (all ops on one channel) |
-| MCTP responsiveness | PLDM free after Complete | PLDM interleaves MCTP polls with pending FdOps |
+| Blocking direction | PLDM blocks on channel_transact | Orchestrator blocks on channel_transact (small named timeouts) |
+| Who runs verify/apply | Polled via poll_stage (one step per call) | FD runs both through FdOps callbacks |
+| Orchestrator role | Drives verify/apply | Gatekeeper: grants or denies each phase |
+| Nudge direction | Orchestrator -> PLDM | FD -> Orchestrator |
+| Transfer (in-transport) | PLDM writes via FdOps | FdOps::fw_data_download writes via device server |
+| Transfer (out-of-transport) | Not covered | Image pre-staged by a third party (platform decides where) |
+| Crypto | Inline | Separate service; reads staged image directly from device server |
+| Channel count | 2 (notify + intake) | 1 orchestrator-FD channel (device server + crypto channels are separate) |
+| MCTP responsiveness | PLDM free after Complete | FD keeps MCTP responder live; parks only awaiting grants |
+| Orchestrator responsiveness | Always responsive | Always responsive (gatekeeper, no long ops) |
 
 ## Open questions
 
-Whether Verify and Apply should share one pending slot or have separate ones.
-The MCTP server caps outstanding pending recvs per handle; the PLDM server
-could do the same, or use a single slot since the orchestrator issues them
-sequentially.
+Whether PLDM-FD should respond to ActivateFirmware immediately from its own
+state rather than waiting for the orchestrator's Activate IPC call. The
+current diagram has the FD wait, which means a slow orchestrator could cause
+a DSP0267 response timeout. Responding immediately and letting the
+orchestrator activate off the nudge would avoid that, at the cost of the UA
+seeing "accepted" before activation actually happens.
 
-Whether RejectOffer needs a reason code. The orchestrator knows why it rejected
-(wrong target, update already running, locked), but the PLDM service only needs
-to know "rejected" to tell the UA. A reason code would help diagnostics but
-adds nothing to the protocol.
+Same question applies to CancelUpdate: should the FD respond to the UA
+immediately, or wait for the orchestrator's AckCancel?
 
-How the orchestrator learns that PLDM died (same open question as #458). The
-timeout approach works here too: if PLDM stops nudging and the orchestrator's
-pending Verify/Apply never completes, the orchestrator times out the IPC call.
+How the FD parks while waiting for a grant. The PLDM state machine calls
+FdOps::verify synchronously, but the FD needs to service its IPC dispatch
+loop while waiting for GrantVerify. Options: gate before the FdOps call
+(run_terminus checks a flag and parks on object_wait), or gate inside the
+FdOps implementation (which needs a way to yield back to the dispatch loop).
+
+Whether GrantVerify/GrantApply should carry additional data (e.g. a nonce,
+a policy token) or just be bare ok/deny signals.
+
+Whether the orchestrator needs the verify/apply result reported back via
+IPC, or if querying FD status after the nudge is enough. Currently the
+orchestrator learns the result via QueryStatus after the phase-complete
+nudge.
+
+How the FD discovers which device server to open a channel to. Either
+AcceptOffer also carries the device identity, or the FD is statically wired
+to the staging device at init time.
+
+Whether the SVN bump should happen before or after Activate. Currently it
+happens on ActivationPending (before). If Activate fails, the SVN is spent.
+Moving it after is safer but means activation is not yet committed when the
+orchestrator authorizes it.
+
+Whether FdOps callbacks need priv_data for fw_download/verify/apply.
+
+What happens on the UA side after RejectOffer. The diagrams answer
+UpdateComponent before the orchestrator's QueryStatus, so when the
+orchestrator rejects there is no pending UA command to fail. The FD needs an
+abort path: either send TransferComplete with an error code, or let the
+protocol time out per DSP0267.
+
+Whether FdOps::verify reads the whole staged image at once or streams it in
+chunks (incremental hash, responder polled between chunks). Streaming fits
+the "must not block for long" constraint but adds complexity to the crypto
+service interface.
+
+How the orchestrator learns that the FD process died mid-update, and what
+cleanup path it takes (release staging, close write filter, reset state).
+
+Whether a corruption runtime scanner should exist as a separate service, and
+if so, how it signals the orchestrator (sync or async).
+
+How the orchestrator opens and closes the SMC write filter: an IPC op on
+the device server (which already manages the SPI flash), or a register it
+writes directly. Currently the diagrams show it as an orchestrator note at
+AcceptOffer and Activate/Cancel.
