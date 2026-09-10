@@ -4,23 +4,27 @@ How the PLDM Firmware Device (FD) and the orchestrator communicate when the
 FD runs as an IPC server and the orchestrator is its client. Modeled on the
 MCTP server/client split: the FD process owns a dispatch loop that decodes
 IPC requests and routes them to the firmware-device state machine, and the
-orchestrator talks to it through synchronous `channel_transact` calls with
-small named timeouts (consts, not magic numbers).
+orchestrator talks to it through `ServiceCall` requests that return a signal
+via the caller's `WaitGroup`.
 
 The FD drives the PLDM protocol and executes firmware operations through
 FdOps callbacks: `fw_data_download` writes chunks to flash via the device
-server, `verify` delegates to the crypto service (which reads the staged image directly from the device server), `apply` commits
-the staged image via the device server, `activate` finalizes the boot
-preference via the device server. The platform driver owns slot logic and
-knows where each component's image belongs. Before each phase (download via AcceptOffer,
+server, `verify` delegates to the crypto service (which reads the staged
+image directly from the device server), `apply` and `activate` use
+board-specific logic from the platform driver trait to determine the
+operation, then execute it via the device server. The platform driver is a
+trait linked at build time, not a service; board-specific behavior enters
+via trait implementations. Before each phase (download via AcceptOffer,
 verify, apply, activate), the FD nudges the orchestrator and waits for a
 grant. The orchestrator is a gatekeeper: it can block any phase (e.g. deny
 verify for an isolated component with DenyVerify; the FD surfaces it to
-the UA as a verify failure), but it does not execute the operations itself. FdOps callbacks must not block for long
-because the UA can send CancelUpdate asynchronously, and the FD's
-responder path needs to stay live to handle it. PLDM is blocked during
-update because of the protocol: the UA cannot send another RequestUpdate
-while one is active.
+the UA as a verify failure), but it does not execute the operations itself.
+The orchestrator never blocks: it must stay responsive to async events
+(e.g. CompromiseDetected). All outbound operations (IPC to FD, SVN bump,
+write filter) go through ServiceCall, and their completion signals sit in
+the orchestrator's WaitGroup alongside event signals. FdOps callbacks must
+not block for long because the UA can send CancelUpdate asynchronously, and
+the FD's responder path needs to stay live to handle it.
 
 Out-of-transport, a third party writes the image to staging before the PLDM
 session begins. The platform driver knows the staging address; the orchestrator
@@ -29,11 +33,19 @@ firmware bytes but still runs verify and apply through FdOps.
 
 Design decisions:
 
-- Blocking direction: orchestrator to FD. The orchestrator blocks on
-  `channel_transact` with small named timeouts; the FD never blocks on a
-  channel_transact toward the orchestrator. While awaiting a grant the FD
-  parks but keeps servicing its dispatch loop and MCTP responder. Same
-  direction as MCTP client-to-server.
+- ServiceCall is the universal IPC primitive. Every cross-process request
+  (FdOps to device server, FdOps to crypto, orchestrator to FD) goes
+  through `ServiceCall<Req, Resp>`: `start()` sends the request
+  non-blocking, the caller adds the completion `signal()` to its
+  `WaitGroup`, and `try_recv()` picks up the result after wake. No process
+  ever blocks on another; `object_wait` on the WaitGroup sleeps the thread
+  until any signal fires.
+- The orchestrator never blocks. Its WaitGroup multiplexes FD nudge signals,
+  ServiceCall completions (SVN bump, write filter), CompromiseDetected, and
+  timers. Any event gets handled on the next wake, regardless of what else
+  is in flight. While awaiting a grant the FD keeps servicing its dispatch
+  loop and MCTP responder (the polled FdOps callback reports 0% progress
+  until granted).
 - The FD executes download, verify, and apply through FdOps callbacks. Our
   verification code goes in FdOps::verify, which calls the crypto service
   over IPC (a separate process holds the keys). The crypto service reads
@@ -45,6 +57,18 @@ Design decisions:
   any phase (e.g. component is isolated, update policy violation) and the FD
   returns the rejection to the UA via FdOps return value. This keeps the
   orchestrator lightweight and non-blocking.
+- Grant gates add no PLDM states. The FD enters Verify and Apply
+  automatically per DSP0267. The gate lives inside the polled FdOps
+  callback: pldm-lib calls verify/apply repeatedly via `fd_progress`, and
+  our implementation returns success with 0% progress until the orchestrator
+  grants. Between polls the dispatch loop and MCTP responder stay live, so
+  there is no deadlock and no spec violation.
+- Delegated verification. FdOps::verify sends a single "verify this image"
+  request to the crypto service on the first poll, then checks for the
+  completion signal on each subsequent poll. The crypto service owns the
+  full pipeline (read from device server, hash, check signature) in its
+  own process. The FD never touches image data or hash state, and there
+  is no accumulated state to lose on cancel.
 - Nudges are FD to orchestrator only, level-triggered USER signals (same
   Pigweed kernel mechanism as #458, reversed). The FD raises the signal
   when the orchestrator needs to act (offer ready, grant needed, phase
@@ -111,7 +135,8 @@ sequenceDiagram
     loop FdOps::fw_data_download per chunk
         FD->>UA: RequestFirmwareData (MCTP)
         UA-->>FD: firmware chunk
-        FD->>DevSrv: FdOps::fw_data_download: write chunk
+        FD->>DevSrv: ServiceCall: write chunk
+        DevSrv-->>FD: signal: Ok
     end
     end
 
@@ -133,10 +158,12 @@ sequenceDiagram
     Note over FD, Crypto: FdOps::verify
 
     rect rgb(230, 255, 230)
-    FD->>Crypto: FdOps::verify: verify staged image
+    FD->>Crypto: ServiceCall::start(VerifyRequest { addr, size })
+    Note over FD: verify() polls return 0% until signal
     Crypto->>DevSrv: read staged image
     DevSrv-->>Crypto: image data
-    Crypto-->>FD: verification result
+    Crypto-->>FD: signal: Verdict
+    Note over FD: verify() poll: try_recv -> 100% + verdict
     end
     FD->>UA: VerifyComplete (MCTP)
 
@@ -156,8 +183,8 @@ sequenceDiagram
     Note over FD, DevSrv: FdOps::apply
 
     rect rgb(230, 255, 230)
-    FD->>DevSrv: FdOps::apply: commit staged image
-    DevSrv-->>FD: Ok
+    FD->>DevSrv: ServiceCall: FdOps::apply: commit staged image
+    DevSrv-->>FD: signal: Ok
     end
     FD->>UA: ApplyComplete (MCTP)
 
@@ -177,8 +204,8 @@ sequenceDiagram
     end
 
     rect rgb(230, 255, 230)
-    FD->>DevSrv: FdOps::activate: set boot preference
-    DevSrv-->>FD: Ok
+    FD->>DevSrv: ServiceCall: FdOps::activate: set boot preference
+    DevSrv-->>FD: signal: Ok
     end
 
     FD-->>UA: ActivateFirmware response (accepted)
@@ -261,10 +288,12 @@ sequenceDiagram
     Note over FD, Crypto: FdOps::verify
 
     rect rgb(230, 255, 230)
-    FD->>Crypto: FdOps::verify: verify staged image
+    FD->>Crypto: ServiceCall::start(VerifyRequest { addr, size })
+    Note over FD: verify() polls return 0% until signal
     Crypto->>DevSrv: read staged image
     DevSrv-->>Crypto: image data
-    Crypto-->>FD: verification result
+    Crypto-->>FD: signal: Verdict
+    Note over FD: verify() poll: try_recv -> 100% + verdict
     end
     FD->>UA: VerifyComplete (MCTP)
 
@@ -284,8 +313,8 @@ sequenceDiagram
     Note over FD, DevSrv: FdOps::apply
 
     rect rgb(230, 255, 230)
-    FD->>DevSrv: FdOps::apply: commit staged image
-    DevSrv-->>FD: Ok
+    FD->>DevSrv: ServiceCall: FdOps::apply: commit staged image
+    DevSrv-->>FD: signal: Ok
     end
     FD->>UA: ApplyComplete (MCTP)
 
@@ -305,8 +334,8 @@ sequenceDiagram
     end
 
     rect rgb(230, 255, 230)
-    FD->>DevSrv: FdOps::activate: set boot preference
-    DevSrv-->>FD: Ok
+    FD->>DevSrv: ServiceCall: FdOps::activate: set boot preference
+    DevSrv-->>FD: signal: Ok
     end
 
     FD-->>UA: ActivateFirmware response (accepted)
@@ -367,27 +396,30 @@ signal.
 
 ## FdOps and IPC services
 
-FdOps callbacks run inside the FD process and make their own outbound IPC
-calls to the services they need. The orchestrator does not sit in any of
+FdOps callbacks run inside the FD process and make outbound ServiceCalls
+to the services they need. The platform driver trait (linked at build time)
+determines the board-specific details of each operation; the actual I/O
+goes through the device server. The orchestrator does not sit in any of
 these data paths.
 
-| Callback | Calls | Purpose |
+| Callback | ServiceCall to | Purpose |
 |---|---|---|
-| fw_data_download | flash device server | Write a firmware chunk to the staging region |
+| fw_data_download | device server | Write a firmware chunk to the staging region |
 | verify | crypto service | Hash and signature check; crypto reads the staged image directly from the device server |
-| apply | flash device server | Commit the staged image (swap active slot) |
-| activate | flash device server | Finalize activation (e.g. set boot preference) |
-| cancel_update_component | flash device server | Abort in-flight device server operations, discard FD transfer state |
+| apply | device server | Commit the staged image (platform driver trait determines what to write) |
+| activate | device server | Set boot preference (platform driver trait determines the operation) |
+| cancel_update_component | device server | Abort in-flight operations, discard FD transfer state |
 
 The crypto service runs in a separate process because it holds the
-verification keys. Verification is invoked over IPC, not inline.
+verification keys. Verification is a single ServiceCall: the crypto
+service owns the full read-hash-check pipeline.
 
 ## Comparison with the notify/intake design (PR #458)
 
 | Aspect | PR #458 (PLDM as client) | This design (PLDM-FD as server) |
 |---|---|---|
 | IPC initiator | PLDM | Orchestrator |
-| Blocking direction | PLDM blocks on channel_transact | Orchestrator blocks on channel_transact (small named timeouts) |
+| Blocking direction | PLDM blocks on channel_transact | Nobody blocks; all IPC via ServiceCall + WaitGroup |
 | Who runs verify/apply | Polled via poll_stage (one step per call) | FD runs both through FdOps callbacks |
 | Orchestrator role | Drives verify/apply | Gatekeeper: grants or denies each phase |
 | Nudge direction | Orchestrator -> PLDM | FD -> Orchestrator |
@@ -395,8 +427,8 @@ verification keys. Verification is invoked over IPC, not inline.
 | Transfer (out-of-transport) | Not covered | Image pre-staged by a third party (platform decides where) |
 | Crypto | Inline | Separate service; reads staged image directly from device server |
 | Channel count | 2 (notify + intake) | 1 orchestrator-FD channel (device server + crypto channels are separate) |
-| MCTP responsiveness | PLDM free after Complete | FD keeps MCTP responder live; parks only awaiting grants |
-| Orchestrator responsiveness | Always responsive | Always responsive (gatekeeper, no long ops) |
+| MCTP responsiveness | PLDM free after Complete | FD keeps MCTP responder live; polled callbacks report 0% until granted |
+| Orchestrator responsiveness | Always responsive | Never blocks; WaitGroup multiplexes ServiceCalls + async events |
 
 ## Open questions
 
@@ -409,12 +441,6 @@ seeing "accepted" before activation actually happens.
 
 Same question applies to CancelUpdate: should the FD respond to the UA
 immediately, or wait for the orchestrator's AckCancel?
-
-How the FD parks while waiting for a grant. The PLDM state machine calls
-FdOps::verify synchronously, but the FD needs to service its IPC dispatch
-loop while waiting for GrantVerify. Options: gate before the FdOps call
-(run_terminus checks a flag and parks on object_wait), or gate inside the
-FdOps implementation (which needs a way to yield back to the dispatch loop).
 
 Whether GrantVerify/GrantApply should carry additional data (e.g. a nonce,
 a policy token) or just be bare ok/deny signals.
@@ -440,11 +466,6 @@ UpdateComponent before the orchestrator's QueryStatus, so when the
 orchestrator rejects there is no pending UA command to fail. The FD needs an
 abort path: either send TransferComplete with an error code, or let the
 protocol time out per DSP0267.
-
-Whether FdOps::verify reads the whole staged image at once or streams it in
-chunks (incremental hash, responder polled between chunks). Streaming fits
-the "must not block for long" constraint but adds complexity to the crypto
-service interface.
 
 How the orchestrator learns that the FD process died mid-update, and what
 cleanup path it takes (release staging, close write filter, reset state).
