@@ -25,6 +25,10 @@
 //! `BootWatch` is the seam the orchestrator polls: one device's boot walk,
 //! erased of every device-specific type, answering with a `WalkVerdict`.
 //!
+//! `Recovery` is the restore capability: rewrite one device's active image
+//! from its board-configured recovery source, mechanism unnamed, source
+//! chosen per attempt.
+//!
 //! `LockdownLatch` is the terminal capability: latch the platform into its safe
 //! state, one-way, at the top of the escalation ladder.
 //!
@@ -42,6 +46,7 @@ mod boot_control;
 mod boot_watch;
 mod evidence;
 mod lockdown_latch;
+mod recovery;
 mod svn_floor;
 mod updatable;
 
@@ -49,5 +54,6 @@ pub use boot_control::BootControl;
 pub use boot_watch::{BootWatch, FailureCause, WalkVerdict};
 pub use evidence::{BootStatus, EvidenceReader};
 pub use lockdown_latch::LockdownLatch;
+pub use recovery::Recovery;
 pub use svn_floor::{Svn, SvnFloor};
 pub use updatable::{PayloadReadError, PayloadSource, StageProgress, Updatable, UpdateError};
