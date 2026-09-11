@@ -22,6 +22,10 @@
 //! the chunked read seam staging pulls from — transports and slot
 //! bookkeeping stay behind the adapter.
 //!
+//! `IncrementalVerifier` is the polled verification seam: `start`
+//! consumes the verifier into a `VerifySession` whose `poll` does one
+//! bounded hash step per call. See the trait docs for the full lifecycle.
+//!
 //! `BootWatch` is the seam the orchestrator polls: one device's boot walk,
 //! erased of every device-specific type, answering with a `WalkVerdict`.
 //!
@@ -41,6 +45,7 @@
 mod boot_control;
 mod boot_watch;
 mod evidence;
+mod incremental_verifier;
 mod lockdown_latch;
 mod svn_floor;
 mod updatable;
@@ -48,6 +53,7 @@ mod updatable;
 pub use boot_control::BootControl;
 pub use boot_watch::{BootWatch, FailureCause, WalkVerdict};
 pub use evidence::{BootStatus, EvidenceReader};
+pub use incremental_verifier::{IncrementalVerifier, PollOutcome, VerifySession};
 pub use lockdown_latch::LockdownLatch;
 pub use svn_floor::{Svn, SvnFloor};
 pub use updatable::{PayloadReadError, PayloadSource, StageProgress, Updatable, UpdateError};
