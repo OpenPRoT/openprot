@@ -20,7 +20,7 @@ use pldm_common::message::firmware_update::get_status::{
 use pldm_common::message::firmware_update::request_update::RequestUpdateRequest;
 use pldm_common::message::firmware_update::transfer_complete::TransferResult;
 use pldm_common::message::firmware_update::verify_complete::VerifyResult;
-use pldm_common::protocol::base::PldmMsgType;
+use pldm_common::protocol::base::{PldmBaseCompletionCode, PldmMsgType};
 use pldm_common::protocol::firmware_update::{
     ComponentResponseCode, Descriptor, FirmwareDeviceState,
 };
@@ -302,7 +302,8 @@ fn responder_ignores_fw_commands_from_unexpected_eid() {
 
     let status = GetStatusResponse::decode(&resp).expect("decode GetStatusResponse");
     assert_eq!(
-        status.completion_code, 0,
+        status.completion_code,
+        PldmBaseCompletionCode::Success as u8,
         "GetStatus completion should be success"
     );
     assert_eq!(

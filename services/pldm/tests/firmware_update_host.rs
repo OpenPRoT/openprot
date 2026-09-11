@@ -74,6 +74,7 @@ const IMAGE_SIZE: u32 = 1024;
 struct MockFdOps {
     component_accepted: Cell<bool>,
     download_bytes_received: Cell<usize>,
+    downloaded_image: RefCell<[u8; IMAGE_SIZE as usize]>,
     verified: Cell<bool>,
     applied: Cell<bool>,
 }
@@ -112,17 +113,29 @@ impl FdOps for MockFdOps {
         &self,
         _component: &FirmwareComponent,
     ) -> Result<(usize, usize), FdOpsError> {
-        Ok((0, IMAGE_SIZE as usize))
+        let offset = self.download_bytes_received.get();
+        let length = (IMAGE_SIZE as usize)
+            .checked_sub(offset)
+            .ok_or(FdOpsError::FwDownloadError)?;
+        Ok((offset, length))
     }
 
     fn download_fw_data(
         &self,
-        _offset: usize,
+        offset: usize,
         data: &[u8],
         _component: &FirmwareComponent,
     ) -> Result<TransferResult, FdOpsError> {
+        let end = offset
+            .checked_add(data.len())
+            .ok_or(FdOpsError::FwDownloadError)?;
+        let mut downloaded_image = self.downloaded_image.borrow_mut();
+        let destination = downloaded_image
+            .get_mut(offset..end)
+            .ok_or(FdOpsError::FwDownloadError)?;
+        destination.copy_from_slice(data);
         self.download_bytes_received
-            .set(self.download_bytes_received.get() + data.len());
+            .set(end.max(self.download_bytes_received.get()));
         Ok(TransferResult::TransferSuccess)
     }
 
@@ -200,6 +213,7 @@ fn fw_string(s: &str) -> PldmFirmwareString {
 fn serve_ua_fw_request<S: Sender, const N: usize>(
     ua_server: &RefCell<Server<S, N>>,
     listener: Handle,
+    component_image: &[u8],
 ) {
     let mut req = [0u8; 1024];
     let meta = match ua_server.borrow_mut().try_recv(listener, &mut req) {
@@ -218,10 +232,14 @@ fn serve_ua_fw_request<S: Sender, const N: usize>(
         Ok(FwUpdateCmd::RequestFirmwareData) => {
             let fw_req =
                 RequestFirmwareDataRequest::decode(payload).expect("decode RequestFirmwareData");
+            let offset = fw_req.offset as usize;
             let length = fw_req.length as usize;
             assert!(length <= MAX_TRANSFER_SIZE, "requested chunk exceeds MTU");
-            let data = [0xA5u8; MAX_TRANSFER_SIZE];
-            let resp_msg = RequestFirmwareDataResponse::new(instance_id, success, &data[..length]);
+            let end = offset.checked_add(length).expect("firmware range overflow");
+            let data = component_image
+                .get(offset..end)
+                .expect("requested range should be within the component image");
+            let resp_msg = RequestFirmwareDataResponse::new(instance_id, success, data);
             PldmCodecWithLifetime::encode(&resp_msg, &mut resp)
                 .expect("encode RequestFirmwareData response")
         }
@@ -256,9 +274,12 @@ fn serve_ua_fw_request<S: Sender, const N: usize>(
 
 #[test]
 fn firmware_update_full_flow_via_requester() {
+    let component_image: [u8; IMAGE_SIZE as usize] =
+        core::array::from_fn(|offset| (offset as u8).wrapping_mul(31).wrapping_add(7));
     let fd_ops = MockFdOps {
         component_accepted: Cell::new(false),
         download_bytes_received: Cell::new(0),
+        downloaded_image: RefCell::new([0u8; IMAGE_SIZE as usize]),
         verified: Cell::new(false),
         applied: Cell::new(false),
     };
@@ -291,7 +312,7 @@ fn firmware_update_full_flow_via_requester() {
         transfer(&fd_to_ua_packets, &mut ua_server.borrow_mut());
         fd_to_ua_packets.borrow_mut().clear();
         // UA answers the request.
-        serve_ua_fw_request(&ua_server, ua_fw_listener);
+        serve_ua_fw_request(&ua_server, ua_fw_listener, &component_image);
         // Deliver the UA response back to the FD.
         transfer(&ua_to_fd_packets, &mut fd_server.borrow_mut());
         ua_to_fd_packets.borrow_mut().clear();
@@ -376,7 +397,8 @@ fn firmware_update_full_flow_via_requester() {
     let len = req_update.encode(&mut buf).expect("encode RequestUpdate");
     let resp = ua_transact(&buf[..len]);
     assert_eq!(
-        resp[3], 0,
+        resp[3],
+        PldmBaseCompletionCode::Success as u8,
         "RequestUpdate completion code should be success"
     );
     assert_eq!(
@@ -433,7 +455,8 @@ fn firmware_update_full_flow_via_requester() {
         .expect("encode PassComponentTable");
     let resp = ua_transact(&buf[..len]);
     assert_eq!(
-        resp[3], 0,
+        resp[3],
+        PldmBaseCompletionCode::Success as u8,
         "PassComponentTable completion code should be success"
     );
     assert!(
@@ -459,7 +482,8 @@ fn firmware_update_full_flow_via_requester() {
         .expect("encode UpdateComponent");
     let resp = ua_transact(&buf[..len]);
     assert_eq!(
-        resp[3], 0,
+        resp[3],
+        PldmBaseCompletionCode::Success as u8,
         "UpdateComponent completion code should be success"
     );
 
@@ -478,7 +502,8 @@ fn firmware_update_full_flow_via_requester() {
     let resp = ua_transact(&b[..n]);
     let status = GetStatusResponse::decode(&resp).expect("decode GetStatusResponse");
     assert_eq!(
-        status.completion_code, 0,
+        status.completion_code,
+        PldmBaseCompletionCode::Success as u8,
         "GetStatus completion should be success"
     );
     assert_eq!(
@@ -492,6 +517,11 @@ fn firmware_update_full_flow_via_requester() {
         fd_ops.download_bytes_received.get(),
         IMAGE_SIZE as usize,
         "the full firmware image should have been downloaded"
+    );
+    assert_eq!(
+        *fd_ops.downloaded_image.borrow(),
+        component_image,
+        "the downloaded component image should match the Update Agent image"
     );
     assert!(fd_ops.verified.get(), "firmware should have been verified");
     assert!(fd_ops.applied.get(), "firmware should have been applied");
