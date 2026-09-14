@@ -186,6 +186,22 @@ impl Default for ComponentStatus {
 /// default. `E` must be at least `2 * N + 2` (enforced in [`Rot::new`]).
 pub struct Rot<const N: usize, const E: usize> {
     chain: heapless::Vec<(ComponentId, ComponentAttrs), N>,
+    /// Index into `chain` of the component currently under verification, or the
+    /// past-the-end sentinel `chain.len()` once the walk is done. Release keys
+    /// off `chain[cursor]` alone: a `VerificationPassed` for any other id is
+    /// stale or out-of-turn and is dropped.
+    ///
+    /// While the walk runs (`PreSupervision` and `AwaitingReady`) the cursor
+    /// never points at a gated component. Gating the component under
+    /// verification therefore has to move the cursor past it, which
+    /// [`handle_corruption_advancing`](Self::handle_corruption_advancing) does:
+    /// a verdict already in flight then fails the `chain[cursor]` check and is
+    /// dropped instead of releasing a component the cascade just isolated.
+    /// `property_isolation_is_sticky_under_random_sequences` guards this.
+    ///
+    /// `Recovering` is outside that: `VerificationFailed` leaves the cursor on
+    /// the failed component and a corruption report can gate it there. Entry to
+    /// `PreSupervision` re-walks from 0, which restores the invariant.
     cursor: u8,
     /// One record per chain component (parallel to `chain` by index). Each
     /// [`ComponentStatus`] holds the component's service `lifecycle` (`Isolated`
@@ -424,18 +440,50 @@ impl<const N: usize, const E: usize> Rot<N, E> {
         }
     }
 
-    /// Shared `CorruptionDetected` handling, called from both `PreSupervision`
-    /// (directly) and `SupervisingPlatform` (via its superstate handler).
-    /// Delegates the policy interpretation to [`gate_by_policy`](Self::gate_by_policy)
-    /// so this path and the recovery-exhaustion path can never diverge:
+    /// Shared `CorruptionDetected` handling. Delegates the policy interpretation
+    /// to [`gate_by_policy`](Self::gate_by_policy) so this path and the
+    /// recovery-exhaustion path can never diverge:
     /// `Isolable`/`Cascading` → gate the component (single or cascade) and stay
     /// put, so a later re-walk skips it instead of silently re-releasing one we
     /// already found corrupt; `Required` → recover first (the halt-on-exhaustion
     /// decision happens later in `Recovering`).
     fn handle_corruption(&mut self, id: ComponentId, ctx: &mut Sink<E>) -> Outcome {
+        // Already isolated: it is held in reset and was reported. Recovering
+        // it restores a component the re-walk skips, and on exhaustion a
+        // `Required` one locks the platform down over a cascade that was
+        // already contained.
+        if self.is_gated(id) {
+            return Outcome::Handled;
+        }
         match self.gate_by_policy(ctx, id) {
             Gating::Gated => Outcome::Handled,
             Gating::NotGated => Outcome::Transition(State::Recovering(id)),
+        }
+    }
+
+    /// `CorruptionDetected` for `PreSupervision` and `AwaitingReady`, the two
+    /// states that release off `chain[cursor]`. Gates by policy, then keeps the
+    /// `cursor` invariant by moving it past the component under verification
+    /// when the cascade gated it. A `Required` corruption gates nothing and
+    /// returns `Transition(Recovering)` unchanged.
+    ///
+    /// Not called from `handle_supervising`: `Recovering`'s cursor is stale
+    /// (`VerificationFailed` left it on the failed component), so advancing
+    /// there would verify mid-recovery or reach `Ready` instead of re-walking.
+    fn handle_corruption_advancing(&mut self, id: ComponentId, ctx: &mut Sink<E>) -> Outcome {
+        let outcome = self.handle_corruption(id, ctx);
+        let cursor_gated = self
+            .chain
+            .get(self.cursor as usize)
+            .is_some_and(|(c, _)| self.is_gated(*c));
+        if !matches!(outcome, Outcome::Handled) || !cursor_gated {
+            return outcome;
+        }
+        let next_idx = (self.cursor as usize).saturating_add(1);
+        if self.advance_to_next_ungated(ctx, next_idx) {
+            Outcome::Handled
+        } else {
+            Outcome::Transition(State::Ready)
         }
     }
 
@@ -444,26 +492,30 @@ impl<const N: usize, const E: usize> Rot<N, E> {
     /// each newly gated component, including `root` itself — every isolated
     /// device is reported, not just the one that failed.
     fn cascade_hold(&mut self, ctx: &mut Sink<E>, root: ComponentId) {
-        // BFS over the growing isolation front. `frontier` holds the components
-        // gated so far whose dependents still need visiting; `statuses` records
-        // the durable `Isolated` mark for each.
+        // BFS over the growing isolation front. `frontier` is also the visited
+        // set: a component already on it is never queued again, which bounds the
+        // walk at one visit per component and terminates on a dependency cycle.
+        //
+        // Traversal must not skip a component that is already gated. Its own
+        // dependents may still be running, and they are only reachable through
+        // it, so stopping there would leave a component whose dependency is
+        // isolated out of reset. `gate_one` is idempotent, so re-visiting a
+        // gated component emits nothing and only continues the walk.
         let mut frontier: heapless::Vec<ComponentId, N> = heapless::Vec::new();
-        if self.gate_one(ctx, root) {
-            let _ = frontier.push(root);
-        }
+        self.gate_one(ctx, root);
+        let _ = frontier.push(root);
         let mut i = 0;
         while let Some(&holder) = frontier.get(i) {
             i += 1;
-            let mut newly_gated: heapless::Vec<ComponentId, N> = heapless::Vec::new();
+            let mut dependents: heapless::Vec<ComponentId, N> = heapless::Vec::new();
             for &(id, attrs) in self.chain.iter() {
-                if attrs.depends_on == Some(holder) && !self.is_gated(id) {
-                    let _ = newly_gated.push(id);
+                if attrs.depends_on == Some(holder) && !frontier.contains(&id) {
+                    let _ = dependents.push(id);
                 }
             }
-            for id in newly_gated {
-                if self.gate_one(ctx, id) {
-                    let _ = frontier.push(id);
-                }
+            for id in dependents {
+                self.gate_one(ctx, id);
+                let _ = frontier.push(id);
             }
         }
     }
@@ -528,6 +580,12 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                     }
                 }
                 Event::VerificationFailed(id) => {
+                    // A verdict from before the gating, for a component the
+                    // cascade has since isolated: recovering it re-walks the
+                    // chain for a device that stays held.
+                    if self.is_gated(*id) {
+                        return Outcome::Handled;
+                    }
                     // Recovery is attempted first for every failure, regardless
                     // of the component's recovery-failure policy (CSA: recover
                     // first, classify only once retries are exhausted).
@@ -541,7 +599,7 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 // exists in the first place. `AttestationChallenge` is left
                 // unhandled here (falls through to `Outcome::Super` and is
                 // discarded) — that's a separate question.
-                Event::CorruptionDetected(id) => self.handle_corruption(*id, ctx),
+                Event::CorruptionDetected(id) => self.handle_corruption_advancing(*id, ctx),
                 // Boot-progress liveness for a passive component released
                 // speculatively earlier in this same walk. Clear its watchdog
                 // even though `PreSupervision` is unsupervised — acting on a
@@ -620,10 +678,18 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                     }
                 }
                 Event::VerificationFailed(id) => {
+                    // Same in-flight verdict as above: an isolated component
+                    // does not enter recovery.
+                    if self.is_gated(*id) {
+                        return Outcome::Handled;
+                    }
                     // Recovery is attempted first for every failure, regardless
                     // of the component's recovery-failure policy.
                     Outcome::Transition(State::Recovering(*id))
                 }
+                // Releases off `chain[cursor]` too, so the cursor must move
+                // off a component the cascade gated. `Handled` keeps `awaiting`.
+                Event::CorruptionDetected(id) => self.handle_corruption_advancing(*id, ctx),
                 // `Timeout` is intentionally not handled here: it falls through
                 // to `handle_supervising`, which runs the device-agnostic
                 // boot-progress watchdog uniformly across every supervised state
@@ -753,10 +819,11 @@ impl<const N: usize, const E: usize> Rot<N, E> {
     /// supervisor, is discarded).
     ///
     /// The corruption guarantee, however, *does* hold in `PreSupervision`: that
-    /// state handles [`Event::CorruptionDetected`] directly (via
-    /// [`handle_corruption`](Self::handle_corruption)) rather than through this
-    /// handler, since routing it here would also pull in the attestation
-    /// behavior above. CSA defines no mechanism guaranteeing a corruption report
+    /// state handles [`Event::CorruptionDetected`] in its own arm, via
+    /// [`handle_corruption_advancing`](Self::handle_corruption_advancing), since
+    /// routing it here would also pull in the attestation behavior above.
+    /// `AwaitingReady` does the same; the cursor rationale is on the helper.
+    /// CSA defines no mechanism guaranteeing a corruption report
     /// arrives for an already-released component's *live, executing* state (its
     /// only at-rest mechanism — background NVM integrity polling — is explicitly
     /// scoped to "at rest"/"between boots", not an in-progress boot's chain
@@ -770,6 +837,8 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 ctx.emit(Effect::SignAttestation);
                 Outcome::Handled
             }
+            // Reached from `Ready` and `Recovering` only: `PreSupervision`,
+            // `AwaitingReady` and `Updating` handle this in their own arms.
             Event::CorruptionDetected(id) => self.handle_corruption(*id, ctx),
             // Boot-progress signals arriving after the walk left `PreSupervision`
             // / `AwaitingReady` (e.g. once the machine is already `Ready`): clear
