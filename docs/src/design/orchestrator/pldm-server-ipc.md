@@ -73,7 +73,7 @@ Design decisions:
   mechanism the i2c server-runtime uses to announce a latched slave receive
   (services/i2c/server-runtime/src/lib.rs:18). The FD raises the signal
   when the orchestrator needs to act (offer ready, grant needed, phase
-  complete). The orchestrator lowers it after reading the current state.
+  complete). The FD clears it when it answers the orchestrator's QueryStatus.
 - All orchestrator-to-FD IPC ops get an immediate `Reply`, no
   `DispatchOutcome::Pending`.
 - Dispatch follows the MCTP server pattern: `dispatch_pldm_op` decodes a
@@ -396,6 +396,62 @@ sequenceDiagram
     FD-->>UA: CancelUpdate response
 ```
 
+## Write-access containment
+
+The FD never holds a flash handle. It writes through the device server, one
+ServiceCall per chunk, so the containment is the device server's to enforce.
+
+First layer, in software. The orchestrator arms the device server at AcceptOffer
+with the base address and total it just handed the FD, and disarms it on apply,
+on cancel, and when its backstop timer fires. Writes outside that window are
+rejected. This catches offset bugs in the FD. It does not catch a compromised
+FD, which can still ask the device server to write anywhere inside the window.
+Arming and disarming are orchestrator-to-device-server calls the diagrams do not
+show yet.
+
+Second layer, in hardware. The SMC write filter raises
+`SmcInterrupt::WriteProtected` on writes outside the allowed region
+(target/ast10x0/peripherals/smc/interrupts.rs). The orchestrator opens it for
+the staging region at AcceptOffer and closes it at Activate or on cancel. What
+this needs from the hardware is one thing: whoever drives erase and program
+must not reach the write-protect registers. How to get that is open. Three
+candidates: a separate chip select for staging, a separate MPU region over the
+filter registers, or lock-until-reset bits. The separate chip select is the
+current preference. Picking one needs the AST10x0 register layout, and it does
+not block the rest of this design.
+
+Both layers cover staging only. Apply and activate are a separate problem: the
+FD initiates both as ServiceCalls to the device server, and the grant gate for
+them lives inside the FD's own FdOps callback. A compromised FD skips its own
+gate and calls the device server directly. Closing that means the device server
+refuses apply and activate without a grant it got from the orchestrator, not
+from the FD. Open, and not covered by the write filter, which spans staging
+only.
+
+So the two layers buy this much: an offset bug hits the window check, and a
+compromised FD writing outside staging hits the filter. A compromised FD can
+still corrupt staging, which verify then fails, and can still attempt apply and
+activate until the gap above is closed.
+
+Out-of-transport is different. The FD writes nothing, so the first layer does
+not apply to it. The writer is the third party the orchestrator handed the
+staging address to, and the same two questions land on that path: what bounds
+its writes, and who opens the filter for it. Not answered here.
+
+## Activation reporting
+
+Activation reports, it does not roll back. The ActivateFirmware response means
+accepted, not done. The UA learns the outcome from GetStatus AuxStateStatus and
+from GetFirmwareParameters, which shows which version is actually active. The
+diagrams do not show that poll.
+
+A failed activation leaves the boot preference unchanged, so the old image
+keeps booting and the UA can retry. A bad new image is the trial boot's problem
+instead: the floor stays where it is until UpdateSecurityRevision, so the
+superseded image stays bootable and TrialBoot can revert to it. That is the
+window the security revision commit section describes, seen from the failure
+side.
+
 ## Security revision commit
 
 Activation does not raise the anti-rollback floor. If it did, a trial boot
@@ -475,6 +531,9 @@ back is a separate type that wraps it, the way MctpError wraps ResponseCode. A
 deny carries its reason: Isolated, PolicyViolation, UnknownTarget, Busy. The FD
 maps each one onto a DSP0267 completion code for the UA.
 
+The FD answers RequestUpdate from its own state machine: an update already in
+progress gets ALREADY_IN_UPDATE_MODE and the UA retries. No nudge.
+
 `gen` is the FD's phase generation, still open. See the open question on
 whether a grant carries a token.
 
@@ -485,8 +544,18 @@ changes. Level-triggered (OR'd into active_signals, persists until lowered).
 Every Signals::USER in this tree is i2c's: the server raises it on a bus
 channel and the client answers with SlaveReceive. The MCTP server raises no
 USER signal, and its drive_pending is a deferred channel_respond rather than a
-wake. The
-orchestrator lowers the signal after reading the new state via QueryStatus.
+wake.
+
+The FD clears the signal when it answers QueryStatus, and raises it again on the
+next state change. The orchestrator has no call to clear its own signal:
+pw_kernel's one USER call, `object_set_peer_user_signal`, acts on the peer. i2c
+does the same thing, the server raises on its bus channel and clears it when it
+answers the client's SlaveReceive (services/i2c/server-runtime/src/lib.rs:192
+and 252).
+
+The FD clears first, before it reads out the state it returns. In one thread the
+order cannot matter, since nothing can change between the two. It is the order
+that stays right if the loop ever yields mid-reply, and it is what i2c does.
 
 Events that trigger a nudge:
 - Offer ready (UA sent UpdateComponent, FD has target + total)
@@ -611,8 +680,37 @@ orchestrator rejects there is no pending UA command to fail. The FD needs an
 abort path: either send TransferComplete with an error code, or let the
 protocol time out per DSP0267.
 
-How the orchestrator learns that the FD process died mid-update, and what
-cleanup path it takes (release staging, close write filter, reset state).
+How the orchestrator finds out the FD died. Right now it does not. The
+orchestrator sleeps until the FD nudges it, a dead FD never nudges, and there
+is no "the other side went away" signal to wait on instead: the set is
+READABLE, WRITEABLE, ERROR, JOINABLE, USER and the interrupt bits (the
+`Signals` bitflags in pw_kernel/syscall/syscall_defs.rs). That matters because
+the staging reservation stays held from AcceptOffer until Activate or cancel,
+and in-transport the SMC write filter stays open over the staging region for
+the same window. Both are released by orchestrator code that only runs when the
+FD sends something, so nothing releases them until the chip resets.
+
+The plan is to let the FD tell us after the fact. A supervisor restarts it, the
+fresh FD nudges, and QueryStatus comes back Idle, or with a fresh offer, while
+the orchestrator still believes an update is in flight. That mismatch is the
+signal, and the orchestrator then closes the filter and frees staging. The
+kernel supports the restart: a process can be terminated, joined and started
+again, and the channel survives (`test_object_reset_basic` in
+pw_kernel/tests/process_termination). A nudge from the old FD is cleared when
+the supervisor joins it, before the restart
+(`test_peer_user_signal_cleared_on_terminate`). No `gen` field is needed for
+this, because a restarted FD starts Idle and a new UA session cannot get past
+OfferPending without an AcceptOffer from the orchestrator.
+
+Two gaps remain. There is no supervisor: nothing in this tree calls
+`process_start` or `task_terminate`, and target/ast10x0/erot/system.json5 has no
+apps yet. Without one the stale nudge is never cleared either, so the
+orchestrator can wake on a nudge from an FD that is already gone. And an FD that
+dies and never restarts never nudges, so the orchestrator still needs a plain
+timer as a backstop. That timer has to exceed worst-case transfer plus FD_T1
+(120s, `DEFAULT_FD_T1_TIMEOUT` in pldm-interface/src/config.rs) so a live FD
+always cancels first. FD_T1 is an idle timer the FD resets on every message, not
+a bound on transfer time.
 
 Whether a corruption runtime scanner should exist as a separate service, and
 if so, how it signals the orchestrator (sync or async).
