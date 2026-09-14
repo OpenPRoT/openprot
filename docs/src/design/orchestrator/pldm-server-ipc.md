@@ -94,8 +94,9 @@ server over IPC. Firmware bytes do not pass through the orchestrator. After
 transfer, the FD asks the orchestrator for permission to verify, then runs
 FdOps::verify (which delegates to the crypto service; the crypto service
 reads the staged image directly from the device server). The orchestrator
-also grants apply before the FD commits the image. The orchestrator
-handles activation and SVN.
+also grants apply before the FD commits the image. The orchestrator handles
+activation. It does not touch the security revision here; that is a separate
+command the UA sends later, see "Security revision commit" below.
 
 ```mermaid
 sequenceDiagram
@@ -198,7 +199,7 @@ sequenceDiagram
     activate Orch
     Orch->>FD: ServiceCall: QueryStatus
     FD-->>Orch: Status::ActivationPending
-    Note right of Orch: bump SVN (irreversible),<br/>close SMC write filter
+    Note right of Orch: close SMC write filter
     Orch->>FD: ServiceCall: Activate
     FD-->>Orch: Ok
     deactivate Orch
@@ -210,6 +211,26 @@ sequenceDiagram
     end
 
     FD-->>UA: ActivateFirmware response (accepted)
+
+    Note over UA, DevSrv: SVN COMMIT (later, FD back in IDLE, new image running)
+
+    Note right of Orch: judge the boot, then<br/>TrialBoot::confirm or revert
+    UA->>FD: UpdateSecurityRevision (MCTP, 0x22)
+    FD->>Orch: USER signal (nudge: SVN commit requested)
+
+    rect rgb(230, 240, 255)
+    activate Orch
+    Orch->>FD: ServiceCall: QueryStatus
+    FD-->>Orch: Status::SvnCommitPending { component }
+    Note right of Orch: a confirmed trial only,<br/>else DenySvnCommit
+    Orch->>DevSrv: ServiceCall: SvnFloor::advance
+    DevSrv-->>Orch: signal: Ok
+    Orch->>FD: ServiceCall: GrantSvnCommit
+    FD-->>Orch: Ok
+    deactivate Orch
+    end
+
+    FD-->>UA: UpdateSecurityRevision response (success)
 
     Note over UA, Orch: CANCEL (between AcceptOffer and Activate)
     UA->>FD: CancelUpdate (MCTP)
@@ -328,7 +349,6 @@ sequenceDiagram
     activate Orch
     Orch->>FD: ServiceCall: QueryStatus
     FD-->>Orch: Status::ActivationPending
-    Note right of Orch: bump SVN (irreversible)
     Orch->>FD: ServiceCall: Activate
     FD-->>Orch: Ok
     deactivate Orch
@@ -340,6 +360,26 @@ sequenceDiagram
     end
 
     FD-->>UA: ActivateFirmware response (accepted)
+
+    Note over UA, DevSrv: SVN COMMIT (later, FD back in IDLE, new image running)
+
+    Note right of Orch: judge the boot, then<br/>TrialBoot::confirm or revert
+    UA->>FD: UpdateSecurityRevision (MCTP, 0x22)
+    FD->>Orch: USER signal (nudge: SVN commit requested)
+
+    rect rgb(230, 240, 255)
+    activate Orch
+    Orch->>FD: ServiceCall: QueryStatus
+    FD-->>Orch: Status::SvnCommitPending { component }
+    Note right of Orch: a confirmed trial only,<br/>else DenySvnCommit
+    Orch->>DevSrv: ServiceCall: SvnFloor::advance
+    DevSrv-->>Orch: signal: Ok
+    Orch->>FD: ServiceCall: GrantSvnCommit
+    FD-->>Orch: Ok
+    deactivate Orch
+    end
+
+    FD-->>UA: UpdateSecurityRevision response (success)
 
     Note over UA, Orch: CANCEL (between AcceptOffer and Activate)
     UA->>FD: CancelUpdate (MCTP)
@@ -355,6 +395,29 @@ sequenceDiagram
     end
     FD-->>UA: CancelUpdate response
 ```
+
+## Security revision commit
+
+Activation does not raise the anti-rollback floor. If it did, a trial boot
+could never be reverted: the superseded image would sit below the new floor
+and refuse to run. DSP0267 1.3.0 keeps the two apart. The UA sets the
+Security Revision Number Delayed Update option (`UpdateOptionFlags` bit 2) on
+UpdateComponent, the FD applies and activates without touching the revision,
+and the UA sends UpdateSecurityRevision (command 0x22, section 12.19) once it
+is satisfied with the image. Until that command arrives a downgrade is still
+allowed, which is the window the trial boot lives in.
+
+The FD accepts 0x22 only in the IDLE state, so it arrives outside update mode,
+minutes or days after activation. It acts on the active running image, not a
+pending one, which is what makes it safe to gate on the boot verdict.
+
+The orchestrator owns the write. On a confirmed trial it advances `SvnFloor`
+for that component, then sends GrantSvnCommit so the FD can answer the UA. The
+FD relays the request and the answer and never touches the floor, the same
+split the rest of this design uses for anything irreversible. On an
+unconfirmed or absent trial the orchestrator denies with PolicyViolation and
+the FD returns UPDATE_SECURITY_REVISION_NOT_PERMITTED. DSP0267 has no code for
+a policy refusal, so that capability code is the nearest fit.
 
 ## IPC operations
 
@@ -378,9 +441,11 @@ const sized against the tightest watchdog, not a round number.
 | DenyVerify | orch -> FD | Block verify (e.g. isolated component); FD returns failure to UA |
 | GrantApply | orch -> FD | Authorize FD to run FdOps::apply |
 | DenyApply | orch -> FD | Block apply; FD returns failure to UA |
-| QueryStatus | orch -> FD | Read current FD state (phase, result, error); when OfferPending, includes offer data (target, total, transfer mode) |
-| Activate | orch -> FD | Authorize activation, after orchestrator bumps SVN |
+| QueryStatus | orch -> FD | Read current FD state (phase, result, error); when OfferPending, includes offer data (target, total, transfer mode, SVN delayed) |
+| Activate | orch -> FD | Authorize activation |
 | AckCancel | orch -> FD | Acknowledge cancel, release orchestrator-side resources |
+| GrantSvnCommit | orch -> FD | Tell the FD the floor is raised, so it can answer the UA |
+| DenySvnCommit | orch -> FD | Block the commit, reason PolicyViolation (no confirmed trial); FD answers the UA with UPDATE_SECURITY_REVISION_NOT_PERMITTED |
 
 ## Wire format
 
@@ -428,6 +493,7 @@ Events that trigger a nudge:
 - Verify pending (transfer complete, FD waiting for GrantVerify)
 - Apply pending (verify complete, FD waiting for GrantApply)
 - Activation requested (UA sent ActivateFirmware)
+- SVN commit requested (UA sent UpdateSecurityRevision)
 - Cancelled (UA sent CancelUpdate)
 - Error (FD entered an error state)
 
@@ -525,10 +591,17 @@ How the FD discovers which device server to open a channel to. Either
 AcceptOffer also carries the device identity, or the FD is statically wired
 to the staging device at init time.
 
-Whether the SVN bump should happen before or after Activate. Currently it
-happens on ActivationPending (before). If Activate fails, the SVN is spent.
-Moving it after is safer but means activation is not yet committed when the
-orchestrator authorizes it.
+What the orchestrator does when the UA omits SVNDelayedUpdate. The DSP0267
+default is an automatic bump during the update, which spends the floor before
+any boot is judged and makes revert useless. Either the FD refuses to enable
+a non-delayed update for a component that carries a security revision, or the
+orchestrator accepts the automatic path and its risk.
+
+What the orchestrator does if the UA never sends UpdateSecurityRevision. The
+trial confirms, the image runs, and the floor stays where it was, so the
+superseded image remains bootable indefinitely. Per DSP0267 this is the UA's
+call, and GetFirmwareParameters bit 4 tells it a commit is outstanding. Open
+whether the orchestrator should surface that anywhere else.
 
 Whether FdOps callbacks need priv_data for fw_download/verify/apply.
 
