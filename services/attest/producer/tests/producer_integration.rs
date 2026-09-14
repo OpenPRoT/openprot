@@ -25,15 +25,9 @@ fn config() -> AttestConfig {
     }
 }
 
-fn generate(
-    producer: &SoftwareAttestProducer,
-    nonce: &[u8],
-    evidence: &[u8],
-) -> Vec<u8, MAX_TOKEN_SIZE> {
+fn generate(producer: &SoftwareAttestProducer, nonce: &[u8]) -> Vec<u8, MAX_TOKEN_SIZE> {
     let mut out: Vec<u8, MAX_TOKEN_SIZE> = Vec::new();
-    producer
-        .generate_token(nonce, evidence, 0, &mut out)
-        .unwrap();
+    producer.generate_token(nonce, &mut out).unwrap();
     out
 }
 
@@ -49,10 +43,11 @@ fn decode_payload_map(
 ) -> std::vec::Vec<(ciborium::value::Value, ciborium::value::Value)> {
     let arr = unwrap_cose_sign1(token);
     let payload_bytes = arr[2].as_bytes().unwrap().clone();
-    // payload bytes decode to tag(61, map{...})
-    let tagged: ciborium::value::Value =
+    // payload bytes decode to tag(55799, tag(61, map{...}))
+    let outer: ciborium::value::Value =
         ciborium::de::from_reader(payload_bytes.as_slice()).unwrap();
-    let (_, map_val) = tagged.as_tag().unwrap();
+    let (_, cwt_tagged) = outer.as_tag().unwrap(); // strip tag(55799)
+    let (_, map_val) = cwt_tagged.as_tag().unwrap(); // strip tag(61)
     map_val.as_map().unwrap().clone()
 }
 
@@ -70,7 +65,7 @@ fn find_claim(
 #[test]
 fn token_is_four_element_cbor_array() {
     let producer = SoftwareAttestProducer::new(config());
-    let token = generate(&producer, b"testnonce12345678", &[]);
+    let token = generate(&producer, b"testnonce12345678");
     let arr = unwrap_cose_sign1(&token);
     assert_eq!(arr.len(), 4);
 }
@@ -78,7 +73,7 @@ fn token_is_four_element_cbor_array() {
 #[test]
 fn protected_header_is_bytes() {
     let producer = SoftwareAttestProducer::new(config());
-    let token = generate(&producer, b"n", &[]);
+    let token = generate(&producer, b"testnonce");
     let arr = unwrap_cose_sign1(&token);
     assert!(arr[0].as_bytes().is_some());
 }
@@ -86,7 +81,7 @@ fn protected_header_is_bytes() {
 #[test]
 fn signature_is_96_zero_bytes() {
     let producer = SoftwareAttestProducer::new(config());
-    let token = generate(&producer, b"n", &[]);
+    let token = generate(&producer, b"testnonce");
     let arr = unwrap_cose_sign1(&token);
     let sig = arr[3].as_bytes().unwrap();
     assert_eq!(sig.len(), 96);
@@ -99,7 +94,7 @@ fn signature_is_96_zero_bytes() {
 fn nonce_claim_matches_input() {
     let producer = SoftwareAttestProducer::new(config());
     let nonce = b"unique_nonce_bytes";
-    let token = generate(&producer, nonce, &[]);
+    let token = generate(&producer, nonce);
     let map = decode_payload_map(&token);
     let v = find_claim(&map, 10).unwrap(); // eat_nonce
     assert_eq!(v.as_bytes().unwrap(), nonce);
@@ -108,7 +103,7 @@ fn nonce_claim_matches_input() {
 #[test]
 fn hw_model_claim_matches_config() {
     let producer = SoftwareAttestProducer::new(config());
-    let token = generate(&producer, b"n", &[]);
+    let token = generate(&producer, b"testnonce");
     let map = decode_payload_map(&token);
     let v = find_claim(&map, 259).unwrap(); // hwmodel
     assert_eq!(v.as_text().unwrap(), "TestPlatform");
@@ -117,30 +112,10 @@ fn hw_model_claim_matches_config() {
 #[test]
 fn measurements_claim_contains_three_caliptra_components() {
     let producer = SoftwareAttestProducer::new(config());
-    let token = generate(&producer, b"n", &[]);
+    let token = generate(&producer, b"testnonce");
     let map = decode_payload_map(&token);
-    let v = find_claim(&map, -70000).unwrap(); // measurements
+    let v = find_claim(&map, 273).unwrap(); // measurements (OCP-EAT key 273)
     assert_eq!(v.as_array().unwrap().len(), 3);
-}
-
-// ── Evidence embedding ───────────────────────────────────────────────────────
-
-#[test]
-fn empty_evidence_omits_evidence_claim() {
-    let producer = SoftwareAttestProducer::new(config());
-    let token = generate(&producer, b"n", &[]);
-    let map = decode_payload_map(&token);
-    assert!(find_claim(&map, -70001).is_none());
-}
-
-#[test]
-fn evidence_bytes_embedded_verbatim() {
-    let producer = SoftwareAttestProducer::new(config());
-    let evidence = [0xDE, 0xAD, 0xBE, 0xEF];
-    let token = generate(&producer, b"n", &evidence);
-    let map = decode_payload_map(&token);
-    let v = find_claim(&map, -70001).unwrap();
-    assert_eq!(v.as_bytes().unwrap(), &evidence);
 }
 
 // ── Certificate chain ────────────────────────────────────────────────────────

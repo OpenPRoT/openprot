@@ -14,9 +14,9 @@ and a software stub for testing without physical hardware.
 |---|---|
 | `src/lib.rs` | Public re-exports; feature gates. |
 | `src/signer.rs` | `HwAttestProducer` and `SoftwareAttestProducer` (feature = `test-support`). |
-| `src/builder.rs` | Assembles the CBOR claim map, embeds raw evidence bytes, constructs the `COSE_Sign1` envelope. No verifier dependency. |
+| `src/builder.rs` | Assembles the CBOR claim map and constructs the `COSE_Sign1` envelope. No verifier dependency. |
 | `src/cert_ueid.rs` | Minimal DER walker: extracts the TCG UEID (OID 2.23.133.5.4.4) from the Caliptra DER certificate chain and verifies consistency across all certs that carry it. |
-| `src/dice_identity.rs` | Wraps the Caliptra mailbox calls that return the DER-encoded DICE certificate chain. |
+| `src/dice_identity.rs` | Retrieves the DER-encoded DICE certificate chain from the signer and validates it for Caliptra compliance: chain length ≥ 3, X.509 v3, and tcg-dice-MultiTcbInfo extension (OID 2.23.133.5.4.5) present on all non-root certificates. |
 | `src/measurements.rs` | Appends platform-registered `MeasurementProvider` outputs into the measurement buffer. Caliptra-internal measurements are written directly by `HwSigner::caliptra_measurements` before `collect()` is called. |
 
 ## Implementations
@@ -32,7 +32,7 @@ let mut producer = HwAttestProducer::new(&caliptra_driver, config);
 producer.add_provider(&uefi_measurements)?;
 
 let mut out: Vec<u8, MAX_TOKEN_SIZE> = Vec::new();
-producer.generate_token(&nonce, &evidence_cbor, iat, &mut out)?;
+producer.generate_token(&nonce, &mut out)?;
 ```
 
 ### `SoftwareAttestProducer` (feature = `test-support`)
@@ -45,7 +45,7 @@ hardware or driver is required.
 #[cfg(feature = "test-support")]
 let producer = SoftwareAttestProducer::new(config);
 let mut out: Vec<u8, MAX_TOKEN_SIZE> = Vec::new();
-producer.generate_token(&nonce, &[], 0, &mut out)?;
+producer.generate_token(&nonce, &mut out)?;
 ```
 
 Enable the feature in `Cargo.toml`:
@@ -58,22 +58,23 @@ openprot-attest-producer = { path = "services/attest/producer", features = ["tes
 ## Token structure
 
 `builder.rs` produces a `COSE_Sign1`-wrapped CWT conforming to the OCP-EAT
-profile. The protected header carries the algorithm identifier (`-35` = ES384)
-and the `x5chain` certificate chain. The CWT payload includes:
+profile. The protected header carries the algorithm identifier (`-35` = ES384).
+The CWT payload includes:
 
-| Claim | Key | Description |
-|---|---|---|
-| `iss` | 1 | Issuer derived from Caliptra device identity |
-| `iat` | 6 | Token creation timestamp |
-| `eat_nonce` | 10 | Caller-supplied freshness nonce (min 32 bytes) |
-| `ueid` | 256 | Device UEID extracted from the TCG UEID extension (OID 2.23.133.5.4.4) in the Caliptra AliasRT certificate. All certs in the chain that carry this extension are verified to agree before token assembly. |
-| `oemid` | 258 | OEM identifier (IANA PEN form) |
-| `hwmodel` | 259 | Hardware model string |
-| `dbgstat` | 263 | Debug status |
-| `sw-name` | 14 | Software component name |
-| `sw-version` | 15 | Software component version |
-| `measurements` | -70000 | Per-component firmware measurement records |
-| `concise-evidence` | -70001 | CBOR-serialized verifier appraisal results (omitted if no peer attestation) |
+Only claims explicitly defined in the OCP-EAT profile are included.
+Claims are written in CBOR deterministic encoding order (RFC 8949 §4.2.1).
+
+| Claim | Key | Required | Description |
+|---|---|---|---|
+| `eat_nonce` | 10 | MUST | Caller-supplied freshness nonce (8–64 bytes) |
+| `ueid` | 256 | OPTIONAL | Device UEID extracted from the TCG UEID extension (OID 2.23.133.5.4.4) in the Caliptra AliasRT certificate |
+| `oemid` | 258 | OPTIONAL | OEM identifier (IANA PEN form) |
+| `hwmodel` | 259 | OPTIONAL | Hardware model string |
+| `dbgstat` | 263 | MUST | Debug status (hardcoded 3 = disabled) |
+| `eat_profile` | 265 | MUST | OCP EAT profile OID `1.3.6.1.4.1.42623.1.3` |
+| `measurements` | 273 | MUST | Per-component firmware measurement records |
+
+The CWT payload is wrapped as `tag(55799, tag(61, map))` per the OCP profile requirement for self-described CBOR. The x5chain certificate chain is in the **unprotected** COSE header (key 33); only the algorithm identifier is in the protected header.
 
 ## Dependencies
 

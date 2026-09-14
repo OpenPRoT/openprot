@@ -27,13 +27,14 @@
 #![forbid(unsafe_code)]
 
 pub mod consts;
+mod caliptra;
 mod error;
 mod traits;
 mod types;
 
+pub use caliptra::HwSigner;
 pub use error::AttestError;
 pub use traits::AttestProducer;
 pub use types::{
-    AttestConfig, DigestAlgorithm, HwSigner, Measurement, MeasurementAuthority,
-    MeasurementProvider, OemId,
+    AttestConfig, DigestAlgorithm, Measurement, MeasurementAuthority, MeasurementProvider, OemId,
 };

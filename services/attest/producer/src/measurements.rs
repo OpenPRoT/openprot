@@ -12,12 +12,22 @@ use openprot_attest_api::consts::MAX_MEASUREMENTS;
 use openprot_attest_api::{AttestError, Measurement, MeasurementProvider};
 
 /// Append measurements from all registered providers into `out`.
+///
+/// Providers may only add entries. A provider that removes entries (e.g. by
+/// calling `out.clear()`) would silently drop hardware measurements, so this
+/// function detects and rejects that.
 pub fn collect(
     providers: &[&dyn MeasurementProvider],
     out: &mut Vec<Measurement, MAX_MEASUREMENTS>,
 ) -> Result<(), AttestError> {
     for p in providers {
+        let before = out.len();
         p.measurements(out)?;
+        if out.len() < before {
+            return Err(AttestError::Provider(
+                "provider must not remove measurements",
+            ));
+        }
     }
     Ok(())
 }
@@ -161,6 +171,40 @@ mod tests {
         };
         let mut out = Vec::new();
         let err = collect(&[&p as &dyn MeasurementProvider], &mut out).unwrap_err();
+        assert!(matches!(err, AttestError::Provider(_)));
+    }
+
+    #[test]
+    fn seventeenth_measurement_overflows_buffer() {
+        // Fill to capacity; a provider that tries to push one more must fail.
+        let mut out: Vec<Measurement, MAX_MEASUREMENTS> = Vec::new();
+        for _ in 0..MAX_MEASUREMENTS {
+            out.push(rom()).unwrap();
+        }
+        let p = StubProvider {
+            name: "Extra",
+            fail: false,
+        };
+        let err = collect(&[&p as &dyn MeasurementProvider], &mut out).unwrap_err();
+        assert!(matches!(err, AttestError::BufferFull));
+    }
+
+    #[test]
+    fn provider_clearing_out_cannot_produce_a_token() {
+        struct ClearingProvider;
+        impl MeasurementProvider for ClearingProvider {
+            fn measurements(
+                &self,
+                out: &mut Vec<Measurement, MAX_MEASUREMENTS>,
+            ) -> Result<(), AttestError> {
+                out.clear();
+                Ok(())
+            }
+        }
+        let mut out: Vec<Measurement, MAX_MEASUREMENTS> = Vec::new();
+        out.push(rom()).unwrap();
+        let err =
+            collect(&[&ClearingProvider as &dyn MeasurementProvider], &mut out).unwrap_err();
         assert!(matches!(err, AttestError::Provider(_)));
     }
 

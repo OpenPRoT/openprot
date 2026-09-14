@@ -112,6 +112,41 @@ pub fn extract_and_verify(
     Ok(leaf_ueid)
 }
 
+// ── Shared cert-level helpers ─────────────────────────────────────────────────
+
+/// Return `true` if `cert_der` is an X.509 v3 certificate (version field = 2).
+pub(crate) fn is_x509_v3(cert_der: &[u8]) -> bool {
+    const V3: [u8; 5] = [0xA0, 0x03, 0x02, 0x01, 0x02];
+    sequence_body(cert_der)
+        .and_then(sequence_body)
+        .and_then(|b| b.get(..5))
+        .map_or(false, |v| v == V3)
+}
+
+/// Return `true` if `cert_der` contains an X.509 extension whose OID bytes
+/// (full DER TLV, e.g. `06 06 ...`) match `oid`.  Returns `Ok(false)` if the
+/// certificate carries no extensions at all (valid for root CA certs).
+pub(crate) fn has_extension_oid(cert_der: &[u8], oid: &[u8]) -> Result<bool, AttestError> {
+    let tbs = sequence_body(cert_der).ok_or(AttestError::Caliptra("cert: bad outer SEQUENCE"))?;
+    let tbs_body = sequence_body(tbs).ok_or(AttestError::Caliptra("cert: bad TBS SEQUENCE"))?;
+    let ext_wrapper = match find_tag(tbs_body, 0xa3) {
+        Some(e) => e,
+        None => return Ok(false),
+    };
+    let ext_seq = sequence_body(ext_wrapper)
+        .ok_or(AttestError::Caliptra("cert: bad extensions SEQUENCE"))?;
+    let mut remaining = ext_seq;
+    while !remaining.is_empty() {
+        let (ext_body, rest) = take_sequence(remaining)
+            .ok_or(AttestError::Caliptra("cert: bad extension entry"))?;
+        remaining = rest;
+        if ext_body.starts_with(oid) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 // ── DER primitives ────────────────────────────────────────────────────────────
 
 /// Parse a DER length field at `data[0..]`. Returns `(length, bytes_consumed)`.

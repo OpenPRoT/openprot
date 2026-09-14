@@ -49,27 +49,17 @@ impl AttestProducer for HwAttestProducer<'_> {
     fn generate_token(
         &self,
         nonce: &[u8],
-        evidence: &[u8],
-        iat: u64,
         out: &mut Vec<u8, MAX_TOKEN_SIZE>,
     ) -> Result<(), AttestError> {
         let mut chain: Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN> = Vec::new();
         self.signer.cert_chain_der(&mut chain)?;
+        dice_identity::validate_chain(&chain)?;
         let ueid = cert_ueid::extract_and_verify(&chain)?;
 
         let mut meas: Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS> = Vec::new();
         self.signer.caliptra_measurements(&mut meas)?;
         measurements::collect(&self.providers, &mut meas)?;
-        builder::build(
-            &self.config,
-            self.signer,
-            &ueid,
-            &meas,
-            nonce,
-            evidence,
-            iat,
-            out,
-        )
+        builder::build(&self.config, self.signer, &ueid, &meas, nonce, out)
     }
 
     fn cert_chain(
@@ -102,8 +92,6 @@ impl AttestProducer for SoftwareAttestProducer {
     fn generate_token(
         &self,
         nonce: &[u8],
-        evidence: &[u8],
-        iat: u64,
         out: &mut Vec<u8, MAX_TOKEN_SIZE>,
     ) -> Result<(), AttestError> {
         // Stub UEID: type EAT_RAND (0x01) followed by 16 deterministic bytes.
@@ -112,16 +100,7 @@ impl AttestProducer for SoftwareAttestProducer {
             0x55, 0x66, 0x77,
         ];
         let meas = measurements::test_caliptra_measurements();
-        builder::build(
-            &self.config,
-            &StubSigner,
-            &stub_ueid,
-            &meas,
-            nonce,
-            evidence,
-            iat,
-            out,
-        )
+        builder::build(&self.config, &StubSigner, &stub_ueid, &meas, nonce, out)
     }
 
     fn cert_chain(
@@ -173,5 +152,64 @@ impl HwSigner for StubSigner {
             out.push(m).map_err(|_| AttestError::BufferFull)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::time::Duration;
+    use heapless::{String, Vec};
+    use openprot_attest_api::consts::{MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_MEASUREMENTS, MAX_TOKEN_SIZE};
+    use openprot_attest_api::{AttestConfig, AttestError, OemId};
+
+    /// A signer that returns a two-cert chain of stub DER (below the 3-cert minimum).
+    struct ShortChainSigner;
+
+    impl HwSigner for ShortChainSigner {
+        fn sign(&self, _: &[u8]) -> Result<[u8; 96], AttestError> {
+            Ok([0u8; 96])
+        }
+        fn cert_chain_der(
+            &self,
+            buf: &mut Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN>,
+        ) -> Result<(), AttestError> {
+            for _ in 0..2 {
+                let mut c: Vec<u8, MAX_CERT_SIZE> = Vec::new();
+                c.extend_from_slice(&STUB_CERT).unwrap();
+                buf.push(c).map_err(|_| AttestError::BufferFull)?;
+            }
+            Ok(())
+        }
+        fn caliptra_measurements(
+            &self,
+            _out: &mut Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS>,
+        ) -> Result<(), AttestError> {
+            Ok(())
+        }
+    }
+
+    fn config() -> AttestConfig {
+        let mut hw_model: String<64> = String::new();
+        hw_model.push_str("TestModel").unwrap();
+        let mut oemid_bytes: Vec<u8, 16> = Vec::new();
+        oemid_bytes
+            .extend_from_slice(&[0x00, 0x01, 0x47, 0xae])
+            .unwrap();
+        AttestConfig {
+            oemid: OemId(oemid_bytes),
+            hw_model,
+            cert_cache_ttl: Duration::from_secs(3600),
+        }
+    }
+
+    #[test]
+    fn generate_token_rejects_chain_with_fewer_than_three_certs() {
+        let producer = HwAttestProducer::new(&ShortChainSigner, config());
+        let mut out: Vec<u8, MAX_TOKEN_SIZE> = Vec::new();
+        let err = producer
+            .generate_token(b"testnonce", &mut out)
+            .unwrap_err();
+        assert!(matches!(err, AttestError::Caliptra(_)));
     }
 }

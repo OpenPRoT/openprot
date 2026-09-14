@@ -15,9 +15,7 @@ firmware stack.
 | `openprot-attest-api` | `api/` | Platform-independent traits and types. Callers depend on this crate only. |
 | `openprot-attest-producer` | `producer/` | Concrete token producer backed by Caliptra hardware or a software stub. |
 
-Neither crate depends on the verifier module or `spdm-lib`. Evidence from the
-verifier is accepted as a raw CBOR byte slice (`&[u8]`), keeping the producer
-decoupled from verifier internals.
+Neither crate depends on the verifier module or `spdm-lib`.
 
 ## Bazel targets
 
@@ -50,15 +48,6 @@ cargo build
 cargo test -p openprot-attest-producer --features test-support
 cargo test --features test-support
 ```
-
-## Relationship to the verifier
-
-The attester and verifier are deliberately decoupled. The verifier
-(`attestation/src/verifier/`) produces a CBOR-serialized `AttestEvidence`
-value that is passed to `AttestProducer::generate_token` as the `evidence`
-byte slice. The producer embeds it verbatim as the `concise-evidence` claim
-(key `-70001`) in the outgoing OCP-EAT token. The outer `COSE_Sign1`
-signature covers the embedded evidence.
 
 ## Standards
 

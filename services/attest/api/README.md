@@ -22,7 +22,8 @@ in hardware dependencies.
 |---|---|
 | `src/lib.rs` | Public re-exports. `#![no_std]` `#![forbid(unsafe_code)]`. |
 | `src/traits.rs` | `AttestProducer` trait. |
-| `src/types.rs` | `Measurement`, `DigestAlgorithm`, `MeasurementAuthority`, `AttestConfig`, `OemId`, `HwSigner` trait, `MeasurementProvider` trait. |
+| `src/caliptra.rs` | `HwSigner` trait — Caliptra-specific signing and certificate operations. |
+| `src/types.rs` | `Measurement`, `DigestAlgorithm`, `MeasurementAuthority`, `AttestConfig`, `OemId`, `MeasurementProvider` trait. |
 | `src/consts.rs` | Fixed-capacity constants (`MAX_CERT_SIZE`, `MAX_CHAIN_LEN`, etc.). |
 | `src/error.rs` | `AttestError` — shared error type for both service crates. |
 
@@ -38,8 +39,6 @@ pub trait AttestProducer {
     fn generate_token(
         &self,
         nonce: &[u8],
-        evidence: &[u8],
-        iat: u64,
         out: &mut Vec<u8, MAX_TOKEN_SIZE>,
     ) -> Result<(), AttestError>;
 
@@ -50,11 +49,7 @@ pub trait AttestProducer {
 }
 ```
 
-`evidence` is the raw CBOR output of the verifier service. Pass an empty slice
-when no peer attestation has been performed. The bytes are embedded verbatim as
-the `concise-evidence` claim (key `-70001`) in the OCP-EAT token. `iat` is a
-Unix timestamp (seconds since epoch) supplied by the caller. The encoded token
-is appended to the caller-supplied `out` buffer.
+The encoded token is appended to the caller-supplied `out` buffer.
 
 ### `HwSigner`
 

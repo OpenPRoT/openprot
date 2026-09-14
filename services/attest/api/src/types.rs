@@ -6,8 +6,8 @@ use core::time::Duration;
 use heapless::{String, Vec};
 
 use crate::consts::{
-    MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_COMPONENT_LEN, MAX_DIGEST_LEN, MAX_HW_MODEL_LEN,
-    MAX_MEASUREMENTS, MAX_OEMID_LEN, MAX_VERSION_LEN,
+    MAX_COMPONENT_LEN, MAX_DIGEST_LEN, MAX_HW_MODEL_LEN, MAX_MEASUREMENTS, MAX_OEMID_LEN,
+    MAX_VERSION_LEN,
 };
 use crate::error::AttestError;
 
@@ -42,26 +42,6 @@ pub struct AttestConfig {
     pub oemid: OemId,
     pub hw_model: String<MAX_HW_MODEL_LEN>,
     pub cert_cache_ttl: Duration,
-}
-
-/// Hardware-backed signing operations.
-///
-/// Production: implemented by a platform mailbox driver.
-/// Testing: implement with a software key (`SoftwareAttestProducer` in the
-/// producer crate behind `test-support`).
-pub trait HwSigner {
-    /// Sign `payload` with the platform alias key. Returns raw (r‖s) bytes.
-    fn sign(&self, payload: &[u8]) -> Result<[u8; 96], AttestError>;
-    /// Return the full DER-encoded certificate chain, leaf → root.
-    fn cert_chain_der(
-        &self,
-        buf: &mut Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN>,
-    ) -> Result<(), AttestError>;
-    /// Return Caliptra-internal firmware measurements (ROM, FMC, runtime, etc.).
-    fn caliptra_measurements(
-        &self,
-        out: &mut Vec<Measurement, MAX_MEASUREMENTS>,
-    ) -> Result<(), AttestError>;
 }
 
 /// Platform-specific measurement source.
