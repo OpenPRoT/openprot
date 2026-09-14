@@ -69,8 +69,9 @@ Design decisions:
   full pipeline (read from device server, hash, check signature) in its
   own process. The FD never touches image data or hash state, and there
   is no accumulated state to lose on cancel.
-- Nudges are FD to orchestrator only, level-triggered USER signals (same
-  Pigweed kernel mechanism as #458, reversed). The FD raises the signal
+- Nudges are FD to orchestrator only, level-triggered USER signals. Same
+  mechanism the i2c server-runtime uses to announce a latched slave receive
+  (services/i2c/server-runtime/src/lib.rs:18). The FD raises the signal
   when the orchestrator needs to act (offer ready, grant needed, phase
   complete). The orchestrator lowers it after reading the current state.
 - All orchestrator-to-FD IPC ops get an immediate `Reply`, no
@@ -100,7 +101,7 @@ handles activation and SVN.
 sequenceDiagram
     participant UA as UA (BMC)<br/>remote, over MCTP
     participant FD as PLDM-FD (server)<br/>dispatch loop + run_terminus
-    participant Orch as Orchestrator (client)<br/>channel_transact
+    participant Orch as Orchestrator (client)<br/>ServiceCall
     participant DevSrv as Device Server<br/>manages the SPI flash
     participant Crypto as Crypto Service<br/>hash + signature verification
 
@@ -121,10 +122,10 @@ sequenceDiagram
 
     rect rgb(230, 240, 255)
     activate Orch
-    Orch->>FD: channel_transact: QueryStatus
+    Orch->>FD: ServiceCall: QueryStatus
     FD-->>Orch: Status::OfferPending { target, total, mode: InTransport }
     Note right of Orch: validate target + total,<br/>platform driver picks<br/>staging address,<br/>reserve staging,<br/>open SMC write filter
-    Orch->>FD: channel_transact: AcceptOffer { base: FlashAddress }
+    Orch->>FD: ServiceCall: AcceptOffer { base: FlashAddress }
     FD-->>Orch: Ok
     deactivate Orch
     end
@@ -147,10 +148,10 @@ sequenceDiagram
 
     rect rgb(230, 240, 255)
     activate Orch
-    Orch->>FD: channel_transact: QueryStatus
+    Orch->>FD: ServiceCall: QueryStatus
     FD-->>Orch: Status::VerifyPending
     Note right of Orch: check isolation, update policy
-    Orch->>FD: channel_transact: GrantVerify
+    Orch->>FD: ServiceCall: GrantVerify
     FD-->>Orch: Ok
     deactivate Orch
     end
@@ -173,9 +174,9 @@ sequenceDiagram
 
     rect rgb(230, 240, 255)
     activate Orch
-    Orch->>FD: channel_transact: QueryStatus
+    Orch->>FD: ServiceCall: QueryStatus
     FD-->>Orch: Status::ApplyPending { verify_ok: true }
-    Orch->>FD: channel_transact: GrantApply
+    Orch->>FD: ServiceCall: GrantApply
     FD-->>Orch: Ok
     deactivate Orch
     end
@@ -195,10 +196,10 @@ sequenceDiagram
 
     rect rgb(230, 240, 255)
     activate Orch
-    Orch->>FD: channel_transact: QueryStatus
+    Orch->>FD: ServiceCall: QueryStatus
     FD-->>Orch: Status::ActivationPending
     Note right of Orch: bump SVN (irreversible),<br/>close SMC write filter
-    Orch->>FD: channel_transact: Activate
+    Orch->>FD: ServiceCall: Activate
     FD-->>Orch: Ok
     deactivate Orch
     end
@@ -215,10 +216,10 @@ sequenceDiagram
     FD->>Orch: USER signal (nudge: cancelled)
     rect rgb(230, 240, 255)
     activate Orch
-    Orch->>FD: channel_transact: QueryStatus
+    Orch->>FD: ServiceCall: QueryStatus
     FD-->>Orch: Status::Cancelled
     Note right of Orch: release staging,<br/>close SMC write filter
-    Orch->>FD: channel_transact: AckCancel
+    Orch->>FD: ServiceCall: AckCancel
     FD-->>Orch: Ok
     deactivate Orch
     end
@@ -237,7 +238,7 @@ and apply phases still run through FdOps with the same gatekeeper pattern.
 sequenceDiagram
     participant UA as UA (BMC)<br/>remote, over MCTP
     participant FD as PLDM-FD (server)<br/>dispatch loop + run_terminus
-    participant Orch as Orchestrator (client)<br/>channel_transact
+    participant Orch as Orchestrator (client)<br/>ServiceCall
     participant DevSrv as Device Server<br/>manages the SPI flash
     participant Crypto as Crypto Service<br/>hash + signature verification
 
@@ -258,10 +259,10 @@ sequenceDiagram
 
     rect rgb(230, 240, 255)
     activate Orch
-    Orch->>FD: channel_transact: QueryStatus
+    Orch->>FD: ServiceCall: QueryStatus
     FD-->>Orch: Status::OfferPending { target, total, mode: OutOfTransport }
     Note right of Orch: validate target + total,<br/>platform driver picks<br/>staging address
-    Orch->>FD: channel_transact: AcceptOffer { base: FlashAddress }
+    Orch->>FD: ServiceCall: AcceptOffer { base: FlashAddress }
     Note left of FD: FD does not write in<br/>out-of-transport, but the<br/>orchestrator communicates the<br/>base address to the third party<br/>that pre-stages the image
     FD-->>Orch: Ok
     deactivate Orch
@@ -277,10 +278,10 @@ sequenceDiagram
 
     rect rgb(230, 240, 255)
     activate Orch
-    Orch->>FD: channel_transact: QueryStatus
+    Orch->>FD: ServiceCall: QueryStatus
     FD-->>Orch: Status::VerifyPending
     Note right of Orch: check isolation, update policy
-    Orch->>FD: channel_transact: GrantVerify
+    Orch->>FD: ServiceCall: GrantVerify
     FD-->>Orch: Ok
     deactivate Orch
     end
@@ -303,9 +304,9 @@ sequenceDiagram
 
     rect rgb(230, 240, 255)
     activate Orch
-    Orch->>FD: channel_transact: QueryStatus
+    Orch->>FD: ServiceCall: QueryStatus
     FD-->>Orch: Status::ApplyPending { verify_ok: true }
-    Orch->>FD: channel_transact: GrantApply
+    Orch->>FD: ServiceCall: GrantApply
     FD-->>Orch: Ok
     deactivate Orch
     end
@@ -325,10 +326,10 @@ sequenceDiagram
 
     rect rgb(230, 240, 255)
     activate Orch
-    Orch->>FD: channel_transact: QueryStatus
+    Orch->>FD: ServiceCall: QueryStatus
     FD-->>Orch: Status::ActivationPending
     Note right of Orch: bump SVN (irreversible)
-    Orch->>FD: channel_transact: Activate
+    Orch->>FD: ServiceCall: Activate
     FD-->>Orch: Ok
     deactivate Orch
     end
@@ -345,10 +346,10 @@ sequenceDiagram
     FD->>Orch: USER signal (nudge: cancelled)
     rect rgb(230, 240, 255)
     activate Orch
-    Orch->>FD: channel_transact: QueryStatus
+    Orch->>FD: ServiceCall: QueryStatus
     FD-->>Orch: Status::Cancelled
     Note right of Orch: discard the accepted offer
-    Orch->>FD: channel_transact: AckCancel
+    Orch->>FD: ServiceCall: AckCancel
     FD-->>Orch: Ok
     deactivate Orch
     end
@@ -357,9 +358,17 @@ sequenceDiagram
 
 ## IPC operations
 
-The orchestrator's IPC vocabulary. Each is a `channel_transact` call with a
-named timeout constant: request in, response out, no state kept on the wire.
-Every op returns immediately.
+The orchestrator's IPC vocabulary. Each one is a `ServiceCall`: request in,
+response out, nothing kept on the wire between them. The FD answers every op
+from state it already holds, so the answer is back by the orchestrator's next
+wake.
+
+A blocking `channel_transact` would work here too, and is less machinery, but
+only with a timeout small enough to keep the orchestrator reactive. A transact
+in flight delays every boot watchdog by up to that timeout, because
+`BootWatchdogs::wait_deadline` is what feeds `object_wait`
+(services/orchestrator/server/src/runtime.rs). Going that way means a named
+const sized against the tightest watchdog, not a round number.
 
 | Op | Direction | Purpose |
 |---|---|---|
@@ -373,11 +382,45 @@ Every op returns immediately.
 | Activate | orch -> FD | Authorize activation, after orchestrator bumps SVN |
 | AckCancel | orch -> FD | Acknowledge cancel, release orchestrator-side resources |
 
+## Wire format
+
+Fixed 8-byte header. Most ops carry no payload.
+
+```text
+Request:
++----+-------+-----+----------+
+| op | flags | gen | reserved |  + [args]
+| 1B |  1B   | 2B  |    4B    |
++----+-------+-----+----------+
+
+Response:
++------+-------+-----+-------------+
+| code | flags | gen | payload_len |  + [payload]
+|  1B  |  1B   | 2B  |    2B LE    |
++------+-------+-----+-------------+
+```
+
+`op` decodes through `TryFrom<u8>` and an unknown value is a decode error, not
+a panic. Decode failures get their own type: Truncated, InvalidOpcode,
+BufferTooSmall, PayloadTooLarge. MAX_REQUEST_SIZE and MAX_RESPONSE_SIZE live in
+the api crate and size the buffers on both sides.
+
+`code` is the on-wire result. The error type the orchestrator's client hands
+back is a separate type that wraps it, the way MctpError wraps ResponseCode. A
+deny carries its reason: Isolated, PolicyViolation, UnknownTarget, Busy. The FD
+maps each one onto a DSP0267 completion code for the UA.
+
+`gen` is the FD's phase generation, still open. See the open question on
+whether a grant carries a token.
+
 ## Nudges
 
 The FD raises a USER signal on the orchestrator's `WaitGroup` when state
-changes. Level-triggered (OR'd into active_signals, persists until lowered),
-same mechanism as the MCTP server uses for drive_pending notifications. The
+changes. Level-triggered (OR'd into active_signals, persists until lowered).
+Every Signals::USER in this tree is i2c's: the server raises it on a bus
+channel and the client answers with SlaveReceive. The MCTP server raises no
+USER signal, and its drive_pending is a deferred channel_respond rather than a
+wake. The
 orchestrator lowers the signal after reading the new state via QueryStatus.
 
 Events that trigger a nudge:
@@ -393,6 +436,34 @@ to learn what happened. One bit, no framing, no lost
 messages. The parentheticals in the diagrams (e.g. "nudge: offer ready")
 name the state the orchestrator will find via QueryStatus, not data on the
 signal.
+
+## Crate layout
+
+Five crates, split so the protocol path builds and tests on the host. Same
+split as services/i2c.
+
+| Crate | Builds on | Holds |
+|---|---|---|
+| pldm-ipc-api | host | wire format, opcodes, error types, the seam trait |
+| pldm-ipc-server | host | `dispatch_pldm_op`, pure, plus the loopback transport |
+| pldm-ipc-server-runtime | kernel | object_wait, channel_read, channel_respond |
+| orchestrator-pldm-client | host | all the marshalling, generic over a Transport |
+| orchestrator-pldm-client-ipc | kernel | Transport over the kernel call, around 40 lines |
+
+Two crates are kernel-tagged and neither holds protocol logic. That is what
+lets the loopback run the real client encoders against the real dispatch with
+no kernel, the way services/i2c/server/src/loopback.rs does. It is also the
+debugging seam for interfacing problems between the two processes: malformed
+frames, reserved bits set, a grant with no offer, an op in the wrong phase.
+
+The FD's runtime is not an i2c clone. It multiplexes the orchestrator channel
+with the MCTP responder and run_terminus in one WaitGroup, where i2c's
+multiplexes bus channels and an IRQ.
+
+Each side treats the other as untrusted, since they are separate processes.
+Every fault, a malformed frame included, comes back as a well-formed rejection
+and neither dispatch panics. The FD holds the live PLDM session, so a panic
+there loses the update.
 
 ## FdOps and IPC services
 
