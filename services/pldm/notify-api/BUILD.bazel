@@ -1,0 +1,21 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+# Contract only: both processes decode this, so it carries no transport and no
+# state and builds on the host. Untagged, so a kernel binary links it as-is.
+rust_library(
+    name = "pldm_notify_api",
+    srcs = ["src/lib.rs"],
+    crate_name = "openprot_pldm_notify_api",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@rust_crates//:zerocopy"],
+)
+
+# Host wire tests: build on the host platform, no kernel/QEMU.
+rust_test(
+    name = "pldm_notify_api_test",
+    crate = ":pldm_notify_api",
+)
