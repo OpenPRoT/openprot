@@ -664,7 +664,11 @@ What the orchestrator does when the UA omits SVNDelayedUpdate. The DSP0267
 default is an automatic bump during the update, which spends the floor before
 any boot is judged and makes revert useless. Either the FD refuses to enable
 a non-delayed update for a component that carries a security revision, or the
-orchestrator accepts the automatic path and its risk.
+orchestrator accepts the automatic path and its risk. Refusing needs a
+completion code DSP0267 does not have for UpdateComponent, the same problem the
+0x22 path solved by picking the nearest capability code. The refusal also has to
+land in the UpdateComponent response, not later: by the time the orchestrator
+sees the offer over QueryStatus, the FD has already answered the UA.
 
 What the orchestrator does if the UA never sends UpdateSecurityRevision. The
 trial confirms, the image runs, and the floor stays where it was, so the
@@ -714,6 +718,25 @@ a bound on transfer time.
 
 Whether a corruption runtime scanner should exist as a separate service, and
 if so, how it signals the orchestrator (sync or async).
+
+What happens when the crypto service dies or never answers. FdOps::verify
+sends one ServiceCall and polls for the completion signal. If that signal never
+arrives the FD polls forever, the UA gets no VerifyComplete, and nothing in the
+design notices. The FD needs a deadline on that call and a DSP0267 code for the
+timeout. The FD's other ServiceCalls to the device server have the same shape
+and need the same answer.
+
+What Status::Error is. The nudge list has "Error (FD entered an error state)"
+but no such status is defined here. It needs an error value, and it needs to say
+whether the session can continue or the UA has to start over from RequestUpdate.
+
+Where FdOps::cancel_update_component belongs in the flow. The callback is in the
+FdOps table and in neither diagram, not even in the CancelUpdate box that ought
+to call it. The rejected-offer case is part of the RejectOffer question above.
+
+Whether Status::ApplyPending should carry why verify failed. It carries
+verify_ok as a bool today, so the orchestrator cannot tell a bad signature from
+an expired certificate, and the FD picks the DSP0267 code on its own.
 
 How the orchestrator opens and closes the SMC write filter: an IPC op on
 the device server (which already manages the SPI flash), or a register it
