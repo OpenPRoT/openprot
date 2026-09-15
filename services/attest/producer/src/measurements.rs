@@ -203,8 +203,7 @@ mod tests {
         }
         let mut out: Vec<Measurement, MAX_MEASUREMENTS> = Vec::new();
         out.push(rom()).unwrap();
-        let err =
-            collect(&[&ClearingProvider as &dyn MeasurementProvider], &mut out).unwrap_err();
+        let err = collect(&[&ClearingProvider as &dyn MeasurementProvider], &mut out).unwrap_err();
         assert!(matches!(err, AttestError::Provider(_)));
     }
 

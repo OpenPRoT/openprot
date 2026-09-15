@@ -120,7 +120,7 @@ pub(crate) fn is_x509_v3(cert_der: &[u8]) -> bool {
     sequence_body(cert_der)
         .and_then(sequence_body)
         .and_then(|b| b.get(..5))
-        .map_or(false, |v| v == V3)
+        .is_some_and(|v| v == V3)
 }
 
 /// Return `true` if `cert_der` contains an X.509 extension whose OID bytes
@@ -133,12 +133,12 @@ pub(crate) fn has_extension_oid(cert_der: &[u8], oid: &[u8]) -> Result<bool, Att
         Some(e) => e,
         None => return Ok(false),
     };
-    let ext_seq = sequence_body(ext_wrapper)
-        .ok_or(AttestError::Caliptra("cert: bad extensions SEQUENCE"))?;
+    let ext_seq =
+        sequence_body(ext_wrapper).ok_or(AttestError::Caliptra("cert: bad extensions SEQUENCE"))?;
     let mut remaining = ext_seq;
     while !remaining.is_empty() {
-        let (ext_body, rest) = take_sequence(remaining)
-            .ok_or(AttestError::Caliptra("cert: bad extension entry"))?;
+        let (ext_body, rest) =
+            take_sequence(remaining).ok_or(AttestError::Caliptra("cert: bad extension entry"))?;
         remaining = rest;
         if ext_body.starts_with(oid) {
             return Ok(true);

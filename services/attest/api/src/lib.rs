@@ -26,8 +26,8 @@
 #![no_std]
 #![forbid(unsafe_code)]
 
-pub mod consts;
 mod caliptra;
+pub mod consts;
 mod error;
 mod traits;
 mod types;

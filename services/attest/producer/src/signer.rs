@@ -160,7 +160,9 @@ mod tests {
     use super::*;
     use core::time::Duration;
     use heapless::{String, Vec};
-    use openprot_attest_api::consts::{MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_MEASUREMENTS, MAX_TOKEN_SIZE};
+    use openprot_attest_api::consts::{
+        MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_MEASUREMENTS, MAX_TOKEN_SIZE,
+    };
     use openprot_attest_api::{AttestConfig, AttestError, OemId};
 
     /// A signer that returns a two-cert chain of stub DER (below the 3-cert minimum).
@@ -207,9 +209,7 @@ mod tests {
     fn generate_token_rejects_chain_with_fewer_than_three_certs() {
         let producer = HwAttestProducer::new(&ShortChainSigner, config());
         let mut out: Vec<u8, MAX_TOKEN_SIZE> = Vec::new();
-        let err = producer
-            .generate_token(b"testnonce", &mut out)
-            .unwrap_err();
+        let err = producer.generate_token(b"testnonce", &mut out).unwrap_err();
         assert!(matches!(err, AttestError::Caliptra(_)));
     }
 }

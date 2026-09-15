@@ -441,7 +441,7 @@ mod tests {
         assert_eq!(d.str().unwrap(), "Signature1"); // context string
         assert!(!d.bytes().unwrap().is_empty()); // phdr_bstr (non-empty)
         assert!(d.bytes().unwrap().is_empty()); // aad = h''
-        // payload_bstr decodes to tag(55799, tag(61, CWT map))
+                                                // payload_bstr decodes to tag(55799, tag(61, CWT map))
         let payload_bstr = d.bytes().unwrap();
         let mut pd = minicbor::Decoder::new(payload_bstr);
         assert_eq!(pd.tag().unwrap(), minicbor::data::Tag::new(55799));

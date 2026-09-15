@@ -181,7 +181,9 @@ mod tests {
             let mut ext_body: heapless::Vec<u8, 32> = heapless::Vec::new();
             ext_body.extend_from_slice(&oid).unwrap();
             ext_body.extend_from_slice(&extn_val).unwrap();
-            ext_items.extend_from_slice(&der_tlv(0x30, &ext_body)).unwrap();
+            ext_items
+                .extend_from_slice(&der_tlv(0x30, &ext_body))
+                .unwrap();
         }
         let ext_wrapper = der_tlv(0xa3, &der_tlv(0x30, &ext_items));
 
@@ -200,7 +202,9 @@ mod tests {
 
         // Outer cert SEQUENCE { TBS, algId, signature }
         let mut cert_body: heapless::Vec<u8, 256> = heapless::Vec::new();
-        cert_body.extend_from_slice(&der_tlv(0x30, &tbs_body)).unwrap();
+        cert_body
+            .extend_from_slice(&der_tlv(0x30, &tbs_body))
+            .unwrap();
         cert_body.extend_from_slice(&[0x30, 0x00]).unwrap(); // placeholder algId
         cert_body.extend_from_slice(&[0x03, 0x01, 0x00]).unwrap(); // placeholder sig
 
