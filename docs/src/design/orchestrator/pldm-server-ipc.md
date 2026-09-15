@@ -161,9 +161,11 @@ sequenceDiagram
 
     rect rgb(230, 255, 230)
     FD->>Crypto: ServiceCall::start(VerifyRequest { addr, size })
-    Note over FD: verify() polls return 0% until signal
     Crypto->>DevSrv: read staged image
     DevSrv-->>Crypto: image data
+    loop fd_progress poll
+        Note over FD: verify() returns 0%, no signal yet
+    end
     Crypto-->>FD: signal: Verdict
     Note over FD: verify() poll: try_recv -> 100% + verdict
     end
@@ -185,8 +187,12 @@ sequenceDiagram
     Note over FD, DevSrv: FdOps::apply
 
     rect rgb(230, 255, 230)
-    FD->>DevSrv: ServiceCall: FdOps::apply: commit staged image
+    FD->>DevSrv: ServiceCall::start(apply: commit staged image)
+    loop fd_progress poll
+        Note over FD: apply() returns 0%, no signal yet
+    end
     DevSrv-->>FD: signal: Ok
+    Note over FD: apply() poll: try_recv -> 100%
     end
     FD->>UA: ApplyComplete (MCTP)
 
@@ -311,9 +317,11 @@ sequenceDiagram
 
     rect rgb(230, 255, 230)
     FD->>Crypto: ServiceCall::start(VerifyRequest { addr, size })
-    Note over FD: verify() polls return 0% until signal
     Crypto->>DevSrv: read staged image
     DevSrv-->>Crypto: image data
+    loop fd_progress poll
+        Note over FD: verify() returns 0%, no signal yet
+    end
     Crypto-->>FD: signal: Verdict
     Note over FD: verify() poll: try_recv -> 100% + verdict
     end
@@ -335,8 +343,12 @@ sequenceDiagram
     Note over FD, DevSrv: FdOps::apply
 
     rect rgb(230, 255, 230)
-    FD->>DevSrv: ServiceCall: FdOps::apply: commit staged image
+    FD->>DevSrv: ServiceCall::start(apply: commit staged image)
+    loop fd_progress poll
+        Note over FD: apply() returns 0%, no signal yet
+    end
     DevSrv-->>FD: signal: Ok
+    Note over FD: apply() poll: try_recv -> 100%
     end
     FD->>UA: ApplyComplete (MCTP)
 
