@@ -1,0 +1,233 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+//! Firmware measurement collection.
+//!
+//! Aggregates Caliptra-internal measurements (ROM, FMC, RT digests) with any
+//! platform-registered [`MeasurementProvider`] instances.
+
+use heapless::Vec;
+
+use openprot_attest_api::consts::MAX_MEASUREMENTS;
+use openprot_attest_api::{AttestError, Measurement, MeasurementProvider};
+
+/// Append measurements from all registered providers into `out`.
+///
+/// Providers may only add entries. A provider that removes entries (e.g. by
+/// calling `out.clear()`) would silently drop hardware measurements, so this
+/// function detects and rejects that.
+pub fn collect(
+    providers: &[&dyn MeasurementProvider],
+    out: &mut Vec<Measurement, MAX_MEASUREMENTS>,
+) -> Result<(), AttestError> {
+    for p in providers {
+        let before = out.len();
+        p.measurements(out)?;
+        if out.len() < before {
+            return Err(AttestError::Provider(
+                "provider must not remove measurements",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Stub Caliptra measurements for use in tests (requires `test-support` feature).
+#[cfg(feature = "test-support")]
+pub fn test_caliptra_measurements() -> Vec<Measurement, MAX_MEASUREMENTS> {
+    use heapless::String;
+    use openprot_attest_api::consts::{MAX_COMPONENT_LEN, MAX_DIGEST_LEN, MAX_VERSION_LEN};
+    use openprot_attest_api::{DigestAlgorithm, MeasurementAuthority};
+
+    let mut v: Vec<Measurement, MAX_MEASUREMENTS> = Vec::new();
+
+    for (name, ver, fill) in &[
+        ("Caliptra ROM", "1.0.0", 0xAAu8),
+        ("Caliptra FMC", "2.3.1", 0xBBu8),
+        ("Caliptra RT", "2.3.1", 0xCCu8),
+    ] {
+        let mut component: String<MAX_COMPONENT_LEN> = String::new();
+        component.push_str(name).unwrap();
+        let mut version: String<MAX_VERSION_LEN> = String::new();
+        version.push_str(ver).unwrap();
+        let mut digest: Vec<u8, MAX_DIGEST_LEN> = Vec::new();
+        digest.extend_from_slice(&[*fill; 48]).unwrap();
+        v.push(Measurement {
+            component,
+            version,
+            digest_alg: DigestAlgorithm::Sha384,
+            digest,
+            authority: MeasurementAuthority::Caliptra,
+        })
+        .unwrap();
+    }
+    v
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use heapless::{String, Vec};
+    use openprot_attest_api::consts::{
+        MAX_COMPONENT_LEN, MAX_DIGEST_LEN, MAX_MEASUREMENTS, MAX_VERSION_LEN,
+    };
+    use openprot_attest_api::{DigestAlgorithm, MeasurementAuthority};
+
+    struct StubProvider {
+        name: &'static str,
+        fail: bool,
+    }
+
+    impl MeasurementProvider for StubProvider {
+        fn measurements(
+            &self,
+            out: &mut Vec<Measurement, MAX_MEASUREMENTS>,
+        ) -> Result<(), AttestError> {
+            if self.fail {
+                return Err(AttestError::Provider("intentional failure"));
+            }
+            let mut component: String<MAX_COMPONENT_LEN> = String::new();
+            component.push_str(self.name).unwrap();
+            let mut version: String<MAX_VERSION_LEN> = String::new();
+            version.push_str("0.1").unwrap();
+            let mut digest: Vec<u8, MAX_DIGEST_LEN> = Vec::new();
+            digest.extend_from_slice(&[0xBBu8; 48]).unwrap();
+            out.push(Measurement {
+                component,
+                version,
+                digest_alg: DigestAlgorithm::Sha384,
+                digest,
+                authority: MeasurementAuthority::Platform,
+            })
+            .map_err(|_| AttestError::BufferFull)
+        }
+    }
+
+    fn rom() -> Measurement {
+        let mut component: String<MAX_COMPONENT_LEN> = String::new();
+        component.push_str("ROM").unwrap();
+        let mut version: String<MAX_VERSION_LEN> = String::new();
+        version.push_str("1.0").unwrap();
+        let mut digest: Vec<u8, MAX_DIGEST_LEN> = Vec::new();
+        digest.extend_from_slice(&[0xAAu8; 48]).unwrap();
+        Measurement {
+            component,
+            version,
+            digest_alg: DigestAlgorithm::Sha384,
+            digest,
+            authority: MeasurementAuthority::Caliptra,
+        }
+    }
+
+    #[test]
+    fn no_providers_leaves_out_unchanged() {
+        let mut out = Vec::new();
+        out.push(rom()).unwrap();
+        collect(&[], &mut out).unwrap();
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].component.as_str(), "ROM");
+    }
+
+    #[test]
+    fn provider_measurements_are_appended() {
+        let p = StubProvider {
+            name: "UEFI",
+            fail: false,
+        };
+        let mut out = Vec::new();
+        out.push(rom()).unwrap();
+        collect(&[&p as &dyn MeasurementProvider], &mut out).unwrap();
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[1].component.as_str(), "UEFI");
+    }
+
+    #[test]
+    fn multiple_providers_all_appended() {
+        let p1 = StubProvider {
+            name: "UEFI",
+            fail: false,
+        };
+        let p2 = StubProvider {
+            name: "BMC",
+            fail: false,
+        };
+        let mut out = Vec::new();
+        collect(
+            &[
+                &p1 as &dyn MeasurementProvider,
+                &p2 as &dyn MeasurementProvider,
+            ],
+            &mut out,
+        )
+        .unwrap();
+        assert_eq!(out.len(), 2);
+    }
+
+    #[test]
+    fn failing_provider_propagates_error() {
+        let p = StubProvider {
+            name: "BMC",
+            fail: true,
+        };
+        let mut out = Vec::new();
+        let err = collect(&[&p as &dyn MeasurementProvider], &mut out).unwrap_err();
+        assert!(matches!(err, AttestError::Provider(_)));
+    }
+
+    #[test]
+    fn seventeenth_measurement_overflows_buffer() {
+        // Fill to capacity; a provider that tries to push one more must fail.
+        let mut out: Vec<Measurement, MAX_MEASUREMENTS> = Vec::new();
+        for _ in 0..MAX_MEASUREMENTS {
+            out.push(rom()).unwrap();
+        }
+        let p = StubProvider {
+            name: "Extra",
+            fail: false,
+        };
+        let err = collect(&[&p as &dyn MeasurementProvider], &mut out).unwrap_err();
+        assert!(matches!(err, AttestError::BufferFull));
+    }
+
+    #[test]
+    fn provider_clearing_out_cannot_produce_a_token() {
+        struct ClearingProvider;
+        impl MeasurementProvider for ClearingProvider {
+            fn measurements(
+                &self,
+                out: &mut Vec<Measurement, MAX_MEASUREMENTS>,
+            ) -> Result<(), AttestError> {
+                out.clear();
+                Ok(())
+            }
+        }
+        let mut out: Vec<Measurement, MAX_MEASUREMENTS> = Vec::new();
+        out.push(rom()).unwrap();
+        let err = collect(&[&ClearingProvider as &dyn MeasurementProvider], &mut out).unwrap_err();
+        assert!(matches!(err, AttestError::Provider(_)));
+    }
+
+    #[test]
+    fn later_provider_failure_preserves_earlier_entries() {
+        let good = StubProvider {
+            name: "UEFI",
+            fail: false,
+        };
+        let bad = StubProvider {
+            name: "BMC",
+            fail: true,
+        };
+        let mut out = Vec::new();
+        let err = collect(
+            &[
+                &good as &dyn MeasurementProvider,
+                &bad as &dyn MeasurementProvider,
+            ],
+            &mut out,
+        )
+        .unwrap_err();
+        assert!(matches!(err, AttestError::Provider(_)));
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].component.as_str(), "UEFI");
+    }
+}
