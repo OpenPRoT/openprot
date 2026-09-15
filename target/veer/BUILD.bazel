@@ -105,6 +105,12 @@ rust_binary(
 rust_library(
     name = "console",
     srcs = ["console.rs"],
+    crate_features = select({
+        ":emulator": ["emulator"],
+        ":fpga": ["fpga"],
+        ":silicon": ["silicon"],
+        "//conditions:default": [],
+    }),
     crate_name = "console_backend",
     edition = "2024",
     target_compatible_with = TARGET_COMPATIBLE_WITH,
