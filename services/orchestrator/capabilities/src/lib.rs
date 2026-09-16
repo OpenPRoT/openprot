@@ -22,6 +22,11 @@
 //! the chunked read seam staging pulls from — transports and slot
 //! bookkeeping stay behind the adapter.
 //!
+//! `TrialBoot` is the commit gate activation leaves open, whether `Updatable`
+//! did the activating or a PLDM firmware device did it for the eRoT: keep the
+//! activated image once its boot was judged, or drop it. It sits on every
+//! device whose slots the eRoT drives, the eRoT's own image included.
+//!
 //! `BootWatch` is the seam the orchestrator polls: one device's boot walk,
 //! erased of every device-specific type, answering with a `WalkVerdict`.
 //!
@@ -43,6 +48,7 @@ mod boot_watch;
 mod evidence;
 mod lockdown_latch;
 mod svn_floor;
+mod trial_boot;
 mod updatable;
 
 pub use boot_control::BootControl;
@@ -50,4 +56,5 @@ pub use boot_watch::{BootWatch, FailureCause, WalkVerdict};
 pub use evidence::{BootStatus, EvidenceReader};
 pub use lockdown_latch::LockdownLatch;
 pub use svn_floor::{Svn, SvnFloor};
+pub use trial_boot::TrialBoot;
 pub use updatable::{PayloadReadError, PayloadSource, StageProgress, Updatable, UpdateError};
