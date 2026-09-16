@@ -111,6 +111,251 @@ impl<P> BootCheckpoint<P> {
     }
 }
 
+/// Names one slot in one device's layout. Ids must be unique within one
+/// layout ([`ImageLayout::new`] checks that) and mean nothing beyond the
+/// name: slot 0 on the BMC has nothing to do with slot 0 on the NIC.
+/// Recovery tries slots in the order they are declared, not in id order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SlotId(pub u8);
+
+/// A byte range in the store that holds one device's images. Offsets count
+/// from the start of that device's area; the platform driver knows which
+/// part that is and where the area starts.
+///
+/// An image with no address, streamed or held inside a self-updating
+/// device, is not described this way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Region {
+    base: u32,
+    size: u32,
+}
+
+impl Region {
+    /// Declares a region. Const, so a bad board table fails the build
+    /// instead of the boot.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `size` is zero, or if `base + size` would run past the end
+    /// of the 32-bit offset range.
+    #[must_use]
+    pub const fn new(base: u32, size: u32) -> Self {
+        assert!(size > 0, "region size must not be zero");
+        assert!(
+            base.checked_add(size).is_some(),
+            "region must not run past the end of the offset space"
+        );
+        Self { base, size }
+    }
+
+    /// Offset of the first byte, from the start of the device's firmware
+    /// partition.
+    #[must_use]
+    pub const fn base(&self) -> u32 {
+        self.base
+    }
+
+    /// The region's size in bytes, not the size of the image currently in
+    /// it. Named `size` rather than `len`: a region is never empty, and
+    /// `len` would suggest an `is_empty` next to it.
+    #[must_use]
+    pub const fn size(&self) -> u32 {
+        self.size
+    }
+
+    /// Offset one past the last byte.
+    #[must_use]
+    pub const fn end(&self) -> u32 {
+        self.base + self.size
+    }
+
+    /// Whether the two regions share a byte.
+    const fn overlaps(&self, other: &Region) -> bool {
+        self.base < other.end() && other.base < self.end()
+    }
+}
+
+/// One slot in a device's layout. How many slots a device has is board
+/// data: A/B, one slot, or any other count, and no layout shape is named
+/// in code.
+///
+/// Every slot can be written and booted. The golden image can be neither,
+/// and it is not a slot, so there is no flag to set and nothing to check.
+#[derive(Debug, Clone, Copy)]
+pub struct Slot {
+    id: SlotId,
+    region: Region,
+}
+
+impl Slot {
+    /// Declares one slot. Const, so board tables build at compile time.
+    /// Whole-layout rules (unique ids, no overlap) are checked by
+    /// [`ImageLayout::new`], which sees the whole list.
+    #[must_use]
+    pub const fn new(id: SlotId, region: Region) -> Self {
+        Self { id, region }
+    }
+
+    /// This slot's id, unique within the layout (checked by
+    /// [`ImageLayout::new`]).
+    #[must_use]
+    pub const fn id(&self) -> SlotId {
+        self.id
+    }
+
+    /// Where this slot lives in the device's image store.
+    #[must_use]
+    pub const fn region(&self) -> Region {
+        self.region
+    }
+}
+
+/// The golden image: the last image recovery falls back to, and the one
+/// image the eRoT never writes. A board without one declares none.
+///
+/// It is not a slot, so code that walks the slot list to pick a write
+/// target or to check the SVN floor never sees it. The floor check has to
+/// skip it: a golden image's security version is fixed when the board is
+/// made, so once the floor moves past it, the check would reject the last
+/// image that still boots.
+///
+/// That only works while the image truly cannot be written. The board has
+/// to guarantee it in hardware (a write-protect pin, a locked flash block,
+/// or a separate part); this crate cannot check it.
+#[derive(Debug, Clone, Copy)]
+pub struct Golden {
+    region: Region,
+}
+
+impl Golden {
+    /// Declares a layout's golden image.
+    #[must_use]
+    pub const fn new(region: Region) -> Self {
+        Self { region }
+    }
+
+    /// Where the golden image lives in the device's image store.
+    #[must_use]
+    pub const fn region(&self) -> Region {
+        self.region
+    }
+}
+
+/// Every image of one device that the eRoT can address: the slots it
+/// writes, plus the golden image when the board has one. Slots are declared
+/// in recovery order: recovery tries them from top to bottom and falls back
+/// to the golden image last.
+///
+/// The golden image is optional. A board that only has A/B slots declares
+/// none, and recovery then stops after the last slot.
+///
+/// A device has a layout when the eRoT owns its flash and writes its
+/// images. A device that takes its own updates over PLDM and picks what it
+/// boots has no layout, and the eRoT never names a byte range for it.
+#[derive(Debug, Clone, Copy)]
+pub struct ImageLayout {
+    slots: &'static [Slot],
+    golden: Option<Golden>,
+}
+
+impl ImageLayout {
+    /// Declares a device's images. Const, so a bad layout fails the
+    /// build.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the layout holds no image, if two slots share an id, or if
+    /// two regions overlap, the golden image included: an update to one
+    /// image would corrupt another.
+    ///
+    /// The check covers addresses only. Two regions in the same flash erase
+    /// block still wipe each other without overlapping, and this crate does
+    /// not know the erase block size, so a board checks that itself.
+    #[must_use]
+    pub const fn new(slots: &'static [Slot], golden: Option<Golden>) -> Self {
+        assert!(
+            !slots.is_empty() || golden.is_some(),
+            "a layout must hold at least one image"
+        );
+        let mut s = 0;
+        while s < slots.len() {
+            if let Some(golden) = golden {
+                assert!(
+                    !slots[s].region.overlaps(&golden.region),
+                    "a slot must not overlap the golden image"
+                );
+            }
+            let mut t = s + 1;
+            while t < slots.len() {
+                assert!(
+                    slots[s].id.0 != slots[t].id.0,
+                    "slot ids must be unique within a layout"
+                );
+                assert!(
+                    !slots[s].region.overlaps(&slots[t].region),
+                    "slots must not overlap"
+                );
+                t += 1;
+            }
+            s += 1;
+        }
+        Self { slots, golden }
+    }
+
+    /// The slots the eRoT writes, in declaration order. Empty when the
+    /// golden image is the device's only image.
+    #[must_use]
+    pub const fn slots(&self) -> &'static [Slot] {
+        self.slots
+    }
+
+    /// The golden image, when the board has one.
+    #[must_use]
+    pub const fn golden(&self) -> Option<Golden> {
+        self.golden
+    }
+
+    /// How many images recovery can try: every slot, then the golden image
+    /// if there is one.
+    #[must_use]
+    pub const fn image_count(&self) -> usize {
+        self.slots.len() + self.golden.is_some() as usize
+    }
+}
+
+/// Fails the build if `max_retry` is too small for a device to boot every
+/// image. Recovery restores one image per attempt, and the orchestrator
+/// counts the restore before deciding whether to boot, so the last restore
+/// the budget allows is never booted: two slots plus a golden image need
+/// four attempts, not three.
+///
+/// This is a minimum, not the exact number. A driver that retries the same
+/// image before stepping to the next one needs more. Devices with no
+/// layout are skipped: they have no images to step through.
+///
+/// Boards call it from a const fence, so a budget that is too small fails
+/// the build:
+///
+/// ```ignore
+/// const _: () = assert_retry_reaches_every_image(MAX_RETRY, MANAGED_DEVICES);
+/// ```
+///
+/// # Panics
+///
+/// Panics if `max_retry` is not greater than a device's image count.
+pub const fn assert_retry_reaches_every_image<R, P>(max_retry: u8, devices: &[DeviceConfig<R, P>]) {
+    let mut i = 0;
+    while i < devices.len() {
+        if let Some(layout) = devices[i].layout() {
+            assert!(
+                max_retry as usize > layout.image_count(),
+                "max_retry is too small to boot every image of a device"
+            );
+        }
+        i += 1;
+    }
+}
+
 /// One managed downstream device, as declared by the board config.
 ///
 /// Generic over the board's reset signal type `R` (which must match the
@@ -130,6 +375,7 @@ pub struct DeviceConfig<R, P: 'static> {
     name: &'static str,
     reset_signal: R,
     checkpoints: &'static [BootCheckpoint<P>],
+    layout: Option<ImageLayout>,
 }
 
 impl<R, P> DeviceConfig<R, P> {
@@ -139,14 +385,15 @@ impl<R, P> DeviceConfig<R, P> {
     /// # Panics
     ///
     /// Panics — a build error in const context — if `name` is empty, if
-    /// `checkpoints` is empty, or if two checkpoints share a name
-    /// (failure reports identify a checkpoint by name; a duplicate would
-    /// make them ambiguous).
+    /// `checkpoints` is empty, if two checkpoints share a name (failure
+    /// reports identify a checkpoint by name; a duplicate would make them
+    /// ambiguous). Layout rules are checked by [`ImageLayout::new`].
     #[must_use]
     pub const fn new(
         name: &'static str,
         reset_signal: R,
         checkpoints: &'static [BootCheckpoint<P>],
+        layout: Option<ImageLayout>,
     ) -> Self {
         assert!(!name.is_empty(), "device name must not be empty");
         assert!(
@@ -169,6 +416,7 @@ impl<R, P> DeviceConfig<R, P> {
             name,
             reset_signal,
             checkpoints,
+            layout,
         }
     }
 
@@ -191,6 +439,14 @@ impl<R, P> DeviceConfig<R, P> {
     #[must_use]
     pub const fn checkpoints(&self) -> &'static [BootCheckpoint<P>] {
         self.checkpoints
+    }
+
+    /// This device's images, when the eRoT owns its flash. `None` when the
+    /// device takes its own updates, where the eRoT never addresses a byte
+    /// range.
+    #[must_use]
+    pub const fn layout(&self) -> Option<ImageLayout> {
+        self.layout
     }
 }
 
@@ -219,41 +475,219 @@ mod tests {
     // rejection is a build error nobody can assert on. These tests call
     // them at runtime to prove the reject paths actually fire.
 
-    const CHECKPOINT: BootCheckpoint<u8> =
+    const BOOT_COMPLETE: BootCheckpoint<u8> =
         BootCheckpoint::new("boot-complete", 0, Duration::from_secs(1));
 
     // Same name, different signal: each checkpoint is individually valid,
     // so the pair only trips the device-level duplicate check.
-    const CHECKPOINT_DUP: BootCheckpoint<u8> =
+    const BOOT_COMPLETE_DUPLICATE_NAME: BootCheckpoint<u8> =
         BootCheckpoint::new("boot-complete", 1, Duration::from_secs(1));
+
+    /// Slots are one megabyte each; the values only have to be distinct
+    /// and non-overlapping.
+    const SLOT_SIZE: u32 = 0x10_0000;
+
+    /// An ordinary slot, placed by id so two of them never overlap by
+    /// accident.
+    const fn slot(id: u8) -> Slot {
+        Slot::new(SlotId(id), Region::new(id as u32 * SLOT_SIZE, SLOT_SIZE))
+    }
+
+    /// The golden image, above every slot `slot` can place.
+    const GOLDEN: Golden = Golden::new(Region::new(0xF000_0000, SLOT_SIZE));
+
+    const LAYOUT: ImageLayout = ImageLayout::new(const { &[slot(0), slot(1)] }, Some(GOLDEN));
+
+    /// The same two slots on a board that carries no golden image.
+    const SLOTS_ONLY: ImageLayout = ImageLayout::new(const { &[slot(0), slot(1)] }, None);
 
     #[test]
     fn accepts_a_valid_table() {
-        let device = DeviceConfig::new("dev", 0u8, &[CHECKPOINT]);
+        let device = DeviceConfig::new("dev", 0u8, &[BOOT_COMPLETE], Some(LAYOUT));
         assert_eq!(device.name(), "dev");
         assert_eq!(*device.reset_signal(), 0);
         assert_eq!(device.checkpoints().len(), 1);
         assert_eq!(device.checkpoints()[0].name(), "boot-complete");
         assert_eq!(*device.checkpoints()[0].probe(), 0);
         assert_eq!(device.checkpoints()[0].timeout(), Duration::from_secs(1));
+
+        let layout = device.layout().expect("declared above");
+        assert_eq!(layout.slots().len(), 2);
+        assert_eq!(layout.slots()[1].region().base(), SLOT_SIZE);
+        assert_eq!(layout.slots()[1].region().end(), 2 * SLOT_SIZE);
+        assert_eq!(
+            layout.golden().expect("declared above").region().base(),
+            0xF000_0000
+        );
+    }
+
+    /// A device that owns its own images declares no layout at all, golden
+    /// included: the eRoT never addresses a byte range for it.
+    #[test]
+    fn accepts_a_device_without_a_layout() {
+        let device = DeviceConfig::new("dev", 0u8, &[BOOT_COMPLETE], None);
+        assert!(device.layout().is_none());
+    }
+
+    /// The golden image may be a device's only image.
+    #[test]
+    fn accepts_a_layout_with_no_slots() {
+        let layout = ImageLayout::new(&[], Some(GOLDEN));
+        assert!(layout.slots().is_empty());
+    }
+
+    /// A board with plain A/B slots carries no golden image, and recovery
+    /// stops after the last slot.
+    #[test]
+    fn accepts_a_layout_without_a_golden_image() {
+        assert!(SLOTS_ONLY.golden().is_none());
+        assert_eq!(SLOTS_ONLY.slots().len(), 2);
+    }
+
+    /// A layout with no slots and no golden image describes no image at
+    /// all, so a device declaring it would have nothing to boot.
+    #[test]
+    #[should_panic(expected = "at least one image")]
+    fn rejects_a_layout_with_no_images() {
+        let _ = ImageLayout::new(&[], None);
     }
 
     #[test]
     #[should_panic(expected = "checkpoint names must be unique")]
     fn rejects_duplicate_checkpoint_names() {
-        let _ = DeviceConfig::new("dev", 0u8, &[CHECKPOINT, CHECKPOINT_DUP]);
+        let _ = DeviceConfig::new(
+            "dev",
+            0u8,
+            &[BOOT_COMPLETE, BOOT_COMPLETE_DUPLICATE_NAME],
+            None,
+        );
     }
 
     #[test]
     #[should_panic(expected = "device name must not be empty")]
     fn rejects_an_empty_device_name() {
-        let _ = DeviceConfig::new("", 0u8, &[CHECKPOINT]);
+        let _ = DeviceConfig::new("", 0u8, &[BOOT_COMPLETE], None);
     }
 
     #[test]
     #[should_panic(expected = "at least one boot checkpoint")]
     fn rejects_an_empty_checkpoint_list() {
-        let _ = DeviceConfig::new("dev", 0u8, &[] as &[BootCheckpoint<u8>]);
+        let _ = DeviceConfig::new("dev", 0u8, &[] as &[BootCheckpoint<u8>], None);
+    }
+
+    #[test]
+    #[should_panic(expected = "slot ids must be unique")]
+    fn rejects_duplicate_slot_ids() {
+        let _ = ImageLayout::new(
+            const {
+                &[
+                    Slot::new(SlotId(0), Region::new(0, SLOT_SIZE)),
+                    Slot::new(SlotId(0), Region::new(SLOT_SIZE, SLOT_SIZE)),
+                ]
+            },
+            Some(GOLDEN),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "slots must not overlap")]
+    fn rejects_overlapping_slots() {
+        let _ = ImageLayout::new(
+            const {
+                &[
+                    Slot::new(SlotId(0), Region::new(0, SLOT_SIZE)),
+                    Slot::new(SlotId(1), Region::new(SLOT_SIZE - 1, SLOT_SIZE)),
+                ]
+            },
+            Some(GOLDEN),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "must not overlap the golden image")]
+    fn rejects_a_slot_overlapping_the_golden_image() {
+        let _ = ImageLayout::new(
+            const { &[Slot::new(SlotId(0), Region::new(0xF000_0000, SLOT_SIZE))] },
+            Some(GOLDEN),
+        );
+    }
+
+    /// Regions that touch do not overlap: `end` is one past the last
+    /// byte.
+    #[test]
+    fn accepts_adjacent_regions() {
+        let layout = ImageLayout::new(
+            const {
+                &[
+                    Slot::new(SlotId(0), Region::new(0, SLOT_SIZE)),
+                    Slot::new(SlotId(1), Region::new(SLOT_SIZE, SLOT_SIZE)),
+                ]
+            },
+            Some(GOLDEN),
+        );
+        assert_eq!(
+            layout.slots()[0].region().end(),
+            layout.slots()[1].region().base()
+        );
+    }
+
+    #[test]
+    fn counts_every_slot_and_the_golden_image_when_there_is_one() {
+        assert_eq!(LAYOUT.image_count(), 3);
+        assert_eq!(ImageLayout::new(&[], Some(GOLDEN)).image_count(), 1);
+        assert_eq!(SLOTS_ONLY.image_count(), 2);
+    }
+
+    /// Two slots and a golden image need four attempts: three restores
+    /// plus the one the last restore would otherwise never get.
+    #[test]
+    fn accepts_a_retry_budget_that_boots_the_golden_image() {
+        const DEVICES: &[DeviceConfig<u8, u8>] =
+            &[DeviceConfig::new("dev", 0, &[BOOT_COMPLETE], Some(LAYOUT))];
+        assert_retry_reaches_every_image(4, DEVICES);
+    }
+
+    /// Two slots and no golden image need three attempts: two restores
+    /// plus the one the last restore would otherwise never get.
+    #[test]
+    fn accepts_a_retry_budget_that_boots_every_slot() {
+        const DEVICES: &[DeviceConfig<u8, u8>] = &[DeviceConfig::new(
+            "dev",
+            0,
+            &[BOOT_COMPLETE],
+            Some(SLOTS_ONLY),
+        )];
+        assert_retry_reaches_every_image(3, DEVICES);
+    }
+
+    /// A device with no layout has no images to step through, so any
+    /// budget covers it.
+    #[test]
+    fn accepts_any_retry_budget_for_a_device_without_a_layout() {
+        const DEVICES: &[DeviceConfig<u8, u8>] =
+            &[DeviceConfig::new("dev", 0, &[BOOT_COMPLETE], None)];
+        assert_retry_reaches_every_image(0, DEVICES);
+    }
+
+    #[test]
+    /// Three attempts restore the golden image and stop before booting it.
+    #[should_panic(expected = "max_retry is too small")]
+    fn rejects_a_retry_budget_that_never_boots_the_golden_image() {
+        const DEVICES: &[DeviceConfig<u8, u8>] =
+            &[DeviceConfig::new("dev", 0, &[BOOT_COMPLETE], Some(LAYOUT))];
+        assert_retry_reaches_every_image(3, DEVICES);
+    }
+
+    #[test]
+    #[should_panic(expected = "region size must not be zero")]
+    fn rejects_a_zero_size_region() {
+        let _ = Region::new(0, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "must not run past the end of the offset space")]
+    fn rejects_a_region_past_the_end_of_the_offset_space() {
+        let _ = Region::new(u32::MAX, 1);
     }
 
     #[test]

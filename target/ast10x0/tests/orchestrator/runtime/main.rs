@@ -27,7 +27,7 @@ use openprot_orchestrator_sm::{
 };
 use orchestrator_capabilities::{BootStatus, BootWatch, EvidenceReader, FailureCause, WalkVerdict};
 use orchestrator_checkpoint_walk::CheckpointWalk;
-use orchestrator_config::{BootCheckpoint, DeviceConfig};
+use orchestrator_config::{assert_retry_reaches_every_image, BootCheckpoint, DeviceConfig};
 use pw_status::{Error, Result};
 use userspace::time::{Clock, Duration, Instant, SystemClock};
 use userspace::{entry, syscall};
@@ -40,6 +40,8 @@ const C1: ComponentId = ComponentId::new(1);
 const N: usize = 4;
 const E: usize = 2 * N + 2;
 const MAX_RETRY: u8 = 3;
+
+const _: () = assert_retry_reaches_every_image(MAX_RETRY, &[SOC]);
 
 /// Commit watchdog window. Not a boot window, so it stays a local constant
 /// rather than coming from the device table.
@@ -59,6 +61,8 @@ const SOC: DeviceConfig<u8, u8> = DeviceConfig::new(
         BootCheckpoint::new("bl1", 1, core::time::Duration::from_millis(500)),
         BootCheckpoint::new("kernel", 2, core::time::Duration::from_millis(500)),
     ],
+    // The boot walk never looks at images; no layout is legal.
+    None,
 );
 
 /// The device table speaks `core::time::Duration`; the runtime speaks the
