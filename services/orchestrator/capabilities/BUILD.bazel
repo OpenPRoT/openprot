@@ -9,6 +9,7 @@ rust_library(
         "src/boot_control.rs",
         "src/boot_watch.rs",
         "src/evidence.rs",
+        "src/incremental_verifier.rs",
         "src/lib.rs",
         "src/lockdown_latch.rs",
         "src/svn_floor.rs",
