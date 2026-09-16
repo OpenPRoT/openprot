@@ -1070,7 +1070,6 @@ fn mid_walk_cascade_in_awaiting_ready_drops_late_verdict() {
         assert!(effects.contains(&Effect::ReportIsolated(id)));
         assert!(!effects.contains(&Effect::ReleaseReset(id)));
     }
-    // The walk carries on past the isolated pair.
     assert!(effects.contains(&Effect::ReadFirmware(C3)));
     assert!(effects.contains(&Effect::VerifyFirmware(C3)));
 }
@@ -1181,16 +1180,16 @@ fn cascade_in_awaiting_ready_below_the_cursor_leaves_it_alone() {
     assert_eq!(state, State::Ready);
     // The cursor never left C1, so its verdict still counts.
     assert!(effects.contains(&Effect::ReleaseReset(C1)));
-    // C2 is gated before its turn and the walk skips it.
     assert!(effects.contains(&Effect::ReportIsolated(C2)));
     assert!(!effects.contains(&Effect::ReleaseReset(C2)));
     assert!(!effects.contains(&Effect::ReadFirmware(C2)));
 }
 
 /// The cascade gates the component the `AwaitingReady` slot waits on. The slot
-/// keeps naming it, which is harmless: `gate_one` cleared its `awaiting_boot`,
-/// a late `ComponentReady` releases nothing, and the walk reaches `Ready`
-/// through the cursor rather than through readiness.
+/// keeps naming it, which changes nothing: `gate_one` cleared its
+/// `awaiting_boot`, a late `ComponentReady` releases nothing, and the walk
+/// reaches `Ready` when the cursor reaches the end of the chain, not when
+/// C0's `ComponentReady` arrives.
 #[test]
 fn gating_the_awaited_component_does_not_stall_the_walk() {
     let (effects, state) = drive(
@@ -1217,9 +1216,84 @@ fn gating_the_awaited_component_does_not_stall_the_walk() {
         assert!(effects.contains(&Effect::ReportIsolated(id)));
     }
     assert!(!effects.contains(&Effect::ReleaseReset(C1)));
-    // The walk moved past the isolated pair and finished on C2.
     assert!(effects.contains(&Effect::ReadFirmware(C2)));
     assert!(effects.contains(&Effect::ReleaseReset(C2)));
+}
+
+/// A failure verdict in flight when the cascade gated the component does not
+/// put it into recovery.
+#[test]
+fn late_verification_failed_for_gated_component_is_dropped() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::active_required()),
+            (C1, ComponentAttrs::passive_cascading()),
+            (C2, ComponentAttrs::passive_required().with_depends_on(C1)),
+            (C3, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0), // releases C0, cursor on C1
+            Event::CorruptionDetected(C1), // gates C1 -> C2, cursor moves to C3
+            Event::VerificationFailed(C1), // in flight before the gating
+        ],
+    );
+    assert_ne!(state, State::Recovering(C1), "isolated C1 entered recovery");
+    assert!(
+        !effects.contains(&Effect::RecoverComponent { id: C1, attempt: 0 }),
+        "RecoverComponent fired for isolated C1"
+    );
+}
+
+/// A contained cascade does not lock the platform down through the `Required`
+/// component it held. Three corruption reports for the isolated C1 would
+/// otherwise exhaust its retries, and `gate_by_policy` would read C1's own
+/// `Required` policy and escalate. MAX_RETRY is 3.
+#[test]
+fn contained_cascade_does_not_lock_down_via_its_required_dependent() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_cascading()),
+            (C1, ComponentAttrs::passive_required().with_depends_on(C0)),
+        ]),
+        &[
+            BOOT,
+            Event::CorruptionDetected(C0), // gates C0, cascade-holds C1
+            Event::CorruptionDetected(C1), // isolated C1 into recovery, attempt 0
+            Event::Restored(C1),
+            Event::CorruptionDetected(C1), // attempt 1
+            Event::Restored(C1),
+            Event::CorruptionDetected(C1), // attempt 2
+            Event::Restored(C1),           // retries exhausted
+        ],
+    );
+    assert!(
+        !effects.contains(&Effect::LatchLockdown),
+        "contained cascade reached lockdown, state {state:?}"
+    );
+}
+
+/// A corruption report for a component the cascade already isolated is
+/// dropped.
+#[test]
+fn corruption_report_for_an_isolated_component_is_dropped() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_cascading()),
+            (C1, ComponentAttrs::passive_required().with_depends_on(C0)),
+        ]),
+        &[
+            BOOT,
+            Event::CorruptionDetected(C0), // gates C0, cascade-holds C1
+            Event::CorruptionDetected(C1), // C1 is already isolated
+        ],
+    );
+    assert!(effects.contains(&Effect::ReportIsolated(C1)));
+    assert_ne!(state, State::Recovering(C1), "isolated C1 entered recovery");
+    assert!(
+        !effects.contains(&Effect::RecoverComponent { id: C1, attempt: 0 }),
+        "RecoverComponent fired for cascade-held C1"
+    );
 }
 
 /// Runtime corruption under a non-`Required` policy reports too. This path
@@ -2190,6 +2264,50 @@ fn random_event(rng: &mut SplitMix64, ids: &[ComponentId]) -> Event {
         12 => Event::RecoveryFailed,
         13 => Event::CommitTimeout,
         _ => Event::EffectFailed,
+    }
+}
+
+/// Isolation is sticky: once a component is reported isolated, nothing in the
+/// rest of the run takes it out of reset or hands it to recovery. The
+/// verify-before-release property misses the recovery half of that, because
+/// recovery re-verifies before releasing.
+#[test]
+fn property_isolation_is_sticky_under_random_sequences() {
+    const RUNS: u64 = 20_000;
+    const MAX_LEN: u32 = 24;
+
+    let palette = [C0, C1, C2, C3];
+
+    for seed in 0..RUNS {
+        let mut rng = SplitMix64(seed.wrapping_mul(0xD1B5_4A32_D192_ED03).wrapping_add(1));
+
+        let ch = random_chain(&mut rng);
+        let mut orch =
+            Orchestrator::<CAPACITY, ECAP>::new(ch.try_into().expect("valid chain"), MAX_RETRY);
+        let mut platform = Recorder::new();
+
+        orch.dispatch(&mut platform, BOOT);
+        let len = 1 + rng.below(MAX_LEN);
+        for _ in 0..len {
+            let event = random_event(&mut rng, &palette);
+            orch.dispatch(&mut platform, event);
+        }
+
+        let mut isolated = [false; CAPACITY];
+        for effect in &platform.recorded {
+            match effect {
+                Effect::ReportIsolated(id) => isolated[id.get() as usize] = true,
+                Effect::ReleaseReset(id) => assert!(
+                    !isolated[id.get() as usize],
+                    "seed {seed}: released {id:?} after reporting it isolated",
+                ),
+                Effect::RecoverComponent { id, .. } => assert!(
+                    !isolated[id.get() as usize],
+                    "seed {seed}: recovered {id:?} after reporting it isolated",
+                ),
+                _ => {}
+            }
+        }
     }
 }
 
