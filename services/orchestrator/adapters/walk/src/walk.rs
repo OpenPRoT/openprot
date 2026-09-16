@@ -136,8 +136,8 @@ mod tests {
     const KERNEL: BootCheckpoint<u8> = BootCheckpoint::new("kernel", 2, Duration::from_millis(200));
     const CHECKPOINTS: &[BootCheckpoint<u8>] = &[BL1, KERNEL];
 
-    static DEVICE: DeviceConfig<u8, u8> = DeviceConfig::new("test-dev", 0, CHECKPOINTS);
-    static ONE_CP_DEVICE: DeviceConfig<u8, u8> = DeviceConfig::new("one-cp-dev", 0, &[BL1]);
+    static DEVICE: DeviceConfig<u8, u8> = DeviceConfig::new("test-dev", 0, CHECKPOINTS, None);
+    static ONE_CP_DEVICE: DeviceConfig<u8, u8> = DeviceConfig::new("one-cp-dev", 0, &[BL1], None);
 
     // A progress-register reader: probe N is Booted once progress >= N.
     // Mirrors the SocReader archetype in the evidence tests.
