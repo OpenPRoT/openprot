@@ -32,8 +32,8 @@ mod hw_abstraction;
 mod traits;
 mod types;
 
-pub use hw_abstraction::HwSigner;
 pub use error::AttestError;
+pub use hw_abstraction::HwSigner;
 pub use traits::AttestProducer;
 pub use types::{
     AttestConfig, DigestAlgorithm, Measurement, MeasurementAuthority, MeasurementProvider, OemId,

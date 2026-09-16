@@ -94,9 +94,8 @@ pub fn extract_and_verify(
     }
 
     // The leaf cert (index 0) must carry the UEID extension.
-    let leaf_ueid = extract(&chain[0])?.ok_or(AttestError::Mailbox(
-        "leaf cert missing TCG UEID extension",
-    ))?;
+    let leaf_ueid =
+        extract(&chain[0])?.ok_or(AttestError::Mailbox("leaf cert missing TCG UEID extension"))?;
 
     // Every other cert that carries the extension must match.
     for cert in chain.iter().skip(1) {
