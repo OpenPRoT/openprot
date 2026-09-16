@@ -33,7 +33,7 @@ use openprot_orchestrator_sm::{
     Chain, ComponentAttrs, ComponentId, Effect, EffectError, Event, Orchestrator, Platform,
     PowerOnResult, State,
 };
-use orchestrator_config::{BootCheckpoint, DeviceConfig};
+use orchestrator_config::{assert_retry_reaches_every_image, BootCheckpoint, DeviceConfig};
 use pw_status::{Error, Result};
 use userspace::time::Duration;
 use userspace::{entry, syscall};
@@ -46,6 +46,8 @@ const C1: ComponentId = ComponentId::new(1);
 const N: usize = 4;
 const E: usize = 2 * N + 2;
 const MAX_RETRY: u8 = 3;
+
+const _: () = assert_retry_reaches_every_image(MAX_RETRY, &[SOC]);
 
 /// Commit watchdog window. Not a boot window, so it stays a local constant
 /// rather than coming from the device table.
@@ -64,6 +66,8 @@ const SOC: DeviceConfig<u8, u8> = DeviceConfig::new(
         BootCheckpoint::new("bl1", 0, core::time::Duration::from_millis(50)),
         BootCheckpoint::new("kernel", 0, core::time::Duration::from_millis(50)),
     ],
+    // The boot walk never looks at images; no layout is legal.
+    None,
 );
 
 /// The device table speaks `core::time::Duration`; the runtime speaks the
