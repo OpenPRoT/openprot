@@ -14,6 +14,9 @@ carried over. i2c is strict request → response, run-to-completion.
   SPDM/MCTP dual-role operation. ✅ Slave RX (data reception) complete;
   ⚠️ Slave TX (ReadRequest responses) **required for SPDM responder** —
   see [SPDM responder implementation](#spdm-responder-implementation).
+- **Unanswered master read** - the ast10x0 handler answers a read with no staged
+  reply with one filler byte, `0xFF`, and re-arms receive, so the bus is not
+  held.
 
 ```
  consumer (any embedded-hal driver)
@@ -160,6 +163,8 @@ target needs it — not fabricated speculatively.
 **Post-demo (not blocking):**
 - ReadRequest event delivery — needed for responder state machines; baseline SPDM
   works via pre-staged TX buffer
+- ReadRequest event kind is still not reported: the driver answers the read
+  itself with a filler byte rather than asking the service what to send
 - Hardware EVB testing (`--config=k_ast1060_evb`) — currently QEMU-only
 
 ## Test matrix
