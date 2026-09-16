@@ -424,10 +424,9 @@ impl<const N: usize, const E: usize> Rot<N, E> {
         }
     }
 
-    /// Shared `CorruptionDetected` handling, called from both `PreSupervision`
-    /// (directly) and `SupervisingPlatform` (via its superstate handler).
-    /// Delegates the policy interpretation to [`gate_by_policy`](Self::gate_by_policy)
-    /// so this path and the recovery-exhaustion path can never diverge:
+    /// Shared `CorruptionDetected` handling. Delegates the policy interpretation
+    /// to [`gate_by_policy`](Self::gate_by_policy) so this path and the
+    /// recovery-exhaustion path can never diverge:
     /// `Isolable`/`Cascading` → gate the component (single or cascade) and stay
     /// put, so a later re-walk skips it instead of silently re-releasing one we
     /// already found corrupt; `Required` → recover first (the halt-on-exhaustion
@@ -436,6 +435,33 @@ impl<const N: usize, const E: usize> Rot<N, E> {
         match self.gate_by_policy(ctx, id) {
             Gating::Gated => Outcome::Handled,
             Gating::NotGated => Outcome::Transition(State::Recovering(id)),
+        }
+    }
+
+    /// `CorruptionDetected` for the two states that release off `chain[cursor]`,
+    /// `PreSupervision` and `AwaitingReady`. Gates by policy, then moves the
+    /// cursor off the component under verification if the cascade gated it, so a
+    /// verdict already in flight is a mismatch and gets dropped instead of
+    /// releasing an isolated component. A `Required` corruption gates nothing
+    /// and returns `Transition(Recovering)` unchanged.
+    ///
+    /// Not called from `handle_supervising`: `Recovering`'s cursor is stale
+    /// (`VerificationFailed` left it on the failed component), so advancing
+    /// there would verify mid-recovery or reach `Ready` instead of re-walking.
+    fn handle_corruption_advancing(&mut self, id: ComponentId, ctx: &mut Sink<E>) -> Outcome {
+        let outcome = self.handle_corruption(id, ctx);
+        let cursor_gated = self
+            .chain
+            .get(self.cursor as usize)
+            .is_some_and(|(c, _)| self.is_gated(*c));
+        if !matches!(outcome, Outcome::Handled) || !cursor_gated {
+            return outcome;
+        }
+        let next_idx = (self.cursor as usize).saturating_add(1);
+        if self.advance_to_next_ungated(ctx, next_idx) {
+            Outcome::Handled
+        } else {
+            Outcome::Transition(State::Ready)
         }
     }
 
@@ -541,7 +567,7 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 // exists in the first place. `AttestationChallenge` is left
                 // unhandled here (falls through to `Outcome::Super` and is
                 // discarded) — that's a separate question.
-                Event::CorruptionDetected(id) => self.handle_corruption(*id, ctx),
+                Event::CorruptionDetected(id) => self.handle_corruption_advancing(*id, ctx),
                 // Boot-progress liveness for a passive component released
                 // speculatively earlier in this same walk. Clear its watchdog
                 // even though `PreSupervision` is unsupervised — acting on a
@@ -624,6 +650,9 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                     // of the component's recovery-failure policy.
                     Outcome::Transition(State::Recovering(*id))
                 }
+                // Releases off `chain[cursor]` too, so the cursor must move
+                // off a component the cascade gated. `Handled` keeps `awaiting`.
+                Event::CorruptionDetected(id) => self.handle_corruption_advancing(*id, ctx),
                 // `Timeout` is intentionally not handled here: it falls through
                 // to `handle_supervising`, which runs the device-agnostic
                 // boot-progress watchdog uniformly across every supervised state
@@ -753,10 +782,11 @@ impl<const N: usize, const E: usize> Rot<N, E> {
     /// supervisor, is discarded).
     ///
     /// The corruption guarantee, however, *does* hold in `PreSupervision`: that
-    /// state handles [`Event::CorruptionDetected`] directly (via
-    /// [`handle_corruption`](Self::handle_corruption)) rather than through this
-    /// handler, since routing it here would also pull in the attestation
-    /// behavior above. CSA defines no mechanism guaranteeing a corruption report
+    /// state handles [`Event::CorruptionDetected`] in its own arm, via
+    /// [`handle_corruption_advancing`](Self::handle_corruption_advancing), since
+    /// routing it here would also pull in the attestation behavior above.
+    /// `AwaitingReady` does the same; the cursor rationale is on the helper.
+    /// CSA defines no mechanism guaranteeing a corruption report
     /// arrives for an already-released component's *live, executing* state (its
     /// only at-rest mechanism — background NVM integrity polling — is explicitly
     /// scoped to "at rest"/"between boots", not an in-progress boot's chain
@@ -770,6 +800,8 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 ctx.emit(Effect::SignAttestation);
                 Outcome::Handled
             }
+            // Reached from `Ready` and `Recovering` only: `PreSupervision`,
+            // `AwaitingReady` and `Updating` handle this in their own arms.
             Event::CorruptionDetected(id) => self.handle_corruption(*id, ctx),
             // Boot-progress signals arriving after the walk left `PreSupervision`
             // / `AwaitingReady` (e.g. once the machine is already `Ready`): clear

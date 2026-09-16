@@ -979,6 +979,249 @@ fn cascading_runtime_corruption_cascades_transitively() {
     assert!(!effects.contains(&Effect::LatchLockdown));
 }
 
+/// A cascade that fires mid-walk gates components the cursor has not reached
+/// yet, and the walk then skips them: corruption of C1 arrives while the walk
+/// is still verifying C0, so C1 -> C2 -> C3 are all gated before their turn.
+/// No `ReadFirmware` is ever emitted for them, and the walk reaches the end of
+/// the chain and goes to `Ready`. The post-walk cascade tests cannot cover this:
+/// there the cursor is already past every component when the cascade fires.
+#[test]
+fn mid_walk_cascade_skips_unreached_dependents() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_required()),
+            (C1, ComponentAttrs::passive_cascading()),
+            (C2, ComponentAttrs::passive_required().with_depends_on(C1)),
+            (C3, ComponentAttrs::passive_required().with_depends_on(C2)),
+        ]),
+        &[
+            BOOT,                          // walk starts at C0
+            Event::CorruptionDetected(C1), // cascade C1 -> C2 -> C3, cursor still on C0
+            Event::VerificationPassed(C0), // advance: nothing ungated is left
+        ],
+    );
+    // The rest of the chain is gated, so the walk is done.
+    assert_eq!(state, State::Ready);
+    // The whole two-hop chain is isolated and reported, though the walk never
+    // reached any of it.
+    for id in [C1, C2, C3] {
+        assert!(effects.contains(&Effect::AssertReset(id)));
+        assert!(effects.contains(&Effect::ReportIsolated(id)));
+    }
+    // Verification is never requested for a gated component, at any depth.
+    for id in [C1, C2, C3] {
+        assert!(!effects.contains(&Effect::ReadFirmware(id)));
+        assert!(!effects.contains(&Effect::VerifyFirmware(id)));
+        assert!(!effects.contains(&Effect::ReleaseReset(id)));
+    }
+    // C0 is untouched by the cascade: it verifies and is released as usual.
+    assert!(effects.contains(&Effect::ReleaseReset(C0)));
+    assert!(!effects.contains(&Effect::AssertReset(C0)));
+}
+
+/// Corruption during recovery gates and stops there. `Recovering`'s cursor is
+/// stale, so advancing it would verify C2 mid-recovery, or end the walk at
+/// `Ready` and skip the re-walk recovery exists to run.
+#[test]
+fn corruption_during_recovery_does_not_advance_the_walk() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_cascading()),
+            (C1, ComponentAttrs::passive_required().with_depends_on(C0)),
+            (C2, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationFailed(C0), // cursor stays on C0
+            Event::CorruptionDetected(C0), // gates C0 -> C1
+        ],
+    );
+    assert_eq!(state, State::Recovering(C0));
+    assert!(effects.contains(&Effect::ReportIsolated(C0)));
+    assert!(effects.contains(&Effect::ReportIsolated(C1)));
+    // The walk does not resume from inside recovery.
+    assert!(!effects.contains(&Effect::ReadFirmware(C2)));
+    assert!(!effects.contains(&Effect::VerifyFirmware(C2)));
+}
+
+/// A cascade during `AwaitingReady` gates the component under verification, so
+/// the walk moves on to C3. C1's in-flight verdict no longer matches the cursor
+/// and is dropped, leaving C1 in reset. `awaiting` survives the `Handled`.
+#[test]
+fn mid_walk_cascade_in_awaiting_ready_drops_late_verdict() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::active_required()),
+            (C1, ComponentAttrs::passive_cascading()),
+            (C2, ComponentAttrs::passive_required().with_depends_on(C1)),
+            (C3, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0), // releases C0, cursor on C1
+            Event::CorruptionDetected(C1), // gates C1 -> C2, cursor moves to C3
+            Event::VerificationPassed(C1), // in flight before the gating
+        ],
+    );
+    // Still awaiting C0's readiness: the cursor moved, the payload is
+    // unchanged.
+    assert_eq!(state, State::AwaitingReady(Some(C0)));
+    for id in [C1, C2] {
+        assert!(effects.contains(&Effect::ReportIsolated(id)));
+        assert!(!effects.contains(&Effect::ReleaseReset(id)));
+    }
+    // The walk carries on past the isolated pair.
+    assert!(effects.contains(&Effect::ReadFirmware(C3)));
+    assert!(effects.contains(&Effect::VerifyFirmware(C3)));
+}
+
+/// A component gated while it is under verification is never released by its
+/// own in-flight verdict. Release keys off `chain[cursor]` alone, so leaving
+/// the cursor on a component the cascade just isolated would take it out of
+/// reset. The cursor moves past it instead and the walk continues to C2.
+#[test]
+fn gating_the_component_under_verification_never_releases_it() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_cascading()),
+            (C1, ComponentAttrs::passive_required().with_depends_on(C0)),
+            (C2, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,                          // cursor on C0, awaiting its verdict
+            Event::CorruptionDetected(C0), // gates C0 and C1, cursor moves to C2
+            Event::VerificationPassed(C0), // in flight before the gating: must not release
+            Event::VerificationPassed(C2),
+        ],
+    );
+    assert_eq!(state, State::Ready);
+    // Both are gated and reported before the cursor moves.
+    assert!(effects.contains(&Effect::ReportIsolated(C0)));
+    assert!(effects.contains(&Effect::ReportIsolated(C1)));
+    // Neither isolated component is taken out of reset.
+    assert!(!effects.contains(&Effect::ReleaseReset(C0)));
+    assert!(!effects.contains(&Effect::ReleaseReset(C1)));
+    // The walk continues past them instead of stalling on C0's verdict.
+    assert!(effects.contains(&Effect::ReadFirmware(C2)));
+    assert!(effects.contains(&Effect::ReleaseReset(C2)));
+    assert!(!effects.contains(&Effect::ReadFirmware(C1)));
+}
+
+/// The same gating with the rest of the chain gated too: the walk has no
+/// component to move on to, so it ends in `Ready` with everything held in
+/// reset. A non-`Required` cascade never escalates to lockdown.
+#[test]
+fn gating_the_last_ungated_component_ends_the_walk() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_cascading()),
+            (C1, ComponentAttrs::passive_required().with_depends_on(C0)),
+        ]),
+        &[
+            BOOT,
+            Event::CorruptionDetected(C0), // gates the whole chain
+            Event::VerificationPassed(C0), // in flight before the gating
+        ],
+    );
+    assert_eq!(state, State::Ready);
+    assert!(!effects.contains(&Effect::ReleaseReset(C0)));
+    assert!(!effects.contains(&Effect::ReleaseReset(C1)));
+    assert!(!effects.contains(&Effect::ReadFirmware(C1)));
+    assert!(!effects.contains(&Effect::LatchLockdown));
+}
+
+/// The `AwaitingReady` analog of
+/// `gating_the_last_ungated_component_ends_the_walk`: with nothing ungated left
+/// to move to, the walk ends at `Ready`, the isolated pair held and no
+/// lockdown. C0's `ComponentReady` never arrives; the walk does not wait
+/// for it.
+#[test]
+fn gating_the_rest_of_the_chain_in_awaiting_ready_ends_the_walk() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::active_required()),
+            (C1, ComponentAttrs::passive_cascading()),
+            (C2, ComponentAttrs::passive_required().with_depends_on(C1)),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0), // releases C0, cursor on C1
+            Event::CorruptionDetected(C1), // gates C1 -> C2, nothing left ungated
+            Event::VerificationPassed(C1), // in flight before the gating
+        ],
+    );
+    assert_eq!(state, State::Ready);
+    for id in [C1, C2] {
+        assert!(effects.contains(&Effect::ReportIsolated(id)));
+        assert!(!effects.contains(&Effect::ReleaseReset(id)));
+    }
+    assert!(!effects.contains(&Effect::ReadFirmware(C2)));
+    assert!(!effects.contains(&Effect::LatchLockdown));
+}
+
+/// The other half of the cursor rule: gating a component the cursor has not
+/// reached leaves the cursor alone, so C1's verdict still releases it. An
+/// unconditional advance would make that verdict a mismatch and leave a
+/// verified component in reset.
+#[test]
+fn cascade_in_awaiting_ready_below_the_cursor_leaves_it_alone() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::active_required()),
+            (C1, ComponentAttrs::passive_required()),
+            (C2, ComponentAttrs::passive_cascading()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0), // releases C0, cursor on C1
+            Event::CorruptionDetected(C2), // gates C2, which the cursor has not reached
+            Event::VerificationPassed(C1), // C1 is still under verification
+        ],
+    );
+    assert_eq!(state, State::Ready);
+    // The cursor never left C1, so its verdict still counts.
+    assert!(effects.contains(&Effect::ReleaseReset(C1)));
+    // C2 is gated before its turn and the walk skips it.
+    assert!(effects.contains(&Effect::ReportIsolated(C2)));
+    assert!(!effects.contains(&Effect::ReleaseReset(C2)));
+    assert!(!effects.contains(&Effect::ReadFirmware(C2)));
+}
+
+/// The cascade gates the component the `AwaitingReady` slot waits on. The slot
+/// keeps naming it, which is harmless: `gate_one` cleared its `awaiting_boot`,
+/// a late `ComponentReady` releases nothing, and the walk reaches `Ready`
+/// through the cursor rather than through readiness.
+#[test]
+fn gating_the_awaited_component_does_not_stall_the_walk() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::active_cascading()),
+            (C1, ComponentAttrs::passive_required().with_depends_on(C0)),
+            (C2, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0), // releases C0, awaits its readiness
+            Event::CorruptionDetected(C0), // gates the awaited C0 and C1
+            Event::ComponentReady(C0),     // in flight before the gating
+            Event::VerificationPassed(C1), // in flight before the gating
+            Event::VerificationPassed(C2),
+        ],
+    );
+    assert_eq!(state, State::Ready);
+    // C0 was live and goes back into reset; C1 goes with it. C1 had already
+    // been read and verified when C0's verdict advanced the cursor, so its own
+    // verdict is the one that must not release it.
+    assert!(effects.contains(&Effect::AssertReset(C0)));
+    for id in [C0, C1] {
+        assert!(effects.contains(&Effect::ReportIsolated(id)));
+    }
+    assert!(!effects.contains(&Effect::ReleaseReset(C1)));
+    // The walk moved past the isolated pair and finished on C2.
+    assert!(effects.contains(&Effect::ReadFirmware(C2)));
+    assert!(effects.contains(&Effect::ReleaseReset(C2)));
+}
+
 /// Runtime corruption under a non-`Required` policy reports too. This path
 /// never enters recovery at all, so without its own report the isolation would
 /// be silent.
@@ -1146,7 +1389,8 @@ fn required_failure_in_awaiting_ready_enters_recovering() {
 }
 
 /// CorruptionDetected while in AwaitingReady (required component) →
-/// Recovering via the SupervisingPlatform superstate handler.
+/// Recovering. A `Required` corruption gates nothing, so the cursor-advancing
+/// arm returns the transition unchanged.
 #[test]
 fn corruption_in_awaiting_ready_triggers_recovery() {
     let (effects, state) = drive(
@@ -1164,8 +1408,8 @@ fn corruption_in_awaiting_ready_triggers_recovery() {
     assert!(effects.contains(&Effect::RecoverComponent { id: C0, attempt: 0 }));
 }
 
-/// CorruptionDetected while in Updating (required component) → Recovering
-/// via the SupervisingPlatform superstate handler.
+/// CorruptionDetected while in Updating (required component) → Recovering.
+/// Updating has its own arm; it discards the staged image on preemption.
 #[test]
 fn corruption_in_updating_triggers_recovery() {
     let (effects, state) = drive(
@@ -1549,6 +1793,27 @@ fn chain_rejects_empty() {
     assert_eq!(Chain::try_from(empty).unwrap_err(), ChainError::Empty);
 }
 
+/// More than `u8::MAX` components is rejected. `cursor` is a `u8` and uses
+/// `chain.len()` as its past-the-end sentinel, so a 256-entry chain would
+/// truncate that sentinel to 0 and the walk would never read as done.
+#[test]
+fn chain_rejects_more_than_u8_max_components() {
+    const OVER: usize = 256;
+    let mut entries: heapless::Vec<(ComponentId, ComponentAttrs), OVER> = heapless::Vec::new();
+    for i in 0..OVER {
+        entries
+            .push((
+                ComponentId::new(i as u8),
+                ComponentAttrs::passive_required(),
+            ))
+            .expect("fits OVER");
+    }
+    assert_eq!(
+        Chain::<OVER>::try_from(entries).unwrap_err(),
+        ChainError::TooLong
+    );
+}
+
 /// A repeated `ComponentId` is rejected: the state machine's linear id lookups would
 /// otherwise be ambiguous.
 #[test]
@@ -1881,6 +2146,31 @@ impl SplitMix64 {
     }
 }
 
+/// Build a random three-component chain: kind, failure policy and dependency
+/// edge all vary per seed. The `AwaitingReady` cursor race needs a gateable
+/// component after an active one, which the old fixed chain never had, so the
+/// shape is part of what gets fuzzed.
+fn random_chain(rng: &mut SplitMix64) -> heapless::Vec<(ComponentId, ComponentAttrs), CAPACITY> {
+    let ids = [C0, C1, C2];
+    let mut c = heapless::Vec::new();
+    for (i, &id) in ids.iter().enumerate() {
+        let mut attrs = match rng.below(6) {
+            0 => ComponentAttrs::active_required(),
+            1 => ComponentAttrs::passive_required(),
+            2 => ComponentAttrs::active_isolable(),
+            3 => ComponentAttrs::passive_isolable(),
+            4 => ComponentAttrs::active_cascading(),
+            _ => ComponentAttrs::passive_cascading(),
+        };
+        // Depend on an earlier component half the time, so cascades have depth.
+        if i > 0 && rng.below(2) == 0 {
+            attrs = attrs.with_depends_on(ids[rng.below(i as u32) as usize]);
+        }
+        c.push((id, attrs)).expect("chain within CAPACITY");
+    }
+    c
+}
+
 /// Build one random event over the given id palette. Id-less events ignore it.
 fn random_event(rng: &mut SplitMix64, ids: &[ComponentId]) -> Event {
     let id = ids[rng.below(ids.len() as u32) as usize];
@@ -1905,7 +2195,7 @@ fn random_event(rng: &mut SplitMix64, ids: &[ComponentId]) -> Event {
 
 #[test]
 fn property_verify_before_release_holds_under_random_sequences() {
-    const RUNS: u64 = 4000;
+    const RUNS: u64 = 20_000;
     const MAX_LEN: u32 = 24;
 
     // C0..C2 are in-chain; C3 is intentionally out-of-chain — fed as noise so
@@ -1916,11 +2206,7 @@ fn property_verify_before_release_holds_under_random_sequences() {
     for seed in 0..RUNS {
         let mut rng = SplitMix64(seed.wrapping_mul(0xD1B5_4A32_D192_ED03).wrapping_add(1));
 
-        let ch = chain(&[
-            (C0, ComponentAttrs::passive_required()),
-            (C1, ComponentAttrs::active_isolable()),
-            (C2, ComponentAttrs::passive_required()),
-        ]);
+        let ch = random_chain(&mut rng);
         let mut orch =
             Orchestrator::<CAPACITY, ECAP>::new(ch.try_into().expect("valid chain"), MAX_RETRY);
         let mut platform = Recorder::new();
