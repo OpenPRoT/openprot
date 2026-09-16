@@ -17,7 +17,7 @@ and a software stub for testing without physical hardware.
 | `src/builder.rs` | Assembles the CBOR claim map and constructs the `COSE_Sign1` envelope. No verifier dependency. |
 | `src/cert_ueid.rs` | Minimal DER walker: extracts the TCG UEID (OID 2.23.133.5.4.4) from the Caliptra DER certificate chain and verifies consistency across all certs that carry it. |
 | `src/dice_identity.rs` | Retrieves the DER-encoded DICE certificate chain from the signer and validates it for Caliptra compliance: chain length ≥ 3, X.509 v3, and tcg-dice-MultiTcbInfo extension (OID 2.23.133.5.4.5) present on all non-root certificates. |
-| `src/measurements.rs` | Appends platform-registered `MeasurementProvider` outputs into the measurement buffer. Caliptra-internal measurements are written directly by `HwSigner::caliptra_measurements` before `collect()` is called. |
+| `src/measurements.rs` | Appends platform-registered `MeasurementProvider` outputs into the measurement buffer. Caliptra-internal measurements are written directly by `HwSigner::measurements` before `collect()` is called. |
 
 ## Implementations
 

@@ -22,7 +22,7 @@ in hardware dependencies.
 |---|---|
 | `src/lib.rs` | Public re-exports. `#![no_std]` `#![forbid(unsafe_code)]`. |
 | `src/traits.rs` | `AttestProducer` trait. |
-| `src/caliptra.rs` | `HwSigner` trait — Caliptra-specific signing and certificate operations. |
+| `src/hw_abstraction.rs` | Hardware abstraction for attestation signing and certificate operations. |
 | `src/types.rs` | `Measurement`, `DigestAlgorithm`, `MeasurementAuthority`, `AttestConfig`, `OemId`, `MeasurementProvider` trait. |
 | `src/consts.rs` | Fixed-capacity constants (`MAX_CERT_SIZE`, `MAX_CHAIN_LEN`, etc.). |
 | `src/error.rs` | `AttestError` — shared error type for both service crates. |
@@ -63,7 +63,7 @@ pub trait HwSigner {
         &self,
         buf: &mut Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN>,
     ) -> Result<(), AttestError>;
-    fn caliptra_measurements(
+    fn measurements(
         &self,
         out: &mut Vec<Measurement, MAX_MEASUREMENTS>,
     ) -> Result<(), AttestError>;

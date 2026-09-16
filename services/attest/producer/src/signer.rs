@@ -57,7 +57,7 @@ impl AttestProducer for HwAttestProducer<'_> {
         let ueid = cert_ueid::extract_and_verify(&chain)?;
 
         let mut meas: Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS> = Vec::new();
-        self.signer.caliptra_measurements(&mut meas)?;
+        self.signer.measurements(&mut meas)?;
         measurements::collect(&self.providers, &mut meas)?;
         builder::build(&self.config, self.signer, &ueid, &meas, nonce, out)
     }
@@ -99,7 +99,7 @@ impl AttestProducer for SoftwareAttestProducer {
             0x01, 0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x11, 0x22, 0x33, 0x44,
             0x55, 0x66, 0x77,
         ];
-        let meas = measurements::test_caliptra_measurements();
+        let meas = measurements::test_measurements();
         builder::build(&self.config, &StubSigner, &stub_ueid, &meas, nonce, out)
     }
 
@@ -143,11 +143,11 @@ impl HwSigner for StubSigner {
         buf.push(leaf).map_err(|_| AttestError::BufferFull)?;
         buf.push(ca).map_err(|_| AttestError::BufferFull)
     }
-    fn caliptra_measurements(
+    fn measurements(
         &self,
         out: &mut Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS>,
     ) -> Result<(), AttestError> {
-        let stub = measurements::test_caliptra_measurements();
+        let stub = measurements::test_measurements();
         for m in stub {
             out.push(m).map_err(|_| AttestError::BufferFull)?;
         }
@@ -183,7 +183,7 @@ mod tests {
             }
             Ok(())
         }
-        fn caliptra_measurements(
+        fn measurements(
             &self,
             _out: &mut Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS>,
         ) -> Result<(), AttestError> {
@@ -210,6 +210,6 @@ mod tests {
         let producer = HwAttestProducer::new(&ShortChainSigner, config());
         let mut out: Vec<u8, MAX_TOKEN_SIZE> = Vec::new();
         let err = producer.generate_token(b"testnonce", &mut out).unwrap_err();
-        assert!(matches!(err, AttestError::Caliptra(_)));
+        assert!(matches!(err, AttestError::Mailbox(_)));
     }
 }

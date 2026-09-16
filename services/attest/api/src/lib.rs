@@ -26,13 +26,13 @@
 #![no_std]
 #![forbid(unsafe_code)]
 
-mod caliptra;
 pub mod consts;
 mod error;
+mod hw_abstraction;
 mod traits;
 mod types;
 
-pub use caliptra::HwSigner;
+pub use hw_abstraction::HwSigner;
 pub use error::AttestError;
 pub use traits::AttestProducer;
 pub use types::{

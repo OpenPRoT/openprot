@@ -31,25 +31,25 @@ pub const UEID_LEN: usize = 17;
 /// malformed or the UEID field has an unexpected length.
 fn extract(cert_der: &[u8]) -> Result<Option<[u8; UEID_LEN]>, AttestError> {
     // cert DER: SEQUENCE { TBSCertificate, AlgorithmIdentifier, BIT STRING }
-    let tbs = sequence_body(cert_der).ok_or(AttestError::Caliptra("cert: bad outer SEQUENCE"))?;
+    let tbs = sequence_body(cert_der).ok_or(AttestError::Mailbox("cert: bad outer SEQUENCE"))?;
 
     // TBSCertificate: SEQUENCE { version [0], serialNumber, signature, issuer,
     //                            validity, subject, spki, [3] extensions }
-    let tbs_body = sequence_body(tbs).ok_or(AttestError::Caliptra("cert: bad TBS SEQUENCE"))?;
+    let tbs_body = sequence_body(tbs).ok_or(AttestError::Mailbox("cert: bad TBS SEQUENCE"))?;
 
     // Walk TBS fields to find the [3] EXPLICIT extensions wrapper (tag 0xa3).
     let extensions_wrapper =
-        find_tag(tbs_body, 0xa3).ok_or(AttestError::Caliptra("cert: no extensions"))?;
+        find_tag(tbs_body, 0xa3).ok_or(AttestError::Mailbox("cert: no extensions"))?;
 
     // [3] wraps a SEQUENCE of Extension SEQUENCEs.
     let ext_seq = sequence_body(extensions_wrapper)
-        .ok_or(AttestError::Caliptra("cert: bad extensions SEQUENCE"))?;
+        .ok_or(AttestError::Mailbox("cert: bad extensions SEQUENCE"))?;
 
     // Walk each Extension SEQUENCE looking for the TCG UEID OID.
     let mut remaining = ext_seq;
     while !remaining.is_empty() {
         let (ext_body, rest) =
-            take_sequence(remaining).ok_or(AttestError::Caliptra("cert: bad extension entry"))?;
+            take_sequence(remaining).ok_or(AttestError::Mailbox("cert: bad extension entry"))?;
         remaining = rest;
 
         // Extension ::= SEQUENCE { extnID OBJECT IDENTIFIER, extnValue OCTET STRING }
@@ -62,16 +62,16 @@ fn extract(cert_der: &[u8]) -> Result<Option<[u8; UEID_LEN]>, AttestError> {
 
             // extnValue is OCTET STRING { contents }
             let contents = octet_string_body(extn_value_outer)
-                .ok_or(AttestError::Caliptra("ueid: bad extnValue OCTET STRING"))?;
+                .ok_or(AttestError::Mailbox("ueid: bad extnValue OCTET STRING"))?;
 
             // Contents: SEQUENCE { OCTET STRING(ueid_bytes) }
             let inner_seq =
-                sequence_body(contents).ok_or(AttestError::Caliptra("ueid: bad inner SEQUENCE"))?;
+                sequence_body(contents).ok_or(AttestError::Mailbox("ueid: bad inner SEQUENCE"))?;
             let ueid_bytes = octet_string_body(inner_seq)
-                .ok_or(AttestError::Caliptra("ueid: bad inner OCTET STRING"))?;
+                .ok_or(AttestError::Mailbox("ueid: bad inner OCTET STRING"))?;
 
             if ueid_bytes.len() != UEID_LEN {
-                return Err(AttestError::Caliptra("ueid: unexpected length"));
+                return Err(AttestError::Mailbox("ueid: unexpected length"));
             }
             let mut out = [0u8; UEID_LEN];
             out.copy_from_slice(ueid_bytes);
@@ -90,11 +90,11 @@ pub fn extract_and_verify(
     chain: &Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN>,
 ) -> Result<[u8; UEID_LEN], AttestError> {
     if chain.is_empty() {
-        return Err(AttestError::Caliptra("cert chain is empty"));
+        return Err(AttestError::Mailbox("cert chain is empty"));
     }
 
     // The leaf cert (index 0) must carry the UEID extension.
-    let leaf_ueid = extract(&chain[0])?.ok_or(AttestError::Caliptra(
+    let leaf_ueid = extract(&chain[0])?.ok_or(AttestError::Mailbox(
         "leaf cert missing TCG UEID extension",
     ))?;
 
@@ -102,7 +102,7 @@ pub fn extract_and_verify(
     for cert in chain.iter().skip(1) {
         if let Some(ueid) = extract(cert)? {
             if ueid != leaf_ueid {
-                return Err(AttestError::Caliptra(
+                return Err(AttestError::Mailbox(
                     "UEID mismatch across certificate chain",
                 ));
             }
@@ -127,18 +127,18 @@ pub(crate) fn is_x509_v3(cert_der: &[u8]) -> bool {
 /// (full DER TLV, e.g. `06 06 ...`) match `oid`.  Returns `Ok(false)` if the
 /// certificate carries no extensions at all (valid for root CA certs).
 pub(crate) fn has_extension_oid(cert_der: &[u8], oid: &[u8]) -> Result<bool, AttestError> {
-    let tbs = sequence_body(cert_der).ok_or(AttestError::Caliptra("cert: bad outer SEQUENCE"))?;
-    let tbs_body = sequence_body(tbs).ok_or(AttestError::Caliptra("cert: bad TBS SEQUENCE"))?;
+    let tbs = sequence_body(cert_der).ok_or(AttestError::Mailbox("cert: bad outer SEQUENCE"))?;
+    let tbs_body = sequence_body(tbs).ok_or(AttestError::Mailbox("cert: bad TBS SEQUENCE"))?;
     let ext_wrapper = match find_tag(tbs_body, 0xa3) {
         Some(e) => e,
         None => return Ok(false),
     };
     let ext_seq =
-        sequence_body(ext_wrapper).ok_or(AttestError::Caliptra("cert: bad extensions SEQUENCE"))?;
+        sequence_body(ext_wrapper).ok_or(AttestError::Mailbox("cert: bad extensions SEQUENCE"))?;
     let mut remaining = ext_seq;
     while !remaining.is_empty() {
         let (ext_body, rest) =
-            take_sequence(remaining).ok_or(AttestError::Caliptra("cert: bad extension entry"))?;
+            take_sequence(remaining).ok_or(AttestError::Mailbox("cert: bad extension entry"))?;
         remaining = rest;
         if ext_body.starts_with(oid) {
             return Ok(true);

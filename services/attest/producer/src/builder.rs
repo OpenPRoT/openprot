@@ -78,7 +78,7 @@ pub(crate) fn build(
     out: &mut Vec<u8, MAX_TOKEN_SIZE>,
 ) -> Result<(), AttestError> {
     if nonce.len() < MIN_NONCE_LEN || nonce.len() > MAX_NONCE_LEN {
-        return Err(AttestError::Caliptra(
+        return Err(AttestError::Mailbox(
             "nonce must be 8–64 bytes (RFC 9711 §4.3.4.3, OCP-EAT profile)",
         ));
     }
@@ -235,7 +235,7 @@ mod tests {
             buf.push(c1).map_err(|_| AttestError::BufferFull)?;
             Ok(())
         }
-        fn caliptra_measurements(
+        fn measurements(
             &self,
             _out: &mut Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS>,
         ) -> Result<(), AttestError> {
@@ -415,7 +415,7 @@ mod tests {
                 buf.push(c0).map_err(|_| AttestError::BufferFull)?;
                 buf.push(c1).map_err(|_| AttestError::BufferFull)
             }
-            fn caliptra_measurements(
+            fn measurements(
                 &self,
                 _out: &mut Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS>,
             ) -> Result<(), AttestError> {
@@ -461,7 +461,7 @@ mod tests {
             &mut out,
         )
         .unwrap_err();
-        assert!(matches!(err, AttestError::Caliptra(_)));
+        assert!(matches!(err, AttestError::Mailbox(_)));
         // Too long: 65 bytes > MAX_NONCE_LEN (64)
         let err = build(
             &config(),
@@ -472,7 +472,7 @@ mod tests {
             &mut out,
         )
         .unwrap_err();
-        assert!(matches!(err, AttestError::Caliptra(_)));
+        assert!(matches!(err, AttestError::Mailbox(_)));
     }
 
     #[test]

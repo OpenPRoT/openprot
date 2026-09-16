@@ -34,7 +34,7 @@ pub fn collect(
 
 /// Stub Caliptra measurements for use in tests (requires `test-support` feature).
 #[cfg(feature = "test-support")]
-pub fn test_caliptra_measurements() -> Vec<Measurement, MAX_MEASUREMENTS> {
+pub fn test_measurements() -> Vec<Measurement, MAX_MEASUREMENTS> {
     use heapless::String;
     use openprot_attest_api::consts::{MAX_COMPONENT_LEN, MAX_DIGEST_LEN, MAX_VERSION_LEN};
     use openprot_attest_api::{DigestAlgorithm, MeasurementAuthority};

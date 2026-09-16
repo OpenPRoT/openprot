@@ -21,7 +21,7 @@ pub trait HwSigner {
         buf: &mut Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN>,
     ) -> Result<(), AttestError>;
     /// Return Caliptra-internal firmware measurements (ROM, FMC, runtime, etc.).
-    fn caliptra_measurements(
+    fn measurements(
         &self,
         out: &mut Vec<Measurement, MAX_MEASUREMENTS>,
     ) -> Result<(), AttestError>;

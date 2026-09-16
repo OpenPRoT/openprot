@@ -44,20 +44,20 @@ pub fn cert_chain(
 /// cert that does not carry DICE extensions and is therefore exempt.
 pub fn validate_chain(chain: &[Vec<u8, MAX_CERT_SIZE>]) -> Result<(), AttestError> {
     if chain.len() < 3 {
-        return Err(AttestError::Caliptra(
+        return Err(AttestError::Mailbox(
             "DICE chain must have at least 3 certificates",
         ));
     }
     for (i, cert) in chain.iter().enumerate() {
         if cert.first() != Some(&0x30) {
-            return Err(AttestError::Caliptra("cert: not a DER SEQUENCE"));
+            return Err(AttestError::Mailbox("cert: not a DER SEQUENCE"));
         }
         if !is_x509_v3(cert) {
-            return Err(AttestError::Caliptra("cert: not X.509 v3"));
+            return Err(AttestError::Mailbox("cert: not X.509 v3"));
         }
         let is_root = i == chain.len() - 1;
         if !is_root && !has_extension_oid(cert, &OID_TCG_MULTI_TCBINFO)? {
-            return Err(AttestError::Caliptra(
+            return Err(AttestError::Mailbox(
                 "cert: missing tcg-dice-MultiTcbInfo extension",
             ));
         }
@@ -92,7 +92,7 @@ mod tests {
             c.extend_from_slice(&STUB_CERT).unwrap();
             buf.push(c).map_err(|_| AttestError::BufferFull)
         }
-        fn caliptra_measurements(
+        fn measurements(
             &self,
             _out: &mut Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS>,
         ) -> Result<(), AttestError> {
@@ -115,7 +115,7 @@ mod tests {
             buf.push(c0).map_err(|_| AttestError::BufferFull)?;
             buf.push(c1).map_err(|_| AttestError::BufferFull)
         }
-        fn caliptra_measurements(
+        fn measurements(
             &self,
             _out: &mut Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS>,
         ) -> Result<(), AttestError> {
@@ -140,7 +140,7 @@ mod tests {
             buf.push(make_dice_cert(true, false))
                 .map_err(|_| AttestError::BufferFull)
         }
-        fn caliptra_measurements(
+        fn measurements(
             &self,
             _out: &mut Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS>,
         ) -> Result<(), AttestError> {
@@ -250,7 +250,7 @@ mod tests {
         // Leaf is v1 (no version field).
         let chain = make_chain(&[(false, true), (true, true), (true, false)]);
         let err = validate_chain(&chain).unwrap_err();
-        assert!(matches!(err, AttestError::Caliptra(_)));
+        assert!(matches!(err, AttestError::Mailbox(_)));
     }
 
     #[test]
@@ -258,7 +258,7 @@ mod tests {
         // Leaf is v3 but lacks the MultiTcbInfo extension.
         let chain = make_chain(&[(true, false), (true, true), (true, false)]);
         let err = validate_chain(&chain).unwrap_err();
-        assert!(matches!(err, AttestError::Caliptra(_)));
+        assert!(matches!(err, AttestError::Mailbox(_)));
     }
 
     #[test]

@@ -3,8 +3,8 @@
 
 #[derive(Debug, thiserror::Error)]
 pub enum AttestError {
-    #[error("Caliptra mailbox error: {0}")]
-    Caliptra(&'static str),
+    #[error("Mailbox error: {0}")]
+    Mailbox(&'static str),
     #[error("CBOR encoding error")]
     Cbor,
     #[error("Fixed-size buffer capacity exceeded")]
