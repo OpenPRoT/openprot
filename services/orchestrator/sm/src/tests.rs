@@ -1161,7 +1161,8 @@ fn gating_the_rest_of_the_chain_in_awaiting_ready_ends_the_walk() {
 /// The other half of the cursor rule: gating a component the cursor has not
 /// reached leaves the cursor alone, so C1's verdict still releases it. An
 /// unconditional advance would make that verdict a mismatch and leave a
-/// verified component in reset.
+/// verified component in reset. C3 depends on C2 so the cascade has a
+/// dependent to gate.
 #[test]
 fn cascade_in_awaiting_ready_below_the_cursor_leaves_it_alone() {
     let (effects, state) = drive(
@@ -1169,20 +1170,24 @@ fn cascade_in_awaiting_ready_below_the_cursor_leaves_it_alone() {
             (C0, ComponentAttrs::active_required()),
             (C1, ComponentAttrs::passive_required()),
             (C2, ComponentAttrs::passive_cascading()),
+            (C3, ComponentAttrs::passive_required().with_depends_on(C2)),
         ]),
         &[
             BOOT,
             Event::VerificationPassed(C0), // releases C0, cursor on C1
-            Event::CorruptionDetected(C2), // gates C2, which the cursor has not reached
+            Event::CorruptionDetected(C2), // cascade-gates C2 and C3, both below the cursor
             Event::VerificationPassed(C1), // C1 is still under verification
         ],
     );
     assert_eq!(state, State::Ready);
     // The cursor never left C1, so its verdict still counts.
     assert!(effects.contains(&Effect::ReleaseReset(C1)));
-    assert!(effects.contains(&Effect::ReportIsolated(C2)));
-    assert!(!effects.contains(&Effect::ReleaseReset(C2)));
-    assert!(!effects.contains(&Effect::ReadFirmware(C2)));
+    // C2 and C3 are gated before their turn and the walk skips them.
+    for id in [C2, C3] {
+        assert!(effects.contains(&Effect::ReportIsolated(id)));
+        assert!(!effects.contains(&Effect::ReleaseReset(id)));
+        assert!(!effects.contains(&Effect::ReadFirmware(id)));
+    }
 }
 
 /// The cascade gates the component the `AwaitingReady` slot waits on. The slot
@@ -1293,6 +1298,41 @@ fn corruption_report_for_an_isolated_component_is_dropped() {
     assert!(
         !effects.contains(&Effect::RecoverComponent { id: C1, attempt: 0 }),
         "RecoverComponent fired for cascade-held C1"
+    );
+}
+
+/// A cascade reaches past a component that is already isolated. C1 is gated on
+/// its own first, so the walk from C0 has to continue through it to reach C2.
+/// Stopping at C1 would leave C2 out of reset with both components it depends
+/// on isolated.
+#[test]
+fn cascade_reaches_past_an_already_isolated_component() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_cascading()),
+            (C1, ComponentAttrs::passive_isolable().with_depends_on(C0)),
+            (C2, ComponentAttrs::passive_required().with_depends_on(C1)),
+        ]),
+        &[
+            BOOT,
+            Event::CorruptionDetected(C1), // isolable: gates C1 alone
+            Event::CorruptionDetected(C0), // cascading: C0 -> C1 -> C2
+            Event::VerificationPassed(C2),
+        ],
+    );
+    assert_eq!(state, State::Ready);
+    for id in [C0, C1, C2] {
+        assert!(effects.contains(&Effect::ReportIsolated(id)));
+        assert!(!effects.contains(&Effect::ReleaseReset(id)));
+    }
+    // C1 is reported once, by the corruption that gated it, not again by the
+    // cascade passing through.
+    assert_eq!(
+        effects
+            .iter()
+            .filter(|e| **e == Effect::ReportIsolated(C1))
+            .count(),
+        1
     );
 }
 
@@ -2271,6 +2311,82 @@ fn random_event(rng: &mut SplitMix64, ids: &[ComponentId]) -> Event {
 /// rest of the run takes it out of reset or hands it to recovery. The
 /// verify-before-release property misses the recovery half of that, because
 /// recovery re-verifies before releasing.
+/// A `Cascading` component takes its whole dependent subtree with it. Only
+/// `Cascading` carries that promise: `Isolable` isolates the one component and
+/// its dependents keep running, so the check is scoped to cascading roots.
+/// Traversing only ungated dependents used to stop the walk at a component that
+/// was already isolated, leaving the subtree behind it out of reset.
+#[test]
+fn property_cascading_isolation_reaches_the_whole_subtree() {
+    const RUNS: u64 = 20_000;
+    const MAX_LEN: u32 = 24;
+
+    let palette = [C0, C1, C2, C3];
+
+    for seed in 0..RUNS {
+        let mut rng = SplitMix64(seed.wrapping_mul(0xD1B5_4A32_D192_ED03).wrapping_add(1));
+
+        let ch = random_chain(&mut rng);
+        let mut orch = Orchestrator::<CAPACITY, ECAP>::new(
+            ch.clone().try_into().expect("valid chain"),
+            MAX_RETRY,
+        );
+        let mut platform = Recorder::new();
+
+        orch.dispatch(&mut platform, BOOT);
+        let len = 1 + rng.below(MAX_LEN);
+        for _ in 0..len {
+            let event = random_event(&mut rng, &palette);
+            orch.dispatch(&mut platform, event);
+        }
+
+        let mut isolated = [false; CAPACITY];
+        for effect in &platform.recorded {
+            if let Effect::ReportIsolated(id) = effect {
+                isolated[id.get() as usize] = true;
+            }
+        }
+
+        // Start from the dependents of every isolated `Cascading` component,
+        // then propagate down the `depends_on` edges to a fixed point.
+        // Propagation ignores the intermediate components' own policies:
+        // `cascade_hold` gates a subtree whatever the nodes in it are
+        // configured as, so an `Isolable` component in the middle must not
+        // stop it.
+        let mut must_isolate = [false; CAPACITY];
+        for &(id, attrs) in ch.iter() {
+            let Some(holder) = attrs.depends_on else {
+                continue;
+            };
+            let holder_cascading = ch
+                .iter()
+                .find(|(c, _)| *c == holder)
+                .is_some_and(|(_, a)| a.failure_policy == FailurePolicy::Cascading);
+            if isolated[holder.get() as usize] && holder_cascading {
+                must_isolate[id.get() as usize] = true;
+            }
+        }
+        for _ in 0..ch.len() {
+            for &(id, attrs) in ch.iter() {
+                if let Some(holder) = attrs.depends_on
+                    && must_isolate[holder.get() as usize]
+                {
+                    must_isolate[id.get() as usize] = true;
+                }
+            }
+        }
+        for &(id, _) in ch.iter() {
+            if must_isolate[id.get() as usize] {
+                assert!(
+                    isolated[id.get() as usize],
+                    "seed {seed}: {id:?} is under an isolated cascading component \
+                     but was never isolated",
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn property_isolation_is_sticky_under_random_sequences() {
     const RUNS: u64 = 20_000;

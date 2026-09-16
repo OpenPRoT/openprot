@@ -492,26 +492,31 @@ impl<const N: usize, const E: usize> Rot<N, E> {
     /// each newly gated component, including `root` itself — every isolated
     /// device is reported, not just the one that failed.
     fn cascade_hold(&mut self, ctx: &mut Sink<E>, root: ComponentId) {
-        // BFS over the growing isolation front. `frontier` holds the components
-        // gated so far whose dependents still need visiting; `statuses` records
-        // the durable `Isolated` mark for each.
+        // BFS over the components gated so far. `frontier` is also the visited
+        // set: a component already on it is never queued again, so the walk
+        // visits each component once and terminates even on a dependency
+        // cycle.
+        //
+        // Traversal must not skip a component that is already gated. Its own
+        // dependents may still be running, and they are only reachable through
+        // it, so stopping there would leave a component whose dependency is
+        // isolated out of reset. `gate_one` is idempotent, so re-visiting a
+        // gated component emits nothing and only continues the walk.
         let mut frontier: heapless::Vec<ComponentId, N> = heapless::Vec::new();
-        if self.gate_one(ctx, root) {
-            let _ = frontier.push(root);
-        }
+        self.gate_one(ctx, root);
+        let _ = frontier.push(root);
         let mut i = 0;
         while let Some(&holder) = frontier.get(i) {
             i += 1;
-            let mut newly_gated: heapless::Vec<ComponentId, N> = heapless::Vec::new();
+            let mut dependents: heapless::Vec<ComponentId, N> = heapless::Vec::new();
             for &(id, attrs) in self.chain.iter() {
-                if attrs.depends_on == Some(holder) && !self.is_gated(id) {
-                    let _ = newly_gated.push(id);
+                if attrs.depends_on == Some(holder) && !frontier.contains(&id) {
+                    let _ = dependents.push(id);
                 }
             }
-            for id in newly_gated {
-                if self.gate_one(ctx, id) {
-                    let _ = frontier.push(id);
-                }
+            for id in dependents {
+                self.gate_one(ctx, id);
+                let _ = frontier.push(id);
             }
         }
     }
