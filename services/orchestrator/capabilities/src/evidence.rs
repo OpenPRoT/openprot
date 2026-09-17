@@ -98,9 +98,6 @@ mod tests {
     // board is expected to use); fault codes in the same register carry
     // the device's own judgment, fatal or retriable, for every signal.
 
-    const POISON: u8 = 0xFF;
-    const TRANSIENT: u8 = 0xEE;
-
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum TestSignal {
         /// Booted once the progress register reaches this level
@@ -108,8 +105,9 @@ mod tests {
         Progress(u8),
     }
 
-    struct SocReader {
+    struct ProgressReader {
         level: u8,
+        fault: Option<BootStatus>,
         fail: bool,
     }
 
@@ -124,19 +122,21 @@ mod tests {
 
     impl core::error::Error for RegFault {}
 
-    impl EvidenceReader<TestSignal> for SocReader {
+    impl EvidenceReader<TestSignal> for ProgressReader {
         type Error = RegFault;
 
         fn read(&mut self, probe: &TestSignal) -> Result<BootStatus, RegFault> {
             if self.fail {
                 return Err(RegFault);
             }
+            if let Some(fault) = self.fault {
+                return Ok(fault);
+            }
             let TestSignal::Progress(threshold) = *probe;
-            Ok(match self.level {
-                POISON => BootStatus::FailedFatal,
-                TRANSIENT => BootStatus::FailedRetriable,
-                l if l >= threshold => BootStatus::Booted,
-                _ => BootStatus::Booting,
+            Ok(if self.level >= threshold {
+                BootStatus::Booted
+            } else {
+                BootStatus::Booting
             })
         }
     }
@@ -146,12 +146,14 @@ mod tests {
     // late ones.
     #[test]
     fn one_reader_serves_a_staged_boot() {
-        let mut soc = SocReader {
+        let mut reader = ProgressReader {
             level: 2,
+            fault: None,
             fail: false,
         };
         let mut read = |threshold| {
-            soc.read(&TestSignal::Progress(threshold))
+            reader
+                .read(&TestSignal::Progress(threshold))
                 .expect("read failed")
         };
 
@@ -166,14 +168,16 @@ mod tests {
     // retriability judgment.
     #[test]
     fn a_poisoned_register_fails_every_signal_fatally() {
-        let mut soc = SocReader {
-            level: POISON,
+        let mut reader = ProgressReader {
+            level: 0,
+            fault: Some(BootStatus::FailedFatal),
             fail: false,
         };
 
         for threshold in 1..=4 {
             assert_eq!(
-                soc.read(&TestSignal::Progress(threshold))
+                reader
+                    .read(&TestSignal::Progress(threshold))
                     .expect("read failed"),
                 BootStatus::FailedFatal
             );
@@ -182,14 +186,16 @@ mod tests {
 
     #[test]
     fn a_transient_fault_reads_retriable_for_every_signal() {
-        let mut soc = SocReader {
-            level: TRANSIENT,
+        let mut reader = ProgressReader {
+            level: 0,
+            fault: Some(BootStatus::FailedRetriable),
             fail: false,
         };
 
         for threshold in 1..=4 {
             assert_eq!(
-                soc.read(&TestSignal::Progress(threshold))
+                reader
+                    .read(&TestSignal::Progress(threshold))
                     .expect("read failed"),
                 BootStatus::FailedRetriable
             );
@@ -198,12 +204,13 @@ mod tests {
 
     #[test]
     fn errors_surface_through_the_reader() {
-        let mut soc = SocReader {
+        let mut reader = ProgressReader {
             level: 0,
+            fault: None,
             fail: true,
         };
 
-        let err = soc
+        let err = reader
             .read(&TestSignal::Progress(1))
             .expect_err("expected the register fault");
 
