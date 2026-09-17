@@ -219,6 +219,11 @@ pub enum Event {
     CorruptionDetected(ComponentId),
     /// This component has been restored from its configured recovery source.
     Restored(ComponentId),
+    /// The platform has no remaining recovery source for `id` (its configured
+    /// images/slots are exhausted); reported in place of `Restored(id)` and
+    /// short-circuits the retry cap. See the verdict-vs-error contract on
+    /// [`Platform::execute`](crate::Platform::execute).
+    RecoveryUnavailable(ComponentId),
     /// A required component's recovery was exhausted.
     RecoveryFailed,
     /// The platform driver's boot-progress watchdog fired: `id` did not report its
@@ -267,6 +272,7 @@ impl Event {
             | Event::BootConfirmed(id)
             | Event::CorruptionDetected(id)
             | Event::Restored(id)
+            | Event::RecoveryUnavailable(id)
             | Event::Timeout(id) => Some(*id),
             Event::PowerGood(_)
             | Event::AttestationChallenge
@@ -320,6 +326,10 @@ pub enum Effect {
     /// attempt 0, slot B on 1, golden on 2) without counting attempts itself —
     /// a count of its own could drift from the core's, since the driver never
     /// sees when a recovery succeeds.
+    ///
+    /// The driver reports the verdict as an event, not an `execute` error —
+    /// see the verdict-vs-error contract on
+    /// [`Platform::execute`](crate::Platform::execute).
     RecoverComponent {
         id: ComponentId,
         attempt: u8,

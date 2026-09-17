@@ -1388,6 +1388,151 @@ fn required_exhaustion_reports_before_lockdown() {
     );
 }
 
+/// Platform-signaled recovery exhaustion (`RecoveryUnavailable`) short-circuits
+/// the retry cap: a single event, not `MAX_RETRY` cycles, is enough for an
+/// `Isolable` component to be gated and skipped.
+#[test]
+fn isolable_recovery_unavailable_skips() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_required()),
+            (C1, ComponentAttrs::passive_isolable()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::VerificationFailed(C1),  // → Recovering(C1)
+            Event::RecoveryUnavailable(C1), // platform: no image left
+            Event::VerificationPassed(C0),  // re-walk from top
+        ],
+    );
+    assert_eq!(state, State::Ready);
+    assert!(effects.contains(&Effect::RecoverComponent { id: C1, attempt: 0 }));
+    assert!(effects.contains(&Effect::AssertReset(C1)));
+    assert!(effects.contains(&Effect::ReportIsolated(C1)));
+    assert!(!effects.contains(&Effect::ReleaseReset(C1))); // never released
+    assert!(!effects.contains(&Effect::LatchLockdown)); // NOT a lockdown
+}
+
+/// Platform-signaled recovery exhaustion on a `Required` component reports it
+/// then latches `Locked` — no lockdown-avoidance policy applies to `Required`.
+#[test]
+fn required_recovery_unavailable_locks() {
+    let (effects, state) = drive(
+        passive_required(&[C0]),
+        &[
+            BOOT,
+            Event::VerificationFailed(C0), // → Recovering(C0)
+            Event::RecoveryUnavailable(C0),
+        ],
+    );
+    assert_eq!(state, State::Locked);
+    assert!(effects.contains(&Effect::ReportRecoveryFailed(C0)));
+    assert!(effects.contains(&Effect::LatchLockdown));
+}
+
+/// A `Cascading` root that goes `RecoveryUnavailable` gates itself and its
+/// transitive dependents, exactly like count-driven cascade exhaustion.
+#[test]
+fn cascading_recovery_unavailable_cascades() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_required()),
+            (C1, ComponentAttrs::passive_cascading()),
+            (C2, ComponentAttrs::passive_required().with_depends_on(C1)),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::VerificationFailed(C1), // → Recovering(C1)
+            Event::RecoveryUnavailable(C1),
+            Event::VerificationPassed(C0), // re-walk from top
+        ],
+    );
+    assert_eq!(state, State::Ready);
+    assert!(effects.contains(&Effect::AssertReset(C1)));
+    assert!(effects.contains(&Effect::AssertReset(C2)));
+    assert!(effects.contains(&Effect::ReportIsolated(C1)));
+    assert!(effects.contains(&Effect::ReportIsolated(C2)));
+    assert!(!effects.contains(&Effect::LatchLockdown));
+}
+
+/// `RecoveryUnavailable` is authoritative and immediate: it exhausts recovery
+/// on the first event regardless of how high `max_retry` is, and never
+/// consults (or bumps) the retry count.
+#[test]
+fn recovery_unavailable_short_circuits_retry_budget() {
+    let mut c = heapless::Vec::<(ComponentId, ComponentAttrs), CAPACITY>::new();
+    c.push((C0, ComponentAttrs::passive_isolable()))
+        .expect("fits");
+    c.push((C1, ComponentAttrs::passive_required()))
+        .expect("fits");
+    let mut orch = Orchestrator::<CAPACITY, ECAP>::new(c.try_into().expect("valid chain"), u8::MAX);
+    let mut effects = Vec::new();
+    for ev in [
+        BOOT,
+        Event::VerificationFailed(C0), // → Recovering(C0)
+        Event::RecoveryUnavailable(C0),
+        Event::VerificationPassed(C1), // re-walk skips gated C0, reaches Ready
+    ] {
+        orch.dispatch_with(ev, |e| {
+            effects.push(e);
+            Ok(None)
+        });
+    }
+    assert_eq!(orch.state(), State::Ready);
+    assert_eq!(
+        effects
+            .iter()
+            .filter(|e| matches!(e, Effect::RecoverComponent { .. }))
+            .count(),
+        1,
+        "exactly one recovery attempt before exhaustion",
+    );
+    assert!(effects.contains(&Effect::AssertReset(C0)));
+}
+
+/// A `RecoveryUnavailable` for a component other than the one currently under
+/// recovery is dropped — same guard `Restored` already gets.
+#[test]
+fn recovery_unavailable_other_component_dropped() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_required()),
+            (C1, ComponentAttrs::passive_isolable()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::VerificationFailed(C1),  // → Recovering(C1)
+            Event::RecoveryUnavailable(C0), // wrong target: dropped
+        ],
+    );
+    assert_eq!(state, State::Recovering(C1));
+    assert!(!effects.contains(&Effect::AssertReset(C1)));
+    assert!(!effects.contains(&Effect::ReportIsolated(C1)));
+}
+
+/// A `RecoveryUnavailable` for an id outside the chain is dropped at the
+/// dispatch boundary, before any handler sees it.
+#[test]
+fn recovery_unavailable_off_chain_dropped() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_required()),
+            (C1, ComponentAttrs::passive_isolable()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::VerificationFailed(C1),  // → Recovering(C1)
+            Event::RecoveryUnavailable(C2), // C2 is not in this chain
+        ],
+    );
+    assert_eq!(state, State::Recovering(C1));
+    assert!(!effects.contains(&Effect::AssertReset(C1)));
+}
+
 /// A component that recovers within its retry budget is not degraded, so
 /// nothing is reported — reports mark components taken *out of service*, not
 /// every transient failure.
@@ -2288,7 +2433,7 @@ fn random_chain(rng: &mut SplitMix64) -> heapless::Vec<(ComponentId, ComponentAt
 /// Build one random event over the given id palette. Id-less events ignore it.
 fn random_event(rng: &mut SplitMix64, ids: &[ComponentId]) -> Event {
     let id = ids[rng.below(ids.len() as u32) as usize];
-    match rng.below(15) {
+    match rng.below(16) {
         0 => Event::VerificationPassed(id),
         1 => Event::VerificationFailed(id),
         2 => Event::ComponentReady(id),
@@ -2303,6 +2448,7 @@ fn random_event(rng: &mut SplitMix64, ids: &[ComponentId]) -> Event {
         11 => Event::UpdateRejected,
         12 => Event::RecoveryFailed,
         13 => Event::CommitTimeout,
+        14 => Event::RecoveryUnavailable(id),
         _ => Event::EffectFailed,
     }
 }

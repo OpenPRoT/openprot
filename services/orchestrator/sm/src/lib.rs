@@ -440,6 +440,28 @@ impl<const N: usize, const E: usize> Rot<N, E> {
         }
     }
 
+    /// Recovery is over for `failed` without success: gate per policy
+    /// (`Isolable`/`Cascading` skip; `Required` reports + latches `Locked`).
+    /// Shared by the retry-cap path (`Restored`, count exhausted) and the
+    /// platform's `RecoveryUnavailable` path, so the two can never diverge.
+    fn exhaust_recovery(&mut self, ctx: &mut Sink<E>, failed: ComponentId) -> Outcome {
+        match self.gate_by_policy(ctx, failed) {
+            Gating::Gated => {
+                self.clear_retry(failed);
+                Outcome::Transition(State::PreSupervision)
+            }
+            // `Required`, or an unknown/missing id: report the component that
+            // forced the halt, then lock down. The report precedes the
+            // internal `Emit`, so it is actuated before the machine moves
+            // toward `Locked`.
+            Gating::NotGated => {
+                ctx.emit(Effect::ReportRecoveryFailed(failed));
+                ctx.emit(Effect::Emit(Event::RecoveryFailed));
+                Outcome::Handled
+            }
+        }
+    }
+
     /// Shared `CorruptionDetected` handling. Delegates the policy interpretation
     /// to [`gate_by_policy`](Self::gate_by_policy) so this path and the
     /// recovery-exhaustion path can never diverge:
@@ -774,26 +796,20 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                     if attempts < self.max_retry {
                         Outcome::Transition(State::PreSupervision)
                     } else {
-                        // Retries exhausted: gate via the same `gate_by_policy`
-                        // the runtime-corruption path uses, so the two can never
-                        // disagree. Gated → continue the walk; NotGated
-                        // (Required/unknown) → lock down.
-                        match self.gate_by_policy(ctx, failed) {
-                            Gating::Gated => {
-                                self.clear_retry(failed);
-                                Outcome::Transition(State::PreSupervision)
-                            }
-                            // `Required`, or an unknown/missing id: report the
-                            // component that forced the halt, then lock down.
-                            // The report precedes the internal `Emit`, so it is
-                            // actuated before the machine moves toward `Locked`.
-                            Gating::NotGated => {
-                                ctx.emit(Effect::ReportRecoveryFailed(failed));
-                                ctx.emit(Effect::Emit(Event::RecoveryFailed));
-                                Outcome::Handled
-                            }
-                        }
+                        // Retries exhausted: gate via the same shared arm the
+                        // platform's `RecoveryUnavailable` path uses, so the
+                        // two can never disagree.
+                        self.exhaust_recovery(ctx, failed)
                     }
+                }
+                Event::RecoveryUnavailable(id) => {
+                    if *id != failed {
+                        return Outcome::Handled; // same guard as Restored
+                    }
+                    // Authoritative: the platform is out of sources, so the
+                    // machine does not wait for the retry count to run out
+                    // (does not call `bump_retry`).
+                    self.exhaust_recovery(ctx, failed)
                 }
                 Event::RecoveryFailed => Outcome::Transition(State::Locked),
                 _ => Outcome::Super,
@@ -992,6 +1008,16 @@ pub struct EffectError;
 ///   of the escalation ladder — the core has nothing stronger to emit and
 ///   will *believe* it is `Locked`. The driver must treat that failure as
 ///   terminal (halt/reset), not a recoverable error.
+/// - **[`Effect::RecoverComponent`] reports its verdict as an event, not an
+///   `execute` error.** On success the driver feeds back
+///   [`Event::Restored`]; when its configured recovery sources for that
+///   component are exhausted, it feeds back [`Event::RecoveryUnavailable`]
+///   instead — never [`EffectError`]. `EffectError` from a `RecoverComponent`
+///   call is reserved for a genuine actuation fault (e.g. a bus error during
+///   the image swap), which fails closed to [`State::Locked`] unconditionally.
+///   Reporting "out of images" that way would lock the whole platform down
+///   even for an `Isolable`/`Cascading` component, instead of letting it be
+///   gated per [`FailurePolicy`] like the count-driven exhaustion path.
 pub trait Platform {
     fn execute(&mut self, effect: Effect) -> Result<Option<Event>, EffectError>;
 }

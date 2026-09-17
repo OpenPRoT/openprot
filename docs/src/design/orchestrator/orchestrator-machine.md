@@ -35,6 +35,8 @@ stateDiagram-v2
     Recovering --> PreSupervision : Restored [retry < max_retry]<br/>(re-verify)
     Recovering --> PreSupervision : Restored [retry ≥ max_retry, Isolable/Cascading]<br/>/ AssertReset (skip — held)
     Recovering --> Locked    : Restored [retry ≥ max_retry, Required]<br/>(self-emits RecoveryFailed) / LatchLockdown
+    Recovering --> PreSupervision : RecoveryUnavailable [Isolable/Cascading]<br/>/ AssertReset (skip — held)
+    Recovering --> Locked    : RecoveryUnavailable [Required]<br/>(self-emits RecoveryFailed) / LatchLockdown
     Locked     --> Locked    : (terminal — all events ignored)
 ```
 
@@ -232,10 +234,25 @@ entire region is affected (not the whole chain — INV5).
 | `Restored(id)` | `id == failed`, cap reached, `Isolable` | `AssertReset(failed)` · `ReportIsolated(failed)` | `PreSupervision` (recovery exhausted: mark `failed` `Isolated`, reset its `retry`; the re-walk skips it) |
 | `Restored(id)` | `id == failed`, cap reached, `Cascading` | `AssertReset` · `ReportIsolated` (per component) | `PreSupervision` (recovery exhausted: mark `failed` + `depends_on` dependents `Isolated`) |
 | `Restored(id)` | `id == failed`, cap reached, `Required` | `ReportRecoveryFailed(failed)` · `Effect::Emit(RecoveryFailed)` | `Handled` (orchestrator queues `RecoveryFailed` next — INV7) |
+| `RecoveryUnavailable(id)` | `id != failed` | — | `Handled` (stale — belongs to a displaced episode) |
+| `RecoveryUnavailable(id)` | `id == failed`, `Isolable` | `AssertReset(failed)` · `ReportIsolated(failed)` | `PreSupervision` (exhausted immediately, bypassing the retry cap) |
+| `RecoveryUnavailable(id)` | `id == failed`, `Cascading` | `AssertReset` · `ReportIsolated` (per component) | `PreSupervision` (exhausted immediately) |
+| `RecoveryUnavailable(id)` | `id == failed`, `Required` | `ReportRecoveryFailed(failed)` · `Effect::Emit(RecoveryFailed)` | `Handled` |
 | `RecoveryFailed` | — | — | `Locked` |
 | anything else | — | — | `Outcome::Super` → `SupervisingPlatform` |
 
 ("cap reached" = `retry + 1 >= max_retry`.)
+
+**`RecoveryUnavailable` is the platform's own exhaustion signal.** Where
+`Restored` past the retry cap means "the machine gave up after counting failed
+restores," `RecoveryUnavailable` means "the platform driver reports no
+recovery source left for this component" — reported in place of `Restored`
+when it has no untried image/slot to swap in. It is authoritative: it runs
+the same exhaustion handling as the retry cap (`Isolable`/`Cascading` gate and
+skip, `Required` locks) immediately, without bumping or waiting on `retry`.
+This keeps `max_retry` a pure liveness backstop against a restore that keeps
+"succeeding" without ever re-verifying clean, rather than the only way
+recovery ever ends.
 
 **Two-stage recovery (CSA-aligned).** A verification failure never skips a
 component outright. Every failure — during initial boot or a re-walk — first
