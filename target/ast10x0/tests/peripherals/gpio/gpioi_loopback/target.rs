@@ -7,7 +7,7 @@
 #![no_main]
 
 use ast10x0_peripherals::create_pins;
-use ast10x0_peripherals::gpio::{GpioRole, IntoGpio};
+use ast10x0_peripherals::gpio::{IntTrigger, IntoGpio, OutputPin};
 use ast10x0_peripherals::scu;
 use console_backend::console_backend_write_all;
 use target_common::{declare_target, TargetInterface};
@@ -26,28 +26,28 @@ fn test_gpio_loopback() -> bool {
     scu::route(&(&output, &input));
     pw_log::info!("--- GPIOI loopback test ---");
 
-    output.apply(GpioRole::Output);
-    input.apply(GpioRole::Input);
+    let mut output = output.into_output();
+    let input = input.into_input();
 
     let interrupt_cases = [
-        ("level-high", GpioRole::EnableLevelHigh, false, true),
-        ("level-low", GpioRole::EnableLevelLow, true, false),
-        ("rising-edge", GpioRole::EnableRising, false, true),
-        ("falling-edge", GpioRole::EnableFalling, true, false),
-        ("both-edge rising", GpioRole::EnableBoth, false, true),
-        ("both-edge falling", GpioRole::EnableBoth, true, false),
+        ("level-high", IntTrigger::LevelHigh, false, true),
+        ("level-low", IntTrigger::LevelLow, true, false),
+        ("rising-edge", IntTrigger::Rising, false, true),
+        ("falling-edge", IntTrigger::Falling, true, false),
+        ("both-edge rising", IntTrigger::Both, false, true),
+        ("both-edge falling", IntTrigger::Both, true, false),
     ];
 
     for (name, mode, initial_high, trigger_high) in interrupt_cases {
         pw_log::info!("=== Testing GPIOI1 {} interrupt ===", name as &str);
 
-        input.apply(GpioRole::DisableInt);
+        input.disable_interrupt();
         input.ack(input.map().int_status);
 
         if initial_high {
-            output.apply(GpioRole::SetHigh);
+            let _ = output.set_high();
         } else {
-            output.apply(GpioRole::SetLow);
+            let _ = output.set_low();
         }
         let initial_level = if initial_high { "high" } else { "low" };
         pw_log::info!(
@@ -73,17 +73,17 @@ fn test_gpio_loopback() -> bool {
         );
 
         input.ack(input.map().int_status);
-        input.apply(mode);
+        input.enable_interrupt(mode);
         if input.read(input.map().int_status) {
             pw_log::error!("{}: interrupt pending before trigger", name as &str);
-            input.apply(GpioRole::DisableInt);
+            input.disable_interrupt();
             return false;
         }
 
         if trigger_high {
-            output.apply(GpioRole::SetHigh);
+            let _ = output.set_high();
         } else {
-            output.apply(GpioRole::SetLow);
+            let _ = output.set_low();
         }
         let trigger_level = if trigger_high { "high" } else { "low" };
         pw_log::info!(
@@ -100,7 +100,7 @@ fn test_gpio_loopback() -> bool {
         };
         if !input_matches {
             pw_log::error!("{}: input and output GPIO level mismatch", name as &str);
-            input.apply(GpioRole::DisableInt);
+            input.disable_interrupt();
             return false;
         }
         pw_log::info!(
@@ -111,14 +111,14 @@ fn test_gpio_loopback() -> bool {
 
         if !input.read(input.map().int_status) {
             pw_log::error!("{}: interrupt status was not set", name as &str);
-            input.apply(GpioRole::DisableInt);
+            input.disable_interrupt();
             return false;
         }
         pw_log::info!("GPIOI1 {} interrupt status set", name as &str);
 
         // Disable level-sensitive modes before clearing so an active level
         // cannot immediately reassert the status bit.
-        input.apply(GpioRole::DisableInt);
+        input.disable_interrupt();
         input.ack(input.map().int_status);
         if input.read(input.map().int_status) {
             pw_log::error!("{}: interrupt status did not clear", name as &str);

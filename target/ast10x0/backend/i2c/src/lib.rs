@@ -255,6 +255,26 @@ impl I2cSlaveEvent for Ast1060I2cBackend {
     }
 }
 
+/// Bring up and open a buffer-mode (non-DMA) bus from its two pin tokens — init hardware then wrap
+/// with no DMA buffers, so the driver is structurally incapable of a DMA transfer. Use for buses that
+/// never master a DMA transaction (e.g. slave-only), which then cost no `.ram_nc`.
+pub fn open_bus<Scl: Routes<I2cScl>, Sda: Routes<I2cSda>>(
+    scl: Scl,
+    sda: Sda,
+    config: &I2cConfig,
+) -> Result<BusDriver, I2cError> {
+    let regs = Ast1060I2cRegisters::from_pins(&scl, &sda);
+    init_regs(regs, config)?;
+    Ok(Ast1060I2cBackend {
+        regs,
+        config: *config,
+        master_dma_buf: None,
+        slave_dma_buf: None,
+        slave_enabled: false,
+        slave_addr: None,
+    })
+}
+
 /// Bring up and open a DmaMode bus from its two pin tokens in one step — init hardware (master-enable,
 /// timing, interrupts) then wrap with the caller's non-cached DMA buffers, so a driver can never front
 /// an uninitialized controller; naming the SCL/SDA pins binds that already-muxed controller at compile time.

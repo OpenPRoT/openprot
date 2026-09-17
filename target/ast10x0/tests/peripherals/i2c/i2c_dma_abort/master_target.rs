@@ -24,6 +24,7 @@
 #![no_main]
 
 use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
+use ast10x0_peripherals::create_pins;
 use ast10x0_peripherals::i2c::{
     Ast1060I2c, Ast1060I2cRegisters, ClockConfig, I2cConfig, I2cError, I2cSpeed, I2cXferMode,
 };
@@ -97,14 +98,14 @@ fn run_master() -> Result<(), &'static str> {
 
     let board = Ast10x0Board::new(Ast10x0BoardDescriptor {
         pinctrl_groups: &[pinctrl::PINCTRL_I2C2],
-        i2c_buses: &[],
     });
     // SAFETY: single call at boot with exclusive access to SCU/I2C global regs.
     unsafe { board.init() }.map_err(|_| "board init failed")?;
 
-    // SAFETY: I2C2 registers accessed only through `master` for this test.
-    let mmio =
-        unsafe { Ast1060I2cRegisters::new(ast1060_pac::I2c2::ptr(), ast1060_pac::I2cbuff2::ptr()) };
+    // SAFETY: sole pin creation site in this binary, at boot; the pins! table is this chip's true pin map.
+    let pins = unsafe { create_pins() };
+    // Naming Bus 2's SCL/SDA pins binds that controller's registers at compile time.
+    let mmio = Ast1060I2cRegisters::from_pins(&pins.scu418_0, &pins.scu418_1);
     // SAFETY: both buffers are non-cached SRAM statics uniquely owned by this
     // driver for the test's lifetime.
     let master_dma_buf: &'static mut [u8] =
