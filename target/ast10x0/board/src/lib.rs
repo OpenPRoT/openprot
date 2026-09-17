@@ -13,12 +13,14 @@
 
 use ast10x0_peripherals::hace::HaceDevice;
 use ast10x0_peripherals::scu::{PinctrlPin, ScuRegisters};
+use openprot_hal_blocking::DelayNs;
 
+pub mod bmc;
 pub mod board;
 pub mod spi_monitor;
 pub mod spim_wiring;
 
-pub use board::Pins;
+pub use board::{BmcReadyPin, BmcResetPin, Pins};
 pub use spi_monitor::Ast1060SpiMonitor;
 pub use spim_wiring::{
     apply_spim_external_mux, apply_spim_pinctrl, apply_spim_wiring, apply_spim_wiring_with_log,
@@ -100,5 +102,14 @@ pub fn delay_us(micros: u32) {
     // This is calibration-free but inaccurate; improve for production.
     for _ in 0..micros.saturating_mul(16) {
         core::hint::spin_loop();
+    }
+}
+
+/// Spins out short waits; this board has no timer source yet.
+pub struct SpinDelay;
+
+impl DelayNs for SpinDelay {
+    fn delay_ns(&mut self, ns: u32) {
+        delay_us(ns.div_ceil(1_000));
     }
 }

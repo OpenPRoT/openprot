@@ -74,8 +74,14 @@ pub const IJKL: GpioMap = gpio_group!(
     sen0: 0x09c, sen1: 0x0a0, senboth: 0x0a4, int_sts: 0x0a8, in_level: 0x070, out_read: 0x0c8,
 );
 
+/// GPIO group MNOP (GPIOM–GPIOP): int_en breaks stride (0x0e8); input-read reads the data reg.
+pub const MNOP: GpioMap = gpio_group!(
+    dataval: 0x078, dir: 0x07c, int_en: 0x0e8,
+    sen0: 0x0ec, sen1: 0x0f0, senboth: 0x0f4, int_sts: 0x0f8, in_level: 0x078, out_read: 0x0cc,
+);
+
 /// Reject a contradictory or unevenly-slotted role in any group at compile time — zero runtime cost.
 const _: () = assert!(
-    role_cfgs_ok(&ABCD) && role_cfgs_ok(&EFGH) && role_cfgs_ok(&IJKL),
+    role_cfgs_ok(&ABCD) && role_cfgs_ok(&EFGH) && role_cfgs_ok(&IJKL) && role_cfgs_ok(&MNOP),
     "an AST GPIO group has a self-conflicting or unevenly-slotted role"
 );

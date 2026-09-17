@@ -4,7 +4,7 @@
 //! The AST1060 pin universe: one owned ZST token per pad, with its capability role impls.
 //! A SoC fact (same across all AST1060 boards), so it lives here, not in a board.
 
-use crate::gpio::{ABCD, EFGH, IJKL};
+use crate::gpio::{ABCD, EFGH, IJKL, MNOP};
 use ast1060_pac::{I2c, I2c1, I2c2, I2c3, I2cbuff, I2cbuff1, I2cbuff2, I2cbuff3};
 use openprot_hal::field_mux::Block;
 use openprot_hal::gpio::{Gpio, GpioData};
@@ -53,6 +53,8 @@ openprot_hal::pins! {
     scu414_31 { I2cSda: &[set(0x414, 31)] => I2cData { ctrl: I2C_CTRL[1] }, Gpio: &[clear(0x414, 31)] => GpioData { bit: 31, map: &EFGH } },
     scu418_0 { I2cScl: &[set(0x418, 0)] => I2cData { ctrl: I2C_CTRL[2] }, Gpio: &[clear(0x418, 0)] => GpioData { bit: 0, map: &IJKL } },
     scu418_1 { I2cSda: &[set(0x418, 1)] => I2cData { ctrl: I2C_CTRL[2] }, Gpio: &[clear(0x418, 1)] => GpioData { bit: 1, map: &IJKL } },
+    scu418_2 { Gpio: &[clear(0x418, 2)] => GpioData { bit: 2, map: &IJKL } },
+    scu41c_5 { Gpio: &[clear(0x41c, 5)] => GpioData { bit: 5, map: &MNOP } },
 
     scu410_0 { Gpio: &[clear(0x410, 0), clear(0x4b0, 0), clear(0x690, 0)] => GpioData { bit: 0, map: &ABCD } },
     scu410_1 { Gpio: &[clear(0x410, 1), clear(0x4b0, 1), clear(0x690, 1)] => GpioData { bit: 1, map: &ABCD } },
