@@ -61,6 +61,8 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
+        "//services/orchestrator/adapters/walk:orchestrator_checkpoint_walk",
+        "//services/orchestrator/capabilities:orchestrator_capabilities",
         "//services/orchestrator/config:orchestrator_config",
         "//services/orchestrator/server:orchestrator_server",
         "//services/orchestrator/sm:orchestrator_sm",
