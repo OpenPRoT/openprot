@@ -17,16 +17,46 @@
 /// re-resets the device and re-runs the whole walk, so budgets are
 /// per boot attempt and owned by the orchestrator state machine.
 ///
-/// The signal is a board-defined id — the schema attaches no meaning to
+/// The signal is a board-defined id, the schema attaches no meaning to
 /// it and names no signal kinds. Each board defines its own vocabulary (a
 /// small enum: a GPIO line, a progress-register threshold, a message-path
 /// readiness) and gives it meaning in its `EvidenceReader`. The id is a
 /// defunctionalized evidence check: data in the table instead of a
-/// function, so the table stays printable, comparable, const-checkable —
+/// function, so the table stays printable, comparable, const-checkable,
 /// and could one day be generated instead of written.
 ///
 /// Fields are private so a checkpoint that violates the schema is
 /// unrepresentable: [`new`](Self::new) is the only way in, and it checks.
+///
+/// # Example: three GPIO checkpoints
+///
+/// A BMC behind three GPIO ready lines (bl1 on pin 4, kernel on pin 5,
+/// service on pin 6), all on the same SGPIOM bank. Each signal variant
+/// maps to one `GpioBootMonitor` in the board's `EvidenceReader`, and
+/// the walker (`CheckpointWalk`) walks them in declaration order.
+///
+/// ```ignore
+/// #[derive(Debug, Clone, Copy)]
+/// enum BmcSignal { Bl1, Kernel, Service }
+///
+/// const BMC: DeviceConfig<u8, BmcSignal> = DeviceConfig::new(
+///     "bmc", 0,
+///     &[
+///         BootCheckpoint::new("bl1",     BmcSignal::Bl1,     Duration::from_millis(500)),
+///         BootCheckpoint::new("kernel",  BmcSignal::Kernel,  Duration::from_secs(5)),
+///         BootCheckpoint::new("service", BmcSignal::Service, Duration::from_secs(30)),
+///     ],
+/// );
+///
+/// // Pin binding at bring-up: one GpioBootMonitor per signal.
+/// let bl1     = GpioBootMonitor::new(&sgpiom, Mask(1 << 4), ActivePolarity::ActiveHigh);
+/// let kernel  = GpioBootMonitor::new(&sgpiom, Mask(1 << 5), ActivePolarity::ActiveHigh);
+/// let service = GpioBootMonitor::new(&sgpiom, Mask(1 << 6), ActivePolarity::ActiveHigh);
+///
+/// // The board's EvidenceReader dispatches signal to monitor.
+/// // See EvidenceReader's docs for the full impl pattern.
+/// let bmc_walk = CheckpointWalk::new(bmc_reader, BMC.checkpoints());
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct BootCheckpoint<G> {
     name: &'static str,
