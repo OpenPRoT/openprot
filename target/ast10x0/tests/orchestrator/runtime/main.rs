@@ -7,14 +7,15 @@
 //! `orchestrator-config`), and the checkpoint walker (`CheckpointWalk`,
 //! `orchestrator-checkpoint-walk`) wired end to end under the kernel.
 //!
-//! Scenarios 1-2 exercise `CheckpointWalk` end to end: the walk judges
+//! Scenarios 1-3 exercise `CheckpointWalk` end to end: the walk judges
 //! per-checkpoint windows via `poll(now_millis)` and an `EvidenceReader`,
 //! the runtime converts `deadline_millis` to kernel ticks via `object_wait`,
-//! and a `DeadlineExceeded` re-poll proves the timeout path.
+//! and a `DeadlineExceeded` re-poll proves the timeout path. Scenario 3
+//! drives a device-reported fault, not just silence, through that path.
 //!
-//! Scenarios 3-4 exercise `BootWatchdogs` multiplexing across a
+//! Scenarios 4-5 exercise `BootWatchdogs` multiplexing across a
 //! multi-component chain (nearest-of-many deadlines, correct-id recovery).
-//! Scenario 5 covers the commit watchdog.
+//! Scenario 6 covers the commit watchdog.
 
 #![no_main]
 #![no_std]
@@ -68,21 +69,49 @@ fn window(timeout: core::time::Duration) -> Duration {
 }
 
 /// Progress-register reader for the walk: probe N is `Booted` once
-/// `level >= N`. Mirrors the SocReader archetype in the evidence tests.
+/// `level >= N`. Mirrors the ProgressReader archetype in the evidence tests,
+/// including its fault channel: a device that reports its own verdict reads
+/// that verdict for every probe, whichever checkpoint is being awaited.
 struct ProgressReader {
     level: u8,
+    fault: Option<BootStatus>,
+}
+
+impl ProgressReader {
+    const fn new() -> Self {
+        Self {
+            level: 0,
+            fault: None,
+        }
+    }
 }
 
 impl EvidenceReader<u8> for ProgressReader {
     type Error = core::convert::Infallible;
 
     fn read(&mut self, probe: &u8) -> core::result::Result<BootStatus, Self::Error> {
+        if let Some(fault) = self.fault {
+            return Ok(fault);
+        }
         Ok(if self.level >= *probe {
             BootStatus::Booted
         } else {
             BootStatus::Booting
         })
     }
+}
+
+/// What the simulated device does when given an opportunity to report.
+#[derive(Clone, Copy)]
+enum DeviceBehavior {
+    /// Reports progress for the first `reached` opportunities, then goes
+    /// quiet: `reached == len` boots, anything less times out.
+    Progresses { reached: usize },
+    /// Reports this fault on the very first opportunity, instead of
+    /// progress. Exercises `CheckpointWalk`'s `FailedRetriable`/`FailedFatal`
+    /// arms through the real interrupt/`object_wait` path, not just through
+    /// `CheckpointWalk`'s own host unit tests.
+    Faults(BootStatus),
 }
 
 fn ticks_to_millis(ticks: u64) -> u64 {
@@ -155,16 +184,15 @@ fn drive_releases(core: &mut Core, plat: &mut FakePlatform, ids: &[ComponentId])
 }
 
 /// Run one component's inner checkpoint walk through `CheckpointWalk` and
-/// return its terminal verdict as an event. `reached` simulates the device:
-/// the reader's progress advances for the first `reached` checkpoints, then
-/// goes quiet, so `reached == len` boots and anything less times out.
+/// return its terminal verdict as an event. `behavior` simulates the device:
+/// it either advances its progress register or reports a fault.
 ///
 /// The walk judges per-checkpoint windows; the runtime (`object_wait`) just
 /// sleeps until the walk's deadline or a device signal.
 fn walk_device(
     walk: &mut CheckpointWalk<ProgressReader, u8>,
     id: ComponentId,
-    reached: usize,
+    behavior: DeviceBehavior,
 ) -> Result<Event> {
     walk.arm();
     let mut k = 0usize;
@@ -173,10 +201,20 @@ fn walk_device(
         let now = ticks_to_millis(SystemClock::now().ticks());
         match walk.poll(now) {
             WalkVerdict::Waiting { deadline_millis } => {
-                // Simulate device progress after the poll returned Waiting,
-                // so every trigger pairs with a wait+ack below.
-                if k < reached {
-                    walk.reader_mut().level = (k + 1) as u8;
+                // Simulate the device after the poll returned Waiting, so
+                // every trigger pairs with a wait+ack below.
+                let triggered = match behavior {
+                    DeviceBehavior::Progresses { reached } if k < reached => {
+                        walk.reader_mut().level = (k + 1) as u8;
+                        true
+                    }
+                    DeviceBehavior::Faults(status) if k == 0 => {
+                        walk.reader_mut().fault = Some(status);
+                        true
+                    }
+                    _ => false,
+                };
+                if triggered {
                     syscall::debug_trigger_interrupt(constants::BOOT_PROGRESS)?;
                 }
 
@@ -242,8 +280,9 @@ fn scenario_checkpoint_confirmed() -> Result<()> {
         return Err(Error::Internal);
     }
 
-    let mut walk = CheckpointWalk::new(ProgressReader { level: 0 }, &SOC);
-    let terminal = walk_device(&mut walk, C0, SOC.checkpoints().len())?;
+    let mut walk = CheckpointWalk::new(ProgressReader::new(), &SOC);
+    let reached = SOC.checkpoints().len();
+    let terminal = walk_device(&mut walk, C0, DeviceBehavior::Progresses { reached })?;
     if terminal != Event::Booted(C0) {
         pw_log::error!("scenario 1: walk did not confirm boot");
         return Err(Error::Internal);
@@ -276,8 +315,8 @@ fn scenario_checkpoint_timeout() -> Result<()> {
 
     drive_releases(&mut core, &mut plat, &[C0])?;
 
-    let mut walk = CheckpointWalk::new(ProgressReader { level: 0 }, &SOC);
-    let terminal = walk_device(&mut walk, C0, 0)?;
+    let mut walk = CheckpointWalk::new(ProgressReader::new(), &SOC);
+    let terminal = walk_device(&mut walk, C0, DeviceBehavior::Progresses { reached: 0 })?;
     let is_boot_failed = matches!(
         terminal,
         Event::BootFailed { id, checkpoint: "bl1", kind, .. }
@@ -298,17 +337,69 @@ fn scenario_checkpoint_timeout() -> Result<()> {
     Ok(())
 }
 
+/// Inner walk, device-fault path: the device is up enough to report its own
+/// verdict. The walk surfaces `BootFailed` with `DeviceFatal`, and — the point
+/// of the scenario — it does so *early*, without burning the checkpoint's
+/// window, which is what distinguishes a reported fault from silence.
+fn scenario_checkpoint_device_fault() -> Result<()> {
+    pw_log::info!("scenario 3: device-reported fault ends the wait early");
+    let mut core = new_core(&[C0])?;
+    let mut plat = FakePlatform::new();
+
+    drive_releases(&mut core, &mut plat, &[C0])?;
+
+    let mut walk = CheckpointWalk::new(ProgressReader::new(), &SOC);
+    let start = ticks_to_millis(SystemClock::now().ticks());
+    let terminal = walk_device(
+        &mut walk,
+        C0,
+        DeviceBehavior::Faults(BootStatus::FailedFatal),
+    )?;
+    let elapsed = ticks_to_millis(SystemClock::now().ticks()).saturating_sub(start);
+
+    let is_fatal = matches!(
+        terminal,
+        Event::BootFailed { id, checkpoint: "bl1", kind, .. }
+            if id == C0 && kind == BootFailureKind::DeviceFatal
+    );
+    if !is_fatal {
+        pw_log::error!("scenario 3: walk did not surface the device's fatal verdict");
+        return Err(Error::Internal);
+    }
+
+    // The checkpoint's window is 500ms; a fault-ended wait should finish in a
+    // small fraction of that. A silence-driven timeout (scenario 2) can only
+    // finish once the full window lapses, so this margin is generous enough to
+    // distinguish the two without being flaky.
+    if elapsed >= 100 {
+        pw_log::error!(
+            "scenario 3: fault took {}ms, did not end the wait early",
+            elapsed as u32
+        );
+        return Err(Error::Internal);
+    }
+
+    core.dispatch(&mut plat, terminal);
+    if core.state() != State::Recovering(C0) {
+        pw_log::error!("scenario 3: core did not enter recovery");
+        return Err(Error::Internal);
+    }
+
+    pw_log::info!("scenario 3: PASS");
+    Ok(())
+}
+
 /// Outer walk, all confirm: a two-component chain, both boot watchdogs armed at
 /// once, both components report in, the core reaches `Ready`.
 fn scenario_chain_all_confirm() -> Result<()> {
-    pw_log::info!("scenario 3: multi-component chain all confirm");
+    pw_log::info!("scenario 4: multi-component chain all confirm");
     let mut core = new_core(&[C0, C1])?;
     let mut plat = FakePlatform::new();
     let mut wd = Watchdogs::new();
 
     drive_releases(&mut core, &mut plat, &[C0, C1])?;
     if core.state() != State::Ready {
-        pw_log::error!("scenario 3: chain did not reach Ready on release");
+        pw_log::error!("scenario 4: chain did not reach Ready on release");
         return Err(Error::Internal);
     }
 
@@ -325,11 +416,11 @@ fn scenario_chain_all_confirm() -> Result<()> {
     core.dispatch(&mut plat, Event::Booted(C1));
 
     if core.state() != State::Ready {
-        pw_log::error!("scenario 3: core left Ready after both booted");
+        pw_log::error!("scenario 4: core left Ready after both booted");
         return Err(Error::Internal);
     }
 
-    pw_log::info!("scenario 3: PASS");
+    pw_log::info!("scenario 4: PASS");
     Ok(())
 }
 
@@ -337,7 +428,7 @@ fn scenario_chain_all_confirm() -> Result<()> {
 /// quiet. With only `C1` left, the runtime's nearest deadline is `C1`'s; it
 /// lapses and `poll_expired` surfaces `Timeout(C1)`, recovering the right one.
 fn scenario_chain_one_timeout() -> Result<()> {
-    pw_log::info!("scenario 4: multi-component chain, one times out");
+    pw_log::info!("scenario 5: multi-component chain, one times out");
     let mut core = new_core(&[C0, C1])?;
     let mut plat = FakePlatform::new();
     let mut wd = Watchdogs::new();
@@ -360,13 +451,13 @@ fn scenario_chain_one_timeout() -> Result<()> {
         wd.wait_deadline(),
     ) {
         Ok(_) => {
-            pw_log::error!("scenario 4: unexpected signal, C1's device is quiet");
+            pw_log::error!("scenario 5: unexpected signal, C1's device is quiet");
             return Err(Error::Internal);
         }
         Err(Error::DeadlineExceeded) => {
             let event = wd.poll_expired().ok_or(Error::Internal)?;
             if event != Event::Timeout(C1) {
-                pw_log::error!("scenario 4: runtime timed out the wrong component");
+                pw_log::error!("scenario 5: runtime timed out the wrong component");
                 return Err(Error::Internal);
             }
             core.dispatch(&mut plat, event);
@@ -375,11 +466,11 @@ fn scenario_chain_one_timeout() -> Result<()> {
     }
 
     if core.state() != State::Recovering(C1) {
-        pw_log::error!("scenario 4: core did not recover C1");
+        pw_log::error!("scenario 5: core did not recover C1");
         return Err(Error::Internal);
     }
 
-    pw_log::info!("scenario 4: PASS");
+    pw_log::info!("scenario 5: PASS");
     Ok(())
 }
 
@@ -387,7 +478,7 @@ fn scenario_chain_one_timeout() -> Result<()> {
 /// against the real clock, and confirm the runtime surfaces `CommitTimeout`
 /// (and nothing more).
 fn scenario_commit_timeout() -> Result<()> {
-    pw_log::info!("scenario 5: commit watchdog surfaces CommitTimeout");
+    pw_log::info!("scenario 6: commit watchdog surfaces CommitTimeout");
     let mut wd = Watchdogs::new();
 
     wd.arm_commit(COMMIT_WINDOW);
@@ -397,12 +488,12 @@ fn scenario_commit_timeout() -> Result<()> {
         wd.wait_deadline(),
     ) {
         Ok(_) => {
-            pw_log::error!("scenario 5: unexpected signal, no device is armed");
+            pw_log::error!("scenario 6: unexpected signal, no device is armed");
             return Err(Error::Internal);
         }
         Err(Error::DeadlineExceeded) => {
             if wd.poll_expired() != Some(Event::CommitTimeout) {
-                pw_log::error!("scenario 5: runtime did not surface CommitTimeout");
+                pw_log::error!("scenario 6: runtime did not surface CommitTimeout");
                 return Err(Error::Internal);
             }
         }
@@ -411,17 +502,18 @@ fn scenario_commit_timeout() -> Result<()> {
 
     // One-shot: the watchdog is drained, nothing more is due.
     if wd.poll_expired().is_some() {
-        pw_log::error!("scenario 5: commit watchdog fired twice");
+        pw_log::error!("scenario 6: commit watchdog fired twice");
         return Err(Error::Internal);
     }
 
-    pw_log::info!("scenario 5: PASS");
+    pw_log::info!("scenario 6: PASS");
     Ok(())
 }
 
 fn run_test() -> Result<()> {
     scenario_checkpoint_confirmed()?;
     scenario_checkpoint_timeout()?;
+    scenario_checkpoint_device_fault()?;
     scenario_chain_all_confirm()?;
     scenario_chain_one_timeout()?;
     scenario_commit_timeout()?;
