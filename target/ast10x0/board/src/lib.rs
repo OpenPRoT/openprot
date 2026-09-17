@@ -15,6 +15,7 @@ use ast10x0_peripherals::hace::HaceDevice;
 use ast10x0_peripherals::scu::{ClockRegisterHalf, ScuRegisterHalf};
 use ast10x0_peripherals::scu::{PinctrlPin, ScuRegisters};
 
+pub mod bmc;
 pub mod spi_monitor;
 pub mod spim_wiring;
 
