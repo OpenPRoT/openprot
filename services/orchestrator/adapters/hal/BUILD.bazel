@@ -7,6 +7,8 @@ rust_library(
     name = "orchestrator_hal_adapters",
     srcs = [
         "src/gpio_boot_monitor.rs",
+        "src/gpio_ready_monitor.rs",
+        "src/gpio_reset_control.rs",
         "src/hal_boot_control.rs",
         "src/lib.rs",
     ],
@@ -15,6 +17,7 @@ rust_library(
     deps = [
         "//hal/blocking",
         "//services/orchestrator/capabilities:orchestrator_capabilities",
+        "@rust_crates//:embedded-hal",
     ],
 )
 
