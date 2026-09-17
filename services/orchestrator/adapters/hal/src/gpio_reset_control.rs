@@ -5,7 +5,9 @@
 
 use core::time::Duration;
 use openprot_hal_blocking::gpio_port::ActivePolarity;
-use openprot_hal_blocking::system_control::{Error as HalError, ErrorKind, ErrorType, ResetControl};
+use openprot_hal_blocking::system_control::{
+    Error as HalError, ErrorKind, ErrorType, ResetControl,
+};
 use openprot_hal_blocking::{DelayNs, OutputPin};
 
 /// Why driving a reset line failed.
