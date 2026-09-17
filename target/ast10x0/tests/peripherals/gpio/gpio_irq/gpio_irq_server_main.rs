@@ -8,7 +8,7 @@
 
 use app_gpio_irq_server::{handle, signals};
 use ast10x0_peripherals::create_pins;
-use ast10x0_peripherals::gpio::{bind_gpio, GpioRole};
+use ast10x0_peripherals::gpio::{bind_gpio, IntTrigger};
 use pw_status::Error;
 use userspace::entry;
 use userspace::syscall;
@@ -28,9 +28,7 @@ fn entry() {
     // we bind the already-routed pin rather than re-muxing it.
     // SAFETY: sole pin creation site in this binary, at boot; the pins! table is this chip's true pin map.
     let pins = unsafe { create_pins() };
-    let a0 = bind_gpio(pins.scu410_0);
-    a0.apply(GpioRole::Input);
-    a0.apply(GpioRole::SetLow);
+    let a0 = bind_gpio(pins.scu410_0).into_input();
 
     if syscall::wait_group_add(
         handle::WG,
@@ -44,7 +42,7 @@ fn entry() {
     }
 
     a0.ack(a0.map().int_status);
-    a0.apply(GpioRole::EnableBoth);
+    a0.enable_interrupt(IntTrigger::Both);
 
     if syscall::interrupt_ack(handle::GPIO_IRQ, signals::GPIO).is_err() {
         fail!("initial interrupt_ack failed");

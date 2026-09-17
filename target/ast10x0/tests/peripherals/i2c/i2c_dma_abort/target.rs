@@ -22,7 +22,8 @@
 #![no_std]
 #![no_main]
 
-use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor, I2cBusCfg};
+use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
+use ast10x0_peripherals::create_pins;
 use ast10x0_peripherals::i2c::{ClockConfig, I2cConfig, I2cError, I2cSpeed, I2cXferMode};
 use ast10x0_peripherals::scu::pinctrl;
 use codegen as _;
@@ -69,19 +70,18 @@ fn setup_and_serve_one() -> Result<i2c_backend::BusDriver, &'static str> {
 
     let board = Ast10x0Board::new(Ast10x0BoardDescriptor {
         pinctrl_groups: &[pinctrl::PINCTRL_I2C2],
-        i2c_buses: &[I2cBusCfg {
-            bus: 2,
-            config: SLAVE_CFG,
-        }],
     });
     // SAFETY: single call at boot with exclusive access to the board.
     unsafe { board.init() }.map_err(|_| "board init failed")?;
 
-    // SAFETY: board.init() ran init_bus(2); we are the sole owner of Bus 2.
-    let mut driver = unsafe { i2c_backend::open_bus(2, &SLAVE_CFG) }.map_err(|e| {
-        pw_log::error!("open_bus failed: {}", i2c_error_str(e) as &str);
-        "open_bus failed"
-    })?;
+    // SAFETY: sole pin creation site in this binary, at boot; the pins! table is this chip's true pin map.
+    let pins = unsafe { create_pins() };
+    // Buffer-mode slave: no DMA buffers, so this driver cannot master a DMA transfer.
+    let mut driver =
+        i2c_backend::open_bus(pins.scu418_0, pins.scu418_1, &SLAVE_CFG).map_err(|e| {
+            pw_log::error!("open_bus failed: {}", i2c_error_str(e) as &str);
+            "open_bus failed"
+        })?;
 
     driver
         .configure_slave_address(SLAVE_ADDR)
