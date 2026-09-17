@@ -502,13 +502,6 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
                 dma_buf.as_ptr() as u32
             };
 
-            // Arm the DMA engine (i2cm1c length + i2cm30 base addr). The guard
-            // tears the engine down automatically if we return before commit.
-            let dma = ArmedDma::arm_tx(self.mmio(), phy_addr, chunk_len);
-
-            self.clear_interrupts(0xffff_ffff);
-            self.completion = false;
-
             // Build command
             let mut cmd = constants::AST_I2CM_PKT_EN
                 | constants::AST_I2CM_TX_CMD
@@ -522,14 +515,9 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
                 cmd |= constants::AST_I2CM_STOP_CMD;
             }
 
-            self.regs().i2cm18().write(|w| unsafe { w.bits(cmd) });
-
-            match self.wait_completion(constants::DEFAULT_TIMEOUT_US) {
-                // STOP issued; the engine quiesced normally.
-                Ok(()) => dma.commit(),
-                // Timeout: `dma` drops here, soft-resetting the live engine.
-                Err(e) => return Err(e),
-            }
+            // Arm the DMA engine (i2cm1c length + i2cm30 base addr) and run the
+            // transaction; the guard tears the engine down on any error path.
+            ArmedDma::arm_tx(self, phy_addr, chunk_len).run(cmd)?;
 
             let status = self.regs().i2cm14().read().bits();
             if status & constants::AST_I2CM_PKT_ERROR != 0 {
@@ -578,13 +566,6 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
                 dma_buf.as_ptr() as u32
             };
 
-            // Arm the DMA engine (i2cm1c length + i2cm34 base addr). The guard
-            // tears the engine down automatically if we return before commit.
-            let dma = ArmedDma::arm_rx(self.mmio(), phy_addr, chunk_len);
-
-            self.clear_interrupts(0xffff_ffff);
-            self.completion = false;
-
             // Build command
             let mut cmd = constants::AST_I2CM_PKT_EN
                 | constants::AST_I2CM_RX_CMD
@@ -597,14 +578,9 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
                 cmd |= constants::AST_I2CM_RX_CMD_LAST | constants::AST_I2CM_STOP_CMD;
             }
 
-            self.regs().i2cm18().write(|w| unsafe { w.bits(cmd) });
-
-            match self.wait_completion(constants::DEFAULT_TIMEOUT_US) {
-                // STOP issued; the engine quiesced normally.
-                Ok(()) => dma.commit(),
-                // Timeout: `dma` drops here, soft-resetting the live engine.
-                Err(e) => return Err(e),
-            }
+            // Arm the DMA engine (i2cm1c length + i2cm34 base addr) and run the
+            // transaction; the guard tears the engine down on any error path.
+            ArmedDma::arm_rx(self, phy_addr, chunk_len).run(cmd)?;
 
             let status = self.regs().i2cm14().read().bits();
             if status & constants::AST_I2CM_PKT_ERROR != 0 {
