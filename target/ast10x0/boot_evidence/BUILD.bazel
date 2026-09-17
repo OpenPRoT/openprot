@@ -1,0 +1,22 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "ast10x0_boot_evidence",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking",
+        "//services/orchestrator/adapters/hal:orchestrator_hal_adapters",
+        "//services/orchestrator/capabilities:orchestrator_capabilities",
+        "//services/orchestrator/config:orchestrator_config",
+    ],
+)
+
+rust_test(
+    name = "ast10x0_boot_evidence_test",
+    crate = ":ast10x0_boot_evidence",
+)
