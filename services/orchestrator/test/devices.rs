@@ -9,7 +9,10 @@
 
 use core::time::Duration;
 
-use orchestrator_config::{BootCheckpoint, DeviceConfig};
+use orchestrator_config::{
+    assert_retry_reaches_every_image, BootCheckpoint, DeviceConfig, Golden, ImageLayout, Region,
+    Slot, SlotId,
+};
 
 /// The mock board's boot-signal vocabulary. The schema carries these
 /// opaquely; only this board's `EvidenceReader` gives them meaning.
@@ -23,6 +26,18 @@ pub enum MockSignal {
     /// clears it).
     Heartbeat,
 }
+
+/// The BMC's images: two 2 MiB slots at the bottom of its firmware
+/// partition, the golden image above them.
+const BMC_LAYOUT: ImageLayout = ImageLayout::new(
+    const {
+        &[
+            Slot::new(SlotId(0), Region::new(0x00_0000, 0x20_0000)),
+            Slot::new(SlotId(1), Region::new(0x20_0000, 0x20_0000)),
+        ]
+    },
+    Golden::new(Region::new(0x40_0000, 0x20_0000)),
+);
 
 /// Declaration order is the boot order: the orchestrator releases devices
 /// top to bottom, one at a time. This table is the authority — the
@@ -41,6 +56,10 @@ pub const MANAGED_DEVICES: &[DeviceConfig<u8, MockSignal>] = &[
             MockSignal::Gpio(12),
             Duration::from_secs(90),
         )],
+        // A/B plus the golden image, in the flash the eRoT owns. Offsets
+        // are counted from the start of the BMC's flash area; real
+        // boards declare their own.
+        Some(BMC_LAYOUT),
     ),
     // PLDM device (NIC archetype): self-updating, SPDM-capable. Two
     // checkpoints, exercising the multi-checkpoint path: transport up
@@ -52,6 +71,10 @@ pub const MANAGED_DEVICES: &[DeviceConfig<u8, MockSignal>] = &[
             BootCheckpoint::new("mctp-ready", MockSignal::MctpReady, Duration::from_secs(20)),
             BootCheckpoint::new("heartbeat", MockSignal::Heartbeat, Duration::from_secs(10)),
         ],
+        // Self-updating device: it owns its images and its boot selection,
+        // so the eRoT addresses no byte range for it and declares no
+        // layout.
+        None,
     ),
 ];
 
@@ -75,3 +98,11 @@ const fn validate_signals(devices: &[DeviceConfig<u8, MockSignal>]) {
 }
 
 const _: () = validate_signals(MANAGED_DEVICES);
+
+/// How many times the orchestrator restores a component before it gives up.
+/// Four, because the BMC has three images and the attempt that restores the
+/// last one is never booted, so three would stop one boot short of the
+/// golden image.
+pub const MAX_RETRY: u8 = 4;
+
+const _: () = assert_retry_reaches_every_image(MAX_RETRY, MANAGED_DEVICES);
