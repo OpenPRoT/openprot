@@ -7,7 +7,7 @@
 #![no_main]
 
 use ast10x0_peripherals::create_pins;
-use ast10x0_peripherals::gpio::{GpioRole, IntoGpio};
+use ast10x0_peripherals::gpio::{IntoGpio, OutputPin};
 use ast10x0_peripherals::scu;
 use console_backend::console_backend_write_all;
 use target_common::{declare_target, TargetInterface};
@@ -29,13 +29,13 @@ fn run_gpioa_test() -> bool {
 
     // AST1060 has no internal pull control on these inputs, so their sampled level is set by external
     // wiring — either value is valid. Configure as input and log the live level; do not assert.
-    a0.apply(GpioRole::Input);
+    let a0 = a0.into_input();
     pw_log::info!(
         "GPIOA0 input sampled level={}",
         a0.read(a0.map().in_level) as u32
     );
 
-    a1.apply(GpioRole::Input);
+    let a1 = a1.into_input();
     pw_log::info!(
         "GPIOA1 input sampled level={}",
         a1.read(a1.map().in_level) as u32
@@ -43,30 +43,30 @@ fn run_gpioa_test() -> bool {
 
     // Outputs are verified against the output latch (`OUT_LEVEL`), which is wiring-independent — an
     // open-drain high floats the pin, so reading the live level would depend on an external pull-up.
-    a3.apply(GpioRole::Output);
-    a3.apply(GpioRole::SetLow);
+    let mut a3 = a3.into_output();
+    let _ = a3.set_low();
     if a3.read(a3.map().out_level) {
         pw_log::error!("GPIOA3 open-drain output did not latch low");
         return false;
     }
     pw_log::info!("GPIOA3 open-drain output latched low");
 
-    a3.apply(GpioRole::SetHigh);
+    let _ = a3.set_high();
     if !a3.read(a3.map().out_level) {
         pw_log::error!("GPIOA3 open-drain output did not latch high");
         return false;
     }
     pw_log::info!("GPIOA3 open-drain output latched high");
 
-    a4.apply(GpioRole::Output);
-    a4.apply(GpioRole::SetLow);
+    let mut a4 = a4.into_output();
+    let _ = a4.set_low();
     if a4.read(a4.map().out_level) {
         pw_log::error!("GPIOA4 push-pull output did not latch low");
         return false;
     }
     pw_log::info!("GPIOA4 push-pull output latched low");
 
-    a4.apply(GpioRole::SetHigh);
+    let _ = a4.set_high();
     if !a4.read(a4.map().out_level) {
         pw_log::error!("GPIOA4 push-pull output did not latch high");
         return false;

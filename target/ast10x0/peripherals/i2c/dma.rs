@@ -56,9 +56,8 @@ impl<'i, 'b, Y: FnMut(u32)> ArmedDma<'i, 'b, Y> {
     pub(crate) fn arm_rx(i2c: &'i mut Ast1060I2c<'b, Y>, phy_addr: u32, len: usize) -> Self {
         let cur = i2c.mmio.i2c.read_reg(constants::I2CM1C);
         #[allow(clippy::cast_possible_truncation)]
-        let v = (cur & !((0xfff << 16) | (1 << 31)))
-            | ((((len - 1) as u32) & 0xfff) << 16)
-            | (1 << 31);
+        let v =
+            (cur & !((0xfff << 16) | (1 << 31))) | ((((len - 1) as u32) & 0xfff) << 16) | (1 << 31);
         i2c.mmio.i2c.write_reg(constants::I2CM1C, v);
         i2c.mmio
             .i2c
@@ -69,7 +68,7 @@ impl<'i, 'b, Y: FnMut(u32)> ArmedDma<'i, 'b, Y> {
     /// Issue `cmd` on i2cm18 and wait for the engine to quiesce. On success the
     /// guard is forgotten, so no teardown runs; on timeout it drops live here
     /// and soft-resets the controller.
-    pub(crate) fn run(mut self, cmd: I2cMasterCommand) -> Result<(), I2cError> {
+    pub(crate) fn run(self, cmd: I2cMasterCommand) -> Result<(), I2cError> {
         self.i2c.clear_interrupts(I2cMasterStatus::all());
         self.i2c.completion = false;
 

@@ -6,5 +6,7 @@
 
 mod map;
 
-pub(crate) use map::{ABCD, EFGH, IJKL};
-pub use openprot_hal::gpio::{bind_gpio, GpioRole, IntoGpio};
+pub(crate) use map::{ABCD, EFGH, IJKL, MNOP};
+pub use openprot_hal::gpio::{
+    bind_gpio, GpioPin, Input, InputPin, IntTrigger, IntoGpio, Output, OutputPin,
+};
