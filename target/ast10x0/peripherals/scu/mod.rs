@@ -16,7 +16,9 @@ pub mod types;
 
 pub use openprot_hal::resource::FieldWrite;
 pub use pinmux::{apply_mux, route, PinctrlPin};
-pub use pins::{create_pins, scu414_30, scu414_31, scu418_0, scu418_1, PinTokens, I2C_CTRL};
+pub use pins::{
+    create_pins, scu414_30, scu414_31, scu418_0, scu418_1, scu418_2, scu41c_5, PinTokens, I2C_CTRL,
+};
 pub use registers::ScuRegisters;
 pub use routing::SpimGpioOriVal;
 pub use types::{

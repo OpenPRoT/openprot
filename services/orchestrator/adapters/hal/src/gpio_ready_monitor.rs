@@ -138,7 +138,10 @@ mod tests {
         let mut high = GpioReadyMonitor::new(MockPin::at(true), ActivePolarity::ActiveLow);
 
         assert_eq!(low.boot_status().expect("read failed"), BootStatus::Booted);
-        assert_eq!(high.boot_status().expect("read failed"), BootStatus::Booting);
+        assert_eq!(
+            high.boot_status().expect("read failed"),
+            BootStatus::Booting
+        );
     }
 
     #[test]
