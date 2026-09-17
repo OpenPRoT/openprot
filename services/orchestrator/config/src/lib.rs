@@ -57,6 +57,26 @@
 /// // See EvidenceReader's docs for the full impl pattern.
 /// let bmc_walk = CheckpointWalk::new(bmc_reader, &BMC);
 /// ```
+///
+/// The GPIO wiring above is illustrative only (`ignore`d: this crate is
+/// deliberately dependency-free, so it can't compile against
+/// `GpioBootMonitor`/`CheckpointWalk`, which live downstream). The part of
+/// the shape this crate *can* check — declaring a checkpoint list and
+/// building a table from it — is a real, compiled example:
+///
+/// ```rust
+/// use orchestrator_config::{BootCheckpoint, DeviceConfig};
+/// use core::time::Duration;
+///
+/// const CHECKPOINTS: &[BootCheckpoint<u8>] = &[
+///     BootCheckpoint::new("bl1", 0, Duration::from_millis(500)),
+///     BootCheckpoint::new("kernel", 1, Duration::from_secs(5)),
+/// ];
+/// const BMC: DeviceConfig<u8, u8> = DeviceConfig::new("bmc", 0, CHECKPOINTS);
+///
+/// assert_eq!(BMC.checkpoints().len(), 2);
+/// assert_eq!(BMC.checkpoints()[0].name(), "bl1");
+/// ```
 #[derive(Debug, Clone, Copy)]
 pub struct BootCheckpoint<P> {
     name: &'static str,
