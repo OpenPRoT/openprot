@@ -25,8 +25,11 @@ pub struct BufferSender<'a> {
 }
 
 impl Sender for BufferSender<'_> {
+    // This mock captures every packet into a buffer rather than routing it, so
+    // the destination EID has no effect on the result.
     fn send_vectored(
         &mut self,
+        _eid: mctp::Eid,
         mut fragmenter: Fragmenter,
         payload: &[&[u8]],
     ) -> mctp::Result<Tag> {
