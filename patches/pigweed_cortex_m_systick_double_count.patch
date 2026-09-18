@@ -1,0 +1,54 @@
+Count each SysTick wrap once.
+
+The SysTick handler adds a reload period to TICKS, and Clock::now() added a
+second one whenever it saw COUNTFLAG set. Entering the exception does not
+clear COUNTFLAG -- only reading CSR does, and the handler never read it --
+so every wrap was counted twice and the monotonic clock ran at twice real
+time. On AST1060 (SYS_TICK_HZ 200 MHz, SCHEDULER_TICK_HZ 100) a 90 s
+deadline expired in 45 s, measured on hardware.
+
+The handler is the authoritative accumulator: it is delivered by the pending
+bit and so catches every wrap. It now claims each wrap by clearing COUNTFLAG,
+and Clock::now() corrects only its own return value, for the window where a
+wrap has happened but the handler has not run yet.
+
+--- a/pw_kernel/arch/arm_cortex_m/timer.rs
++++ b/pw_kernel/arch/arm_cortex_m/timer.rs
+@@ -31,18 +31,21 @@
+     const TICKS_PER_SEC: u64 = KernelConfig::SYS_TICK_HZ as u64;
+
+     fn now() -> pw_time_core::Instant<Self> {
+-        let mut ticks = TICKS.lock(crate::Arch);
++        let ticks = TICKS.lock(crate::Arch);
+         let systick_regs = Regs::get().systick;
+         let mut current = systick_regs.cvr.read().current();
+         let reload = systick_regs.rvr.read().reload();
++        // A set COUNTFLAG is a wrap the SysTick handler has not claimed yet,
++        // because it is masked or still pending. The handler owns TICKS, so
++        // only the value returned here is corrected; adding to TICKS as well
++        // would count the wrap twice and run the clock at twice real time.
++        let mut unclaimed_wrap = 0u64;
+         if systick_regs.csr.read().countflag() {
+-            // Update the global tick count, as reading the control bit
+-            // when it's 1 will clear it.
+-            *ticks += u64::from(SYSTICK_RELOAD_VALUE);
++            unclaimed_wrap = u64::from(SYSTICK_RELOAD_VALUE);
+             current = systick_regs.cvr.read().current();
+         }
+
+-        let delta = u64::from(reload - current);
++        let delta = unclaimed_wrap + u64::from(reload - current);
+         // The cortex-m systick is a count down timer which triggers
+         // ever reload period, which we define as (SYS_TICK_HZ / SCHEDULER_TICK_HZ).
+         // The current time is calculated as the number of ticks + delta where:
+@@ -112,6 +115,10 @@
+
+     {
+         let mut ticks = TICKS.lock(crate::Arch);
++        // Claim the wrap by clearing COUNTFLAG, so the `Clock::now()` below
++        // does not correct for it a second time. This exception is delivered
++        // by the pending bit, not by COUNTFLAG, so clearing it is safe.
++        let _ = Regs::get().systick.csr.read();
+         *ticks += u64::from(SYSTICK_RELOAD_VALUE);
+         log_if::info_if!(LOG_SYSTICK, "SysTick {}", *ticks as u64);
+     }

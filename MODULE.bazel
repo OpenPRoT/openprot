@@ -24,7 +24,7 @@ git_override(
     module_name = "pigweed",
     commit = "294d431a761dc44fe07710c15d5ac1603f7ef7bf",
     patch_args = ["-p1"],
-    patches = [],
+    patches = ["//patches:pigweed_cortex_m_systick_double_count.patch"],
     remote = "https://pigweed.googlesource.com/pigweed/pigweed",
 )
 
