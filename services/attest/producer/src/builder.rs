@@ -213,7 +213,9 @@ mod tests {
         MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_COMPONENT_LEN, MAX_DIGEST_LEN, MAX_MEASUREMENTS,
         MAX_TOKEN_SIZE, MAX_VERSION_LEN,
     };
-    use openprot_attest_api::{AttestError, DigestAlgorithm, MeasurementAuthority, OemId};
+    use openprot_attest_api::{
+        AttestError, DigestAlgorithm, MeasurementAuthority, OemId, SignerKind,
+    };
 
     use crate::signer::STUB_CERT;
 
@@ -254,6 +256,7 @@ mod tests {
             oemid: OemId(oemid_bytes),
             hw_model,
             cert_cache_ttl: Duration::from_secs(3600),
+            signer_kind: SignerKind::Hardware,
         }
     }
 

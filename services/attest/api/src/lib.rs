@@ -18,7 +18,8 @@
 //!                    │ trait object / generic bound
 //! ┌──────────────────▼────────────────────────────┐
 //! │  openprot-attest-producer                     │
-//! │      HwAttestProducer  (production)           │
+//! │      HwAttestProducer  (production, HW key)   │
+//! │      SwAttestProducer  (production, SW key)   │
 //! │      SoftwareAttestProducer (test-support)    │
 //! └───────────────────────────────────────────────┘
 //! ```
@@ -33,8 +34,9 @@ mod traits;
 mod types;
 
 pub use error::AttestError;
-pub use hw_abstraction::HwSigner;
+pub use hw_abstraction::{HwSigner, SwSigner};
 pub use traits::AttestProducer;
 pub use types::{
     AttestConfig, DigestAlgorithm, Measurement, MeasurementAuthority, MeasurementProvider, OemId,
+    SignerKind, SwSignerConfig,
 };

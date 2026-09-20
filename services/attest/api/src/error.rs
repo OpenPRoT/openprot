@@ -13,4 +13,6 @@ pub enum AttestError {
     Cose,
     #[error("Measurement provider error: {0}")]
     Provider(&'static str),
+    #[error("Invalid key material: {0}")]
+    InvalidKey(&'static str),
 }

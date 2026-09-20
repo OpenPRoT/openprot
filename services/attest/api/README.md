@@ -22,8 +22,8 @@ in hardware dependencies.
 |---|---|
 | `src/lib.rs` | Public re-exports. `#![no_std]` `#![forbid(unsafe_code)]`. |
 | `src/traits.rs` | `AttestProducer` trait. |
-| `src/hw_abstraction.rs` | Hardware abstraction for attestation signing and certificate operations. |
-| `src/types.rs` | `Measurement`, `DigestAlgorithm`, `MeasurementAuthority`, `AttestConfig`, `OemId`, `MeasurementProvider` trait. |
+| `src/hw_abstraction.rs` | `HwSigner` trait; `SwSigner` struct with P-384 scalar validation. |
+| `src/types.rs` | `Measurement`, `DigestAlgorithm`, `MeasurementAuthority`, `AttestConfig`, `OemId`, `MeasurementProvider` trait, `SignerKind` enum, `SwSignerConfig` struct. |
 | `src/consts.rs` | Fixed-capacity constants (`MAX_CERT_SIZE`, `MAX_CHAIN_LEN`, etc.). |
 | `src/error.rs` | `AttestError` — shared error type for both service crates. |
 
@@ -73,6 +73,19 @@ pub trait HwSigner {
 The private Alias Key never leaves Caliptra. Production code implements this
 trait via the Caliptra mailbox driver (`caliptra-sw`).
 
+### `SwSigner`
+
+Holds a caller-supplied P-384 private scalar and DER certificate chain for
+software-only signing (no Caliptra hardware required).  Constructed via
+`SwSigner::new(SwSignerConfig { ... })`, which validates:
+
+- Scalar is not all zeros (`d ≥ 1`).
+- Scalar is less than the P-384 group order (`d < n`).
+- Cert chain contains at least one certificate.
+- Every certificate begins with `0x30` (DER SEQUENCE tag).
+
+Returns `Err(AttestError::InvalidKey)` on any violation.
+
 ### `MeasurementProvider`
 
 Plug in platform-specific firmware measurement sources (UEFI, BMC, etc.)
@@ -94,8 +107,10 @@ pub trait MeasurementProvider {
 | `Measurement` | Single firmware measurement: component name, version, digest algorithm, digest bytes, measurement authority. |
 | `DigestAlgorithm` | `Sha384` or `Sha512`. |
 | `MeasurementAuthority` | `Caliptra` (hardware-measured) or `Platform` (software-registered). |
-| `AttestConfig` | Producer configuration: `oemid`, `hw_model`, `cert_cache_ttl`. |
+| `AttestConfig` | Producer configuration: `oemid`, `hw_model`, `cert_cache_ttl`, `signer_kind`. |
 | `OemId` | OEM identifier (IANA Private Enterprise Number or UUID form). |
+| `SignerKind` | `Hardware` (Caliptra mailbox) or `Software` (caller-supplied key via `SwSigner`). |
+| `SwSignerConfig` | Input to `SwSigner::new`: 48-byte P-384 scalar and DER cert chain. |
 
 ## Cargo
 
