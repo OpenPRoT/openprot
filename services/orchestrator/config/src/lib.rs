@@ -12,66 +12,96 @@
 
 #![cfg_attr(not(test), no_std)]
 
-/// One boot checkpoint: a signal the orchestrator waits for, and how long
+/// One boot checkpoint: a probe the orchestrator evaluates, and how long
 /// it waits. Retry policy is deliberately not table data: a retry
 /// re-resets the device and re-runs the whole walk, so budgets are
 /// per boot attempt and owned by the orchestrator state machine.
 ///
-/// The signal is a board-defined id — the schema attaches no meaning to
-/// it and names no signal kinds. Each board defines its own vocabulary (a
-/// small enum: a GPIO line, a progress-register threshold, a message-path
-/// readiness) and gives it meaning in its `EvidenceReader`. The id is a
-/// defunctionalized evidence check: data in the table instead of a
-/// function, so the table stays printable, comparable, const-checkable —
+/// The probe is board-defined, the schema attaches no meaning to it and
+/// names no probe kinds. Each board defines its own vocabulary (a small
+/// enum: a GPIO line, a progress-register threshold, a message-path
+/// readiness) and gives it meaning in its `EvidenceReader`. The probe is
+/// a defunctionalized evidence check: data in the table instead of a
+/// function, so the table stays printable, comparable, const-checkable,
 /// and could one day be generated instead of written.
 ///
 /// Fields are private so a checkpoint that violates the schema is
 /// unrepresentable: [`new`](Self::new) is the only way in, and it checks.
+///
+/// # Example: three GPIO checkpoints
+///
+/// A BMC behind three GPIO ready lines (bl1 on pin 4, kernel on pin 5,
+/// service on pin 6), all on the same SGPIOM bank. Each probe variant
+/// maps to one `GpioBootMonitor` in the board's `EvidenceReader`, and
+/// the walker (`CheckpointWalk`) walks them in declaration order.
+///
+/// ```ignore
+/// #[derive(Debug, Clone, Copy)]
+/// enum BmcProbe { Bl1, Kernel, Service }
+///
+/// const BMC: DeviceConfig<u8, BmcProbe> = DeviceConfig::new(
+///     "bmc", 0,
+///     &[
+///         BootCheckpoint::new("bl1",     BmcProbe::Bl1,     Duration::from_millis(500)),
+///         BootCheckpoint::new("kernel",  BmcProbe::Kernel,  Duration::from_secs(5)),
+///         BootCheckpoint::new("service", BmcProbe::Service, Duration::from_secs(30)),
+///     ],
+/// );
+///
+/// // Pin binding at bring-up: one GpioBootMonitor per probe.
+/// let bl1     = GpioBootMonitor::new(&sgpiom, Mask(1 << 4), ActivePolarity::ActiveHigh);
+/// let kernel  = GpioBootMonitor::new(&sgpiom, Mask(1 << 5), ActivePolarity::ActiveHigh);
+/// let service = GpioBootMonitor::new(&sgpiom, Mask(1 << 6), ActivePolarity::ActiveHigh);
+///
+/// // The board's EvidenceReader dispatches probe to monitor.
+/// // See EvidenceReader's docs for the full impl pattern.
+/// let bmc_walk = CheckpointWalk::new(bmc_reader, BMC.checkpoints());
+/// ```
 #[derive(Debug, Clone, Copy)]
-pub struct BootCheckpoint<G> {
+pub struct BootCheckpoint<P> {
     name: &'static str,
-    signal: G,
+    probe: P,
     timeout: core::time::Duration,
 }
 
-impl<G> BootCheckpoint<G> {
+impl<P> BootCheckpoint<P> {
     /// Declares a checkpoint. `const`, so board tables run the checks at
     /// build time.
     ///
     /// # Panics
     ///
-    /// Panics — a build error in const context — if `name` is empty or
+    /// Panics, a build error in const context, if `name` is empty or
     /// `timeout` is zero.
     #[must_use]
-    pub const fn new(name: &'static str, signal: G, timeout: core::time::Duration) -> Self {
+    pub const fn new(name: &'static str, probe: P, timeout: core::time::Duration) -> Self {
         assert!(!name.is_empty(), "checkpoint name must not be empty");
         assert!(!timeout.is_zero(), "checkpoint timeout must not be zero");
         Self {
             name,
-            signal,
+            probe,
             timeout,
         }
     }
 
-    /// Names the checkpoint in failure reports ("bl1", "kernel", …).
+    /// Names the checkpoint in failure reports ("bl1", "kernel", ...).
     /// Unique within a device's checkpoint list.
     #[must_use]
     pub const fn name(&self) -> &'static str {
         self.name
     }
 
-    /// Board-defined signal id, resolved by the board's `EvidenceReader`
-    /// (in `orchestrator-capabilities`). An id rather than a function, so
-    /// the table stays pure data — the type-level docs say why.
+    /// Board-defined probe, resolved by the board's `EvidenceReader`
+    /// (in `orchestrator-capabilities`). Data rather than a function, so
+    /// the table stays pure data, the type-level docs say why.
     #[must_use]
-    pub const fn signal(&self) -> &G {
-        &self.signal
+    pub const fn probe(&self) -> &P {
+        &self.probe
     }
 
     /// Window for one attempt at this checkpoint. Expiry is the boot
     /// walk's own judgment; hung devices report nothing.
     ///
-    /// The orchestrator state machine never sees this value — it is
+    /// The orchestrator state machine never sees this value, it is
     /// clockless. The walk consumes the windows and reports expiry as a
     /// failed attempt; a component's whole boot timeout is nothing more
     /// than its walk over these windows, in order.
@@ -85,8 +115,8 @@ impl<G> BootCheckpoint<G> {
 ///
 /// Generic over the board's reset signal type `R` (which must match the
 /// `ResetId` of the reset controller behind the board's `BootControl`
-/// implementation) and its boot-signal vocabulary `G`, for the same
-/// reason: signal ids are board-specific.
+/// implementation) and its boot-probe vocabulary `P`, for the same
+/// reason: probes are board-specific.
 ///
 /// Deliberately says nothing about attestation or commit requirements:
 /// those follow from what kind of device this is (iRoT-backed or
@@ -96,13 +126,13 @@ impl<G> BootCheckpoint<G> {
 /// Fields are private so a device entry that violates the schema is
 /// unrepresentable: [`new`](Self::new) is the only way in, and it checks.
 #[derive(Debug, Clone, Copy)]
-pub struct DeviceConfig<R, G: 'static> {
+pub struct DeviceConfig<R, P: 'static> {
     name: &'static str,
     reset_signal: R,
-    checkpoints: &'static [BootCheckpoint<G>],
+    checkpoints: &'static [BootCheckpoint<P>],
 }
 
-impl<R, G> DeviceConfig<R, G> {
+impl<R, P> DeviceConfig<R, P> {
     /// Declares a managed device. `const`, so board tables run the checks
     /// at build time.
     ///
@@ -116,7 +146,7 @@ impl<R, G> DeviceConfig<R, G> {
     pub const fn new(
         name: &'static str,
         reset_signal: R,
-        checkpoints: &'static [BootCheckpoint<G>],
+        checkpoints: &'static [BootCheckpoint<P>],
     ) -> Self {
         assert!(!name.is_empty(), "device name must not be empty");
         assert!(
@@ -159,7 +189,7 @@ impl<R, G> DeviceConfig<R, G> {
     /// window expires fails the attempt — whether to retry or recover is
     /// the orchestrator's decision, not table data.
     #[must_use]
-    pub const fn checkpoints(&self) -> &'static [BootCheckpoint<G>] {
+    pub const fn checkpoints(&self) -> &'static [BootCheckpoint<P>] {
         self.checkpoints
     }
 }
@@ -204,7 +234,7 @@ mod tests {
         assert_eq!(*device.reset_signal(), 0);
         assert_eq!(device.checkpoints().len(), 1);
         assert_eq!(device.checkpoints()[0].name(), "boot-complete");
-        assert_eq!(*device.checkpoints()[0].signal(), 0);
+        assert_eq!(*device.checkpoints()[0].probe(), 0);
         assert_eq!(device.checkpoints()[0].timeout(), Duration::from_secs(1));
     }
 

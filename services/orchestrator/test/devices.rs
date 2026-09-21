@@ -11,10 +11,10 @@ use core::time::Duration;
 
 use orchestrator_config::{BootCheckpoint, DeviceConfig};
 
-/// The mock board's boot-signal vocabulary. The schema carries these
+/// The mock board's boot-probe vocabulary. The schema carries these
 /// opaquely; only this board's `EvidenceReader` gives them meaning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MockSignal {
+pub enum MockProbe {
     /// A boot-complete GPIO line, by index.
     Gpio(u8),
     /// The device's MCTP endpoint answers as ready.
@@ -30,7 +30,7 @@ pub enum MockSignal {
 ///
 /// The mock board's reset controller addresses reset lines by plain index,
 /// so the reset id type is `u8`.
-pub const MANAGED_DEVICES: &[DeviceConfig<u8, MockSignal>] = &[
+pub const MANAGED_DEVICES: &[DeviceConfig<u8, MockProbe>] = &[
     // Direct-flash SPI device (BMC archetype): the eRoT fronts its flash.
     // Single checkpoint: it raises a boot-complete GPIO.
     DeviceConfig::new(
@@ -38,7 +38,7 @@ pub const MANAGED_DEVICES: &[DeviceConfig<u8, MockSignal>] = &[
         7,
         &[BootCheckpoint::new(
             "boot-complete",
-            MockSignal::Gpio(12),
+            MockProbe::Gpio(12),
             Duration::from_secs(90),
         )],
     ),
@@ -49,24 +49,24 @@ pub const MANAGED_DEVICES: &[DeviceConfig<u8, MockSignal>] = &[
         "nic",
         3,
         &[
-            BootCheckpoint::new("mctp-ready", MockSignal::MctpReady, Duration::from_secs(20)),
-            BootCheckpoint::new("heartbeat", MockSignal::Heartbeat, Duration::from_secs(10)),
+            BootCheckpoint::new("mctp-ready", MockProbe::MctpReady, Duration::from_secs(20)),
+            BootCheckpoint::new("heartbeat", MockProbe::Heartbeat, Duration::from_secs(10)),
         ],
     ),
 ];
 
 /// Board-local checks the schema constructors cannot do — they know the
 /// schema's shape, not this board's meanings. Const-fence pattern: a bad
-/// signal fails the build.
-const fn validate_signals(devices: &[DeviceConfig<u8, MockSignal>]) {
+/// probe fails the build.
+const fn validate_probes(devices: &[DeviceConfig<u8, MockProbe>]) {
     let mut i = 0;
     while i < devices.len() {
         let checkpoints = devices[i].checkpoints();
         let mut c = 0;
         while c < checkpoints.len() {
-            if let MockSignal::Gpio(line) = *checkpoints[c].signal() {
+            if let MockProbe::Gpio(line) = *checkpoints[c].probe() {
                 // The mock ready-line bank packs 32 lines, SGPIO-style.
-                assert!(line < 32, "gpio signal names a line outside the bank");
+                assert!(line < 32, "gpio probe names a line outside the bank");
             }
             c += 1;
         }
@@ -74,4 +74,4 @@ const fn validate_signals(devices: &[DeviceConfig<u8, MockSignal>]) {
     }
 }
 
-const _: () = validate_signals(MANAGED_DEVICES);
+const _: () = validate_probes(MANAGED_DEVICES);

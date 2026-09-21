@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Evidence reading: the boot-liveness vocabulary and the reader that
-//! resolves a board-defined signal id to it.
+//! resolves a board-defined probe to it.
 
 /// Liveness of a managed device's boot: Boot Confirmation only — whether
 /// the device came up, never what booted (that is attestation).
@@ -30,63 +30,62 @@ pub enum BootStatus {
     FailedFatal,
 }
 
-/// Reads a device's boot evidence, one signal at a time.
+/// Reads a device's boot evidence, one probe at a time.
 ///
-/// Implemented by board wiring — typically once per managed device, so
-/// each device's boot walk borrows only its own reader. `G` is the
-/// board's signal vocabulary; an exhaustive `match` on it keeps dispatch
-/// direct and makes a forgotten signal a compile error, not a runtime
+/// Implemented by board wiring, typically once per managed device, so
+/// each device's boot walk borrows only its own reader. `P` is the
+/// board's probe vocabulary; an exhaustive `match` on it keeps dispatch
+/// direct and makes a forgotten probe a compile error, not a runtime
 /// hole.
 ///
-/// The status must describe the **current** boot cycle — see
+/// The status must describe the *current* boot cycle, see
 /// [`BootStatus`] for the latching contract (evidence is cleared by the
 /// reset path, never by the reader).
 ///
 /// # Wiring a concrete reader
 ///
 /// Concrete readers (e.g. `GpioBootMonitor` in `orchestrator-hal-adapters`)
-/// stay signal-agnostic — an adapter crate cannot know a board's `G`.
+/// stay probe-agnostic, an adapter crate cannot know a board's `P`.
 /// The board impl owns the match; the hardware binding is made once, at
-/// construction, and the signal id just proves the right reader was
-/// wired:
+/// construction, and the probe just proves the right reader was wired:
 ///
 /// ```ignore
-/// /// bmc wiring: one ready line behind the board's signal vocabulary.
-/// struct BmcReader<'a, P: GpioPort> {
+/// /// bmc wiring: one ready line behind the board's probe vocabulary.
+/// struct BmcReader<'a, Port: GpioPort> {
 ///     // (port, pin, polarity) bound at bring-up from the table's Gpio(12).
-///     ready: GpioBootMonitor<'a, P>,
+///     ready: GpioBootMonitor<'a, Port>,
 /// }
 ///
-/// impl<P: GpioPort> EvidenceReader<MockSignal> for BmcReader<'_, P>
+/// impl<Port: GpioPort> EvidenceReader<MockProbe> for BmcReader<'_, Port>
 /// where
-///     P::Error: 'static,
+///     Port::Error: 'static,
 /// {
-///     type Error = MonitorError<P::Error>;
+///     type Error = MonitorError<Port::Error>;
 ///
-///     fn read(&mut self, signal: &MockSignal) -> Result<BootStatus, Self::Error> {
-///         match signal {
-///             MockSignal::Gpio(_) => self.ready.boot_status(),
+///     fn read(&mut self, probe: &MockProbe) -> Result<BootStatus, Self::Error> {
+///         match probe {
+///             MockProbe::Gpio(_) => self.ready.boot_status(),
 ///             other => unreachable!("bmc reader wired to {other:?}"),
 ///         }
 ///     }
 /// }
 /// ```
-pub trait EvidenceReader<G> {
+pub trait EvidenceReader<P> {
     /// The error type reported by this reader.
     ///
     /// Requires [`core::error::Error`] (in `core` since Rust 1.81) so the
     /// orchestrator gets `Display` and a `source()` cause chain, not just
-    /// a `Debug` dump. Error categories stay implementation-defined —
+    /// a `Debug` dump. Error categories stay implementation-defined,
     /// this crate names no error vocabulary of its own.
     type Error: core::error::Error;
 
-    /// Returns the current liveness evidence for `signal`.
+    /// Returns the current liveness evidence for `probe`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the evidence channel behind `signal` cannot be
+    /// Returns an error if the evidence channel behind `probe` cannot be
     /// read.
-    fn read(&mut self, signal: &G) -> Result<BootStatus, Self::Error>;
+    fn read(&mut self, probe: &P) -> Result<BootStatus, Self::Error>;
 }
 
 #[cfg(test)]
@@ -128,11 +127,11 @@ mod tests {
     impl EvidenceReader<TestSignal> for SocReader {
         type Error = RegFault;
 
-        fn read(&mut self, signal: &TestSignal) -> Result<BootStatus, RegFault> {
+        fn read(&mut self, probe: &TestSignal) -> Result<BootStatus, RegFault> {
             if self.fail {
                 return Err(RegFault);
             }
-            let TestSignal::Progress(threshold) = *signal;
+            let TestSignal::Progress(threshold) = *probe;
             Ok(match self.level {
                 POISON => BootStatus::FailedFatal,
                 TRANSIENT => BootStatus::FailedRetriable,
@@ -269,11 +268,11 @@ mod tests {
     impl EvidenceReader<NicSignal> for MockNicEndpoint {
         type Error = MctpFault;
 
-        fn read(&mut self, signal: &NicSignal) -> Result<BootStatus, MctpFault> {
+        fn read(&mut self, probe: &NicSignal) -> Result<BootStatus, MctpFault> {
             if self.bus_fault {
                 return Err(MctpFault);
             }
-            match signal {
+            match probe {
                 NicSignal::MctpReady => {
                     if let Some(code) = self.fault_code {
                         return Ok(match code {
