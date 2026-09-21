@@ -13,7 +13,10 @@ use orchestrator_config::BootCheckpoint;
 /// checkpoints is unwatchable). A read error is treated as silence
 /// (`Booting`), so a transient bus glitch does not kill a healthy boot.
 /// A lapsed window is a timeout with no final read: a device that has not
-/// reported cannot be judged on a race. An unarmed or post-terminal poll
+/// reported cannot be judged on a race. Each checkpoint's deadline
+/// starts from the first poll after arm, not from the arm call, so
+/// time between arming and polling does not count against the window.
+/// An unarmed or post-terminal poll
 /// returns `Waiting { deadline_millis: u64::MAX }` (no deadline).
 pub struct CheckpointWalk<R, P: 'static> {
     reader: R,

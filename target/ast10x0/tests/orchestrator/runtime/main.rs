@@ -7,10 +7,10 @@
 //! `orchestrator-config`), and the checkpoint walker (`CheckpointWalk`,
 //! `orchestrator-checkpoint-walk`) wired end to end under the kernel.
 //!
-//! Scenarios 1-2 exercise `CheckpointWalk`: the walk judges per-checkpoint
-//! windows via `poll(now_millis)` and an `EvidenceReader`, while the runtime
-//! uses the walk's `deadline_millis` as the `object_wait` argument. The walk
-//! owns the verdict; the runtime owns the clock and wake scheduling.
+//! Scenarios 1-2 exercise `CheckpointWalk` end to end: the walk judges
+//! per-checkpoint windows via `poll(now_millis)` and an `EvidenceReader`,
+//! the runtime converts `deadline_millis` to kernel ticks via `object_wait`,
+//! and a `DeadlineExceeded` re-poll proves the timeout path.
 //!
 //! Scenarios 3-4 exercise `BootWatchdogs` multiplexing across a
 //! multi-component chain (nearest-of-many deadlines, correct-id recovery).
@@ -152,8 +152,7 @@ fn drive_releases(core: &mut Core, plat: &mut FakePlatform, ids: &[ComponentId])
 /// goes quiet, so `reached == len` boots and anything less times out.
 ///
 /// The walk judges per-checkpoint windows; the runtime (`object_wait`) just
-/// sleeps until the walk's deadline or a device signal. No `BootWatchdogs`
-/// are involved: the walk owns the verdict, the kernel clock owns the wake.
+/// sleeps until the walk's deadline or a device signal.
 fn walk_device(
     walk: &mut CheckpointWalk<ProgressReader, u8>,
     id: ComponentId,
@@ -235,6 +234,7 @@ fn scenario_checkpoint_confirmed() -> Result<()> {
         pw_log::error!("scenario 1: walk did not confirm boot");
         return Err(Error::Internal);
     }
+
     core.dispatch(&mut plat, terminal);
     if core.state() != State::Ready {
         pw_log::error!("scenario 1: core left Ready after boot confirmed");
@@ -253,8 +253,8 @@ fn scenario_checkpoint_confirmed() -> Result<()> {
 }
 
 /// Inner walk, timeout path: the device never signals, the first checkpoint's
-/// window lapses (judged by `CheckpointWalk`, not by `BootWatchdogs`), the
-/// walk surfaces `Timeout`, and the core recovers.
+/// window lapses (judged by `CheckpointWalk`), and the walk surfaces
+/// `Timeout`. The core recovers from the walk's verdict.
 fn scenario_checkpoint_timeout() -> Result<()> {
     pw_log::info!("scenario 2: checkpoint walk timeout drives recovery");
     let mut core = new_core(&[C0])?;
@@ -268,6 +268,7 @@ fn scenario_checkpoint_timeout() -> Result<()> {
         pw_log::error!("scenario 2: walk did not time out");
         return Err(Error::Internal);
     }
+
     core.dispatch(&mut plat, terminal);
     if core.state() != State::Recovering(C0) {
         pw_log::error!("scenario 2: core did not enter recovery");
