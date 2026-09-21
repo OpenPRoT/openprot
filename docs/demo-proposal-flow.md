@@ -1,29 +1,41 @@
 Propsal:
-Build a small Update Agent leverage pldm-lib/pldm-common to run ontop of OpenBMC on AST2700.
+Summary 
 Use OpenProt as Firmware Device to execute extern staging flow listed below.  
-Update agent will send GetFirmParameters for Inventory and ActivatePendingComponentImage to signal to OpenProt to begin this flow.
 
+Leverage pldm-lib/pldm-common to build small Update Agent client.
+UA Client will stash the image in staging flash
+Update Agent will go through discovery of Type5 support via Type 0 commands
+Update Agent will go through Inventory via Type 5 commands
+Update Agent will trigger out-of-transport image update via ActivatePendingComponentImage of UA component
+
+:::mermaid
 sequenceDiagram
     autonumber
-    participant BMC as BMC
+    participant UA as UA
     participant OpenProt as OpenProt
-    participant fwspi as BMC SPI bus (fwspi)
+    participant fwspi as UA SPI bus (fwspi)
 
-    BMC->>OpenProt: GetFirmwareParameters
-    OpenProt-->>BMC: FirmwareParameters
+    UA->>OpenProt: GetPldmTypes
+    OpenProt-->>UA: PldmTypes 0 and 5 Returned
+
+    UA->>OpenProt: GetPldmCommands Type 5
+    OpenProt-->>UA: Commands including ActivatePendingComponent
+
+    UA->>OpenProt: GetFirmwareParameters
+    OpenProt-->>UA: FirmwareParameters including ComponentActivationMethods.ActivatePendingImage
 
     opt Optional query
-        BMC->>OpenProt: QueryDeviceIdentifiers
-        OpenProt-->>BMC: Descriptors
+        UA->>OpenProt: QueryDeviceIdentifiers
+        OpenProt-->>UA: Descriptors
     end
 
-    BMC->>OpenProt: ActivatePendingComponentImage(AST2070 Component Identifier)
-    OpenProt-->>BMC: EstimatedTimeForActivation
+    UA->>OpenProt: ActivatePendingComponentImage(AST2070 Component Identifier)
+    OpenProt-->>UA: EstimatedTimeForActivation
 
-    Note over OpenProt,BMC: OpenProt disables access by BMC (notify BMC to shutdown, then pull power)
+    Note over OpenProt,UA: OpenProt disables access by UA (notify UA to shutdown, then pull power)
 
     OpenProt->>fwspi: Claim mastership
-    OpenProt->>OpenProt: Verify BMC image in staging area
+    OpenProt->>OpenProt: Verify UA image in staging area
 
     alt Image good
         OpenProt->>OpenProt: Copy staging image to "B" partition
@@ -31,17 +43,18 @@ sequenceDiagram
         OpenProt->>OpenProt: Erase staging area
         OpenProt->>OpenProt: Mark "B" partition as active
     else Image bad
-        OpenProt-->>BMC: Activation failed (image invalid)
-        Note over BMC,OpenProt: Abort update and restore previous state
+        OpenProt-->>UA: Activation failed (image invalid)
+        Note over UA,OpenProt: Abort update and restore previous state
     end
 
     OpenProt->>fwspi: Return mastership
-    OpenProt-->>BMC: Re-enable access and allow BMC to boot
-    BMC->>BMC: Boot
+    OpenProt-->>UA: Re-enable access and allow UA to boot
+    UA->>UA: Boot
 
-    alt BMC boot completes
-        Note over BMC,OpenProt: Good update completed
+    alt UA boot completes
+        Note over UA,OpenProt: Good update completed
         Note over OpenProt: Update inactive "A" to match "B" (requires mastership again)
     else Boot fails
-        Note over BMC,OpenProt: Recovery required
+        Note over UA,OpenProt: Recovery required
     end
+:::
