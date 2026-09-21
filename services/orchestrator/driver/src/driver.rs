@@ -4,12 +4,14 @@
 //! The [`PlatformDriver`]: one executor method per [`Effect`] variant, routed from
 //! the SM through the [`Platform`] impl.
 
-use openprot_orchestrator_sm::{ComponentId, ComponentKind, Effect, EffectError, Event, Platform};
+use openprot_orchestrator_sm::{
+    BootFailureKind, ComponentId, ComponentKind, Effect, EffectError, Event, Platform,
+};
 
 use crate::board::{
     Board, BoardCapabilities, ImageSource, Report, ReportSink, SvnFloorBinding, Verdict, Verifier,
 };
-use orchestrator_capabilities::{BootControl, BootWatch, Svn, SvnFloor, WalkVerdict};
+use orchestrator_capabilities::{BootControl, BootWatch, FailureCause, Svn, SvnFloor, WalkVerdict};
 
 /// Why the driver could not carry out an effect.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -159,7 +161,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
 
     /// Release `id` from reset and arm its boot walk;
     /// [`poll_boot_walks`](Self::poll_boot_walks) feeds the verdict back
-    /// as `ComponentReady(id)`/`Booted(id)`/`Timeout(id)`. Arms on every
+    /// as `ComponentReady(id)`/`Booted(id)`/`BootFailed { id, .. }`. Arms on every
     /// release: a retry re-release starts a fresh walk.
     pub fn release_reset(&mut self, id: ComponentId) -> Result<(), DriverError> {
         self.boot_control(id)?
@@ -175,7 +177,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// Hold `id` in reset — a durable quiesce, not a pulse; at-rest
     /// verification and the recovery re-walk depend on it. Also stops the
     /// boot walk: a held device produces no boot signal, so polling it
-    /// could only yield a stale `Timeout`.
+    /// could only yield a stale `BootFailed`.
     pub fn assert_reset(&mut self, id: ComponentId) -> Result<(), DriverError> {
         self.boot_control(id)?
             .hold_in_reset()
@@ -187,8 +189,8 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// Polls every watched walk at `now_millis` and returns the first
     /// terminal verdict as its event: [`WalkVerdict::Complete`] becomes
     /// `ComponentReady(id)` (`Active`) or `Booted(id)` (`Passive`),
-    /// [`WalkVerdict::Failed`] becomes `Timeout(id)` regardless of cause —
-    /// retry budgeting is the SM's. The finished walk stops being watched;
+    /// [`WalkVerdict::Failed`] becomes `BootFailed { id, checkpoint, kind }`.
+    /// The finished walk stops being watched;
     /// each verdict is delivered once.
     ///
     /// Returns at the first event; drain by calling until
@@ -220,10 +222,19 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
                         next_deadline_millis,
                     };
                 }
-                WalkVerdict::Failed { .. } => {
+                WalkVerdict::Failed { checkpoint, cause } => {
                     self.watching[idx] = false;
+                    let kind = match cause {
+                        FailureCause::TimedOut => BootFailureKind::TimedOut,
+                        FailureCause::DeviceRetriable => BootFailureKind::DeviceRetriable,
+                        FailureCause::DeviceFatal => BootFailureKind::DeviceFatal,
+                    };
                     return BootWalkPoll {
-                        event: Some(Event::Timeout(id)),
+                        event: Some(Event::BootFailed {
+                            id,
+                            checkpoint,
+                            kind,
+                        }),
                         next_deadline_millis,
                     };
                 }

@@ -23,7 +23,7 @@
 //!
 //! Boot-walk verdicts are the one asynchronous read: the run loop calls
 //! [`PlatformDriver::poll_boot_walks`] and dispatches the returned events
-//! (`ComponentReady`/`Booted`/`Timeout`) into the SM.
+//! (`ComponentReady`/`Booted`/`BootFailed`) into the SM.
 //!
 //! [`Platform`]: openprot_orchestrator_sm::Platform
 

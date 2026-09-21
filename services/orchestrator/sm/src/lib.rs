@@ -634,13 +634,11 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                     self.clear_awaiting_boot(*id);
                     Outcome::Handled
                 }
-                // Device-agnostic boot-progress watchdog. A passive component
-                // released speculatively can miss its window while the walk is
-                // still in `PreSupervision`; treat that as a boot failure and
-                // recover it, exactly as the supervised states do. A timeout for
-                // a component not awaiting boot (e.g. still under verification)
-                // is spurious and dropped.
-                Event::Timeout(id) => {
+                // Boot failure: either the walk judged a checkpoint failure
+                // (BootFailed) or the fleet-level watchdog fired (Timeout).
+                // Both recover the component if it is still awaiting boot;
+                // stale/spurious events are dropped.
+                Event::BootFailed { id, .. } | Event::Timeout(id) => {
                     if self.is_awaiting_boot(*id) {
                         Outcome::Transition(State::Recovering(*id))
                     } else {
@@ -865,12 +863,10 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 self.clear_awaiting_boot(*id);
                 Outcome::Handled
             }
-            // Device-agnostic boot-progress watchdog across every supervised
-            // state: a released component that never reported in before its
-            // window closed is recovered like any other boot failure. A timeout
-            // for a component not awaiting boot (already reported, gated, or
-            // never released) is stale/spurious and dropped.
-            Event::Timeout(id) => {
+            // Boot failure across every supervised state: a walk checkpoint
+            // failure (BootFailed) or fleet-level watchdog (Timeout) recovers
+            // the component if it is still awaiting boot. Stale events dropped.
+            Event::BootFailed { id, .. } | Event::Timeout(id) => {
                 if self.is_awaiting_boot(*id) {
                     Outcome::Transition(State::Recovering(*id))
                 } else {

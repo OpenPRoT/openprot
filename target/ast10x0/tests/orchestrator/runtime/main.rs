@@ -22,10 +22,10 @@
 use app_test_runtime::{constants, handle, signals};
 use openprot_orchestrator_server::BootWatchdogs;
 use openprot_orchestrator_sm::{
-    Chain, ComponentAttrs, ComponentId, Effect, EffectError, Event, Orchestrator, Platform,
-    PowerOnResult, State,
+    BootFailureKind, Chain, ComponentAttrs, ComponentId, Effect, EffectError, Event, Orchestrator,
+    Platform, PowerOnResult, State,
 };
-use orchestrator_capabilities::{BootStatus, BootWatch, EvidenceReader, WalkVerdict};
+use orchestrator_capabilities::{BootStatus, BootWatch, EvidenceReader, FailureCause, WalkVerdict};
 use orchestrator_checkpoint_walk::CheckpointWalk;
 use orchestrator_config::{BootCheckpoint, DeviceConfig};
 use pw_status::{Error, Result};
@@ -50,7 +50,7 @@ type Watchdogs = BootWatchdogs<N>;
 
 /// The device table: per-checkpoint windows, exactly as a board would declare
 /// them. Two checkpoints so the inner walk exercises re-arm-on-progress
-/// (`bl1` then `kernel`). Signal ids are progress thresholds: the reader
+/// (`bl1` then `kernel`). Probe ids are progress thresholds: the reader
 /// reports `Booted` once its internal level reaches the threshold.
 const SOC: DeviceConfig<u8, u8> = DeviceConfig::new(
     "soc",
@@ -67,7 +67,7 @@ fn window(timeout: core::time::Duration) -> Duration {
     Duration::from_millis(timeout.as_millis() as u64)
 }
 
-/// Progress-register reader for the walk: signal N is `Booted` once
+/// Progress-register reader for the walk: probe N is `Booted` once
 /// `level >= N`. Mirrors the SocReader archetype in the evidence tests.
 struct ProgressReader {
     level: u8,
@@ -76,8 +76,8 @@ struct ProgressReader {
 impl EvidenceReader<u8> for ProgressReader {
     type Error = core::convert::Infallible;
 
-    fn read(&mut self, signal: &u8) -> core::result::Result<BootStatus, Self::Error> {
-        Ok(if self.level >= *signal {
+    fn read(&mut self, probe: &u8) -> core::result::Result<BootStatus, Self::Error> {
+        Ok(if self.level >= *probe {
             BootStatus::Booted
         } else {
             BootStatus::Booting
@@ -91,6 +91,14 @@ fn ticks_to_millis(ticks: u64) -> u64 {
 
 fn millis_to_ticks(millis: u64) -> u64 {
     millis * SystemClock::TICKS_PER_SEC / 1000
+}
+
+fn failure_kind(cause: FailureCause) -> BootFailureKind {
+    match cause {
+        FailureCause::TimedOut => BootFailureKind::TimedOut,
+        FailureCause::DeviceRetriable => BootFailureKind::DeviceRetriable,
+        FailureCause::DeviceFatal => BootFailureKind::DeviceFatal,
+    }
 }
 
 /// A fake [`Platform`] for the run loop. It records the `ReleaseReset(id)`
@@ -188,7 +196,13 @@ fn walk_device(
                 }
             }
             WalkVerdict::Complete => return Ok(Event::Booted(id)),
-            WalkVerdict::Failed { .. } => return Ok(Event::Timeout(id)),
+            WalkVerdict::Failed { checkpoint, cause } => {
+                return Ok(Event::BootFailed {
+                    id,
+                    checkpoint,
+                    kind: failure_kind(cause),
+                });
+            }
         }
     }
 }
@@ -254,7 +268,7 @@ fn scenario_checkpoint_confirmed() -> Result<()> {
 
 /// Inner walk, timeout path: the device never signals, the first checkpoint's
 /// window lapses (judged by `CheckpointWalk`), and the walk surfaces
-/// `Timeout`. The core recovers from the walk's verdict.
+/// `BootFailed` with `TimedOut`. The core recovers from the walk's verdict.
 fn scenario_checkpoint_timeout() -> Result<()> {
     pw_log::info!("scenario 2: checkpoint walk timeout drives recovery");
     let mut core = new_core(&[C0])?;
@@ -264,8 +278,13 @@ fn scenario_checkpoint_timeout() -> Result<()> {
 
     let mut walk = CheckpointWalk::new(ProgressReader { level: 0 }, SOC.checkpoints());
     let terminal = walk_device(&mut walk, C0, 0)?;
-    if terminal != Event::Timeout(C0) {
-        pw_log::error!("scenario 2: walk did not time out");
+    let is_boot_failed = matches!(
+        terminal,
+        Event::BootFailed { id, checkpoint: "bl1", kind, .. }
+            if id == C0 && kind == BootFailureKind::TimedOut
+    );
+    if !is_boot_failed {
+        pw_log::error!("scenario 2: walk did not produce BootFailed");
         return Err(Error::Internal);
     }
 

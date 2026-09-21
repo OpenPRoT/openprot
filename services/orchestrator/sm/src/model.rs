@@ -185,6 +185,20 @@ pub enum PowerOnResult {
     SelfVerificationFailed,
 }
 
+/// Why a boot walk failed at a checkpoint, as reported by the platform
+/// driver. Mirrors `orchestrator_capabilities::FailureCause` without
+/// coupling the state machine crate to the capabilities crate.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum BootFailureKind {
+    /// The checkpoint's window expired; the device reported nothing.
+    TimedOut,
+    /// The device reported a failure worth another attempt.
+    DeviceRetriable,
+    /// The device reported a terminal failure; re-running the same image
+    /// cannot change the verdict.
+    DeviceFatal,
+}
+
 /// Everything the outside world can tell the state machine.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Event {
@@ -226,10 +240,20 @@ pub enum Event {
     RecoveryUnavailable(ComponentId),
     /// A required component's recovery was exhausted.
     RecoveryFailed,
+    /// A boot walk failed at a specific checkpoint with a classified cause.
+    /// Produced by the platform driver when `CheckpointWalk::poll` returns
+    /// `WalkVerdict::Failed`. A component awaiting boot enters recovery.
+    /// The `checkpoint` and `kind` fields are preserved so the state
+    /// machine can differentiate (e.g. skip retries on `DeviceFatal`).
+    BootFailed {
+        id: ComponentId,
+        checkpoint: &'static str,
+        kind: BootFailureKind,
+    },
     /// The platform driver's boot-progress watchdog fired: `id` did not report its
     /// boot-progress signal ([`Event::ComponentReady`] for an `Active`
     /// component, [`Event::Booted`] for a `Passive` one) within its configured
-    /// boot timeout. Treated as a verification failure — a component still
+    /// boot timeout. Treated as a verification failure, a component still
     /// awaiting boot-progress enters recovery. A timeout for a component that is
     /// not awaiting boot (never released, already reported in, or already gated)
     /// is stale/spurious and dropped. The watchdog is per component and
@@ -273,6 +297,7 @@ impl Event {
             | Event::CorruptionDetected(id)
             | Event::Restored(id)
             | Event::RecoveryUnavailable(id)
+            | Event::BootFailed { id, .. }
             | Event::Timeout(id) => Some(*id),
             Event::PowerGood(_)
             | Event::AttestationChallenge

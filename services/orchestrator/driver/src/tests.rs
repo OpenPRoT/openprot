@@ -5,8 +5,8 @@ extern crate std;
 
 use crate::*;
 use openprot_orchestrator_sm::{
-    ComponentAttrs, ComponentId, ComponentKind, Effect, Event, Orchestrator, Platform,
-    PowerOnResult, State,
+    BootFailureKind, ComponentAttrs, ComponentId, ComponentKind, Effect, Event, Orchestrator,
+    Platform, PowerOnResult, State,
 };
 use orchestrator_capabilities::{BootWatch, FailureCause, Svn, SvnFloor, WalkVerdict};
 
@@ -647,12 +647,10 @@ fn completed_walks_report_by_kind() {
     assert_eq!(quiet.next_deadline_millis, None, "no walk left waiting");
 }
 
-// A failed walk becomes Timeout(id) regardless of cause — the retry
-// decision is the SM's.
-// TODO: the SM only knows Timeout, so DeviceFatal still spends retry
-// budget. Add a fatal, unrecoverable-error event to the SM in a later PR.
+// A failed walk becomes BootFailed, preserving the checkpoint name and
+// classified cause so the SM can differentiate retry decisions later.
 #[test]
-fn failed_walks_map_to_timeout() {
+fn failed_walks_map_to_boot_failed() {
     let mut driver = walk_driver(
         [
             MockWalk::scripted(std::vec![WalkVerdict::Failed {
@@ -669,8 +667,22 @@ fn failed_walks_map_to_timeout() {
     driver.release_reset(C0).unwrap();
     driver.release_reset(C1).unwrap();
 
-    assert_eq!(driver.poll_boot_walks(0).event, Some(Event::Timeout(C0)));
-    assert_eq!(driver.poll_boot_walks(0).event, Some(Event::Timeout(C1)));
+    assert_eq!(
+        driver.poll_boot_walks(0).event,
+        Some(Event::BootFailed {
+            id: C0,
+            checkpoint: "heartbeat",
+            kind: BootFailureKind::TimedOut,
+        })
+    );
+    assert_eq!(
+        driver.poll_boot_walks(0).event,
+        Some(Event::BootFailed {
+            id: C1,
+            checkpoint: "self-test",
+            kind: BootFailureKind::DeviceFatal,
+        })
+    );
     assert_eq!(driver.poll_boot_walks(0).event, None);
 }
 
@@ -780,12 +792,23 @@ fn rerelease_arms_a_fresh_walk() {
     );
 
     driver.release_reset(C0).unwrap();
-    assert_eq!(driver.poll_boot_walks(0).event, Some(Event::Timeout(C0)));
+    assert_eq!(
+        driver.poll_boot_walks(0).event,
+        Some(Event::BootFailed {
+            id: C0,
+            checkpoint: "heartbeat",
+            kind: BootFailureKind::TimedOut,
+        })
+    );
 
     driver.release_reset(C0).unwrap();
     assert_eq!(
         driver.poll_boot_walks(0).event,
-        Some(Event::Timeout(C0)),
+        Some(Event::BootFailed {
+            id: C0,
+            checkpoint: "heartbeat",
+            kind: BootFailureKind::TimedOut,
+        }),
         "fresh attempt from the first checkpoint, not the old walk resumed"
     );
 }
@@ -810,12 +833,11 @@ fn booted_walk_settles_in_ready() {
     assert_eq!(orch.state(), State::Ready);
 }
 
-// End to end, failure path: the released component never reports in, its
-// Timeout enters recovery, and with no recovery capability composed yet
-// the machine fails closed. The Recovery PR replaces this test with the
-// recovery-path one — its failure there is the reminder.
+// End to end, failure path: the released component's walk fails, its
+// BootFailed enters recovery, and with no recovery capability composed
+// yet the machine fails closed.
 #[test]
-fn boot_timeout_fails_closed_without_recovery() {
+fn boot_failure_fails_closed_without_recovery() {
     let mut orch = orchestrator();
     let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
         boot_watches: [MockWalk::scripted(std::vec![WalkVerdict::Failed {
@@ -829,7 +851,14 @@ fn boot_timeout_fails_closed_without_recovery() {
     assert_eq!(orch.state(), State::Ready);
 
     let event = driver.poll_boot_walks(0).event.expect("walk failed");
-    assert_eq!(event, Event::Timeout(C0));
+    assert_eq!(
+        event,
+        Event::BootFailed {
+            id: C0,
+            checkpoint: "heartbeat",
+            kind: BootFailureKind::TimedOut,
+        }
+    );
     orch.dispatch(&mut driver, event);
 
     assert_eq!(orch.state(), State::Locked);

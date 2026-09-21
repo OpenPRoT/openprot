@@ -567,6 +567,52 @@ fn timeout_stale_id_ignored() {
     assert!(!effects.contains(&Effect::RecoverComponent { id: C1, attempt: 0 }));
 }
 
+/// A `BootFailed` for the awaited component enters recovery, same as
+/// `Timeout`. The checkpoint and kind are preserved in the event but do not
+/// affect the transition.
+#[test]
+fn boot_failed_awaited_enters_recovering() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::active_required()),
+            (C1, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::BootFailed {
+                id: C0,
+                checkpoint: "heartbeat",
+                kind: BootFailureKind::DeviceRetriable,
+            },
+        ],
+    );
+    assert_eq!(state, State::Recovering(C0));
+    assert!(effects.contains(&Effect::RecoverComponent { id: C0, attempt: 0 }));
+}
+
+/// A `BootFailed` for a component not awaiting boot is stale and dropped.
+#[test]
+fn boot_failed_stale_id_ignored() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::active_required()),
+            (C1, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::BootFailed {
+                id: C1,
+                checkpoint: "self-test",
+                kind: BootFailureKind::DeviceFatal,
+            },
+        ],
+    );
+    assert_eq!(state, State::AwaitingReady(Some(C0)));
+    assert!(!effects.contains(&Effect::RecoverComponent { id: C1, attempt: 0 }));
+}
+
 /// An out-of-chain id in a `VerificationFailed` report is dropped: the core
 /// supervises only chain components, so a verdict for an id the chain does not
 /// contain neither enters `Recovering` nor emits `RecoverComponent`.
@@ -2441,7 +2487,24 @@ fn random_event(rng: &mut SplitMix64, ids: &[ComponentId]) -> Event {
         4 => Event::BootConfirmed(id),
         5 => Event::CorruptionDetected(id),
         6 => Event::Restored(id),
-        7 => Event::Timeout(id),
+        7 => {
+            // Coin-flip: exercise both BootFailed and Timeout on
+            // this arm.
+            if rng.below(2) == 0 {
+                let kind = match rng.below(3) {
+                    0 => BootFailureKind::TimedOut,
+                    1 => BootFailureKind::DeviceRetriable,
+                    _ => BootFailureKind::DeviceFatal,
+                };
+                Event::BootFailed {
+                    id,
+                    checkpoint: "fuzz",
+                    kind,
+                }
+            } else {
+                Event::Timeout(id)
+            }
+        }
         8 => Event::AttestationChallenge,
         9 => Event::UpdateRequest,
         10 => Event::UpdateVerified,
