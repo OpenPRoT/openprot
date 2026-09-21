@@ -22,7 +22,7 @@ in hardware dependencies.
 |---|---|
 | `src/lib.rs` | Public re-exports. `#![no_std]` `#![forbid(unsafe_code)]`. |
 | `src/traits.rs` | `AttestProducer` trait. |
-| `src/hw_abstraction.rs` | `HwSigner` trait; `SwSigner` struct with P-384 scalar validation. |
+| `src/signing_abstraction.rs` | `HwSigner` trait; `SwSigner` struct with P-384 scalar validation. |
 | `src/types.rs` | `Measurement`, `DigestAlgorithm`, `MeasurementAuthority`, `AttestConfig`, `OemId`, `MeasurementProvider` trait, `SignerKind` enum, `SwSignerConfig` struct. |
 | `src/consts.rs` | Fixed-capacity constants (`MAX_CERT_SIZE`, `MAX_CHAIN_LEN`, etc.). |
 | `src/error.rs` | `AttestError` — shared error type for both service crates. |

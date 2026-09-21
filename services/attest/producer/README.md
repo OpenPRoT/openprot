@@ -38,7 +38,7 @@ producer.generate_token(&nonce, &mut out)?;
 
 ### `SwAttestProducer` (production, software key)
 
-Backed by a [`SwSigner`](../api/src/hw_abstraction.rs) holding a caller-supplied
+Backed by a [`SwSigner`](../api/src/signing_abstraction.rs) holding a caller-supplied
 P-384 private scalar and DER certificate chain.  No Caliptra hardware required.
 DICE chain validation is skipped (SW-generated certs carry no DICE extensions).
 If the leaf certificate carries the TCG UEID extension (OID 2.23.133.5.4.4) it

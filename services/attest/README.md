@@ -22,7 +22,7 @@ in hardware dependencies.
 |---|---|
 | `src/lib.rs` | Public re-exports. `#![no_std]` `#![forbid(unsafe_code)]`. |
 | `src/traits.rs` | `AttestProducer` trait. |
-| `src/hw_abstraction.rs` | `HwSigner` trait; `SwSigner` struct with P-384 scalar validation. |
+| `src/signing_abstraction.rs` | `HwSigner` trait; `SwSigner` struct with P-384 scalar validation. |
 | `src/types.rs` | `Measurement`, `DigestAlgorithm`, `MeasurementAuthority`, `AttestConfig`, `OemId`, `MeasurementProvider` trait, `SignerKind` enum, `SwSignerConfig` struct. |
 | `src/consts.rs` | Fixed-capacity constants (`MAX_CERT_SIZE`, `MAX_CHAIN_LEN`, etc.). |
 | `src/error.rs` | `AttestError` — shared error type for both service crates. |
@@ -31,16 +31,14 @@ in hardware dependencies.
 
 ### `AttestProducer`
 
-The primary interface implemented by `HwAttestProducer` (and the
-`SoftwareAttestProducer` stub in the producer crate).
+The primary interface implemented by `HwAttestProducer`, `SwAttestProducer`,
+and the `SoftwareAttestProducer` stub in the producer crate.
 
 ```rust
-pub trait AttestProducer: Send + Sync {
+pub trait AttestProducer {
     fn generate_token(
         &self,
         nonce: &[u8],
-        evidence: &[u8],
-        iat: u64,
         out: &mut Vec<u8, MAX_TOKEN_SIZE>,
     ) -> Result<(), AttestError>;
 
@@ -51,26 +49,21 @@ pub trait AttestProducer: Send + Sync {
 }
 ```
 
-`evidence` is the raw CBOR output of the verifier service. Pass an empty slice
-when no peer attestation has been performed. The bytes are embedded verbatim as
-the `concise-evidence` claim (key `-70001`) in the OCP-EAT token. `iat` is a
-Unix timestamp (seconds since epoch) supplied by the caller. The encoded token
-is appended to the caller-supplied `out` buffer.
+The encoded token is appended to the caller-supplied `out` buffer.
 
 ### `HwSigner`
 
-Abstracts signing and certificate operations that execute inside the Caliptra
-hardware boundary.
+Abstracts signing and certificate operations backed by the Caliptra hardware
+boundary.
 
 ```rust
-pub trait HwSigner: Send + Sync {
+pub trait HwSigner {
     fn sign(&self, payload: &[u8]) -> Result<[u8; 96], AttestError>;
-    fn leaf_cert_der(&self, buf: &mut Vec<u8, MAX_CERT_SIZE>) -> Result<(), AttestError>;
     fn cert_chain_der(
         &self,
         buf: &mut Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN>,
     ) -> Result<(), AttestError>;
-    fn caliptra_measurements(
+    fn measurements(
         &self,
         out: &mut Vec<Measurement, MAX_MEASUREMENTS>,
     ) -> Result<(), AttestError>;
@@ -80,14 +73,26 @@ pub trait HwSigner: Send + Sync {
 The private Alias Key never leaves Caliptra. Production code implements this
 trait via the Caliptra mailbox driver (`caliptra-sw`).
 
+### `SwSigner`
+
+Holds a caller-supplied P-384 private scalar and DER certificate chain for
+software-only signing (no Caliptra hardware required). Constructed via
+`SwSigner::new(SwSignerConfig { ... })`, which validates:
+
+- Scalar is not all zeros (`d ≥ 1`).
+- Scalar is less than the P-384 group order (`d < n`).
+- Cert chain contains at least one certificate.
+- Every certificate begins with `0x30` (DER SEQUENCE tag).
+
+Returns `Err(AttestError::InvalidKey)` on any violation.
+
 ### `MeasurementProvider`
 
 Plug in platform-specific firmware measurement sources (UEFI, BMC, etc.)
 beyond the Caliptra-internal measurements.
 
 ```rust
-pub trait MeasurementProvider: Send + Sync {
-    fn component_name(&self) -> &str;
+pub trait MeasurementProvider {
     fn measurements(
         &self,
         out: &mut Vec<Measurement, MAX_MEASUREMENTS>,

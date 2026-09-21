@@ -29,12 +29,12 @@
 
 pub mod consts;
 mod error;
-mod hw_abstraction;
+mod signing_abstraction;
 mod traits;
 mod types;
 
 pub use error::AttestError;
-pub use hw_abstraction::{HwSigner, SwSigner};
+pub use signing_abstraction::{HwSigner, SwSigner};
 pub use traits::AttestProducer;
 pub use types::{
     AttestConfig, DigestAlgorithm, Measurement, MeasurementAuthority, MeasurementProvider, OemId,
