@@ -567,11 +567,10 @@ fn timeout_stale_id_ignored() {
     assert!(!effects.contains(&Effect::RecoverComponent { id: C1, attempt: 0 }));
 }
 
-/// A `BootFailed` for the awaited component enters recovery, same as
-/// `Timeout`. The checkpoint and kind are preserved in the event but do not
-/// affect the transition.
+/// A retriable `BootFailed` for the awaited component enters recovery,
+/// same as `Timeout`.
 #[test]
-fn boot_failed_awaited_enters_recovering() {
+fn boot_failed_retriable_enters_recovering() {
     let (effects, state) = drive(
         chain(&[
             (C0, ComponentAttrs::active_required()),
@@ -584,6 +583,65 @@ fn boot_failed_awaited_enters_recovering() {
                 id: C0,
                 checkpoint: "heartbeat",
                 kind: BootFailureKind::DeviceRetriable,
+            },
+        ],
+    );
+    assert_eq!(state, State::Recovering(C0));
+    assert!(effects.contains(&Effect::RecoverComponent { id: C0, attempt: 0 }));
+    assert!(effects.contains(&Effect::ReportBootFailed {
+        id: C0,
+        checkpoint: "heartbeat",
+        kind: BootFailureKind::DeviceRetriable,
+    }));
+}
+
+/// A fatal `BootFailed` for an `Isolable` component gates it immediately
+/// with no recovery attempt.
+#[test]
+fn boot_failed_fatal_isolable_gates_without_recovery() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::active_isolable()),
+            (C1, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::BootFailed {
+                id: C0,
+                checkpoint: "bl1",
+                kind: BootFailureKind::DeviceFatal,
+            },
+        ],
+    );
+    assert_eq!(state, State::AwaitingReady(Some(C0)));
+    assert!(!effects.contains(&Effect::RecoverComponent { id: C0, attempt: 0 }));
+    assert!(effects.contains(&Effect::AssertReset(C0)));
+    assert!(effects.contains(&Effect::ReportIsolated(C0)));
+    assert!(effects.contains(&Effect::ReportBootFailed {
+        id: C0,
+        checkpoint: "bl1",
+        kind: BootFailureKind::DeviceFatal,
+    }));
+}
+
+/// A fatal `BootFailed` for a `Required` component still enters recovery
+/// (the device said "this image is bad" but a different recovery source
+/// could help).
+#[test]
+fn boot_failed_fatal_required_still_recovers() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::active_required()),
+            (C1, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::BootFailed {
+                id: C0,
+                checkpoint: "bl1",
+                kind: BootFailureKind::DeviceFatal,
             },
         ],
     );
@@ -611,6 +669,71 @@ fn boot_failed_stale_id_ignored() {
     );
     assert_eq!(state, State::AwaitingReady(Some(C0)));
     assert!(!effects.contains(&Effect::RecoverComponent { id: C1, attempt: 0 }));
+}
+
+/// A fatal `BootFailed` in `PreSupervision` for a speculatively released
+/// passive isolable component gates it and advances the cursor past it,
+/// same as `CorruptionDetected`.
+#[test]
+fn boot_failed_fatal_in_pre_supervision_gates_passive() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_isolable()),
+            (C1, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::BootFailed {
+                id: C0,
+                checkpoint: "self-test",
+                kind: BootFailureKind::DeviceFatal,
+            },
+            Event::VerificationPassed(C1),
+        ],
+    );
+    assert_eq!(state, State::Ready);
+    assert!(effects.contains(&Effect::AssertReset(C0)));
+    assert!(effects.contains(&Effect::ReportIsolated(C0)));
+    assert!(effects.contains(&Effect::ReportBootFailed {
+        id: C0,
+        checkpoint: "self-test",
+        kind: BootFailureKind::DeviceFatal,
+    }));
+    assert!(!effects.contains(&Effect::RecoverComponent { id: C0, attempt: 0 }));
+}
+
+/// A fatal `BootFailed` in `Ready` for a passive isolable component that
+/// was released speculatively and still owes a boot signal: gates it
+/// without recovery and stays `Ready`.
+#[test]
+fn boot_failed_fatal_in_ready_gates_passive() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_isolable()),
+            (C1, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::VerificationPassed(C1),
+            // Both released; machine is Ready with C0/C1 still awaiting boot.
+            Event::BootFailed {
+                id: C0,
+                checkpoint: "pcie-link",
+                kind: BootFailureKind::DeviceFatal,
+            },
+        ],
+    );
+    assert_eq!(state, State::Ready);
+    assert!(effects.contains(&Effect::AssertReset(C0)));
+    assert!(effects.contains(&Effect::ReportIsolated(C0)));
+    assert!(effects.contains(&Effect::ReportBootFailed {
+        id: C0,
+        checkpoint: "pcie-link",
+        kind: BootFailureKind::DeviceFatal,
+    }));
+    assert!(!effects.contains(&Effect::RecoverComponent { id: C0, attempt: 0 }));
 }
 
 /// An out-of-chain id in a `VerificationFailed` report is dropped: the core

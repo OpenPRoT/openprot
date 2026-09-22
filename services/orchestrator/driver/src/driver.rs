@@ -297,6 +297,18 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
                 self.report(Report::UpdateAborted);
                 Ok(None)
             }
+            Effect::ReportBootFailed {
+                id,
+                checkpoint,
+                kind,
+            } => {
+                self.report(Report::BootFailed {
+                    id,
+                    checkpoint,
+                    kind,
+                });
+                Ok(None)
+            }
             // No board capability is composed for these seams yet, so they
             // fail closed here instead of behind stub methods. Each group
             // gains an executor when its capability joins

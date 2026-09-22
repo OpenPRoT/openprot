@@ -634,15 +634,39 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                     self.clear_awaiting_boot(*id);
                     Outcome::Handled
                 }
-                // Boot failure: either the walk judged a checkpoint failure
-                // (BootFailed) or the fleet-level watchdog fired (Timeout).
-                // Both recover the component if it is still awaiting boot;
-                // stale/spurious events are dropped.
-                Event::BootFailed { id, .. } | Event::Timeout(id) => {
+                // Timeout always recovers: silence says nothing about the
+                // image, so a fresh attempt is never futile. Stale ids
+                // (component not awaiting boot) are dropped.
+                Event::Timeout(id) => {
                     if self.is_awaiting_boot(*id) {
                         Outcome::Transition(State::Recovering(*id))
                     } else {
                         Outcome::Handled
+                    }
+                }
+                // A device-reported boot failure. DeviceFatal means the
+                // device itself declared the image unrecoverable by retry,
+                // so Isolable/Cascading components are gated immediately
+                // (no recovery budget burned); Required still recovers
+                // because a different recovery source could help.
+                // Non-fatal kinds recover unconditionally, like Timeout.
+                Event::BootFailed {
+                    id,
+                    checkpoint,
+                    kind,
+                } => {
+                    if !self.is_awaiting_boot(*id) {
+                        return Outcome::Handled;
+                    }
+                    ctx.emit(Effect::ReportBootFailed {
+                        id: *id,
+                        checkpoint,
+                        kind: *kind,
+                    });
+                    if *kind == BootFailureKind::DeviceFatal {
+                        self.handle_corruption_advancing(*id, ctx)
+                    } else {
+                        Outcome::Transition(State::Recovering(*id))
                     }
                 }
                 Event::EffectFailed => Outcome::Transition(State::Locked),
@@ -711,10 +735,26 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 // Releases off `chain[cursor]` too, so the cursor must move
                 // off a component the cascade gated. `Handled` keeps `awaiting`.
                 Event::CorruptionDetected(id) => self.handle_corruption_advancing(*id, ctx),
-                // `Timeout` is intentionally not handled here: it falls through
-                // to `handle_supervising`, which runs the device-agnostic
-                // boot-progress watchdog uniformly across every supervised state
-                // (an `AwaitingReady` timeout is no longer special-cased).
+                // DeviceFatal: the device declared the image unrecoverable.
+                // Gate Isolable/Cascading immediately (cursor-advancing),
+                // recover Required. Non-fatal kinds and Timeout fall through
+                // to handle_supervising below.
+                Event::BootFailed {
+                    id,
+                    kind: BootFailureKind::DeviceFatal,
+                    checkpoint,
+                } if self.is_awaiting_boot(*id) => {
+                    ctx.emit(Effect::ReportBootFailed {
+                        id: *id,
+                        checkpoint,
+                        kind: BootFailureKind::DeviceFatal,
+                    });
+                    self.handle_corruption_advancing(*id, ctx)
+                }
+                // `Timeout` and non-fatal `BootFailed` fall through to
+                // `handle_supervising`, which runs the device-agnostic
+                // boot-progress watchdog uniformly across every supervised
+                // state.
                 _ => Outcome::Super,
             },
 
@@ -863,14 +903,35 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 self.clear_awaiting_boot(*id);
                 Outcome::Handled
             }
-            // Boot failure across every supervised state: a walk checkpoint
-            // failure (BootFailed) or fleet-level watchdog (Timeout) recovers
-            // the component if it is still awaiting boot. Stale events dropped.
-            Event::BootFailed { id, .. } | Event::Timeout(id) => {
+            // Timeout always recovers: silence is ambiguous, so retrying
+            // is never futile. Stale ids (already booted) are dropped.
+            Event::Timeout(id) => {
                 if self.is_awaiting_boot(*id) {
                     Outcome::Transition(State::Recovering(*id))
                 } else {
                     Outcome::Handled
+                }
+            }
+            // Same DeviceFatal split as PreSupervision/AwaitingReady, but
+            // non-advancing: Ready/Recovering/Updating are not walking the
+            // chain, so the cursor is not the walk position.
+            Event::BootFailed {
+                id,
+                checkpoint,
+                kind,
+            } => {
+                if !self.is_awaiting_boot(*id) {
+                    return Outcome::Handled;
+                }
+                ctx.emit(Effect::ReportBootFailed {
+                    id: *id,
+                    checkpoint,
+                    kind: *kind,
+                });
+                if *kind == BootFailureKind::DeviceFatal {
+                    self.handle_corruption(*id, ctx)
+                } else {
+                    Outcome::Transition(State::Recovering(*id))
                 }
             }
             // A new update cannot start from any supervised state except

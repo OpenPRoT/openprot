@@ -242,9 +242,19 @@ pub enum Event {
     RecoveryFailed,
     /// A boot walk failed at a specific checkpoint with a classified cause.
     /// Produced by the platform driver when `CheckpointWalk::poll` returns
-    /// `WalkVerdict::Failed`. A component awaiting boot enters recovery.
-    /// The `checkpoint` and `kind` fields are preserved so the state
-    /// machine can differentiate (e.g. skip retries on `DeviceFatal`).
+    /// `WalkVerdict::Failed`. `TimedOut` and `DeviceRetriable` enter recovery
+    /// (the retry cap limits attempts). `DeviceFatal` gates
+    /// `Isolable`/`Cascading` components immediately (no recovery attempt)
+    /// and enters recovery for `Required` (halt-on-exhaustion still applies).
+    ///
+    /// The split is about what gating costs, not about whether a retry could
+    /// work. Recovery does not re-run the bad image: `attempt` rides on
+    /// [`Effect::RecoverComponent`] so the driver can try a different source
+    /// each time, and an untried golden image may fix any component. Gating an
+    /// `Isolable`/`Cascading` component holds it in reset and leaves the
+    /// platform running, so skipping straight there costs little. Gating a
+    /// `Required` one locks the platform down, so every recovery source is
+    /// tried first.
     BootFailed {
         id: ComponentId,
         checkpoint: &'static str,
@@ -369,6 +379,14 @@ pub enum Effect {
     /// immediately before the machine latches to [`Locked`](crate::State::Locked).
     /// Names the component that forced the halt.
     ReportRecoveryFailed(ComponentId),
+    /// Report that a boot walk failed at a named checkpoint. Emitted before
+    /// the transition (recovery or gate) so management software learns where
+    /// in the boot sequence the failure occurred.
+    ReportBootFailed {
+        id: ComponentId,
+        checkpoint: &'static str,
+        kind: BootFailureKind,
+    },
     /// Report that an [`Event::UpdateRequest`] was declined because the machine
     /// is busy in a supervised state other than [`Ready`](crate::State::Ready)
     /// — a chain walk is finishing ([`AwaitingReady`](crate::State::AwaitingReady)),
