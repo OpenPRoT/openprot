@@ -1,29 +1,35 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! The [`TrialBoot`] commit capability contract.
+//! The [`DeviceTrialBoot`] commit capability contract.
 //!
-//! Who judges the boot depends on the implementation.
+//! This is the gate for the downstream devices, the ones the eRoT watches
+//! from outside. [`BootWatch`] checks a device's checkpoints and answers with
+//! a [`WalkVerdict`], read through an [`EvidenceReader`] over the board's
+//! ready lines. `Complete` means confirm, `Failed` means revert, whether the
+//! device reported the failure or a checkpoint's window ran out with no
+//! report at all. The eRoT stays alive across the whole flow, so nothing has
+//! to persist beyond the device's own slot metadata: an orchestrator that
+//! rebooted mid-update re-walks the chain from the start.
 //!
-//! For a downstream device the eRoT watches from outside. [`BootWatch`]
-//! checks the device's checkpoints and answers with a [`WalkVerdict`], read
-//! through an [`EvidenceReader`] over the board's ready lines. `Complete`
-//! means confirm, `Failed` means revert, whether the device reported the
-//! failure or a checkpoint's window ran out with no report at all.
+//! The eRoT's own image is the same gate under a different lifetime, and it
+//! is [`SelfUpdate`] instead. There the judging outlives the judge: the eRoT
+//! resets into the candidate, so the verdict is reached by a later boot that
+//! has to read what the previous one left behind. That needs durable state
+//! this trait deliberately does not carry, and the verdict is the
+//! orchestrator's own supervised boot coming up, not a call from the image
+//! that armed the trial.
 //!
-//! For the eRoT's own image nobody is watching from outside. The trial image
-//! runs its own health checks and calls `confirm`. Getting that far is what
-//! counts as success. Failure means never getting there, and none of our code
-//! is running to notice: whatever resets the part next (a watchdog, a power
-//! cycle, a panic) boots the confirmed slot, because the trial boot used up
-//! the arming. The new image works out what happened from stored state, with
-//! no reset-cause register: if it is running the confirmed slot and a trial
-//! is still open, the trial never confirmed. What the health check covers is
-//! up to the caller, not this trait.
+//! A board that wants one gate for both can implement this trait over its
+//! [`SelfUpdate`] session; nothing here forbids it. What does not work is one
+//! trait for both via a supertrait bound: `confirm` with no trial open
+//! succeeds here and is an error on a session, and `is_pending` cannot say
+//! "confirmed, but the anti-rollback floor has not moved yet".
 //!
 //! [`BootWatch`]: crate::BootWatch
 //! [`WalkVerdict`]: crate::WalkVerdict
 //! [`EvidenceReader`]: crate::EvidenceReader
+//! [`SelfUpdate`]: crate::SelfUpdate
 
 /// Commit capability: confirm or revert an image that was activated but not
 /// committed, once its boot has been judged.
@@ -34,12 +40,13 @@
 /// device does it for the eRoT. This trait is the other half: keep that image
 /// if its boot was good, or throw it away.
 ///
-/// Implemented for every device whose slot choice the eRoT drives, both
-/// downstream devices behind interposed flash and the eRoT's own image. The
-/// two differ in who judges the boot, not in this contract. A device that
-/// commits on its own, a PLDM firmware device picking its own slot, has no
-/// `TrialBoot` on the eRoT side, the same split as
-/// [`SvnFloor`](crate::SvnFloor).
+/// Implemented for the downstream devices whose slot choice the eRoT drives,
+/// behind interposed flash or over PLDM. A device that commits on its own,
+/// a PLDM firmware device picking its own slot, has no
+/// `DeviceTrialBoot` on the eRoT side, the same split as
+/// [`SvnFloor`](crate::SvnFloor). The eRoT's own
+/// image has [`SelfUpdate`](crate::SelfUpdate), which holds the same gate
+/// plus the state a verdict reached after a reset needs.
 ///
 /// `confirm` and `revert` take no arguments. A device has at most one trial
 /// open at a time, the one the last activation armed, so there is nothing to
@@ -64,10 +71,8 @@
 /// nothing. A caller that needs to tell a repeat from a trial that was never
 /// there checks `is_pending` first, the same shape as
 /// [`SvnFloor::advance`](crate::SvnFloor::advance). Neither call boots
-/// anything; they only move slot metadata. Restarting a downstream device is
-/// [`BootControl`](crate::BootControl), and the eRoT's own image needs no
-/// call at all, since the next reset boots the confirmed slot whatever caused
-/// it.
+/// anything; they only move slot metadata. Restarting the device is
+/// [`BootControl`](crate::BootControl).
 ///
 /// `is_pending` is a yes or no. It does not say whether the armed image has
 /// booted, and this trait cannot tell a `confirm` that came after a watched
@@ -77,7 +82,7 @@
 /// way [`BootControl`](crate::BootControl)'s caller keeps a device in reset
 /// until it has been checked. Which slot the running image booted from is not
 /// visible here.
-pub trait TrialBoot {
+pub trait DeviceTrialBoot {
     /// The error type this device's trial record reports.
     ///
     /// Bounded by [`core::error::Error`] so the caller gets `Display` and a
@@ -87,10 +92,8 @@ pub trait TrialBoot {
 
     /// Whether an activated image is still waiting for its verdict.
     ///
-    /// Answered from stored state. For the eRoT's own update the image that
-    /// calls `confirm` is not the image that armed the trial, and an
-    /// orchestrator that rebooted mid-update has no memory of a downstream
-    /// device's open trial either.
+    /// Answered from stored state, because an orchestrator that rebooted
+    /// mid-update has no memory of a device's open trial.
     fn is_pending(&self) -> Result<bool, Self::Error>;
 
     /// Keeps the activated image as the confirmed one and closes the trial.
@@ -134,9 +137,10 @@ mod tests {
     /// The one flow both implementations go through: apply the verdict to
     /// whatever the last activation armed, then check the record came out
     /// clear. A record left open means a later boot finds a trial nobody
-    /// owns. Generic over `TrialBoot`, so a downstream device and the eRoT
-    /// itself run the same code.
-    fn apply_verdict<T: TrialBoot>(trial: &mut T, verdict: Verdict) -> Result<(), T::Error> {
+    /// owns. Generic over `DeviceTrialBoot`, so every device runs the same code
+    /// whether the orchestrator held the instance all along or built it
+    /// afresh.
+    fn apply_verdict<T: DeviceTrialBoot>(trial: &mut T, verdict: Verdict) -> Result<(), T::Error> {
         match verdict {
             Verdict::Healthy => trial.confirm()?,
             Verdict::Bad => trial.revert()?,
@@ -149,8 +153,7 @@ mod tests {
     }
 
     /// A slot-selection record whose arming counts for the next boot only,
-    /// the way both a device's eRoT-held store and the eRoT's own stored
-    /// record behave.
+    /// the way a device's eRoT-held store behaves.
     struct SlotRecord {
         confirmed_slot: u8,
         trial_slot: Option<u8>,
@@ -185,12 +188,12 @@ mod tests {
         }
     }
 
-    /// One `TrialBoot` over a record the caller owns. The two cases differ
-    /// only in how long the instance lives. For a downstream device the eRoT
-    /// holds it for the whole flow and judges the boot from outside, over the
-    /// device's boot-complete line. For the eRoT's own update the image that
-    /// confirms builds a fresh one over the stored record, because the
-    /// instance that armed the trial went away with the previous boot.
+    /// One `DeviceTrialBoot` over a record the caller owns. The two cases
+    /// differ only in how long the instance lives: the orchestrator holds it
+    /// for the
+    /// whole flow and judges the boot over the device's boot-complete line,
+    /// or, having rebooted mid-update, builds a fresh one over the record the
+    /// device kept.
     ///
     /// Tied to no HAL: the contract has to work from any stack (mock, IPC
     /// proxy, simulator), and a HAL-bound `Error` type would stop this
@@ -217,7 +220,7 @@ mod tests {
         }
     }
 
-    impl TrialBoot for TrialRecord<'_> {
+    impl DeviceTrialBoot for TrialRecord<'_> {
         type Error = MockFault;
 
         fn is_pending(&self) -> Result<bool, MockFault> {
@@ -279,19 +282,19 @@ mod tests {
     }
 
     #[test]
-    fn the_erot_confirms_its_own_trial_from_the_boot_the_trial_started() {
+    fn a_caller_that_lost_its_instance_confirms_from_stored_state() {
         let mut record = SlotRecord::new(0);
         record.activate(1);
 
         // The boot that arming triggered. The armed image is now running,
-        // and the instance that armed it is gone.
+        // and the orchestrator that armed it has since restarted.
         assert_eq!(record.boot(), 1);
 
         let mut trial = TrialRecord::from(&mut record);
         assert_eq!(
             trial.is_pending(),
             Ok(true),
-            "the new image learns it is on trial from stored state alone"
+            "the fresh instance learns of the trial from stored state alone"
         );
         apply_verdict(&mut trial, Verdict::Healthy).unwrap();
 
@@ -300,7 +303,7 @@ mod tests {
     }
 
     #[test]
-    fn an_erot_trial_that_never_confirms_falls_back_on_the_next_reset() {
+    fn a_trial_that_never_confirms_falls_back_on_the_next_reset() {
         let mut record = SlotRecord::new(0);
         record.activate(1);
 
