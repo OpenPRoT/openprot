@@ -10,7 +10,7 @@ pub mod transport;
 #[doc(inline)]
 pub use protocol::{
     I2cError, I2cOp, I2cOpDesc, I2cOpKind, I2cRequestHeader, I2cResponseHeader, SlaveEvent,
-    MAX_OPS, MAX_PAYLOAD_SIZE,
+    MAX_BUF_SIZE, MAX_OPS, MAX_PAYLOAD_SIZE,
 };
 pub use seam::I2cSlaveEvent;
 pub use transport::{Transport, TransportError};

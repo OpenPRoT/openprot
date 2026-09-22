@@ -21,12 +21,8 @@
 use i2c_api::seam::{error_kind, ErrorKind, ErrorType, I2c, Operation, SevenBitAddress};
 use i2c_api::{
     I2cError, I2cOp, I2cOpDesc, I2cOpKind, I2cRequestHeader, I2cResponseHeader, SlaveEvent,
-    Transport, TransportError, MAX_OPS, MAX_PAYLOAD_SIZE,
+    Transport, TransportError, MAX_BUF_SIZE, MAX_OPS, MAX_PAYLOAD_SIZE,
 };
-
-// One IPC message fits in a single 512-byte channel buffer on the server side.
-// Raising this requires a matching change to the server's receive buffer.
-const MAX_BUF_SIZE: usize = 512;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClientError {

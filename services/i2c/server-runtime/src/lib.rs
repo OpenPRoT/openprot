@@ -27,9 +27,12 @@
 use i2c_api::seam::{
     I2c, I2cBusRecovery, I2cIsrEvent, I2cSlaveBuffer, I2cSlaveEvent, SevenBitAddress,
 };
-use i2c_api::{I2cError, I2cOp, I2cRequestHeader, I2cResponseHeader, SlaveEvent, MAX_PAYLOAD_SIZE};
+use i2c_api::{
+    I2cError, I2cOp, I2cRequestHeader, I2cResponseHeader, SlaveEvent, MAX_BUF_SIZE,
+    MAX_PAYLOAD_SIZE,
+};
+use i2c_server::dispatch;
 use i2c_server::slave::dispatch_slave;
-use i2c_server::{dispatch, MAX_BUF_SIZE};
 use userspace::syscall::{self, Signals};
 use userspace::time::Instant;
 
