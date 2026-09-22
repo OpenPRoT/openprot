@@ -8,6 +8,7 @@ rust_library(
     srcs = [
         "src/boot_control.rs",
         "src/boot_watch.rs",
+        "src/device_trial_boot.rs",
         "src/evidence.rs",
         "src/incremental_verifier.rs",
         "src/lib.rs",
@@ -15,7 +16,6 @@ rust_library(
         "src/recovery.rs",
         "src/self_update.rs",
         "src/svn_floor.rs",
-        "src/trial_boot.rs",
         "src/updatable.rs",
     ],
     edition = "2024",

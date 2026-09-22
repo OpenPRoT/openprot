@@ -22,8 +22,9 @@
 //! the chunked read seam staging pulls from — transports and slot
 //! bookkeeping stay behind the adapter.
 //!
-//! `TrialBoot` is the commit gate activation leaves open, whether `Updatable`
-//! did the activating or a PLDM firmware device did it for the eRoT: keep the
+//! `DeviceTrialBoot` is the commit gate activation leaves open, whether
+//! `Updatable` did the activating or a PLDM firmware device did it for the
+//! eRoT: keep the
 //! activated image once its boot was judged, or drop it. It sits on the
 //! downstream devices whose slots the eRoT drives, where the eRoT watches the
 //! boot and decides within one of its own lifetimes.
@@ -63,22 +64,22 @@
 
 mod boot_control;
 mod boot_watch;
+mod device_trial_boot;
 mod evidence;
 mod incremental_verifier;
 mod lockdown_latch;
 mod recovery;
 mod self_update;
 mod svn_floor;
-mod trial_boot;
 mod updatable;
 
 pub use boot_control::BootControl;
 pub use boot_watch::{BootWatch, FailureCause, WalkVerdict};
+pub use device_trial_boot::DeviceTrialBoot;
 pub use evidence::{BootStatus, EvidenceReader};
 pub use incremental_verifier::{IncrementalVerifier, PollOutcome, VerifySession};
 pub use lockdown_latch::LockdownLatch;
 pub use recovery::{Recovery, RestoreOutcome};
 pub use self_update::{trial_outcome, RunningImage, SelfUpdate, SelfUpdateState, TrialOutcome};
 pub use svn_floor::{Svn, SvnFloor};
-pub use trial_boot::TrialBoot;
 pub use updatable::{PayloadReadError, PayloadSource, StageProgress, Updatable, UpdateError};
