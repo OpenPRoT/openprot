@@ -71,11 +71,16 @@ impl<P> BootCheckpoint<P> {
     /// # Panics
     ///
     /// Panics, a build error in const context, if `name` is empty or
-    /// `timeout` is zero.
+    /// `timeout` is shorter than 1 ms (the walk rounds to whole
+    /// milliseconds, so a sub-millisecond window would silently become
+    /// zero).
     #[must_use]
     pub const fn new(name: &'static str, probe: P, timeout: core::time::Duration) -> Self {
         assert!(!name.is_empty(), "checkpoint name must not be empty");
-        assert!(!timeout.is_zero(), "checkpoint timeout must not be zero");
+        assert!(
+            timeout.as_millis() >= 1,
+            "checkpoint timeout must be at least 1 ms"
+        );
         Self {
             name,
             probe,
@@ -263,8 +268,14 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "checkpoint timeout must not be zero")]
+    #[should_panic(expected = "checkpoint timeout must be at least 1 ms")]
     fn rejects_a_zero_checkpoint_timeout() {
         let _ = BootCheckpoint::new("boot-complete", 0u8, Duration::ZERO);
+    }
+
+    #[test]
+    #[should_panic(expected = "checkpoint timeout must be at least 1 ms")]
+    fn rejects_a_sub_millisecond_checkpoint_timeout() {
+        let _ = BootCheckpoint::new("boot-complete", 0u8, Duration::from_micros(999));
     }
 }
