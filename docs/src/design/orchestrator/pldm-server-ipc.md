@@ -324,7 +324,7 @@ sequenceDiagram
     FD-->>Orch: Status::OfferPending { target, total, mode: OutOfTransport }
     Note right of Orch: validate target + total,<br/>platform driver picks<br/>staging address
     Orch->>FD: ServiceCall: AcceptOffer { base: FlashAddress }
-    Note left of FD: FD does not write in<br/>out-of-transport; a third party<br/>pre-stages the image, and how it<br/>learns the address is open
+    Note left of FD: FD does not write in<br/>out-of-transport. A third party<br/>pre-stages the image, and how it<br/>learns the address is open
     FD-->>Orch: Ok
     deactivate Orch
     end
