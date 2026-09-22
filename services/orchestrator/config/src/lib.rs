@@ -55,7 +55,7 @@
 ///
 /// // The board's EvidenceReader dispatches probe to monitor.
 /// // See EvidenceReader's docs for the full impl pattern.
-/// let bmc_walk = CheckpointWalk::new(bmc_reader, BMC.checkpoints());
+/// let bmc_walk = CheckpointWalk::new(bmc_reader, &BMC);
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct BootCheckpoint<P> {

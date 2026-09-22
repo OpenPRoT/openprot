@@ -242,7 +242,7 @@ fn scenario_checkpoint_confirmed() -> Result<()> {
         return Err(Error::Internal);
     }
 
-    let mut walk = CheckpointWalk::new(ProgressReader { level: 0 }, SOC.checkpoints());
+    let mut walk = CheckpointWalk::new(ProgressReader { level: 0 }, &SOC);
     let terminal = walk_device(&mut walk, C0, SOC.checkpoints().len())?;
     if terminal != Event::Booted(C0) {
         pw_log::error!("scenario 1: walk did not confirm boot");
@@ -276,7 +276,7 @@ fn scenario_checkpoint_timeout() -> Result<()> {
 
     drive_releases(&mut core, &mut plat, &[C0])?;
 
-    let mut walk = CheckpointWalk::new(ProgressReader { level: 0 }, SOC.checkpoints());
+    let mut walk = CheckpointWalk::new(ProgressReader { level: 0 }, &SOC);
     let terminal = walk_device(&mut walk, C0, 0)?;
     let is_boot_failed = matches!(
         terminal,
