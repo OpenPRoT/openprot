@@ -10,6 +10,10 @@ use embedded_hal::i2c::I2c;
 use mctp::Result;
 use mctp_lib::i2c::{MctpI2cEncap, MCTP_I2C_MAXMTU};
 
+/// MCTP transport header bytes the fragmenter prepends to every fragment.
+/// `mctp-estack` keeps `MctpHeader::LEN` private, so it is restated here.
+const MCTP_HEADER_LEN: usize = 4;
+
 /// I2C MCTP sender.
 ///
 /// Implements `mctp_lib::Sender` to fragment and send MCTP packets
@@ -144,7 +148,7 @@ impl<C: I2c<u8>> mctp_lib::Sender for I2cSender<C> {
     }
 
     fn get_mtu(&self) -> usize {
-        MCTP_I2C_MAXMTU
+        MCTP_I2C_MAXMTU - MCTP_HEADER_LEN
     }
 }
 
