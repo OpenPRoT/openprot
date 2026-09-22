@@ -973,13 +973,15 @@ pub struct EffectError;
 /// [`EffectError`] if it could not be performed. Never called with
 /// [`Effect::Emit`] — the orchestrator consumes those internally.
 ///
-/// `Ok(Some(event))` feeds back what the effect produced synchronously (e.g.
-/// a verification verdict); the orchestrator queues it and settles it in the
-/// same dispatch run. At most one event per effect. Synchronous results belong
-/// here, not in a driver-side queue — one feedback path keeps ordering honest.
-/// `execute` may block until the effect completes; results that only arrive
-/// later (boot progress, timer expiry) are delivered as their own outside
-/// events via `dispatch`.
+/// `Ok(Some(event))` feeds back what the effect produced without blocking
+/// (e.g. a verification verdict from an in-process check); the orchestrator
+/// queues it and settles it in the same dispatch run. At most one event per
+/// effect. Immediate results belong here, not in a driver-side queue,
+/// so the orchestrator sees them in the order they were produced.
+/// `execute` must return without blocking:
+/// results that require I/O or arrive later (boot progress, timer expiry,
+/// a verdict from a remote crypto service) are delivered as their own
+/// outside events via `dispatch`.
 ///
 /// Failure stays on the error channel, never in a returned event: `Err` is
 /// checked between effects, so a failed actuation aborts the rest of the
