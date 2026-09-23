@@ -6,7 +6,8 @@
 #![no_std]
 #![no_main]
 
-use ast10x0_peripherals::gpio::{gpioi, GpioExt, InterruptMode};
+use ast10x0_peripherals::aperture::take_aperture;
+use ast10x0_peripherals::gpio::{gpioi, GpioExt, GpioRegisters, InterruptMode};
 use ast10x0_peripherals::scu::{pinctrl, ScuRegisters};
 use console_backend::console_backend_write_all;
 use embedded_hal::digital::{InputPin, OutputPin};
@@ -24,7 +25,7 @@ fn test_gpio_loopback() -> bool {
         let scu = ScuRegisters::new_global_unlocked();
         scu.apply_pinctrl_group(pinctrl::PINCTRL_GPIOI0);
         scu.apply_pinctrl_group(pinctrl::PINCTRL_GPIOI1);
-        gpioi::GPIOI::new_global().split()
+        gpioi::GPIOI::new(GpioRegisters::new(take_aperture())).split()
     };
     pw_log::info!("--- GPIOI loopback test ---");
 

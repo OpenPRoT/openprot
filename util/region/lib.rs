@@ -16,6 +16,14 @@ pub trait Mmap {
     const LEN: usize;
 }
 
+/// Whether `T`'s range contains the `len` bytes starting at `start`.
+///
+/// Written without `START + LEN` so a region that runs to the end of the
+/// address space does not overflow the const evaluator.
+pub const fn covers<T: Mmap>(start: usize, len: usize) -> bool {
+    start >= T::START && T::LEN >= len && start - T::START <= T::LEN - len
+}
+
 /// Exclusive ownership of the region described by `T`.
 ///
 /// Move-only, so handing it to a driver transfers sole access and a second

@@ -6,7 +6,8 @@
 #![no_std]
 #![no_main]
 
-use ast10x0_peripherals::gpio::{gpioa, ActiveLow, GpioExt};
+use ast10x0_peripherals::aperture::take_aperture;
+use ast10x0_peripherals::gpio::{gpioa, ActiveLow, GpioExt, GpioRegisters};
 use ast10x0_peripherals::scu::{pinctrl, ScuRegisters};
 use console_backend::console_backend_write_all;
 use embedded_hal::digital::{InputPin, OutputPin, StatefulOutputPin};
@@ -23,7 +24,7 @@ fn run_gpioa_test() -> bool {
         scu.apply_pinctrl_group(pinctrl::PINCTRL_GPIOA1);
         scu.apply_pinctrl_group(pinctrl::PINCTRL_GPIOA3);
         scu.apply_pinctrl_group(pinctrl::PINCTRL_GPIOA4);
-        gpioa::GPIOA::new_global().split()
+        gpioa::GPIOA::new(GpioRegisters::new(take_aperture())).split()
     };
     pw_log::info!("=== AST10x0 GPIOA smoke test ===");
 

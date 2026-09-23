@@ -15,7 +15,7 @@ use crate::smc::helpers::{
 use crate::smc::interrupts::{SmcInterrupt, SmcInterruptDecoder};
 use crate::smc::registers::SmcRegisters;
 use crate::smc::types::*;
-use util_region::{Mmap, Region};
+use util_region::{covers, Mmap, Region};
 use util_sfdp::{decode_geometry, FlashGeometry};
 
 /// Internal controller state
@@ -291,10 +291,11 @@ impl<I: SmcInstance> Smc<I, Uninitialized> {
     /// `system.json5`, each is minted once per process, and a second controller
     /// over the same block would need tokens the caller no longer has.
     ///
-    /// Only the window's start address is checked. A process is free to map
-    /// less than the full decode region, and both current callers do.
+    /// Each mapping only has to contain what is used, not match it exactly. A
+    /// process may map less than the full decode region, and both current
+    /// callers do; a kernel-only binary maps the whole address space.
     pub fn new<Cs0, Cs1>(
-        region: Region<I::Regs>,
+        _region: Region<I::Regs>,
         _cs0_window: Region<Cs0>,
         _cs1_window: Region<Cs1>,
     ) -> Result<Self, SmcError>
@@ -304,29 +305,27 @@ impl<I: SmcInstance> Smc<I, Uninitialized> {
     {
         const {
             assert!(
-                <I::Regs as Mmap>::START == I::CONTROLLER.base_address(),
-                "mapped region does not start at this controller's base address"
-            );
-            assert!(
-                <I::Regs as Mmap>::LEN
-                    >= core::mem::size_of::<ast1060_pac::fmc::RegisterBlock>(),
-                "mapped region is shorter than this controller's register block"
+                covers::<I::Regs>(
+                    I::CONTROLLER.base_address(),
+                    core::mem::size_of::<ast1060_pac::fmc::RegisterBlock>()
+                ),
+                "mapped region does not contain this controller's register block"
             );
             let layout = layout_for(I::CONTROLLER, I::CONFIG);
             if layout.cs0_present {
                 assert!(
-                    Cs0::START == layout.window_base[0],
-                    "CS0 mapping does not start at this controller's CS0 decode window"
+                    covers::<Cs0>(layout.window_base[0], 1),
+                    "CS0 mapping does not cover this controller's CS0 decode window"
                 );
             }
             if layout.cs1_present {
                 assert!(
-                    Cs1::START == layout.window_base[1],
-                    "CS1 mapping does not start at this controller's CS1 decode window"
+                    covers::<Cs1>(layout.window_base[1], 1),
+                    "CS1 mapping does not cover this controller's CS1 decode window"
                 );
             }
         }
-        let base = region.as_mut_ptr() as *const _;
+        let base = I::CONTROLLER.base_address() as *const _;
         // SAFETY: `region` is sole ownership of the granted register block, and
         // the block is this controller's per the check above.
         let regs = unsafe { SmcRegisters::new(base) };

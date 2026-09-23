@@ -5,6 +5,7 @@
 #![feature(associated_type_defaults)]
 #![feature(adt_const_params)]
 
+pub mod aperture;
 pub mod gpio;
 pub mod hace;
 pub mod i2c;

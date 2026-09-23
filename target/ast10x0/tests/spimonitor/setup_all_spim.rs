@@ -15,6 +15,7 @@ use ast10x0_board::{
     apply_spim_external_mux, bmc_spim_csin_levels, bmc_spim_path_debug, delay_us,
     enable_flash_power, release_spi_flash_resets, set_bmc_resets, spim_external_mux_state,
 };
+use ast10x0_peripherals::aperture::{take_aperture, Aperture};
 use ast10x0_peripherals::scu::{
     pinctrl::PINCTRL_SPI1_QUAD, ScuExtMuxSelect, ScuRegisters, SpiMonitorInstance, SpiMonitorSource,
 };
@@ -86,6 +87,7 @@ const BMC_FLASH_GEOMETRY: FlashGeometry = FlashGeometry {
 struct Spi1Instance;
 
 impl SmcInstance for Spi1Instance {
+    type Regs = Aperture;
     const CONTROLLER: SmcController = SmcController::Spi1;
     const CONFIG: SmcConfig = SmcConfig {
         cs0: Some(BMC_FLASH_CONFIG),
@@ -414,7 +416,10 @@ fn reset_one_bmc_flash(
 
 fn reset_bmc_flashes(scu: &ScuRegisters, log_jedec: bool) -> Result<(), SmcError> {
     scu.apply_pinctrl_group(PINCTRL_SPI1_QUAD);
-    let mut spi = unsafe { SpiUninit::<Spi1Instance>::new()? }.init()?;
+    let mut spi = unsafe {
+        SpiUninit::<Spi1Instance>::new(take_aperture(), take_aperture(), take_aperture())?
+    }
+    .init()?;
 
     for (index, monitor, chip_select) in [
         (0u32, SpiMonitorInstance::Spim0, ChipSelect::Cs0),

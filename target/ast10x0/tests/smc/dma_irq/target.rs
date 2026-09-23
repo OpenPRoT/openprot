@@ -22,6 +22,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use core::task::Poll;
 
 use arch_arm_cortex_m::Arch;
+use ast10x0_peripherals::aperture::{take_aperture, Aperture};
 use ast10x0_peripherals::scu::pinctrl::PINCTRL_FMC_QUAD;
 use ast10x0_peripherals::scu::ScuRegisters;
 use ast10x0_peripherals::smc::{
@@ -47,6 +48,7 @@ pub struct Target {}
 struct FmcInstance;
 
 impl SmcInstance for FmcInstance {
+    type Regs = Aperture;
     const CONTROLLER: SmcController = SmcController::Fmc;
     const CONFIG: SmcConfig = SmcConfig {
         cs0: Some(FlashConfig { spi_clock_mhz: 50 }),
@@ -114,7 +116,10 @@ fn run_dma_read_irq_test() -> Result<(), SmcError> {
     let scu = unsafe { ScuRegisters::new_global_unlocked() };
     scu.apply_pinctrl_group(PINCTRL_FMC_QUAD);
 
-    let mut controller = unsafe { FmcUninit::<FmcInstance>::new()? }.init()?;
+    let mut controller = unsafe {
+        FmcUninit::<FmcInstance>::new(take_aperture(), take_aperture(), take_aperture())?
+    }
+    .init()?;
 
     if !controller.is_ready() || controller.controller_id() != SmcController::Fmc {
         return Err(SmcError::HardwareError);

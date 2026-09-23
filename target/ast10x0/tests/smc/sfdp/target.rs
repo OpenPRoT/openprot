@@ -12,6 +12,7 @@
 #![no_std]
 #![no_main]
 
+use ast10x0_peripherals::aperture::{take_aperture, Aperture};
 #[allow(unused_imports)]
 use ast10x0_peripherals::scu::pinctrl::PINCTRL_FMC_QUAD;
 use ast10x0_peripherals::scu::ScuRegisters;
@@ -34,6 +35,7 @@ const CS1_EXPECTED_CAPACITY_MB: u32 = 64;
 struct FmcInstance;
 
 impl SmcInstance for FmcInstance {
+    type Regs = Aperture;
     const CONTROLLER: SmcController = SmcController::Fmc;
     const CONFIG: SmcConfig = SmcConfig {
         cs0: Some(FlashConfig {
@@ -56,7 +58,10 @@ fn run_smc_fmc_cs1_sfdp_test() -> Result<(), SmcError> {
 
     pw_log::info!("=== AST10x0 SMC FMC CS1 SFDP config test ===");
     // Both CS are driven on the EVB; capacity for each is an OUTPUT of init().
-    let mut fmc = unsafe { FmcUninit::<FmcInstance>::new()? }.init()?;
+    let mut fmc = unsafe {
+        FmcUninit::<FmcInstance>::new(take_aperture(), take_aperture(), take_aperture())?
+    }
+    .init()?;
 
     if !fmc.is_ready() {
         return Err(SmcError::HardwareError);

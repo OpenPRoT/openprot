@@ -6,6 +6,7 @@
 #![no_std]
 #![no_main]
 
+use ast10x0_peripherals::aperture::{take_aperture, Aperture};
 use ast10x0_peripherals::scu::{
     pinctrl::{PINCTRL_SPI1_QUAD, PINCTRL_SPIM1_DEFAULT},
     ScuExtMuxSelect, ScuRegisters, SpiMonitorInstance, SpiMonitorPassthrough, SpiMonitorSource,
@@ -27,6 +28,7 @@ use target_debug::{dump_smc_read, dump_smc_register};
 struct Spi1Instance;
 
 impl SmcInstance for Spi1Instance {
+    type Regs = Aperture;
     const CONTROLLER: SmcController = SmcController::Spi1;
     const CONFIG: SmcConfig = SmcConfig {
         cs0: Some(FlashConfig { spi_clock_mhz: 50 }),
@@ -57,7 +59,10 @@ fn run_spi1_read_test() -> Result<(), SmcError> {
     config_spi1_master_controller()?;
 
     pw_log::info!("=== AST10x0 SMC SPI1 read test ===");
-    let mut spi = unsafe { SpiUninit::<Spi1Instance>::new()? }.init()?;
+    let mut spi = unsafe {
+        SpiUninit::<Spi1Instance>::new(take_aperture(), take_aperture(), take_aperture())?
+    }
+    .init()?;
 
     if !spi.is_ready() {
         return Err(SmcError::HardwareError);

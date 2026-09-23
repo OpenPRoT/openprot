@@ -5,7 +5,7 @@
 
 use ast1060_pac as device;
 use core::marker::PhantomData;
-use util_region::{Mmap, Region};
+use util_region::{covers, Mmap, Region};
 
 /// Base address of the AST10x0 GPIO register block.
 const GPIO_BASE: usize = 0x7e78_0000;
@@ -35,12 +35,11 @@ impl<R: Mmap> GpioRegisters<R> {
     pub fn new(_region: Region<R>) -> Self {
         const {
             assert!(
-                R::START == GPIO_BASE,
-                "mapped region does not start at the GPIO base address"
-            );
-            assert!(
-                R::LEN >= core::mem::size_of::<device::gpio::RegisterBlock>(),
-                "mapped region is shorter than the GPIO register block"
+                covers::<R>(
+                    GPIO_BASE,
+                    core::mem::size_of::<device::gpio::RegisterBlock>()
+                ),
+                "mapped region does not contain the GPIO register block"
             );
         }
         Self {
@@ -55,6 +54,6 @@ impl<R: Mmap> GpioRegisters<R> {
 /// The one place in the driver that turns an address into a reference.
 #[inline]
 pub(crate) fn regs_of<R: Mmap>() -> &'static device::gpio::RegisterBlock {
-    // SAFETY: `R::START` is the GPIO base, checked when the region was taken.
-    unsafe { &*(R::START as *const device::gpio::RegisterBlock) }
+    // SAFETY: `R` was checked to contain this block when the region was taken.
+    unsafe { &*(GPIO_BASE as *const device::gpio::RegisterBlock) }
 }

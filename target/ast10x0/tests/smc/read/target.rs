@@ -19,6 +19,7 @@
 
 #![no_std]
 #![no_main]
+use ast10x0_peripherals::aperture::{take_aperture, Aperture};
 #[allow(unused_imports)]
 use ast10x0_peripherals::scu::pinctrl::PINCTRL_FMC_QUAD;
 use ast10x0_peripherals::scu::ScuRegisters;
@@ -39,6 +40,7 @@ use target_debug::{dump_smc_read, dump_smc_register};
 struct FmcInstance;
 
 impl SmcInstance for FmcInstance {
+    type Regs = Aperture;
     const CONTROLLER: SmcController = SmcController::Fmc;
     const CONFIG: SmcConfig = SmcConfig {
         cs0: Some(FlashConfig { spi_clock_mhz: 50 }),
@@ -65,7 +67,10 @@ fn run_smc_read_test() -> Result<(), SmcError> {
     scu.apply_pinctrl_group(PINCTRL_FMC_QUAD);
 
     pw_log::info!("=== AST10x0 smc  read test  ===");
-    let mut controller = unsafe { FmcUninit::<FmcInstance>::new()? }.init()?;
+    let mut controller = unsafe {
+        FmcUninit::<FmcInstance>::new(take_aperture(), take_aperture(), take_aperture())?
+    }
+    .init()?;
 
     let mut id = [0u8; 3];
     controller
