@@ -32,6 +32,107 @@ def _gpio_set(pin: int, state: str) -> None:
     subprocess.run(["pinctrl", "set", str(pin), "op"] + state.split(), check=True)
 
 
+_DISCOVERY_TIMEOUT = 30  # seconds to wait for a reset board to answer
+_FLUSH_DURATION = 0.5  # drain ports this long while reset is held, comfortably
+# longer than the FTDI latency timer (~16ms) so every pre-reset byte lands and
+# is discarded and nothing new can arrive until reset is released
+_COLLECT_WINDOW = 1.0  # once the first bytes arrive, keep reading this long so a
+# running board has time to reveal a non-0x55 byte and be ruled out
+
+
+def _list_uart_ports() -> list[str]:
+    return sorted(str(p) for p in Path("/dev").glob("ttyUSB*"))
+
+
+def _discover_uart_port(
+    srst_pin: int, fwspick_pin: int, baudrate: int, exclude=(), verbose=False
+):
+    """Reset the board on (srst_pin, fwspick_pin) and return the /dev/ttyUSB*
+    that emits the bootloader ready signal.
+
+    The GPIO wiring to each board is fixed, but USB enumeration order differs
+    between Pi fixtures, so ttyUSB numbering can't be hardcoded. The board we
+    just reset comes up in the bootloader and emits only the 'U' (0x55) ready
+    signal; a board still running its app emits other bytes. So the target is
+    the one port whose post-flush buffer is non-empty and entirely 0x55.
+    """
+    candidates = [p for p in _list_uart_ports() if p not in exclude]
+    if not candidates:
+        print("RUNNER: no /dev/ttyUSB* ports found", file=sys.stderr)
+        return None
+
+    opened: list[tuple[str, serial.Serial]] = []
+    for dev in candidates:
+        try:
+            opened.append((dev, serial.Serial(dev, baudrate=baudrate, timeout=0.1)))
+        except serial.SerialException as e:
+            print(f"RUNNER: skipping {dev}: {e}", file=sys.stderr)
+    if not opened:
+        return None
+
+    try:
+        # Assert reset first so every board stops transmitting, then drain each
+        # port for longer than the FTDI latency timer. Held in reset, no board
+        # can emit anything, so once drained the buffers stay empty until reset
+        # is released; no pre-reset byte can leak past the flush.
+        _gpio_set(srst_pin, "dl")
+        flush_deadline = time.time() + _FLUSH_DURATION
+        while time.time() < flush_deadline:
+            for _, port in opened:
+                port.read(4096)
+        _gpio_set(fwspick_pin, "pn dh")
+        time.sleep(1)
+        _gpio_set(srst_pin, "dh")
+
+        buffers = {dev: bytearray() for dev, _ in opened}
+        deadline = time.time() + _DISCOVERY_TIMEOUT
+        collect_deadline = None
+        while time.time() < deadline:
+            for dev, port in opened:
+                data = port.read(256)
+                if data:
+                    buffers[dev].extend(data)
+            if collect_deadline is None:
+                if any(buffers.values()):
+                    collect_deadline = time.time() + _COLLECT_WINDOW
+            elif time.time() >= collect_deadline:
+                break
+
+        if verbose:
+            for dev, buf in buffers.items():
+                print(
+                    f"RUNNER: {dev} post-flush buffer ({len(buf)} bytes): "
+                    f"{bytes(buf[:32])!r}",
+                    file=sys.stderr,
+                )
+
+        # The freshly reset board emits only the bootloader 'U' (0x55); a board
+        # still running its app emits other bytes. So the target is the port
+        # whose buffer is non-empty and entirely 0x55; any non-0x55 rules it out.
+        candidates = [
+            dev for dev, buf in buffers.items() if buf and all(b == 0x55 for b in buf)
+        ]
+        if len(candidates) == 1:
+            return candidates[0]
+
+        if candidates:
+            print(
+                f"RUNNER: multiple ports look like a bootloader: {candidates}",
+                file=sys.stderr,
+            )
+        else:
+            print("RUNNER: no bootloader (U-only) port found", file=sys.stderr)
+        if not verbose:
+            print(
+                "RUNNER: re-run with --test_arg=-v to dump post-flush buffers",
+                file=sys.stderr,
+            )
+        return None
+    finally:
+        for _, port in opened:
+            port.close()
+
+
 def _sequence_to_fwspick_mode(
     srst_pin: int, fwspick_pin: int, port: serial.Serial
 ) -> None:
@@ -62,6 +163,7 @@ def _wait_for_uart_ready(port: serial.Serial, timeout: int = 30) -> bool:
 
 
 def _upload_firmware(port: serial.Serial, firmware_path: Path) -> None:
+    print(f"RUNNER: uploading firmware to {port.port}", file=sys.stderr)
     data = firmware_path.read_bytes()
     size = len(data)
     aligned = (size + 3) & ~3
@@ -166,8 +268,13 @@ def main() -> int:
         description="AST1060 EVB hardware layer: GPIO, firmware upload, UART stream"
     )
     parser.add_argument(
-        "uart_device",
-        help="Serial port device path (e.g. /dev/ttyUSB0)",
+        "--uart-device",
+        default=None,
+        help=(
+            "Serial port device path (e.g. /dev/ttyUSB0). If omitted, the port "
+            "is auto-discovered by resetting the board on --srst-pin/--fwspick-pin "
+            "and listening for the bootloader. Required with --stream-only."
+        ),
     )
     parser.add_argument(
         "firmware",
@@ -219,6 +326,12 @@ def main() -> int:
         default=None,
         help="BCM GPIO pin connected to device B FWSPICK",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose-runner",
+        action="store_true",
+        help="Dump each port's post-flush buffer during UART discovery",
+    )
     args = parser.parse_args()
 
     if not args.stream_only:
@@ -231,11 +344,28 @@ def main() -> int:
     else:
         firmware_path = None
 
+    # Resolve the master UART. An explicit --uart-device is trusted as-is;
+    # otherwise reset the board and discover which /dev/ttyUSB* answers, so the
+    # harness tolerates USB enumeration order differing between Pi fixtures.
+    if args.stream_only:
+        if not args.uart_device:
+            parser.error("--uart-device is required with --stream-only")
+    elif not args.uart_device:
+        args.uart_device = _discover_uart_port(
+            args.srst_pin,
+            args.fwspick_pin,
+            args.baudrate,
+            verbose=args.verbose_runner,
+        )
+        if args.uart_device is None:
+            print("RUNNER: could not discover master UART", file=sys.stderr)
+            return 1
+        print(f"RUNNER: discovered master UART at {args.uart_device}", file=sys.stderr)
+
     if args.slave_firmware:
         missing = [
             name
             for name, val in [
-                ("--slave-uart-device", args.slave_uart_device),
                 ("--slave-srst-pin", args.slave_srst_pin),
                 ("--slave-fwspick-pin", args.slave_fwspick_pin),
             ]
@@ -250,6 +380,21 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 1
+        if not args.slave_uart_device:
+            args.slave_uart_device = _discover_uart_port(
+                args.slave_srst_pin,
+                args.slave_fwspick_pin,
+                args.baudrate,
+                exclude=(args.uart_device,),
+                verbose=args.verbose_runner,
+            )
+            if args.slave_uart_device is None:
+                print("Error: could not discover slave UART", file=sys.stderr)
+                return 1
+            print(
+                f"RUNNER: discovered slave UART at {args.slave_uart_device}",
+                file=sys.stderr,
+            )
         return 0 if _run_paired(args, firmware_path, slave_firmware_path) else 1
 
     try:
