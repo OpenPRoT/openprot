@@ -81,27 +81,36 @@ impl<const E: usize> Sink<E> {
     /// Append one effect. `E` is sized so overflow is impossible for a machine
     /// that compiles: `Rot::EFFECT_CAP_OK` proves `E >= 2 * N + 2` and no
     /// handler emits more than `2 * N + 2` effects into one `Sink`, so the push
-    /// below can never fail. The `Err` arm is therefore dead — dropped rather
-    /// than panicked, since a runtime panic here would be unreachable code
-    /// shipped in the binary.
+    /// below can never fail. A `cfg(test)` assert catches a stale derivation
+    /// in the test suite; in the release binary the push is unchecked
+    /// (fail-closed: fewer effects means more lockdown, never less).
     ///
     /// The driver runs the effects from one handler in the order they were
     /// emitted, and it does not run them as a single all-or-nothing group: if
     /// one effect fails, the ones before it have already happened. When an
-    /// effect fails, the driver stops there — it skips the rest and injects
+    /// effect fails, the driver stops there, it skips the rest and injects
     /// `EffectFailed` so the machine locks down. Stopping partway is still safe
     /// no matter what order the effects were in: a component is only ever
     /// released after it has passed verification, and every other effect either
     /// tightens things (holds a component in reset, or latches lockdown) or just
     /// reports what happened. So a batch that stops early can only leave the
     /// platform more locked down, never less. A skipped report costs information,
-    /// not containment — and the batch was cut short by a failure that latches
+    /// not containment, and the batch was cut short by a failure that latches
     /// lockdown anyway, which is the louder signal.
     pub fn emit(&mut self, effect: Effect) {
-        // Dead Err arm: overflow is proved impossible by `Rot::EFFECT_CAP_OK`
-        // (`E >= 2 * N + 2`) plus the state machine never emitting more than
-        // `2 * N + 2` effects into one Sink.
-        let _ = self.effects.push(effect);
+        let ok = self.effects.push(effect).is_ok();
+        // Compile-time proof (EFFECT_CAP_OK) makes this unreachable; the
+        // cfg(test) assert catches a stale derivation during testing.
+        // debug_assert covers non-Bazel builds where debug_assertions is on.
+        debug_assert!(
+            ok,
+            "Sink overflowed E={E}, EFFECT_CAP_OK derivation is stale"
+        );
+        #[cfg(test)]
+        assert!(
+            ok,
+            "Sink overflowed E={E}, EFFECT_CAP_OK derivation is stale"
+        );
     }
 
     pub fn effects(&self) -> &[Effect] {

@@ -2971,3 +2971,12 @@ fn event_returned_during_lockdown_is_discarded() {
     assert_eq!(orch.state(), State::Locked);
     assert_eq!(platform.recorded.last(), Some(&Effect::LatchLockdown));
 }
+
+#[test]
+#[should_panic(expected = "Sink overflowed")]
+fn sink_overflow_panics_in_tests() {
+    let mut sink = Sink::<1>::new();
+    sink.emit(Effect::LatchLockdown);
+    // Second emit overflows the 1-slot buffer.
+    sink.emit(Effect::LatchLockdown);
+}
