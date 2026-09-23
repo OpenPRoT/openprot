@@ -114,10 +114,7 @@ impl AttestProducer for SwAttestProducer<'_> {
         let mut chain: Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN> = Vec::new();
         self.signer.cert_chain_der(&mut chain)?;
 
-        // Attempt UEID extraction from the leaf cert; fall back to a zeroed
-        // placeholder if the TCG UEID extension is absent.
-        let ueid: [u8; cert_ueid::UEID_LEN] =
-            cert_ueid::extract_and_verify(&chain).unwrap_or([0u8; cert_ueid::UEID_LEN]);
+        let ueid: [u8; cert_ueid::UEID_LEN] = cert_ueid::extract_and_verify(&chain)?;
 
         let mut meas: Vec<openprot_attest_api::Measurement, MAX_MEASUREMENTS> = Vec::new();
         measurements::collect(&self.providers, &mut meas)?;
@@ -128,6 +125,7 @@ impl AttestProducer for SwAttestProducer<'_> {
         &self,
         buf: &mut Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN>,
     ) -> Result<(), AttestError> {
+        buf.clear();
         self.signer.cert_chain_der(buf)
     }
 }
@@ -169,6 +167,7 @@ impl AttestProducer for SoftwareAttestProducer {
         &self,
         buf: &mut Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN>,
     ) -> Result<(), AttestError> {
+        buf.clear();
         let mut leaf: Vec<u8, MAX_CERT_SIZE> = Vec::new();
         leaf.extend_from_slice(&STUB_CERT)
             .map_err(|_| AttestError::BufferFull)?;
@@ -220,12 +219,9 @@ impl HwSigner for StubSigner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::time::Duration;
-    use heapless::{String, Vec};
-    use openprot_attest_api::consts::{
-        MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_MEASUREMENTS, MAX_TOKEN_SIZE,
-    };
-    use openprot_attest_api::{AttestConfig, AttestError, OemId, SignerKind};
+    use heapless::String;
+    use openprot_attest_api::consts::{MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_MEASUREMENTS, MAX_TOKEN_SIZE};
+    use openprot_attest_api::{AttestConfig, AttestError, OemId};
 
     /// A signer that returns a two-cert chain of stub DER (below the 3-cert minimum).
     struct ShortChainSigner;
@@ -263,8 +259,6 @@ mod tests {
         AttestConfig {
             oemid: OemId(oemid_bytes),
             hw_model,
-            cert_cache_ttl: Duration::from_secs(3600),
-            signer_kind: SignerKind::Hardware,
         }
     }
 
@@ -273,6 +267,6 @@ mod tests {
         let producer = HwAttestProducer::new(&ShortChainSigner, config());
         let mut out: Vec<u8, MAX_TOKEN_SIZE> = Vec::new();
         let err = producer.generate_token(b"testnonce", &mut out).unwrap_err();
-        assert!(matches!(err, AttestError::Mailbox(_)));
+        assert!(matches!(err, AttestError::ChainValidation(_)));
     }
 }

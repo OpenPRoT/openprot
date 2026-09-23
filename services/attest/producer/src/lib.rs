@@ -14,6 +14,7 @@
 
 pub mod builder;
 pub mod cert_ueid;
+pub mod der;
 pub mod dice_identity;
 pub mod measurements;
 mod signer;

@@ -48,10 +48,14 @@ const HDR_X5CHAIN: i64 = 33;
 // OID 1.3.6.1.4.1.42623.1.3 encoded as raw OID content bytes (~oid per OCP profile CDDL).
 const OCP_PROFILE_OID: [u8; 10] = [0x2B, 0x06, 0x01, 0x04, 0x01, 0x82, 0xCC, 0x7F, 0x01, 0x03];
 
-// Fixed scratch buffers used during token construction.
-const SCRATCH: usize = MAX_TOKEN_SIZE;
-// Protected header contains only {1: -35} ≈ 5 bytes; small fixed buffer suffices.
+// Protected header contains only {1: -35} ≈ 5 bytes.
 const PHDR_SCRATCH: usize = 16;
+// Payload scratch: fixed-claim overhead (~128 B) + per-measurement bound.
+// Per measurement: component (MAX_COMPONENT_LEN) + version (MAX_VERSION_LEN)
+// + digest (MAX_DIGEST_LEN) + ~12 B CBOR framing = ~192 B each.
+const PAYLOAD_SCRATCH: usize = 256 + openprot_attest_api::consts::MAX_MEASUREMENTS * 192;
+// Sig_Structure scratch: payload + Signature1 context (~80 B overhead).
+const SIG_SCRATCH: usize = PAYLOAD_SCRATCH + 80;
 
 /// Writer over a fixed `[u8]` slice; tracks how many bytes have been written.
 type BufWriter<'a> = minicbor::encode::write::Cursor<&'a mut [u8]>;
@@ -78,7 +82,7 @@ pub(crate) fn build(
     out: &mut Vec<u8, MAX_TOKEN_SIZE>,
 ) -> Result<(), AttestError> {
     if nonce.len() < MIN_NONCE_LEN || nonce.len() > MAX_NONCE_LEN {
-        return Err(AttestError::Mailbox(
+        return Err(AttestError::InvalidNonce(
             "nonce must be 8–64 bytes (RFC 9711 §4.3.4.3, OCP-EAT profile)",
         ));
     }
@@ -104,43 +108,24 @@ pub(crate) fn build(
     let phdr_bytes = &phdr_scratch[..phdr_len];
 
     // ── Encode CWT claims map ──────────────────────────────────────────────
-    // Claims are written in CBOR deterministic order (RFC 8949 §4.2.1).
-    let mut payload_scratch = [0u8; SCRATCH];
+    // Claims written in CBOR deterministic order (RFC 8949 §4.2.1):
+    //   10=nonce, 256=ueid, 258=oemid, 259=hwmodel, 263=dbgstat,
+    //   265=eat_profile, 273=measurements  →  7 claims total.
+    let mut payload_scratch = [0u8; PAYLOAD_SCRATCH];
     let payload_len = (|| -> Result<usize, minicbor::encode::Error<EndOfSlice>> {
-        // Fixed claims (7): nonce, ueid, oemid, hwmodel, dbgstat,
-        // eat_profile, measurements. Update on any change below.
-        const FIXED_CLAIMS: usize = 7;
-        let n_claims = FIXED_CLAIMS;
         let mut w = BufWriter::new(&mut payload_scratch[..]);
         let mut e = Encoder::new(&mut w);
-        // OCP-EAT profile requires tag(55799) wrapping the CWT tag(61).
         e.tag(minicbor::data::Tag::new(55799))?;
         e.tag(minicbor::data::Tag::new(61))?;
-        e.map(n_claims as u64)?;
+        e.map(7)?;
 
-        // ── 1-byte key (10 = nonce) ──────────────────────────────────────
-        e.i64(CLAIM_NONCE)?;
-        e.bytes(nonce)?;
+        e.i64(CLAIM_NONCE)?;  e.bytes(nonce)?;
+        e.i64(CLAIM_UEID)?;   e.bytes(ueid)?;
+        e.i64(CLAIM_OEMID)?;  e.bytes(&config.oemid.0)?;
+        e.i64(CLAIM_HWMODEL)?; e.str(&config.hw_model)?;
+        e.i64(CLAIM_DBGSTAT)?; e.i64(3)?;
+        e.i64(CLAIM_EAT_PROFILE)?; e.bytes(&OCP_PROFILE_OID)?;
 
-        // ── 3-byte keys (sorted: 256, 258, 259, 263, 265, 273) ───────────
-        e.i64(CLAIM_UEID)?;
-        e.bytes(ueid)?;
-
-        e.i64(CLAIM_OEMID)?;
-        e.bytes(&config.oemid.0)?;
-
-        e.i64(CLAIM_HWMODEL)?;
-        e.str(&config.hw_model)?;
-
-        // dbgstat = 3 (disabled)
-        e.i64(CLAIM_DBGSTAT)?;
-        e.i64(3)?;
-
-        // eat_profile OID 1.3.6.1.4.1.42623.1.3 (raw OID bytes, ~oid per OCP CDDL)
-        e.i64(CLAIM_EAT_PROFILE)?;
-        e.bytes(&OCP_PROFILE_OID)?;
-
-        // measurements array (key 273 per OCP-EAT profile)
         e.i64(CLAIM_MEASUREMENTS)?;
         e.array(measurements.len() as u64)?;
         for m in measurements {
@@ -160,17 +145,16 @@ pub(crate) fn build(
     let payload_bytes = &payload_scratch[..payload_len];
 
     // ── Sign ──────────────────────────────────────────────────────────────
-    // RFC 9052 §4.4: signature input is Sig_Structure =
-    //   ["Signature1", phdr_bstr, h'', payload_bstr]
+    // RFC 9052 §4.4: Sig_Structure = ["Signature1", phdr_bstr, h'', payload_bstr]
     let sig = {
-        let mut sig_scratch = [0u8; SCRATCH];
+        let mut sig_scratch = [0u8; SIG_SCRATCH];
         let sig_input_len = (|| -> Result<usize, minicbor::encode::Error<EndOfSlice>> {
             let mut w = BufWriter::new(&mut sig_scratch[..]);
             let mut e = Encoder::new(&mut w);
             e.array(4)?;
             e.str("Signature1")?;
             e.bytes(phdr_bytes)?;
-            e.bytes(b"")?; // aad = h''
+            e.bytes(b"")?;
             e.bytes(payload_bytes)?;
             Ok(w.position())
         })()
@@ -178,16 +162,17 @@ pub(crate) fn build(
         signer.sign(&sig_scratch[..sig_input_len])?
     };
 
-    // ── Assemble COSE_Sign1 ────────────────────────────────────────────────
-    // Unprotected header carries x5chain (not signed, per OCP-EAT profile).
-    let mut cose_scratch = [0u8; SCRATCH];
+    // ── Assemble COSE_Sign1 directly into `out` ────────────────────────────
+    // Encode into out's backing memory, then truncate to actual length.
+    // This avoids a separate cose_scratch buffer and the copy that follows.
+    out.resize_default(MAX_TOKEN_SIZE)
+        .map_err(|_| AttestError::BufferFull)?;
     let cose_len = (|| -> Result<usize, minicbor::encode::Error<EndOfSlice>> {
-        let mut w = BufWriter::new(&mut cose_scratch[..]);
+        let mut w = BufWriter::new(&mut out[..]);
         let mut e = Encoder::new(&mut w);
         e.tag(minicbor::data::Tag::new(18))?;
         e.array(4)?;
         e.bytes(phdr_bytes)?;
-        // Unprotected header: {33: [cert0, cert1, ...]}
         e.map(1)?;
         e.i64(HDR_X5CHAIN)?;
         e.array(chain.len() as u64)?;
@@ -199,23 +184,19 @@ pub(crate) fn build(
         Ok(w.position())
     })()
     .map_err(cbor_err)?;
-
-    out.extend_from_slice(&cose_scratch[..cose_len])
-        .map_err(|_| AttestError::BufferFull)
+    out.truncate(cose_len);
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::time::Duration;
     use heapless::{String, Vec};
     use openprot_attest_api::consts::{
         MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_COMPONENT_LEN, MAX_DIGEST_LEN, MAX_MEASUREMENTS,
         MAX_TOKEN_SIZE, MAX_VERSION_LEN,
     };
-    use openprot_attest_api::{
-        AttestError, DigestAlgorithm, MeasurementAuthority, OemId, SignerKind,
-    };
+    use openprot_attest_api::{AttestError, DigestAlgorithm, MeasurementAuthority, OemId};
 
     use crate::signer::STUB_CERT;
 
@@ -255,8 +236,6 @@ mod tests {
         openprot_attest_api::AttestConfig {
             oemid: OemId(oemid_bytes),
             hw_model,
-            cert_cache_ttl: Duration::from_secs(3600),
-            signer_kind: SignerKind::Hardware,
         }
     }
 
@@ -464,7 +443,7 @@ mod tests {
             &mut out,
         )
         .unwrap_err();
-        assert!(matches!(err, AttestError::Mailbox(_)));
+        assert!(matches!(err, AttestError::InvalidNonce(_)));
         // Too long: 65 bytes > MAX_NONCE_LEN (64)
         let err = build(
             &config(),
@@ -475,7 +454,7 @@ mod tests {
             &mut out,
         )
         .unwrap_err();
-        assert!(matches!(err, AttestError::Mailbox(_)));
+        assert!(matches!(err, AttestError::InvalidNonce(_)));
     }
 
     #[test]

@@ -7,9 +7,8 @@
 
 use heapless::{String, Vec};
 use openprot_attest_api::consts::{MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_TOKEN_SIZE};
-use openprot_attest_api::{AttestConfig, AttestProducer, OemId, SignerKind};
+use openprot_attest_api::{AttestConfig, AttestProducer, OemId};
 use openprot_attest_producer::SoftwareAttestProducer;
-use std::time::Duration;
 
 fn config() -> AttestConfig {
     let mut hw_model: String<64> = String::new();
@@ -21,8 +20,6 @@ fn config() -> AttestConfig {
     AttestConfig {
         oemid: OemId(oemid_bytes),
         hw_model,
-        cert_cache_ttl: Duration::from_secs(3600),
-        signer_kind: SignerKind::Hardware,
     }
 }
 

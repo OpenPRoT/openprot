@@ -38,5 +38,5 @@ pub use signing_abstraction::{HwSigner, SwSigner};
 pub use traits::AttestProducer;
 pub use types::{
     AttestConfig, DigestAlgorithm, Measurement, MeasurementAuthority, MeasurementProvider, OemId,
-    SignerKind, SwSignerConfig,
+    SwSignerConfig,
 };

@@ -1,9 +1,8 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-use core::time::Duration;
-
 use heapless::{String, Vec};
+use zeroize::Zeroize;
 
 use crate::consts::{
     MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_COMPONENT_LEN, MAX_DIGEST_LEN, MAX_HW_MODEL_LEN,
@@ -51,25 +50,16 @@ pub struct SwSignerConfig {
     pub cert_chain: Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN>,
 }
 
-/// Selects the signing backend recorded in [`AttestConfig`].
-///
-/// Key material for the software path is held by [`crate::SwSigner`] and
-/// passed separately to [`SwAttestProducer::new`] — it is not embedded here
-/// to avoid placing a large buffer on the stack inside the enum.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SignerKind {
-    /// Hardware-backed signing via the Caliptra mailbox driver.
-    Hardware,
-    /// Software-only signing with caller-supplied key material.
-    Software,
+impl Drop for SwSignerConfig {
+    fn drop(&mut self) {
+        self.private_key_scalar.zeroize();
+    }
 }
 
 /// Producer configuration, set once at platform initialisation.
 pub struct AttestConfig {
     pub oemid: OemId,
     pub hw_model: String<MAX_HW_MODEL_LEN>,
-    pub cert_cache_ttl: Duration,
-    pub signer_kind: SignerKind,
 }
 
 /// Platform-specific measurement source.

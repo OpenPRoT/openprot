@@ -18,6 +18,9 @@ pub trait AttestProducer {
     ) -> Result<(), AttestError>;
 
     /// Return the current DICE certificate chain, ordered leaf → root.
+    ///
+    /// On success `buf` is **cleared** and then populated with the chain.
+    /// Any contents in `buf` before the call are discarded.
     fn cert_chain(
         &self,
         buf: &mut Vec<Vec<u8, MAX_CERT_SIZE>, MAX_CHAIN_LEN>,

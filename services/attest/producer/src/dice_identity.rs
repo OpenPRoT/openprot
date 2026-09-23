@@ -15,7 +15,7 @@ use heapless::Vec;
 use openprot_attest_api::consts::{MAX_CERT_SIZE, MAX_CHAIN_LEN};
 use openprot_attest_api::{AttestError, HwSigner};
 
-use crate::cert_ueid::{has_extension_oid, is_x509_v3};
+use crate::der::{has_extension_oid, is_x509_v3};
 
 /// DER encoding of OID 2.23.133.5.4.5 (tcg-dice-MultiTcbInfo).
 const OID_TCG_MULTI_TCBINFO: [u8; 8] = [0x06, 0x06, 0x67, 0x81, 0x05, 0x05, 0x04, 0x05];
@@ -44,20 +44,20 @@ pub fn cert_chain(
 /// cert that does not carry DICE extensions and is therefore exempt.
 pub fn validate_chain(chain: &[Vec<u8, MAX_CERT_SIZE>]) -> Result<(), AttestError> {
     if chain.len() < 3 {
-        return Err(AttestError::Mailbox(
+        return Err(AttestError::ChainValidation(
             "DICE chain must have at least 3 certificates",
         ));
     }
     for (i, cert) in chain.iter().enumerate() {
         if cert.first() != Some(&0x30) {
-            return Err(AttestError::Mailbox("cert: not a DER SEQUENCE"));
+            return Err(AttestError::Der("cert: not a DER SEQUENCE"));
         }
         if !is_x509_v3(cert) {
-            return Err(AttestError::Mailbox("cert: not X.509 v3"));
+            return Err(AttestError::ChainValidation("cert: not X.509 v3"));
         }
         let is_root = i == chain.len() - 1;
         if !is_root && !has_extension_oid(cert, &OID_TCG_MULTI_TCBINFO)? {
-            return Err(AttestError::Mailbox(
+            return Err(AttestError::ChainValidation(
                 "cert: missing tcg-dice-MultiTcbInfo extension",
             ));
         }
@@ -250,7 +250,7 @@ mod tests {
         // Leaf is v1 (no version field).
         let chain = make_chain(&[(false, true), (true, true), (true, false)]);
         let err = validate_chain(&chain).unwrap_err();
-        assert!(matches!(err, AttestError::Mailbox(_)));
+        assert!(matches!(err, AttestError::ChainValidation(_)));
     }
 
     #[test]
@@ -258,7 +258,7 @@ mod tests {
         // Leaf is v3 but lacks the MultiTcbInfo extension.
         let chain = make_chain(&[(true, false), (true, true), (true, false)]);
         let err = validate_chain(&chain).unwrap_err();
-        assert!(matches!(err, AttestError::Mailbox(_)));
+        assert!(matches!(err, AttestError::ChainValidation(_)));
     }
 
     #[test]

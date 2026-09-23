@@ -11,7 +11,10 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         "@rust_crates//:heapless",
+        "@rust_crates//:p384",
+        "@rust_crates//:sha2",
         "@rust_crates//:thiserror",
+        "@rust_crates//:zeroize",
     ],
 )
 
