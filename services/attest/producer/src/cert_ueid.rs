@@ -16,7 +16,9 @@
 use heapless::Vec;
 use openprot_attest_api::{consts::MAX_CERT_SIZE, consts::MAX_CHAIN_LEN, AttestError};
 
-use crate::der::{find_tag, octet_string_body, sequence_body, skip_optional_boolean, take_sequence};
+use crate::der::{
+    find_tag, octet_string_body, sequence_body, skip_optional_boolean, take_sequence,
+};
 
 /// DER encoding of OID 2.23.133.5.4.4 (TCG UEID extension).
 const OID_TCG_UEID: [u8; 8] = [0x06, 0x06, 0x67, 0x81, 0x05, 0x05, 0x04, 0x04];
@@ -81,8 +83,9 @@ pub fn extract_and_verify(
         return Err(AttestError::ChainValidation("cert chain is empty"));
     }
 
-    let leaf_ueid = extract(&chain[0])?
-        .ok_or(AttestError::ChainValidation("leaf cert missing TCG UEID extension"))?;
+    let leaf_ueid = extract(&chain[0])?.ok_or(AttestError::ChainValidation(
+        "leaf cert missing TCG UEID extension",
+    ))?;
 
     for cert in chain.iter().skip(1) {
         if let Some(ueid) = extract(cert)? {
@@ -115,9 +118,13 @@ mod tests {
         let exts_wrapper = der_tlv(0xa3, &exts_seq);
 
         let mut tbs_body: heapless::Vec<u8, 256> = heapless::Vec::new();
-        tbs_body.extend_from_slice(&[0xa0, 0x03, 0x02, 0x01, 0x02]).unwrap();
+        tbs_body
+            .extend_from_slice(&[0xa0, 0x03, 0x02, 0x01, 0x02])
+            .unwrap();
         tbs_body.extend_from_slice(&[0x02, 0x01, 0x01]).unwrap();
-        for _ in 0..5 { tbs_body.extend_from_slice(&[0x30, 0x00]).unwrap(); }
+        for _ in 0..5 {
+            tbs_body.extend_from_slice(&[0x30, 0x00]).unwrap();
+        }
         tbs_body.extend_from_slice(&exts_wrapper).unwrap();
         let tbs = der_tlv(0x30, &tbs_body);
 
@@ -134,9 +141,16 @@ mod tests {
         let mut out: heapless::Vec<u8, 256> = heapless::Vec::new();
         out.push(tag).unwrap();
         let l = value.len();
-        if l < 128 { out.push(l as u8).unwrap(); }
-        else if l < 256 { out.push(0x81).unwrap(); out.push(l as u8).unwrap(); }
-        else { out.push(0x82).unwrap(); out.push((l >> 8) as u8).unwrap(); out.push((l & 0xff) as u8).unwrap(); }
+        if l < 128 {
+            out.push(l as u8).unwrap();
+        } else if l < 256 {
+            out.push(0x81).unwrap();
+            out.push(l as u8).unwrap();
+        } else {
+            out.push(0x82).unwrap();
+            out.push((l >> 8) as u8).unwrap();
+            out.push((l & 0xff) as u8).unwrap();
+        }
         out.extend_from_slice(value).unwrap();
         out
     }
@@ -151,9 +165,8 @@ mod tests {
     #[test]
     fn returns_err_for_cert_with_no_extensions_wrapper() {
         let tbs_body = [
-            0xa0, 0x03, 0x02, 0x01, 0x02,
-            0x02, 0x01, 0x01,
-            0x30, 0x00, 0x30, 0x00, 0x30, 0x00, 0x30, 0x00, 0x30, 0x00,
+            0xa0, 0x03, 0x02, 0x01, 0x02, 0x02, 0x01, 0x01, 0x30, 0x00, 0x30, 0x00, 0x30, 0x00,
+            0x30, 0x00, 0x30, 0x00,
         ];
         let tbs = der_tlv(0x30, &tbs_body);
         let mut cert_body: heapless::Vec<u8, 64> = heapless::Vec::new();
@@ -174,9 +187,13 @@ mod tests {
         let exts_wrapper = der_tlv(0xa3, &der_tlv(0x30, &der_tlv(0x30, &ext_body)));
 
         let mut tbs_body: heapless::Vec<u8, 128> = heapless::Vec::new();
-        tbs_body.extend_from_slice(&[0xa0, 0x03, 0x02, 0x01, 0x02]).unwrap();
+        tbs_body
+            .extend_from_slice(&[0xa0, 0x03, 0x02, 0x01, 0x02])
+            .unwrap();
         tbs_body.extend_from_slice(&[0x02, 0x01, 0x01]).unwrap();
-        for _ in 0..5 { tbs_body.extend_from_slice(&[0x30, 0x00]).unwrap(); }
+        for _ in 0..5 {
+            tbs_body.extend_from_slice(&[0x30, 0x00]).unwrap();
+        }
         tbs_body.extend_from_slice(&exts_wrapper).unwrap();
         let tbs = der_tlv(0x30, &tbs_body);
 

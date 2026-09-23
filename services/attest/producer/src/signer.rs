@@ -220,7 +220,9 @@ impl HwSigner for StubSigner {
 mod tests {
     use super::*;
     use heapless::String;
-    use openprot_attest_api::consts::{MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_MEASUREMENTS, MAX_TOKEN_SIZE};
+    use openprot_attest_api::consts::{
+        MAX_CERT_SIZE, MAX_CHAIN_LEN, MAX_MEASUREMENTS, MAX_TOKEN_SIZE,
+    };
     use openprot_attest_api::{AttestConfig, AttestError, OemId};
 
     /// A signer that returns a two-cert chain of stub DER (below the 3-cert minimum).

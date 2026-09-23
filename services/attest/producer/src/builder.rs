@@ -119,12 +119,18 @@ pub(crate) fn build(
         e.tag(minicbor::data::Tag::new(61))?;
         e.map(7)?;
 
-        e.i64(CLAIM_NONCE)?;  e.bytes(nonce)?;
-        e.i64(CLAIM_UEID)?;   e.bytes(ueid)?;
-        e.i64(CLAIM_OEMID)?;  e.bytes(&config.oemid.0)?;
-        e.i64(CLAIM_HWMODEL)?; e.str(&config.hw_model)?;
-        e.i64(CLAIM_DBGSTAT)?; e.i64(3)?;
-        e.i64(CLAIM_EAT_PROFILE)?; e.bytes(&OCP_PROFILE_OID)?;
+        e.i64(CLAIM_NONCE)?;
+        e.bytes(nonce)?;
+        e.i64(CLAIM_UEID)?;
+        e.bytes(ueid)?;
+        e.i64(CLAIM_OEMID)?;
+        e.bytes(&config.oemid.0)?;
+        e.i64(CLAIM_HWMODEL)?;
+        e.str(&config.hw_model)?;
+        e.i64(CLAIM_DBGSTAT)?;
+        e.i64(3)?;
+        e.i64(CLAIM_EAT_PROFILE)?;
+        e.bytes(&OCP_PROFILE_OID)?;
 
         e.i64(CLAIM_MEASUREMENTS)?;
         e.array(measurements.len() as u64)?;

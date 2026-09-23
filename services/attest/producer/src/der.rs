@@ -98,8 +98,7 @@ pub(crate) fn has_extension_oid(cert_der: &[u8], oid: &[u8]) -> Result<bool, Att
         Some(e) => e,
         None => return Ok(false),
     };
-    let ext_seq = sequence_body(ext_wrapper)
-        .ok_or(AttestError::Der("bad extensions SEQUENCE"))?;
+    let ext_seq = sequence_body(ext_wrapper).ok_or(AttestError::Der("bad extensions SEQUENCE"))?;
     let mut remaining = ext_seq;
     while !remaining.is_empty() {
         let (ext_body, rest) =

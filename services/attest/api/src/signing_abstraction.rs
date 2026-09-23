@@ -116,21 +116,33 @@ mod tests {
 
     #[test]
     fn rejects_zero_scalar() {
-        let config = SwSignerConfig { private_key_scalar: [0u8; 48], cert_chain: valid_chain() };
-        assert!(matches!(SwSigner::new(config), Err(AttestError::InvalidKey(_))));
+        let config = SwSignerConfig {
+            private_key_scalar: [0u8; 48],
+            cert_chain: valid_chain(),
+        };
+        assert!(matches!(
+            SwSigner::new(config),
+            Err(AttestError::InvalidKey(_))
+        ));
     }
 
     #[test]
     fn rejects_scalar_equal_to_group_order() {
         // P-384 group order n — must be rejected (d must be < n).
         let order: [u8; 48] = [
-            0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
-            0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,
-            0xC7,0x63,0x4D,0x81,0xF4,0x37,0x2D,0xDF,0x58,0x1A,0x0D,0xB2,
-            0x48,0xB0,0xA7,0x7A,0xEC,0xEC,0x19,0x6A,0xCC,0xC5,0x29,0x73,
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+            0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xC7, 0x63, 0x4D, 0x81,
+            0xF4, 0x37, 0x2D, 0xDF, 0x58, 0x1A, 0x0D, 0xB2, 0x48, 0xB0, 0xA7, 0x7A, 0xEC, 0xEC,
+            0x19, 0x6A, 0xCC, 0xC5, 0x29, 0x73,
         ];
-        let config = SwSignerConfig { private_key_scalar: order, cert_chain: valid_chain() };
-        assert!(matches!(SwSigner::new(config), Err(AttestError::InvalidKey(_))));
+        let config = SwSignerConfig {
+            private_key_scalar: order,
+            cert_chain: valid_chain(),
+        };
+        assert!(matches!(
+            SwSigner::new(config),
+            Err(AttestError::InvalidKey(_))
+        ));
     }
 
     #[test]
@@ -139,7 +151,10 @@ mod tests {
             private_key_scalar: valid_scalar(),
             cert_chain: Vec::new(),
         };
-        assert!(matches!(SwSigner::new(config), Err(AttestError::InvalidKey(_))));
+        assert!(matches!(
+            SwSigner::new(config),
+            Err(AttestError::InvalidKey(_))
+        ));
     }
 
     #[test]
@@ -148,13 +163,22 @@ mod tests {
         let mut bad_cert: Vec<u8, MAX_CERT_SIZE> = Vec::new();
         bad_cert.push(0x04).unwrap(); // OCTET STRING tag, not SEQUENCE
         chain.push(bad_cert).unwrap();
-        let config = SwSignerConfig { private_key_scalar: valid_scalar(), cert_chain: chain };
-        assert!(matches!(SwSigner::new(config), Err(AttestError::InvalidKey(_))));
+        let config = SwSignerConfig {
+            private_key_scalar: valid_scalar(),
+            cert_chain: chain,
+        };
+        assert!(matches!(
+            SwSigner::new(config),
+            Err(AttestError::InvalidKey(_))
+        ));
     }
 
     #[test]
     fn accepts_valid_config() {
-        let config = SwSignerConfig { private_key_scalar: valid_scalar(), cert_chain: valid_chain() };
+        let config = SwSignerConfig {
+            private_key_scalar: valid_scalar(),
+            cert_chain: valid_chain(),
+        };
         assert!(SwSigner::new(config).is_ok());
     }
 }
