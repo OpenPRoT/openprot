@@ -15,6 +15,7 @@ use crate::smc::helpers::{
 use crate::smc::interrupts::{SmcInterrupt, SmcInterruptDecoder};
 use crate::smc::registers::SmcRegisters;
 use crate::smc::types::*;
+use util_region::{Mmap, Region};
 use util_sfdp::{decode_geometry, FlashGeometry};
 
 /// Internal controller state
@@ -184,6 +185,62 @@ struct ResolvedCs {
     window_base: usize,
 }
 
+/// Derive the full controller layout from its static config. Splits the
+/// 256 MiB aperture evenly across present chip selects for now.
+///
+/// The single source of the decode windows: [`Smc::new`] checks the mappings
+/// against it and [`Smc::init`] programs the segment registers from it, so the
+/// two cannot drift apart.
+const fn layout_for(ctrl: SmcController, cfg: SmcConfig) -> SmcLayout {
+    let cs0_present = cfg.cs0.is_some();
+    let cs1_present = cfg.cs1.is_some();
+    let present = cs0_present as usize + cs1_present as usize;
+    if present == 0 {
+        panic!("SMC config must configure at least one chip select");
+    }
+    let region_size = SMC_WINDOW_SIZE_BYTES / present;
+    let cs0_size = if cs0_present { region_size } else { 0 };
+    let base = ctrl.flash_window_address();
+    let window_base = [base, base + cs0_size];
+
+    let mut conf = 0u32;
+    if cs0_present {
+        conf |= 1 << 16; // CONF_ENABLE_W0
+        conf |= 0x2 << 0; // FLASH_TYPE_SPI
+    }
+    if cs1_present {
+        conf |= 1 << 17; // CONF_ENABLE_W1
+        conf |= 0x2 << 2; // FLASH_TYPE_SPI
+    }
+
+    let cs0_segment = if cs0_present {
+        match encode_segment_for(ctrl, 0, cs0_size) {
+            Ok(seg) => seg,
+            Err(_) => panic!("invalid CS0 segment for SMC config"),
+        }
+    } else {
+        0
+    };
+    let cs1_segment = if cs1_present {
+        match encode_segment_for(ctrl, cs0_size, cs0_size + region_size) {
+            Ok(seg) => seg,
+            Err(_) => panic!("invalid CS1 segment for SMC config"),
+        }
+    } else {
+        0
+    };
+
+    SmcLayout {
+        conf,
+        region_size,
+        window_base,
+        cs0_present,
+        cs1_present,
+        cs0_segment,
+        cs1_segment,
+    }
+}
+
 const fn encode_segment_for(
     ctrl: SmcController,
     start: usize,
@@ -227,15 +284,51 @@ pub type UninitSmc<I> = Smc<I, Uninitialized>;
 pub type ReadySmc<I> = Smc<I, Ready>;
 
 impl<I: SmcInstance> Smc<I, Uninitialized> {
-    /// Create a new SMC controller instance.
+    /// Create a new SMC controller instance from the regions mapped to it.
     ///
-    /// # Safety
-    /// Caller must ensure:
-    /// - No other Smc instance exists for this hardware controller
-    /// - The controller's base address points to valid hardware
-    pub unsafe fn new() -> Result<Self, SmcError> {
-        let base = I::CONTROLLER.base_address() as *const _;
-        // SAFETY: Caller ensures base address is valid and no other instance exists.
+    /// Takes all three by value: the register block plus the decode window of
+    /// each chip select. That is what makes this safe — the mappings come from
+    /// `system.json5`, each is minted once per process, and a second controller
+    /// over the same block would need tokens the caller no longer has.
+    ///
+    /// Only the window's start address is checked. A process is free to map
+    /// less than the full decode region, and both current callers do.
+    pub fn new<Cs0, Cs1>(
+        region: Region<I::Regs>,
+        _cs0_window: Region<Cs0>,
+        _cs1_window: Region<Cs1>,
+    ) -> Result<Self, SmcError>
+    where
+        Cs0: Mmap,
+        Cs1: Mmap,
+    {
+        const {
+            assert!(
+                <I::Regs as Mmap>::START == I::CONTROLLER.base_address(),
+                "mapped region does not start at this controller's base address"
+            );
+            assert!(
+                <I::Regs as Mmap>::LEN
+                    >= core::mem::size_of::<ast1060_pac::fmc::RegisterBlock>(),
+                "mapped region is shorter than this controller's register block"
+            );
+            let layout = layout_for(I::CONTROLLER, I::CONFIG);
+            if layout.cs0_present {
+                assert!(
+                    Cs0::START == layout.window_base[0],
+                    "CS0 mapping does not start at this controller's CS0 decode window"
+                );
+            }
+            if layout.cs1_present {
+                assert!(
+                    Cs1::START == layout.window_base[1],
+                    "CS1 mapping does not start at this controller's CS1 decode window"
+                );
+            }
+        }
+        let base = region.as_mut_ptr() as *const _;
+        // SAFETY: `region` is sole ownership of the granted register block, and
+        // the block is this controller's per the check above.
         let regs = unsafe { SmcRegisters::new(base) };
 
         Ok(Self {
@@ -250,59 +343,7 @@ impl<I: SmcInstance> Smc<I, Uninitialized> {
 
     /// Initialize hardware and transition to `Ready` mode.
     pub fn init(self) -> Result<Smc<I, Ready>, SmcError> {
-        // Derive the full controller layout from its static config. Splits the
-        // 256 MiB aperture evenly across present chip selects for now.
-        let layout = const {
-            let ctrl = I::CONTROLLER;
-            let cfg = I::CONFIG;
-            let cs0_present = cfg.cs0.is_some();
-            let cs1_present = cfg.cs1.is_some();
-            let present = cs0_present as usize + cs1_present as usize;
-            if present == 0 {
-                panic!("SMC config must configure at least one chip select");
-            }
-            let region_size = SMC_WINDOW_SIZE_BYTES / present;
-            let cs0_size = if cs0_present { region_size } else { 0 };
-            let base = ctrl.flash_window_address();
-            let window_base = [base, base + cs0_size];
-
-            let mut conf = 0u32;
-            if cs0_present {
-                conf |= 1 << 16; // CONF_ENABLE_W0
-                conf |= 0x2 << 0; // FLASH_TYPE_SPI
-            }
-            if cs1_present {
-                conf |= 1 << 17; // CONF_ENABLE_W1
-                conf |= 0x2 << 2; // FLASH_TYPE_SPI
-            }
-
-            let cs0_segment = if cs0_present {
-                match encode_segment_for(ctrl, 0, cs0_size) {
-                    Ok(seg) => seg,
-                    Err(_) => panic!("invalid CS0 segment for SMC config"),
-                }
-            } else {
-                0
-            };
-            let cs1_segment = if cs1_present {
-                match encode_segment_for(ctrl, cs0_size, cs0_size + region_size) {
-                    Ok(seg) => seg,
-                    Err(_) => panic!("invalid CS1 segment for SMC config"),
-                }
-            } else {
-                0
-            };
-
-            SmcLayout {
-                conf,
-                region_size,
-                window_base,
-                cs0_present,
-                cs1_present,
-                cs0_segment,
-                cs1_segment,
-            }
-        };
+        let layout = const { layout_for(I::CONTROLLER, I::CONFIG) };
 
         // 1. Configure flash types and write-enable per CS.
         self.regs.write_config(layout.conf);

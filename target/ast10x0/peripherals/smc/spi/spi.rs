@@ -17,6 +17,8 @@
 //! For BootSpi (FMC), use the [`crate::smc::fmc`] wrapper.
 //! For HostSpi/NormalSpi (SPI1/SPI2), use this wrapper.
 
+use util_region::{Mmap, Region};
+
 use crate::smc::controller::{Cs, ReadySmc, UninitSmc};
 use crate::smc::types::{SmcController, SmcError, SmcInstance};
 
@@ -42,16 +44,22 @@ pub struct SpiReady<I: SmcInstance> {
 }
 
 impl<I: SmcInstance> SpiUninit<I> {
-    /// Construct an uninitialized SPI controller for SPI1 or SPI2.
+    /// Construct an uninitialized SPI controller for SPI1 or SPI2 from the
+    /// regions mapped to it.
     ///
     /// # Topology Requirements
     ///
     /// The SPI wrapper is for HostSpi and NormalSpi topologies only.
     /// BootSpi (FMC) should use the [`crate::smc::fmc`] wrapper.
-    ///
-    /// # Safety
-    /// Caller must ensure unique ownership of the selected SPI hardware block.
-    pub unsafe fn new() -> Result<Self, SmcError> {
+    pub fn new<Cs0, Cs1>(
+        region: Region<I::Regs>,
+        cs0_window: Region<Cs0>,
+        cs1_window: Region<Cs1>,
+    ) -> Result<Self, SmcError>
+    where
+        Cs0: Mmap,
+        Cs1: Mmap,
+    {
         // The SPI wrapper is specialized for HostSpi and NormalSpi topologies.
         // FMC (BootSpi topology) uses the FMC wrapper. Enforce that here.
         const {
@@ -61,8 +69,7 @@ impl<I: SmcInstance> SpiUninit<I> {
             );
         }
 
-        // SAFETY: Caller upholds controller ownership requirements.
-        let inner = unsafe { UninitSmc::<I>::new()? };
+        let inner = UninitSmc::<I>::new(region, cs0_window, cs1_window)?;
         Ok(Self { inner })
     }
 

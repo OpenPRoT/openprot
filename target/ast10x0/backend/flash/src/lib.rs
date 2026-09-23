@@ -9,6 +9,7 @@
 
 #![no_std]
 
+use core::marker::PhantomData;
 use core::num::NonZero;
 
 use ast10x0_peripherals::smc::{
@@ -17,12 +18,18 @@ use ast10x0_peripherals::smc::{
 };
 use hal_flash_driver::{FlashAddress, FlashDriver};
 use util_error::{self as error, ErrorCode};
+use util_region::{Mmap, Region};
 use util_types::{Blocking, PowerOf2Usize};
 
 /// Compile-time descriptor for the wired FMC controller this backend drives.
-struct FmcInstance;
+///
+/// `R` names the register region the hosting process was granted, so the
+/// controller's base address comes from that image's `system.json5`.
+struct FmcInstance<R: Mmap>(PhantomData<R>);
 
-impl SmcInstance for FmcInstance {
+impl<R: Mmap> SmcInstance for FmcInstance<R> {
+    type Regs = R;
+
     const CONTROLLER: SmcController = SmcController::Fmc;
     const CONFIG: SmcConfig = SmcConfig {
         cs0: Some(FlashConfig { spi_clock_mhz: 50 }),
@@ -35,7 +42,7 @@ impl SmcInstance for FmcInstance {
 
 /// Geometry source for the served chip (CS1). `Pinned` here makes the reported
 /// geometry a compile-time constant; `Discover` reports the SFDP-read value.
-type Cs1Geometry = <FmcInstance as SmcInstance>::Cs1Geometry;
+type Cs1Geometry<R> = <FmcInstance<R> as SmcInstance>::Cs1Geometry;
 
 fn map_smc_error(e: SmcError) -> ErrorCode {
     match e {
@@ -66,29 +73,35 @@ impl Blocking for NoWaitBlocking {
 }
 
 /// FMC flash driver.
-pub struct Ast10x0FmcFlashDriver {
-    fmc: FmcReady<FmcInstance>,
+pub struct Ast10x0FmcFlashDriver<R: Mmap> {
+    fmc: FmcReady<FmcInstance<R>>,
     geometry: FlashGeometry,
 }
 
 /// Stable alias used by the server binary for compile-time backend selection.
-pub type Backend = Ast10x0FmcFlashDriver;
+pub type Backend<R> = Ast10x0FmcFlashDriver<R>;
 
-impl Ast10x0FmcFlashDriver {
-    /// Initialize the FMC and return a ready driver.
+impl<R: Mmap> Ast10x0FmcFlashDriver<R> {
+    /// Initialize the FMC from the regions mapped to this process.
     ///
-    /// # Safety
-    /// The calling process must be the sole owner of the FMC controller
-    /// (MMIO 0x7e62_0000) and its CS flash windows: with both CS0 and CS1
-    /// present the 256 MiB aperture is split in half, so CS0 decodes at
-    /// 0x8000_0000 and the served CS1 flash at 0x8800_0000, per the
-    /// system.json5 of the image this runs in. The FMC pinmux
-    /// (`PINCTRL_FMC_QUAD`) must already have been applied by the kernel
-    /// target's pre-task init; this driver never touches the shared SCU.
-    /// Call at most once per process.
-    pub unsafe fn new() -> Result<Self, ErrorCode> {
-        // SAFETY: sole ownership of the FMC hardware block per the contract above.
-        let uninit = unsafe { FmcUninit::<FmcInstance>::new() }.map_err(map_smc_error)?;
+    /// Takes the register block and both CS decode windows, which `init` lights
+    /// up: with CS0 and CS1 both present the 256 MiB aperture is split in half,
+    /// so CS0 decodes low and the served CS1 flash decodes at the midpoint.
+    /// Consuming the tokens is what bounds this to one driver per process.
+    ///
+    /// The FMC pinmux (`PINCTRL_FMC_QUAD`) must already have been applied by the
+    /// kernel target's pre-task init; this driver never touches the shared SCU.
+    pub fn new<Cs0, Cs1>(
+        regs: Region<R>,
+        cs0_window: Region<Cs0>,
+        cs1_window: Region<Cs1>,
+    ) -> Result<Self, ErrorCode>
+    where
+        Cs0: Mmap,
+        Cs1: Mmap,
+    {
+        let uninit = FmcUninit::<FmcInstance<R>>::new(regs, cs0_window, cs1_window)
+            .map_err(map_smc_error)?;
         let mut fmc = uninit.init().map_err(map_smc_error)?;
         // Geometry was discovered over SFDP during `init()`; read it back off the
         // CS1 handle (no rediscovery, no recalibration).
@@ -107,7 +120,7 @@ impl Ast10x0FmcFlashDriver {
     }
 }
 
-impl FlashDriver for Ast10x0FmcFlashDriver {
+impl<R: Mmap> FlashDriver for Ast10x0FmcFlashDriver<R> {
     type Error = ErrorCode;
 
     // PAGE_SIZE / PROGRAM_WINDOW_SIZE are defaulted to 0, geometry is discovered instead
@@ -116,24 +129,24 @@ impl FlashDriver for Ast10x0FmcFlashDriver {
     const PROGRAM_ALIGNMENT: usize = 1;
 
     fn size(&self) -> NonZero<usize> {
-        NonZero::new(Cs1Geometry::geometry(&self.geometry).capacity_bytes as usize)
+        NonZero::new(Cs1Geometry::<R>::geometry(&self.geometry).capacity_bytes as usize)
             .expect("capacity validated in new()")
     }
 
     /// Default erase page: one SFDP-discovered sector.
     fn page_size(&self) -> usize {
-        Cs1Geometry::geometry(&self.geometry).sector_size as usize
+        Cs1Geometry::<R>::geometry(&self.geometry).sector_size as usize
     }
 
     /// SPI NOR program page: writes must not cross this boundary.
     fn program_window_size(&self) -> usize {
-        Cs1Geometry::geometry(&self.geometry).page_size as usize
+        Cs1Geometry::<R>::geometry(&self.geometry).page_size as usize
     }
 
     fn erasable_sizes_bitmap(&mut self) -> Result<u32, Self::Error> {
         // Only sector erase is implemented by the peripheral driver.
         Ok(1u32
-            << Cs1Geometry::geometry(&self.geometry)
+            << Cs1Geometry::<R>::geometry(&self.geometry)
                 .sector_size
                 .trailing_zeros())
     }

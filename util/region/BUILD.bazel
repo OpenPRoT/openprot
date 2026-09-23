@@ -1,0 +1,15 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["regions.rs.jinja"])
+
+rust_library(
+    name = "region",
+    srcs = ["lib.rs"],
+    crate_name = "util_region",
+    edition = "2024",
+)

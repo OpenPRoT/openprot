@@ -16,6 +16,8 @@
 //!
 //! See [`crate::smc`] module-level documentation for the full taxonomy.
 
+use util_region::{Mmap, Region};
+
 use crate::smc::controller::{Cs, ReadySmc, UninitSmc};
 use crate::smc::types::{SmcController, SmcError, SmcInstance};
 
@@ -34,19 +36,23 @@ pub struct FmcReady<I: SmcInstance> {
 }
 
 impl<I: SmcInstance> FmcUninit<I> {
-    /// Construct an uninitialized FMC controller.
-    ///
-    /// # Safety
-    /// Caller must ensure unique ownership of the FMC hardware block.
-    pub unsafe fn new() -> Result<Self, SmcError> {
+    /// Construct an uninitialized FMC controller from the regions mapped to it.
+    pub fn new<Cs0, Cs1>(
+        region: Region<I::Regs>,
+        cs0_window: Region<Cs0>,
+        cs1_window: Region<Cs1>,
+    ) -> Result<Self, SmcError>
+    where
+        Cs0: Mmap,
+        Cs1: Mmap,
+    {
         const {
             assert!(
                 matches!(I::CONTROLLER, SmcController::Fmc),
                 "FmcUninit requires an SmcInstance whose CONTROLLER is Fmc"
             );
         }
-        // SAFETY: Caller upholds controller ownership requirements.
-        let inner = unsafe { UninitSmc::<I>::new()? };
+        let inner = UninitSmc::<I>::new(region, cs0_window, cs1_window)?;
         Ok(Self { inner })
     }
 

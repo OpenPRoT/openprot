@@ -7,6 +7,7 @@ load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH", "system_image_test")
+load("//util/region:defs.bzl", "app_regions")
 
 filegroup(
     name = "system_config",
@@ -97,6 +98,15 @@ rust_app(
     ],
 )
 
+app_regions(
+    name = "app_pldm_fd_regions",
+    app_name = "pldm_fd",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
 rust_app(
     name = "pldm_fd",
     srcs = ["fd_main.rs"],
@@ -106,6 +116,7 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
+        ":app_pldm_fd_regions",
         "//hal/blocking/flash",
         "//services/mctp/client-ipc:mctp_client_ipc",
         "//services/pldm:pldm_service",

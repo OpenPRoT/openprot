@@ -8,6 +8,7 @@ load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_scri
 load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH", "flash_system_image_test")
+load("//util/region:defs.bzl", "app_regions")
 
 filegroup(
     name = "system_config",
@@ -49,6 +50,15 @@ rust_binary(
     ],
 )
 
+app_regions(
+    name = "app_flash_server_regions",
+    app_name = "flash_server_bin",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
 rust_app(
     name = "flash_server_bin",
     srcs = ["server_main.rs"],
@@ -58,6 +68,7 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
+        ":app_flash_server_regions",
         "//hal/blocking/flash",
         "//services/flash:server",
         "//target/ast10x0/backend/flash:flash_backend_ast10x0",

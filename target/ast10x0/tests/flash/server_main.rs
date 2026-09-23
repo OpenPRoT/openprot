@@ -5,6 +5,7 @@
 #![no_std]
 
 use app_flash_server::handle;
+use app_flash_server_regions::take_mmaps;
 use flash_backend::{Backend, NoWaitBlocking};
 use hal_flash::BlockingFlash;
 use services_flash_server::FlashIpcServer;
@@ -19,10 +20,10 @@ const IPC_BUF_SIZE: usize = 4352;
 
 #[entry]
 fn entry() {
-    // SAFETY: this process is the sole owner of the FMC/CS0-window mappings
-    // declared in system.json5, the kernel target applied the FMC pinmux
-    // before starting any process, and this runs once.
-    let driver = match unsafe { Backend::new() } {
+    // SAFETY: mints this process's memory mappings once, at its entry point.
+    let mmaps = unsafe { take_mmaps() };
+    // The kernel target applied the FMC pinmux before starting any process.
+    let driver = match Backend::new(mmaps.fmc_regs, mmaps.fmc_cs0_window, mmaps.fmc_cs1_window) {
         Ok(d) => d,
         Err(e) => {
             pw_log::error!("flash server: FMC init failed: {:08x}", e.0.get() as u32);

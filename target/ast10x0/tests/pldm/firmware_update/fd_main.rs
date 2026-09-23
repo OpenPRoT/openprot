@@ -13,7 +13,7 @@
 
 use core::cell::{Cell, RefCell};
 
-use flash_backend::{Backend, NoWaitBlocking};
+use flash_backend::NoWaitBlocking;
 use hal_flash::{BlockingFlash, Flash, FlashAddress};
 use openprot_mctp_client_ipc::IpcMctpClient;
 use openprot_pldm_service::firmware_device::{FirmwareDevice, RunTerminusResult};
@@ -32,6 +32,10 @@ use userspace::{entry, syscall};
 use util_error::ErrorCode;
 
 use app_pldm_fd::handle;
+use app_pldm_fd_regions::{take_mmaps, FmcRegs, Mmaps};
+
+/// The FMC backend bound to this process's register mapping.
+type Backend = flash_backend::Backend<FmcRegs>;
 
 /// This card's EID, matching the MCTP server app underneath it.
 const FD_EID: u8 = 8;
@@ -244,11 +248,9 @@ impl FdOps for DemoFdOps {
 }
 
 /// Bring up the FMC and clear the sector the image lands in.
-fn init_flash() -> Result<BlockingFlash<Backend, NoWaitBlocking>, ErrorCode> {
-    // SAFETY: this process is the sole owner of the FMC and its CS windows per
-    // system.json5, the kernel target applied the FMC pinmux before any process
-    // started, and this runs once.
-    let driver = unsafe { Backend::new() }?;
+fn init_flash(mmaps: Mmaps) -> Result<BlockingFlash<Backend, NoWaitBlocking>, ErrorCode> {
+    // The kernel target applied the FMC pinmux before any process started.
+    let driver = Backend::new(mmaps.fmc_regs, mmaps.fmc_cs0_window, mmaps.fmc_cs1_window)?;
     let mut flash = BlockingFlash {
         driver,
         blocking: NoWaitBlocking,
@@ -265,7 +267,9 @@ fn init_flash() -> Result<BlockingFlash<Backend, NoWaitBlocking>, ErrorCode> {
 
 #[entry]
 fn entry() {
-    let flash = match init_flash() {
+    // SAFETY: mints this process's memory mappings once, at its entry point.
+    let mmaps = unsafe { take_mmaps() };
+    let flash = match init_flash(mmaps) {
         Ok(flash) => flash,
         Err(e) => {
             pw_log::error!("FD: flash init failed: {:08x}", e.0.get() as u32);
