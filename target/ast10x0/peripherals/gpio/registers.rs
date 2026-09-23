@@ -5,10 +5,19 @@
 
 use ast1060_pac as device;
 use core::marker::PhantomData;
+use util_region::{Mmap, Region};
 
-/// Safe wrapper around the AST1060 GPIO register block.
-pub struct GpioRegisters {
-    base: *const device::gpio::RegisterBlock,
+/// Base address of the AST10x0 GPIO register block.
+const GPIO_BASE: usize = 0x7e78_0000;
+
+/// Proof that this process was granted the GPIO register block.
+///
+/// Carries no pointer. The address comes from `R`, which exists only in the
+/// per-process mapping table generated from `system.json5`, so a process that
+/// was not granted the block has no mapping to name and the driver will not
+/// compile for it.
+pub struct GpioRegisters<R: Mmap> {
+    _region: PhantomData<R>,
     /// Prevent `Send` and `Sync`.
     ///
     /// MMIO register blocks must not be transferred across threads or
@@ -17,36 +26,35 @@ pub struct GpioRegisters {
     _not_send_sync: PhantomData<*const ()>,
 }
 
-impl GpioRegisters {
-    /// Create a register accessor from a raw GPIO register block pointer.
+impl<R: Mmap> GpioRegisters<R> {
+    /// Take ownership of the granted GPIO register block.
     ///
-    /// # Safety
-    ///
-    /// - `base` must be a valid, non-null pointer to the AST1060 GPIO register block.
-    /// - The block must remain valid for the lifetime of this value.
-    /// - Caller must enforce exclusive (or otherwise coordinated) access to the
-    ///   register block for the duration of use.
-    pub const unsafe fn new(base: *const device::gpio::RegisterBlock) -> Self {
+    /// Safe because the region is minted once per process from the same
+    /// manifest the kernel uses to program the MPU, and taking it by value
+    /// spends it.
+    pub fn new(_region: Region<R>) -> Self {
+        const {
+            assert!(
+                R::START == GPIO_BASE,
+                "mapped region does not start at the GPIO base address"
+            );
+            assert!(
+                R::LEN >= core::mem::size_of::<device::gpio::RegisterBlock>(),
+                "mapped region is shorter than the GPIO register block"
+            );
+        }
         Self {
-            base,
+            _region: PhantomData,
             _not_send_sync: PhantomData,
         }
     }
+}
 
-    /// Create a register accessor for the global GPIO instance.
-    ///
-    /// # Safety
-    ///
-    /// Caller must ensure exclusive access to the singleton GPIO peripheral is
-    /// coordinated for the lifetime of this value.
-    pub unsafe fn new_global() -> Self {
-        // SAFETY: Caller upholds the singleton access contract.
-        unsafe { Self::new(device::Gpio::ptr()) }
-    }
-
-    #[inline]
-    pub(crate) fn regs(&self) -> &device::gpio::RegisterBlock {
-        // SAFETY: Constructor guarantees a valid, non-null register block pointer.
-        unsafe { &*self.base }
-    }
+/// The granted GPIO register block.
+///
+/// The one place in the driver that turns an address into a reference.
+#[inline]
+pub(crate) fn regs_of<R: Mmap>() -> &'static device::gpio::RegisterBlock {
+    // SAFETY: `R::START` is the GPIO base, checked when the region was taken.
+    unsafe { &*(R::START as *const device::gpio::RegisterBlock) }
 }
