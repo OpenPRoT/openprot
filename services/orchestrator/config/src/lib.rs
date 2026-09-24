@@ -272,9 +272,10 @@ impl Golden {
 }
 
 /// Every image of one device that the eRoT can address: the slots it
-/// writes, plus the golden image. Slots are declared in recovery order:
-/// recovery tries them from top to bottom and falls back to the golden
-/// image last.
+/// writes, plus the golden image when there is one. Slots are declared in
+/// recovery order: recovery tries them from top to bottom and falls back to
+/// the golden image last. A board with plain A/B slots carries no golden
+/// image, and recovery then stops after the last slot.
 ///
 /// A device has a layout when the eRoT owns its flash and writes its
 /// images. A device that takes its own updates over PLDM and picks what it
@@ -284,7 +285,7 @@ impl Golden {
 #[derive(Debug, Clone, Copy)]
 pub struct ImageLayout {
     slots: &'static [Slot],
-    golden: Golden,
+    golden: Option<Golden>,
 }
 
 impl ImageLayout {
@@ -293,22 +294,28 @@ impl ImageLayout {
     ///
     /// # Panics
     ///
-    /// Panics if two slots share an id, or if two regions overlap, the
-    /// golden image included. Overlapping regions would let an update to
-    /// one image corrupt another.
+    /// Panics if the layout holds no image, if two slots share an id, or
+    /// if two regions overlap, the golden image included. Overlapping
+    /// regions would let an update to one image corrupt another.
     ///
     /// The overlap check only covers addresses. Two regions that share a
     /// flash erase block still wipe each other even though they do not
     /// overlap, and this crate does not know the erase block size, so a
     /// board checks that in its own const fence.
     #[must_use]
-    pub const fn new(slots: &'static [Slot], golden: Golden) -> Self {
+    pub const fn new(slots: &'static [Slot], golden: Option<Golden>) -> Self {
+        assert!(
+            !slots.is_empty() || golden.is_some(),
+            "a layout must hold at least one image"
+        );
         let mut s = 0;
         while s < slots.len() {
-            assert!(
-                !slots[s].region.overlaps(&golden.region),
-                "a slot must not overlap the golden image"
-            );
+            if let Some(golden) = golden {
+                assert!(
+                    !slots[s].region.overlaps(&golden.region),
+                    "a slot must not overlap the golden image"
+                );
+            }
             let mut t = s + 1;
             while t < slots.len() {
                 assert!(
@@ -333,17 +340,17 @@ impl ImageLayout {
         self.slots
     }
 
-    /// The golden image.
+    /// The golden image, when the board has one.
     #[must_use]
-    pub const fn golden(&self) -> Golden {
+    pub const fn golden(&self) -> Option<Golden> {
         self.golden
     }
 
-    /// How many images recovery can try: every slot, then the golden
-    /// image.
+    /// How many images recovery can try: every slot, then the golden image
+    /// if there is one.
     #[must_use]
     pub const fn image_count(&self) -> usize {
-        self.slots.len() + 1
+        self.slots.len() + self.golden.is_some() as usize
     }
 }
 
@@ -523,7 +530,7 @@ mod tests {
     /// The golden image, above every slot `slot` can place.
     const GOLDEN: Golden = Golden::new(Region::new(0xF000_0000, SLOT_LEN));
 
-    const LAYOUT: ImageLayout = ImageLayout::new(const { &[slot(0), slot(1)] }, GOLDEN);
+    const LAYOUT: ImageLayout = ImageLayout::new(const { &[slot(0), slot(1)] }, Some(GOLDEN));
 
     #[test]
     fn accepts_a_valid_table() {
@@ -539,7 +546,10 @@ mod tests {
         assert_eq!(layout.slots().len(), 2);
         assert_eq!(layout.slots()[1].region().base(), SLOT_LEN);
         assert_eq!(layout.slots()[1].region().end(), 2 * SLOT_LEN);
-        assert_eq!(layout.golden().region().base(), 0xF000_0000);
+        assert_eq!(
+            layout.golden().expect("declared above").region().base(),
+            0xF000_0000
+        );
     }
 
     /// A device that owns its own images declares no layout at all, golden
@@ -553,7 +563,7 @@ mod tests {
     /// The golden image may be a device's only image.
     #[test]
     fn accepts_a_layout_with_no_slots() {
-        let layout = ImageLayout::new(&[], GOLDEN);
+        let layout = ImageLayout::new(&[], Some(GOLDEN));
         assert!(layout.slots().is_empty());
     }
 
@@ -590,7 +600,7 @@ mod tests {
                     Slot::new(SlotId(0), Region::new(SLOT_LEN, SLOT_LEN)),
                 ]
             },
-            GOLDEN,
+            Some(GOLDEN),
         );
     }
 
@@ -604,7 +614,7 @@ mod tests {
                     Slot::new(SlotId(1), Region::new(SLOT_LEN - 1, SLOT_LEN)),
                 ]
             },
-            GOLDEN,
+            Some(GOLDEN),
         );
     }
 
@@ -613,7 +623,7 @@ mod tests {
     fn rejects_a_slot_overlapping_the_golden_image() {
         let _ = ImageLayout::new(
             const { &[Slot::new(SlotId(0), Region::new(0xF000_0000, SLOT_LEN))] },
-            GOLDEN,
+            Some(GOLDEN),
         );
     }
 
@@ -628,7 +638,7 @@ mod tests {
                     Slot::new(SlotId(1), Region::new(SLOT_LEN, SLOT_LEN)),
                 ]
             },
-            GOLDEN,
+            Some(GOLDEN),
         );
         assert_eq!(
             layout.slots()[0].region().end(),
@@ -636,10 +646,24 @@ mod tests {
         );
     }
 
+    /// A board with plain A/B slots carries no golden image.
+    #[test]
+    fn accepts_slots_without_a_golden_image() {
+        let layout = ImageLayout::new(const { &[slot(0), slot(1)] }, None);
+        assert!(layout.golden().is_none());
+        assert_eq!(layout.image_count(), 2);
+    }
+
+    #[test]
+    #[should_panic(expected = "at least one image")]
+    fn rejects_a_layout_with_no_image() {
+        let _ = ImageLayout::new(&[], None);
+    }
+
     #[test]
     fn counts_every_slot_and_the_golden_image() {
         assert_eq!(LAYOUT.image_count(), 3);
-        assert_eq!(ImageLayout::new(&[], GOLDEN).image_count(), 1);
+        assert_eq!(ImageLayout::new(&[], Some(GOLDEN)).image_count(), 1);
     }
 
     /// Two slots and a golden image need four attempts: three restores
