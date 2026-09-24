@@ -36,7 +36,7 @@ const BMC_LAYOUT: ImageLayout = ImageLayout::new(
             Slot::new(SlotId(1), Region::new(0x20_0000, 0x20_0000)),
         ]
     },
-    Golden::new(Region::new(0x40_0000, 0x20_0000)),
+    Some(Golden::new(Region::new(0x40_0000, 0x20_0000))),
 );
 
 /// Declaration order is the boot order: the orchestrator releases devices
