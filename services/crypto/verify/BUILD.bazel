@@ -1,0 +1,13 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "client",
+    srcs = ["client.rs"],
+    crate_name = "crypto_verify_client",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["//hal/blocking/flash:driver"],
+)
