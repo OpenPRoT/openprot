@@ -66,7 +66,7 @@ pub enum SelfUpdateState {
         /// The SVN recorded by [`prepare`](SelfUpdate::prepare).
         svn: Svn,
     },
-    /// The trial image confirmed itself. The anti-rollback floor has not
+    /// The trial was confirmed. The anti-rollback floor has not
     /// necessarily taken the SVN yet, which is what
     /// [`TrialOutcome::ConfirmedUncommitted`] covers.
     Committed {
@@ -96,7 +96,7 @@ pub enum TrialOutcome {
     Unconfirmed,
     /// This boot is the trial. Nothing has judged it yet.
     InProgress,
-    /// The trial confirmed itself, and the anti-rollback floor has not
+    /// The trial was confirmed, and the anti-rollback floor has not
     /// necessarily taken the SVN yet.
     ConfirmedUncommitted {
         /// The verified SVN the session recorded.
@@ -192,7 +192,7 @@ pub trait SelfUpdate {
     /// ordering rule exists to prevent.
     fn arm_trial(&mut self) -> Result<(), Self::Error>;
 
-    /// Records that the trial image judged itself good, leaving the state
+    /// Records that the trial was judged good, leaving the state
     /// `Committed`. The anti-rollback floor is advanced by the caller
     /// afterwards, not here: this trait holds the session, it does not own
     /// the floor.
