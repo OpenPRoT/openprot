@@ -24,7 +24,12 @@ use pldm_common::message::firmware_update::get_status::ProgressPercent;
 use pldm_common::message::firmware_update::request_fw_data::MAX_TRANSFER_SIZE;
 use pldm_common::message::firmware_update::transfer_complete::TransferResult;
 use pldm_common::message::firmware_update::verify_complete::VerifyResult;
-use pldm_common::protocol::firmware_update::{ComponentResponseCode, Descriptor};
+use pldm_common::protocol::base::PldmBaseCompletionCode;
+use pldm_common::protocol::firmware_update::{
+    ComponentActivationMethods, ComponentClassification, ComponentParameterEntry,
+    ComponentResponseCode, Descriptor, DescriptorType, FirmwareDeviceCapability,
+    PldmFirmwareString, PldmFirmwareVersion,
+};
 use pldm_common::util::fw_component::FirmwareComponent;
 use pldm_interface::firmware_device::fd_ops::{ComponentOperation, FdOps, FdOpsError};
 use pw_status::Error;
@@ -44,6 +49,21 @@ const UA_EID: u8 = 9;
 
 /// Size of the demo image, in bytes. Must match the update agent's blob.
 const IMAGE_SIZE: usize = 1024;
+
+/// This device's UUID, the one descriptor QueryDeviceIdentifiers reports. The
+/// update agent holds the same value and refuses to update anything else.
+const DEVICE_UUID: [u8; 16] = [
+    0x4f, 0x50, 0x52, 0x54, 0x00, 0x01, 0x40, 0x00, 0xa0, 0x00, 0xde, 0xad, 0xbe, 0xef, 0x00, 0x01,
+];
+
+/// The single updatable component this device advertises. The update agent
+/// learns it from GetFirmwareParameters rather than assuming it.
+const COMP_IDENTIFIER: u16 = 0x0001;
+
+/// Version strings the device reports as running today. The update agent must
+/// offer something newer for the component to be accepted.
+const ACTIVE_COMP_VERSION: &str = "v0.9";
+const ACTIVE_IMAGE_SET_VERSION: &str = "openprot-demo-v0.9";
 
 /// Where the image lands on CS1. Scratch region, sector-aligned, and clobbered
 /// without backup — persisting the image is the point of the test.
@@ -80,6 +100,7 @@ struct DemoFdOps {
     bytes_received: Cell<usize>,
     corrupt: Cell<bool>,
     verified: Cell<bool>,
+    activated: Cell<bool>,
 }
 
 impl DemoFdOps {
@@ -89,6 +110,7 @@ impl DemoFdOps {
             bytes_received: Cell::new(0),
             corrupt: Cell::new(false),
             verified: Cell::new(false),
+            activated: Cell::new(false),
         }
     }
 
@@ -101,16 +123,47 @@ impl DemoFdOps {
 impl FdOps for DemoFdOps {
     fn get_device_identifiers(
         &self,
-        _device_identifiers: &mut [Descriptor],
+        device_identifiers: &mut [Descriptor],
     ) -> Result<usize, FdOpsError> {
-        Ok(0)
+        let uuid = Descriptor::new(DescriptorType::Uuid, &DEVICE_UUID)
+            .map_err(|_| FdOpsError::DeviceIdentifiersError)?;
+        *device_identifiers
+            .first_mut()
+            .ok_or(FdOpsError::DeviceIdentifiersError)? = uuid;
+        Ok(1)
     }
 
     fn get_firmware_parms(
         &self,
         firmware_params: &mut FirmwareParameters,
     ) -> Result<(), FdOpsError> {
-        *firmware_params = FirmwareParameters::default();
+        let comp_version = PldmFirmwareString::new("ASCII", ACTIVE_COMP_VERSION)
+            .map_err(|_| FdOpsError::FirmwareParametersError)?;
+        let image_set_version = PldmFirmwareString::new("ASCII", ACTIVE_IMAGE_SET_VERSION)
+            .map_err(|_| FdOpsError::FirmwareParametersError)?;
+
+        // Self-contained: the device applies the image itself, so the update
+        // agent's ActivateFirmware is all that is needed to finish.
+        let mut activation = ComponentActivationMethods(0);
+        activation.set_self_contained(true);
+
+        let component = ComponentParameterEntry::new(
+            ComponentClassification::Firmware,
+            COMP_IDENTIFIER,
+            0, // comp_classification_index
+            &PldmFirmwareVersion::new(0, &comp_version, None),
+            &PldmFirmwareVersion::default(),
+            activation,
+            FirmwareDeviceCapability(0),
+        );
+
+        *firmware_params = FirmwareParameters::new(
+            FirmwareDeviceCapability(0),
+            1, // comp_count
+            &image_set_version,
+            &PldmFirmwareString::default(),
+            &[component],
+        );
         Ok(())
     }
 
@@ -120,11 +173,18 @@ impl FdOps for DemoFdOps {
 
     fn handle_component(
         &self,
-        _component: &FirmwareComponent,
-        _fw_params: &FirmwareParameters,
+        component: &FirmwareComponent,
+        fw_params: &FirmwareParameters,
         _op: ComponentOperation,
     ) -> Result<ComponentResponseCode, FdOpsError> {
-        Ok(ComponentResponseCode::CompCanBeUpdated)
+        // Matches the offered component against what this device advertised:
+        // an unknown identifier, or a version no newer than the running one,
+        // is refused.
+        let code = component.evaluate_update_eligibility(fw_params);
+        if code != ComponentResponseCode::CompCanBeUpdated {
+            pw_log::error!("FD: component refused, code {}", code as u32);
+        }
+        Ok(code)
     }
 
     fn query_download_offset_and_length(
@@ -237,9 +297,14 @@ impl FdOps for DemoFdOps {
     fn activate(
         &self,
         _self_contained_activation: u8,
-        _estimated_time: &mut u16,
+        estimated_time: &mut u16,
     ) -> Result<u8, FdOpsError> {
-        Ok(0)
+        // The image is already in flash; nothing is deferred, so the update
+        // agent is told to expect no wait.
+        *estimated_time = 0;
+        self.activated.set(true);
+        pw_log::info!("FD: activated");
+        Ok(PldmBaseCompletionCode::Success as u8)
     }
 
     fn cancel_update_component(&self, _component: &FirmwareComponent) -> Result<(), FdOpsError> {
@@ -301,8 +366,8 @@ fn entry() {
     pw_log::info!("FD: waiting for the update agent at EID {}", UA_EID as u32);
 
     let mut buf = [0u8; FD_BUF_SIZE];
-    // Returns when the update agent goes quiet for IDLE_TIMEOUT_MILLIS, which
-    // is how a finished flow ends; the verdict is in `fd_ops`, not here.
+    // Returns as soon as ActivateFirmware puts the device back in Idle; an
+    // idle timeout arrives as an error instead.
     match fd.run_terminus(
         UA_EID,
         &mut buf,
@@ -321,7 +386,7 @@ fn entry() {
         }
     }
 
-    if fd_ops.image_is_good() {
+    if fd_ops.image_is_good() && fd_ops.activated.get() {
         pw_log::info!("FD: update flow complete");
         let _ = syscall::debug_shutdown(Ok(()));
     } else {
