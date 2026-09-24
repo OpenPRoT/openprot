@@ -16,8 +16,30 @@
 //! checkpoints as data (`BootCheckpoint` in `orchestrator-config`), and the
 //! board's reader gives the ids meaning.
 //!
+//! `Updatable` is the update capability: stage a payload on one device
+//! (polled, one bounded step at a time) and mark it the boot candidate —
+//! always tentatively; the commit gate lives elsewhere. `PayloadSource` is
+//! the chunked read seam staging pulls from — transports and slot
+//! bookkeeping stay behind the adapter.
+//!
+//! `TrialBoot` is the commit gate activation leaves open, whether `Updatable`
+//! did the activating or a PLDM firmware device did it for the eRoT: keep the
+//! activated image once its boot was judged, or drop it. It sits on every
+//! device whose slots the eRoT drives, the eRoT's own image included.
+//!
+//! `IncrementalVerifier` is the polled verification seam: `start`
+//! consumes the verifier into a `VerifySession` whose `poll` does one
+//! bounded hash step per call. See the trait docs for the full lifecycle.
+//!
 //! `BootWatch` is the seam the orchestrator polls: one device's boot walk,
 //! erased of every device-specific type, answering with a `WalkVerdict`.
+//!
+//! `Recovery` is the restore capability: rewrite one device's active image
+//! from its board-configured recovery source, mechanism unnamed, source
+//! chosen per attempt.
+//!
+//! `LockdownLatch` is the terminal capability: latch the platform into its safe
+//! state, one-way, at the top of the escalation ladder.
 //!
 //! This crate is a dependency-free leaf: it holds the capability contracts,
 //! and everything depends downward on it. Concrete adapters bind a capability
@@ -32,9 +54,19 @@
 mod boot_control;
 mod boot_watch;
 mod evidence;
+mod incremental_verifier;
+mod lockdown_latch;
+mod recovery;
 mod svn_floor;
+mod trial_boot;
+mod updatable;
 
 pub use boot_control::BootControl;
 pub use boot_watch::{BootWatch, FailureCause, WalkVerdict};
 pub use evidence::{BootStatus, EvidenceReader};
+pub use incremental_verifier::{IncrementalVerifier, PollOutcome, VerifySession};
+pub use lockdown_latch::LockdownLatch;
+pub use recovery::{Recovery, RestoreOutcome};
 pub use svn_floor::{Svn, SvnFloor};
+pub use trial_boot::TrialBoot;
+pub use updatable::{PayloadReadError, PayloadSource, StageProgress, Updatable, UpdateError};

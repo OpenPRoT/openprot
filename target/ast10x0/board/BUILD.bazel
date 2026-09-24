@@ -1,12 +1,13 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
-load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
 
 rust_library(
     name = "ast10x0_board",
     srcs = [
+        "src/bmc.rs",
         "src/lib.rs",
         "src/spi_monitor.rs",
         "src/spim_wiring.rs",
@@ -16,8 +17,33 @@ rust_library(
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],
     deps = [
+        "//hal/blocking",
+        "//services/orchestrator/adapters/hal:orchestrator_hal_adapters",
+        "//services/orchestrator/capabilities:orchestrator_capabilities",
+        "//services/orchestrator/config:orchestrator_config",
         "//target/ast10x0/backend/i2c:i2c_backend_ast10x0",
         "//target/ast10x0/peripherals",
         "@ast1060_pac",
+    ],
+)
+
+# The BMC supervision vocabulary names no hardware, so it compiles as its own
+# crate root on the host and its tests run without the kernel.
+rust_test(
+    name = "bmc_host_test",
+    srcs = ["src/bmc.rs"],
+    crate_root = "src/bmc.rs",
+    edition = "2024",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        "//hal/blocking",
+        "//services/orchestrator/adapters/hal:orchestrator_hal_adapters",
+        "//services/orchestrator/adapters/walk:orchestrator_checkpoint_walk",
+        "//services/orchestrator/capabilities:orchestrator_capabilities",
+        "//services/orchestrator/config:orchestrator_config",
+        "@rust_crates//:embedded-hal",
     ],
 )

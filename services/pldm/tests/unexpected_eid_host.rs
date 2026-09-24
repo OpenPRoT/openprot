@@ -202,7 +202,7 @@ fn responder_ignores_commands_from_unexpected_eid() {
     // "done", not a failure. `UA_EID` is the only EID `run_terminus` is told
     // to serve, so commands from `ATTACKER_EID` must be ignored below.
     let mut run_fd_once =
-        || match fd.run_terminus(UA_EID, &mut fd_buf, TIMEOUT_MILLIS, TIMEOUT_MILLIS) {
+        || match fd.run_terminus(UA_EID, &mut fd_buf, TIMEOUT_MILLIS, TIMEOUT_MILLIS, &mut ()) {
             RunTerminusResult::Completed => {}
             RunTerminusResult::StoppedByError(PldmServiceError::Mctp(e)) if e.is_timeout() => {}
             RunTerminusResult::StoppedByError(e) => panic!("firmware device failed: {e:?}"),

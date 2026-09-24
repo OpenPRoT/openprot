@@ -1,0 +1,31 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// Generated from the system manifest. Do not edit.
+
+#![no_std]
+
+#[allow(unused_imports)]
+use util_region::{Mmap, Region};
+{% for m in process.memory_mappings %}{% if m["type"] == "device" %}{% set mmap = m.name | replace("_", " ") | title | replace(" ", "") %}
+pub struct {{mmap}};
+
+impl Mmap for {{mmap}} {
+    const START: usize = {{m.start_address | hex}};
+    const LEN: usize = {{m.size_bytes | hex}};
+}
+{% endif %}{% endfor %}
+/// The device memory mappings declared for `{{process.name}}`.
+pub struct Mmaps {
+{% for m in process.memory_mappings %}{% if m["type"] == "device" %}    pub {{m.name}}: Region<{{m.name | replace("_", " ") | title | replace(" ", "")}}>,
+{% endif %}{% endfor %}}
+
+/// # Safety
+/// Mints every mapping in the table, so each region it names is claimed from
+/// nothing. Call once, from the process entry point.
+#[allow(unused)]
+pub const unsafe fn take_mmaps() -> Mmaps {
+    Mmaps {
+{% for m in process.memory_mappings %}{% if m["type"] == "device" %}        {{m.name}}: unsafe { Region::new() },
+{% endif %}{% endfor %}    }
+}

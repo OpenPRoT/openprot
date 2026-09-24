@@ -41,10 +41,6 @@ use i2c_api::{
     MAX_PAYLOAD_SIZE,
 };
 
-/// One request/response buffer size. Matches the client's `MAX_BUF_SIZE`: a
-/// whole transaction must fit one round-trip and is never fragmented.
-pub const MAX_BUF_SIZE: usize = 512;
-
 /// Map the embedded-hal error taxonomy onto the wire status code. The server
 /// stays decoupled from any concrete backend: it only needs `B::Error: Error`.
 pub(crate) fn kind_to_wire(kind: ErrorKind) -> I2cError {

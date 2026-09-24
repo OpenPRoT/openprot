@@ -155,6 +155,21 @@ def _release_lock(host: str) -> None:
     _ssh(host, f"rm -f {_LOCK_PATH}", capture_output=True)
 
 
+def _reap_stale_runners(host: str) -> None:
+    """Kill orphaned runners left behind when an SSH session drops.
+
+    The remote python does not die with its SSH client, and an orphan that still
+    holds the UARTs silently swallows the bootloader handshake of every later
+    run. Only called while holding the lock, so any match is an orphan.
+    """
+    # The [p] keeps the pattern from matching the shell that runs pkill.
+    r = _ssh(host, "pkill -f '[p]i_test_runner.py'", capture_output=True)
+    if r.returncode == 0:
+        print("RUNNER: reaped orphaned pi_test_runner.py on the Pi", file=sys.stderr)
+        # Let the kernel release the serial ports before we reopen them.
+        time.sleep(1)
+
+
 def _touch_lock_forever(host: str, stop: threading.Event) -> None:
     """Background thread: touch the lock file every _LOCK_TOUCH_INTERVAL seconds."""
     while not stop.wait(_LOCK_TOUCH_INTERVAL):
@@ -279,6 +294,8 @@ def _run_remote(
         return False
     print("RUNNER: lock acquired, starting test", file=sys.stderr)
 
+    _reap_stale_runners(host)
+
     stop_touch = threading.Event()
     touch_thread = threading.Thread(
         target=_touch_lock_forever, args=(host, stop_touch), daemon=True
@@ -342,6 +359,7 @@ def _run_remote(
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait()
+        _reap_stale_runners(host)
         stop_touch.set()
         _release_lock(host)
 

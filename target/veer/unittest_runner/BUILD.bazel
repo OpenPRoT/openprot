@@ -33,6 +33,17 @@ caliptra_test(
     target = ":unittest_runner",
 )
 
+caliptra_test(
+    name = "fpga_test",
+    interface = "fpga",
+    tags = [
+        "fpga",
+        "manual",
+        "requires-fpga",
+    ],
+    target = ":unittest_runner",
+)
+
 filegroup(
     name = "system_config",
     srcs = ["system.json5"],

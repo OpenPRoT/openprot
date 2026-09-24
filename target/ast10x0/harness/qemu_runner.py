@@ -56,6 +56,19 @@ def _parse_args():
         "--qemu-args", nargs="*", help="Extra arguments to pass to qemu"
     )
     parser.add_argument(
+        "--flash-image",
+        type=str,
+        help="Path to a raw SPI-NOR image to attach as the FMC CS0 flash "
+        "(if=mtd). Re-seeded to an erased (0xFF) state of --flash-size bytes "
+        "on every run so tests start from a known device state.",
+    )
+    parser.add_argument(
+        "--flash-size",
+        type=int,
+        default=8 * 1024 * 1024,
+        help="Size in bytes of the --flash-image backing store (default: 8 MiB).",
+    )
+    parser.add_argument(
         "--timeout",
         type=int,
         default=30,
@@ -118,11 +131,53 @@ def _sentinel_watcher(
         print(f"Exception watching sentinel: {e}", file=sys.stderr)
 
 
+def _seed_flash_image(path: str, size: int, fill: int = 0xFF) -> None:
+    """Create/overwrite `path` with `size` bytes of `fill` (0xFF = erased)."""
+    with open(path, "wb") as f:
+        f.write(bytes([fill & 0xFF]) * size)
+
+
+def _resolve_flash_drives(args):
+    """Return a list of (index, path, size, fill) FMC backing images.
+
+    index 0 -> FMC CS0, index 1 -> FMC CS1. Each image is re-seeded on every
+    run so tests start from a known device state. An explicit --flash-image
+    (manual runs) attaches at CS1. A flash_system_image_test sets
+    AST10X0_CS0_IMAGE / AST10X0_CS1_IMAGE (basenames) plus AST10X0_FLASH_SIZE
+    and per-CS AST10X0_CS0_FILL / AST10X0_CS1_FILL, resolved against
+    $TEST_TMPDIR so each run gets private, freshly-seeded images.
+    """
+    base = os.environ.get("TEST_TMPDIR", tempfile.gettempdir())
+    size = int(os.environ.get("AST10X0_FLASH_SIZE", str(args.flash_size)))
+    drives = []
+    if args.flash_image:
+        drives.append((1, args.flash_image, size, 0xFF))
+    cs0 = os.environ.get("AST10X0_CS0_IMAGE")
+    if cs0:
+        fill = int(os.environ.get("AST10X0_CS0_FILL", "255"))
+        drives.append((0, os.path.join(base, cs0), size, fill))
+    cs1 = os.environ.get("AST10X0_CS1_IMAGE")
+    if cs1:
+        fill = int(os.environ.get("AST10X0_CS1_FILL", "255"))
+        drives.append((1, os.path.join(base, cs1), size, fill))
+    return drives
+
+
 def _main(args) -> None:
+    drives = _resolve_flash_drives(args)
+
+    machine = args.machine
+    if drives:
+        # ast1030-evb models one flash type for the whole FMC controller.
+        # w25q80bl matches internal flash on evb CS0, but is smaller than evb CS1.
+        # Both CS share this model — only the attached backing images differ.
+        model = os.environ.get("AST10X0_FMC_MODEL", "w25q80bl")
+        machine = f"{machine},fmc-model={model}"
+
     qemu_args = [
         _QEMU_ARM,
         "-machine",
-        args.machine,
+        machine,
         "-cpu",
         args.cpu,
         "-bios",
@@ -135,6 +190,13 @@ def _main(args) -> None:
         "-kernel",
         args.image,
     ]
+
+    for index, path, size, fill in drives:
+        _seed_flash_image(path, size, fill)
+        qemu_args += [
+            "-drive",
+            f"file={path},format=raw,if=mtd,index={index}",
+        ]
 
     if args.qemu_args:
         qemu_args.extend(args.qemu_args)

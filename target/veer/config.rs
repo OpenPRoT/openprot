@@ -27,8 +27,11 @@ pub struct KernelConfig;
 impl KernelConfigInterface for KernelConfig {
     #[cfg(feature = "silicon")]
     const SYSTEM_CLOCK_HZ: u64 = 100_000_000;
+    // Matches TIMER_FREQUENCY_HZ in
+    // third_party/caliptra/caliptra-mcu-sw/platforms/fpga/runtime/src/main.rs,
+    // the confirmed clock rate for this core on the VCK190 build.
     #[cfg(feature = "fpga")]
-    const SYSTEM_CLOCK_HZ: u64 = 10_000_000; //FIXME
+    const SYSTEM_CLOCK_HZ: u64 = 20_000_000;
     #[cfg(feature = "emulator")]
     const SYSTEM_CLOCK_HZ: u64 = 1_000_000;
 }

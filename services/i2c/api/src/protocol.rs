@@ -22,11 +22,21 @@
 
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
 
-/// Max total payload (sum of read or write bytes) in one transaction.
-pub const MAX_PAYLOAD_SIZE: usize = 256;
+/// One IPC message buffer. A whole transaction crosses the boundary in a
+/// single round-trip and is never fragmented, so this bounds header plus
+/// payload in either direction.
+pub const MAX_BUF_SIZE: usize = 512;
 
 /// Max number of `Operation`s in one transaction.
 pub const MAX_OPS: usize = 16;
+
+/// Max total payload (sum of read or write bytes) in one transaction.
+///
+/// Derived from [`MAX_BUF_SIZE`] rather than chosen: the request direction is
+/// the tighter of the two, carrying an op descriptor per operation on top of
+/// the header. Raising the payload ceiling means raising `MAX_BUF_SIZE`.
+pub const MAX_PAYLOAD_SIZE: usize =
+    MAX_BUF_SIZE - I2cRequestHeader::SIZE - MAX_OPS * I2cOpDesc::SIZE;
 
 #[non_exhaustive]
 #[repr(u8)]

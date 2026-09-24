@@ -8,6 +8,16 @@ load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_scri
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH", "system_image_test")
 
+# The I2C and MCTP server apps are role-agnostic infrastructure: any two-card
+# test that needs an MCTP link builds its own `rust_app` from these sources
+# against its own system config.
+exports_files([
+    "i2c_server_main.rs",
+    "i2c_server_main_peer.rs",
+    "main.rs",
+    "main_peer.rs",
+])
+
 filegroup(
     name = "system_config",
     srcs = ["system.json5"],

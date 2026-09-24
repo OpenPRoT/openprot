@@ -7,7 +7,8 @@
 #![no_std]
 
 use app_gpio_irq_server::{handle, signals};
-use ast10x0_peripherals::gpio::{gpioa, GpioExt, InterruptMode};
+use app_gpio_irq_server_regions::take_mmaps;
+use ast10x0_peripherals::gpio::{gpioa, GpioExt, GpioRegisters, InterruptMode};
 use pw_status::Error;
 use userspace::entry;
 use userspace::syscall;
@@ -25,9 +26,9 @@ macro_rules! fail {
 
 #[entry]
 fn entry() {
-    // SAFETY: this process exclusively owns the GPIO device mapping declared
-    // in system.json5.
-    let gpioa = unsafe { gpioa::GPIOA::new_global().split() };
+    // SAFETY: mints this process's mappings once, at its entry point.
+    let mmaps = unsafe { take_mmaps() };
+    let gpioa = gpioa::GPIOA::new(GpioRegisters::new(mmaps.gpio_regs)).split();
     let mut pa0 = gpioa.pa0.into_pull_down_input();
 
     if syscall::wait_group_add(

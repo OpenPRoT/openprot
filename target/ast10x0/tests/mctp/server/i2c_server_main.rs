@@ -23,7 +23,7 @@ const SLAVE_CFG: I2cConfig = I2cConfig {
 #[unsafe(link_section = ".ram_nc")]
 static mut MASTER_DMA_BUF: [u8; 4096] = [0u8; 4096];
 #[unsafe(link_section = ".ram_nc")]
-static mut SLAVE_DMA_BUF: [u8; 256] = [0u8; 256];
+static mut SLAVE_DMA_BUF: [u8; 512] = [0u8; 512];
 
 #[entry]
 fn entry() {

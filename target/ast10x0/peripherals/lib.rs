@@ -2,11 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #![no_std]
+#![feature(associated_type_defaults)]
+#![feature(adt_const_params)]
 
+pub mod aperture;
 pub mod gpio;
 pub mod hace;
 pub mod i2c;
 pub mod i3c;
+pub mod otp;
 pub mod scu;
 pub mod sgpiom;
 pub mod smc;

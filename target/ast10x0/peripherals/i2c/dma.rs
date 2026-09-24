@@ -11,72 +11,89 @@
 //!
 //! [`ArmedDma`] makes that teardown a property of the type system: constructing
 //! it arms the engine, and its [`Drop`] soft-resets the controller
-//! unconditionally. [`ArmedDma::commit`] *consumes* the guard (defusing the
-//! teardown by forgetting it), so a committed transaction is no longer a
-//! droppable `ArmedDma` — "committed" is the absence of the value, not a runtime
-//! flag. Every error path that returns before commit therefore drops a live
-//! guard and tears the engine down; there is no state in which the teardown can
-//! be skipped by mistake. All DMA-lifecycle `unsafe` is confined to this module,
-//! holding its own `Copy` of the [`Ast1060I2cRegisters`] façade.
+//! unconditionally. [`ArmedDma::run`] drives the transaction to completion and
+//! *consumes* the guard on success (defusing the teardown by forgetting it), so
+//! a committed transaction is no longer a droppable `ArmedDma` — "committed" is
+//! the absence of the value, not a runtime flag. Every error path returns
+//! before that point and therefore drops a live guard; there is no state in
+//! which the teardown can be skipped by mistake.
+//!
+//! The guard borrows the controller mutably for the whole armed window, so a
+//! second transaction cannot be armed while one is live — exclusivity of the
+//! engine is the borrow checker's, not a comment's.
 
 use super::constants;
-use super::registers::Ast1060I2cRegisters;
+use super::controller::Ast1060I2c;
+use super::error::I2cError;
 
 /// Guard for one armed master DMA transaction.
 ///
 /// Constructing an `ArmedDma` programs the DMA length + buffer-base registers
 /// (the engine is now a potential AHB bus master). [`Drop`] soft-resets the
-/// controller and waits for the engine to go idle. The happy path calls
-/// [`commit`](ArmedDma::commit), which consumes the guard so its `Drop` never
-/// runs — there is no "committed" flag, the committed state is simply the guard
-/// no longer existing.
+/// controller and waits for the engine to go idle. [`run`](ArmedDma::run)
+/// issues the command and forgets the guard once the engine has quiesced
+/// normally — there is no "committed" flag, the committed state is simply the
+/// guard no longer existing.
 #[must_use = "drop tears down the DMA engine; bind it for the transfer's lifetime"]
-pub(crate) struct ArmedDma {
-    mmio: Ast1060I2cRegisters,
+pub(crate) struct ArmedDma<'i, 'b, Y: FnMut(u32)> {
+    i2c: &'i mut Ast1060I2c<'b, Y>,
 }
 
-impl ArmedDma {
+impl<'i, 'b, Y: FnMut(u32)> ArmedDma<'i, 'b, Y> {
     /// Arm a TX DMA transaction: program i2cm1c (len-1) + i2cm30 (base addr).
-    pub(crate) fn arm_tx(mmio: Ast1060I2cRegisters, phy_addr: u32, len: usize) -> Self {
+    pub(crate) fn arm_tx(i2c: &'i mut Ast1060I2c<'b, Y>, phy_addr: u32, len: usize) -> Self {
         #[allow(clippy::cast_possible_truncation)]
-        mmio.i2c().i2cm1c().write(|w| unsafe {
+        i2c.regs().i2cm1c().write(|w| unsafe {
             w.dmatx_buf_len_byte()
                 .bits((len - 1) as u16)
                 .dmatx_buf_len_wr_enbl_for_cur_write_cmd()
                 .set_bit()
         });
-        mmio.i2c()
+        i2c.regs()
             .i2cm30()
             .write(|w| unsafe { w.sdramdmabuffer_base_addr().bits(phy_addr) });
-        Self { mmio }
+        Self { i2c }
     }
 
     /// Arm an RX DMA transaction: program i2cm1c (len-1) + i2cm34 (base addr).
-    pub(crate) fn arm_rx(mmio: Ast1060I2cRegisters, phy_addr: u32, len: usize) -> Self {
+    pub(crate) fn arm_rx(i2c: &'i mut Ast1060I2c<'b, Y>, phy_addr: u32, len: usize) -> Self {
         #[allow(clippy::cast_possible_truncation)]
-        mmio.i2c().i2cm1c().modify(|_, w| unsafe {
+        i2c.regs().i2cm1c().modify(|_, w| unsafe {
             w.dmarx_buf_len_byte()
                 .bits((len - 1) as u16)
                 .dmarx_buf_len_wr_enbl_for_cur_write_cmd()
                 .set_bit()
         });
-        mmio.i2c()
+        i2c.regs()
             .i2cm34()
             .modify(|_, w| unsafe { w.sdramdmabuffer_base_addr1().bits(phy_addr) });
-        Self { mmio }
+        Self { i2c }
     }
 
-    /// Transfer completed cleanly (STOP issued); no teardown needed.
-    pub(crate) fn commit(self) {
-        core::mem::forget(self);
+    /// Issue `cmd` on i2cm18 and wait for the engine to quiesce. On success the
+    /// guard is forgotten, so no teardown runs; on timeout it drops live here
+    /// and soft-resets the controller.
+    pub(crate) fn run(self, cmd: u32) -> Result<(), I2cError> {
+        self.i2c.clear_interrupts(0xffff_ffff);
+        self.i2c.completion = false;
+
+        self.i2c.regs().i2cm18().write(|w| unsafe { w.bits(cmd) });
+
+        match self.i2c.wait_completion(constants::DEFAULT_TIMEOUT_US) {
+            Ok(()) => {
+                core::mem::forget(self);
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
     }
 }
 
-impl Drop for ArmedDma {
+impl<Y: FnMut(u32)> Drop for ArmedDma<'_, '_, Y> {
     fn drop(&mut self) {
-        // Reached only for an *uncommitted* guard: `commit` consumes and forgets
-        // the value, so a committed transaction never drops here. Teardown is
-        // therefore unconditional.
+        // Reached only for an *uncommitted* guard: `run` forgets the value on
+        // the success path, so a committed transaction never drops here.
+        // Teardown is therefore unconditional.
         //
         // No master-only abort exists; soft-reset the controller (datasheet
         // §27.6.8): clear I2CC00 function-control, then restore it. Timing in
@@ -86,21 +103,21 @@ impl Drop for ArmedDma {
         // This disables the slave function for the reset window, which is safe
         // here: the i2c-server-runtime backend is master-only and never arms a
         // concurrent slave on this controller.
-        let fun_ctrl = self.mmio.i2c().i2cc00().read().bits();
+        let fun_ctrl = self.i2c.regs().i2cc00().read().bits();
         unsafe {
-            self.mmio.i2c().i2cc00().write(|w| w.bits(0));
-            self.mmio.i2c().i2cc00().write(|w| w.bits(fun_ctrl));
+            self.i2c.regs().i2cc00().write(|w| w.bits(0));
+            self.i2c.regs().i2cc00().write(|w| w.bits(fun_ctrl));
         }
 
         let mut timeout = constants::ABORT_TIMEOUT_US;
-        while timeout > 0 && self.mmio.i2c().i2cc08().read().bus_busy_status().bit() {
+        while timeout > 0 && self.i2c.regs().i2cc08().read().bus_busy_status().bit() {
             timeout = timeout.saturating_sub(1);
             core::hint::spin_loop();
         }
 
         // Clear any latched interrupts from the aborted transaction.
         unsafe {
-            self.mmio.i2c().i2cm14().write(|w| w.bits(0xffff_ffff));
+            self.i2c.regs().i2cm14().write(|w| w.bits(0xffff_ffff));
         }
     }
 }

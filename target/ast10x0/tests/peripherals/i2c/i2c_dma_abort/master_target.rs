@@ -8,7 +8,7 @@
 //!
 //! - **Phase 1 (commit / no-op):** a DMA `write()` to a responsive slave `0x42`
 //!   completes with `Ok`. The transfer's `wait_completion` returns cleanly, so the
-//!   guard is `commit()`ed and its teardown never runs — the happy path still works
+//!   guard is forgotten and its teardown never runs — the happy path still works
 //!   and the engine is not spuriously reset.
 //! - **Phase 2 (timeout → auto-teardown):** device B stops servicing and holds SCL
 //!   low. The DMA `write()` cannot complete, `wait_completion` times out, and the

@@ -8,6 +8,7 @@ load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_scri
 load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH", "system_image_test")
+load("//util/region:defs.bzl", "app_regions")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -50,6 +51,15 @@ rust_binary(
     ],
 )
 
+app_regions(
+    name = "app_gpio_irq_server_regions",
+    app_name = "gpio_irq_server",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
 rust_app(
     name = "gpio_irq_server",
     srcs = ["gpio_irq_server_main.rs"],
@@ -59,6 +69,7 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
+        ":app_gpio_irq_server_regions",
         "//target/ast10x0/peripherals",
         "@ast1060_pac",
         "@pigweed//pw_kernel/userspace",

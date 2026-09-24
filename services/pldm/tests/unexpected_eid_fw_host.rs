@@ -20,7 +20,7 @@ use pldm_common::message::firmware_update::get_status::{
 use pldm_common::message::firmware_update::request_update::RequestUpdateRequest;
 use pldm_common::message::firmware_update::transfer_complete::TransferResult;
 use pldm_common::message::firmware_update::verify_complete::VerifyResult;
-use pldm_common::protocol::base::PldmMsgType;
+use pldm_common::protocol::base::{PldmBaseCompletionCode, PldmMsgType};
 use pldm_common::protocol::firmware_update::{
     ComponentResponseCode, Descriptor, FirmwareDeviceState,
 };
@@ -228,7 +228,7 @@ fn responder_ignores_fw_commands_from_unexpected_eid() {
     // "done", not a failure. `UA_EID` is the only EID `run_terminus` is told
     // to serve, so commands from `ATTACKER_EID` must be ignored below.
     let mut run_fd_once =
-        || match fd.run_terminus(UA_EID, &mut fd_buf, TIMEOUT_MILLIS, TIMEOUT_MILLIS) {
+        || match fd.run_terminus(UA_EID, &mut fd_buf, TIMEOUT_MILLIS, TIMEOUT_MILLIS, &mut ()) {
             RunTerminusResult::Completed => {}
             RunTerminusResult::StoppedByError(PldmServiceError::Mctp(e)) if e.is_timeout() => {}
             RunTerminusResult::StoppedByError(e) => panic!("firmware device failed: {e:?}"),
@@ -302,7 +302,8 @@ fn responder_ignores_fw_commands_from_unexpected_eid() {
 
     let status = GetStatusResponse::decode(&resp).expect("decode GetStatusResponse");
     assert_eq!(
-        status.completion_code, 0,
+        status.completion_code,
+        PldmBaseCompletionCode::Success as u8,
         "GetStatus completion should be success"
     );
     assert_eq!(

@@ -1,0 +1,78 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 util/ipc AsyncTransaction QEMU test.
+//
+// Two-process layout:
+//
+//   initiator — exercises util_ipc::IpcInitiator (blocking transact) and
+//               util_ipc::AsyncTransaction (async start/try_recv/cancel);
+//               calls debug_shutdown(Ok|Err) to report the result.
+//   handler   — util_ipc::IpcHandler read/respond loop that increments the
+//               single byte it's sent.
+//
+// Memory map (AST10x0: 768 KB SRAM, no XIP):
+//   0x00000000 - 0x00000500  vector table (1280 B)
+//   0x00000500 - 0x00020500  kernel flash (~128 KB)
+//   0x00020500 - 0x00060500  app flash (256 KB total; 128 KB per app)
+//   0x00060000 - 0x00080000  kernel RAM (128 KB)
+//   0x00080000 - 0x000C0000  app RAM (256 KB total; 64 KB + 32 KB per process)
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,
+    },
+    kernel: {
+        flash_start_address: 0x00000500,
+        flash_size_bytes: 129792,
+        ram_start_address: 0x00060000,
+        ram_size_bytes: 131072,
+    },
+    apps: [
+        {
+            name: "initiator",
+            flash_size_bytes: 131072,
+            processes: [
+                {
+                    name: "initiator_process",
+                    ram_size_bytes: 65536,
+                    objects: [
+                        {
+                            name: "ipc",
+                            type: "channel_initiator",
+                            handler_process: "handler_process",
+                            handler_object_name: "ipc",
+                        },
+                        {
+                            type: "thread",
+                            name: "initiator_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },],
+
+                },
+            ],
+        },
+        {
+            name: "handler",
+            flash_size_bytes: 131072,
+            processes: [
+                {
+                    name: "handler_process",
+                    ram_size_bytes: 32768,
+                    objects: [
+                        {
+                            name: "ipc",
+                            type: "channel_handler",
+                        },
+                        {
+                            type: "thread",
+                            name: "handler_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },],
+
+                },
+            ],
+        },
+    ],
+}

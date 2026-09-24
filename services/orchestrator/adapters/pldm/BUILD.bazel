@@ -1,0 +1,24 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "orchestrator_pldm_adapter",
+    srcs = [
+        "src/lib.rs",
+    ],
+    crate_name = "openprot_orchestrator_pldm_adapter",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/orchestrator/sm:orchestrator_sm",
+        "//services/pldm:pldm_service",
+    ],
+)
+
+# Host tests: build on the host platform, no kernel/QEMU.
+rust_test(
+    name = "orchestrator_pldm_adapter_test",
+    crate = ":orchestrator_pldm_adapter",
+)

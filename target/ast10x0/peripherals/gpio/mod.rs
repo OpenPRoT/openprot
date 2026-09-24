@@ -4,12 +4,13 @@
 //! AST10x0 GPIO peripheral driver.
 //!
 //! Each GPIO bank (A–U) is exposed as a sub-module (`gpioa`, `gpiob`, …).
-//! Obtain a bank via `GPIOX::new_global()` (unsafe), then call `split()` to
-//! get the individual typed pins.
+//! Obtain a bank via `GPIOX::new()` with the granted GPIO region, then call
+//! `split()` to get the individual typed pins.
 
 mod registers;
 mod types;
 
+pub(crate) use registers::regs_of;
 pub use registers::GpioRegisters;
 pub use types::{
     ActiveHigh, ActiveLow, Floating, GpioError, GpioExt, Input, InputMode, InterruptMode,
@@ -28,40 +29,23 @@ macro_rules! gpio_macro {
 
         pub mod $gpiox {
             use super::*;
-            use ast1060_pac as device;
             use core::marker::PhantomData;
             use embedded_hal::digital::{InputPin, OutputPin, StatefulOutputPin};
+            use util_region::Mmap;
 
-            pub struct $GPIOX {
-                _regs: GpioRegisters,
+            pub struct $GPIOX<R: Mmap> {
+                _regs: GpioRegisters<R>,
             }
 
-            impl $GPIOX {
+            impl<R: Mmap> $GPIOX<R> {
                 /// Create a GPIO bank instance from a [`GpioRegisters`] handle.
-                ///
-                /// # Safety
-                ///
-                /// Caller must ensure exclusive access to the GPIO register block is
-                /// coordinated for the lifetime of this value.
-                pub const unsafe fn new(regs: GpioRegisters) -> Self {
+                pub const fn new(regs: GpioRegisters<R>) -> Self {
                     Self { _regs: regs }
-                }
-
-                /// Create a GPIO bank instance using the global GPIO register block.
-                ///
-                /// # Safety
-                ///
-                /// Caller must ensure exclusive access to the singleton GPIO peripheral
-                /// is coordinated for the lifetime of this value.
-                pub unsafe fn new_global() -> Self {
-                    Self {
-                        _regs: unsafe { GpioRegisters::new_global() },
-                    }
                 }
 
                 /// Initialize command-source and debounce registers for this bank.
                 pub fn init(&self) {
-                    let p = self._regs.regs();
+                    let p = regs_of::<R>();
                     p.$cmd_src0_reg().modify(|r, w| unsafe {
                         w.bits(r.bits() & !(0xff << $pos))
                     });
@@ -77,19 +61,20 @@ macro_rules! gpio_macro {
                 }
             }
 
-            pub struct Parts {
+            pub struct Parts<R: Mmap> {
                 $(
-                    pub $pxi: $PXi<$MODE>,
+                    pub $pxi: $PXi<R, $MODE>,
                 )+
             }
 
-            impl GpioExt for $GPIOX {
-                type Parts = Parts;
+            impl<R: Mmap> GpioExt for $GPIOX<R> {
+                type Parts = Parts<R>;
 
                 fn split(self) -> Self::Parts {
                     Parts {
                         $(
                             $pxi: $PXi {
+                                _region: PhantomData,
                                 _mode: PhantomData,
                             },
                         )+
@@ -98,44 +83,45 @@ macro_rules! gpio_macro {
             }
 
             $(
-                pub struct $PXi<MODE> {
+                pub struct $PXi<R: Mmap, MODE> {
+                    _region: PhantomData<R>,
                     _mode: PhantomData<MODE>,
                 }
 
-                impl<MODE> $PXi<MODE> {
+                impl<R: Mmap, MODE> $PXi<R, MODE> {
                     /// Configures the pin as a pulled-down input.
                     #[must_use]
-                    pub fn into_pull_down_input(self) -> $PXi<Input<PullDown>> {
-                        let p = unsafe { &*device::Gpio::ptr() };
+                    pub fn into_pull_down_input(self) -> $PXi<R, Input<PullDown>> {
+                        let p = regs_of::<R>();
                         p.$dir_reg().modify(|r, w| unsafe {
                             w.bits(r.bits() & !(1u32 << ($pos + $i)))
                         });
                         p.$data_val_reg().modify(|r, w| unsafe {
                             w.bits(r.bits() & !(1u32 << ($pos + $i)))
                         });
-                        $PXi { _mode: PhantomData }
+                        $PXi { _region: PhantomData, _mode: PhantomData }
                     }
 
                     /// Configures the pin as a pulled-up input.
                     #[must_use]
-                    pub fn into_pull_up_input(self) -> $PXi<Input<PullUp>> {
-                        let p = unsafe { &*device::Gpio::ptr() };
+                    pub fn into_pull_up_input(self) -> $PXi<R, Input<PullUp>> {
+                        let p = regs_of::<R>();
                         p.$dir_reg().modify(|r, w| unsafe {
                             w.bits(r.bits() & !(1u32 << ($pos + $i)))
                         });
                         p.$data_val_reg().modify(|r, w| unsafe {
                             w.bits(r.bits() | (1u32 << ($pos + $i)))
                         });
-                        $PXi { _mode: PhantomData }
+                        $PXi { _region: PhantomData, _mode: PhantomData }
                     }
 
                     /// Configures the pin as an open-drain output.
                     #[must_use]
-                    pub fn into_open_drain_output<ODM>(self) -> $PXi<Output<OpenDrain<ODM>>>
+                    pub fn into_open_drain_output<ODM>(self) -> $PXi<R, Output<OpenDrain<ODM>>>
                     where
                         ODM: OpenDrainMode,
                     {
-                        let p = unsafe { &*device::Gpio::ptr() };
+                        let p = regs_of::<R>();
                         p.$data_val_reg().modify(|r, w| unsafe {
                             let mask = 1u32 << ($pos + $i);
                             w.bits(if ODM::ACTIVE_HIGH {
@@ -148,26 +134,26 @@ macro_rules! gpio_macro {
                         p.$dir_reg().modify(|r, w| unsafe {
                             w.bits(r.bits() & !(1u32 << ($pos + $i)))
                         });
-                        $PXi { _mode: PhantomData }
+                        $PXi { _region: PhantomData, _mode: PhantomData }
                     }
 
                     /// Configures the pin as a push-pull output.
                     #[must_use]
-                    pub fn into_push_pull_output(self) -> $PXi<Output<PushPull>> {
-                        let p = unsafe { &*device::Gpio::ptr() };
+                    pub fn into_push_pull_output(self) -> $PXi<R, Output<PushPull>> {
+                        let p = regs_of::<R>();
                         p.$dir_reg().modify(|r, w| unsafe {
                             w.bits(r.bits() | (1u32 << ($pos + $i)))
                         });
                         p.$data_val_reg().modify(|r, w| unsafe {
                             w.bits(r.bits() | (1u32 << ($pos + $i)))
                         });
-                        $PXi { _mode: PhantomData }
+                        $PXi { _region: PhantomData, _mode: PhantomData }
                     }
                 }
 
-                impl StatefulOutputPin for $PXi<Output<PushPull>> {
+                impl<R: Mmap> StatefulOutputPin for $PXi<R, Output<PushPull>> {
                     fn is_set_high(&mut self) -> Result<bool, Self::Error> {
-                        let p = unsafe { &*device::Gpio::ptr() };
+                        let p = regs_of::<R>();
                         Ok(
                             (p.$data_read_reg().read().bits() & (1u32 << ($pos + $i)))
                                 == (1u32 << ($pos + $i)),
@@ -179,9 +165,9 @@ macro_rules! gpio_macro {
                     }
                 }
 
-                impl OutputPin for $PXi<Output<PushPull>> {
+                impl<R: Mmap> OutputPin for $PXi<R, Output<PushPull>> {
                     fn set_high(&mut self) -> Result<(), Self::Error> {
-                        let p = unsafe { &*device::Gpio::ptr() };
+                        let p = regs_of::<R>();
                         p.$data_val_reg().modify(|r, w| unsafe {
                             w.bits(r.bits() | (1u32 << ($pos + $i)))
                         });
@@ -189,7 +175,7 @@ macro_rules! gpio_macro {
                     }
 
                     fn set_low(&mut self) -> Result<(), Self::Error> {
-                        let p = unsafe { &*device::Gpio::ptr() };
+                        let p = regs_of::<R>();
                         p.$data_val_reg().modify(|r, w| unsafe {
                             w.bits(r.bits() & !(1u32 << ($pos + $i)))
                         });
@@ -197,12 +183,12 @@ macro_rules! gpio_macro {
                     }
                 }
 
-                impl<ODM> StatefulOutputPin for $PXi<Output<OpenDrain<ODM>>>
+                impl<R: Mmap, ODM> StatefulOutputPin for $PXi<R, Output<OpenDrain<ODM>>>
                 where
                     ODM: OpenDrainMode,
                 {
                     fn is_set_high(&mut self) -> Result<bool, Self::Error> {
-                        let p = unsafe { &*device::Gpio::ptr() };
+                        let p = regs_of::<R>();
                         let is_output =
                             (p.$dir_reg().read().bits() & (1u32 << ($pos + $i))) != 0;
                         Ok(is_output == ODM::ACTIVE_HIGH)
@@ -213,12 +199,12 @@ macro_rules! gpio_macro {
                     }
                 }
 
-                impl<ODM> OutputPin for $PXi<Output<OpenDrain<ODM>>>
+                impl<R: Mmap, ODM> OutputPin for $PXi<R, Output<OpenDrain<ODM>>>
                 where
                     ODM: OpenDrainMode,
                 {
                     fn set_high(&mut self) -> Result<(), Self::Error> {
-                        let p = unsafe { &*device::Gpio::ptr() };
+                        let p = regs_of::<R>();
                         p.$dir_reg().modify(|r, w| unsafe {
                             let mask = 1u32 << ($pos + $i);
                             w.bits(if ODM::ACTIVE_HIGH {
@@ -231,7 +217,7 @@ macro_rules! gpio_macro {
                     }
 
                     fn set_low(&mut self) -> Result<(), Self::Error> {
-                        let p = unsafe { &*device::Gpio::ptr() };
+                        let p = regs_of::<R>();
                         p.$dir_reg().modify(|r, w| unsafe {
                             let mask = 1u32 << ($pos + $i);
                             w.bits(if ODM::ACTIVE_HIGH {
@@ -244,12 +230,12 @@ macro_rules! gpio_macro {
                     }
                 }
 
-                impl<MODE> InputPin for $PXi<Input<MODE>>
+                impl<R: Mmap, MODE> InputPin for $PXi<R, Input<MODE>>
                 where
                     MODE: InputMode,
                 {
                     fn is_high(&mut self) -> Result<bool, Self::Error> {
-                        let p = unsafe { &*device::Gpio::ptr() };
+                        let p = regs_of::<R>();
                         Ok(
                             (p.$data_val_reg().read().bits() & (1u32 << ($pos + $i)))
                                 == (1u32 << ($pos + $i)),
@@ -261,13 +247,13 @@ macro_rules! gpio_macro {
                     }
                 }
 
-                impl<MODE> $PXi<Input<MODE>>
+                impl<R: Mmap, MODE> $PXi<R, Input<MODE>>
                 where
                     MODE: InputMode,
                 {
                     /// Enable or disable interrupts on this pin.
                     pub fn set_interrupt_mode(&mut self, mode: InterruptMode) {
-                        let p = unsafe { &*device::Gpio::ptr() };
+                        let p = regs_of::<R>();
                         match mode {
                             InterruptMode::LevelHigh => {
                                 p.$int_sen_t0().modify(|r, w| unsafe {
@@ -344,20 +330,20 @@ macro_rules! gpio_macro {
                     /// Returns the current interrupt-pending status for this pin.
                     #[must_use]
                     pub fn get_interrupt_status(&self) -> bool {
-                        let p = unsafe { &*device::Gpio::ptr() };
+                        let p = regs_of::<R>();
                         (p.$int_sts_reg().read().bits() & (1u32 << ($pos + $i)))
                             == (1u32 << ($pos + $i))
                     }
 
                     /// Clear the pending interrupt for this pin.
                     pub fn clear_interrupt(&self) {
-                        let p = unsafe { &*device::Gpio::ptr() };
+                        let p = regs_of::<R>();
                         p.$int_sts_reg().write(|w| unsafe { w.bits(1u32 << ($pos + $i)) });
                     }
 
                     /// Set the command-source bits for this pin.
                     pub fn set_cmd_src(&self, cmd_src0: u32, cmd_src1: u32) {
-                        let p = unsafe { &*device::Gpio::ptr() };
+                        let p = regs_of::<R>();
                         p.$cmd_src0_reg().modify(|r, w| unsafe {
                             w.bits(
                                 (r.bits() & !(1u32 << ($pos + $i)))
@@ -374,7 +360,7 @@ macro_rules! gpio_macro {
 
                     /// Select the debounce timer for this pin.
                     pub fn select_debounce_timer(&self, deb_setting1: u32, deb_setting2: u32) {
-                        let p = unsafe { &*device::Gpio::ptr() };
+                        let p = regs_of::<R>();
                         p.$deb1_reg().modify(|r, w| unsafe {
                             w.bits(
                                 (r.bits() & !(1u32 << ($pos + $i)))
@@ -390,7 +376,7 @@ macro_rules! gpio_macro {
                     }
                 }
 
-                impl<MODE> embedded_hal::digital::ErrorType for $PXi<MODE> {
+                impl<R: Mmap, MODE> embedded_hal::digital::ErrorType for $PXi<R, MODE> {
                     type Error = GpioError;
                 }
             )+

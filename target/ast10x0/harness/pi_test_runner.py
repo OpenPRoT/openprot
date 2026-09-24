@@ -28,6 +28,10 @@ except ImportError:
     sys.exit(1)
 
 
+# All elapsed times reported by this script are relative to process start.
+_T0 = time.monotonic()
+
+
 def _gpio_set(pin: int, state: str) -> None:
     subprocess.run(["pinctrl", "set", str(pin), "op"] + state.split(), check=True)
 
@@ -74,7 +78,11 @@ def _upload_firmware(port: serial.Serial, firmware_path: Path) -> None:
     padding = aligned - size
     if padding:
         port.write(bytes(padding))
-    print(f"Uploaded {size} bytes ({padding} bytes padding)", file=sys.stderr)
+    print(
+        f"[{time.monotonic() - _T0:7.2f}] Uploaded {size} bytes"
+        f" ({padding} bytes padding); board boots now",
+        file=sys.stderr,
+    )
 
 
 _stdout_lock = threading.Lock()
@@ -83,18 +91,29 @@ _SUCCESS_SENTINEL = b"TEST_RESULT:PASS"
 _FAILURE_SENTINELS = [b"TEST_RESULT:FAIL", b"panic"]
 
 
-def _stream_uart(port: serial.Serial, lock=None) -> bool:
+def _stream_uart(port: serial.Serial, lock=None, label: str = "") -> bool:
     port.timeout = 1.0
     buf = b""
+    # Held back so the prefix only ever lands at a line start: a pw_tokenizer
+    # $base64 frame is terminated by the newline, never split across one.
+    partial = b""
     while True:
         data = port.read(1024)
         if data:
-            try:
-                with lock or nullcontext():
-                    sys.stdout.buffer.write(data)
-                    sys.stdout.buffer.flush()
-            except (BrokenPipeError, OSError):
-                return False
+            partial += data
+            lines = partial.split(b"\n")
+            partial = lines.pop()
+            if lines:
+                stamped = b"".join(
+                    b"[%7.2f %s] %s\n" % (time.monotonic() - _T0, label.encode(), line)
+                    for line in lines
+                )
+                try:
+                    with lock or nullcontext():
+                        sys.stdout.buffer.write(stamped)
+                        sys.stdout.buffer.flush()
+                except (BrokenPipeError, OSError):
+                    return False
             buf += data
             if _SUCCESS_SENTINEL in buf:
                 return True
@@ -134,22 +153,28 @@ def _run_paired(args, firmware_path: Path, slave_firmware_path: Path) -> bool:
             return False
         _upload_firmware(port_b, slave_firmware_path)
 
+        results = [None, None]
+
+        def _monitor(idx, port, label):
+            results[idx] = _stream_uart(port, _stdout_lock, label)
+
+        # Started before card A is flashed: the slave boots a full upload
+        # earlier, and its output would otherwise sit in the tty buffer and
+        # arrive all at once with the wrong timestamps.
+        threads = [
+            threading.Thread(target=_monitor, args=(1, port_b, "slave"), daemon=True)
+        ]
+        threads[0].start()
+
         _sequence_to_fwspick_mode(args.srst_pin, args.fwspick_pin, port_a)
         if not _wait_for_uart_ready(port_a):
             return False
         _upload_firmware(port_a, firmware_path)
 
-        results = [None, None]
-
-        def _monitor(idx, port):
-            results[idx] = _stream_uart(port, _stdout_lock)
-
-        threads = [
-            threading.Thread(target=_monitor, args=(0, port_a)),
-            threading.Thread(target=_monitor, args=(1, port_b)),
-        ]
-        for t in threads:
-            t.start()
+        threads.append(
+            threading.Thread(target=_monitor, args=(0, port_a, "main"), daemon=True)
+        )
+        threads[1].start()
         for t in threads:
             t.join()
 

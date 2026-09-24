@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Evidence reading: the boot-liveness vocabulary and the reader that
-//! resolves a board-defined signal id to it.
+//! resolves a board-defined probe to it.
 
 /// Liveness of a managed device's boot: Boot Confirmation only — whether
 /// the device came up, never what booted (that is attestation).
@@ -30,63 +30,62 @@ pub enum BootStatus {
     FailedFatal,
 }
 
-/// Reads a device's boot evidence, one signal at a time.
+/// Reads a device's boot evidence, one probe at a time.
 ///
-/// Implemented by board wiring — typically once per managed device, so
-/// each device's boot walk borrows only its own reader. `G` is the
-/// board's signal vocabulary; an exhaustive `match` on it keeps dispatch
-/// direct and makes a forgotten signal a compile error, not a runtime
+/// Implemented by board wiring, typically once per managed device, so
+/// each device's boot walk borrows only its own reader. `P` is the
+/// board's probe vocabulary; an exhaustive `match` on it keeps dispatch
+/// direct and makes a forgotten probe a compile error, not a runtime
 /// hole.
 ///
-/// The status must describe the **current** boot cycle — see
+/// The status must describe the *current* boot cycle, see
 /// [`BootStatus`] for the latching contract (evidence is cleared by the
 /// reset path, never by the reader).
 ///
 /// # Wiring a concrete reader
 ///
 /// Concrete readers (e.g. `GpioBootMonitor` in `orchestrator-hal-adapters`)
-/// stay signal-agnostic — an adapter crate cannot know a board's `G`.
+/// stay probe-agnostic, an adapter crate cannot know a board's `P`.
 /// The board impl owns the match; the hardware binding is made once, at
-/// construction, and the signal id just proves the right reader was
-/// wired:
+/// construction, and the probe just proves the right reader was wired:
 ///
 /// ```ignore
-/// /// bmc wiring: one ready line behind the board's signal vocabulary.
-/// struct BmcReader<'a, P: GpioPort> {
+/// /// bmc wiring: one ready line behind the board's probe vocabulary.
+/// struct BmcReader<'a, Port: GpioPort> {
 ///     // (port, pin, polarity) bound at bring-up from the table's Gpio(12).
-///     ready: GpioBootMonitor<'a, P>,
+///     ready: GpioBootMonitor<'a, Port>,
 /// }
 ///
-/// impl<P: GpioPort> EvidenceReader<MockSignal> for BmcReader<'_, P>
+/// impl<Port: GpioPort> EvidenceReader<MockProbe> for BmcReader<'_, Port>
 /// where
-///     P::Error: 'static,
+///     Port::Error: 'static,
 /// {
-///     type Error = MonitorError<P::Error>;
+///     type Error = MonitorError<Port::Error>;
 ///
-///     fn read(&mut self, signal: &MockSignal) -> Result<BootStatus, Self::Error> {
-///         match signal {
-///             MockSignal::Gpio(_) => self.ready.boot_status(),
+///     fn read(&mut self, probe: &MockProbe) -> Result<BootStatus, Self::Error> {
+///         match probe {
+///             MockProbe::Gpio(_) => self.ready.boot_status(),
 ///             other => unreachable!("bmc reader wired to {other:?}"),
 ///         }
 ///     }
 /// }
 /// ```
-pub trait EvidenceReader<G> {
+pub trait EvidenceReader<P> {
     /// The error type reported by this reader.
     ///
     /// Requires [`core::error::Error`] (in `core` since Rust 1.81) so the
     /// orchestrator gets `Display` and a `source()` cause chain, not just
-    /// a `Debug` dump. Error categories stay implementation-defined —
+    /// a `Debug` dump. Error categories stay implementation-defined,
     /// this crate names no error vocabulary of its own.
     type Error: core::error::Error;
 
-    /// Returns the current liveness evidence for `signal`.
+    /// Returns the current liveness evidence for `probe`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the evidence channel behind `signal` cannot be
+    /// Returns an error if the evidence channel behind `probe` cannot be
     /// read.
-    fn read(&mut self, signal: &G) -> Result<BootStatus, Self::Error>;
+    fn read(&mut self, probe: &P) -> Result<BootStatus, Self::Error>;
 }
 
 #[cfg(test)]
@@ -99,9 +98,6 @@ mod tests {
     // board is expected to use); fault codes in the same register carry
     // the device's own judgment, fatal or retriable, for every signal.
 
-    const POISON: u8 = 0xFF;
-    const TRANSIENT: u8 = 0xEE;
-
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum TestSignal {
         /// Booted once the progress register reaches this level
@@ -109,8 +105,9 @@ mod tests {
         Progress(u8),
     }
 
-    struct SocReader {
+    struct ProgressReader {
         level: u8,
+        fault: Option<BootStatus>,
         fail: bool,
     }
 
@@ -125,19 +122,21 @@ mod tests {
 
     impl core::error::Error for RegFault {}
 
-    impl EvidenceReader<TestSignal> for SocReader {
+    impl EvidenceReader<TestSignal> for ProgressReader {
         type Error = RegFault;
 
-        fn read(&mut self, signal: &TestSignal) -> Result<BootStatus, RegFault> {
+        fn read(&mut self, probe: &TestSignal) -> Result<BootStatus, RegFault> {
             if self.fail {
                 return Err(RegFault);
             }
-            let TestSignal::Progress(threshold) = *signal;
-            Ok(match self.level {
-                POISON => BootStatus::FailedFatal,
-                TRANSIENT => BootStatus::FailedRetriable,
-                l if l >= threshold => BootStatus::Booted,
-                _ => BootStatus::Booting,
+            if let Some(fault) = self.fault {
+                return Ok(fault);
+            }
+            let TestSignal::Progress(threshold) = *probe;
+            Ok(if self.level >= threshold {
+                BootStatus::Booted
+            } else {
+                BootStatus::Booting
             })
         }
     }
@@ -147,12 +146,14 @@ mod tests {
     // late ones.
     #[test]
     fn one_reader_serves_a_staged_boot() {
-        let mut soc = SocReader {
+        let mut reader = ProgressReader {
             level: 2,
+            fault: None,
             fail: false,
         };
         let mut read = |threshold| {
-            soc.read(&TestSignal::Progress(threshold))
+            reader
+                .read(&TestSignal::Progress(threshold))
                 .expect("read failed")
         };
 
@@ -167,14 +168,16 @@ mod tests {
     // retriability judgment.
     #[test]
     fn a_poisoned_register_fails_every_signal_fatally() {
-        let mut soc = SocReader {
-            level: POISON,
+        let mut reader = ProgressReader {
+            level: 0,
+            fault: Some(BootStatus::FailedFatal),
             fail: false,
         };
 
         for threshold in 1..=4 {
             assert_eq!(
-                soc.read(&TestSignal::Progress(threshold))
+                reader
+                    .read(&TestSignal::Progress(threshold))
                     .expect("read failed"),
                 BootStatus::FailedFatal
             );
@@ -183,14 +186,16 @@ mod tests {
 
     #[test]
     fn a_transient_fault_reads_retriable_for_every_signal() {
-        let mut soc = SocReader {
-            level: TRANSIENT,
+        let mut reader = ProgressReader {
+            level: 0,
+            fault: Some(BootStatus::FailedRetriable),
             fail: false,
         };
 
         for threshold in 1..=4 {
             assert_eq!(
-                soc.read(&TestSignal::Progress(threshold))
+                reader
+                    .read(&TestSignal::Progress(threshold))
                     .expect("read failed"),
                 BootStatus::FailedRetriable
             );
@@ -199,12 +204,13 @@ mod tests {
 
     #[test]
     fn errors_surface_through_the_reader() {
-        let mut soc = SocReader {
+        let mut reader = ProgressReader {
             level: 0,
+            fault: None,
             fail: true,
         };
 
-        let err = soc
+        let err = reader
             .read(&TestSignal::Progress(1))
             .expect_err("expected the register fault");
 
@@ -269,11 +275,11 @@ mod tests {
     impl EvidenceReader<NicSignal> for MockNicEndpoint {
         type Error = MctpFault;
 
-        fn read(&mut self, signal: &NicSignal) -> Result<BootStatus, MctpFault> {
+        fn read(&mut self, probe: &NicSignal) -> Result<BootStatus, MctpFault> {
             if self.bus_fault {
                 return Err(MctpFault);
             }
-            match signal {
+            match probe {
                 NicSignal::MctpReady => {
                     if let Some(code) = self.fault_code {
                         return Ok(match code {

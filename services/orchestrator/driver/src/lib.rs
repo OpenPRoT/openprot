@@ -15,9 +15,15 @@
 //! driver-side event queue.
 //!
 //! Everything device-specific arrives through the seams in [`board`]:
-//! image access ([`ImageSource`]), image judgment ([`Verifier`]) and reset
-//! actuation ([`orchestrator_capabilities::BootControl`]), bundled in one
-//! [`Board`] built by the board's composition crate.
+//! image access ([`ImageSource`]), image judgment ([`Verifier`]), reset
+//! actuation ([`orchestrator_capabilities::BootControl`]), boot
+//! supervision ([`orchestrator_capabilities::BootWatch`]) and the
+//! anti-rollback floor ([`orchestrator_capabilities::SvnFloor`]), bundled
+//! in one [`Board`] built by the board's composition crate.
+//!
+//! Boot-walk verdicts are the one asynchronous read: the run loop calls
+//! [`PlatformDriver::poll_boot_walks`] and dispatches the returned events
+//! (`ComponentReady`/`Booted`/`BootFailed`) into the SM.
 //!
 //! [`Platform`]: openprot_orchestrator_sm::Platform
 
@@ -29,5 +35,7 @@ mod driver;
 #[cfg(test)]
 mod tests;
 
-pub use board::{Board, BoardCapabilities, ImageSource, Verdict, Verifier};
-pub use driver::{DriverError, PlatformDriver};
+pub use board::{
+    Board, BoardCapabilities, ImageSource, Report, ReportSink, SvnFloorBinding, Verdict, Verifier,
+};
+pub use driver::{request_update, BootWalkPoll, DriverError, PlatformDriver};

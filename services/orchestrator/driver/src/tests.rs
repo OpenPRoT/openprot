@@ -5,8 +5,10 @@ extern crate std;
 
 use crate::*;
 use openprot_orchestrator_sm::{
-    ComponentAttrs, ComponentId, Event, Orchestrator, PowerOnResult, State,
+    BootFailureKind, ComponentAttrs, ComponentId, ComponentKind, Effect, Event, Orchestrator,
+    Platform, PowerOnResult, State,
 };
+use orchestrator_capabilities::{BootWatch, FailureCause, Svn, SvnFloor, WalkVerdict};
 
 const C0: ComponentId = ComponentId::new(0);
 
@@ -35,9 +37,14 @@ impl core::fmt::Display for MemFault {
 
 impl core::error::Error for MemFault {}
 
-/// RAM-backed image source — the seam satisfied without a HAL.
+/// RAM-backed image source — the seam satisfied without a HAL. A re-flash
+/// can be queued: it lands on the first re-open (a re-stage), the way real
+/// flash changes underneath a source between stagings — never on the
+/// initial staging.
 struct MemImage {
     data: std::vec::Vec<u8>,
+    reflash: Option<std::vec::Vec<u8>>,
+    opened: bool,
     fail_open: bool,
     fail_read: bool,
 }
@@ -46,9 +53,17 @@ impl MemImage {
     fn holding(data: std::vec::Vec<u8>) -> Self {
         Self {
             data,
+            reflash: None,
+            opened: false,
             fail_open: false,
             fail_read: false,
         }
+    }
+
+    /// Queue a re-flash: the first re-open stages `data` instead.
+    fn reflash_on_reopen(mut self, data: std::vec::Vec<u8>) -> Self {
+        self.reflash = Some(data);
+        self
     }
 }
 
@@ -59,6 +74,10 @@ impl ImageSource for MemImage {
         if self.fail_open {
             return Err(MemFault);
         }
+        if let Some(data) = self.reflash.take_if(|_| self.opened) {
+            self.data = data;
+        }
+        self.opened = true;
         Ok(())
     }
 
@@ -76,34 +95,38 @@ impl ImageSource for MemImage {
 }
 
 #[derive(Debug)]
-struct VerifierBroken;
+struct VerifierError;
 
-impl core::fmt::Display for VerifierBroken {
+impl core::fmt::Display for VerifierError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str("verifier broken")
     }
 }
 
-impl core::error::Error for VerifierBroken {}
+impl core::error::Error for VerifierError {}
 
 /// The magic + XOR-zero check as a board-supplied verifier, reading in
 /// chunks.
 struct XorVerifier {
     fault: bool,
+    /// The manifest SVN this verifier reports for an authenticated image.
+    /// A real verifier reads it from the signed manifest of the image it
+    /// just checked; the test image format has no manifest, so tests pin it.
+    svn: u32,
 }
 
 impl Verifier for XorVerifier {
-    type Error = VerifierBroken;
+    type Error = VerifierError;
 
     fn verify(
         &mut self,
         _id: ComponentId,
         image: &mut impl ImageSource,
-    ) -> Result<Verdict, VerifierBroken> {
+    ) -> Result<Verdict, VerifierError> {
         if self.fault {
-            return Err(VerifierBroken);
+            return Err(VerifierError);
         }
-        let len = image.size().map_err(|_| VerifierBroken)?;
+        let len = image.size().map_err(|_| VerifierError)?;
         let mut magic = [0u8; 4];
         let mut xor = 0u8;
         let mut offset = 0;
@@ -112,7 +135,7 @@ impl Verifier for XorVerifier {
             let take = chunk.len().min(len - offset);
             image
                 .read_at(offset, &mut chunk[..take])
-                .map_err(|_| VerifierBroken)?;
+                .map_err(|_| VerifierError)?;
             if offset == 0 && take >= 4 {
                 magic.copy_from_slice(&chunk[..4]);
             }
@@ -121,7 +144,7 @@ impl Verifier for XorVerifier {
         }
         let ok = len > IMAGE_MAGIC.len() && magic == IMAGE_MAGIC && xor == 0;
         Ok(if ok {
-            Verdict::Authenticated
+            Verdict::Authenticated { svn: Svn(self.svn) }
         } else {
             Verdict::Rejected
         })
@@ -175,6 +198,140 @@ impl orchestrator_capabilities::BootControl for MockReset {
     }
 }
 
+/// Boot walk without a device; scripted verdicts. An exhausted script
+/// holds its last verdict; an empty script waits forever. `arm` rewinds
+/// to the script start, so a fresh attempt is observable from the
+/// verdicts alone — no poll or arm counters needed.
+struct MockWalk {
+    verdicts: std::vec::Vec<WalkVerdict>,
+    next: usize,
+}
+
+const IDLE_DEADLINE: u64 = 60_000;
+
+impl MockWalk {
+    fn scripted(verdicts: std::vec::Vec<WalkVerdict>) -> Self {
+        Self { verdicts, next: 0 }
+    }
+
+    /// A walk that reports "still waiting" forever.
+    fn idle() -> Self {
+        Self::scripted(std::vec::Vec::new())
+    }
+}
+
+impl BootWatch for MockWalk {
+    fn arm(&mut self) {
+        self.next = 0;
+    }
+
+    fn poll(&mut self, _now_millis: u64) -> WalkVerdict {
+        match self.verdicts.get(self.next) {
+            Some(v) => {
+                self.next += 1;
+                *v
+            }
+            // Exhausted: repeat the last verdict, like a real finished
+            // walk. A driver bug that re-polls one then shows up as a
+            // duplicate event in the exactly-once assertions instead of
+            // panicking here.
+            None => self
+                .verdicts
+                .last()
+                .copied()
+                .unwrap_or(WalkVerdict::Waiting {
+                    deadline_millis: IDLE_DEADLINE,
+                }),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct FloorFaultInjected;
+
+impl core::fmt::Display for FloorFaultInjected {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("floor fault injected")
+    }
+}
+
+impl core::error::Error for FloorFaultInjected {}
+
+/// An SVN floor without storage; tests read it back through the
+/// capability's own `floor()` via `PlatformDriver::board`.
+struct MockFloor {
+    floor: u32,
+    fail: bool,
+}
+
+impl MockFloor {
+    fn new() -> Self {
+        Self {
+            floor: 0,
+            fail: false,
+        }
+    }
+}
+
+/// Update adapter without a HAL. Wiring-only for now: it stages the whole
+/// payload in one step. The update pump replaces it with a stepping mock
+/// when the executors land.
+struct MockUpdatable {
+    ready: bool,
+    active: bool,
+}
+
+impl MockUpdatable {
+    fn new() -> Self {
+        Self {
+            ready: false,
+            active: false,
+        }
+    }
+}
+
+impl orchestrator_capabilities::SvnFloor for MockFloor {
+    type Error = FloorFaultInjected;
+
+    fn floor(&self) -> Result<Svn, FloorFaultInjected> {
+        if self.fail {
+            return Err(FloorFaultInjected);
+        }
+        Ok(Svn(self.floor))
+    }
+
+    fn advance(&mut self, to: Svn) -> Result<(), FloorFaultInjected> {
+        if self.fail {
+            return Err(FloorFaultInjected);
+        }
+        self.floor = self.floor.max(to.0);
+        Ok(())
+    }
+}
+
+impl orchestrator_capabilities::Updatable for MockUpdatable {
+    fn poll_stage(
+        &mut self,
+        _payload: &dyn orchestrator_capabilities::PayloadSource,
+    ) -> Result<orchestrator_capabilities::StageProgress, orchestrator_capabilities::UpdateError>
+    {
+        self.ready = true;
+        Ok(orchestrator_capabilities::StageProgress::Ready)
+    }
+
+    fn abandon(&mut self) {
+        self.ready = false;
+    }
+
+    fn activate(&mut self) -> Result<(), orchestrator_capabilities::UpdateError> {
+        if !self.ready {
+            return Err(orchestrator_capabilities::UpdateError::NothingStaged);
+        }
+        self.active = true;
+        Ok(())
+    }
+}
+
 /// The test board's type choices.
 struct MockBoard;
 
@@ -182,13 +339,38 @@ impl BoardCapabilities for MockBoard {
     type Image = MemImage;
     type Verifier = XorVerifier;
     type BootControl = MockReset;
+    type BootWatch = MockWalk;
+    type SvnFloor = MockFloor;
+    type ReportSink = RecordingSink;
+    type Updatable = MockUpdatable;
+}
+
+/// The SVN `mock_board`'s verifier vouches for. Tests that read the floor
+/// back assert against it.
+const MOCK_SVN: u32 = 5;
+
+/// Happy-path wiring for `N` components. Tests override the one field
+/// they exercise with `..mock_board()`.
+fn mock_board<const N: usize>() -> Board<MockBoard, N> {
+    Board {
+        images: core::array::from_fn(|_| MemImage::holding(valid_image())),
+        verifier: XorVerifier {
+            fault: false,
+            svn: MOCK_SVN,
+        },
+        boot_controls: core::array::from_fn(|_| MockReset::new()),
+        boot_watches: core::array::from_fn(|_| MockWalk::idle()),
+        component_kinds: core::array::from_fn(|_| ComponentKind::Passive),
+        svn_floors: core::array::from_fn(|_| SvnFloorBinding::Erot(MockFloor::new())),
+        report_sink: RecordingSink::new(),
+        updatables: core::array::from_fn(|_| MockUpdatable::new()),
+    }
 }
 
 fn driver(images: [MemImage; 1]) -> PlatformDriver<MockBoard, 1> {
     PlatformDriver::new(Board {
         images,
-        verifier: XorVerifier { fault: false },
-        boot_controls: [MockReset::new()],
+        ..mock_board()
     })
 }
 
@@ -267,9 +449,11 @@ fn unreadable_source_fails_closed() {
 fn verifier_fault_fails_closed() {
     let mut orch = orchestrator();
     let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
-        images: [MemImage::holding(valid_image())],
-        verifier: XorVerifier { fault: true },
-        boot_controls: [MockReset::new()],
+        verifier: XorVerifier {
+            fault: true,
+            svn: MOCK_SVN,
+        },
+        ..mock_board()
     });
 
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
@@ -281,14 +465,7 @@ const C1: ComponentId = ComponentId::new(1);
 
 #[test]
 fn verify_for_a_different_component_is_refused() {
-    let mut driver = PlatformDriver::<MockBoard, 2>::new(Board {
-        images: [
-            MemImage::holding(valid_image()),
-            MemImage::holding(valid_image()),
-        ],
-        verifier: XorVerifier { fault: false },
-        boot_controls: [MockReset::new(), MockReset::new()],
-    });
+    let mut driver = PlatformDriver::<MockBoard, 2>::new(mock_board());
 
     driver.stage_firmware(C0).unwrap();
 
@@ -318,19 +495,13 @@ fn verify_of_unknown_component_is_refused() {
 
 #[test]
 fn reset_release_and_assert_reach_the_boot_control() {
-    let control = MockReset::new();
-    let held = control.held.clone();
-    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
-        images: [MemImage::holding(valid_image())],
-        verifier: XorVerifier { fault: false },
-        boot_controls: [control],
-    });
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(mock_board());
 
     driver.release_reset(C0).unwrap();
-    assert!(!held.get());
+    assert!(!driver.board().boot_controls[0].held.get());
 
     driver.assert_reset(C0).unwrap();
-    assert!(held.get());
+    assert!(driver.board().boot_controls[0].held.get());
 }
 
 #[test]
@@ -352,9 +523,8 @@ fn reset_line_fault_is_reported() {
     let mut control = MockReset::new();
     control.fail = true;
     let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
-        images: [MemImage::holding(valid_image())],
-        verifier: XorVerifier { fault: false },
         boot_controls: [control],
+        ..mock_board()
     });
 
     assert_eq!(driver.release_reset(C0), Err(DriverError::BootControlFault));
@@ -387,4 +557,659 @@ fn execute_returns_the_verdict_event() {
         driver.execute(Effect::VerifyFirmware(C0)),
         Ok(Some(Event::VerificationPassed(C0)))
     );
+}
+
+/// Wraps [`XorVerifier`] and snapshots the reset line as the check runs,
+/// so the test can see the line state inside the verification window.
+struct LineWatchingVerifier {
+    inner: XorVerifier,
+    line: std::rc::Rc<core::cell::Cell<bool>>,
+    held_during_verify: std::rc::Rc<core::cell::Cell<bool>>,
+}
+
+impl Verifier for LineWatchingVerifier {
+    type Error = VerifierError;
+
+    fn verify(
+        &mut self,
+        id: ComponentId,
+        image: &mut impl ImageSource,
+    ) -> Result<Verdict, VerifierError> {
+        self.held_during_verify.set(self.line.get());
+        self.inner.verify(id, image)
+    }
+}
+
+struct WatchBoard;
+
+impl BoardCapabilities for WatchBoard {
+    type Image = MemImage;
+    type Verifier = LineWatchingVerifier;
+    type BootControl = MockReset;
+    type BootWatch = MockWalk;
+    type SvnFloor = MockFloor;
+    // A board with nothing to tell: exercises the no-op sink.
+    type ReportSink = ();
+    type Updatable = MockUpdatable;
+}
+
+// The at-rest guarantee end to end: the component is still held while its
+// image is verified, and the line is released only on the passing verdict.
+#[test]
+fn release_follows_verification() {
+    let control = MockReset::new();
+    let held = control.held.clone();
+    let held_during_verify = std::rc::Rc::new(core::cell::Cell::new(false));
+    let mut driver = PlatformDriver::<WatchBoard, 1>::new(Board {
+        images: [MemImage::holding(valid_image())],
+        verifier: LineWatchingVerifier {
+            inner: XorVerifier {
+                fault: false,
+                svn: MOCK_SVN,
+            },
+            line: held.clone(),
+            held_during_verify: held_during_verify.clone(),
+        },
+        boot_controls: [control],
+        boot_watches: [MockWalk::idle()],
+        component_kinds: [ComponentKind::Passive],
+        svn_floors: [SvnFloorBinding::Erot(MockFloor::new())],
+        report_sink: (),
+        updatables: [MockUpdatable::new()],
+    });
+    let mut orch = orchestrator();
+
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+
+    assert_eq!(orch.state(), State::Ready);
+    assert!(
+        held_during_verify.get(),
+        "held while its image was verified"
+    );
+    assert!(!held.get(), "released after the verdict");
+}
+
+// A dead reset line is a failed actuation, not a verdict: the SM fails
+// closed and the component stays quiesced.
+#[test]
+fn failed_release_fails_closed() {
+    let mut control = MockReset::new();
+    control.fail = true;
+    let held = control.held.clone();
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
+        boot_controls: [control],
+        ..mock_board()
+    });
+    let mut orch = orchestrator();
+
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+
+    assert_eq!(orch.state(), State::Locked);
+    assert!(held.get(), "never left reset");
+}
+
+// ---------------------------------------------------------------------------
+// Boot-walk supervision.
+// ---------------------------------------------------------------------------
+
+/// A 2-component driver with per-component scripted walks and kinds;
+/// everything else is the happy-path mock.
+fn walk_driver(
+    walks: [MockWalk; 2],
+    component_kinds: [ComponentKind; 2],
+) -> PlatformDriver<MockBoard, 2> {
+    PlatformDriver::new(Board {
+        boot_watches: walks,
+        component_kinds,
+        ..mock_board()
+    })
+}
+
+// A completed walk becomes ComponentReady for Active, Booted for Passive.
+// One event per call, drained in index order; a finished walk never
+// reports twice.
+#[test]
+fn completed_walks_report_by_kind() {
+    let mut driver = walk_driver(
+        [
+            MockWalk::scripted(std::vec![WalkVerdict::Complete]),
+            MockWalk::scripted(std::vec![WalkVerdict::Complete]),
+        ],
+        [ComponentKind::Active, ComponentKind::Passive],
+    );
+    driver.release_reset(C0).unwrap();
+    driver.release_reset(C1).unwrap();
+
+    assert_eq!(
+        driver.poll_boot_walks(0).event,
+        Some(Event::ComponentReady(C0))
+    );
+    assert_eq!(driver.poll_boot_walks(0).event, Some(Event::Booted(C1)));
+
+    let quiet = driver.poll_boot_walks(0);
+    assert_eq!(quiet.event, None, "verdicts are delivered exactly once");
+    assert_eq!(quiet.next_deadline_millis, None, "no walk left waiting");
+}
+
+// A failed walk becomes BootFailed, preserving the checkpoint name and
+// classified cause so the SM can differentiate retry decisions later.
+#[test]
+fn failed_walks_map_to_boot_failed() {
+    let mut driver = walk_driver(
+        [
+            MockWalk::scripted(std::vec![WalkVerdict::Failed {
+                checkpoint: "heartbeat",
+                cause: FailureCause::TimedOut,
+            }]),
+            MockWalk::scripted(std::vec![WalkVerdict::Failed {
+                checkpoint: "self-test",
+                cause: FailureCause::DeviceFatal,
+            }]),
+        ],
+        [ComponentKind::Active, ComponentKind::Passive],
+    );
+    driver.release_reset(C0).unwrap();
+    driver.release_reset(C1).unwrap();
+
+    assert_eq!(
+        driver.poll_boot_walks(0).event,
+        Some(Event::BootFailed {
+            id: C0,
+            checkpoint: "heartbeat",
+            kind: BootFailureKind::TimedOut,
+        })
+    );
+    assert_eq!(
+        driver.poll_boot_walks(0).event,
+        Some(Event::BootFailed {
+            id: C1,
+            checkpoint: "self-test",
+            kind: BootFailureKind::DeviceFatal,
+        })
+    );
+    assert_eq!(driver.poll_boot_walks(0).event, None);
+}
+
+// An event-carrying poll returns before visiting later walks, so its
+// deadline is partial and must not be trusted; the drain's final,
+// event-free poll visits every remaining walk and reports the earliest
+// deadline.
+#[test]
+fn deadline_is_authoritative_only_when_no_event() {
+    let mut driver = walk_driver(
+        [
+            MockWalk::scripted(std::vec![WalkVerdict::Complete]),
+            MockWalk::scripted(std::vec![WalkVerdict::Waiting {
+                deadline_millis: 1_000,
+            }]),
+        ],
+        [ComponentKind::Passive, ComponentKind::Passive],
+    );
+    driver.release_reset(C0).unwrap();
+    driver.release_reset(C1).unwrap();
+
+    let first = driver.poll_boot_walks(0);
+    assert_eq!(first.event, Some(Event::Booted(C0)));
+    assert_eq!(
+        first.next_deadline_millis, None,
+        "returned before the waiting walk was visited"
+    );
+
+    let last = driver.poll_boot_walks(0);
+    assert_eq!(last.event, None);
+    assert_eq!(last.next_deadline_millis, Some(1_000));
+}
+
+// While every watched walk waits, the poll carries the earliest deadline
+// as the run loop's next wake-up.
+#[test]
+fn waiting_walks_report_the_earliest_deadline() {
+    let mut driver = walk_driver(
+        [
+            MockWalk::scripted(std::vec![WalkVerdict::Waiting {
+                deadline_millis: 9_000,
+            }]),
+            MockWalk::scripted(std::vec![WalkVerdict::Waiting {
+                deadline_millis: 4_000,
+            }]),
+        ],
+        [ComponentKind::Passive, ComponentKind::Passive],
+    );
+    driver.release_reset(C0).unwrap();
+    driver.release_reset(C1).unwrap();
+
+    let poll = driver.poll_boot_walks(0);
+    assert_eq!(poll.event, None);
+    assert_eq!(poll.next_deadline_millis, Some(4_000));
+}
+
+// A walk is watched only between release and terminal verdict. The script's
+// terminal verdict would surface as an event if the gate were missing: no
+// event before release, no stale event after assert_reset, and the verdict
+// still arrives once the device is actually released.
+#[test]
+fn only_released_components_are_watched() {
+    let mut driver = walk_driver(
+        [
+            MockWalk::scripted(std::vec![WalkVerdict::Complete]),
+            MockWalk::idle(),
+        ],
+        [ComponentKind::Passive, ComponentKind::Passive],
+    );
+
+    assert_eq!(
+        driver.poll_boot_walks(0).event,
+        None,
+        "unreleased: no event"
+    );
+
+    driver.release_reset(C0).unwrap();
+    driver.assert_reset(C0).unwrap();
+    assert_eq!(
+        driver.poll_boot_walks(0).event,
+        None,
+        "back in reset: no stale event"
+    );
+
+    driver.release_reset(C0).unwrap();
+    assert_eq!(driver.poll_boot_walks(0).event, Some(Event::Booted(C0)));
+}
+
+// Every release re-arms the walk: a retry judges a new attempt from the
+// first checkpoint, not the failed one resumed. With a script of
+// [Failed, Complete], a resumed walk would report Complete on the second
+// attempt; a fresh one reports Failed again.
+#[test]
+fn rerelease_arms_a_fresh_walk() {
+    let mut driver = walk_driver(
+        [
+            MockWalk::scripted(std::vec![
+                WalkVerdict::Failed {
+                    checkpoint: "heartbeat",
+                    cause: FailureCause::TimedOut,
+                },
+                WalkVerdict::Complete,
+            ]),
+            MockWalk::idle(),
+        ],
+        [ComponentKind::Passive, ComponentKind::Passive],
+    );
+
+    driver.release_reset(C0).unwrap();
+    assert_eq!(
+        driver.poll_boot_walks(0).event,
+        Some(Event::BootFailed {
+            id: C0,
+            checkpoint: "heartbeat",
+            kind: BootFailureKind::TimedOut,
+        })
+    );
+
+    driver.release_reset(C0).unwrap();
+    assert_eq!(
+        driver.poll_boot_walks(0).event,
+        Some(Event::BootFailed {
+            id: C0,
+            checkpoint: "heartbeat",
+            kind: BootFailureKind::TimedOut,
+        }),
+        "fresh attempt from the first checkpoint, not the old walk resumed"
+    );
+}
+
+// End to end: a passive component is released speculatively (Ready), its
+// walk completes, and the Booted event settles cleanly.
+#[test]
+fn booted_walk_settles_in_ready() {
+    let mut orch = orchestrator();
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
+        boot_watches: [MockWalk::scripted(std::vec![WalkVerdict::Complete])],
+        ..mock_board()
+    });
+
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    assert_eq!(orch.state(), State::Ready);
+
+    let event = driver.poll_boot_walks(0).event.expect("walk completed");
+    assert_eq!(event, Event::Booted(C0));
+    orch.dispatch(&mut driver, event);
+
+    assert_eq!(orch.state(), State::Ready);
+}
+
+// End to end, failure path: the released component's walk fails, its
+// BootFailed enters recovery, and with no recovery capability composed
+// yet the machine fails closed.
+#[test]
+fn boot_failure_fails_closed_without_recovery() {
+    let mut orch = orchestrator();
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
+        boot_watches: [MockWalk::scripted(std::vec![WalkVerdict::Failed {
+            checkpoint: "heartbeat",
+            cause: FailureCause::TimedOut,
+        }])],
+        ..mock_board()
+    });
+
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    assert_eq!(orch.state(), State::Ready);
+
+    let event = driver.poll_boot_walks(0).event.expect("walk failed");
+    assert_eq!(
+        event,
+        Event::BootFailed {
+            id: C0,
+            checkpoint: "heartbeat",
+            kind: BootFailureKind::TimedOut,
+        }
+    );
+    orch.dispatch(&mut driver, event);
+
+    assert_eq!(orch.state(), State::Locked);
+}
+
+// ---------------------------------------------------------------------------
+// Report sink.
+// ---------------------------------------------------------------------------
+
+/// Records what it is handed: the seam satisfied without a management
+/// transport. Tests read `seen` back through `PlatformDriver::board`.
+#[derive(Default)]
+struct RecordingSink {
+    seen: std::vec::Vec<Report>,
+}
+
+impl RecordingSink {
+    fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl ReportSink for RecordingSink {
+    fn report(&mut self, report: Report) {
+        self.seen.push(report);
+    }
+}
+
+/// One of each report, so a test covers the whole enum.
+fn every_report() -> [Report; 5] {
+    [
+        Report::Isolated(C0),
+        Report::RecoveryFailed(C0),
+        Report::BootFailed {
+            id: C0,
+            checkpoint: "self-test",
+            kind: BootFailureKind::DeviceFatal,
+        },
+        Report::UpdateDeferred,
+        Report::UpdateAborted,
+    ]
+}
+
+// Every report is deliverable through the seam alone, in the order handed
+// over; the unit sink is a wiring choice and satisfies the same caller.
+#[test]
+fn every_report_reaches_a_sink() {
+    fn tell<S: ReportSink>(sink: &mut S, reports: [Report; 5]) {
+        for report in reports {
+            sink.report(report);
+        }
+    }
+
+    let mut recording = RecordingSink::new();
+    tell(&mut recording, every_report());
+    assert_eq!(recording.seen, every_report());
+
+    tell(&mut (), every_report());
+}
+
+// ---------------------------------------------------------------------------
+// Anti-rollback floor commits.
+// ---------------------------------------------------------------------------
+
+// The floor may only move to the SVN the verifier vouched for, and only
+// after a verification has passed — the two halves of the commit contract.
+#[test]
+fn commit_advances_the_floor_to_the_verified_svn() {
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(mock_board());
+
+    driver
+        .execute(Effect::ReadFirmware(C0))
+        .expect("stage failed");
+    driver
+        .execute(Effect::VerifyFirmware(C0))
+        .expect("verify failed");
+
+    assert_eq!(driver.execute(Effect::CommitSvnFloor(C0)), Ok(None));
+    // Read back through the capability's own seam.
+    let SvnFloorBinding::Erot(floor) = &driver.board().svn_floors[0] else {
+        panic!("C0 is wired with an eRoT floor");
+    };
+    assert_eq!(
+        floor.floor(),
+        Ok(Svn(MOCK_SVN)),
+        "floor advanced to the verifier's SVN"
+    );
+}
+
+// A component wired without an eRoT floor tracks its own SVN. The commit
+// succeeds even with no verified image cached: there is no floor to
+// mis-advance.
+#[test]
+fn commit_without_an_erot_floor_is_a_no_op() {
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
+        svn_floors: [SvnFloorBinding::SelfManaged],
+        ..mock_board()
+    });
+
+    assert_eq!(driver.execute(Effect::CommitSvnFloor(C0)), Ok(None));
+}
+
+#[test]
+fn commit_without_a_verified_image_fails_closed() {
+    let mut driver = driver([MemImage::holding(valid_image())]);
+
+    assert_eq!(
+        driver.commit_svn_floor(C0),
+        Err(DriverError::NoVerifiedImage)
+    );
+}
+
+// A rejection must clear the cached SVN, or the floor could commit against
+// an image that is no longer the authenticated one.
+#[test]
+fn rejected_image_clears_the_verified_svn() {
+    let mut corrupt = valid_image();
+    corrupt[7] ^= 0x01;
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
+        images: [MemImage::holding(valid_image()).reflash_on_reopen(corrupt)],
+        ..mock_board()
+    });
+
+    driver.stage_firmware(C0).expect("stage failed");
+    assert_eq!(
+        driver.verify_firmware(C0),
+        Ok(Event::VerificationPassed(C0))
+    );
+
+    // The queued re-flash lands on the re-stage; the rejection must take
+    // the cached SVN with it.
+    driver.stage_firmware(C0).expect("re-stage failed");
+    assert_eq!(
+        driver.verify_firmware(C0),
+        Ok(Event::VerificationFailed(C0))
+    );
+
+    assert_eq!(
+        driver.commit_svn_floor(C0),
+        Err(DriverError::NoVerifiedImage)
+    );
+}
+
+#[test]
+fn floor_fault_is_reported() {
+    let mut mock = MockFloor::new();
+    mock.fail = true;
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
+        svn_floors: [SvnFloorBinding::Erot(mock)],
+        ..mock_board()
+    });
+
+    driver.stage_firmware(C0).expect("stage failed");
+    driver.verify_firmware(C0).expect("verify failed");
+
+    assert_eq!(driver.commit_svn_floor(C0), Err(DriverError::SvnFloorFault));
+}
+
+// Every report effect reaches the board's sink, in emission order, and none
+// hands back an error for the SM to fail closed on.
+#[test]
+fn reports_reach_the_board_sink() {
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
+        verifier: XorVerifier {
+            fault: false,
+            svn: 0,
+        },
+        ..mock_board()
+    });
+
+    for effect in [
+        Effect::ReportIsolated(C0),
+        Effect::ReportRecoveryFailed(C0),
+        Effect::ReportBootFailed {
+            id: C0,
+            checkpoint: "self-test",
+            kind: BootFailureKind::DeviceFatal,
+        },
+        Effect::ReportUpdateDeferred,
+        Effect::ReportUpdateAborted,
+    ] {
+        assert_eq!(driver.execute(effect), Ok(None));
+    }
+
+    assert_eq!(driver.board().report_sink.seen, every_report());
+}
+
+// An Isolable component is contained and reported, and the platform keeps
+// running: executing a report returns no error, so it never reaches the
+// fail-closed path.
+#[test]
+fn reporting_an_isolated_component_does_not_lock_the_platform() {
+    let mut driver = PlatformDriver::<MockBoard, 2>::new(Board {
+        verifier: XorVerifier {
+            fault: false,
+            svn: 0,
+        },
+        ..mock_board()
+    });
+    let mut chain = heapless::Vec::<_, 2>::new();
+    chain
+        .push((C0, ComponentAttrs::passive_required()))
+        .unwrap();
+    chain
+        .push((C1, ComponentAttrs::passive_isolable()))
+        .unwrap();
+    let mut orch = Orchestrator::<2, 6>::new(chain.try_into().unwrap(), 3);
+
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    assert_eq!(orch.state(), State::Ready, "both components verified");
+
+    orch.dispatch(&mut driver, Event::CorruptionDetected(C1));
+
+    assert_eq!(orch.state(), State::Ready, "contained, not locked");
+    assert_eq!(driver.board().report_sink.seen, [Report::Isolated(C1)]);
+}
+
+#[test]
+fn submit_update_refuses_an_unknown_component() {
+    let mut driver = driver([MemImage::holding(valid_image())]);
+
+    assert_eq!(
+        driver.submit_update(ComponentId::new(9)),
+        Err(DriverError::UnknownComponent)
+    );
+    assert_eq!(driver.pending_update(), None);
+}
+
+// Single update in flight by construction: a second submit is refused and
+// the first job's target survives untouched.
+#[test]
+fn submit_update_refuses_a_second_in_flight() {
+    let mut driver = driver([MemImage::holding(valid_image())]);
+
+    driver.submit_update(C0).unwrap();
+    assert_eq!(driver.submit_update(C0), Err(DriverError::UpdateBusy));
+    assert_eq!(driver.pending_update(), Some(C0));
+}
+
+// The frontend connection end to end: request_update records the job and
+// the SM receives UpdateRequest. Ready accepts it and enters Updating,
+// whose entry effects (AuthenticateUpdate, StageUpdate) have no executors
+// yet, so the machine latches Locked — that latch is the proof the event
+// arrived. Flips to an Updating/Ready assertion when the pump lands.
+#[test]
+fn request_update_reaches_the_sm() {
+    let mut orch = orchestrator();
+    let mut driver = driver([MemImage::holding(valid_image())]);
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    assert_eq!(orch.state(), State::Ready);
+
+    request_update(&mut orch, &mut driver, C0).unwrap();
+
+    assert_eq!(driver.pending_update(), Some(C0));
+    assert_eq!(orch.state(), State::Locked);
+}
+
+// A refused submit injects nothing: no job, no event, the SM stays Ready.
+#[test]
+fn refused_request_update_injects_no_event() {
+    let mut orch = orchestrator();
+    let mut driver = driver([MemImage::holding(valid_image())]);
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+
+    assert_eq!(
+        request_update(&mut orch, &mut driver, ComponentId::new(9)),
+        Err(DriverError::UnknownComponent)
+    );
+
+    assert_eq!(driver.pending_update(), None);
+    assert_eq!(orch.state(), State::Ready);
+}
+
+// The Updatable seam is wired but not yet driven: no executor exists until
+// the update pump lands. This pins the mock against the trait's ordering
+// rule so the wiring cannot rot in the meantime.
+#[test]
+fn updatable_seam_is_satisfiable_by_the_mock() {
+    use orchestrator_capabilities::{PayloadReadError, PayloadSource, StageProgress, Updatable};
+
+    struct SlicePayload(&'static [u8]);
+
+    impl PayloadSource for SlicePayload {
+        fn len(&self) -> u64 {
+            self.0.len() as u64
+        }
+
+        fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<(), PayloadReadError> {
+            let start = usize::try_from(offset).map_err(|_| PayloadReadError::OutOfRange)?;
+            let end = start
+                .checked_add(buf.len())
+                .ok_or(PayloadReadError::OutOfRange)?;
+            buf.copy_from_slice(self.0.get(start..end).ok_or(PayloadReadError::OutOfRange)?);
+            Ok(())
+        }
+    }
+
+    let mut dev = MockUpdatable::new();
+
+    assert_eq!(
+        dev.activate(),
+        Err(orchestrator_capabilities::UpdateError::NothingStaged)
+    );
+    assert_eq!(
+        dev.poll_stage(&SlicePayload(b"image")),
+        Ok(StageProgress::Ready)
+    );
+    dev.activate().expect("activate failed");
+    assert!(dev.active);
 }

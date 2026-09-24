@@ -22,14 +22,9 @@ local_path_override(
 
 git_override(
     module_name = "pigweed",
-    commit = "6f0aac30f8313cbd5103686097a1f6b3098e8aac",  # roll:pigweed
+    commit = "294d431a761dc44fe07710c15d5ac1603f7ef7bf",
     patch_args = ["-p1"],
-    patches = [
-        # Program the VeeR external-interrupt redirect table (MEIVT) in
-        # veer_pic early_init; without it the first external interrupt
-        # vectors through an unprogrammed table to address 0.
-        "//third_party/pigweed:veer_pic_meivt.patch",
-    ],
+    patches = ["//patches:pigweed_cortex_m_systick_double_count.patch"],
     remote = "https://pigweed.googlesource.com/pigweed/pigweed",
 )
 

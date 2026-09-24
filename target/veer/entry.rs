@@ -25,7 +25,7 @@ fn main() -> ! {
 }
 
 pub fn exit(code: u32) -> ! {
-    #[cfg(not(feature = "emulator"))]
+    #[cfg(not(any(feature = "emulator", feature = "fpga")))]
     let _ = code;
 
     #[cfg(feature = "emulator")]
@@ -33,6 +33,17 @@ pub fn exit(code: u32) -> ! {
         // SAFETY: writing to this address will cause the emulator to exit.
         let exitcode = core::ptr::with_exposed_provenance_mut::<u32>(0x1000_2000);
         exitcode.write_volatile(code);
+    }
+
+    #[cfg(feature = "fpga")]
+    unsafe {
+        // SAFETY: dbg_fifo_push (0xA401_1014) is the FPGA wrapper's
+        // debug/exit register; writing 0xff/0x01 (valid bit 0x100 set)
+        // signals pass/fail to the host, matching
+        // caliptra-mcu-sw/platforms/fpga/rom/src/io.rs::exit_fpga.
+        let dbg_fifo_push = core::ptr::without_provenance_mut::<u32>(0xA401_1014);
+        let byte: u32 = if code == 0 { 0xff } else { 0x01 };
+        dbg_fifo_push.write_volatile(byte | 0x100);
     }
     loop {}
 }
