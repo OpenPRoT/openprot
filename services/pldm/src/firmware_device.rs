@@ -104,9 +104,10 @@ impl FdEventSink for () {
 
 /// Outcome of [`FirmwareDevice::run_terminus`].
 pub enum RunTerminusResult {
-    /// The loop exited normally (currently unreachable: `run_terminus` only
-    /// returns via an error today, but this variant exists so a future,
-    /// well-defined completion condition does not require an API change).
+    /// The update session ended: the FD left update mode and is `Idle`
+    /// again, either because the Update Agent activated the new firmware or
+    /// because it cancelled. A device that serves more than one update calls
+    /// [`run_terminus`](FirmwareDevice::run_terminus) again.
     Completed,
     /// The loop was stopped by an unrecoverable error.
     StoppedByError(PldmServiceError),
@@ -177,7 +178,9 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
     /// listener is bound, silently dropping any Update Agent command that
     /// arrives in that window.
     ///
-    /// This method loops indefinitely and returns only on error.
+    /// This method loops until the FD leaves update mode — the `Idle` the
+    /// Update Agent's `ActivateFirmware` or cancel returns it to — or an
+    /// error stops it.
     /// A `timeout_millis` of `0` blocks indefinitely while idle.
     ///
     /// `requester_timeout_millis` bounds how long each `send_request` call
@@ -293,8 +296,14 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
                 },
             ) {
                 Ok(()) => {
-                    if !was_update_mode && self.cmd_interface.fd_ctx.is_update_mode() {
+                    let is_update_mode = self.cmd_interface.fd_ctx.is_update_mode();
+                    if !was_update_mode && is_update_mode {
                         sink.notify(FdEvent::UpdateRequested);
+                    }
+                    // The true→false edge is the end of the session: the FD
+                    // answered ActivateFirmware (or a cancel) and is Idle.
+                    if was_update_mode && !is_update_mode {
+                        return Ok(());
                     }
                 }
                 // A short poll timeout while an initiator request is active
