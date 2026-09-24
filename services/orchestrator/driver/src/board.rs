@@ -8,7 +8,7 @@ use openprot_orchestrator_sm::{BootFailureKind, ComponentId, ComponentKind};
 use orchestrator_capabilities::Updatable;
 
 pub use orchestrator_capabilities::{BootControl, BootWatch};
-use orchestrator_capabilities::{Svn, SvnFloor};
+use orchestrator_capabilities::{Recovery, Svn, SvnFloor};
 
 /// Access to one component's active firmware image, however it is reached —
 /// interposed flash, a PLDM/MCTP transfer, a RAM copy in tests.
@@ -179,7 +179,10 @@ pub trait BoardCapabilities {
     type ReportSink: ReportSink;
     /// Stages and activates update payloads on the managed components.
     type Updatable: Updatable;
-    // Later seams: Recovery.
+    /// Restores a managed component's image from its recovery source.
+    /// `()` for a board with no recovery path: every attempt reports
+    /// source exhaustion immediately.
+    type Recovery: Recovery;
 }
 
 /// Who keeps one component's anti-rollback floor. Spelled as its own type
@@ -208,6 +211,7 @@ pub enum SvnFloorBinding<F: SvnFloor> {
 ///     type SvnFloor = OtpSvnFloor;        // fuse-backed anti-rollback floor
 ///     type ReportSink = MctpReports;      // reports out over the management transport
 ///     type Updatable = PldmDevice;        // device pulls its own chunks
+///     type Recovery = SlotRecovery;       // A/B + golden, attempt-indexed
 /// }
 /// let board = Board::<Ast1060Board, 2> {
 ///     images: [bmc_image, cpld_image],
@@ -218,6 +222,7 @@ pub enum SvnFloorBinding<F: SvnFloor> {
 ///     svn_floors: [SvnFloorBinding::Erot(bmc_floor), SvnFloorBinding::SelfManaged],
 ///     report_sink,
 ///     updatables: [bmc_update, cpld_update],
+///     recovery: [bmc_recovery, cpld_recovery],
 /// };
 /// ```
 pub struct Board<B: BoardCapabilities, const N: usize> {
@@ -246,5 +251,8 @@ pub struct Board<B: BoardCapabilities, const N: usize> {
     /// as `images`. A device without an update path wires an adapter whose
     /// `poll_stage` errors.
     pub updatables: [B::Updatable; N],
-    // Later seams add fields, e.g. recovery: [B::Recovery; N].
+    /// `recovery[i]` restores `ComponentId(i)`'s image from its configured
+    /// sources, same indexing as `images`. `()` for a board with no
+    /// recovery path.
+    pub recovery: [B::Recovery; N],
 }

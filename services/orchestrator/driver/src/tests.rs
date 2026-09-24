@@ -8,7 +8,9 @@ use openprot_orchestrator_sm::{
     BootFailureKind, ComponentAttrs, ComponentId, ComponentKind, Effect, Event, Orchestrator,
     Platform, PowerOnResult, State,
 };
-use orchestrator_capabilities::{BootWatch, FailureCause, Svn, SvnFloor, WalkVerdict};
+use orchestrator_capabilities::{
+    BootWatch, FailureCause, Recovery, RestoreOutcome, Svn, SvnFloor, WalkVerdict,
+};
 
 const C0: ComponentId = ComponentId::new(0);
 
@@ -343,6 +345,7 @@ impl BoardCapabilities for MockBoard {
     type SvnFloor = MockFloor;
     type ReportSink = RecordingSink;
     type Updatable = MockUpdatable;
+    type Recovery = ();
 }
 
 /// The SVN `mock_board`'s verifier vouches for. Tests that read the floor
@@ -364,6 +367,7 @@ fn mock_board<const N: usize>() -> Board<MockBoard, N> {
         svn_floors: core::array::from_fn(|_| SvnFloorBinding::Erot(MockFloor::new())),
         report_sink: RecordingSink::new(),
         updatables: core::array::from_fn(|_| MockUpdatable::new()),
+        recovery: core::array::from_fn(|_| ()),
     }
 }
 
@@ -591,6 +595,7 @@ impl BoardCapabilities for WatchBoard {
     // A board with nothing to tell: exercises the no-op sink.
     type ReportSink = ();
     type Updatable = MockUpdatable;
+    type Recovery = ();
 }
 
 // The at-rest guarantee end to end: the component is still held while its
@@ -616,6 +621,7 @@ fn release_follows_verification() {
         svn_floors: [SvnFloorBinding::Erot(MockFloor::new())],
         report_sink: (),
         updatables: [MockUpdatable::new()],
+        recovery: [()],
     });
     let mut orch = orchestrator();
 
@@ -878,10 +884,10 @@ fn booted_walk_settles_in_ready() {
 }
 
 // End to end, failure path: the released component's walk fails, its
-// BootFailed enters recovery, and with no recovery capability composed
-// yet the machine fails closed.
+// BootFailed enters recovery. The `()` recovery reports source
+// exhaustion immediately, and a Required component locks down.
 #[test]
-fn boot_failure_fails_closed_without_recovery() {
+fn boot_failure_locks_when_recovery_is_exhausted() {
     let mut orch = orchestrator();
     let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
         boot_watches: [MockWalk::scripted(std::vec![WalkVerdict::Failed {
@@ -906,6 +912,171 @@ fn boot_failure_fails_closed_without_recovery() {
     orch.dispatch(&mut driver, event);
 
     assert_eq!(orch.state(), State::Locked);
+    assert!(
+        driver
+            .board()
+            .report_sink
+            .seen
+            .contains(&Report::RecoveryFailed(C0)),
+        "lock came via exhaust_recovery, not a raw actuation fault"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Recovery executor.
+// ---------------------------------------------------------------------------
+
+struct MockRecovery {
+    sources: u8,
+    fail_on: Option<u8>,
+}
+
+#[derive(Debug)]
+struct RecoveryActuationFault;
+
+impl core::fmt::Display for RecoveryActuationFault {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("recovery actuation fault")
+    }
+}
+
+impl core::error::Error for RecoveryActuationFault {}
+
+impl Recovery for MockRecovery {
+    type Error = RecoveryActuationFault;
+
+    fn restore(&mut self, attempt: u8) -> Result<RestoreOutcome, Self::Error> {
+        if self.fail_on == Some(attempt) {
+            return Err(RecoveryActuationFault);
+        }
+        if attempt >= self.sources {
+            return Ok(RestoreOutcome::SourceExhausted);
+        }
+        Ok(RestoreOutcome::Restored)
+    }
+}
+
+struct RecoverableBoard;
+
+impl BoardCapabilities for RecoverableBoard {
+    type Image = MemImage;
+    type Verifier = XorVerifier;
+    type BootControl = MockReset;
+    type BootWatch = MockWalk;
+    type SvnFloor = MockFloor;
+    type ReportSink = RecordingSink;
+    type Updatable = MockUpdatable;
+    type Recovery = MockRecovery;
+}
+
+fn recoverable_board<const N: usize>(sources: u8) -> Board<RecoverableBoard, N> {
+    Board {
+        images: core::array::from_fn(|_| MemImage::holding(valid_image())),
+        verifier: XorVerifier {
+            fault: false,
+            svn: MOCK_SVN,
+        },
+        boot_controls: core::array::from_fn(|_| MockReset::new()),
+        boot_watches: core::array::from_fn(|_| MockWalk::idle()),
+        component_kinds: core::array::from_fn(|_| ComponentKind::Passive),
+        svn_floors: core::array::from_fn(|_| SvnFloorBinding::Erot(MockFloor::new())),
+        report_sink: RecordingSink::new(),
+        updatables: core::array::from_fn(|_| MockUpdatable::new()),
+        recovery: core::array::from_fn(|_| MockRecovery {
+            sources,
+            fail_on: None,
+        }),
+    }
+}
+
+// RecoverComponent with a successful restore returns Restored(id).
+#[test]
+fn recover_component_returns_restored() {
+    let mut driver = PlatformDriver::<RecoverableBoard, 1>::new(recoverable_board(2));
+
+    assert_eq!(driver.recover_component(C0, 0), Ok(Event::Restored(C0)));
+    assert_eq!(driver.recover_component(C0, 1), Ok(Event::Restored(C0)));
+}
+
+// RecoverComponent past the last source returns RecoveryUnavailable(id).
+#[test]
+fn recover_component_returns_unavailable_when_exhausted() {
+    let mut driver = PlatformDriver::<RecoverableBoard, 1>::new(recoverable_board(1));
+
+    assert_eq!(driver.recover_component(C0, 0), Ok(Event::Restored(C0)));
+    assert_eq!(
+        driver.recover_component(C0, 1),
+        Ok(Event::RecoveryUnavailable(C0))
+    );
+}
+
+// A faulting mechanism returns RecoveryFault; the next attempt still
+// succeeds, so a fault does not poison the path.
+#[test]
+fn recovery_fault_is_reported() {
+    let mut driver = PlatformDriver::<RecoverableBoard, 1>::new(Board {
+        recovery: [MockRecovery {
+            sources: 2,
+            fail_on: Some(0),
+        }],
+        ..recoverable_board(2)
+    });
+
+    assert_eq!(
+        driver.recover_component(C0, 0),
+        Err(DriverError::RecoveryFault)
+    );
+    // The next attempt succeeds: a fault does not poison the path.
+    assert_eq!(driver.recover_component(C0, 1), Ok(Event::Restored(C0)));
+}
+
+// An unknown component is refused before the mechanism is consulted.
+#[test]
+fn recover_unknown_component_is_refused() {
+    let mut driver = PlatformDriver::<RecoverableBoard, 1>::new(recoverable_board(2));
+
+    assert_eq!(
+        driver.recover_component(ComponentId::new(9), 0),
+        Err(DriverError::UnknownComponent)
+    );
+}
+
+// The `()` impl reports exhaustion on every attempt: no sources exist.
+#[test]
+fn unit_recovery_always_exhausted() {
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(mock_board());
+
+    assert_eq!(
+        driver.recover_component(C0, 0),
+        Ok(Event::RecoveryUnavailable(C0))
+    );
+}
+
+// RecoverComponent through the Platform seam: a successful restore returns
+// Some(Restored), a faulting mechanism returns EffectError.
+#[test]
+fn execute_routes_recover_component() {
+    use openprot_orchestrator_sm::{Effect, EffectError, Platform};
+
+    let mut driver = PlatformDriver::<RecoverableBoard, 1>::new(recoverable_board(2));
+
+    assert_eq!(
+        driver.execute(Effect::RecoverComponent { id: C0, attempt: 0 }),
+        Ok(Some(Event::Restored(C0)))
+    );
+
+    let mut faulting_driver = PlatformDriver::<RecoverableBoard, 1>::new(Board {
+        recovery: [MockRecovery {
+            sources: 2,
+            fail_on: Some(0),
+        }],
+        ..recoverable_board(2)
+    });
+
+    assert_eq!(
+        faulting_driver.execute(Effect::RecoverComponent { id: C0, attempt: 0 }),
+        Err(EffectError)
+    );
 }
 
 // ---------------------------------------------------------------------------

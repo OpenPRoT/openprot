@@ -11,7 +11,9 @@ use openprot_orchestrator_sm::{
 use crate::board::{
     Board, BoardCapabilities, ImageSource, Report, ReportSink, SvnFloorBinding, Verdict, Verifier,
 };
-use orchestrator_capabilities::{BootControl, BootWatch, FailureCause, Svn, SvnFloor, WalkVerdict};
+use orchestrator_capabilities::{
+    BootControl, BootWatch, FailureCause, Recovery, RestoreOutcome, Svn, SvnFloor, WalkVerdict,
+};
 
 /// Why the driver could not carry out an effect.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -35,6 +37,9 @@ pub enum DriverError {
     /// An update is already in flight; the frontend answers the requester
     /// over its own protocol, the SM never sees the refused request.
     UpdateBusy,
+    /// The recovery mechanism faulted (bus error, unreachable source).
+    /// Distinct from source exhaustion, which is a verdict, not a fault.
+    RecoveryFault,
 }
 
 impl core::fmt::Display for DriverError {
@@ -48,6 +53,7 @@ impl core::fmt::Display for DriverError {
             DriverError::NoVerifiedImage => "no verified image to commit the floor to",
             DriverError::SvnFloorFault => "svn floor could not be advanced",
             DriverError::UpdateBusy => "an update is already in flight",
+            DriverError::RecoveryFault => "recovery mechanism faulted",
         })
     }
 }
@@ -283,6 +289,27 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         }
     }
 
+    /// Restore `id`'s image from its recovery source. The verdict travels
+    /// as an event, not an error: `Restored` and `SourceExhausted` are
+    /// outcomes the SM handles per failure policy, while an `Err` from
+    /// the mechanism is a genuine actuation fault that fails closed.
+    pub fn recover_component(
+        &mut self,
+        id: ComponentId,
+        attempt: u8,
+    ) -> Result<Event, DriverError> {
+        let recovery = self
+            .board
+            .recovery
+            .get_mut(id.get() as usize)
+            .ok_or(DriverError::UnknownComponent)?;
+        match recovery.restore(attempt) {
+            Ok(RestoreOutcome::Restored) => Ok(Event::Restored(id)),
+            Ok(RestoreOutcome::SourceExhausted) => Ok(Event::RecoveryUnavailable(id)),
+            Err(_) => Err(DriverError::RecoveryFault),
+        }
+    }
+
     /// Hands one report to the board's sink. Cannot fail, so reporting stays
     /// off the fail-closed path; reports arrive in the order the SM emitted
     /// them.
@@ -348,15 +375,17 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
                 });
                 Ok(None)
             }
+            Effect::RecoverComponent { id, attempt } => {
+                self.recover_component(id, attempt).map(Some)
+            }
             // No board capability is composed for these seams yet, so they
             // fail closed here instead of behind stub methods. Each group
             // gains an executor when its capability joins
-            // [`BoardCapabilities`], as BootControl did above: recovery
-            // sourcing for RecoverComponent; update staging, authentication
-            // and trial activation for the update quartet; evidence signing
-            // for SignAttestation; the terminal latch for LatchLockdown.
-            Effect::RecoverComponent { .. }
-            | Effect::AuthenticateUpdate
+            // [`BoardCapabilities`], as BootControl did above: update
+            // staging, authentication and trial activation for the update
+            // quartet; evidence signing for SignAttestation; the terminal
+            // latch for LatchLockdown.
+            Effect::AuthenticateUpdate
             | Effect::StageUpdate
             | Effect::ActivateUpdate
             | Effect::DiscardStaged
