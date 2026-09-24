@@ -327,10 +327,12 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
                 Ok(None)
             }
             Effect::ReportUpdateDeferred => {
+                self.pending_update = None;
                 self.report(Report::UpdateDeferred);
                 Ok(None)
             }
             Effect::ReportUpdateAborted => {
+                self.pending_update = None;
                 self.report(Report::UpdateAborted);
                 Ok(None)
             }

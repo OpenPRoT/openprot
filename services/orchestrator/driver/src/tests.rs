@@ -1176,6 +1176,46 @@ fn refused_request_update_injects_no_event() {
     assert_eq!(orch.state(), State::Ready);
 }
 
+// ReportUpdateDeferred clears pending_update so the next request is not
+// permanently blocked.
+#[test]
+fn deferred_report_clears_pending_update() {
+    let mut driver = driver([MemImage::holding(valid_image())]);
+    driver.submit_update(C0).unwrap();
+    assert_eq!(driver.pending_update(), Some(C0));
+
+    driver.execute(Effect::ReportUpdateDeferred).unwrap();
+
+    assert_eq!(
+        driver.pending_update(),
+        None,
+        "deferred report must clear the pending job"
+    );
+
+    // A subsequent submit succeeds: the slot is free.
+    driver.submit_update(C0).unwrap();
+    assert_eq!(driver.pending_update(), Some(C0));
+}
+
+// ReportUpdateAborted clears pending_update so an update superseded by
+// recovery does not block future requests.
+#[test]
+fn aborted_update_clears_pending_update() {
+    let mut driver = driver([MemImage::holding(valid_image())]);
+    driver.submit_update(C0).unwrap();
+
+    driver.execute(Effect::ReportUpdateAborted).unwrap();
+
+    assert_eq!(
+        driver.pending_update(),
+        None,
+        "aborted report must clear the pending job"
+    );
+
+    driver.submit_update(C0).unwrap();
+    assert_eq!(driver.pending_update(), Some(C0));
+}
+
 // The Updatable seam is wired but not yet driven: no executor exists until
 // the update pump lands. This pins the mock against the trait's ordering
 // rule so the wiring cannot rot in the meantime.
