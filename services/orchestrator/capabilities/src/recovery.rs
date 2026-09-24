@@ -62,6 +62,18 @@ pub trait Recovery {
     fn restore(&mut self, attempt: u8) -> Result<RestoreOutcome, Self::Error>;
 }
 
+/// Reports source exhaustion on every attempt, for a board whose
+/// components have no alternate image to fall back to. The orchestrator
+/// gates the component per its failure policy on the first try instead
+/// of retrying through a source list that does not exist.
+impl Recovery for () {
+    type Error = core::convert::Infallible;
+
+    fn restore(&mut self, _attempt: u8) -> Result<RestoreOutcome, Self::Error> {
+        Ok(RestoreOutcome::SourceExhausted)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
