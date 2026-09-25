@@ -49,11 +49,16 @@ Design decisions:
   unsafe call safely. So no borrowed stack buffer, and no scratch buffer
   shared between channels: each in-flight channel needs its own. Separately,
   a channel carries one transaction at a time and a second `start()` on a
-  busy channel returns ResourceExhausted, so one outstanding ServiceCall per
-  channel is the kernel's rule rather than ours. `channel_async_cancel`
-  drops a pending transaction. Nothing in this tree uses the async calls
-  yet, i2c and mctp both block in `channel_transact`, so the contract is
-  spelled out here rather than pointed at.
+  busy channel returns `Unavailable`, so one outstanding ServiceCall per
+  channel is the kernel's rule rather than ours. The same `Unavailable`
+  comes back from `try_recv()` when the transaction is still pending or
+  was already cancelled, so the caller keys off which call returned it,
+  not the error value alone. `channel_async_cancel` drops a pending
+  transaction. A blocking `transact()` never queues behind an in-flight
+  async one; it fails immediately with `Unavailable` via the same path.
+  Nothing in this tree uses the async calls yet, i2c and mctp both block
+  in `channel_transact`, so the contract is spelled out here rather than
+  pointed at.
 - The orchestrator never blocks. Its WaitGroup multiplexes FD nudge signals,
   ServiceCall completions (SVN bump, write filter), CompromiseDetected, and
   timers. Any event gets handled on the next wake, regardless of what else
