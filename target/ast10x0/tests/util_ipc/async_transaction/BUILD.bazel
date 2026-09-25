@@ -84,6 +84,7 @@ rust_app(
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
         "//util/ipc",
+        "//util/service",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
