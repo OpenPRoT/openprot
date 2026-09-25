@@ -24,7 +24,7 @@ use pw_status::{Error, Result};
 /// Buffers lent to the kernel for the duration of one async transaction.
 #[derive(Debug)]
 pub struct Buffers {
-    pub send: &'static [u8],
+    pub send: &'static mut [u8],
     pub recv: &'static mut [u8],
 }
 
@@ -58,23 +58,40 @@ impl<H: IpcInitiator> AsyncTransaction<H> {
 
     /// Start an async transaction.
     ///
-    /// `send` is the request payload the server will read. `recv` is the
-    /// buffer the kernel writes the server's response into. Both must be
-    /// `'static` because the kernel holds raw pointers into them until
+    /// `send` holds the request payload the server will read. `recv` is
+    /// the buffer the kernel writes the server's response into. Both must
+    /// be `'static` because the kernel holds raw pointers into them until
     /// `try_recv` or `cancel` completes the transaction.
+    ///
+    /// `send` is taken mutably even though the kernel only reads it: the
+    /// caller serializes the next request into the same buffer, and a
+    /// shared borrow handed back would leave it with nowhere to write.
+    /// Only `send[..send_len]` goes on the wire, so a caller that keeps one
+    /// buffer sized for its largest request does not transmit the slack
+    /// behind a short one. `send_len` past the end of `send` is
+    /// `OutOfRange`.
     ///
     /// On success the buffers are held until `try_recv` or `cancel`
     /// returns them. On failure (already pending, or a kernel error) both
     /// buffers come back in the `Err` so nothing is lost.
     pub fn start(
         &mut self,
-        send: &'static [u8],
+        send: &'static mut [u8],
+        send_len: usize,
         recv: &'static mut [u8],
     ) -> core::result::Result<(), StartError> {
         if self.inflight.is_some() {
             return Err(StartError {
                 error: Error::FailedPrecondition,
-                buffers: Buffers { send, recv },
+                send,
+                recv,
+            });
+        }
+        if send_len > send.len() {
+            return Err(StartError {
+                error: Error::OutOfRange,
+                send,
+                recv,
             });
         }
 
@@ -82,41 +99,52 @@ impl<H: IpcInitiator> AsyncTransaction<H> {
         // stay valid regardless of what happens to `self`, and they are
         // not read, written, or dropped again until try_recv/cancel.
         // nosemgrep
-        let result = unsafe { self.handle.async_transact_start(send, recv) };
+        let result = unsafe { self.handle.async_transact_start(&send[..send_len], recv) };
 
         match result {
             Ok(()) => {
                 self.inflight = Some(Buffers { send, recv });
                 Ok(())
             }
-            Err(error) => Err(StartError {
-                error,
-                buffers: Buffers { send, recv },
-            }),
+            Err(error) => Err(StartError { error, send, recv }),
         }
     }
 
     /// Try to complete a pending transaction.
     ///
-    /// Returns `Ok(Completion { len, send, recv })` when the server has
-    /// responded. `recv[..len]` holds the response payload; the full
-    /// buffer is returned so it can be reused.
+    /// Returns `Ok(Some(Completion { len, send, recv }))` when the server
+    /// has responded. `recv[..len]` holds the response payload; both
+    /// buffers come back so they can be reused.
     ///
-    /// Returns `Err(Error::Unavailable)` if READABLE is not set (server
-    /// has not responded yet); the buffers stay held and another
-    /// `try_recv` is expected after the next READABLE signal.
+    /// Returns `Ok(None)` while the server has not responded yet. The
+    /// buffers stay held and another `try_recv` is expected after the
+    /// next READABLE signal.
     ///
-    /// Returns `Err(Error::FailedPrecondition)` if no transaction is
-    /// pending. Any other kernel error leaves the transaction pending;
-    /// use `cancel()` to reclaim the buffers.
-    pub fn try_recv(&mut self) -> Result<Completion> {
+    /// Any error ends the transaction and carries the buffers out, so
+    /// there is no path that strands them. `FailedPrecondition` means no
+    /// transaction was pending, and that one carries nothing.
+    pub fn try_recv(&mut self) -> core::result::Result<Option<Completion>, RecvError> {
         if self.inflight.is_none() {
-            return Err(Error::FailedPrecondition);
+            return Err(RecvError {
+                error: Error::FailedPrecondition,
+                buffers: None,
+            });
         }
 
-        let len = self.handle.async_transact_complete()?;
-        let buffers = self.inflight.take().unwrap();
-        Ok(Completion { len, buffers })
+        match self.handle.async_transact_complete() {
+            Ok(len) => {
+                let Buffers { send, recv } = self.inflight.take().unwrap();
+                Ok(Some(Completion { len, send, recv }))
+            }
+            Err(Error::Unavailable) => Ok(None),
+            Err(error) => {
+                // The kernel refused for a reason that is not "not yet".
+                // Take the buffers back rather than leave the caller to
+                // remember a cancel().
+                let buffers = self.cancel().ok();
+                Err(RecvError { error, buffers })
+            }
+        }
     }
 
     /// Cancel a pending transaction and reclaim the buffers.
@@ -151,23 +179,27 @@ impl<H: IpcInitiator> Drop for AsyncTransaction<H> {
 /// Successful completion of an async transaction.
 #[derive(Debug)]
 pub struct Completion {
-    /// Number of response bytes written into `buffers.recv`.
+    /// Number of response bytes written into `recv`.
     pub len: usize,
-    /// The buffers, returned for reuse. `recv[..len]` holds the response
-    /// payload.
-    pub buffers: Buffers,
+    /// The send buffer, returned for reuse.
+    pub send: &'static mut [u8],
+    /// The receive buffer, returned for reuse. `recv[..len]` holds the
+    /// response payload.
+    pub recv: &'static mut [u8],
+}
+
+/// Error from `try_recv()`. `buffers` is `None` only when no transaction
+/// was pending, so there were none to hand back.
+#[derive(Debug)]
+pub struct RecvError {
+    pub error: Error,
+    pub buffers: Option<Buffers>,
 }
 
 /// Error from `start()`, carrying the buffers back so they are not lost.
 #[derive(Debug)]
 pub struct StartError {
     pub error: Error,
-    pub buffers: Buffers,
-}
-
-impl From<StartError> for Error {
-    /// Drops the reclaimed buffers; use `StartError` directly to reuse them.
-    fn from(e: StartError) -> Self {
-        e.error
-    }
+    pub send: &'static mut [u8],
+    pub recv: &'static mut [u8],
 }
