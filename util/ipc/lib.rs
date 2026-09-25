@@ -98,5 +98,5 @@ impl IpcHandle {
 mod async_transaction;
 mod target;
 
-pub use async_transaction::{AsyncTransaction, Buffers, Completion, StartError};
+pub use async_transaction::{AsyncTransaction, Buffers, Completion, RecvError, StartError};
 pub use target::{AsSyscallBuffer, Instant};
