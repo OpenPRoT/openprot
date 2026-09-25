@@ -48,11 +48,12 @@ rust_binary(
     ],
 )
 
-# Test app: drives the real orchestrator-sm core two ways — CheckpointWalk
+# Test app: drives the real orchestrator-sm core three ways: CheckpointWalk
 # judging per-checkpoint windows directly against object_wait (scenarios 1-3),
-# and the server runtime (BootWatchdogs) multiplexing boot/commit watchdogs via
-# wait_deadline/poll_expired (scenarios 4-6) — feeding the resulting events
-# back into the core. debug_shutdown(Ok|Err) reports.
+# the server runtime (BootWatchdogs) multiplexing boot/commit watchdogs via
+# wait_deadline/poll_expired (scenarios 4-6), and recovery end to end under
+# real kernel deadlines (scenarios 7-8), feeding the resulting events back
+# into the core. debug_shutdown(Ok|Err) reports.
 rust_app(
     name = "test_runtime",
     srcs = ["main.rs"],
