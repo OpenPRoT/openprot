@@ -96,7 +96,9 @@ impl IpcHandle {
 }
 
 mod async_transaction;
+mod channel_transport;
 mod target;
 
 pub use async_transaction::{AsyncTransaction, Buffers, Completion, RecvError, StartError};
+pub use channel_transport::AsyncChannelTransport;
 pub use target::{AsSyscallBuffer, Instant};

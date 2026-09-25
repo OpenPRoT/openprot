@@ -18,6 +18,10 @@
 //! | double start       | `start` while pending               | buffers returned  |
 //! | try_recv early     | `try_recv` before the response      | `Ok(None)`        |
 //! | send_len too big   | `start` past the end of `send`      | `OutOfRange`      |
+//! | transport roundtrip| `AsyncChannelTransport` start/poll  | byte incremented  |
+//! | transport not ready| `poll` before the response          | `Ok(None)`        |
+//! | transport too large| request past the send buffer        | `TooLarge`        |
+//! | transport cancel   | `cancel` then reuse                 | channel freed     |
 
 #![no_main]
 #![no_std]
@@ -27,7 +31,8 @@ use pw_status::{Error, Result};
 use userspace::entry;
 use userspace::syscall::{self, Signals};
 use userspace::time::{Clock, Instant, SystemClock};
-use util_ipc::{AsyncTransaction, IpcHandle, IpcInitiator};
+use util_ipc::{AsyncChannelTransport, AsyncTransaction, IpcHandle, IpcInitiator};
+use util_service::{AsyncTransport, TransportError};
 
 static mut SEND_BUF: [u8; 1] = [0x10];
 static mut RECV_BUF: [u8; 1] = [0u8; 1];
@@ -273,6 +278,139 @@ fn test_send_len_out_of_range() -> Result<()> {
     }
 }
 
+/// Buffers the transport lends the kernel. One byte each, matching the
+/// handler's request and response.
+static mut TXN_SEND: [u8; 1] = [0u8; 1];
+static mut TXN_RECV: [u8; 1] = [0u8; 1];
+
+/// # Safety
+/// Only called from this single-threaded app, and only while no
+/// `AsyncChannelTransport` still holds a prior borrow.
+unsafe fn transport() -> AsyncChannelTransport<IpcHandle> {
+    // Safety: see function doc.
+    unsafe {
+        AsyncChannelTransport::new(
+            IpcHandle::new(handle::IPC),
+            &mut *core::ptr::addr_of_mut!(TXN_SEND),
+            &mut *core::ptr::addr_of_mut!(TXN_RECV),
+        )
+    }
+}
+
+/// The seam end to end: a request goes out as plain bytes, the response
+/// comes back into the caller's own buffer, and the transport is idle
+/// afterwards so the next request can reuse it.
+fn test_transport_roundtrip() -> Result<()> {
+    // Safety: no other transport is live right now.
+    let mut transport = unsafe { transport() };
+    let mut resp = [0u8; 1];
+
+    transport.start(&[0x10]).map_err(|_| Error::Internal)?;
+    syscall::object_wait(transport.as_raw(), Signals::READABLE, Instant::MAX)?;
+
+    let Some(len) = transport.poll(&mut resp).map_err(|_| Error::Internal)? else {
+        pw_log::error!("transport roundtrip: not ready after READABLE");
+        return Err(Error::Internal);
+    };
+    if len != 1 || resp[0] != 0x11 {
+        pw_log::error!("transport roundtrip: unexpected response");
+        return Err(Error::Internal);
+    }
+
+    // Idle again: a second round-trip reuses the same buffers.
+    transport.start(&[0x10]).map_err(|_| Error::Internal)?;
+    syscall::object_wait(transport.as_raw(), Signals::READABLE, Instant::MAX)?;
+    transport.poll(&mut resp).map_err(|_| Error::Internal)?;
+    Ok(())
+}
+
+/// The case a loopback cannot reach: poll returns Ok(None) while the
+/// handler is parked, then Ok(Some) once it answers.
+fn test_transport_not_ready_then_ready() -> Result<()> {
+    let ipc = IpcHandle::new(handle::IPC);
+    if syscall::object_wait(ipc.as_raw(), Signals::USER, SystemClock::now()).is_ok() {
+        pw_log::error!("transport not ready: stale parked signal");
+        return Err(Error::Internal);
+    }
+
+    // Safety: no other transport is live right now.
+    let mut transport = unsafe { transport() };
+    let mut resp = [0u8; 1];
+
+    transport.start(&[0x40]).map_err(|_| Error::Internal)?;
+    syscall::object_wait(transport.as_raw(), Signals::USER, Instant::MAX)?;
+
+    match transport.poll(&mut resp) {
+        Ok(None) => {}
+        Ok(Some(_)) => {
+            pw_log::error!("transport not ready: completed before the handler responded");
+            return Err(Error::Internal);
+        }
+        Err(_) => {
+            pw_log::error!("transport not ready: poll failed");
+            return Err(Error::Internal);
+        }
+    }
+
+    ipc.set_peer_user_signal(true)?;
+    syscall::object_wait(transport.as_raw(), Signals::READABLE, Instant::MAX)?;
+    let ready = transport.poll(&mut resp).map_err(|_| Error::Internal)?;
+    ipc.set_peer_user_signal(false)?;
+
+    if ready != Some(1) || resp[0] != 0x41 {
+        pw_log::error!("transport not ready: unexpected response");
+        return Err(Error::Internal);
+    }
+    Ok(())
+}
+
+/// A request longer than the send buffer is refused before anything goes
+/// out, and the transport stays idle.
+fn test_transport_request_too_large() -> Result<()> {
+    // Safety: no other transport is live right now.
+    let mut transport = unsafe { transport() };
+
+    match transport.start(&[0x10, 0x20]) {
+        Err(TransportError::TooLarge) => {}
+        Err(_) => {
+            pw_log::error!("transport too large: wrong error");
+            return Err(Error::Internal);
+        }
+        Ok(()) => {
+            pw_log::error!("transport too large: start() succeeded");
+            return Err(Error::Internal);
+        }
+    }
+
+    // Still idle: a correctly sized request goes through.
+    transport.start(&[0x10]).map_err(|_| Error::Internal)?;
+    transport.cancel().map_err(|_| Error::Internal)?;
+    Ok(())
+}
+
+/// Cancel returns the buffers to the transport, so the next start works
+/// and a poll with nothing in flight is WrongState.
+fn test_transport_cancel() -> Result<()> {
+    // Safety: no other transport is live right now.
+    let mut transport = unsafe { transport() };
+    let mut resp = [0u8; 1];
+
+    transport.start(&[0x10]).map_err(|_| Error::Internal)?;
+    transport.cancel().map_err(|_| Error::Internal)?;
+
+    match transport.poll(&mut resp) {
+        Err(TransportError::WrongState) => {}
+        _ => {
+            pw_log::error!("transport cancel: poll after cancel was not WrongState");
+            return Err(Error::Internal);
+        }
+    }
+
+    transport.start(&[0x10]).map_err(|_| Error::Internal)?;
+    transport.cancel().map_err(|_| Error::Internal)?;
+    Ok(())
+}
+
 /// How often the whole sequence runs. Every case leaves the channel idle
 /// and both USER signals lowered, so a repeat that fails means state leaked
 /// from the pass before it.
@@ -286,7 +424,11 @@ fn run_all() -> Result<()> {
             .and_then(|_| test_drop_cancels())
             .and_then(|_| test_double_start())
             .and_then(|_| test_try_recv_before_response())
-            .and_then(|_| test_send_len_out_of_range());
+            .and_then(|_| test_send_len_out_of_range())
+            .and_then(|_| test_transport_roundtrip())
+            .and_then(|_| test_transport_not_ready_then_ready())
+            .and_then(|_| test_transport_request_too_large())
+            .and_then(|_| test_transport_cancel());
 
         if ret.is_err() {
             pw_log::error!("failed in round {}", round as u32);
