@@ -55,6 +55,7 @@ constraint_value(
         ":__subpackages__",
         "//drivers:__subpackages__",
         "//services:__subpackages__",
+        "//util:__subpackages__",
     ],
 )
 
