@@ -7,6 +7,7 @@ rust_library(
     name = "ipc",
     srcs = [
         "async_transaction.rs",
+        "channel_transport.rs",
         "lib.rs",
         "target.rs",
     ],
@@ -19,6 +20,7 @@ rust_library(
     }),
     visibility = ["//visibility:public"],
     deps = [
+        "//util/service",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_status/rust:pw_status",
     ],
