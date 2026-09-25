@@ -10,6 +10,8 @@ use mctp_lib::fragment::{Fragmenter, SendOutput};
 use mctp_lib::Sender;
 use openprot_mctp_api::{Handle, MctpClient, MctpError, RecvMetadata, ResponseCode};
 use openprot_mctp_server::Server;
+use openprot_pldm_service::firmware_device::{FdEventSink, FirmwareDevice, RunTerminusResult};
+use pldm_interface::firmware_device::fd_ops::FdOps;
 
 pub const FD_EID: u8 = 42;
 pub const UA_EID: u8 = 8;
@@ -54,6 +56,47 @@ pub fn transfer<S: Sender, const N: usize>(
     let pkts = packets.borrow();
     for pkt in pkts.iter() {
         dest.inbound(pkt).expect("inbound should accept packet");
+    }
+}
+
+/// Drives `fd` for exactly one step and panics on any error.
+///
+/// These host tests queue one command, run the FD, and check the response —
+/// never more than one step's worth of work, and never while the FD is in
+/// initiator mode. `run_terminus` used to be driven until it timed out with
+/// nothing left to receive, treating that timeout as "done"; the trouble is
+/// a genuine timeout (something actually hanging) looks identical, so a real
+/// bug there would have passed silently. Bounding the run to one step with
+/// `run_until` removes the ambiguity: every error from here is real.
+// `common.rs` is compiled once per test binary (via `mod common;`), and not
+// every binary uses every helper here — `firmware_update_host.rs`'s
+// multi-step flow needs `run_terminus` directly instead.
+#[allow(dead_code)]
+pub fn run_fd_step<O, Cr, Cq>(
+    fd: &mut FirmwareDevice<'_, O, Cr, Cq>,
+    remote_eid: u8,
+    buf: &mut [u8],
+    sink: &mut impl FdEventSink,
+) where
+    O: FdOps,
+    Cr: MctpClient,
+    Cq: MctpClient,
+{
+    let mut done = false;
+    match fd.run_until(
+        remote_eid,
+        buf,
+        TIMEOUT_MILLIS,
+        TIMEOUT_MILLIS,
+        sink,
+        || {
+            let go = !done;
+            done = true;
+            go
+        },
+    ) {
+        RunTerminusResult::Completed => {}
+        RunTerminusResult::StoppedByError(e) => panic!("firmware device failed: {e:?}"),
     }
 }
 
