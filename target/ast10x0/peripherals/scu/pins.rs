@@ -18,8 +18,20 @@ unsafe impl Block for ScuBlock {
     const BASE: *const u8 = ast1060_pac::Scu::ptr().cast();
 }
 
-// SAFETY: `Gpio::ptr()` is the valid, aligned, `'static` GPIO base, usable for `u32` MMIO at every offset its driver touches.
-pub(crate) const GPIO_BASE: *const () = ast1060_pac::Gpio::ptr().cast();
+/// Recover a peripheral's base address as an integer. svd2rust already carries it as the `usize`
+/// const-generic parameter of [`Periph`], but only ever surfaces it pre-cast to a pointer, and a
+/// const pointer-to-integer cast is rejected. This re-exposes the parameter itself.
+pub trait PeriphAddr {
+    /// The peripheral's base address, straight from the SVD.
+    const ADDR: usize;
+}
+
+impl<RB, const A: usize> PeriphAddr for ast1060_pac::generic::Periph<RB, A> {
+    const ADDR: usize = A;
+}
+
+/// The GPIO register block base, as an integer a grant check can compare against.
+pub(crate) const GPIO_BASE: usize = <ast1060_pac::Gpio as PeriphAddr>::ADDR;
 
 /// Every I2C controller the AST1060 exposes (0..=13) — the single source of truth for controller
 /// register bases. Pins reference a row; the userspace server indexes it by bus number.

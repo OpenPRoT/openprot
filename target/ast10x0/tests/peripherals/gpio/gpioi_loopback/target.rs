@@ -6,8 +6,9 @@
 #![no_std]
 #![no_main]
 
+use ast10x0_peripherals::aperture::take_aperture;
 use ast10x0_peripherals::create_pins;
-use ast10x0_peripherals::gpio::{IntTrigger, IntoGpio, OutputPin};
+use ast10x0_peripherals::gpio::{GpioBlock, IntTrigger, IntoGpio, OutputPin};
 use ast10x0_peripherals::scu;
 use console_backend::console_backend_write_all;
 use target_common::{declare_target, TargetInterface};
@@ -21,8 +22,10 @@ fn test_gpio_loopback() -> bool {
     // Jumper: GPIOH4/SCL1 <-> GPIOH5/SDA1 (J16 pins 1-4, rot-ast-ctrl); other teams swap to GPIOI0/I1 (scu418_0/scu418_1).
     // SAFETY: created once at boot, exclusive SoC access; the pins! table is this chip's true pin map.
     let pins = unsafe { create_pins() };
-    let output = pins.scu414_28.into_gpio();
-    let input = pins.scu414_29.into_gpio();
+    // SAFETY: kernel-only binary, minted once; no process holds a conflicting grant.
+    let gpio = GpioBlock::new(unsafe { take_aperture() });
+    let output = pins.scu414_28.into_gpio(&gpio);
+    let input = pins.scu414_29.into_gpio(&gpio);
     scu::route(&(&output, &input));
     pw_log::info!("--- GPIOI loopback test ---");
 

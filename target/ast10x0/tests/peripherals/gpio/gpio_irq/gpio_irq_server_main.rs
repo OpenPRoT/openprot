@@ -7,8 +7,9 @@
 #![no_std]
 
 use app_gpio_irq_server::{handle, signals};
+use app_gpio_irq_server_regions::take_mmaps;
 use ast10x0_peripherals::create_pins;
-use ast10x0_peripherals::gpio::{bind_gpio, IntTrigger};
+use ast10x0_peripherals::gpio::{bind_gpio, GpioBlock, IntTrigger};
 use pw_status::Error;
 use userspace::entry;
 use userspace::syscall;
@@ -28,7 +29,10 @@ fn entry() {
     // we bind the already-routed pin rather than re-muxing it.
     // SAFETY: sole pin creation site in this binary, at boot; the pins! table is this chip's true pin map.
     let pins = unsafe { create_pins() };
-    let a0 = bind_gpio(pins.scu410_0).into_input();
+    // SAFETY: mints this process's mappings once, at its entry point.
+    let mmaps = unsafe { take_mmaps() };
+    let gpio = GpioBlock::new(mmaps.gpio_regs);
+    let a0 = bind_gpio(pins.scu410_0, &gpio).into_input();
 
     if syscall::wait_group_add(
         handle::WG,

@@ -13,7 +13,10 @@ rust_library(
     ]),
     crate_name = "openprot_hal",
     edition = "2024",
-    deps = ["@rust_crates//:embedded-hal"],
+    deps = [
+        "//util/region",
+        "@rust_crates//:embedded-hal",
+    ],
 )
 
 rust_doc(

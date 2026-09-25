@@ -6,8 +6,9 @@
 #![no_std]
 #![no_main]
 
+use ast10x0_peripherals::aperture::take_aperture;
 use ast10x0_peripherals::create_pins;
-use ast10x0_peripherals::gpio::{IntoGpio, OutputPin};
+use ast10x0_peripherals::gpio::{GpioBlock, IntoGpio, OutputPin};
 use ast10x0_peripherals::scu;
 use console_backend::console_backend_write_all;
 use target_common::{declare_target, TargetInterface};
@@ -18,10 +19,12 @@ pub struct Target {}
 fn run_gpioa_test() -> bool {
     // SAFETY: created once, exclusive SoC access; the pins! table is this chip's true pin map.
     let pins = unsafe { create_pins() };
-    let a0 = pins.scu410_0.into_gpio();
-    let a1 = pins.scu410_1.into_gpio();
-    let a3 = pins.scu410_3.into_gpio();
-    let a4 = pins.scu410_4.into_gpio();
+    // SAFETY: kernel-only binary, minted once; no process holds a conflicting grant.
+    let gpio = GpioBlock::new(unsafe { take_aperture() });
+    let a0 = pins.scu410_0.into_gpio(&gpio);
+    let a1 = pins.scu410_1.into_gpio(&gpio);
+    let a3 = pins.scu410_3.into_gpio(&gpio);
+    let a4 = pins.scu410_4.into_gpio(&gpio);
     // Each handle carries its route at the type level; the tuple's `COALESCED` folds them to the
     // minimal set of RMWs at compile time — apply once.
     scu::route(&(&a0, &a1, &a3, &a4));

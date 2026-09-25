@@ -7,6 +7,7 @@
 use crate::field_mux::{coalesce_routes, Mmio, MuxRoutes, RegBatch, MAX_REGS};
 use crate::resource::{field, Capability, Pin, Routes};
 use core::marker::PhantomData;
+use util_region::{covers, Mmap, Region};
 
 // A directed pin speaks the embedded-hal vocabulary; re-exported so callers need not name the crate.
 pub use embedded_hal::digital::{InputPin, OutputPin};
@@ -103,7 +104,7 @@ pub enum GpioRole {
 #[derive(Clone, Copy)]
 pub struct GpioMap {
     /// Base of the GPIO register block these offsets are relative to — one per chip, folded at use.
-    pub base: *const (),
+    pub base: usize,
     /// Field ops to drive as output.
     pub output: &'static [RegOp],
     /// Field ops to switch to input.
@@ -233,6 +234,79 @@ pub const fn role_cfgs_ok(map: &GpioMap) -> bool {
         ])
 }
 
+/// One byte past the last register this map names — the extent a grant must cover.
+const fn map_extent(map: &GpioMap) -> usize {
+    const fn top(ops: &[RegOp], max: u32) -> u32 {
+        let mut max = max;
+        let mut i = 0;
+        while i < ops.len() {
+            if ops[i].offset > max {
+                max = ops[i].offset;
+            }
+            i += 1;
+        }
+        max
+    }
+    const fn top_reg(offset: u32, max: u32) -> u32 {
+        if offset > max {
+            offset
+        } else {
+            max
+        }
+    }
+
+    let mut max = 0;
+    max = top(map.output, max);
+    max = top(map.input, max);
+    max = top(map.set_high, max);
+    max = top(map.set_low, max);
+    max = top(map.enable_rising, max);
+    max = top(map.enable_falling, max);
+    max = top(map.enable_level_high, max);
+    max = top(map.enable_level_low, max);
+    max = top(map.enable_both, max);
+    max = top(map.disable_int, max);
+    max = top_reg(map.in_level.0, max);
+    max = top_reg(map.out_level.0, max);
+    max = top_reg(map.int_enable.0, max);
+    max = top_reg(map.int_status.0, max);
+    max = top_reg(map.sense_both.0, max);
+    max as usize + 4
+}
+
+/// Proof that the granted region `R` contains the register group pin `P` lives in. An associated
+/// const, not an anonymous `const {}`, so it evaluates under `generic_const_exprs`.
+trait AssertGpioGrant {
+    /// Evaluating this forces the coverage check; referencing it is what makes it run.
+    const COVERS: ();
+}
+
+impl<P: Routes<Gpio>, R: Mmap> AssertGpioGrant for (P, R) {
+    const COVERS: () = assert!(
+        covers::<R>(
+            <P as Routes<Gpio>>::DATA.map.base,
+            map_extent(<P as Routes<Gpio>>::DATA.map)
+        ),
+        "granted region does not cover this pin's GPIO register group",
+    );
+}
+
+/// The GPIO register block this process was granted in `system.json5`. Holding one is the authority
+/// to touch GPIO at all; binding a pin through it proves the grant covers that pin's group.
+pub struct GpioBlock<R: Mmap> {
+    _region: PhantomData<R>,
+}
+
+impl<R: Mmap> GpioBlock<R> {
+    /// Consume the granted region — the single gate between an MPU grant and any GPIO access.
+    #[must_use]
+    pub fn new(_region: Region<R>) -> Self {
+        Self {
+            _region: PhantomData,
+        }
+    }
+}
+
 /// Direction not yet chosen — what a freshly bound handle carries.
 pub struct Unset;
 
@@ -261,24 +335,32 @@ pub enum IntTrigger {
 /// register map all ride in on const `<P as Routes<Gpio>>::DATA`, so every op folds to this pin's own
 /// base and slot — handles for different pins never alias, with no shared block value to carry.
 ///
-/// `D` is the pin's direction: [`Unset`] until [`GpioPin::into_output`] or [`GpioPin::into_input`]
-/// switches it, after which the level and interrupt verbs are the ones that direction allows.
-pub struct GpioPin<P, D = Unset> {
+/// `R` is the grant the pin was bound through; `D` is the pin's direction: [`Unset`] until
+/// [`GpioPin::into_output`] or [`GpioPin::into_input`] switches it, after which the level and
+/// interrupt verbs are the ones that direction allows.
+pub struct GpioPin<P, R: Mmap, D = Unset> {
     /// The pin's type is the authority (consumed at bind); the handle is a move-only ZST that reads no field.
     _pin: PhantomData<(P, D)>,
+    /// The grant this pin was bound through, kept so the chain stays visible in the type.
+    _region: PhantomData<R>,
 }
 
-impl<P: Routes<Gpio>> GpioPin<P, Unset> {
-    /// Bind a (consumed) pin token — the token is the authority; base/bit/map ride in on const DATA.
+impl<P: Routes<Gpio>, R: Mmap> GpioPin<P, R, Unset> {
+    /// Bind a (consumed) pin token through a granted block — the token is the authority for the
+    /// pin, the block for the registers; base/bit/map ride in on const DATA.
     ///
     /// Binds as [`Unset`]: only [`GpioPin::into_output`] and [`GpioPin::into_input`] mint a directed
     /// handle, so a direction in the type always means the direction register was written.
-    pub fn new(_pin: P) -> Self {
-        Self { _pin: PhantomData }
+    pub fn new(_pin: P, _block: &GpioBlock<R>) -> Self {
+        let () = <(P, R) as AssertGpioGrant>::COVERS;
+        Self {
+            _pin: PhantomData,
+            _region: PhantomData,
+        }
     }
 }
 
-impl<P: Routes<Gpio>, D> GpioPin<P, D> {
+impl<P: Routes<Gpio>, R: Mmap, D> GpioPin<P, R, D> {
     /// This pin's register group map — read handles (`int_enable`, `int_status`, `in_level`) hang off it.
     #[must_use]
     pub const fn map(&self) -> &'static GpioMap {
@@ -315,20 +397,26 @@ impl<P: Routes<Gpio>, D> GpioPin<P, D> {
 
     /// Switch the pin to output, carrying the direction in its type from here on.
     #[must_use]
-    pub fn into_output(self) -> GpioPin<P, Output> {
+    pub fn into_output(self) -> GpioPin<P, R, Output> {
         self.apply(GpioRole::Output);
-        GpioPin { _pin: PhantomData }
+        GpioPin {
+            _pin: PhantomData,
+            _region: PhantomData,
+        }
     }
 
     /// Switch the pin to input, carrying the direction in its type from here on.
     #[must_use]
-    pub fn into_input(self) -> GpioPin<P, Input> {
+    pub fn into_input(self) -> GpioPin<P, R, Input> {
         self.apply(GpioRole::Input);
-        GpioPin { _pin: PhantomData }
+        GpioPin {
+            _pin: PhantomData,
+            _region: PhantomData,
+        }
     }
 }
 
-impl<P: Routes<Gpio>> GpioPin<P, Input> {
+impl<P: Routes<Gpio>, R: Mmap> GpioPin<P, R, Input> {
     /// Raise this pin's interrupt on `trigger`.
     pub fn enable_interrupt(&self, trigger: IntTrigger) {
         self.apply(match trigger {
@@ -346,11 +434,11 @@ impl<P: Routes<Gpio>> GpioPin<P, Input> {
     }
 }
 
-impl<P> embedded_hal::digital::ErrorType for GpioPin<P, Output> {
+impl<P, R: Mmap> embedded_hal::digital::ErrorType for GpioPin<P, R, Output> {
     type Error = core::convert::Infallible;
 }
 
-impl<P: Routes<Gpio>> embedded_hal::digital::OutputPin for GpioPin<P, Output> {
+impl<P: Routes<Gpio>, R: Mmap> embedded_hal::digital::OutputPin for GpioPin<P, R, Output> {
     fn set_high(&mut self) -> Result<(), Self::Error> {
         self.apply(GpioRole::SetHigh);
         Ok(())
@@ -362,11 +450,11 @@ impl<P: Routes<Gpio>> embedded_hal::digital::OutputPin for GpioPin<P, Output> {
     }
 }
 
-impl<P> embedded_hal::digital::ErrorType for GpioPin<P, Input> {
+impl<P, R: Mmap> embedded_hal::digital::ErrorType for GpioPin<P, R, Input> {
     type Error = core::convert::Infallible;
 }
 
-impl<P: Routes<Gpio>> embedded_hal::digital::InputPin for GpioPin<P, Input> {
+impl<P: Routes<Gpio>, R: Mmap> embedded_hal::digital::InputPin for GpioPin<P, R, Input> {
     fn is_high(&mut self) -> Result<bool, Self::Error> {
         Ok(self.read(self.map().in_level))
     }
@@ -377,20 +465,20 @@ impl<P: Routes<Gpio>> embedded_hal::digital::InputPin for GpioPin<P, Input> {
 }
 
 /// Bind a pin already routed to GPIO by privileged init; touches no SCU register — userspace-safe.
-pub fn bind_gpio<P: Routes<Gpio> + Pin>(pin: P) -> GpioPin<P> {
-    GpioPin::new(pin)
+pub fn bind_gpio<P: Routes<Gpio> + Pin, R: Mmap>(pin: P, block: &GpioBlock<R>) -> GpioPin<P, R> {
+    GpioPin::new(pin, block)
 }
 
 /// A GPIO handle carries its pin's SCU route at the type level, folded to one RMW per register at compile time.
-impl<P: Routes<Gpio>, D> MuxRoutes for GpioPin<P, D> {
+impl<P: Routes<Gpio>, R: Mmap, D> MuxRoutes for GpioPin<P, R, D> {
     const COALESCED: RegBatch = coalesce_routes(&[<P as Routes<Gpio>>::ROUTE]);
 }
 
-/// `pin.into_gpio()`: consume a GPIO-capable token into a bind-only handle; the SCU applier routes it later.
+/// `pin.into_gpio(&block)`: consume a GPIO-capable token into a bind-only handle; the SCU applier routes it later.
 pub trait IntoGpio: Routes<Gpio> + Pin + Sized {
     /// Bind this pin token to a GPIO handle (no SCU write); its route rides in via [`MuxRoutes`].
-    fn into_gpio(self) -> GpioPin<Self> {
-        GpioPin::new(self)
+    fn into_gpio<R: Mmap>(self, block: &GpioBlock<R>) -> GpioPin<Self, R> {
+        GpioPin::new(self, block)
     }
 }
 
