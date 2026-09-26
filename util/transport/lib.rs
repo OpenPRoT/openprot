@@ -22,6 +22,12 @@
 
 #![no_std]
 
+mod delayed;
+mod loopback;
+
+pub use delayed::Delayed;
+pub use loopback::Loopback;
+
 /// Why a transport round-trip failed. Small and service-neutral;
 /// service-level status travels inside the response payload, not here.
 ///
