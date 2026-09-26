@@ -188,7 +188,7 @@ impl Platform for FakePlatform {
                 let _ = self.released.push(id);
             }
             Effect::RecoverComponent { id, attempt } => {
-                let _ = self.recovery_attempts.push(attempt);
+                assert!(self.recovery_attempts.push(attempt).is_ok());
                 if let Some(sources) = self.recovery_sources {
                     return if attempt < sources {
                         Ok(Some(Event::Restored(id)))
@@ -229,7 +229,7 @@ fn drive_releases(core: &mut Core, plat: &mut FakePlatform, ids: &[ComponentId])
 }
 
 /// Run one component's inner checkpoint walk through `CheckpointWalk` and
-/// return its terminal verdict as an event. `behavior` simulates the device:
+/// return its final verdict as an event. `behavior` simulates the device:
 /// it either advances its progress register or reports a fault.
 ///
 /// The walk judges per-checkpoint windows; the runtime (`object_wait`) just
@@ -327,13 +327,13 @@ fn scenario_checkpoint_confirmed() -> Result<()> {
 
     let mut walk = CheckpointWalk::new(ProgressReader::new(), &SOC);
     let reached = SOC.checkpoints().len();
-    let terminal = walk_device(&mut walk, C0, DeviceBehavior::Progresses { reached })?;
-    if terminal != Event::Booted(C0) {
+    let final_event = walk_device(&mut walk, C0, DeviceBehavior::Progresses { reached })?;
+    if final_event != Event::Booted(C0) {
         pw_log::error!("scenario 1: walk did not confirm boot");
         return Err(Error::Internal);
     }
 
-    core.dispatch(&mut plat, terminal);
+    core.dispatch(&mut plat, final_event);
     if core.state() != State::Ready {
         pw_log::error!("scenario 1: core left Ready after boot confirmed");
         return Err(Error::Internal);
@@ -361,9 +361,9 @@ fn scenario_checkpoint_timeout() -> Result<()> {
     drive_releases(&mut core, &mut plat, &[C0])?;
 
     let mut walk = CheckpointWalk::new(ProgressReader::new(), &SOC);
-    let terminal = walk_device(&mut walk, C0, DeviceBehavior::Progresses { reached: 0 })?;
+    let final_event = walk_device(&mut walk, C0, DeviceBehavior::Progresses { reached: 0 })?;
     let is_boot_failed = matches!(
-        terminal,
+        final_event,
         Event::BootFailed { id, checkpoint: "bl1", kind, .. }
             if id == C0 && kind == BootFailureKind::TimedOut
     );
@@ -372,7 +372,7 @@ fn scenario_checkpoint_timeout() -> Result<()> {
         return Err(Error::Internal);
     }
 
-    core.dispatch(&mut plat, terminal);
+    core.dispatch(&mut plat, final_event);
     if core.state() != State::Recovering(C0) {
         pw_log::error!("scenario 2: core did not enter recovery");
         return Err(Error::Internal);
@@ -395,7 +395,7 @@ fn scenario_checkpoint_device_fault() -> Result<()> {
 
     let mut walk = CheckpointWalk::new(ProgressReader::new(), &SOC);
     let start = ticks_to_millis(SystemClock::now().ticks());
-    let terminal = walk_device(
+    let final_event = walk_device(
         &mut walk,
         C0,
         DeviceBehavior::Faults(BootStatus::FailedFatal),
@@ -403,7 +403,7 @@ fn scenario_checkpoint_device_fault() -> Result<()> {
     let elapsed = ticks_to_millis(SystemClock::now().ticks()).saturating_sub(start);
 
     let is_fatal = matches!(
-        terminal,
+        final_event,
         Event::BootFailed { id, checkpoint: "bl1", kind, .. }
             if id == C0 && kind == BootFailureKind::DeviceFatal
     );
@@ -424,7 +424,7 @@ fn scenario_checkpoint_device_fault() -> Result<()> {
         return Err(Error::Internal);
     }
 
-    core.dispatch(&mut plat, terminal);
+    core.dispatch(&mut plat, final_event);
     if core.state() != State::Recovering(C0) {
         pw_log::error!("scenario 3: core did not enter recovery");
         return Err(Error::Internal);
@@ -568,9 +568,9 @@ fn scenario_recovery_succeeds() -> Result<()> {
     drive_releases(&mut core, &mut plat, &[C0])?;
 
     let mut walk = CheckpointWalk::new(ProgressReader::new(), &SOC);
-    let terminal = walk_device(&mut walk, C0, DeviceBehavior::Progresses { reached: 0 })?;
+    let final_event = walk_device(&mut walk, C0, DeviceBehavior::Progresses { reached: 0 })?;
     let is_timeout = matches!(
-        terminal,
+        final_event,
         Event::BootFailed { id, kind, .. } if id == C0 && kind == BootFailureKind::TimedOut
     );
     if !is_timeout {
@@ -582,7 +582,7 @@ fn scenario_recovery_succeeds() -> Result<()> {
     // RecoverComponent { attempt: 0 }, and FakePlatform returns
     // Restored(C0). The SM then re-enters PreSupervision, emits
     // ReadFirmware + VerifyFirmware. All in one dispatch cycle.
-    core.dispatch(&mut plat, terminal);
+    core.dispatch(&mut plat, final_event);
     if core.state() != State::PreSupervision {
         pw_log::error!("scenario 7: expected PreSupervision after restore");
         return Err(Error::Internal);
@@ -603,18 +603,22 @@ fn scenario_recovery_succeeds() -> Result<()> {
         );
         return Err(Error::Internal);
     }
+    if core.state() != State::Ready {
+        pw_log::error!("scenario 7: core did not reach Ready after re-release");
+        return Err(Error::Internal);
+    }
 
     // Re-walk: the device boots this time.
     walk = CheckpointWalk::new(ProgressReader::new(), &SOC);
     let reached = SOC.checkpoints().len();
-    let terminal = walk_device(&mut walk, C0, DeviceBehavior::Progresses { reached })?;
-    if terminal != Event::Booted(C0) {
+    let final_event = walk_device(&mut walk, C0, DeviceBehavior::Progresses { reached })?;
+    if final_event != Event::Booted(C0) {
         pw_log::error!("scenario 7: re-walk did not confirm boot");
         return Err(Error::Internal);
     }
-    core.dispatch(&mut plat, terminal);
+    core.dispatch(&mut plat, final_event);
     if core.state() != State::Ready {
-        pw_log::error!("scenario 7: core did not reach Ready after re-walk");
+        pw_log::error!("scenario 7: core left Ready after re-walk boot");
         return Err(Error::Internal);
     }
 
@@ -633,9 +637,9 @@ fn scenario_recovery_exhausted_locks() -> Result<()> {
     drive_releases(&mut core, &mut plat, &[C0])?;
 
     let mut walk = CheckpointWalk::new(ProgressReader::new(), &SOC);
-    let terminal = walk_device(&mut walk, C0, DeviceBehavior::Progresses { reached: 0 })?;
+    let final_event = walk_device(&mut walk, C0, DeviceBehavior::Progresses { reached: 0 })?;
     let is_timeout = matches!(
-        terminal,
+        final_event,
         Event::BootFailed { id, kind, .. } if id == C0 && kind == BootFailureKind::TimedOut
     );
     if !is_timeout {
@@ -646,7 +650,7 @@ fn scenario_recovery_exhausted_locks() -> Result<()> {
     // Dispatch the timeout. RecoverComponent { attempt: 0 } →
     // RecoveryUnavailable(C0) → exhaust_recovery → ReportRecoveryFailed →
     // RecoveryFailed → Locked. All in one dispatch cycle.
-    core.dispatch(&mut plat, terminal);
+    core.dispatch(&mut plat, final_event);
     if core.state() != State::Locked {
         pw_log::error!("scenario 8: expected Locked after exhaustion");
         return Err(Error::Internal);
