@@ -95,7 +95,8 @@ pub trait Transport {
 ///
 /// A transport carries one round-trip at a time: `start` while another is in
 /// flight, or `poll`/`cancel` with none, is `WrongState`. Any error from
-/// `poll` ends the round-trip, so the next call is `start`.
+/// `poll` ends the round-trip and discards the response: a later `poll`
+/// cannot retrieve it, and the next call is `start`.
 pub trait AsyncTransport {
     fn start(&mut self, req: &[u8]) -> Result<(), TransportError>;
 
