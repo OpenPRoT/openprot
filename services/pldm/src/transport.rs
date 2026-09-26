@@ -108,10 +108,7 @@ impl<C: MctpClient> MctpPldmTransport<C> {
         }
 
         // Open an outbound request channel.
-        let mut req_channel = self
-            .stack
-            .req(remote_eid, timeout_millis)
-            .map_err(PldmServiceError::Mctp)?;
+        let mut req_channel = self.stack.req(remote_eid, timeout_millis)?;
 
         // Send the PLDM payload (buf[1..1+pldm_len]).  The MCTP layer adds
         // its own framing, so we exclude buf[0].
@@ -121,15 +118,13 @@ impl<C: MctpClient> MctpPldmTransport<C> {
         let req_payload = buf
             .get(1..req_end)
             .ok_or(PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-        req_channel
-            .send(MCTP_PLDM_MSG_TYPE, req_payload)
-            .map_err(PldmServiceError::Mctp)?;
+        req_channel.send(MCTP_PLDM_MSG_TYPE, req_payload)?;
 
         // Receive the PLDM response into buf[1..].
         let recv_buf = buf
             .get_mut(1..)
             .ok_or(PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-        let (meta, _) = req_channel.recv(recv_buf).map_err(PldmServiceError::Mctp)?;
+        let (meta, _) = req_channel.recv(recv_buf)?;
 
         Ok(meta.payload_size)
     }
@@ -198,9 +193,7 @@ impl<C: MctpClient> MctpPldmTransport<C> {
         &self,
         timeout_millis: u32,
     ) -> Result<StackListener<'_, C>, PldmServiceError> {
-        self.stack
-            .listener(MCTP_PLDM_MSG_TYPE, timeout_millis)
-            .map_err(PldmServiceError::Mctp)
+        Ok(self.stack.listener(MCTP_PLDM_MSG_TYPE, timeout_millis)?)
     }
 
     /// Receive one incoming PLDM request on an already-registered `listener`
@@ -230,10 +223,7 @@ impl<C: MctpClient> MctpPldmTransport<C> {
         let recv_buf = buf
             .get_mut(1..)
             .ok_or(PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-        let (meta, mut resp_channel) = listener
-            .recv(recv_buf)
-            .map(|(m, _, r)| (m, r))
-            .map_err(PldmServiceError::Mctp)?;
+        let (meta, _, mut resp_channel) = listener.recv(recv_buf)?;
 
         let payload_size = meta.payload_size;
 
@@ -265,8 +255,6 @@ impl<C: MctpClient> MctpPldmTransport<C> {
         let resp_payload = buf
             .get(1..resp_total_len)
             .ok_or(PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-        resp_channel
-            .send(resp_payload)
-            .map_err(PldmServiceError::Mctp)
+        Ok(resp_channel.send(resp_payload)?)
     }
 }

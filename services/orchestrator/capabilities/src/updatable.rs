@@ -186,6 +186,12 @@ impl core::error::Error for UpdateError {
     }
 }
 
+impl From<PayloadReadError> for UpdateError {
+    fn from(e: PayloadReadError) -> Self {
+        Self::Payload(e)
+    }
+}
+
 /// Chunked, random-access read seam [`Updatable::poll_stage`] pulls from.
 ///
 /// The candidate payload is streamed and never RAM-resident;
@@ -559,9 +565,7 @@ mod tests {
                 self.offset
             };
             let len = PLDM_CHUNK.min(total - request);
-            payload
-                .read_at(request as u64, &mut self.staged[request..request + len])
-                .map_err(UpdateError::Payload)?;
+            payload.read_at(request as u64, &mut self.staged[request..request + len])?;
             if request == self.offset {
                 self.offset += len;
             }
@@ -724,9 +728,7 @@ mod tests {
             }
             let end = (self.count + FLASH_PAGE).min(total);
             let mut page = vec![0; end - self.count];
-            payload
-                .read_at(self.count as u64, &mut page)
-                .map_err(UpdateError::Payload)?;
+            payload.read_at(self.count as u64, &mut page)?;
             self.slot[self.count..end].copy_from_slice(&page);
             if self.corrupt_next_write {
                 self.corrupt_next_write = false;
