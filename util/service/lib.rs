@@ -1,42 +1,31 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! The seams every IPC service is built from.
+//! Transport and dispatch traits for IPC services.
 //!
-//! A service splits into wire marshalling (host-buildable, in the service's
-//! own `api` crate), a server that turns one request frame into one response
-//! frame, and a transport that carries frames between the two. This crate
-//! holds the three traits that seam sits on, so a service defines its wire
-//! format and nothing else.
-//!
-//! A transport comes in two shapes and a type implements whichever it can
-//! serve. `Transport` blocks until the response arrives, which is what a
-//! dedicated server thread or an early-boot in-process path wants.
-//! `AsyncTransport` starts a round-trip and returns, so a caller running in
-//! an event loop never blocks. Neither is the fallback for the other: a
-//! blocking transport has no way to poll, and an event loop cannot wait.
-//!
-//! `Dispatch` is the server end. One request frame in, one response frame
-//! out, no state between calls. The same impl backs the production channel
-//! and the in-process loopback, so host tests exercise the real server.
+//! Three traits: `Transport` (blocking), `AsyncTransport` (split-phase),
+//! and `Dispatch` (server). A service defines its wire format in its own
+//! crate and plugs into these.
 
 #![no_std]
 
-/// Why a transport round-trip failed. Small and service-neutral;
-/// service-level status travels inside the response payload, not here.
+mod delayed;
+mod loopback;
+
+pub use delayed::Delayed;
+pub use loopback::Loopback;
+
+/// Why a transport round-trip failed.
 ///
-/// `WrongState` belongs to `AsyncTransport`: a blocking `transact` has no
-/// state between calls to get wrong. The other two apply to both.
+/// Service-level errors travel inside the response payload, not here.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransportError {
-    /// The underlying channel, syscall, or loopback call failed.
+    /// The channel, syscall, or loopback call failed.
     Failed,
-    /// `start` was called while a round-trip was still in flight, or
-    /// `poll`/`cancel` was called with nothing in flight.
+    /// `start` while in flight, or `poll`/`cancel` with nothing in flight.
     WrongState,
-    /// The request does not fit the transport's request buffer, or the
-    /// response does not fit the caller's.
+    /// Request or response does not fit its buffer.
     TooLarge,
 }
 
@@ -52,63 +41,49 @@ impl core::fmt::Display for TransportError {
 
 impl core::error::Error for TransportError {}
 
-/// Bytes in, bytes out, one round-trip, caller waits for the response.
-///
-/// `transact` writes the response into `resp` and returns its length. The
-/// request is one fully serialized frame and so is the response. No
-/// fragmentation, no state between calls.
-///
-/// Implement this when the caller can afford to wait: a thread dedicated to
-/// one service, or an in-process path before IPC exists. A caller inside an
-/// event loop wants `AsyncTransport` instead.
+/// One round-trip, caller waits for the response.
 pub trait Transport {
     fn transact(&mut self, req: &[u8], resp: &mut [u8]) -> Result<usize, TransportError>;
 }
 
-/// Bytes in, bytes out, one round-trip at a time, split so the caller never
-/// blocks.
+/// One round-trip at a time, split so the caller never blocks.
 ///
-/// `start` takes one fully serialized request and returns immediately; the
-/// transport copies what it needs, so `req` is free afterwards. `poll`
-/// returns `Ok(None)` while the response is still outstanding and
-/// `Ok(Some(len))` once `resp[..len]` holds one fully serialized reply.
-/// `len` is never 0: a server that cannot produce a frame at all is a
-/// failed round-trip, not an empty reply.
+/// `start` copies the request and returns immediately. `poll` returns
+/// `Ok(None)` while the response is outstanding, `Ok(Some(len))` when
+/// `resp[..len]` holds the reply. `poll` never waits.
 ///
-/// `poll` never waits: with no response ready it returns `Ok(None)` and
-/// returns. The caller is expected to be signal-driven rather than
-/// spinning, parking its event loop until the response to this round-trip
-/// arrives and polling once when it does. Registering for that needs the
-/// concrete transport (a kernel one hands out its channel handle, a
-/// loopback has none), so it happens at wiring time, not through this
-/// trait.
+/// One round-trip at a time: `start` while in flight or `poll`/`cancel`
+/// with nothing in flight is `WrongState`. Any error from `poll` ends
+/// the round-trip.
 ///
-/// A server that raises a signal to say it has news, with no round-trip
-/// outstanding, is not this trait's concern. The caller learns what the
-/// news is by starting a round-trip and asking.
+/// A request that is too large for the transport is caught at different
+/// points depending on the implementation. A channel transport checks at
+/// `start` and returns `TooLarge` before anything goes out. A loopback
+/// has no send buffer to overflow, so it hands the request straight to
+/// the server, which answers with a protocol error frame at `poll`.
+/// Callers need to handle both cases. A response too large for the
+/// caller's buffer is always `TooLarge` from `poll`.
 ///
-/// A transport carries one round-trip at a time: `start` while another is in
-/// flight, or `poll`/`cancel` with none, is `WrongState`. Any error from
-/// `poll` ends the round-trip, so the next call is `start`.
+/// Registering for wake-up signals needs the concrete transport (a
+/// kernel channel has a handle, a loopback does not), so that happens
+/// at wiring time, not through this trait.
 pub trait AsyncTransport {
     fn start(&mut self, req: &[u8]) -> Result<(), TransportError>;
 
     fn poll(&mut self, resp: &mut [u8]) -> Result<Option<usize>, TransportError>;
 
-    /// Abandon the round-trip in flight. The response, if one arrives, is
-    /// discarded.
+    /// Abandon the in-flight round-trip.
     fn cancel(&mut self) -> Result<(), TransportError>;
 }
 
 /// Why a dispatch produced no response frame at all.
 ///
-/// A service encodes its own errors into the response frame, so a failed
-/// operation is still a frame and still `Ok`. This is the one case where
-/// there is nothing to send back.
+/// Service errors go in the response frame (still `Ok`). This covers
+/// the case where even an error frame does not fit.
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DispatchError {
-    /// `response` is too small to hold even an error frame.
+    /// Response buffer too small for any frame.
     ResponseTooSmall,
 }
 
@@ -122,15 +97,18 @@ impl core::fmt::Display for DispatchError {
 
 impl core::error::Error for DispatchError {}
 
-/// The server end: one request frame in, one response frame out.
+impl From<DispatchError> for TransportError {
+    fn from(e: DispatchError) -> Self {
+        match e {
+            DispatchError::ResponseTooSmall => Self::TooLarge,
+        }
+    }
+}
+
+/// Server end: one request frame in, one response frame out.
 ///
-/// Returns the number of bytes written to `response`, always at least one.
-/// A loopback transport writes into the caller's buffer, so it reports a
-/// `DispatchError` as `TransportError::TooLarge`.
-///
-/// Implementations hold no state between calls beyond whatever the service
-/// itself owns, so the same impl serves the production channel and the
-/// in-process loopback.
+/// Returns bytes written to `response`. No state between calls beyond
+/// what the service itself owns.
 pub trait Dispatch {
     fn dispatch(&mut self, request: &[u8], response: &mut [u8]) -> Result<usize, DispatchError>;
 }
