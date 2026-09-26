@@ -16,6 +16,6 @@ rust_library(
 )
 
 rust_test(
-    name = "loopback_test",
+    name = "service_test",
     crate = ":service",
 )
