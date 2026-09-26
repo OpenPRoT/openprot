@@ -54,7 +54,8 @@ pub trait Transport {
 ///
 /// One round-trip at a time: `start` while in flight or `poll`/`cancel`
 /// with nothing in flight is `WrongState`. Any error from `poll` ends
-/// the round-trip.
+/// the round-trip and discards the response: a later `poll` cannot
+/// retrieve it, and the next call is `start`.
 ///
 /// A request that is too large for the transport is caught at different
 /// points depending on the implementation. A channel transport checks at

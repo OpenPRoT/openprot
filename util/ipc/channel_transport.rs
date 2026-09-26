@@ -93,6 +93,8 @@ impl<H: IpcInitiator> AsyncTransport for AsyncChannelTransport<H> {
                     recv: completion.recv,
                 });
                 if too_large {
+                    // recv goes back to idle without being copied out, so
+                    // the response is gone. The next call is start.
                     return Err(TransportError::TooLarge);
                 }
                 Ok(Some(len))

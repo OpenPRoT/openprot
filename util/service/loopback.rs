@@ -56,6 +56,8 @@ impl<D: Dispatch, const N: usize> AsyncTransport for Loopback<D, N> {
             return Err(TransportError::WrongState);
         };
         if len > resp.len() {
+            // The held response is dropped, not kept for a retry: the
+            // round-trip is over and the next call is start.
             self.pending = None;
             return Err(TransportError::TooLarge);
         }
