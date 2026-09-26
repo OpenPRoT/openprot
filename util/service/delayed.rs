@@ -80,7 +80,7 @@ mod tests {
         ) -> Result<usize, DispatchError> {
             self.seen += 1;
             if response.is_empty() {
-                return Err(DispatchError::ResponseTooSmall);
+                return Err(DispatchError::ResponseTooLarge);
             }
             response[0] = request[0].wrapping_add(1);
             Ok(1)

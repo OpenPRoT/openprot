@@ -42,10 +42,13 @@ pub trait FdHandler {
 
 /// Decode one request, call the handler, encode the response.
 ///
-/// Returns the number of bytes written to `response`. On any wire
-/// error the response is an `InternalError`; on an unknown opcode it
-/// is `InvalidOp`. Only a `response` too small to hold even that error
-/// frame has nothing to send back.
+/// Returns the number of bytes written to `response`. An unknown opcode
+/// answers `InvalidOp` and a request frame that does not decode answers
+/// `MalformedRequest`, so a caller error is never reported as a fault in
+/// the FD. `InternalError` is left for the one server-side case: the
+/// response does not fit the buffer the caller gave, but an error frame
+/// does. A `response` too small for even that error frame has nothing to
+/// send back.
 pub fn dispatch<F: FdHandler>(
     handler: &mut F,
     request: &[u8],
@@ -54,9 +57,12 @@ pub fn dispatch<F: FdHandler>(
     let code = match dispatch_inner(handler, request, response) {
         Ok(n) => return Ok(n),
         Err(WireError::InvalidOpcode(_)) => ResponseCode::InvalidOp,
-        Err(_) => ResponseCode::InternalError,
+        Err(WireError::Truncated | WireError::PayloadTooLarge | WireError::InvalidValue(_)) => {
+            ResponseCode::MalformedRequest
+        }
+        Err(WireError::BufferTooSmall) => ResponseCode::InternalError,
     };
-    wire::encode_error_response(response, code).map_err(|_| DispatchError::ResponseTooSmall)
+    wire::encode_error_response(response, code).map_err(|_| DispatchError::ResponseTooLarge)
 }
 
 /// An `FdHandler` as a server the shared transports can drive.
@@ -359,16 +365,16 @@ mod tests {
     }
 
     #[test]
-    fn truncated_request_returns_internal_error() {
+    fn truncated_request_returns_malformed_request() {
         let mut resp = [0u8; MAX_RESPONSE_SIZE];
         let mut fd = MockFd::new();
         let resp_len = dispatch(&mut fd, &[0u8; 2], &mut resp).unwrap();
         let h = wire::decode_response_header(&resp[..resp_len]).unwrap();
-        assert_eq!(h.response_code(), ResponseCode::InternalError);
+        assert_eq!(h.response_code(), ResponseCode::MalformedRequest);
     }
 
     #[test]
-    fn deny_verify_missing_reason_returns_internal_error() {
+    fn deny_verify_missing_reason_returns_malformed_request() {
         let mut req = [0u8; 16];
         let h = RequestHeader {
             op: PldmOp::DenyVerify as u8,
@@ -380,12 +386,12 @@ mod tests {
         let mut fd = MockFd::new();
         let resp_len = dispatch(&mut fd, &req[..RequestHeader::SIZE], &mut resp).unwrap();
         let rh = wire::decode_response_header(&resp[..resp_len]).unwrap();
-        assert_eq!(rh.response_code(), ResponseCode::InternalError);
+        assert_eq!(rh.response_code(), ResponseCode::MalformedRequest);
         assert_eq!(fd.last_op, None);
     }
 
     #[test]
-    fn deny_verify_bad_reason_returns_internal_error() {
+    fn deny_verify_bad_reason_returns_malformed_request() {
         let mut req = [0u8; 16];
         let h = RequestHeader {
             op: PldmOp::DenyVerify as u8,
@@ -398,12 +404,12 @@ mod tests {
         let mut fd = MockFd::new();
         let resp_len = dispatch(&mut fd, &req[..RequestHeader::SIZE + 1], &mut resp).unwrap();
         let rh = wire::decode_response_header(&resp[..resp_len]).unwrap();
-        assert_eq!(rh.response_code(), ResponseCode::InternalError);
+        assert_eq!(rh.response_code(), ResponseCode::MalformedRequest);
         assert_eq!(fd.last_op, None);
     }
 
     #[test]
-    fn accept_offer_truncated_args_returns_internal_error() {
+    fn accept_offer_truncated_args_returns_malformed_request() {
         let mut req = [0u8; 16];
         let h = RequestHeader {
             op: PldmOp::AcceptOffer as u8,
@@ -417,7 +423,7 @@ mod tests {
         let mut fd = MockFd::new();
         let resp_len = dispatch(&mut fd, &req[..RequestHeader::SIZE + 1], &mut resp).unwrap();
         let rh = wire::decode_response_header(&resp[..resp_len]).unwrap();
-        assert_eq!(rh.response_code(), ResponseCode::InternalError);
+        assert_eq!(rh.response_code(), ResponseCode::MalformedRequest);
         assert_eq!(fd.last_op, None);
     }
 
@@ -435,7 +441,7 @@ mod tests {
 
         let h = wire::decode_response_header(&resp[..resp_len]).unwrap();
         assert!(!h.is_success());
-        assert_eq!(h.response_code(), ResponseCode::InternalError);
+        assert_eq!(h.response_code(), ResponseCode::MalformedRequest);
         assert_eq!(fd.last_op, None);
     }
 }

@@ -44,6 +44,9 @@ pub enum ResponseCode {
     InvalidOp = 2,
     /// Operation not valid in the FD's current phase.
     WrongPhase = 3,
+    /// Request frame did not decode: short, over-long, or a field the
+    /// FD does not recognize.
+    MalformedRequest = 4,
 }
 
 impl ResponseCode {
@@ -57,6 +60,7 @@ impl ResponseCode {
             1 => Some(Self::InternalError),
             2 => Some(Self::InvalidOp),
             3 => Some(Self::WrongPhase),
+            4 => Some(Self::MalformedRequest),
             _ => None,
         }
     }
@@ -69,6 +73,7 @@ impl fmt::Display for ResponseCode {
             Self::InternalError => f.write_str("internal error"),
             Self::InvalidOp => f.write_str("invalid op"),
             Self::WrongPhase => f.write_str("wrong phase"),
+            Self::MalformedRequest => f.write_str("malformed request"),
         }
     }
 }

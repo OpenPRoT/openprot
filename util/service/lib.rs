@@ -84,14 +84,15 @@ pub trait AsyncTransport {
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DispatchError {
-    /// Response buffer too small for any frame.
-    ResponseTooSmall,
+    /// The response does not fit the buffer the caller gave, not even
+    /// as an error frame.
+    ResponseTooLarge,
 }
 
 impl core::fmt::Display for DispatchError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::ResponseTooSmall => f.write_str("response buffer too small for a reply"),
+            Self::ResponseTooLarge => f.write_str("response does not fit the buffer"),
         }
     }
 }
@@ -101,7 +102,7 @@ impl core::error::Error for DispatchError {}
 impl From<DispatchError> for TransportError {
     fn from(e: DispatchError) -> Self {
         match e {
-            DispatchError::ResponseTooSmall => Self::TooLarge,
+            DispatchError::ResponseTooLarge => Self::TooLarge,
         }
     }
 }
