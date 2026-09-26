@@ -242,10 +242,8 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
             // such as CancelUpdate is serviced between every RequestFirmwareData.
             let initiator_active = self.cmd_interface.fd_ctx.should_start_initiator_mode();
             if initiator_active
-                && let Some(pldm_len) = self
-                    .cmd_interface
-                    .generate_initiator_request(&mut fw_buf)
-                    .map_err(PldmServiceError::MsgHandler)?
+                && let Some(pldm_len) =
+                    self.cmd_interface.generate_initiator_request(&mut fw_buf)?
             {
                 let resp_len = self.requester_transport.send_request(
                     remote_eid,
@@ -259,9 +257,7 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
                 let resp = fw_buf
                     .get_mut(..resp_total_len)
                     .ok_or(PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-                self.cmd_interface
-                    .process_initiator_response(resp)
-                    .map_err(PldmServiceError::MsgHandler)?;
+                self.cmd_interface.process_initiator_response(resp)?;
             }
 
             // Phase 2: poll for an inbound command so the responder path
@@ -290,9 +286,7 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
                     if source_eid != remote_eid {
                         return Ok(0);
                     }
-                    self.cmd_interface
-                        .handle_responder_msg(framed_buf)
-                        .map_err(PldmServiceError::MsgHandler)
+                    Ok(self.cmd_interface.handle_responder_msg(framed_buf)?)
                 },
             ) {
                 Ok(()) => {
