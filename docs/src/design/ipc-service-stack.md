@@ -49,6 +49,11 @@ sequenceDiagram
 
 ## Loopback path (host tests)
 
+A loopback answers on the first poll, so it cannot test a client's
+not-ready path. `Delayed` wraps any transport and returns `Ok(None)` for a
+set number of polls before forwarding, which is how a host test reaches that
+path.
+
 ```mermaid
 sequenceDiagram
     participant C as Client<br/>(test code)
@@ -85,8 +90,8 @@ graph TD
 
     subgraph "Server process"
         SV[Server main loop]
-        DS[dispatch fn]
-        FH[FdHandler impl]
+        DS[service dispatch]
+        FH["handler (e.g. FdHandler)"]
     end
 
     subgraph "Traits (util/service)"
