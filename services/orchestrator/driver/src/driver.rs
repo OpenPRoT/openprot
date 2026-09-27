@@ -41,6 +41,10 @@ pub enum DriverError {
     UpdateBusy,
     /// The device refused to activate what it staged.
     UpdateFault,
+    /// The machine is in a state that answers nothing: pre-service or
+    /// locked down. The request is refused instead of being dropped
+    /// inside the state machine with no report.
+    Unsupervised,
     /// The recovery mechanism faulted (bus error, unreachable source).
     /// Distinct from source exhaustion, which is a verdict, not a fault.
     RecoveryFault,
@@ -73,6 +77,7 @@ impl core::fmt::Display for DriverError {
             DriverError::SvnFloorFault => "svn floor could not be advanced",
             DriverError::UpdateBusy => "an update is already in flight",
             DriverError::UpdateFault => "device refused to activate the staged image",
+            DriverError::Unsupervised => "the platform is not in a state that answers requests",
             DriverError::RecoveryFault => "recovery mechanism faulted",
             DriverError::NoUpdateJob => "no update job for this effect",
             DriverError::CandidateOutOfRange => "candidate does not fit the staging region",
@@ -693,12 +698,22 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
 /// `AuthenticateStageUpdate` can never run without a target. On refusal no
 /// event is injected and the frontend answers the requester over its own
 /// protocol.
+///
+/// Exactly one answer per request. A supervised machine always produces
+/// one: `Ready` runs the update, and the other supervised states report
+/// it deferred. An unsupervised one (pre-service, or locked down) drops
+/// what it does not handle, so the request is refused here rather than
+/// recorded and forgotten. Refusing outside is what keeps `Locked` inert:
+/// giving it an arm that emits a report would breach that.
 pub fn request_update<B: BoardCapabilities, const N: usize, const E: usize>(
     orchestrator: &mut Orchestrator<N, E>,
     driver: &mut PlatformDriver<B, N>,
     target: ComponentId,
     len: u64,
 ) -> Result<(), DriverError> {
+    if !orchestrator.state().is_supervised() {
+        return Err(DriverError::Unsupervised);
+    }
     driver.submit_update(target, len)?;
     orchestrator.dispatch(driver, Event::UpdateRequest);
     Ok(())

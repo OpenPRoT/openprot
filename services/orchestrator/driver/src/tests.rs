@@ -1792,3 +1792,69 @@ fn a_rejected_update_returns_the_platform_to_ready() {
     assert_eq!(driver.pending_update(), None, "DiscardStaged cleared it");
     assert!(!driver.board().updatables[0].active);
 }
+
+// Exactly one answer per request. Before the platform is in service there
+// is no handler to report a deferral, so the request is refused where the
+// frontend can still answer the requester, and nothing is recorded.
+#[test]
+fn a_request_before_the_platform_is_in_service_is_refused() {
+    let mut orch = orchestrator();
+    let mut driver = driver([MemImage::holding(valid_image())]);
+
+    assert_eq!(orch.state(), State::PowerOnReset);
+    assert_eq!(
+        request_update(&mut orch, &mut driver, C0, CANDIDATE_LEN),
+        Err(DriverError::Unsupervised)
+    );
+    assert_eq!(driver.pending_update(), None);
+}
+
+// Same for a locked platform: Locked is inert by design, so it can neither
+// run the update nor report it deferred.
+#[test]
+fn a_request_to_a_locked_platform_is_refused() {
+    let mut orch = orchestrator();
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
+        verifier: XorVerifier {
+            fault: true,
+            svn: MOCK_SVN,
+        },
+        ..mock_board()
+    });
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    assert_eq!(orch.state(), State::Locked);
+
+    assert_eq!(
+        request_update(&mut orch, &mut driver, C0, CANDIDATE_LEN),
+        Err(DriverError::Unsupervised)
+    );
+    assert_eq!(driver.pending_update(), None);
+}
+
+// A supervised state that is not Ready still answers: the SM reports the
+// request deferred, so the frontend learns its fate and the job is
+// cleared. The contract is one answer, not one acceptance.
+#[test]
+fn a_request_while_an_update_runs_is_deferred_not_dropped() {
+    let mut orch = orchestrator();
+    let mut driver = update_driver(MockUpdatable::stepping(2));
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    request_update(&mut orch, &mut driver, C0, CANDIDATE_LEN).unwrap();
+    assert_eq!(orch.state(), State::Updating);
+
+    // The second request is refused by the driver's own single-job rule,
+    // before the SM sees it.
+    assert_eq!(
+        request_update(&mut orch, &mut driver, C0, CANDIDATE_LEN),
+        Err(DriverError::UpdateBusy)
+    );
+
+    // An UpdateRequest that reaches a supervised non-Ready state is
+    // reported, not dropped.
+    orch.dispatch(&mut driver, Event::UpdateRequest);
+    assert!(driver
+        .board()
+        .report_sink
+        .seen
+        .contains(&Report::UpdateDeferred));
+}

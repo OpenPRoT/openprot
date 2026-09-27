@@ -450,6 +450,24 @@ pub enum State {
     Locked,
 }
 
+impl State {
+    /// Whether the machine is nested under the supervising handler, which
+    /// is the same thing as being able to answer for an event it does not
+    /// handle itself. The supervised states are the ones the eRoT can be
+    /// in after it has exited [`State::PreSupervision`] and before it
+    /// locks down.
+    ///
+    /// An unsupervised state drops what it does not handle, so a caller
+    /// with an outstanding answer to give (the update frontend) has to
+    /// check this before handing the machine a request.
+    pub const fn is_supervised(self) -> bool {
+        matches!(
+            self,
+            State::AwaitingReady(_) | State::Ready | State::Updating | State::Recovering(_)
+        )
+    }
+}
+
 /// A validated **chain of trust**: the ordered list of components the eRoT
 /// walks, verifies, and supervises, in walk order.
 ///
