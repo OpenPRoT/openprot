@@ -47,6 +47,9 @@ pub enum DriverError {
     Unsupervised,
     /// The eRoT's own update session could not be read or written.
     SelfUpdateFault,
+    /// A floor commit was asked for with no confirmed self-update behind
+    /// it. Nothing has proven an image at that SVN, so the floor stays.
+    NoSelfUpdateToCommit,
     /// The recovery mechanism faulted (bus error, unreachable source).
     /// Distinct from source exhaustion, which is a verdict, not a fault.
     RecoveryFault,
@@ -81,6 +84,7 @@ impl core::fmt::Display for DriverError {
             DriverError::UpdateFault => "device refused to activate the staged image",
             DriverError::Unsupervised => "the platform is not in a state that answers requests",
             DriverError::SelfUpdateFault => "self-update session could not be read or written",
+            DriverError::NoSelfUpdateToCommit => "no confirmed self-update to commit the floor to",
             DriverError::RecoveryFault => "recovery mechanism faulted",
             DriverError::NoUpdateJob => "no update job for this effect",
             DriverError::CandidateOutOfRange => "candidate does not fit the staging region",
@@ -333,6 +337,42 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
                 Ok(())
             }
         }
+    }
+
+    /// Advances the eRoT's own floor to the SVN its confirmed session
+    /// recorded, then closes the session.
+    ///
+    /// This is the update agent's request arriving as
+    /// UpdateSecurityRevision, which the FD reports as
+    /// `SvnCommitPending`: the caller runs this and grants on `Ok`, or
+    /// denies on `Err`. The floor never moves at activation, so a
+    /// downgrade needs a confirmed trial boot first.
+    ///
+    /// Refuses unless the session is confirmed and uncommitted. A
+    /// request with nothing behind it must not move the floor, because
+    /// nothing has proven the image that SVN belongs to.
+    ///
+    /// Replay-safe, which is what makes the crash window harmless:
+    /// `advance` is a no-op at or below the floor and `complete`
+    /// succeeds from `Idle`, so a request repeated after a crash between
+    /// the two lands in the same place.
+    pub fn commit_self_svn_floor(&mut self) -> Result<(), DriverError> {
+        let session = &mut self.board.self_update;
+        let state = session.state().map_err(|_| DriverError::SelfUpdateFault)?;
+        let running = session
+            .running()
+            .map_err(|_| DriverError::SelfUpdateFault)?;
+        let TrialOutcome::ConfirmedUncommitted { svn } = trial_outcome(state, running) else {
+            return Err(DriverError::NoSelfUpdateToCommit);
+        };
+        self.board
+            .self_svn_floor
+            .advance(svn)
+            .map_err(|_| DriverError::SvnFloorFault)?;
+        self.board
+            .self_update
+            .complete()
+            .map_err(|_| DriverError::SelfUpdateFault)
     }
 
     /// One step of the in-flight update, called by the event loop between

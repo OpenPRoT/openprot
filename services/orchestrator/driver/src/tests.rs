@@ -2061,3 +2061,108 @@ fn resume_with_an_unreadable_session_fails_closed() {
         Err(DriverError::SelfUpdateFault)
     );
 }
+
+// The update agent's UpdateSecurityRevision, which the FD reports as
+// SvnCommitPending: the floor takes the SVN the confirmed trial proved,
+// and the session closes.
+#[test]
+fn committing_the_self_floor_advances_it_and_closes_the_session() {
+    let mut driver = self_update_driver(
+        MockSelfUpdate::holding(
+            SelfUpdateState::Committed { svn: Svn(7) },
+            RunningImage::Trial,
+        ),
+        3,
+    );
+
+    driver.commit_self_svn_floor().expect("floor commit failed");
+
+    assert_eq!(driver.board().self_svn_floor.floor(), Ok(Svn(7)));
+    assert_eq!(driver.board().self_update.state, SelfUpdateState::Idle);
+}
+
+// Nothing has proven an image at that SVN, so a request with no
+// confirmed session behind it leaves the floor where it is. The caller
+// denies the update agent.
+#[test]
+fn committing_the_self_floor_without_a_confirmed_session_is_refused() {
+    let mut driver = self_update_driver(MockSelfUpdate::idle(), 3);
+
+    assert_eq!(
+        driver.commit_self_svn_floor(),
+        Err(DriverError::NoSelfUpdateToCommit)
+    );
+    assert_eq!(driver.board().self_svn_floor.floor(), Ok(Svn(3)));
+}
+
+// A trial still running is not a verdict: the floor waits for the boot
+// that judges it.
+#[test]
+fn committing_the_self_floor_during_a_trial_is_refused() {
+    let mut driver = self_update_driver(
+        MockSelfUpdate::holding(
+            SelfUpdateState::TrialPending { svn: Svn(7) },
+            RunningImage::Trial,
+        ),
+        3,
+    );
+
+    assert_eq!(
+        driver.commit_self_svn_floor(),
+        Err(DriverError::NoSelfUpdateToCommit)
+    );
+    assert_eq!(driver.board().self_svn_floor.floor(), Ok(Svn(3)));
+}
+
+// The crash window between advancing the floor and closing the session:
+// the update agent asks again, the advance is a no-op, and the session
+// still ends up closed.
+#[test]
+fn a_repeated_self_floor_commit_lands_in_the_same_place() {
+    let mut driver = self_update_driver(
+        MockSelfUpdate::holding(
+            SelfUpdateState::Committed { svn: Svn(7) },
+            RunningImage::Trial,
+        ),
+        7,
+    );
+
+    driver.commit_self_svn_floor().expect("first commit failed");
+
+    assert_eq!(driver.board().self_svn_floor.floor(), Ok(Svn(7)));
+    assert_eq!(driver.board().self_update.state, SelfUpdateState::Idle);
+    // The session is closed, so the repeat is refused rather than
+    // moving the floor a second time.
+    assert_eq!(
+        driver.commit_self_svn_floor(),
+        Err(DriverError::NoSelfUpdateToCommit)
+    );
+    assert_eq!(driver.board().self_svn_floor.floor(), Ok(Svn(7)));
+}
+
+// The floor is the thing that must not silently fail: if it cannot take
+// the SVN, the session stays open so the next request retries.
+#[test]
+fn a_floor_that_cannot_advance_leaves_the_session_open() {
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
+        self_update: MockSelfUpdate::holding(
+            SelfUpdateState::Committed { svn: Svn(7) },
+            RunningImage::Trial,
+        ),
+        self_svn_floor: MockFloor {
+            floor: 3,
+            fail: true,
+        },
+        ..mock_board()
+    });
+
+    assert_eq!(
+        driver.commit_self_svn_floor(),
+        Err(DriverError::SvnFloorFault)
+    );
+    assert_eq!(
+        driver.board().self_update.state,
+        SelfUpdateState::Committed { svn: Svn(7) },
+        "still owed, so the next request retries"
+    );
+}
