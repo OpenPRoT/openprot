@@ -1110,18 +1110,6 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
         self.state
     }
 
-    /// Whether `state` is nested under the supervising handler
-    /// ([`Rot::handle_supervising`]) — i.e. whether an [`Outcome::Super`] from
-    /// its leaf handler has anywhere to go. The four supervised states are the
-    /// ones the eRoT can be in after it has exited [`State::PreSupervision`],
-    /// and before it locks down.
-    const fn is_supervised(state: State) -> bool {
-        matches!(
-            state,
-            State::AwaitingReady(_) | State::Ready | State::Updating(_) | State::Recovering(_)
-        )
-    }
-
     /// Reduce one event: dispatch, fall through to the supervisor if needed, and
     /// apply the resulting outcome.
     ///
@@ -1153,7 +1141,7 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
         //    event — including the `EffectFailed` from a failed `LatchLockdown`,
         //    which would otherwise loop.
         if let Outcome::Super = outcome
-            && Self::is_supervised(self.state)
+            && self.state.is_supervised()
         {
             outcome = self.rot.handle_supervising(event, ctx);
         }

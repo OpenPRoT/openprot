@@ -41,6 +41,9 @@ pub enum DriverError {
     UpdateBusy,
     /// The device refused to activate what it staged.
     UpdateFault,
+    /// The machine is pre-service or locked down, so it would drop the
+    /// request without reporting it. Refused here instead.
+    Unsupervised,
     /// The recovery mechanism faulted (bus error, unreachable source).
     /// Distinct from source exhaustion, which is a verdict, not a fault.
     RecoveryFault,
@@ -73,6 +76,7 @@ impl core::fmt::Display for DriverError {
             DriverError::SvnFloorFault => "svn floor could not be advanced",
             DriverError::UpdateBusy => "an update is already in flight",
             DriverError::UpdateFault => "device refused to activate the staged image",
+            DriverError::Unsupervised => "the platform is pre-service or locked down",
             DriverError::RecoveryFault => "recovery mechanism faulted",
             DriverError::NoUpdateJob => "no update job for this effect",
             DriverError::CandidateOutOfRange => "candidate does not fit the staging region",
@@ -693,12 +697,21 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
 /// `AuthenticateStageUpdate` can never run without a target. On refusal no
 /// event is injected and the frontend answers the requester over its own
 /// protocol.
+///
+/// Every request gets one answer. `Ready` runs the update and the other
+/// supervised states report it deferred, but an unsupervised machine drops
+/// what it does not handle, so the request is refused here instead. The
+/// check sits outside the state machine because giving `Locked` an arm that
+/// emits a report would stop it being inert.
 pub fn request_update<B: BoardCapabilities, const N: usize, const E: usize>(
     orchestrator: &mut Orchestrator<N, E>,
     driver: &mut PlatformDriver<B, N>,
     target: ComponentId,
     len: u64,
 ) -> Result<(), DriverError> {
+    if !orchestrator.state().is_supervised() {
+        return Err(DriverError::Unsupervised);
+    }
     driver.submit_update(target, len)?;
     orchestrator.dispatch(driver, Event::UpdateRequest(target));
     Ok(())

@@ -457,6 +457,19 @@ pub enum State {
     Locked,
 }
 
+impl State {
+    /// Whether an event this state does not handle itself falls through to
+    /// the shared handler. The unsupervised states drop it instead, so a
+    /// caller that owes someone an answer (the update frontend) has to check
+    /// this before handing the machine a request.
+    pub const fn is_supervised(self) -> bool {
+        matches!(
+            self,
+            State::AwaitingReady(_) | State::Ready | State::Updating(_) | State::Recovering(_)
+        )
+    }
+}
+
 /// A validated **chain of trust**: the ordered list of components the eRoT
 /// walks, verifies, and supervises, in walk order.
 ///
