@@ -131,6 +131,19 @@ pub enum Report {
     /// discarded and no verdict for that request follows. Platform-wide for
     /// the same reason as [`Report::UpdateDeferred`].
     UpdateAborted,
+    /// The spare slot could not be brought up to date after a commit.
+    /// The running image is fine. The other slot still holds the
+    /// firmware from before the update, so a fallback boots the old
+    /// version.
+    ///
+    /// CSA 5.1.3 wants more than a report. A slot left unbootable has to
+    /// be repaired from a known-good image. Nothing does that yet.
+    SlotResyncFailed(ComponentId),
+    /// The spare slot was brought up to date but the anti-rollback floor
+    /// could not be written afterwards. The component runs the new image
+    /// and both slots hold it; the floor still names the old SVN, so the
+    /// old image could be installed again.
+    SvnFloorCommitFailed(ComponentId),
 }
 
 /// Where the driver hands its [`Report`]s. What a report becomes, a log
