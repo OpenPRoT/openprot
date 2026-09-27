@@ -12,8 +12,8 @@ use crate::board::{
     Board, BoardCapabilities, ImageSource, Report, ReportSink, SvnFloorBinding, Verdict, Verifier,
 };
 use orchestrator_capabilities::{
-    BootControl, BootWatch, FailureCause, Progress, Recovery, RestoreOutcome, StageProgress, Svn,
-    SvnFloor, Updatable, WalkVerdict,
+    trial_outcome, BootControl, BootWatch, FailureCause, Progress, Recovery, RestoreOutcome,
+    SelfUpdate, StageProgress, Svn, SvnFloor, TrialOutcome, Updatable, WalkVerdict,
 };
 use util_io::{ByteSource, ByteWindow};
 
@@ -45,6 +45,8 @@ pub enum DriverError {
     /// locked down. The request is refused instead of being dropped
     /// inside the state machine with no report.
     Unsupervised,
+    /// The eRoT's own update session could not be read or written.
+    SelfUpdateFault,
     /// The recovery mechanism faulted (bus error, unreachable source).
     /// Distinct from source exhaustion, which is a verdict, not a fault.
     RecoveryFault,
@@ -78,6 +80,7 @@ impl core::fmt::Display for DriverError {
             DriverError::UpdateBusy => "an update is already in flight",
             DriverError::UpdateFault => "device refused to activate the staged image",
             DriverError::Unsupervised => "the platform is not in a state that answers requests",
+            DriverError::SelfUpdateFault => "self-update session could not be read or written",
             DriverError::RecoveryFault => "recovery mechanism faulted",
             DriverError::NoUpdateJob => "no update job for this effect",
             DriverError::CandidateOutOfRange => "candidate does not fit the staging region",
@@ -282,6 +285,54 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         updatable.activate().map_err(|_| DriverError::UpdateFault)?;
         self.pending_update = None;
         Ok(())
+    }
+
+    /// Settles the eRoT's last self-update, once, at boot before the walk.
+    ///
+    /// The eRoT's own update is judged by a boot that has to read what the
+    /// previous one left behind, so the verdict comes from durable state:
+    /// the session plus the image this boot is running.
+    ///
+    /// - No session, or a trial that is running right now: nothing to
+    ///   settle. A trial in progress is judged later, by the boot it is
+    ///   part of, not here.
+    /// - A session nothing will confirm (the trial fell back, or was
+    ///   never armed): reverted, so the next update can start.
+    /// - Confirmed but the floor has not taken the SVN: held. The floor
+    ///   advance is the update agent's to ask for, with
+    ///   UpdateSecurityRevision once the platform is in service, so this
+    ///   boot must not advance it. If the floor already reads at or above
+    ///   the session's SVN the advance did land before the crash, and the
+    ///   session is completed here: that is the one gap between advancing
+    ///   the floor and closing the session.
+    ///
+    /// Must run before the machine can grant a new update: `prepare`
+    /// overwrites any earlier session, so a new update recorded over a
+    /// `Committed` one would drop the floor advance it still owes.
+    pub fn resume_self_update(&mut self) -> Result<(), DriverError> {
+        let session = &mut self.board.self_update;
+        let state = session.state().map_err(|_| DriverError::SelfUpdateFault)?;
+        let running = session
+            .running()
+            .map_err(|_| DriverError::SelfUpdateFault)?;
+        match trial_outcome(state, running) {
+            TrialOutcome::NoSession | TrialOutcome::InProgress => Ok(()),
+            TrialOutcome::Unconfirmed => session.revert().map_err(|_| DriverError::SelfUpdateFault),
+            TrialOutcome::ConfirmedUncommitted { svn } => {
+                let floor = self
+                    .board
+                    .self_svn_floor
+                    .floor()
+                    .map_err(|_| DriverError::SvnFloorFault)?;
+                if floor >= svn {
+                    self.board
+                        .self_update
+                        .complete()
+                        .map_err(|_| DriverError::SelfUpdateFault)?;
+                }
+                Ok(())
+            }
+        }
     }
 
     /// One step of the in-flight update, called by the event loop between

@@ -9,7 +9,8 @@ use openprot_orchestrator_sm::{
     Platform, PowerOnResult, State,
 };
 use orchestrator_capabilities::{
-    BootWatch, FailureCause, Progress, Recovery, RestoreOutcome, Svn, SvnFloor, WalkVerdict,
+    BootWatch, FailureCause, Progress, Recovery, RestoreOutcome, RunningImage, SelfUpdate,
+    SelfUpdateState, Svn, SvnFloor, WalkVerdict,
 };
 use util_io::{ByteReadError, ByteSource};
 
@@ -269,16 +270,17 @@ struct MockFloor {
 
 impl MockFloor {
     fn new() -> Self {
-        Self {
-            floor: 0,
-            fail: false,
-        }
+        Self::holding(0)
+    }
+
+    fn holding(floor: u32) -> Self {
+        Self { floor, fail: false }
     }
 }
 
-/// Update adapter without a HAL. Wiring-only for now: it stages the whole
-/// payload in one step. The update pump replaces it with a stepping mock
-/// when the executors land.
+/// Update adapter without a HAL. Stages the whole payload in one step by
+/// default; `stepping`, `stalling` and `faulting` give the pump the other
+/// shapes it has to handle.
 struct MockUpdatable {
     ready: bool,
     active: bool,
@@ -438,6 +440,101 @@ impl orchestrator_capabilities::Updatable for MockUpdatable {
     }
 }
 
+/// The eRoT's own update session, in RAM. `running` is what the boot
+/// selector left behind, which a test sets to say which image booted.
+struct MockSelfUpdate {
+    state: SelfUpdateState,
+    running: RunningImage,
+    fail: bool,
+}
+
+impl MockSelfUpdate {
+    fn idle() -> Self {
+        Self {
+            state: SelfUpdateState::Idle,
+            running: RunningImage::Confirmed,
+            fail: false,
+        }
+    }
+
+    fn holding(state: SelfUpdateState, running: RunningImage) -> Self {
+        Self {
+            state,
+            running,
+            fail: false,
+        }
+    }
+}
+
+impl SelfUpdate for MockSelfUpdate {
+    type Error = SelfSessionFault;
+
+    fn state(&self) -> Result<SelfUpdateState, SelfSessionFault> {
+        self.checked().map(|_| self.state)
+    }
+
+    fn running(&self) -> Result<RunningImage, SelfSessionFault> {
+        self.checked().map(|_| self.running)
+    }
+
+    fn prepare(&mut self, svn: Svn) -> Result<(), SelfSessionFault> {
+        self.checked()?;
+        self.state = SelfUpdateState::Prepared { svn };
+        Ok(())
+    }
+
+    fn arm_trial(&mut self) -> Result<(), SelfSessionFault> {
+        self.checked()?;
+        let SelfUpdateState::Prepared { svn } = self.state else {
+            return Err(SelfSessionFault);
+        };
+        self.state = SelfUpdateState::TrialPending { svn };
+        Ok(())
+    }
+
+    fn confirm(&mut self) -> Result<(), SelfSessionFault> {
+        self.checked()?;
+        let SelfUpdateState::TrialPending { svn } = self.state else {
+            return Err(SelfSessionFault);
+        };
+        self.state = SelfUpdateState::Committed { svn };
+        Ok(())
+    }
+
+    fn complete(&mut self) -> Result<(), SelfSessionFault> {
+        self.checked()?;
+        self.state = SelfUpdateState::Idle;
+        Ok(())
+    }
+
+    fn revert(&mut self) -> Result<(), SelfSessionFault> {
+        self.checked()?;
+        self.state = SelfUpdateState::Idle;
+        Ok(())
+    }
+}
+
+impl MockSelfUpdate {
+    fn checked(&self) -> Result<(), SelfSessionFault> {
+        if self.fail {
+            Err(SelfSessionFault)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct SelfSessionFault;
+
+impl core::fmt::Display for SelfSessionFault {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("self-update session fault")
+    }
+}
+
+impl core::error::Error for SelfSessionFault {}
+
 /// The test board's type choices.
 struct MockBoard;
 
@@ -451,6 +548,7 @@ impl BoardCapabilities for MockBoard {
     type Updatable = MockUpdatable;
     type Recovery = ();
     type Staging = MemStaging;
+    type SelfUpdate = MockSelfUpdate;
 }
 
 /// The SVN `mock_board`'s verifier vouches for. Tests that read the floor
@@ -478,6 +576,8 @@ fn mock_board<const N: usize>() -> Board<MockBoard, N> {
         recovery: core::array::from_fn(|_| ()),
         update_staging: MemStaging::new(),
         update_stall_budget_millis: STALL_BUDGET_MILLIS,
+        self_update: MockSelfUpdate::idle(),
+        self_svn_floor: MockFloor::new(),
     }
 }
 
@@ -707,6 +807,7 @@ impl BoardCapabilities for WatchBoard {
     type Updatable = MockUpdatable;
     type Recovery = ();
     type Staging = MemStaging;
+    type SelfUpdate = MockSelfUpdate;
 }
 
 // The at-rest guarantee end to end: the component is still held while its
@@ -735,6 +836,8 @@ fn release_follows_verification() {
         recovery: [()],
         update_staging: MemStaging::new(),
         update_stall_budget_millis: STALL_BUDGET_MILLIS,
+        self_update: MockSelfUpdate::idle(),
+        self_svn_floor: MockFloor::new(),
     });
     let mut orch = orchestrator();
 
@@ -1081,6 +1184,7 @@ impl BoardCapabilities for RecoverableBoard {
     type Updatable = MockUpdatable;
     type Recovery = MockRecovery;
     type Staging = MemStaging;
+    type SelfUpdate = MockSelfUpdate;
 }
 
 fn recoverable_board<const N: usize>(sources: u8) -> Board<RecoverableBoard, N> {
@@ -1102,6 +1206,8 @@ fn recoverable_board<const N: usize>(sources: u8) -> Board<RecoverableBoard, N> 
         }),
         update_staging: MemStaging::new(),
         update_stall_budget_millis: STALL_BUDGET_MILLIS,
+        self_update: MockSelfUpdate::idle(),
+        self_svn_floor: MockFloor::new(),
     }
 }
 
@@ -1857,4 +1963,101 @@ fn a_request_while_an_update_runs_is_deferred_not_dropped() {
         .report_sink
         .seen
         .contains(&Report::UpdateDeferred));
+}
+
+// ---------------------------------------------------------------------------
+// Settling the eRoT's own last update at boot
+// ---------------------------------------------------------------------------
+
+fn self_update_driver(session: MockSelfUpdate, floor: u32) -> PlatformDriver<MockBoard, 1> {
+    PlatformDriver::new(Board {
+        self_update: session,
+        self_svn_floor: MockFloor::holding(floor),
+        ..mock_board()
+    })
+}
+
+// Nothing in flight: the common boot touches nothing.
+#[test]
+fn resume_with_no_session_changes_nothing() {
+    let mut driver = self_update_driver(MockSelfUpdate::idle(), 0);
+
+    driver.resume_self_update().expect("resume failed");
+
+    assert_eq!(driver.board().self_update.state, SelfUpdateState::Idle);
+}
+
+// The trial is the image running right now. This boot is the trial, so
+// there is nothing to settle: the verdict comes later in this same boot.
+#[test]
+fn resume_leaves_a_trial_in_progress_alone() {
+    let armed = SelfUpdateState::TrialPending { svn: Svn(7) };
+    let mut driver = self_update_driver(MockSelfUpdate::holding(armed, RunningImage::Trial), 0);
+
+    driver.resume_self_update().expect("resume failed");
+
+    assert_eq!(driver.board().self_update.state, armed);
+}
+
+// The trial booted and the platform fell back, so nothing will ever
+// confirm it. The session is dropped, or no further update could start.
+#[test]
+fn resume_reverts_a_trial_that_fell_back() {
+    let mut driver = self_update_driver(
+        MockSelfUpdate::holding(
+            SelfUpdateState::TrialPending { svn: Svn(7) },
+            RunningImage::Confirmed,
+        ),
+        0,
+    );
+
+    driver.resume_self_update().expect("resume failed");
+
+    assert_eq!(driver.board().self_update.state, SelfUpdateState::Idle);
+}
+
+// Confirmed, floor still below the session's SVN: the advance is the
+// update agent's to ask for with UpdateSecurityRevision once the platform
+// is in service. This boot holds the session and advances nothing.
+#[test]
+fn resume_holds_a_confirmed_session_the_floor_has_not_taken() {
+    let committed = SelfUpdateState::Committed { svn: Svn(7) };
+    let mut driver = self_update_driver(MockSelfUpdate::holding(committed, RunningImage::Trial), 3);
+
+    driver.resume_self_update().expect("resume failed");
+
+    assert_eq!(driver.board().self_update.state, committed);
+    assert_eq!(driver.board().self_svn_floor.floor(), Ok(Svn(3)));
+}
+
+// The crash point between advancing the floor and closing the session:
+// the floor already reads at or above the session's SVN, so the advance
+// did land and the session is finished here.
+#[test]
+fn resume_completes_a_session_whose_floor_already_moved() {
+    let mut driver = self_update_driver(
+        MockSelfUpdate::holding(
+            SelfUpdateState::Committed { svn: Svn(7) },
+            RunningImage::Trial,
+        ),
+        7,
+    );
+
+    driver.resume_self_update().expect("resume failed");
+
+    assert_eq!(driver.board().self_update.state, SelfUpdateState::Idle);
+}
+
+// An unreadable session fails closed rather than guessing: the eRoT
+// cannot tell a confirmed update from a reverted one without it.
+#[test]
+fn resume_with_an_unreadable_session_fails_closed() {
+    let mut session = MockSelfUpdate::idle();
+    session.fail = true;
+    let mut driver = self_update_driver(session, 0);
+
+    assert_eq!(
+        driver.resume_self_update(),
+        Err(DriverError::SelfUpdateFault)
+    );
 }
