@@ -38,4 +38,7 @@ mod tests;
 pub use board::{
     Board, BoardCapabilities, ImageSource, Report, ReportSink, SvnFloorBinding, Verdict, Verifier,
 };
-pub use driver::{bring_up, request_update, BootWalkPoll, DriverError, PlatformDriver, UpdatePoll};
+pub use driver::{
+    bring_up, request_update, settle_self_update, BootWalkPoll, DriverError, PlatformDriver,
+    SelfUpdateSettlement, SettleError, UpdatePoll,
+};

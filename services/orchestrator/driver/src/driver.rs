@@ -15,8 +15,9 @@ use crate::board::{
     Board, BoardCapabilities, ImageSource, Report, ReportSink, SvnFloorBinding, Verdict, Verifier,
 };
 use orchestrator_capabilities::{
-    BootControl, BootWatch, FailureCause, Progress, Recovery, RestoreOutcome, StageProgress, Svn,
-    SvnFloor, Updatable, WalkVerdict,
+    BootControl, BootWatch, FailureCause, Progress, Recovery, RestoreOutcome, RunningImage,
+    SelfUpdate, SelfUpdateState, StageProgress, Svn, SvnFloor, TrialOutcome, Updatable,
+    WalkVerdict,
 };
 use util_io::{ByteSource, ByteWindow};
 
@@ -621,6 +622,33 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     }
 }
 
+/// What [`settle_self_update`] found in the eRoT's last self-update.
+///
+/// What to do about it is the caller's, the same split the capability seams
+/// use.
+#[must_use]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SelfUpdateSettlement {
+    /// Nothing is left to do, so the boot carries on and a new self-update
+    /// may start: no session, a session nothing would confirm and that was
+    /// reverted, or a confirmed session whose floor had already taken its
+    /// SVN.
+    Settled,
+    /// A session is still being judged, either a trial run waiting on the
+    /// update agent or a confirmed one whose floor is still below `svn`. No
+    /// new self-update may start: recording one would overwrite the session.
+    AwaitingUpdateAgent {
+        /// The SVN the session recorded, and the floor's target.
+        svn: Svn,
+    },
+    /// A trial image is running that no session claims, so the eRoT must not
+    /// keep running it. The session is reverted, which clears the pending
+    /// mark, so the confirmed image runs after a reset. An implementation
+    /// whose `revert` leaves the mark in place would run the same image
+    /// again.
+    UnclaimedImageRunning,
+}
+
 /// One [`PlatformDriver::pump_update`] round.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct UpdatePoll {
@@ -741,6 +769,127 @@ pub fn bring_up<B: BoardCapabilities, const N: usize, const E: usize>(
         Orchestrator::new(chain, max_retry),
         PlatformDriver::new(entries, board),
     )
+}
+
+/// Finishes off the eRoT's last self-update, at the start of the next boot.
+///
+/// An update writes the new image to the secondary slot and marks the session
+/// pending, so the next reset runs that image once. That trial run is then
+/// either confirmed or reverted. The eRoT loses all of RAM across the reset,
+/// so the session in durable storage plus the image this boot is running is
+/// everything it has to go on. This reads both and says what it found:
+///
+/// - No session: nothing happened, carry on.
+/// - The session is pending and the trial image booted: this boot is the trial
+///   run. Nothing here judges it. The update agent does, with
+///   UpdateSecurityRevision, so the session is left alone.
+/// - The session is prepared or pending but the confirmed image booted: the
+///   update never ran, or its trial failed and the platform fell back. The
+///   session is reverted, so the update is done again rather than counted as
+///   finished.
+/// - A trial image is running that no session claims: the session is reverted,
+///   which also clears the pending mark, so the confirmed image runs after a
+///   reset. The eRoT must not keep running an image nothing vouched for.
+/// - The session is confirmed and the floor is still below its SVN: the floor
+///   advance is what is left, and the update agent asks for it, so this boot
+///   must not do it.
+/// - The session is confirmed and the floor already reads that SVN or higher:
+///   the advance landed before a crash, so the session is closed here.
+///
+/// Running it twice lands in the same place, which is what lets a boot that
+/// died partway through simply repeat it. A storage fault leaves the session
+/// as it is and comes back as [`SettleError`] with the storage's own error
+/// inside, rather than guessing.
+///
+/// Must run before the machine can grant a new update: `prepare` overwrites
+/// whatever session is there, so a new update recorded over one still being
+/// judged would lose what it owes.
+///
+/// The trial gets one boot. A platform whose pending mark survives a reset has
+/// to clear it before this runs, otherwise an unplanned reset runs the trial
+/// image again.
+///
+/// Takes the session and the eRoT's own floor directly. Neither is board
+/// wiring: nothing calls this yet, and a seam joins [`BoardCapabilities`] when
+/// an executor needs it.
+pub fn settle_self_update<S: SelfUpdate, F: SvnFloor>(
+    session: &mut S,
+    floor: &F,
+) -> Result<SelfUpdateSettlement, SettleError<S::Error, F::Error>> {
+    let state = session.state().map_err(SettleError::Session)?;
+    let running = session.running().map_err(SettleError::Session)?;
+    match orchestrator_capabilities::trial_outcome(state, running) {
+        TrialOutcome::NoSession => Ok(SelfUpdateSettlement::Settled),
+        TrialOutcome::InProgress => {
+            // Nothing here judges the trial. The update agent does.
+            let SelfUpdateState::TrialPending { svn } = state else {
+                // trial_outcome answers InProgress for TrialPending alone.
+                // Fail secure rather than guess which SVN was recorded.
+                return Err(SettleError::InconsistentSession(state));
+            };
+            Ok(SelfUpdateSettlement::AwaitingUpdateAgent { svn })
+        }
+        TrialOutcome::Unconfirmed => {
+            session.revert().map_err(SettleError::Session)?;
+            if running == RunningImage::Trial {
+                return Ok(SelfUpdateSettlement::UnclaimedImageRunning);
+            }
+            Ok(SelfUpdateSettlement::Settled)
+        }
+        TrialOutcome::ConfirmedUncommitted { svn } => {
+            let reached = floor.floor().map_err(SettleError::Floor)?;
+            if reached >= svn {
+                session.complete().map_err(SettleError::Session)?;
+                return Ok(SelfUpdateSettlement::Settled);
+            }
+            Ok(SelfUpdateSettlement::AwaitingUpdateAgent { svn })
+        }
+    }
+}
+
+/// Why [`settle_self_update`] could not finish.
+///
+/// Carries the storage error rather than flattening it, which is what the
+/// `core::error::Error` bound on both seams is for. A caller that only needs
+/// to fail secure collapses it to one [`DriverError`] in a line.
+#[derive(Debug, PartialEq, Eq)]
+pub enum SettleError<S, F> {
+    /// The session could not be read or written.
+    Session(S),
+    /// The eRoT's own anti-rollback floor could not be read.
+    Floor(F),
+    /// `trial_outcome` said a trial is in progress for a state that is not
+    /// `TrialPending`. It cannot today, since that is the only state it
+    /// answers `InProgress` for. Kept so a change there fails secure rather
+    /// than guessing which SVN was recorded.
+    InconsistentSession(SelfUpdateState),
+}
+
+impl<S: core::fmt::Display, F: core::fmt::Display> core::fmt::Display for SettleError<S, F> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            SettleError::Session(err) => write!(f, "self-update session: {err}"),
+            SettleError::Floor(err) => write!(f, "self-update floor: {err}"),
+            SettleError::InconsistentSession(state) => {
+                write!(
+                    f,
+                    "self-update session reads {state:?} and cannot be settled"
+                )
+            }
+        }
+    }
+}
+
+impl<S: core::error::Error + 'static, F: core::error::Error + 'static> core::error::Error
+    for SettleError<S, F>
+{
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        match self {
+            SettleError::Session(err) => Some(err),
+            SettleError::Floor(err) => Some(err),
+            SettleError::InconsistentSession(_) => None,
+        }
+    }
 }
 
 /// The connection between an update frontend and the SM: called (by the

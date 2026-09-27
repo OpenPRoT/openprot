@@ -9,7 +9,8 @@ use openprot_orchestrator_sm::{
     Platform, PowerOnResult, State,
 };
 use orchestrator_capabilities::{
-    BootWatch, FailureCause, Progress, Recovery, RestoreOutcome, Svn, SvnFloor, WalkVerdict,
+    BootWatch, FailureCause, Progress, Recovery, RestoreOutcome, RunningImage, SelfUpdate,
+    SelfUpdateState, Svn, SvnFloor, WalkVerdict,
 };
 use util_io::{ByteReadError, ByteSource};
 
@@ -269,9 +270,20 @@ struct MockFloor {
 
 impl MockFloor {
     fn new() -> Self {
+        Self::with_floor(Svn(0))
+    }
+
+    fn with_floor(floor: Svn) -> Self {
+        Self {
+            floor: floor.0,
+            fail: false,
+        }
+    }
+
+    fn faulting() -> Self {
         Self {
             floor: 0,
-            fail: false,
+            fail: true,
         }
     }
 }
@@ -298,9 +310,9 @@ fn entries_with_kinds<const N: usize>(
     })
 }
 
-/// Update adapter without a HAL. Wiring-only for now: it stages the whole
-/// payload in one step. The update pump replaces it with a stepping mock
-/// when the executors land.
+/// Update adapter without a HAL. Stages the whole payload in one step by
+/// default; `stepping`, `stalling` and `faulting` give the pump the other
+/// shapes it has to handle.
 struct MockUpdatable {
     ready: bool,
     active: bool,
@@ -459,6 +471,115 @@ impl orchestrator_capabilities::Updatable for MockUpdatable {
         Ok(())
     }
 }
+
+/// The eRoT's own update session, in RAM. `running` says which image this
+/// boot runs, the trial one or the confirmed one, as a test sets it.
+struct MockSelfUpdate {
+    state: SelfUpdateState,
+    running: RunningImage,
+    fail: bool,
+}
+
+impl MockSelfUpdate {
+    fn idle() -> Self {
+        Self {
+            state: SelfUpdateState::Idle,
+            running: RunningImage::Confirmed,
+            fail: false,
+        }
+    }
+
+    fn with_session(state: SelfUpdateState, running: RunningImage) -> Self {
+        Self {
+            state,
+            running,
+            fail: false,
+        }
+    }
+}
+
+impl SelfUpdate for MockSelfUpdate {
+    type Error = SelfSessionFault;
+
+    fn state(&self) -> Result<SelfUpdateState, SelfSessionFault> {
+        self.checked().map(|_| self.state)
+    }
+
+    fn running(&self) -> Result<RunningImage, SelfSessionFault> {
+        self.checked().map(|_| self.running)
+    }
+
+    fn prepare(&mut self, svn: Svn) -> Result<(), SelfSessionFault> {
+        self.checked()?;
+        self.state = SelfUpdateState::Prepared { svn };
+        Ok(())
+    }
+
+    fn set_trial_pending(&mut self) -> Result<(), SelfSessionFault> {
+        self.checked()?;
+        // Marking the trial pending twice is a retry, not a fault.
+        let (SelfUpdateState::Prepared { svn } | SelfUpdateState::TrialPending { svn }) =
+            self.state
+        else {
+            return Err(SelfSessionFault);
+        };
+        self.state = SelfUpdateState::TrialPending { svn };
+        Ok(())
+    }
+
+    fn confirm(&mut self) -> Result<(), SelfSessionFault> {
+        self.checked()?;
+        // Confirming a confirmed session is the same retry.
+        let (SelfUpdateState::TrialPending { svn } | SelfUpdateState::Committed { svn }) =
+            self.state
+        else {
+            return Err(SelfSessionFault);
+        };
+        self.state = SelfUpdateState::Committed { svn };
+        Ok(())
+    }
+
+    fn complete(&mut self) -> Result<(), SelfSessionFault> {
+        self.checked()?;
+        // A session still being judged is dropped with revert, never
+        // completed, so complete faults rather than discard it.
+        if !matches!(
+            self.state,
+            SelfUpdateState::Committed { .. } | SelfUpdateState::Idle
+        ) {
+            return Err(SelfSessionFault);
+        }
+        self.state = SelfUpdateState::Idle;
+        Ok(())
+    }
+
+    fn revert(&mut self) -> Result<(), SelfSessionFault> {
+        self.checked()?;
+        self.state = SelfUpdateState::Idle;
+        Ok(())
+    }
+}
+
+impl MockSelfUpdate {
+    fn checked(&self) -> Result<(), SelfSessionFault> {
+        if self.fail {
+            Err(SelfSessionFault)
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct SelfSessionFault;
+
+impl core::fmt::Display for SelfSessionFault {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("self-update session fault")
+    }
+}
+
+impl core::error::Error for SelfSessionFault {}
 
 /// The test board's type choices.
 struct MockBoard;
@@ -1951,4 +2072,151 @@ fn a_second_request_while_an_update_runs_is_refused_as_busy() {
         driver.pending_update().is_some(),
         "the running job survives"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Settling the eRoT's own last update at boot
+// ---------------------------------------------------------------------------
+
+// No session: the ordinary boot changes nothing.
+#[test]
+fn settle_with_no_session_changes_nothing() {
+    let mut session = MockSelfUpdate::idle();
+
+    assert_eq!(
+        settle_self_update(&mut session, &MockFloor::new()),
+        Ok(SelfUpdateSettlement::Settled)
+    );
+
+    assert_eq!(session.state, SelfUpdateState::Idle);
+}
+
+// The trial image is running. The update agent judges it, so the session
+// stays as it is.
+#[test]
+fn settle_leaves_a_running_trial_for_the_update_agent() {
+    let pending = SelfUpdateState::TrialPending { svn: Svn(7) };
+    let mut session = MockSelfUpdate::with_session(pending, RunningImage::Trial);
+
+    assert_eq!(
+        settle_self_update(&mut session, &MockFloor::new()),
+        Ok(SelfUpdateSettlement::AwaitingUpdateAgent { svn: Svn(7) })
+    );
+
+    assert_eq!(session.state, pending);
+}
+
+// The trial ran and the platform fell back, so nothing will confirm it.
+// The session is reverted and the update has to be done again.
+#[test]
+fn settle_reverts_a_trial_that_fell_back() {
+    let mut session = MockSelfUpdate::with_session(
+        SelfUpdateState::TrialPending { svn: Svn(7) },
+        RunningImage::Confirmed,
+    );
+
+    assert_eq!(
+        settle_self_update(&mut session, &MockFloor::new()),
+        Ok(SelfUpdateSettlement::Settled),
+        "the confirmed image booted, so there is nothing to judge"
+    );
+
+    assert_eq!(session.state, SelfUpdateState::Idle);
+}
+
+// Confirmed, floor still below the session's SVN. The advance is the
+// update agent's to ask for, so this boot keeps the session and moves
+// nothing.
+#[test]
+fn settle_keeps_a_confirmed_session_the_floor_has_not_taken() {
+    let committed = SelfUpdateState::Committed { svn: Svn(7) };
+    let mut session = MockSelfUpdate::with_session(committed, RunningImage::Trial);
+    let floor = MockFloor::with_floor(Svn(3));
+
+    assert_eq!(
+        settle_self_update(&mut session, &floor),
+        Ok(SelfUpdateSettlement::AwaitingUpdateAgent { svn: Svn(7) })
+    );
+
+    assert_eq!(session.state, committed);
+    assert_eq!(floor.floor(), Ok(Svn(3)));
+}
+
+// The crash point between advancing the floor and closing the session.
+// The floor already reads the session's SVN, so the advance landed and the
+// session is closed here.
+#[test]
+fn settle_completes_a_session_whose_floor_already_moved() {
+    let mut session = MockSelfUpdate::with_session(
+        SelfUpdateState::Committed { svn: Svn(7) },
+        RunningImage::Trial,
+    );
+
+    assert_eq!(
+        settle_self_update(&mut session, &MockFloor::with_floor(Svn(7))),
+        Ok(SelfUpdateSettlement::Settled)
+    );
+
+    assert_eq!(session.state, SelfUpdateState::Idle);
+}
+
+// A floor above the session's SVN closes it too: something moved the floor
+// further after the advance landed.
+#[test]
+fn settle_completes_a_session_whose_floor_moved_past_it() {
+    let mut session = MockSelfUpdate::with_session(
+        SelfUpdateState::Committed { svn: Svn(7) },
+        RunningImage::Trial,
+    );
+
+    assert_eq!(
+        settle_self_update(&mut session, &MockFloor::with_floor(Svn(9))),
+        Ok(SelfUpdateSettlement::Settled)
+    );
+
+    assert_eq!(session.state, SelfUpdateState::Idle);
+}
+
+// An unreadable session fails secure rather than guessing: without it the
+// eRoT cannot tell a confirmed update from a reverted one. The storage
+// error comes back with it.
+#[test]
+fn settle_with_an_unreadable_session_fails_secure() {
+    let mut session = MockSelfUpdate::idle();
+    session.fail = true;
+
+    assert_eq!(
+        settle_self_update(&mut session, &MockFloor::new()),
+        Err(SettleError::Session(SelfSessionFault))
+    );
+}
+
+// A floor that does not answer fails secure in the same way. The session
+// stays confirmed and the next boot tries again.
+#[test]
+fn settle_with_an_unreadable_floor_fails_secure() {
+    let committed = SelfUpdateState::Committed { svn: Svn(7) };
+    let mut session = MockSelfUpdate::with_session(committed, RunningImage::Trial);
+
+    assert_eq!(
+        settle_self_update(&mut session, &MockFloor::faulting()),
+        Err(SettleError::Floor(FloorFaultInjected))
+    );
+
+    assert_eq!(session.state, committed);
+}
+
+// A trial image is running that no session claims. The session is
+// reverted, which clears the pending mark, so the confirmed image runs
+// after a reset.
+#[test]
+fn settle_reports_an_unclaimed_image_and_reverts_the_session() {
+    let mut session = MockSelfUpdate::with_session(SelfUpdateState::Idle, RunningImage::Trial);
+
+    assert_eq!(
+        settle_self_update(&mut session, &MockFloor::new()),
+        Ok(SelfUpdateSettlement::UnclaimedImageRunning)
+    );
+
+    assert_eq!(session.state, SelfUpdateState::Idle);
 }
