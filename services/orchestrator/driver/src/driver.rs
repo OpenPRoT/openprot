@@ -114,6 +114,10 @@ pub struct PlatformDriver<B: BoardCapabilities, const N: usize> {
     /// The update job submitted by the frontend. Held until the update is
     /// activated or discarded.
     pending_update: Option<UpdateJob>,
+    /// The component and candidate length of the last activation, so a
+    /// commit can re-stage the same payload into the spare slot. Cleared
+    /// once that re-sync is armed.
+    last_activated: Option<(ComponentId, u64)>,
 }
 
 /// What one pump call established, before the stall rule is applied.
@@ -165,6 +169,10 @@ enum UpdatePhase {
     /// The device holds the complete payload. The crypto service has not
     /// started yet.
     Staged,
+    /// The committed image is being written a second time, to bring the
+    /// slot the device just stopped booting from up to date. The SM is
+    /// not involved: this job ends in the driver.
+    Resyncing,
     // Authenticating and Authenticated arrive with the crypto
     // verify-client trait. Until then the pump parks at Staged.
 }
@@ -179,6 +187,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             watching: [false; N],
             verified_svn: [None; N],
             pending_update: None,
+            last_activated: None,
         }
     }
 
@@ -189,6 +198,12 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     #[cfg(test)]
     pub(crate) fn board(&self) -> &Board<B, N> {
         &self.board
+    }
+
+    /// The board wiring, to fault a capability mid-test.
+    #[cfg(test)]
+    pub(crate) fn board_mut(&mut self) -> &mut Board<B, N> {
+        &mut self.board
     }
 
     /// The frontend half of the update handshake: record `target` as the
@@ -210,6 +225,10 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// The length stays on the job because the staging region is board
     /// geometry and usually larger, so the reader needs to know where
     /// the candidate ends.
+    ///
+    /// A slot re-sync counts as in flight: it is writing the staging
+    /// region's bytes to a device, and a new candidate would overwrite
+    /// them mid-pass.
     pub fn submit_update(&mut self, target: ComponentId, len: u64) -> Result<(), DriverError> {
         self.board
             .updatables
@@ -221,6 +240,9 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         if self.pending_update.is_some() {
             return Err(DriverError::UpdateBusy);
         }
+        // The region is about to hold a different candidate, so the last
+        // activation loses its claim on a re-sync from it.
+        self.last_activated = None;
         self.pending_update = Some(UpdateJob {
             target,
             len,
@@ -251,6 +273,9 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             .ok_or(DriverError::UnknownComponent)?;
         updatable.abandon();
         self.pending_update = None;
+        // Whatever the region held is being dropped, so a later commit
+        // must not re-stage from it.
+        self.last_activated = None;
         Ok(())
     }
 
@@ -280,7 +305,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             // trait is wired into the board.
             return Err(DriverError::CandidateNotStaged);
         }
-        let target = job.target;
+        let (target, len) = (job.target, job.len);
         let updatable = self
             .board
             .updatables
@@ -288,6 +313,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             .ok_or(DriverError::UnknownComponent)?;
         updatable.activate().map_err(|_| DriverError::UpdateFault)?;
         self.pending_update = None;
+        self.last_activated = Some((target, len));
         Ok(())
     }
 
@@ -387,6 +413,10 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// `UpdateVerified` arrives with the crypto verify-client; until
     /// then the pump parks at `Staged` and returns idle. The job stays
     /// until the SM answers with `ActivateUpdate` or `DiscardStaged`.
+    ///
+    /// A slot re-sync is the exception: it ends here with no event,
+    /// because the SM never asked for it and a verdict would start a
+    /// second activation.
     pub fn pump_update(&mut self, now_millis: u64) -> UpdatePoll {
         let Some(job) = self.pending_update.as_mut() else {
             return UpdatePoll::idle();
@@ -407,7 +437,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             // or the device already holds the payload and the SM owns
             // the next move.
             UpdatePhase::Submitted | UpdatePhase::Staged => return UpdatePoll::idle(),
-            UpdatePhase::Staging => self.poll_staging(),
+            UpdatePhase::Staging | UpdatePhase::Resyncing => self.poll_staging(),
         };
 
         let step = match stepped {
@@ -426,12 +456,22 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
                     job.progress_since_millis = Some(now_millis);
                 } else if now_millis.saturating_sub(since) >= self.board.update_stall_budget_millis
                 {
-                    return self.reject_job();
+                    return match phase {
+                        UpdatePhase::Resyncing => self.end_resync(),
+                        _ => self.reject_job(),
+                    };
                 }
                 UpdatePoll {
                     event: None,
                     progress: Some(progress),
                 }
+            }
+            // A re-sync ends in the driver. Telling the SM the payload
+            // is staged would start a second activation of an image the
+            // device is already running.
+            Step::Staged if phase == UpdatePhase::Resyncing => {
+                self.pending_update = None;
+                UpdatePoll::idle()
             }
             Step::Staged => {
                 job.phase = UpdatePhase::Staged;
@@ -446,6 +486,10 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
                     progress: None,
                 }
             }
+            // A failed re-sync leaves the running image committed and the
+            // spare slot stale, which is a report rather than a verdict
+            // the SM acts on.
+            Step::Rejected if phase == UpdatePhase::Resyncing => self.end_resync(),
             Step::Rejected => self.reject_job(),
         }
     }
@@ -475,6 +519,20 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         }
     }
 
+    /// Ends a re-sync that failed or stalled. The SM never knew about
+    /// this job, so nothing else would clear it and the pump would
+    /// retry the same failure forever. The running image is committed
+    /// either way, so this is a report, not a verdict.
+    fn end_resync(&mut self) -> UpdatePoll {
+        let target = self.pending_update.as_ref().map(|job| job.target);
+        self.abandon_job();
+        self.pending_update = None;
+        if let Some(target) = target {
+            self.report(Report::SlotResyncFailed(target));
+        }
+        UpdatePoll::idle()
+    }
+
     /// Ends the job the way the SM understands: the device drops what it
     /// staged and the verdict travels as `UpdateRejected`. The job itself
     /// stays until the SM answers with `DiscardStaged`, so the two sides
@@ -483,14 +541,24 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         if let Some(job) = self.pending_update.as_mut() {
             job.phase = UpdatePhase::Submitted;
             job.prepare_commanded = false;
-            let target = job.target.get() as usize;
-            if let Some(updatable) = self.board.updatables.get_mut(target) {
-                updatable.abandon();
-            }
         }
+        self.abandon_job();
         UpdatePoll {
             event: Some(Event::UpdateRejected),
             progress: None,
+        }
+    }
+
+    /// Tells the device to drop what it was staging. Leaves the job
+    /// itself alone: who clears it differs between an update, which the
+    /// SM answers for, and a re-sync, which ends here.
+    fn abandon_job(&mut self) {
+        let Some(job) = self.pending_update.as_ref() else {
+            return;
+        };
+        let target = job.target.get() as usize;
+        if let Some(updatable) = self.board.updatables.get_mut(target) {
+            updatable.abandon();
         }
     }
 
@@ -559,7 +627,41 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             return Ok(());
         };
         let svn = self.verified_svn[idx].ok_or(DriverError::NoVerifiedImage)?;
-        floor.advance(svn).map_err(|_| DriverError::SvnFloorFault)
+        floor.advance(svn).map_err(|_| DriverError::SvnFloorFault)?;
+        self.arm_slot_resync(id);
+        Ok(())
+    }
+
+    /// Queues a second staging pass for the image just committed, so the
+    /// slot the device stopped booting from stops holding the version
+    /// before it. The pump runs it and nothing activates afterwards: the
+    /// payload lands in the inactive slot and stays there.
+    ///
+    /// Re-stages rather than copying between slots, because `Updatable`
+    /// keeps slot identity on the device's side. The candidate is still
+    /// in the staging region: one job at a time, so nothing has
+    /// overwritten it since the activation.
+    ///
+    /// Silent when there is nothing to re-sync (a confirmed boot with no
+    /// update behind it) and when a job is already in flight, which a
+    /// re-sync must never displace. A failure during the pass is a
+    /// report, not an error: the running image is committed either way.
+    fn arm_slot_resync(&mut self, id: ComponentId) {
+        let Some((target, len)) = self.last_activated else {
+            return;
+        };
+        if target != id || self.pending_update.is_some() {
+            return;
+        }
+        self.last_activated = None;
+        self.pending_update = Some(UpdateJob {
+            target,
+            len,
+            phase: UpdatePhase::Resyncing,
+            prepare_commanded: true,
+            progress: Progress::start(len),
+            progress_since_millis: None,
+        });
     }
 
     /// `id`'s reset actuator.
@@ -694,7 +796,7 @@ pub struct UpdatePoll {
     /// at Staged instead.
     pub event: Option<Event>,
     /// How far the job has come, for the update source's progress
-    /// report. `None` once there is nothing left to report.
+    /// report. `None` once the job has ended, whichever way it ended.
     pub progress: Option<Progress>,
 }
 

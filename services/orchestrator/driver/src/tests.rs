@@ -293,6 +293,8 @@ struct MockUpdatable {
     stalls: bool,
     /// Fails every step.
     faults: bool,
+    /// Completed stagings, so a test can tell a re-sync happened.
+    stagings: usize,
 }
 
 /// Bytes one staging step writes.
@@ -309,6 +311,7 @@ impl MockUpdatable {
             written: 0,
             stalls: false,
             faults: false,
+            stagings: 0,
         }
     }
 
@@ -423,6 +426,8 @@ impl orchestrator_capabilities::Updatable for MockUpdatable {
             });
         }
         self.ready = true;
+        self.stagings += 1;
+        self.written = 0;
         Ok(orchestrator_capabilities::StageProgress::Ready)
     }
 
@@ -2164,5 +2169,175 @@ fn a_floor_that_cannot_advance_leaves_the_session_open() {
         driver.board().self_update.state,
         SelfUpdateState::Committed { svn: Svn(7) },
         "still owed, so the next request retries"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Bringing the spare slot up to date after a commit
+// ---------------------------------------------------------------------------
+
+/// Runs an update to activation: request, pump until the device holds
+/// the payload, then feed the verdict.
+///
+/// The verdict is dispatched here rather than read off the pump because
+/// the pump parks at `Staged` and emits nothing until the crypto verify
+/// client is wired. What follows activation is what these tests are
+/// about, so they reach it the way the wired pump will.
+fn activated(driver: &mut PlatformDriver<MockBoard, 1>, orch: &mut Orchestrator<1, 4>) {
+    orch.dispatch(driver, Event::PowerGood(PowerOnResult::Provisioned));
+    request_update(orch, driver, C0, CANDIDATE_LEN).unwrap();
+    for tick in 0..16 {
+        driver.pump_update(tick);
+        if driver.board().updatables[0].ready {
+            break;
+        }
+    }
+    assert!(driver.board().updatables[0].ready, "never staged");
+    orch.dispatch(driver, Event::UpdateVerified(C0));
+    assert!(driver.board().updatables[0].active, "never activated");
+}
+
+// The committed image is written a second time, into the slot the device
+// stopped booting from. Nothing activates afterwards: the device keeps
+// running what it just committed.
+#[test]
+fn a_commit_restages_the_image_into_the_spare_slot() {
+    let mut orch = orchestrator();
+    let mut driver = update_driver(MockUpdatable::new());
+    activated(&mut driver, &mut orch);
+    let staged_before = driver.board().updatables[0].stagings;
+
+    orch.dispatch(&mut driver, Event::BootConfirmed(C0));
+
+    // The re-sync is queued, not run inside the executor.
+    assert_eq!(driver.pending_update(), Some(C0));
+    for tick in 0..16 {
+        if driver.pending_update().is_none() {
+            break;
+        }
+        assert_eq!(driver.pump_update(tick).event, None, "the SM is not told");
+    }
+
+    assert_eq!(driver.pending_update(), None, "the re-sync ended");
+    assert!(driver.board().updatables[0].stagings > staged_before);
+    assert_eq!(orch.state(), State::Ready);
+}
+
+// A confirmed boot with no update behind it has nothing to re-sync.
+#[test]
+fn a_commit_without_an_activation_queues_nothing() {
+    let mut orch = orchestrator();
+    let mut driver = update_driver(MockUpdatable::new());
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+
+    driver.commit_svn_floor(C0).expect("commit failed");
+
+    assert_eq!(driver.pending_update(), None);
+}
+
+// One re-sync per activation: a second confirmed boot does not restage
+// an image that is already in both slots.
+#[test]
+fn a_second_commit_does_not_restage_again() {
+    let mut orch = orchestrator();
+    let mut driver = update_driver(MockUpdatable::new());
+    activated(&mut driver, &mut orch);
+    orch.dispatch(&mut driver, Event::BootConfirmed(C0));
+    for tick in 0..16 {
+        if driver.pending_update().is_none() {
+            break;
+        }
+        driver.pump_update(tick);
+    }
+    let staged_after_resync = driver.board().updatables[0].stagings;
+
+    orch.dispatch(&mut driver, Event::BootConfirmed(C0));
+
+    assert_eq!(driver.pending_update(), None);
+    assert_eq!(driver.board().updatables[0].stagings, staged_after_resync);
+}
+
+// The running image is committed either way, so a device that fails the
+// second pass is reported, not escalated. The job is cleared, or the
+// pump would retry the same failure forever.
+#[test]
+fn a_failed_resync_is_reported_and_ends() {
+    let mut orch = orchestrator();
+    let mut driver = update_driver(MockUpdatable::new());
+    activated(&mut driver, &mut orch);
+
+    orch.dispatch(&mut driver, Event::BootConfirmed(C0));
+    driver.board_mut().updatables[0].faults = true;
+    let poll = driver.pump_update(0);
+
+    assert_eq!(poll.event, None, "no verdict reaches the SM");
+    assert_eq!(driver.pending_update(), None);
+    assert!(driver
+        .board()
+        .report_sink
+        .seen
+        .contains(&Report::SlotResyncFailed(C0)));
+    assert_eq!(orch.state(), State::Ready);
+}
+
+// A re-sync is writing the region's bytes to a device, so a new
+// candidate would overwrite them mid-pass. The frontend is told to come
+// back, the same answer it gets during an update.
+#[test]
+fn a_resync_in_flight_defers_the_next_update() {
+    let mut orch = orchestrator();
+    let mut driver = update_driver(MockUpdatable::stepping(4));
+    activated(&mut driver, &mut orch);
+    orch.dispatch(&mut driver, Event::BootConfirmed(C0));
+    assert_eq!(driver.pending_update(), Some(C0), "the re-sync is armed");
+
+    assert_eq!(
+        driver.submit_update(C0, CANDIDATE_LEN),
+        Err(DriverError::UpdateBusy)
+    );
+}
+
+// A device that goes quiet mid-re-sync is not an update failure: the SM
+// hears nothing and the spare slot is reported stale.
+#[test]
+fn a_stalled_resync_is_reported_not_rejected() {
+    let mut orch = orchestrator();
+    let mut driver = update_driver(MockUpdatable::new());
+    activated(&mut driver, &mut orch);
+    orch.dispatch(&mut driver, Event::BootConfirmed(C0));
+    driver.board_mut().updatables[0].stalls = true;
+
+    assert_eq!(driver.pump_update(0).event, None);
+    let poll = driver.pump_update(STALL_BUDGET_MILLIS);
+
+    assert_eq!(poll.event, None, "no verdict reaches the SM");
+    assert_eq!(driver.pending_update(), None);
+    assert!(driver
+        .board()
+        .report_sink
+        .seen
+        .contains(&Report::SlotResyncFailed(C0)));
+    assert_eq!(orch.state(), State::Ready);
+}
+
+// An update that came and went between the activation and the confirmed
+// boot has left different bytes in the region, so the commit must not
+// re-stage from it.
+#[test]
+fn a_discarded_update_cancels_the_pending_resync() {
+    let mut orch = orchestrator();
+    let mut driver = update_driver(MockUpdatable::new());
+    activated(&mut driver, &mut orch);
+
+    // A second update is submitted and then discarded before it runs.
+    driver.submit_update(C0, CANDIDATE_LEN).unwrap();
+    driver.discard_staged().unwrap();
+
+    orch.dispatch(&mut driver, Event::BootConfirmed(C0));
+
+    assert_eq!(
+        driver.pending_update(),
+        None,
+        "no re-sync from a region that changed hands"
     );
 }

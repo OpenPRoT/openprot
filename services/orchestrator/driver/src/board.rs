@@ -131,6 +131,11 @@ pub enum Report {
     /// discarded and no verdict for that request follows. Platform-wide for
     /// the same reason as [`Report::UpdateDeferred`].
     UpdateAborted,
+    /// The spare slot could not be brought up to date after a commit.
+    /// The running image is committed and fine; the other slot still
+    /// holds the version from before this update, so a fallback would
+    /// boot older firmware.
+    SlotResyncFailed(ComponentId),
 }
 
 /// Where the driver hands its [`Report`]s. What a report becomes, a log
