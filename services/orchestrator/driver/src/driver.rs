@@ -346,7 +346,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             Step::Authenticated => {
                 // Unreachable until Authenticating is a real phase.
                 UpdatePoll {
-                    event: Some(Event::UpdateVerified),
+                    event: Some(Event::UpdateVerified(job.target)),
                     progress: None,
                 }
             }

@@ -220,8 +220,11 @@ pub enum Event {
     AttestationChallenge,
     /// A firmware update has been requested.
     UpdateRequest,
-    /// The staged update authenticated successfully.
-    UpdateVerified,
+    /// The staged update authenticated and the device holds it. Names the
+    /// component it was staged on, which the driver knows and the state
+    /// machine does not: `UpdateRequest` carries no target, so this is
+    /// where the core learns whose commit window `ActivateUpdate` opens.
+    UpdateVerified(ComponentId),
     /// The staged update failed authentication.
     UpdateRejected,
     /// The activated image proved itself healthy at runtime (supervised
@@ -304,6 +307,7 @@ impl Event {
             | Event::ComponentReady(id)
             | Event::Booted(id)
             | Event::BootConfirmed(id)
+            | Event::UpdateVerified(id)
             | Event::CorruptionDetected(id)
             | Event::Restored(id)
             | Event::RecoveryUnavailable(id)
@@ -312,7 +316,6 @@ impl Event {
             Event::PowerGood(_)
             | Event::AttestationChallenge
             | Event::UpdateRequest
-            | Event::UpdateVerified
             | Event::UpdateRejected
             | Event::RecoveryFailed
             | Event::CommitTimeout
