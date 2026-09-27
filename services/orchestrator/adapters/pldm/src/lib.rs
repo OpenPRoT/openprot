@@ -16,7 +16,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
-use openprot_orchestrator_sm::Event;
+use openprot_orchestrator_sm::{ComponentId, Event};
 use openprot_pldm_service::firmware_device::{FdEvent, FdEventSink};
 
 /// Latches an accepted PLDM `RequestUpdate` until the orchestrator run loop
@@ -29,15 +29,20 @@ use openprot_pldm_service::firmware_device::{FdEvent, FdEventSink};
 /// is drained, the two coalesce into one [`Event::UpdateRequest`] — which is
 /// what the state machine would do anyway (an update already being handled
 /// defers further requests).
-#[derive(Default)]
 pub struct UpdateRequestLatch {
+    /// The component this firmware device updates. Board wiring: `FdEvent`
+    /// does not say which component was requested, and this FD serves one.
+    target: ComponentId,
     pending: bool,
 }
 
 impl UpdateRequestLatch {
-    /// A latch with nothing pending.
-    pub const fn new() -> Self {
-        Self { pending: false }
+    /// A latch with nothing pending, for the component this FD updates.
+    pub const fn new(target: ComponentId) -> Self {
+        Self {
+            target,
+            pending: false,
+        }
     }
 
     /// Drain the latch: [`Event::UpdateRequest`] if a `RequestUpdate` was
@@ -45,7 +50,7 @@ impl UpdateRequestLatch {
     pub fn take(&mut self) -> Option<Event> {
         self.pending.then(|| {
             self.pending = false;
-            Event::UpdateRequest
+            Event::UpdateRequest(self.target)
         })
     }
 }
@@ -64,25 +69,27 @@ impl FdEventSink for UpdateRequestLatch {
 mod tests {
     use super::*;
 
+    const C0: ComponentId = ComponentId::new(0);
+
     #[test]
     fn empty_latch_yields_nothing() {
-        assert_eq!(UpdateRequestLatch::new().take(), None);
+        assert_eq!(UpdateRequestLatch::new(C0).take(), None);
     }
 
     #[test]
     fn accepted_request_yields_one_event() {
-        let mut latch = UpdateRequestLatch::new();
+        let mut latch = UpdateRequestLatch::new(C0);
         latch.notify(FdEvent::UpdateRequested);
-        assert_eq!(latch.take(), Some(Event::UpdateRequest));
+        assert_eq!(latch.take(), Some(Event::UpdateRequest(C0)));
         assert_eq!(latch.take(), None, "a drained latch must not re-fire");
     }
 
     #[test]
     fn undrained_notifications_coalesce() {
-        let mut latch = UpdateRequestLatch::new();
+        let mut latch = UpdateRequestLatch::new(C0);
         latch.notify(FdEvent::UpdateRequested);
         latch.notify(FdEvent::UpdateRequested);
-        assert_eq!(latch.take(), Some(Event::UpdateRequest));
+        assert_eq!(latch.take(), Some(Event::UpdateRequest(C0)));
         assert_eq!(latch.take(), None);
     }
 }

@@ -27,7 +27,7 @@ use mctp_lib::Sender;
 use openprot_mctp_api::Handle;
 use openprot_mctp_server::Server;
 use openprot_orchestrator_pldm_adapter::UpdateRequestLatch;
-use openprot_orchestrator_sm::Event;
+use openprot_orchestrator_sm::{ComponentId, Event};
 use openprot_pldm_service::firmware_device::{FirmwareDevice, RunTerminusResult};
 use openprot_pldm_service::{MctpPldmTransport, PldmServiceError};
 use pldm_common::codec::{PldmCodec, PldmCodecWithLifetime};
@@ -338,7 +338,7 @@ fn firmware_update_full_flow_via_requester() {
 
     // Orchestrator-facing latch: `run_terminus` marks it on each accepted
     // RequestUpdate; the assertions below drain it as `Event::UpdateRequest`.
-    let update_events = RefCell::new(UpdateRequestLatch::new());
+    let update_events = RefCell::new(UpdateRequestLatch::new(ComponentId::new(0)));
 
     // Run one full UA->FD->UA command round-trip and return the PLDM response
     // payload (without the MCTP framing byte).
@@ -403,7 +403,7 @@ fn firmware_update_full_flow_via_requester() {
     );
     assert_eq!(
         update_events.borrow_mut().take(),
-        Some(Event::UpdateRequest),
+        Some(Event::UpdateRequest(ComponentId::new(0))),
         "accepted RequestUpdate should latch exactly one orchestrator event"
     );
     assert_eq!(

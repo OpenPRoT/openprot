@@ -24,7 +24,7 @@ stateDiagram-v2
     AwaitingReady --> Recovering    : Timeout(id) [id == awaiting]<br/>/ RestoreGoldenImage
 
     state SupervisingPlatform {
-        Ready         --> Updating      : UpdateRequest<br/>/ AuthenticateStageUpdate
+        Ready         --> Updating      : UpdateRequest(id)<br/>/ AuthenticateStageUpdate
         Updating      --> Ready         : UpdateVerified / ActivateUpdate
         Updating      --> Ready         : UpdateRejected / DiscardStaged
         Ready         --> Recovering    : CorruptionDetected<br/>/ RestoreGoldenImage
@@ -57,9 +57,10 @@ across events and is visible to every handler. States are a plain `State` enum
 | `max_retry` | `u8` | Ceiling for a component's `retry`, chosen by the platform driver. When `statuses[i].retry >= max_retry` recovery is **exhausted** and the failed component's recovery-failure policy (`Isolable`/`Cascading`/`Required`) is applied. |
 | `_effect_cap` | `PhantomData<[u8; E]>` | Zero-sized; ties the effect-buffer size `E` to the type so the `E >= 2 * N + 2` bound is enforced at construction. |
 
-Two pieces of per-episode data are **not** stored on `Rot`: the component whose
-recovery is in progress and the `Active` component whose readiness is
-outstanding. These live in the `State` payloads `Recovering(ComponentId)` and
+Three pieces of per-episode data are **not** stored on `Rot`: the component whose
+recovery is in progress, the component being updated, and the `Active` component
+whose readiness is outstanding. These live in the `State` payloads
+`Recovering(ComponentId)`, `Updating(ComponentId)` and
 `AwaitingReady(Option<ComponentId>)`, so they exist only while the machine is in
 those states — the type system guarantees they cannot be read in any other.
 
@@ -180,14 +181,15 @@ only a fresh `Rot` on `PowerOnReset` releases it.
 
 | Event | Guard | Effects | Next state |
 |---|---|---|---|
-| `UpdateRequest` | — | — | `Updating` |
+| `UpdateRequest(id)` | — | — | `Updating(id)` |
 | anything else | — | — | `Outcome::Super` → `SupervisingPlatform` |
 
 ---
 
 ### `Updating`
 
-An update is in progress.
+An update is in progress on the component the request named, which is the
+state's payload.
 
 **Entry action**: emit `AuthenticateStageUpdate`.
 
@@ -201,7 +203,7 @@ An update is in progress.
 
 | Event | Guard | Effects | Next state |
 |---|---|---|---|
-| `UpdateVerified` | — | `ActivateUpdate` | `Ready` |
+| `UpdateVerified` | — | `ActivateUpdate` | `Ready` (commit window opens on the payload) |
 | `UpdateRejected` | — | `DiscardStaged` | `Ready` (INV4) |
 | `CorruptionDetected(id)` | `Required`/unknown | `DiscardStaged` (then `RestoreGoldenImage` on entry) | `Recovering(id)` (update preempted; staged image discarded) |
 | `CorruptionDetected(id)` | `Isolable`/`Cascading` | `AssertReset(id)` · `ReportIsolated(id)` | `Handled` (component gated; update continues, staged image kept) |

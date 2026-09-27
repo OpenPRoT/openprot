@@ -135,12 +135,12 @@ fn attestation_shared_across_supervising_platform_states() {
         &[
             BOOT,
             Event::VerificationPassed(C0),
-            Event::UpdateRequest,
+            Event::UpdateRequest(C0),
             Event::AttestationChallenge,
         ],
     );
     assert_eq!(effects.last(), Some(&Effect::SignAttestation));
-    assert_eq!(state, State::Updating);
+    assert_eq!(state, State::Updating(C0));
 }
 
 /// INV4: a rejected update rolls back via DiscardStaged and never enters
@@ -152,7 +152,7 @@ fn update_rollback_is_not_recovery() {
         &[
             BOOT,
             Event::VerificationPassed(C0),
-            Event::UpdateRequest,
+            Event::UpdateRequest(C0),
             Event::UpdateRejected,
         ],
     );
@@ -1841,7 +1841,7 @@ fn corruption_in_updating_triggers_recovery() {
         &[
             BOOT,
             Event::VerificationPassed(C0),
-            Event::UpdateRequest,
+            Event::UpdateRequest(C0),
             Event::CorruptionDetected(C0),
         ],
     );
@@ -1885,7 +1885,7 @@ fn update_request_while_recovering_is_deferred() {
         &[
             BOOT,
             Event::VerificationFailed(C0), // → Recovering(C0)
-            Event::UpdateRequest,          // declined while recovering
+            Event::UpdateRequest(C0),      // declined while recovering
         ],
     );
     assert_eq!(state, State::Recovering(C0));
@@ -1902,11 +1902,11 @@ fn update_request_while_updating_is_deferred() {
         &[
             BOOT,
             Event::VerificationPassed(C0),
-            Event::UpdateRequest, // → Updating
-            Event::UpdateRequest, // declined while updating
+            Event::UpdateRequest(C0), // → Updating
+            Event::UpdateRequest(C0), // declined while updating
         ],
     );
-    assert_eq!(state, State::Updating);
+    assert_eq!(state, State::Updating(C0));
     assert_eq!(effects.last(), Some(&Effect::ReportUpdateDeferred));
 }
 
@@ -1923,7 +1923,7 @@ fn update_request_while_awaiting_ready_is_deferred() {
         &[
             BOOT,
             Event::VerificationPassed(C0), // active released → AwaitingReady(Some(C0))
-            Event::UpdateRequest,          // declined while awaiting readiness
+            Event::UpdateRequest(C0),      // declined while awaiting readiness
         ],
     );
     assert_eq!(state, State::AwaitingReady(Some(C0)));
@@ -1937,10 +1937,116 @@ fn update_request_while_awaiting_ready_is_deferred() {
 fn update_request_in_ready_starts_update_not_deferred() {
     let (effects, state) = drive(
         passive_required(&[C0]),
-        &[BOOT, Event::VerificationPassed(C0), Event::UpdateRequest],
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::UpdateRequest(C0),
+        ],
     );
-    assert_eq!(state, State::Updating);
+    assert_eq!(state, State::Updating(C0));
     assert!(!effects.contains(&Effect::ReportUpdateDeferred));
+}
+
+/// UpdateRequest is the one id-carrying event the chain-membership drop lets
+/// through. The job is recorded before the dispatch, so dropping it here would
+/// leave that job with nothing to answer it.
+#[test]
+fn an_update_request_for_an_unknown_component_is_not_dropped() {
+    let (_, state) = drive(
+        passive_required(&[C0]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::UpdateRequest(ComponentId::new(99)),
+        ],
+    );
+    assert_eq!(state, State::Updating(ComponentId::new(99)));
+}
+
+/// A different component reporting healthy must not advance its own floor or
+/// close the updated component's window, which would leave that component
+/// with neither a commit nor a lock.
+#[test]
+fn an_unrelated_boot_confirmed_leaves_the_commit_window_open() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_required()),
+            (C1, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::VerificationPassed(C1),
+            Event::UpdateRequest(C0),
+            Event::UpdateVerified,
+            Event::BootConfirmed(C1),
+            Event::CommitTimeout,
+        ],
+    );
+
+    assert!(
+        !effects.contains(&Effect::CommitSvnFloor(C1)),
+        "floor advanced for C1, which activated nothing"
+    );
+    assert_eq!(
+        state,
+        State::Locked,
+        "commit-or-lock defeated: window closed by an unrelated component"
+    );
+}
+
+/// The other component's report must also leave the window usable: the
+/// updated component's own BootConfirmed still commits its floor, once.
+#[test]
+fn a_sibling_boot_confirmed_does_not_consume_the_window() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_required()),
+            (C1, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::VerificationPassed(C1),
+            Event::UpdateRequest(C0),
+            Event::UpdateVerified,
+            Event::BootConfirmed(C1),
+            Event::BootConfirmed(C0),
+        ],
+    );
+
+    assert_eq!(
+        effects
+            .iter()
+            .filter(|e| **e == Effect::CommitSvnFloor(C0))
+            .count(),
+        1,
+        "C0's floor must commit once on its own BootConfirmed"
+    );
+    assert!(
+        !effects.contains(&Effect::CommitSvnFloor(C1)),
+        "floor advanced for C1, which activated nothing"
+    );
+    assert_eq!(state, State::Ready);
+}
+
+/// With nothing waiting to commit, a BootConfirmed moves no floor.
+#[test]
+fn a_boot_confirmed_with_no_window_open_is_ignored() {
+    let (effects, state) = drive(
+        passive_required(&[C0]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::BootConfirmed(C0),
+        ],
+    );
+
+    assert!(
+        !effects.contains(&Effect::CommitSvnFloor(C0)),
+        "floor advanced with no update activated"
+    );
+    assert_eq!(state, State::Ready);
 }
 
 /// UpdateVerified activates the staged image and returns to Ready.
@@ -1952,7 +2058,7 @@ fn update_verified_activates_update() {
         &[
             BOOT,
             Event::VerificationPassed(C0),
-            Event::UpdateRequest,
+            Event::UpdateRequest(C0),
             Event::UpdateVerified,
         ],
     );
@@ -1975,7 +2081,7 @@ fn svn_floor_commits_on_boot_confirmed_not_on_activation() {
         &[
             BOOT,
             Event::VerificationPassed(C0),
-            Event::UpdateRequest,
+            Event::UpdateRequest(C0),
             Event::UpdateVerified,
         ],
     );
@@ -1989,7 +2095,7 @@ fn svn_floor_commits_on_boot_confirmed_not_on_activation() {
         &[
             BOOT,
             Event::VerificationPassed(C0),
-            Event::UpdateRequest,
+            Event::UpdateRequest(C0),
             Event::UpdateVerified,
             Event::BootConfirmed(C0),
         ],
@@ -2009,7 +2115,7 @@ fn commit_timeout_while_pending_latches_locked() {
         &[
             BOOT,
             Event::VerificationPassed(C0),
-            Event::UpdateRequest,
+            Event::UpdateRequest(C0),
             Event::UpdateVerified,
             // Window open: activated, awaiting BootConfirmed. Watchdog fires.
             Event::CommitTimeout,
@@ -2032,7 +2138,7 @@ fn commit_timeout_after_confirm_is_stale_noop() {
         &[
             BOOT,
             Event::VerificationPassed(C0),
-            Event::UpdateRequest,
+            Event::UpdateRequest(C0),
             Event::UpdateVerified,
             Event::BootConfirmed(C0),
             // Window already closed by the commit above.
@@ -2068,7 +2174,7 @@ fn recovery_clears_commit_window() {
         &[
             BOOT,
             Event::VerificationPassed(C0),
-            Event::UpdateRequest,
+            Event::UpdateRequest(C0),
             Event::UpdateVerified,
             // Window open, then a Required corruption preempts to recovery.
             Event::CorruptionDetected(C0),
@@ -2106,7 +2212,7 @@ fn locked_is_terminal() {
         BOOT,
         Event::VerificationPassed(C0),
         Event::AttestationChallenge,
-        Event::UpdateRequest,
+        Event::UpdateRequest(C0),
         Event::CorruptionDetected(C0),
     ] {
         orch.dispatch_with(ev, |e| {
@@ -2461,7 +2567,7 @@ fn corruption_during_update_discards_staged() {
             BOOT,
             Event::VerificationPassed(C0),
             Event::VerificationPassed(C1), // → Ready
-            Event::UpdateRequest,          // → Updating (AuthenticateStageUpdate)
+            Event::UpdateRequest(C0),      // → Updating (AuthenticateStageUpdate)
             Event::CorruptionDetected(C1), // Required corruption preempts the update
         ],
     );
@@ -2491,11 +2597,11 @@ fn contained_corruption_during_update_does_not_abort() {
             BOOT,
             Event::VerificationPassed(C0),
             Event::VerificationPassed(C1), // → Ready
-            Event::UpdateRequest,          // → Updating
+            Event::UpdateRequest(C0),      // → Updating
             Event::CorruptionDetected(C1), // isolable: contained, update survives
         ],
     );
-    assert_eq!(state, State::Updating);
+    assert_eq!(state, State::Updating(C0));
     assert!(!effects.contains(&Effect::ReportUpdateAborted));
     assert!(!effects.contains(&Effect::DiscardStaged));
 }
@@ -2625,7 +2731,7 @@ fn random_event(rng: &mut SplitMix64, ids: &[ComponentId]) -> Event {
             }
         }
         8 => Event::AttestationChallenge,
-        9 => Event::UpdateRequest,
+        9 => Event::UpdateRequest(id),
         10 => Event::UpdateVerified,
         11 => Event::UpdateRejected,
         12 => Event::RecoveryFailed,

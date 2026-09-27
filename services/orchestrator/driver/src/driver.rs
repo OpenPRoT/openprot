@@ -700,6 +700,6 @@ pub fn request_update<B: BoardCapabilities, const N: usize, const E: usize>(
     len: u64,
 ) -> Result<(), DriverError> {
     driver.submit_update(target, len)?;
-    orchestrator.dispatch(driver, Event::UpdateRequest);
+    orchestrator.dispatch(driver, Event::UpdateRequest(target));
     Ok(())
 }

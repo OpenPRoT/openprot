@@ -218,9 +218,10 @@ pub enum Event {
     Booted(ComponentId),
     /// A challenger has requested a signed attestation.
     AttestationChallenge,
-    /// A firmware update has been requested.
-    UpdateRequest,
-    /// The staged update authenticated successfully.
+    /// A firmware update has been requested for this component.
+    UpdateRequest(ComponentId),
+    /// The staged update authenticated and the device is holding it. No
+    /// component: [`State::Updating`] already names the one being updated.
     UpdateVerified,
     /// The staged update failed authentication.
     UpdateRejected,
@@ -290,13 +291,19 @@ pub enum Event {
 
 impl Event {
     /// The component this event is about, or `None` for events that name no
-    /// component (`PowerGood`, `UpdateRequest`, `CommitTimeout`, …).
+    /// component (`PowerGood`, `CommitTimeout`, …).
     ///
     /// This is the single enumeration of the id-carrying events, consulted once
     /// at the dispatch boundary ([`Orchestrator::step`](crate::Orchestrator::step))
     /// to drop any event that names a component outside the configured chain
     /// before a handler ever sees it. A new id-carrying variant must be listed
     /// here, or it will bypass that membership check.
+    ///
+    /// [`Event::UpdateRequest`] is the exception: it carries a component but
+    /// returns `None`. The caller records the job before dispatching it, so
+    /// dropping the event here would leave that job with nothing to answer it
+    /// and wedge every later request. An unknown target instead fails closed in
+    /// the executor, which has the board's component list to check against.
     pub(crate) fn component_id(&self) -> Option<ComponentId> {
         match self {
             Event::VerificationPassed(id)
@@ -311,7 +318,7 @@ impl Event {
             | Event::Timeout(id) => Some(*id),
             Event::PowerGood(_)
             | Event::AttestationChallenge
-            | Event::UpdateRequest
+            | Event::UpdateRequest(_)
             | Event::UpdateVerified
             | Event::UpdateRejected
             | Event::RecoveryFailed
@@ -437,7 +444,10 @@ pub enum State {
     ///   is spurious.
     AwaitingReady(Option<ComponentId>),
     Ready,
-    Updating,
+    /// An update is running on this component. The payload is the target the
+    /// request named, and it is what opens the commit window on
+    /// [`Event::UpdateVerified`].
+    Updating(ComponentId),
     /// A component failed verification (or was found corrupt under a
     /// non-gating policy) and is being restored from its configured recovery
     /// source. The payload is

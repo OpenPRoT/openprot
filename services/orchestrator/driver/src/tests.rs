@@ -654,7 +654,7 @@ fn emit_is_refused() {
     let mut driver = driver([MemImage::holding(valid_image())]);
 
     assert_eq!(
-        driver.execute(Effect::Emit(Event::UpdateRequest)),
+        driver.execute(Effect::Emit(Event::UpdateRequest(C0))),
         Err(EffectError)
     );
 }
@@ -1446,7 +1446,7 @@ fn request_update_reaches_the_sm() {
     request_update(&mut orch, &mut driver, C0, CANDIDATE_LEN).unwrap();
 
     assert_eq!(driver.pending_update(), Some(C0));
-    assert_eq!(orch.state(), State::Updating);
+    assert_eq!(orch.state(), State::Updating(C0));
 }
 
 // A refused submit injects nothing: no job, no event, the SM stays Ready.
@@ -1756,7 +1756,7 @@ fn an_update_stages_through_the_sm() {
     assert_eq!(orch.state(), State::Ready);
 
     request_update(&mut orch, &mut driver, C0, CANDIDATE_LEN).unwrap();
-    assert_eq!(orch.state(), State::Updating);
+    assert_eq!(orch.state(), State::Updating(C0));
 
     for tick in 0..16 {
         if let Some(event) = driver.pump_update(tick).event {
@@ -1766,7 +1766,7 @@ fn an_update_stages_through_the_sm() {
     }
 
     // Pump parked at Staged, no event emitted. SM stays in Updating.
-    assert_eq!(orch.state(), State::Updating);
+    assert_eq!(orch.state(), State::Updating(C0));
     assert!(driver.board().updatables[0].ready);
     assert!(driver.pending_update().is_some());
 }
