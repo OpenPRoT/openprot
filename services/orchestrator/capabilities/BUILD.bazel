@@ -13,6 +13,7 @@ rust_library(
         "src/incremental_verifier.rs",
         "src/lib.rs",
         "src/lockdown_latch.rs",
+        "src/progress.rs",
         "src/recovery.rs",
         "src/self_update.rs",
         "src/svn_floor.rs",
