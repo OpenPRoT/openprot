@@ -32,6 +32,8 @@ impl fmt::Display for WireError {
     }
 }
 
+impl core::error::Error for WireError {}
+
 /// On-wire response code from the FD.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
