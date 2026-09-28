@@ -5,7 +5,9 @@
 #![no_main]
 
 use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
-use ast10x0_peripherals::scu::pinctrl;
+use ast10x0_peripherals::aperture::take_aperture;
+use ast10x0_peripherals::gpio::{GpioBlock, IntoGpio, OutputPin};
+use ast10x0_peripherals::scu::{self, create_pins, pinctrl};
 use console_backend::console_backend_write_all;
 use entry as _;
 use target_common::{declare_target, TargetInterface};
@@ -30,6 +32,18 @@ impl TargetInterface for Target {
         {
             loop {}
         }
+
+        // GPIOK5: the fd image's reset-passthrough request line to the Pi harness.
+        // SAFETY: sole pin creation site in this binary, at boot; the pins! table is this chip's true pin map.
+        let pins = unsafe { create_pins() };
+        // SAFETY: kernel-only binary, minted once; no process holds a conflicting grant.
+        let gpio = GpioBlock::new(unsafe { take_aperture() });
+        let gpio_k5 = pins.scu418_21.into_gpio(&gpio);
+        scu::route(&gpio_k5);
+        // Driven low (deasserted) immediately so the line has a defined level for
+        // the whole test instead of floating until fd_main.rs binds it as output.
+        let mut gpio_k5 = gpio_k5.into_output();
+        let _ = gpio_k5.set_low();
 
         codegen::start();
         loop {}
