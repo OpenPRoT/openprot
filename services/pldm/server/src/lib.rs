@@ -11,8 +11,8 @@
 
 #![no_std]
 
-use pldm_ipc_api::wire::{self, PldmOp};
-use pldm_ipc_api::{DenyReason, FdStatus, ResponseCode, WireError};
+use pldm_api::wire::{self, PldmOp};
+use pldm_api::{DenyReason, FdStatus, ResponseCode, WireError};
 use util_service::{Dispatch, DispatchError};
 
 /// What the FD does in response to each orchestrator operation.
@@ -151,8 +151,8 @@ fn encode_unit_result(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pldm_ipc_api::status::TransferMode;
-    use pldm_ipc_api::wire::{RequestHeader, MAX_RESPONSE_SIZE};
+    use pldm_api::status::TransferMode;
+    use pldm_api::wire::{RequestHeader, MAX_RESPONSE_SIZE};
 
     /// Mock handler that records calls and returns canned responses.
     struct MockFd {
@@ -449,7 +449,7 @@ mod tests {
 #[cfg(test)]
 mod loopback_tests {
     use super::*;
-    use pldm_ipc_api::wire::MAX_REQUEST_SIZE;
+    use pldm_api::wire::MAX_REQUEST_SIZE;
     use util_service::{AsyncTransport, Loopback, TransportError};
 
     /// Start one request and poll the response out, as the client layer
@@ -462,9 +462,9 @@ mod loopback_tests {
         transport.start(req).unwrap();
         transport.poll(resp).unwrap().unwrap()
     }
-    use pldm_ipc_api::status::TransferMode;
-    use pldm_ipc_api::wire::{self, MAX_RESPONSE_SIZE};
-    use pldm_ipc_api::{DenyReason, FdStatus, ResponseCode};
+    use pldm_api::status::TransferMode;
+    use pldm_api::wire::{self, MAX_RESPONSE_SIZE};
+    use pldm_api::{DenyReason, FdStatus, ResponseCode};
 
     /// Minimal handler for loopback tests.
     struct StubFd {

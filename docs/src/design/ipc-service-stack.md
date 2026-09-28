@@ -13,7 +13,7 @@ sequenceDiagram
     participant AT as AsyncTransaction<br/>(util/ipc)
     participant K as pw_kernel<br/>(channel)
     participant S as Server process
-    participant D as dispatch()<br/>(ipc-server)
+    participant D as dispatch()<br/>(pldm/server)
     participant H as FdHandler
 
     Note over C,H: Request
@@ -58,7 +58,7 @@ path.
 sequenceDiagram
     participant C as Client<br/>(test code)
     participant L as Loopback&lt;D, N&gt;<br/>(util/service)
-    participant D as dispatch()<br/>(ipc-server)
+    participant D as dispatch()<br/>(pldm/server)
     participant H as FdHandler
 
     C->>L: start(req: &[u8])

@@ -4,13 +4,13 @@
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
 rust_library(
-    name = "pldm_ipc_api",
+    name = "pldm_api",
     srcs = glob(["src/**/*.rs"]),
     edition = "2024",
     visibility = ["//visibility:public"],
 )
 
 rust_test(
-    name = "pldm_ipc_api_test",
-    crate = ":pldm_ipc_api",
+    name = "pldm_api_test",
+    crate = ":pldm_api",
 )
