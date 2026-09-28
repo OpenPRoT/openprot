@@ -7,10 +7,11 @@
 //! [`FdEventSink`] seam to the orchestrator's
 //! [`Event::UpdateRequest`]: the PLDM run loop notifies the latch when the
 //! Update Agent's `RequestUpdate` is accepted, and the orchestrator run loop
-//! drains it with [`take`](UpdateRequestLatch::take). This crate depends on
-//! both stacks by design — the PLDM service stays orchestrator-free and the
-//! orchestrator stays transport-free, the same rule that keeps HAL adapters
-//! out of `orchestrator-capabilities`.
+//! drains it with [`take`](UpdateRequestLatch::take). [`verify_outcome_event`]
+//! does the same job for the verify step, which has no sink to latch through.
+//! This crate depends on both stacks by design — the PLDM service stays
+//! orchestrator-free and the orchestrator stays transport-free, the same rule
+//! that keeps HAL adapters out of `orchestrator-capabilities`.
 
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
@@ -60,6 +61,21 @@ impl FdEventSink for UpdateRequestLatch {
     }
 }
 
+/// Maps a PLDM firmware-update verify outcome to the orchestrator event that
+/// reports it.
+///
+/// `verify()` is called directly by the vendored PLDM command state machine,
+/// with no [`FdEventSink`] seam to latch through mid-flight, so there is no
+/// latch counterpart here — the outcome is only known once verify returns,
+/// and this is the one place that turns it into the matching [`Event`].
+pub fn verify_outcome_event(image_is_good: bool) -> Event {
+    if image_is_good {
+        Event::UpdateVerified
+    } else {
+        Event::UpdateRejected
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -84,5 +100,15 @@ mod tests {
         latch.notify(FdEvent::UpdateRequested);
         assert_eq!(latch.take(), Some(Event::UpdateRequest));
         assert_eq!(latch.take(), None);
+    }
+
+    #[test]
+    fn verify_success_yields_verified() {
+        assert_eq!(verify_outcome_event(true), Event::UpdateVerified);
+    }
+
+    #[test]
+    fn verify_failure_yields_rejected() {
+        assert_eq!(verify_outcome_event(false), Event::UpdateRejected);
     }
 }
