@@ -12,12 +12,24 @@
 #![no_std]
 
 use core::cell::{Cell, RefCell};
+use core::time::Duration;
 
+use ast10x0_board::delay_us;
+use ast10x0_peripherals::create_pins;
+use ast10x0_peripherals::gpio::{bind_gpio, GpioBlock};
 use flash_backend::NoWaitBlocking;
 use hal_flash::{BlockingFlash, Flash, FlashAddress};
+use openprot_hal_blocking::gpio_port::ActivePolarity;
+use openprot_hal_blocking::{DelayNs, ResetControl};
 use openprot_mctp_client_ipc::IpcMctpClient;
+use openprot_orchestrator_pldm_adapter::{verify_outcome_event, UpdateRequestLatch};
+use openprot_orchestrator_sm::{
+    Chain, ComponentAttrs, ComponentId, Effect, EffectError, Event, Orchestrator, Platform,
+    PowerOnResult, State,
+};
 use openprot_pldm_service::firmware_device::{FirmwareDevice, RunTerminusResult};
 use openprot_pldm_service::{MctpPldmTransport, PldmServiceError};
+use orchestrator_hal_adapters::GpioResetControl;
 use pldm_common::message::firmware_update::apply_complete::ApplyResult;
 use pldm_common::message::firmware_update::get_fw_params::FirmwareParameters;
 use pldm_common::message::firmware_update::get_status::ProgressPercent;
@@ -35,9 +47,10 @@ use pldm_interface::firmware_device::fd_ops::{ComponentOperation, FdOps, FdOpsEr
 use pw_status::Error;
 use userspace::{entry, syscall};
 use util_error::ErrorCode;
+use util_region::Region;
 
 use app_pldm_fd::handle;
-use app_pldm_fd_regions::{take_mmaps, FmcRegs, Mmaps};
+use app_pldm_fd_regions::{take_mmaps, FmcCs0Window, FmcCs1Window, FmcRegs, GpioRegs};
 
 /// The FMC backend bound to this process's register mapping.
 type Backend = flash_backend::Backend<FmcRegs>;
@@ -80,6 +93,117 @@ const IDLE_TIMEOUT_MILLIS: u32 = 90_000;
 const REQUESTER_TIMEOUT_MILLIS: u32 = 5_000;
 
 const FD_BUF_SIZE: usize = 1024;
+
+/// The one component this test's orchestrator supervises, standing in for the
+/// device this app itself is running on.
+const ORCH_COMPONENT: ComponentId = ComponentId::new(0);
+
+/// Chain capacity and effect-sink cap for the core (`E >= 2*N + 2`).
+const ORCH_N: usize = 1;
+const ORCH_E: usize = 2 * ORCH_N + 2;
+const ORCH_MAX_RETRY: u8 = 1;
+
+type OrchestratorCore = Orchestrator<ORCH_N, ORCH_E>;
+
+/// GPIOK5, the reset-passthrough line the Pi harness watches. Pulsing it asks
+/// the harness to reset the mock BMC's board once its (pretend) update has
+/// gone through. One line, so `GpioResetControl` needs an id type with
+/// exactly one variant to name it.
+#[derive(Clone, PartialEq)]
+enum PassthroughReset {
+    MockBmc,
+}
+
+/// The Pi harness polls the passthrough pin every 100ms
+/// (`_watch_reset_passthrough`); holding it well past that window guarantees
+/// the pulse can't land invisibly between two polls.
+const RESET_PULSE_DURATION: Duration = Duration::from_millis(300);
+
+/// Adapts the board's busy-wait delay to `DelayNs`, so `GpioResetControl`
+/// (generic over any blocking delay provider) can drive its own pulse timing.
+struct BoardDelay;
+
+impl DelayNs for BoardDelay {
+    fn delay_ns(&mut self, ns: u32) {
+        delay_us(ns.div_ceil(1000));
+    }
+
+    fn delay_us(&mut self, us: u32) {
+        delay_us(us);
+    }
+}
+
+/// Pulses GPIOK5 to ask the Pi harness to reset the mock BMC's board, standing
+/// in for the reboot a real firmware activation would cause.
+///
+/// The kernel already routed this pin at the SCU before starting userspace,
+/// so it is bound here rather than muxed. `GpioResetControl::new` drives the
+/// line high as soon as it binds; `reset_pulse` holds it for
+/// `RESET_PULSE_DURATION` and then releases it, so the harness sees one clean
+/// rising-then-falling edge, not two.
+fn request_mock_bmc_reset(gpio_regs: Region<GpioRegs>) {
+    // SAFETY: sole pin creation site in this binary, at boot; the pins! table is this chip's true pin map.
+    let pins = unsafe { create_pins() };
+    let gpio = GpioBlock::new(gpio_regs);
+    let pin = bind_gpio(pins.scu418_21, &gpio).into_output();
+
+    // Both `expect`s document unreachable branches, not swallowed errors:
+    // the GPIO output's error type is `Infallible`, and `PassthroughReset`
+    // has a single variant, so `GpioResetControl`'s own id check always
+    // matches.
+    let mut reset = GpioResetControl::new(
+        pin,
+        BoardDelay,
+        PassthroughReset::MockBmc,
+        ActivePolarity::ActiveHigh,
+    )
+    .expect("GPIOK5 is Infallible and PassthroughReset has one variant");
+    reset
+        .reset_pulse(&PassthroughReset::MockBmc, RESET_PULSE_DURATION)
+        .expect("GPIOK5 is Infallible and PassthroughReset has one variant");
+}
+
+/// A [`Platform`] that pulses the mock BMC's reset on [`Effect::ActivateUpdate`]
+/// — standing in for the reboot a real activation would cause — and reports
+/// that reboot's outcome back as [`Event::BootConfirmed`]. Every other effect
+/// is a no-op: boot verification and update staging aren't what this test
+/// proves, only that a real RequestUpdate, arriving over the wire from the
+/// update agent, drives the orchestrator through to activation.
+struct TestPlatform {
+    gpio_regs: Option<Region<GpioRegs>>,
+}
+
+impl Platform for TestPlatform {
+    fn execute(&mut self, effect: Effect) -> Result<Option<Event>, EffectError> {
+        match effect {
+            Effect::ActivateUpdate => {
+                if let Some(gpio_regs) = self.gpio_regs.take() {
+                    request_mock_bmc_reset(gpio_regs);
+                    pw_log::info!("FD: pulsed GPIOK5 to reset the mock BMC");
+                }
+                Ok(Some(Event::BootConfirmed(ORCH_COMPONENT)))
+            }
+            _ => Ok(None),
+        }
+    }
+}
+
+/// A fresh core supervising just [`ORCH_COMPONENT`], already released to
+/// [`State::Ready`]. Boot verification is bypassed here, not exercised by
+/// this test.
+fn new_ready_core(platform: &mut TestPlatform) -> Result<OrchestratorCore, ErrorCode> {
+    let mut components = heapless::Vec::<(ComponentId, ComponentAttrs), ORCH_N>::new();
+    components
+        .push((ORCH_COMPONENT, ComponentAttrs::passive_required()))
+        .map_err(|_| ErrorCode::kernel_error(Error::Internal))?;
+    let chain: Chain<ORCH_N> = components
+        .try_into()
+        .map_err(|_| ErrorCode::kernel_error(Error::Internal))?;
+    let mut core = Orchestrator::new(chain, ORCH_MAX_RETRY);
+    core.dispatch(platform, Event::PowerGood(PowerOnResult::Provisioned));
+    core.dispatch(platform, Event::VerificationPassed(ORCH_COMPONENT));
+    Ok(core)
+}
 
 /// The byte the demo image carries at `offset`.
 ///
@@ -313,9 +437,13 @@ impl FdOps for DemoFdOps {
 }
 
 /// Bring up the FMC and clear the sector the image lands in.
-fn init_flash(mmaps: Mmaps) -> Result<BlockingFlash<Backend, NoWaitBlocking>, ErrorCode> {
+fn init_flash(
+    fmc_regs: Region<FmcRegs>,
+    fmc_cs0_window: Region<FmcCs0Window>,
+    fmc_cs1_window: Region<FmcCs1Window>,
+) -> Result<BlockingFlash<Backend, NoWaitBlocking>, ErrorCode> {
     // The kernel target applied the FMC pinmux before any process started.
-    let driver = Backend::new(mmaps.fmc_regs, mmaps.fmc_cs0_window, mmaps.fmc_cs1_window)?;
+    let driver = Backend::new(fmc_regs, fmc_cs0_window, fmc_cs1_window)?;
     let mut flash = BlockingFlash {
         driver,
         blocking: NoWaitBlocking,
@@ -334,7 +462,7 @@ fn init_flash(mmaps: Mmaps) -> Result<BlockingFlash<Backend, NoWaitBlocking>, Er
 fn entry() {
     // SAFETY: mints this process's memory mappings once, at its entry point.
     let mmaps = unsafe { take_mmaps() };
-    let flash = match init_flash(mmaps) {
+    let flash = match init_flash(mmaps.fmc_regs, mmaps.fmc_cs0_window, mmaps.fmc_cs1_window) {
         Ok(flash) => flash,
         Err(e) => {
             pw_log::error!("FD: flash init failed: {:08x}", e.0.get() as u32);
@@ -343,6 +471,23 @@ fn entry() {
         }
     };
     let fd_ops = DemoFdOps::new(flash);
+
+    let mut platform = TestPlatform {
+        gpio_regs: Some(mmaps.gpio_regs),
+    };
+    let mut orchestrator = match new_ready_core(&mut platform) {
+        Ok(core) => core,
+        Err(e) => {
+            pw_log::error!("FD: orchestrator init failed: {:08x}", e.0.get() as u32);
+            let _ = syscall::debug_shutdown(Err(Error::Internal));
+            loop {}
+        }
+    };
+    // Synthetic confirmation that this boot reached State::Ready and is
+    // running code. A no-op pre-update; the real signal comes from
+    // TestPlatform::execute once activation resets the mock BMC.
+    orchestrator.dispatch(&mut platform, Event::BootConfirmed(ORCH_COMPONENT));
+    pw_log::info!("FD: BootConfirmed dispatched");
 
     // Both transports talk to the same MCTP server over the same IPC channel.
     // Nothing is ever in flight on both at once: run_terminus alternates its
@@ -366,6 +511,7 @@ fn entry() {
     pw_log::info!("FD: waiting for the update agent at EID {}", UA_EID as u32);
 
     let mut buf = [0u8; FD_BUF_SIZE];
+    let mut update_latch = UpdateRequestLatch::new();
     // Returns as soon as ActivateFirmware puts the device back in Idle; an
     // idle timeout arrives as an error instead.
     match fd.run_terminus(
@@ -373,7 +519,7 @@ fn entry() {
         &mut buf,
         IDLE_TIMEOUT_MILLIS,
         REQUESTER_TIMEOUT_MILLIS,
-        &mut (),
+        &mut update_latch,
     ) {
         RunTerminusResult::Completed => {}
         // A plain idle timeout arrives here too, so the code distinguishes
@@ -386,7 +532,26 @@ fn entry() {
         }
     }
 
-    if fd_ops.image_is_good() && fd_ops.activated.get() {
+    if let Some(event) = update_latch.take() {
+        orchestrator.dispatch(&mut platform, event);
+    }
+    let orchestrator_reached_updating = orchestrator.state() == State::Updating;
+    if !orchestrator_reached_updating {
+        pw_log::error!("FD: orchestrator never reached State::Updating");
+    }
+
+    // The real verify() outcome, already settled by the time run_terminus
+    // returns, becomes the event that lets the orchestrator leave Updating.
+    if orchestrator_reached_updating {
+        orchestrator.dispatch(&mut platform, verify_outcome_event(fd_ops.image_is_good()));
+    }
+    let orchestrator_closed_the_loop =
+        orchestrator_reached_updating && orchestrator.state() == State::Ready;
+    if !orchestrator_closed_the_loop {
+        pw_log::error!("FD: orchestrator never returned to State::Ready after verify");
+    }
+
+    if fd_ops.image_is_good() && fd_ops.activated.get() && orchestrator_closed_the_loop {
         pw_log::info!("FD: update flow complete");
         let _ = syscall::debug_shutdown(Ok(()));
     } else {
