@@ -36,6 +36,18 @@ def _gpio_set(pin: int, state: str) -> None:
     subprocess.run(["pinctrl", "set", str(pin), "op"] + state.split(), check=True)
 
 
+def _gpio_set_input(pin: int, pull: str) -> None:
+    subprocess.run(["pinctrl", "set", str(pin), "ip", pull], check=True)
+
+
+def _gpio_read(pin: int) -> bool:
+    """True if `pin` currently reads high."""
+    out = subprocess.run(
+        ["pinctrl", "get", str(pin)], check=True, capture_output=True, text=True
+    ).stdout
+    return "hi" in out
+
+
 def _sequence_to_fwspick_mode(
     srst_pin: int, fwspick_pin: int, port: serial.Serial
 ) -> None:
@@ -47,6 +59,50 @@ def _sequence_to_fwspick_mode(
     time.sleep(1)
     _gpio_set(srst_pin, "dh")
     time.sleep(1)
+
+
+# A deliberate request pulse (fd_main.rs's RESET_PULSE_DURATION) is held high
+# for 300ms. A power-on/reset transient on an otherwise-undriven pin is not:
+# requiring this many consecutive 100ms-spaced samples to read high before
+# acting rejects the transient without meaningfully delaying a real request.
+_DEBOUNCE_SAMPLES = 3
+
+
+def _watch_reset_passthrough(
+    pin: int, srst_pin: int, stop: threading.Event, lock: threading.Lock
+) -> None:
+    """Reset device A whenever device B requests it over the passthrough GPIO.
+
+    Device B can't toggle the Pi's reset lines itself, so it asks by driving
+    `pin` high; this only plain-resets device A (srst_pin alone, fwspick_pin
+    untouched) so it reboots the firmware already in flash rather than
+    entering the bootloader.
+    """
+    _gpio_set_input(pin, "pd")
+    triggered = False
+    high_streak = 0
+    while not stop.wait(0.1):
+        is_high = _gpio_read(pin)
+        high_streak = high_streak + 1 if is_high else 0
+        if not is_high:
+            triggered = False
+        elif high_streak >= _DEBOUNCE_SAMPLES and not triggered:
+            stamped = (
+                b"[%7.2f watch] Reset-passthrough asserted; resetting device A\n"
+                % (time.monotonic() - _T0,)
+            )
+            try:
+                with lock:
+                    sys.stdout.buffer.write(stamped)
+                    sys.stdout.buffer.flush()
+            except (BrokenPipeError, OSError):
+                pass
+            _gpio_set(srst_pin, "dl")
+            time.sleep(0.1)
+            _gpio_set(srst_pin, "dh")
+            time.sleep(0.5)
+            triggered = True
+            high_streak = 0
 
 
 def _wait_for_uart_ready(port: serial.Serial, timeout: int = 30) -> bool:
@@ -147,11 +203,30 @@ def _run_paired(args, firmware_path: Path, slave_firmware_path: Path) -> bool:
         print(f"Error: could not open {args.uart_device}: {e}", file=sys.stderr)
         return False
 
+    stop_watch = threading.Event()
+    watcher = None
     try:
         _sequence_to_fwspick_mode(args.slave_srst_pin, args.slave_fwspick_pin, port_b)
         if not _wait_for_uart_ready(port_b):
             return False
         _upload_firmware(port_b, slave_firmware_path)
+
+        # Started only once card B's own firmware is running: until then the
+        # passthrough pin has no defined driver (previous firmware, reset
+        # transients, boot-time pinmux defaults), so watching any earlier
+        # would react to noise instead of a real request.
+        if args.reset_passthrough_pin is not None:
+            watcher = threading.Thread(
+                target=_watch_reset_passthrough,
+                args=(
+                    args.reset_passthrough_pin,
+                    args.srst_pin,
+                    stop_watch,
+                    _stdout_lock,
+                ),
+                daemon=True,
+            )
+            watcher.start()
 
         results = [None, None]
 
@@ -182,6 +257,9 @@ def _run_paired(args, firmware_path: Path, slave_firmware_path: Path) -> bool:
     except KeyboardInterrupt:
         return False
     finally:
+        stop_watch.set()
+        if watcher:
+            watcher.join(timeout=1)
         port_a.close()
         port_b.close()
 
@@ -243,6 +321,12 @@ def main() -> int:
         type=int,
         default=None,
         help="BCM GPIO pin connected to device B FWSPICK",
+    )
+    parser.add_argument(
+        "--reset-passthrough-pin",
+        type=int,
+        default=None,
+        help="BCM GPIO pin device B drives high to request a device A reset",
     )
     args = parser.parse_args()
 

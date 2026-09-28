@@ -346,6 +346,8 @@ def _run_remote(
             f" --slave-srst-pin {device_b['srst_pin']}"
             f" --slave-fwspick-pin {device_b['fwspick_pin']}"
         )
+        if reset_passthrough_pin := device_b.get("reset_passthrough_pin"):
+            remote_cmd += f" --reset-passthrough-pin {reset_passthrough_pin}"
 
     proc = _ssh_stream(host, remote_cmd)
     try:

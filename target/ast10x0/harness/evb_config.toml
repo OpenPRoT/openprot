@@ -13,3 +13,7 @@ baudrate = 115200
 srst_pin = 25
 fwspick_pin = 24
 serial_port = "/dev/ttyUSB1"
+# GPIOK5 on device B -> J15 pin 15 -> this Pi BCM pin: device B requests a
+# plain reset of device A by driving this line high, since only the Pi can
+# toggle srst_pin directly.
+reset_passthrough_pin = 8
