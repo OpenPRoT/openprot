@@ -170,6 +170,9 @@ impl core::error::Error for ResetFault {}
 /// line after the control moves into the driver.
 struct MockReset {
     held: std::rc::Rc<core::cell::Cell<bool>>,
+    /// Times the line was asserted, so a test can tell one boot from a
+    /// second one.
+    holds: std::rc::Rc<core::cell::Cell<usize>>,
     fail: bool,
 }
 
@@ -177,6 +180,7 @@ impl MockReset {
     fn new() -> Self {
         Self {
             held: std::rc::Rc::new(core::cell::Cell::new(true)),
+            holds: std::rc::Rc::new(core::cell::Cell::new(0)),
             fail: false,
         }
     }
@@ -189,6 +193,7 @@ impl orchestrator_capabilities::BootControl for MockReset {
         if self.fail {
             return Err(ResetFault);
         }
+        self.holds.set(self.holds.get() + 1);
         self.held.set(true);
         Ok(())
     }
@@ -1856,30 +1861,43 @@ fn activate_update_ends_the_job() {
     assert_eq!(driver.pending_update(), None);
 }
 
-// The path through the SM up to Staged: a request, the pump, staging
-// completes, and the pump parks. The full path through activation
-// requires the crypto verify-client (emitting UpdateVerified).
+// The path through the SM end to end: a request, the pump, staging
+// completes, the verdict activates, and the walk that follows resets the
+// component into what it just activated.
+//
+// The verdict is dispatched here rather than read off the pump, which
+// parks at Staged until the crypto verify client is wired.
 #[test]
-fn an_update_stages_through_the_sm() {
+fn an_update_runs_through_the_sm_and_rewalks() {
     let mut orch = orchestrator();
     let mut driver = update_driver(MockUpdatable::stepping(2));
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
     assert_eq!(orch.state(), State::Ready);
 
+    let resets_before = driver.board().boot_controls[0].holds.get();
+
     request_update(&mut orch, &mut driver, C0, CANDIDATE_LEN).unwrap();
     assert_eq!(orch.state(), State::Updating);
 
     for tick in 0..16 {
-        if let Some(event) = driver.pump_update(tick).event {
-            orch.dispatch(&mut driver, event);
+        driver.pump_update(tick);
+        if driver.board().updatables[0].ready {
             break;
         }
     }
+    assert!(driver.board().updatables[0].ready, "never staged");
 
-    // Pump parked at Staged, no event emitted. SM stays in Updating.
-    assert_eq!(orch.state(), State::Updating);
-    assert!(driver.board().updatables[0].ready);
-    assert!(driver.pending_update().is_some());
+    orch.dispatch(&mut driver, Event::UpdateVerified(C0));
+
+    assert_eq!(orch.state(), State::Ready);
+    assert!(driver.board().updatables[0].active);
+    assert_eq!(driver.pending_update(), None);
+    // The activation only proposed the image; the walk that followed is
+    // what reset the device into it.
+    assert!(
+        driver.board().boot_controls[0].holds.get() > resets_before,
+        "the updated component was never reset"
+    );
 }
 
 // The rejection path through the SM: DiscardStaged runs and the platform
