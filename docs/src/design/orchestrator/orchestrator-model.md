@@ -428,3 +428,42 @@ policy deployments configure.
   The platform is responsible for aggregating any intermediate signals and
   delivering `ComponentReady` only once all platform-policy checkpoints have
   been satisfied.
+
+## 8. Who the Orchestrator Trusts During an Update
+
+Firmware bytes never pass through the orchestrator. The PLDM firmware
+device writes the candidate to the flash service, and the crypto service
+reads it back from that same service to hash it. The orchestrator
+commands each phase (accept the offer, verify, apply, activate) and
+receives a verdict, so it controls policy and never touches data. The trade is
+forced by size: a candidate is megabytes, it does not fit in RAM, and
+routing it through the orchestrator would cost a copy per chunk and
+block the event loop that has to keep answering boot signals.
+
+Three things follow, and none of them are enforceable from where the
+orchestrator sits.
+
+It cannot check that the image the crypto service hashed is the image
+the firmware device staged. It commands verify and believes the verdict.
+
+It cannot check that the flash service served the staged bytes rather
+than stale or substituted ones. There is no second read path to the
+staging region.
+
+It cannot check that an image landed in the slot it named. Slot
+identity stays behind the device adapter.
+
+Against an external attacker this costs nothing. A BMC that offers a
+forged image fails the signature check inside the crypto service, and
+the orchestrator's command never entered into that outcome.
+
+Against a compromised service on the eRoT itself the orchestrator is not
+the defence and cannot be made into one, because it has no independent
+access to the flash. That case is answered in hardware: the SPI
+protection filter that keeps the host off the RoT's flash, or a second
+reader on a path the suspect service does not own.
+
+So the split is that the orchestrator owns policy, meaning who may
+update, when, which components are isolated, and when the SVN floor
+advances, and the crypto service owns data integrity. The orchestrator
+trusts the verdict and does not re-check the contents.
