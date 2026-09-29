@@ -117,33 +117,6 @@ impl fmt::Display for DenyReason {
     }
 }
 
-/// Error returned to the orchestrator's client layer.
-///
-/// Wraps the on-wire `ResponseCode`, the way `MctpError` wraps
-/// `mctp_api::ResponseCode`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PldmIpcError {
-    pub code: ResponseCode,
-}
-
-impl PldmIpcError {
-    pub const fn from_code(code: ResponseCode) -> Self {
-        Self { code }
-    }
-}
-
-impl fmt::Display for PldmIpcError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "pldm ipc error: {}", self.code)
-    }
-}
-
-impl From<ResponseCode> for PldmIpcError {
-    fn from(code: ResponseCode) -> Self {
-        Self::from_code(code)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

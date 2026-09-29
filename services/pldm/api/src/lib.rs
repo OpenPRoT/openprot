@@ -16,7 +16,7 @@ pub mod error;
 pub mod status;
 pub mod wire;
 
-pub use error::{DenyReason, PldmIpcError, ResponseCode, WireError};
+pub use error::{DenyReason, ResponseCode, WireError};
 pub use status::{FdStatus, TransferMode};
 pub use wire::{
     PldmOp, RequestHeader, ResponseHeader, MAX_PAYLOAD_SIZE, MAX_REQUEST_SIZE, MAX_RESPONSE_SIZE,
