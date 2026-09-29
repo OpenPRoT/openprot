@@ -823,24 +823,19 @@ checksum = "953f07c43838f8e6f9758cab68bf5bed85465e7587ebe0b823f1bcd81978ad3a"
 [[package]]
 name = "mctp"
 version = "0.2.0"
-source = "git+https://github.com/CodeConstruct/mctp-rs.git?branch=main#5a7b9067b4a4515b05ef8b5f4948ba542e8ae1c9"
-
-[[package]]
-name = "mctp"
-version = "0.2.0"
-source = "git+https://github.com/CodeConstruct/mctp-rs.git#5a7b9067b4a4515b05ef8b5f4948ba542e8ae1c9"
+source = "git+https://github.com/CodeConstruct/mctp-rs.git?rev=9e52b626863b916d900ca1ddfdd9215baf0f80fc#9e52b626863b916d900ca1ddfdd9215baf0f80fc"
 
 [[package]]
 name = "mctp-estack"
 version = "0.1.0"
-source = "git+https://github.com/CodeConstruct/mctp-rs.git?branch=main#5a7b9067b4a4515b05ef8b5f4948ba542e8ae1c9"
+source = "git+https://github.com/CodeConstruct/mctp-rs.git?rev=9e52b626863b916d900ca1ddfdd9215baf0f80fc#9e52b626863b916d900ca1ddfdd9215baf0f80fc"
 dependencies = [
  "crc",
  "embedded-io",
  "embedded-io-async",
  "heapless 0.8.0",
  "log",
- "mctp 0.2.0 (git+https://github.com/CodeConstruct/mctp-rs.git?branch=main)",
+ "mctp",
  "smbus-pec",
  "uuid",
 ]
@@ -848,10 +843,11 @@ dependencies = [
 [[package]]
 name = "mctp-lib"
 version = "0.1.0"
-source = "git+https://github.com/OpenPRoT/mctp-lib.git?branch=9e-buildup#742fa0e991aa2b87509ff12739e011a674643d91"
+source = "git+https://github.com/OpenPRoT/mctp-lib.git?branch=main#7419534f39d3afb3a5970bdcad6e60cd74c4f09a"
 dependencies = [
- "mctp 0.2.0 (git+https://github.com/CodeConstruct/mctp-rs.git?branch=main)",
+ "mctp",
  "mctp-estack",
+ "zerocopy",
 ]
 
 [[package]]
@@ -1325,7 +1321,7 @@ dependencies = [
  "hmac",
  "k256",
  "log",
- "mctp 0.2.0 (git+https://github.com/CodeConstruct/mctp-rs.git)",
+ "mctp",
  "mctp-lib",
  "memoffset",
  "minijinja",

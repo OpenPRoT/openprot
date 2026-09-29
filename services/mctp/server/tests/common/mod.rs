@@ -46,6 +46,7 @@ const MCTP_HEADER_SIZE: usize = 4;
 impl Sender for BufferSender<'_> {
     fn send_vectored(
         &mut self,
+        _eid: mctp::Eid,
         mut fragmenter: Fragmenter,
         payload: &[&[u8]],
     ) -> mctp::Result<Tag> {
@@ -80,6 +81,7 @@ pub struct SmallMtuBufferSender<'a> {
 impl Sender for SmallMtuBufferSender<'_> {
     fn send_vectored(
         &mut self,
+        _eid: mctp::Eid,
         mut fragmenter: Fragmenter,
         payload: &[&[u8]],
     ) -> mctp::Result<Tag> {
@@ -114,6 +116,7 @@ pub struct DroppingBufferSender;
 impl Sender for DroppingBufferSender {
     fn send_vectored(
         &mut self,
+        _eid: mctp::Eid,
         mut fragmenter: Fragmenter,
         payload: &[&[u8]],
     ) -> mctp::Result<Tag> {
