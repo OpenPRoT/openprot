@@ -14,7 +14,7 @@ sequenceDiagram
     participant K as pw_kernel<br/>(channel)
     participant S as Server process
     participant D as dispatch()<br/>(pldm/server)
-    participant H as FdHandler
+    participant H as FdIpcHandler
 
     Note over C,H: Request
 
@@ -59,7 +59,7 @@ sequenceDiagram
     participant C as Client<br/>(test code)
     participant L as Loopback&lt;D, N&gt;<br/>(util/service)
     participant D as dispatch()<br/>(pldm/server)
-    participant H as FdHandler
+    participant H as FdIpcHandler
 
     C->>L: start(req: &[u8])
     L->>D: dispatch(req, held_buf)
@@ -91,7 +91,7 @@ graph TD
     subgraph "Server process"
         SV[Server main loop]
         DS[service dispatch]
-        FH["handler (e.g. FdHandler)"]
+        FH["handler (e.g. FdIpcHandler)"]
     end
 
     subgraph "Traits (util/service)"

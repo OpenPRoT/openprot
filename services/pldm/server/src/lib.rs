@@ -3,8 +3,8 @@
 
 //! PLDM IPC server: the FD side of the IPC channel.
 //!
-//! Decodes orchestrator requests, dispatches to an `FdHandler`
-//! implementation, and encodes responses. `FdServer` is the
+//! Decodes orchestrator requests, dispatches to an `FdIpcHandler`
+//! implementation, and encodes responses. `FdIpcServer` is the
 //! `util_service::Dispatch` impl, so the same server answers behind a
 //! kernel channel in production and inside `util_service::Loopback` in
 //! host tests.
@@ -25,7 +25,7 @@ use util_service::{Dispatch, DispatchError};
 /// Every method must return immediately. Record the decision, flip
 /// state, return. The FD shares its loop with MCTP traffic from the
 /// UA, so a handler that blocks stalls UA traffic.
-pub trait FdHandler {
+pub trait FdIpcHandler {
     fn accept_offer(&mut self, staging_base: u32) -> Result<(), ResponseCode>;
     fn reject_offer(&mut self) -> Result<(), ResponseCode>;
     fn grant_verify(&mut self) -> Result<(), ResponseCode>;
@@ -49,7 +49,7 @@ pub trait FdHandler {
 /// response does not fit the buffer the caller gave, but an error frame
 /// does. A `response` too small for even that error frame has nothing to
 /// send back.
-pub fn dispatch<F: FdHandler>(
+pub fn dispatch<F: FdIpcHandler>(
     handler: &mut F,
     request: &[u8],
     response: &mut [u8],
@@ -65,15 +65,15 @@ pub fn dispatch<F: FdHandler>(
     wire::encode_error_response(response, code).map_err(|_| DispatchError::ResponseTooLarge)
 }
 
-/// An `FdHandler` as a server the shared transports can drive.
+/// An `FdIpcHandler` as a server the shared transports can drive.
 ///
 /// The newtype exists because `Dispatch` is a foreign trait: it cannot
-/// be implemented for every `F: FdHandler` directly.
-pub struct FdServer<F> {
+/// be implemented for every `F: FdIpcHandler` directly.
+pub struct FdIpcServer<F> {
     handler: F,
 }
 
-impl<F> FdServer<F> {
+impl<F> FdIpcServer<F> {
     pub const fn new(handler: F) -> Self {
         Self { handler }
     }
@@ -84,13 +84,13 @@ impl<F> FdServer<F> {
     }
 }
 
-impl<F: FdHandler> Dispatch for FdServer<F> {
+impl<F: FdIpcHandler> Dispatch for FdIpcServer<F> {
     fn dispatch(&mut self, request: &[u8], response: &mut [u8]) -> Result<usize, DispatchError> {
         dispatch(&mut self.handler, request, response)
     }
 }
 
-fn dispatch_inner<F: FdHandler>(
+fn dispatch_inner<F: FdIpcHandler>(
     handler: &mut F,
     request: &[u8],
     response: &mut [u8],
@@ -187,7 +187,7 @@ mod tests {
         }
     }
 
-    impl FdHandler for MockFd {
+    impl FdIpcHandler for MockFd {
         fn accept_offer(&mut self, _base: u32) -> Result<(), ResponseCode> {
             self.check("accept_offer")
         }
@@ -454,8 +454,8 @@ mod loopback_tests {
 
     /// Start one request and poll the response out, as the client layer
     /// does; the loopback always has it ready on the first poll.
-    fn round_trip<F: FdHandler>(
-        transport: &mut Loopback<FdServer<F>, MAX_RESPONSE_SIZE>,
+    fn round_trip<F: FdIpcHandler>(
+        transport: &mut Loopback<FdIpcServer<F>, MAX_RESPONSE_SIZE>,
         req: &[u8],
         resp: &mut [u8],
     ) -> usize {
@@ -494,7 +494,7 @@ mod loopback_tests {
         }
     }
 
-    impl FdHandler for StubFd {
+    impl FdIpcHandler for StubFd {
         fn accept_offer(&mut self, _base: u32) -> Result<(), ResponseCode> {
             self.status = FdStatus::ReadyXfer;
             Ok(())
@@ -542,7 +542,7 @@ mod loopback_tests {
 
     #[test]
     fn query_status_through_loopback() {
-        let mut transport = Loopback::<_, MAX_RESPONSE_SIZE>::new(FdServer::new(StubFd::idle()));
+        let mut transport = Loopback::<_, MAX_RESPONSE_SIZE>::new(FdIpcServer::new(StubFd::idle()));
         let mut req = [0u8; 16];
         let req_len = wire::encode_query_status(&mut req).unwrap();
         let mut resp = [0u8; MAX_RESPONSE_SIZE];
@@ -557,7 +557,7 @@ mod loopback_tests {
     #[test]
     fn accept_offer_then_query_shows_ready_xfer() {
         let mut transport =
-            Loopback::<_, MAX_RESPONSE_SIZE>::new(FdServer::new(StubFd::with_offer()));
+            Loopback::<_, MAX_RESPONSE_SIZE>::new(FdIpcServer::new(StubFd::with_offer()));
 
         // Accept the offer.
         let mut req = [0u8; 16];
@@ -579,7 +579,7 @@ mod loopback_tests {
     #[test]
     fn reject_offer_then_query_shows_idle() {
         let mut transport =
-            Loopback::<_, MAX_RESPONSE_SIZE>::new(FdServer::new(StubFd::with_offer()));
+            Loopback::<_, MAX_RESPONSE_SIZE>::new(FdIpcServer::new(StubFd::with_offer()));
 
         let mut req = [0u8; 16];
         let req_len = wire::encode_reject_offer(&mut req).unwrap();
@@ -598,7 +598,7 @@ mod loopback_tests {
 
     #[test]
     fn start_while_pending_is_wrong_state() {
-        let mut transport = Loopback::<_, MAX_RESPONSE_SIZE>::new(FdServer::new(StubFd::idle()));
+        let mut transport = Loopback::<_, MAX_RESPONSE_SIZE>::new(FdIpcServer::new(StubFd::idle()));
         let mut req = [0u8; 16];
         let req_len = wire::encode_query_status(&mut req).unwrap();
 
@@ -611,14 +611,14 @@ mod loopback_tests {
 
     #[test]
     fn poll_without_start_is_wrong_state() {
-        let mut transport = Loopback::<_, MAX_RESPONSE_SIZE>::new(FdServer::new(StubFd::idle()));
+        let mut transport = Loopback::<_, MAX_RESPONSE_SIZE>::new(FdIpcServer::new(StubFd::idle()));
         let mut resp = [0u8; MAX_RESPONSE_SIZE];
         assert_eq!(transport.poll(&mut resp), Err(TransportError::WrongState));
     }
 
     #[test]
     fn cancel_releases_the_round_trip() {
-        let mut transport = Loopback::<_, MAX_RESPONSE_SIZE>::new(FdServer::new(StubFd::idle()));
+        let mut transport = Loopback::<_, MAX_RESPONSE_SIZE>::new(FdIpcServer::new(StubFd::idle()));
         let mut req = [0u8; 16];
         let req_len = wire::encode_query_status(&mut req).unwrap();
 
@@ -636,7 +636,7 @@ mod loopback_tests {
 
     #[test]
     fn poll_into_a_short_buffer_is_too_large() {
-        let mut transport = Loopback::<_, MAX_RESPONSE_SIZE>::new(FdServer::new(StubFd::idle()));
+        let mut transport = Loopback::<_, MAX_RESPONSE_SIZE>::new(FdIpcServer::new(StubFd::idle()));
         let mut req = [0u8; 16];
         let req_len = wire::encode_query_status(&mut req).unwrap();
 
@@ -648,8 +648,8 @@ mod loopback_tests {
     }
 
     /// Send a request and assert the response is success.
-    fn send_ok<F: FdHandler>(
-        transport: &mut Loopback<FdServer<F>, MAX_RESPONSE_SIZE>,
+    fn send_ok<F: FdIpcHandler>(
+        transport: &mut Loopback<FdIpcServer<F>, MAX_RESPONSE_SIZE>,
         encode: impl FnOnce(&mut [u8]) -> Result<usize, WireError>,
     ) {
         let mut req = [0u8; 16];
@@ -661,8 +661,8 @@ mod loopback_tests {
     }
 
     /// Send QueryStatus and return the decoded FdStatus.
-    fn query_status<F: FdHandler>(
-        transport: &mut Loopback<FdServer<F>, MAX_RESPONSE_SIZE>,
+    fn query_status<F: FdIpcHandler>(
+        transport: &mut Loopback<FdIpcServer<F>, MAX_RESPONSE_SIZE>,
     ) -> FdStatus {
         let mut req = [0u8; 16];
         let req_len = wire::encode_query_status(&mut req).unwrap();
@@ -676,7 +676,7 @@ mod loopback_tests {
 
     #[test]
     fn offer_accept_reaches_ready_xfer() {
-        let mut t = Loopback::<_, MAX_RESPONSE_SIZE>::new(FdServer::new(StubFd::with_offer()));
+        let mut t = Loopback::<_, MAX_RESPONSE_SIZE>::new(FdIpcServer::new(StubFd::with_offer()));
 
         assert_eq!(
             query_status(&mut t),
@@ -696,7 +696,7 @@ mod loopback_tests {
     // when the transfer completes, so the grant sequence starts there.
     #[test]
     fn grant_sequence_verify_through_idle() {
-        let mut t = Loopback::<_, MAX_RESPONSE_SIZE>::new(FdServer::new(StubFd::at(
+        let mut t = Loopback::<_, MAX_RESPONSE_SIZE>::new(FdIpcServer::new(StubFd::at(
             FdStatus::VerifyPending,
         )));
 
@@ -712,7 +712,7 @@ mod loopback_tests {
 
     #[test]
     fn svn_commit_after_activation() {
-        let mut t = Loopback::<_, MAX_RESPONSE_SIZE>::new(FdServer::new(StubFd::at(
+        let mut t = Loopback::<_, MAX_RESPONSE_SIZE>::new(FdIpcServer::new(StubFd::at(
             FdStatus::SvnCommitPending { component: 1 },
         )));
 
@@ -722,8 +722,9 @@ mod loopback_tests {
 
     #[test]
     fn ack_cancel_returns_to_idle() {
-        let mut t =
-            Loopback::<_, MAX_RESPONSE_SIZE>::new(FdServer::new(StubFd::at(FdStatus::Cancelled)));
+        let mut t = Loopback::<_, MAX_RESPONSE_SIZE>::new(FdIpcServer::new(StubFd::at(
+            FdStatus::Cancelled,
+        )));
 
         send_ok(&mut t, |b| wire::encode_ack_cancel(b));
         assert_eq!(query_status(&mut t), FdStatus::Idle { reason: 0 });
@@ -735,7 +736,7 @@ mod loopback_tests {
         // request at the transport. The decoder rejects it instead and the
         // caller gets an error frame, the same answer a malformed request of
         // any length gets.
-        let mut transport = Loopback::<_, MAX_RESPONSE_SIZE>::new(FdServer::new(StubFd::idle()));
+        let mut transport = Loopback::<_, MAX_RESPONSE_SIZE>::new(FdIpcServer::new(StubFd::idle()));
         let req = [0u8; MAX_REQUEST_SIZE + 1];
         let mut resp = [0u8; MAX_RESPONSE_SIZE];
 
