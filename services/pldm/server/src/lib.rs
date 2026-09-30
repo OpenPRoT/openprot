@@ -27,7 +27,7 @@ use util_service::{Dispatch, DispatchError};
 /// UA, so a handler that blocks stalls UA traffic.
 pub trait FdIpcHandler {
     fn accept_offer(&mut self, staging_base: u32) -> Result<(), ResponseCode>;
-    fn reject_offer(&mut self) -> Result<(), ResponseCode>;
+    fn reject_offer(&mut self, reason: RejectReason) -> Result<(), ResponseCode>;
     fn perform_verify(&mut self) -> Result<(), ResponseCode>;
     fn reject_verify(&mut self, reason: RejectReason) -> Result<(), ResponseCode>;
     fn perform_apply(&mut self) -> Result<(), ResponseCode>;
@@ -109,7 +109,10 @@ fn dispatch_inner<F: FdIpcHandler>(
             let base = wire::get_accept_offer_base(args)?;
             encode_unit_result(response, handler.accept_offer(base))
         }
-        PldmOp::RejectOffer => encode_unit_result(response, handler.reject_offer()),
+        PldmOp::RejectOffer => {
+            let reason = wire::get_reject_reason(args)?;
+            encode_unit_result(response, handler.reject_offer(reason))
+        }
         PldmOp::PerformVerify => encode_unit_result(response, handler.perform_verify()),
         PldmOp::RejectVerify => {
             let reason = wire::get_reject_reason(args)?;
@@ -191,7 +194,7 @@ mod tests {
         fn accept_offer(&mut self, _base: u32) -> Result<(), ResponseCode> {
             self.check("accept_offer")
         }
-        fn reject_offer(&mut self) -> Result<(), ResponseCode> {
+        fn reject_offer(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
             self.check("reject_offer")
         }
         fn perform_verify(&mut self) -> Result<(), ResponseCode> {
@@ -254,7 +257,10 @@ mod tests {
 
     #[test]
     fn reject_offer_dispatches() {
-        roundtrip_success(|buf| wire::encode_reject_offer(buf), "reject_offer");
+        roundtrip_success(
+            |buf| wire::encode_reject_offer(buf, RejectReason::PolicyViolation),
+            "reject_offer",
+        );
     }
 
     #[test]
@@ -393,6 +399,25 @@ mod tests {
         assert_eq!(fd.last_op, None);
     }
 
+    // RejectOffer used to be header-only, so a frame with no reason is a
+    // frame from the old format, not just a truncated one.
+    #[test]
+    fn reject_offer_missing_reason_returns_malformed_request() {
+        let mut req = [0u8; 16];
+        let h = RequestHeader {
+            op: PldmOp::RejectOffer as u8,
+            flags: 0,
+            generation: 0,
+        };
+        req[..RequestHeader::SIZE].copy_from_slice(&h.to_bytes());
+        let mut resp = [0u8; MAX_RESPONSE_SIZE];
+        let mut fd = MockFd::new();
+        let resp_len = dispatch(&mut fd, &req[..RequestHeader::SIZE], &mut resp).unwrap();
+        let rh = wire::decode_response_header(&resp[..resp_len]).unwrap();
+        assert_eq!(rh.response_code(), ResponseCode::MalformedRequest);
+        assert_eq!(fd.last_op, None);
+    }
+
     #[test]
     fn reject_verify_bad_reason_returns_malformed_request() {
         let mut req = [0u8; 16];
@@ -502,7 +527,7 @@ mod loopback_tests {
             self.status = FdStatus::ReadyXfer;
             Ok(())
         }
-        fn reject_offer(&mut self) -> Result<(), ResponseCode> {
+        fn reject_offer(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
             self.status = FdStatus::Idle { reason: 0 };
             Ok(())
         }
@@ -585,7 +610,7 @@ mod loopback_tests {
             Loopback::<_, MAX_RESPONSE_SIZE>::new(FdIpcServer::new(StubFd::with_offer()));
 
         let mut req = [0u8; 16];
-        let req_len = wire::encode_reject_offer(&mut req).unwrap();
+        let req_len = wire::encode_reject_offer(&mut req, RejectReason::PolicyViolation).unwrap();
         let mut resp = [0u8; MAX_RESPONSE_SIZE];
         let resp_len = round_trip(&mut transport, &req[..req_len], &mut resp);
         let h = wire::decode_response_header(&resp[..resp_len]).unwrap();

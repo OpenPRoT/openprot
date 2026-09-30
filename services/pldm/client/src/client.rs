@@ -60,9 +60,11 @@ impl<T: AsyncTransport> FdIpcClient<T> {
         })
     }
 
-    /// Refuse the offer.
-    pub fn reject_offer(&mut self) -> Result<(), ClientError> {
-        self.start(PldmOp::RejectOffer, wire::encode_reject_offer)
+    /// Refuse the offer, with the reason the requester is owed.
+    pub fn reject_offer(&mut self, reason: RejectReason) -> Result<(), ClientError> {
+        self.start(PldmOp::RejectOffer, |buf| {
+            wire::encode_reject_offer(buf, reason)
+        })
     }
 
     /// Tell the FD to verify what it staged.
@@ -249,7 +251,7 @@ mod tests {
         fn accept_offer(&mut self, _staging_base: u32) -> Result<(), ResponseCode> {
             self.answer("accept_offer")
         }
-        fn reject_offer(&mut self) -> Result<(), ResponseCode> {
+        fn reject_offer(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
             self.answer("reject_offer")
         }
         fn perform_verify(&mut self) -> Result<(), ResponseCode> {

@@ -194,12 +194,12 @@ pub const MAX_REQUEST_SIZE: usize = RequestHeader::SIZE + 4;
 pub const fn expected_request_len(op: PldmOp) -> usize {
     match op {
         PldmOp::AcceptOffer => RequestHeader::SIZE + 4,
-        PldmOp::RejectVerify
+        PldmOp::RejectOffer
+        | PldmOp::RejectVerify
         | PldmOp::RejectApply
         | PldmOp::RejectActivate
         | PldmOp::RejectSvnCommit => RequestHeader::SIZE + 1,
-        PldmOp::RejectOffer
-        | PldmOp::PerformVerify
+        PldmOp::PerformVerify
         | PldmOp::PerformApply
         | PldmOp::QueryStatus
         | PldmOp::PerformActivate
@@ -214,6 +214,25 @@ pub const MAX_RESPONSE_SIZE: usize = ResponseHeader::SIZE + MAX_PAYLOAD_SIZE;
 // ============================================================================
 // Request encoding
 // ============================================================================
+
+fn encode_with_reason(
+    buf: &mut [u8],
+    op: PldmOp,
+    reason: RejectReason,
+) -> Result<usize, WireError> {
+    let total = RequestHeader::SIZE + 1;
+    if buf.len() < total {
+        return Err(WireError::BufferTooSmall);
+    }
+    let h = RequestHeader {
+        op: op as u8,
+        flags: 0,
+        generation: 0,
+    };
+    buf[..RequestHeader::SIZE].copy_from_slice(&h.to_bytes());
+    buf[RequestHeader::SIZE] = reason as u8;
+    Ok(total)
+}
 
 fn encode_header_only(buf: &mut [u8], op: PldmOp) -> Result<usize, WireError> {
     if buf.len() < RequestHeader::SIZE {
@@ -245,8 +264,9 @@ pub fn encode_accept_offer(buf: &mut [u8], staging_base: u32) -> Result<usize, W
     Ok(total)
 }
 
-pub fn encode_reject_offer(buf: &mut [u8]) -> Result<usize, WireError> {
-    encode_header_only(buf, PldmOp::RejectOffer)
+/// Encode RejectOffer with the reason the orchestrator is refusing.
+pub fn encode_reject_offer(buf: &mut [u8], reason: RejectReason) -> Result<usize, WireError> {
+    encode_with_reason(buf, PldmOp::RejectOffer, reason)
 }
 
 pub fn encode_perform_verify(buf: &mut [u8]) -> Result<usize, WireError> {
@@ -255,18 +275,7 @@ pub fn encode_perform_verify(buf: &mut [u8]) -> Result<usize, WireError> {
 
 /// Encode RejectVerify with the reason the orchestrator is blocking.
 pub fn encode_reject_verify(buf: &mut [u8], reason: RejectReason) -> Result<usize, WireError> {
-    let total = RequestHeader::SIZE + 1;
-    if buf.len() < total {
-        return Err(WireError::BufferTooSmall);
-    }
-    let h = RequestHeader {
-        op: PldmOp::RejectVerify as u8,
-        flags: 0,
-        generation: 0,
-    };
-    buf[..RequestHeader::SIZE].copy_from_slice(&h.to_bytes());
-    buf[RequestHeader::SIZE] = reason as u8;
-    Ok(total)
+    encode_with_reason(buf, PldmOp::RejectVerify, reason)
 }
 
 pub fn encode_perform_apply(buf: &mut [u8]) -> Result<usize, WireError> {
@@ -275,18 +284,7 @@ pub fn encode_perform_apply(buf: &mut [u8]) -> Result<usize, WireError> {
 
 /// Encode RejectApply with the reason the orchestrator is blocking.
 pub fn encode_reject_apply(buf: &mut [u8], reason: RejectReason) -> Result<usize, WireError> {
-    let total = RequestHeader::SIZE + 1;
-    if buf.len() < total {
-        return Err(WireError::BufferTooSmall);
-    }
-    let h = RequestHeader {
-        op: PldmOp::RejectApply as u8,
-        flags: 0,
-        generation: 0,
-    };
-    buf[..RequestHeader::SIZE].copy_from_slice(&h.to_bytes());
-    buf[RequestHeader::SIZE] = reason as u8;
-    Ok(total)
+    encode_with_reason(buf, PldmOp::RejectApply, reason)
 }
 
 pub fn encode_query_status(buf: &mut [u8]) -> Result<usize, WireError> {
@@ -298,18 +296,7 @@ pub fn encode_perform_activate(buf: &mut [u8]) -> Result<usize, WireError> {
 }
 
 pub fn encode_reject_activate(buf: &mut [u8], reason: RejectReason) -> Result<usize, WireError> {
-    let total = RequestHeader::SIZE + 1;
-    if buf.len() < total {
-        return Err(WireError::BufferTooSmall);
-    }
-    let h = RequestHeader {
-        op: PldmOp::RejectActivate as u8,
-        flags: 0,
-        generation: 0,
-    };
-    buf[..RequestHeader::SIZE].copy_from_slice(&h.to_bytes());
-    buf[RequestHeader::SIZE] = reason as u8;
-    Ok(total)
+    encode_with_reason(buf, PldmOp::RejectActivate, reason)
 }
 
 pub fn encode_ack_cancel(buf: &mut [u8]) -> Result<usize, WireError> {
@@ -322,18 +309,7 @@ pub fn encode_perform_svn_commit(buf: &mut [u8]) -> Result<usize, WireError> {
 
 /// Encode RejectSvnCommit with the reason the orchestrator is blocking.
 pub fn encode_reject_svn_commit(buf: &mut [u8], reason: RejectReason) -> Result<usize, WireError> {
-    let total = RequestHeader::SIZE + 1;
-    if buf.len() < total {
-        return Err(WireError::BufferTooSmall);
-    }
-    let h = RequestHeader {
-        op: PldmOp::RejectSvnCommit as u8,
-        flags: 0,
-        generation: 0,
-    };
-    buf[..RequestHeader::SIZE].copy_from_slice(&h.to_bytes());
-    buf[RequestHeader::SIZE] = reason as u8;
-    Ok(total)
+    encode_with_reason(buf, PldmOp::RejectSvnCommit, reason)
 }
 
 // ============================================================================
@@ -523,10 +499,9 @@ mod tests {
     fn header_only_ops_roundtrip() {
         let ops = [
             (
-                encode_reject_offer as fn(&mut [u8]) -> _,
-                PldmOp::RejectOffer,
+                encode_perform_verify as fn(&mut [u8]) -> _,
+                PldmOp::PerformVerify,
             ),
-            (encode_perform_verify, PldmOp::PerformVerify),
             (encode_perform_apply, PldmOp::PerformApply),
             (encode_query_status, PldmOp::QueryStatus),
             (encode_perform_activate, PldmOp::PerformActivate),
@@ -615,7 +590,7 @@ mod tests {
             Err(WireError::BufferTooSmall)
         );
         assert_eq!(
-            encode_reject_offer(&mut buf),
+            encode_reject_offer(&mut buf, RejectReason::Busy),
             Err(WireError::BufferTooSmall)
         );
         assert_eq!(
