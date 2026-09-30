@@ -9,7 +9,7 @@ use orchestrator_capabilities::Updatable;
 use util_io::ByteSource;
 
 pub use orchestrator_capabilities::{BootControl, BootWatch};
-use orchestrator_capabilities::{Recovery, Svn, SvnFloor};
+use orchestrator_capabilities::{Recovery, SelfUpdate, Svn, SvnFloor};
 
 /// Access to one component's active firmware image, however it is reached —
 /// interposed flash, a PLDM/MCTP transfer, a RAM copy in tests.
@@ -187,6 +187,9 @@ pub trait BoardCapabilities {
     /// The region an update source writes a candidate into. One region,
     /// because one update runs at a time.
     type Staging: ByteSource;
+    /// The eRoT's own update session, in storage that survives the reset
+    /// a self-update boots through.
+    type SelfUpdate: SelfUpdate;
 }
 
 /// Who keeps one component's anti-rollback floor. Spelled as its own type
@@ -217,6 +220,7 @@ pub enum SvnFloorBinding<F: SvnFloor> {
 ///     type Updatable = PldmDevice;        // device pulls its own chunks
 ///     type Recovery = SlotRecovery;       // A/B + golden, attempt-indexed
 ///     type Staging = StagingFlash;        // where the update source writes
+///     type SelfUpdate = FlashSession;     // the eRoT's own update session
 /// }
 /// let board = Board::<Ast1060Board, 2> {
 ///     images: [bmc_image, cpld_image],
@@ -230,6 +234,8 @@ pub enum SvnFloorBinding<F: SvnFloor> {
 ///     recovery: [bmc_recovery, cpld_recovery],
 ///     update_staging,
 ///     update_stall_budget_millis: 30_000,
+///     self_update,
+///     self_svn_floor,
 /// };
 /// ```
 pub struct Board<B: BoardCapabilities, const N: usize> {
@@ -271,4 +277,11 @@ pub struct Board<B: BoardCapabilities, const N: usize> {
     /// answering has to lose the job in bounded time whatever the source
     /// would prefer.
     pub update_stall_budget_millis: u64,
+    /// The eRoT's own update session. One, not one per component: the
+    /// eRoT has a single image of its own.
+    pub self_update: B::SelfUpdate,
+    /// The eRoT's own anti-rollback floor. Separate from `svn_floors`,
+    /// which are the managed components': those can be self-managed by
+    /// the device, while the eRoT always keeps its own.
+    pub self_svn_floor: B::SvnFloor,
 }

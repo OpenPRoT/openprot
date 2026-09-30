@@ -12,8 +12,8 @@ use crate::board::{
     Board, BoardCapabilities, ImageSource, Report, ReportSink, SvnFloorBinding, Verdict, Verifier,
 };
 use orchestrator_capabilities::{
-    BootControl, BootWatch, FailureCause, Progress, Recovery, RestoreOutcome, StageProgress, Svn,
-    SvnFloor, Updatable, WalkVerdict,
+    trial_outcome, BootControl, BootWatch, FailureCause, Progress, Recovery, RestoreOutcome,
+    SelfUpdate, StageProgress, Svn, SvnFloor, TrialOutcome, Updatable, WalkVerdict,
 };
 use util_io::{ByteSource, ByteWindow};
 
@@ -41,6 +41,15 @@ pub enum DriverError {
     UpdateBusy,
     /// The device refused to activate what it staged.
     UpdateFault,
+    /// The machine is in a state that answers nothing: pre-service or
+    /// locked down. The request is refused instead of being dropped
+    /// inside the state machine with no report.
+    Unsupervised,
+    /// The eRoT's own update session could not be read or written.
+    SelfUpdateFault,
+    /// A floor commit was asked for with no confirmed self-update behind
+    /// it. Nothing has proven an image at that SVN, so the floor stays.
+    NoSelfUpdateToCommit,
     /// The recovery mechanism faulted (bus error, unreachable source).
     /// Distinct from source exhaustion, which is a verdict, not a fault.
     RecoveryFault,
@@ -73,6 +82,9 @@ impl core::fmt::Display for DriverError {
             DriverError::SvnFloorFault => "svn floor could not be advanced",
             DriverError::UpdateBusy => "an update is already in flight",
             DriverError::UpdateFault => "device refused to activate the staged image",
+            DriverError::Unsupervised => "the platform is not in a state that answers requests",
+            DriverError::SelfUpdateFault => "self-update session could not be read or written",
+            DriverError::NoSelfUpdateToCommit => "no confirmed self-update to commit the floor to",
             DriverError::RecoveryFault => "recovery mechanism faulted",
             DriverError::NoUpdateJob => "no update job for this effect",
             DriverError::CandidateOutOfRange => "candidate does not fit the staging region",
@@ -279,6 +291,90 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         Ok(())
     }
 
+    /// Settles the eRoT's last self-update, once, at boot before the walk.
+    ///
+    /// The eRoT's own update is judged by a boot that has to read what the
+    /// previous one left behind, so the verdict comes from durable state:
+    /// the session plus the image this boot is running.
+    ///
+    /// - No session, or a trial that is running right now: nothing to
+    ///   settle. A trial in progress is judged later, by the boot it is
+    ///   part of, not here.
+    /// - A session nothing will confirm (the trial fell back, or was
+    ///   never armed): reverted, so the next update can start.
+    /// - Confirmed but the floor has not taken the SVN: held. The floor
+    ///   advance is the update agent's to ask for, with
+    ///   UpdateSecurityRevision once the platform is in service, so this
+    ///   boot must not advance it. If the floor already reads at or above
+    ///   the session's SVN the advance did land before the crash, and the
+    ///   session is completed here: that is the one gap between advancing
+    ///   the floor and closing the session.
+    ///
+    /// Must run before the machine can grant a new update: `prepare`
+    /// overwrites any earlier session, so a new update recorded over a
+    /// `Committed` one would drop the floor advance it still owes.
+    pub fn resume_self_update(&mut self) -> Result<(), DriverError> {
+        let session = &mut self.board.self_update;
+        let state = session.state().map_err(|_| DriverError::SelfUpdateFault)?;
+        let running = session
+            .running()
+            .map_err(|_| DriverError::SelfUpdateFault)?;
+        match trial_outcome(state, running) {
+            TrialOutcome::NoSession | TrialOutcome::InProgress => Ok(()),
+            TrialOutcome::Unconfirmed => session.revert().map_err(|_| DriverError::SelfUpdateFault),
+            TrialOutcome::ConfirmedUncommitted { svn } => {
+                let floor = self
+                    .board
+                    .self_svn_floor
+                    .floor()
+                    .map_err(|_| DriverError::SvnFloorFault)?;
+                if floor >= svn {
+                    self.board
+                        .self_update
+                        .complete()
+                        .map_err(|_| DriverError::SelfUpdateFault)?;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// Advances the eRoT's own floor to the SVN its confirmed session
+    /// recorded, then closes the session.
+    ///
+    /// This is the update agent's request arriving as
+    /// UpdateSecurityRevision, which the FD reports as
+    /// `SvnCommitPending`: the caller runs this and grants on `Ok`, or
+    /// denies on `Err`. The floor never moves at activation, so a
+    /// downgrade needs a confirmed trial boot first.
+    ///
+    /// Refuses unless the session is confirmed and uncommitted. A
+    /// request with nothing behind it must not move the floor, because
+    /// nothing has proven the image that SVN belongs to.
+    ///
+    /// Replay-safe, which is what makes the crash window harmless:
+    /// `advance` is a no-op at or below the floor and `complete`
+    /// succeeds from `Idle`, so a request repeated after a crash between
+    /// the two lands in the same place.
+    pub fn commit_self_svn_floor(&mut self) -> Result<(), DriverError> {
+        let session = &mut self.board.self_update;
+        let state = session.state().map_err(|_| DriverError::SelfUpdateFault)?;
+        let running = session
+            .running()
+            .map_err(|_| DriverError::SelfUpdateFault)?;
+        let TrialOutcome::ConfirmedUncommitted { svn } = trial_outcome(state, running) else {
+            return Err(DriverError::NoSelfUpdateToCommit);
+        };
+        self.board
+            .self_svn_floor
+            .advance(svn)
+            .map_err(|_| DriverError::SvnFloorFault)?;
+        self.board
+            .self_update
+            .complete()
+            .map_err(|_| DriverError::SelfUpdateFault)
+    }
+
     /// One step of the in-flight update, called by the event loop between
     /// events, as [`poll_boot_walks`](Self::poll_boot_walks) is.
     ///
@@ -346,7 +442,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             Step::Authenticated => {
                 // Unreachable until Authenticating is a real phase.
                 UpdatePoll {
-                    event: Some(Event::UpdateVerified),
+                    event: Some(Event::UpdateVerified(job.target)),
                     progress: None,
                 }
             }
@@ -693,12 +789,22 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
 /// `AuthenticateStageUpdate` can never run without a target. On refusal no
 /// event is injected and the frontend answers the requester over its own
 /// protocol.
+///
+/// Exactly one answer per request. A supervised machine always produces
+/// one: `Ready` runs the update, and the other supervised states report
+/// it deferred. An unsupervised one (pre-service, or locked down) drops
+/// what it does not handle, so the request is refused here rather than
+/// recorded and forgotten. Refusing outside is what keeps `Locked` inert:
+/// giving it an arm that emits a report would breach that.
 pub fn request_update<B: BoardCapabilities, const N: usize, const E: usize>(
     orchestrator: &mut Orchestrator<N, E>,
     driver: &mut PlatformDriver<B, N>,
     target: ComponentId,
     len: u64,
 ) -> Result<(), DriverError> {
+    if !orchestrator.state().is_supervised() {
+        return Err(DriverError::Unsupervised);
+    }
     driver.submit_update(target, len)?;
     orchestrator.dispatch(driver, Event::UpdateRequest);
     Ok(())

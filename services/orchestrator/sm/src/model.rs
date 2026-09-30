@@ -220,8 +220,11 @@ pub enum Event {
     AttestationChallenge,
     /// A firmware update has been requested.
     UpdateRequest,
-    /// The staged update authenticated successfully.
-    UpdateVerified,
+    /// The staged update authenticated and the device holds it. Names the
+    /// component it was staged on, which the driver knows and the state
+    /// machine does not: `UpdateRequest` carries no target, so this is
+    /// where the core learns whose commit window `ActivateUpdate` opens.
+    UpdateVerified(ComponentId),
     /// The staged update failed authentication.
     UpdateRejected,
     /// The activated image proved itself healthy at runtime (supervised
@@ -304,6 +307,7 @@ impl Event {
             | Event::ComponentReady(id)
             | Event::Booted(id)
             | Event::BootConfirmed(id)
+            | Event::UpdateVerified(id)
             | Event::CorruptionDetected(id)
             | Event::Restored(id)
             | Event::RecoveryUnavailable(id)
@@ -312,7 +316,6 @@ impl Event {
             Event::PowerGood(_)
             | Event::AttestationChallenge
             | Event::UpdateRequest
-            | Event::UpdateVerified
             | Event::UpdateRejected
             | Event::RecoveryFailed
             | Event::CommitTimeout
@@ -445,6 +448,24 @@ pub enum State {
     /// with a recovery target in hand.
     Recovering(ComponentId),
     Locked,
+}
+
+impl State {
+    /// Whether the machine is nested under the supervising handler, which
+    /// is the same thing as being able to answer for an event it does not
+    /// handle itself. The supervised states are the ones the eRoT can be
+    /// in after it has exited [`State::PreSupervision`] and before it
+    /// locks down.
+    ///
+    /// An unsupervised state drops what it does not handle, so a caller
+    /// with an outstanding answer to give (the update frontend) has to
+    /// check this before handing the machine a request.
+    pub const fn is_supervised(self) -> bool {
+        matches!(
+            self,
+            State::AwaitingReady(_) | State::Ready | State::Updating | State::Recovering(_)
+        )
+    }
 }
 
 /// A validated **chain of trust**: the ordered list of components the eRoT
