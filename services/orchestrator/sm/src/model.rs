@@ -337,8 +337,9 @@ pub enum Effect {
     /// component is gated without triggering (or continuing) a recovery cycle.
     AssertReset(ComponentId),
     SignAttestation,
-    AuthenticateUpdate,
-    StageUpdate,
+    /// Stage the candidate, then verify it. The driver knows the protocol
+    /// order; the SM does not split these into sub-phases.
+    AuthenticateStageUpdate,
     ActivateUpdate,
     DiscardStaged,
     /// Advance the anti-rollback (SVN) floor past `id`'s now-confirmed image.

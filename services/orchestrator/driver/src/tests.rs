@@ -1315,7 +1315,7 @@ fn submit_update_refuses_a_second_in_flight() {
 
 // The frontend connection end to end: request_update records the job and
 // the SM receives UpdateRequest. Ready accepts it and enters Updating,
-// whose entry effects (AuthenticateUpdate, StageUpdate) have no executors
+// whose entry effect (AuthenticateStageUpdate) has no executor
 // yet, so the machine latches Locked — that latch is the proof the event
 // arrived. Flips to an Updating/Ready assertion when the pump lands.
 #[test]

@@ -419,7 +419,7 @@ policy deployments configure.
   delivered as `PowerOnResult` in `Event::PowerGood`.
 - **Attestation** (`AttestationChallenge` / `SignAttestation`): handled in the
   `SupervisingPlatform` superstate, not part of the boot-time verification chain.
-- **Firmware update verification** (`AuthenticateUpdate`): handled in the
+- **Firmware update verification** (`AuthenticateStageUpdate`): handled in the
   `Updating` state, distinct from boot-time chain verification.
 - **Multiple intermediate boot-progress checkpoints per component**: the CSA
   architecture allows platform policy to require multiple intermediate

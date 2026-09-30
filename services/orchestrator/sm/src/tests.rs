@@ -156,14 +156,10 @@ fn update_rollback_is_not_recovery() {
             Event::UpdateRejected,
         ],
     );
-    let tail = &effects[effects.len() - 3..];
+    let tail = &effects[effects.len() - 2..];
     assert_eq!(
         tail,
-        &[
-            Effect::AuthenticateUpdate,
-            Effect::StageUpdate,
-            Effect::DiscardStaged
-        ],
+        &[Effect::AuthenticateStageUpdate, Effect::DiscardStaged],
     );
     assert_eq!(state, State::Ready);
     assert!(!effects.contains(&Effect::LatchLockdown));
@@ -2465,7 +2461,7 @@ fn corruption_during_update_discards_staged() {
             BOOT,
             Event::VerificationPassed(C0),
             Event::VerificationPassed(C1), // → Ready
-            Event::UpdateRequest,          // → Updating (AuthenticateUpdate, StageUpdate)
+            Event::UpdateRequest,          // → Updating (AuthenticateStageUpdate)
             Event::CorruptionDetected(C1), // Required corruption preempts the update
         ],
     );

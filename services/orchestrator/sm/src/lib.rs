@@ -978,8 +978,7 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 // A new update supersedes any activated-but-not-committed image;
                 // the prior commit window is void.
                 self.pending_commit = false;
-                ctx.emit(Effect::AuthenticateUpdate);
-                ctx.emit(Effect::StageUpdate);
+                ctx.emit(Effect::AuthenticateStageUpdate);
             }
             State::Recovering(failed) => {
                 // Recovery voids any activated-but-not-committed image: the

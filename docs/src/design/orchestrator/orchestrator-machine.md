@@ -24,7 +24,7 @@ stateDiagram-v2
     AwaitingReady --> Recovering    : Timeout(id) [id == awaiting]<br/>/ RestoreGoldenImage
 
     state SupervisingPlatform {
-        Ready         --> Updating      : UpdateRequest<br/>/ AuthenticateUpdate · StageUpdate
+        Ready         --> Updating      : UpdateRequest<br/>/ AuthenticateStageUpdate
         Updating      --> Ready         : UpdateVerified / ActivateUpdate
         Updating      --> Ready         : UpdateRejected / DiscardStaged
         Ready         --> Recovering    : CorruptionDetected<br/>/ RestoreGoldenImage
@@ -189,7 +189,7 @@ only a fresh `Rot` on `PowerOnReset` releases it.
 
 An update is in progress.
 
-**Entry action**: emit `AuthenticateUpdate` + `StageUpdate`.
+**Entry action**: emit `AuthenticateStageUpdate`.
 
 > **Rejected** here has a specific meaning from the CSA authenticated-update
 > sequence: the staged candidate failed verification — its signature did not

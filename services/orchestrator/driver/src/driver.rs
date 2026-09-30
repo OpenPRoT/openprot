@@ -110,7 +110,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
 
     /// The frontend half of the update handshake: record `target` as the
     /// component the staged candidate is for. Must succeed BEFORE
-    /// [`Event::UpdateRequest`] is dispatched; `StageUpdate` with no stored
+    /// [`Event::UpdateRequest`] is dispatched; `AuthenticateStageUpdate` with no stored
     /// job fails closed. Refuses an unknown id and a second submit while
     /// one update is in flight; nothing is stored on refusal, so a refused
     /// request can never surface as an update event.
@@ -381,12 +381,11 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
             // No board capability is composed for these seams yet, so they
             // fail closed here instead of behind stub methods. Each group
             // gains an executor when its capability joins
-            // [`BoardCapabilities`], as BootControl did above: update
-            // staging, authentication and trial activation for the update
-            // quartet; evidence signing for SignAttestation; the terminal
-            // latch for LatchLockdown.
-            Effect::AuthenticateUpdate
-            | Effect::StageUpdate
+            // [`BoardCapabilities`], as BootControl did above: staging
+            // plus verification, trial activation and discard for the
+            // update effects; evidence signing for SignAttestation; the
+            // terminal latch for LatchLockdown.
+            Effect::AuthenticateStageUpdate
             | Effect::ActivateUpdate
             | Effect::DiscardStaged
             | Effect::SignAttestation
@@ -402,7 +401,7 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
 /// The connection between an update frontend and the SM: called (by the
 /// event loop, on the frontend's behalf) once a complete candidate for
 /// `target` sits in the staging region. Records the job first, then injects
-/// [`Event::UpdateRequest`]; that order is load-bearing, `StageUpdate` can
+/// [`Event::UpdateRequest`]; that order is load-bearing, `AuthenticateStageUpdate` can
 /// never run without a target. On refusal no event is injected and the
 /// frontend answers the requester over its own protocol.
 pub fn request_update<B: BoardCapabilities, const N: usize, const E: usize>(
