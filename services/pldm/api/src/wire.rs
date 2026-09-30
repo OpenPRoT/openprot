@@ -20,7 +20,7 @@
 //! +------+-------+-----+-------------+----------+
 //! ```
 
-use crate::error::{DenyReason, ResponseCode, WireError};
+use crate::error::{RejectReason, ResponseCode, WireError};
 use crate::status::FdStatus;
 
 // ============================================================================
@@ -35,27 +35,28 @@ pub enum PldmOp {
     AcceptOffer = 0,
     /// Reject the pending offer, FD sends TransferComplete.
     RejectOffer = 1,
-    /// Authorize the FD to run FdOps::verify.
-    GrantVerify = 2,
-    /// Block verify (e.g. isolated component).
-    DenyVerify = 3,
-    /// Authorize the FD to run FdOps::apply.
-    GrantApply = 4,
-    /// Block apply.
-    DenyApply = 5,
+    /// Tell the FD to run FdOps::verify.
+    PerformVerify = 2,
+    /// Tell the FD not to verify (e.g. isolated component).
+    RejectVerify = 3,
+    /// Tell the FD to run FdOps::apply.
+    PerformApply = 4,
+    /// Tell the FD not to apply.
+    RejectApply = 5,
     /// Read the FD's current state (phase, result, error).
     QueryStatus = 6,
-    /// Authorize activation ahead of the UA's request.
-    GrantActivate = 7,
-    /// Refuse activation, or revoke a grant the FD has stored and the UA
-    /// has not yet claimed. FD answers the UA with INCOMPLETE_UPDATE.
-    DenyActivate = 8,
+    /// Tell the FD to activate, ahead of the UA's request.
+    PerformActivate = 7,
+    /// Refuse activation, or take back a PerformActivate the FD has stored
+    /// and the UA has not yet claimed. FD answers the UA with
+    /// INCOMPLETE_UPDATE.
+    RejectActivate = 8,
     /// Acknowledge cancel, release orchestrator-side resources.
     AckCancel = 9,
     /// Tell the FD the SVN floor is raised so it can answer the UA.
-    GrantSvnCommit = 10,
-    /// Block the SVN commit.
-    DenySvnCommit = 11,
+    PerformSvnCommit = 10,
+    /// Tell the FD the floor did not move.
+    RejectSvnCommit = 11,
 }
 
 impl PldmOp {
@@ -63,16 +64,16 @@ impl PldmOp {
         match val {
             0 => Some(Self::AcceptOffer),
             1 => Some(Self::RejectOffer),
-            2 => Some(Self::GrantVerify),
-            3 => Some(Self::DenyVerify),
-            4 => Some(Self::GrantApply),
-            5 => Some(Self::DenyApply),
+            2 => Some(Self::PerformVerify),
+            3 => Some(Self::RejectVerify),
+            4 => Some(Self::PerformApply),
+            5 => Some(Self::RejectApply),
             6 => Some(Self::QueryStatus),
-            7 => Some(Self::GrantActivate),
-            8 => Some(Self::DenyActivate),
+            7 => Some(Self::PerformActivate),
+            8 => Some(Self::RejectActivate),
             9 => Some(Self::AckCancel),
-            10 => Some(Self::GrantSvnCommit),
-            11 => Some(Self::DenySvnCommit),
+            10 => Some(Self::PerformSvnCommit),
+            11 => Some(Self::RejectSvnCommit),
             _ => None,
         }
     }
@@ -193,16 +194,17 @@ pub const MAX_REQUEST_SIZE: usize = RequestHeader::SIZE + 4;
 pub const fn expected_request_len(op: PldmOp) -> usize {
     match op {
         PldmOp::AcceptOffer => RequestHeader::SIZE + 4,
-        PldmOp::DenyVerify | PldmOp::DenyApply | PldmOp::DenyActivate | PldmOp::DenySvnCommit => {
-            RequestHeader::SIZE + 1
-        }
+        PldmOp::RejectVerify
+        | PldmOp::RejectApply
+        | PldmOp::RejectActivate
+        | PldmOp::RejectSvnCommit => RequestHeader::SIZE + 1,
         PldmOp::RejectOffer
-        | PldmOp::GrantVerify
-        | PldmOp::GrantApply
+        | PldmOp::PerformVerify
+        | PldmOp::PerformApply
         | PldmOp::QueryStatus
-        | PldmOp::GrantActivate
+        | PldmOp::PerformActivate
         | PldmOp::AckCancel
-        | PldmOp::GrantSvnCommit => RequestHeader::SIZE,
+        | PldmOp::PerformSvnCommit => RequestHeader::SIZE,
     }
 }
 
@@ -247,18 +249,18 @@ pub fn encode_reject_offer(buf: &mut [u8]) -> Result<usize, WireError> {
     encode_header_only(buf, PldmOp::RejectOffer)
 }
 
-pub fn encode_grant_verify(buf: &mut [u8]) -> Result<usize, WireError> {
-    encode_header_only(buf, PldmOp::GrantVerify)
+pub fn encode_perform_verify(buf: &mut [u8]) -> Result<usize, WireError> {
+    encode_header_only(buf, PldmOp::PerformVerify)
 }
 
-/// Encode DenyVerify with the reason the orchestrator is blocking.
-pub fn encode_deny_verify(buf: &mut [u8], reason: DenyReason) -> Result<usize, WireError> {
+/// Encode RejectVerify with the reason the orchestrator is blocking.
+pub fn encode_reject_verify(buf: &mut [u8], reason: RejectReason) -> Result<usize, WireError> {
     let total = RequestHeader::SIZE + 1;
     if buf.len() < total {
         return Err(WireError::BufferTooSmall);
     }
     let h = RequestHeader {
-        op: PldmOp::DenyVerify as u8,
+        op: PldmOp::RejectVerify as u8,
         flags: 0,
         generation: 0,
     };
@@ -267,18 +269,18 @@ pub fn encode_deny_verify(buf: &mut [u8], reason: DenyReason) -> Result<usize, W
     Ok(total)
 }
 
-pub fn encode_grant_apply(buf: &mut [u8]) -> Result<usize, WireError> {
-    encode_header_only(buf, PldmOp::GrantApply)
+pub fn encode_perform_apply(buf: &mut [u8]) -> Result<usize, WireError> {
+    encode_header_only(buf, PldmOp::PerformApply)
 }
 
-/// Encode DenyApply with the reason the orchestrator is blocking.
-pub fn encode_deny_apply(buf: &mut [u8], reason: DenyReason) -> Result<usize, WireError> {
+/// Encode RejectApply with the reason the orchestrator is blocking.
+pub fn encode_reject_apply(buf: &mut [u8], reason: RejectReason) -> Result<usize, WireError> {
     let total = RequestHeader::SIZE + 1;
     if buf.len() < total {
         return Err(WireError::BufferTooSmall);
     }
     let h = RequestHeader {
-        op: PldmOp::DenyApply as u8,
+        op: PldmOp::RejectApply as u8,
         flags: 0,
         generation: 0,
     };
@@ -291,17 +293,17 @@ pub fn encode_query_status(buf: &mut [u8]) -> Result<usize, WireError> {
     encode_header_only(buf, PldmOp::QueryStatus)
 }
 
-pub fn encode_grant_activate(buf: &mut [u8]) -> Result<usize, WireError> {
-    encode_header_only(buf, PldmOp::GrantActivate)
+pub fn encode_perform_activate(buf: &mut [u8]) -> Result<usize, WireError> {
+    encode_header_only(buf, PldmOp::PerformActivate)
 }
 
-pub fn encode_deny_activate(buf: &mut [u8], reason: DenyReason) -> Result<usize, WireError> {
+pub fn encode_reject_activate(buf: &mut [u8], reason: RejectReason) -> Result<usize, WireError> {
     let total = RequestHeader::SIZE + 1;
     if buf.len() < total {
         return Err(WireError::BufferTooSmall);
     }
     let h = RequestHeader {
-        op: PldmOp::DenyActivate as u8,
+        op: PldmOp::RejectActivate as u8,
         flags: 0,
         generation: 0,
     };
@@ -314,18 +316,18 @@ pub fn encode_ack_cancel(buf: &mut [u8]) -> Result<usize, WireError> {
     encode_header_only(buf, PldmOp::AckCancel)
 }
 
-pub fn encode_grant_svn_commit(buf: &mut [u8]) -> Result<usize, WireError> {
-    encode_header_only(buf, PldmOp::GrantSvnCommit)
+pub fn encode_perform_svn_commit(buf: &mut [u8]) -> Result<usize, WireError> {
+    encode_header_only(buf, PldmOp::PerformSvnCommit)
 }
 
-/// Encode DenySvnCommit with the reason the orchestrator is blocking.
-pub fn encode_deny_svn_commit(buf: &mut [u8], reason: DenyReason) -> Result<usize, WireError> {
+/// Encode RejectSvnCommit with the reason the orchestrator is blocking.
+pub fn encode_reject_svn_commit(buf: &mut [u8], reason: RejectReason) -> Result<usize, WireError> {
     let total = RequestHeader::SIZE + 1;
     if buf.len() < total {
         return Err(WireError::BufferTooSmall);
     }
     let h = RequestHeader {
-        op: PldmOp::DenySvnCommit as u8,
+        op: PldmOp::RejectSvnCommit as u8,
         flags: 0,
         generation: 0,
     };
@@ -414,12 +416,12 @@ pub fn get_accept_offer_base(args: &[u8]) -> Result<u32, WireError> {
     Ok(u32::from_le_bytes([args[0], args[1], args[2], args[3]]))
 }
 
-/// Extract the deny reason from a Deny* request's args.
-pub fn get_deny_reason(args: &[u8]) -> Result<DenyReason, WireError> {
+/// Extract the reject reason from a Reject* request's args.
+pub fn get_reject_reason(args: &[u8]) -> Result<RejectReason, WireError> {
     if args.is_empty() {
         return Err(WireError::Truncated);
     }
-    DenyReason::from_u8(args[0]).ok_or(WireError::InvalidValue(args[0]))
+    RejectReason::from_u8(args[0]).ok_or(WireError::InvalidValue(args[0]))
 }
 
 // ============================================================================
@@ -469,43 +471,52 @@ mod tests {
     }
 
     #[test]
-    fn encode_deny_verify_roundtrip() {
+    fn encode_reject_verify_roundtrip() {
         let mut buf = [0u8; 16];
-        let len = encode_deny_verify(&mut buf, DenyReason::Isolated).unwrap();
+        let len = encode_reject_verify(&mut buf, RejectReason::Isolated).unwrap();
         assert_eq!(len, 9);
         let h = decode_request_header(&buf).unwrap();
-        assert_eq!(h.operation(), Some(PldmOp::DenyVerify));
+        assert_eq!(h.operation(), Some(PldmOp::RejectVerify));
         let args = get_request_args(&buf[..len]);
-        assert_eq!(get_deny_reason(args).unwrap(), DenyReason::Isolated);
+        assert_eq!(get_reject_reason(args).unwrap(), RejectReason::Isolated);
     }
 
     #[test]
-    fn encode_deny_apply_roundtrip() {
+    fn encode_reject_apply_roundtrip() {
         let mut buf = [0u8; 16];
-        let len = encode_deny_apply(&mut buf, DenyReason::PolicyViolation).unwrap();
+        let len = encode_reject_apply(&mut buf, RejectReason::PolicyViolation).unwrap();
         let args = get_request_args(&buf[..len]);
-        assert_eq!(get_deny_reason(args).unwrap(), DenyReason::PolicyViolation);
+        assert_eq!(
+            get_reject_reason(args).unwrap(),
+            RejectReason::PolicyViolation
+        );
     }
 
     #[test]
-    fn encode_deny_svn_commit_roundtrip() {
+    fn encode_reject_svn_commit_roundtrip() {
         let mut buf = [0u8; 16];
-        let len = encode_deny_svn_commit(&mut buf, DenyReason::PolicyViolation).unwrap();
+        let len = encode_reject_svn_commit(&mut buf, RejectReason::PolicyViolation).unwrap();
         assert_eq!(len, 9);
         let h = decode_request_header(&buf).unwrap();
-        assert_eq!(h.operation(), Some(PldmOp::DenySvnCommit));
+        assert_eq!(h.operation(), Some(PldmOp::RejectSvnCommit));
         let args = get_request_args(&buf[..len]);
-        assert_eq!(get_deny_reason(args).unwrap(), DenyReason::PolicyViolation);
+        assert_eq!(
+            get_reject_reason(args).unwrap(),
+            RejectReason::PolicyViolation
+        );
     }
 
     #[test]
-    fn encode_deny_activate_roundtrip() {
+    fn encode_reject_activate_roundtrip() {
         let mut buf = [0u8; 16];
-        let len = encode_deny_activate(&mut buf, DenyReason::UnknownTarget).unwrap();
+        let len = encode_reject_activate(&mut buf, RejectReason::UnknownTarget).unwrap();
         let h = decode_request_header(&buf).unwrap();
-        assert_eq!(h.operation(), Some(PldmOp::DenyActivate));
+        assert_eq!(h.operation(), Some(PldmOp::RejectActivate));
         let args = get_request_args(&buf[..len]);
-        assert_eq!(get_deny_reason(args).unwrap(), DenyReason::UnknownTarget);
+        assert_eq!(
+            get_reject_reason(args).unwrap(),
+            RejectReason::UnknownTarget
+        );
     }
 
     #[test]
@@ -515,12 +526,12 @@ mod tests {
                 encode_reject_offer as fn(&mut [u8]) -> _,
                 PldmOp::RejectOffer,
             ),
-            (encode_grant_verify, PldmOp::GrantVerify),
-            (encode_grant_apply, PldmOp::GrantApply),
+            (encode_perform_verify, PldmOp::PerformVerify),
+            (encode_perform_apply, PldmOp::PerformApply),
             (encode_query_status, PldmOp::QueryStatus),
-            (encode_grant_activate, PldmOp::GrantActivate),
+            (encode_perform_activate, PldmOp::PerformActivate),
             (encode_ack_cancel, PldmOp::AckCancel),
-            (encode_grant_svn_commit, PldmOp::GrantSvnCommit),
+            (encode_perform_svn_commit, PldmOp::PerformSvnCommit),
         ];
         for (encode_fn, expected_op) in ops {
             let mut buf = [0u8; 16];
@@ -608,7 +619,7 @@ mod tests {
             Err(WireError::BufferTooSmall)
         );
         assert_eq!(
-            encode_deny_verify(&mut buf, DenyReason::Busy),
+            encode_reject_verify(&mut buf, RejectReason::Busy),
             Err(WireError::BufferTooSmall)
         );
         assert_eq!(
@@ -635,6 +646,6 @@ mod tests {
 
     #[test]
     fn get_deny_reason_truncated() {
-        assert_eq!(get_deny_reason(&[]), Err(WireError::Truncated));
+        assert_eq!(get_reject_reason(&[]), Err(WireError::Truncated));
     }
 }

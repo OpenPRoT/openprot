@@ -12,7 +12,7 @@
 #![no_std]
 
 use pldm_api::wire::{self, PldmOp};
-use pldm_api::{DenyReason, FdStatus, ResponseCode, WireError};
+use pldm_api::{FdStatus, RejectReason, ResponseCode, WireError};
 use util_service::{Dispatch, DispatchError};
 
 /// What the FD does in response to each orchestrator operation.
@@ -28,16 +28,16 @@ use util_service::{Dispatch, DispatchError};
 pub trait FdIpcHandler {
     fn accept_offer(&mut self, staging_base: u32) -> Result<(), ResponseCode>;
     fn reject_offer(&mut self) -> Result<(), ResponseCode>;
-    fn grant_verify(&mut self) -> Result<(), ResponseCode>;
-    fn deny_verify(&mut self, reason: DenyReason) -> Result<(), ResponseCode>;
-    fn grant_apply(&mut self) -> Result<(), ResponseCode>;
-    fn deny_apply(&mut self, reason: DenyReason) -> Result<(), ResponseCode>;
+    fn perform_verify(&mut self) -> Result<(), ResponseCode>;
+    fn reject_verify(&mut self, reason: RejectReason) -> Result<(), ResponseCode>;
+    fn perform_apply(&mut self) -> Result<(), ResponseCode>;
+    fn reject_apply(&mut self, reason: RejectReason) -> Result<(), ResponseCode>;
     fn query_status(&mut self) -> Result<FdStatus, ResponseCode>;
-    fn grant_activate(&mut self) -> Result<(), ResponseCode>;
-    fn deny_activate(&mut self, reason: DenyReason) -> Result<(), ResponseCode>;
+    fn perform_activate(&mut self) -> Result<(), ResponseCode>;
+    fn reject_activate(&mut self, reason: RejectReason) -> Result<(), ResponseCode>;
     fn ack_cancel(&mut self) -> Result<(), ResponseCode>;
-    fn grant_svn_commit(&mut self) -> Result<(), ResponseCode>;
-    fn deny_svn_commit(&mut self, reason: DenyReason) -> Result<(), ResponseCode>;
+    fn perform_svn_commit(&mut self) -> Result<(), ResponseCode>;
+    fn reject_svn_commit(&mut self, reason: RejectReason) -> Result<(), ResponseCode>;
 }
 
 /// Decode one request, call the handler, encode the response.
@@ -110,30 +110,30 @@ fn dispatch_inner<F: FdIpcHandler>(
             encode_unit_result(response, handler.accept_offer(base))
         }
         PldmOp::RejectOffer => encode_unit_result(response, handler.reject_offer()),
-        PldmOp::GrantVerify => encode_unit_result(response, handler.grant_verify()),
-        PldmOp::DenyVerify => {
-            let reason = wire::get_deny_reason(args)?;
-            encode_unit_result(response, handler.deny_verify(reason))
+        PldmOp::PerformVerify => encode_unit_result(response, handler.perform_verify()),
+        PldmOp::RejectVerify => {
+            let reason = wire::get_reject_reason(args)?;
+            encode_unit_result(response, handler.reject_verify(reason))
         }
-        PldmOp::GrantApply => encode_unit_result(response, handler.grant_apply()),
-        PldmOp::DenyApply => {
-            let reason = wire::get_deny_reason(args)?;
-            encode_unit_result(response, handler.deny_apply(reason))
+        PldmOp::PerformApply => encode_unit_result(response, handler.perform_apply()),
+        PldmOp::RejectApply => {
+            let reason = wire::get_reject_reason(args)?;
+            encode_unit_result(response, handler.reject_apply(reason))
         }
         PldmOp::QueryStatus => match handler.query_status() {
             Ok(status) => wire::encode_status_response(response, &status),
             Err(code) => wire::encode_error_response(response, code),
         },
-        PldmOp::GrantActivate => encode_unit_result(response, handler.grant_activate()),
-        PldmOp::DenyActivate => {
-            let reason = wire::get_deny_reason(args)?;
-            encode_unit_result(response, handler.deny_activate(reason))
+        PldmOp::PerformActivate => encode_unit_result(response, handler.perform_activate()),
+        PldmOp::RejectActivate => {
+            let reason = wire::get_reject_reason(args)?;
+            encode_unit_result(response, handler.reject_activate(reason))
         }
         PldmOp::AckCancel => encode_unit_result(response, handler.ack_cancel()),
-        PldmOp::GrantSvnCommit => encode_unit_result(response, handler.grant_svn_commit()),
-        PldmOp::DenySvnCommit => {
-            let reason = wire::get_deny_reason(args)?;
-            encode_unit_result(response, handler.deny_svn_commit(reason))
+        PldmOp::PerformSvnCommit => encode_unit_result(response, handler.perform_svn_commit()),
+        PldmOp::RejectSvnCommit => {
+            let reason = wire::get_reject_reason(args)?;
+            encode_unit_result(response, handler.reject_svn_commit(reason))
         }
     }
 }
@@ -194,17 +194,17 @@ mod tests {
         fn reject_offer(&mut self) -> Result<(), ResponseCode> {
             self.check("reject_offer")
         }
-        fn grant_verify(&mut self) -> Result<(), ResponseCode> {
-            self.check("grant_verify")
+        fn perform_verify(&mut self) -> Result<(), ResponseCode> {
+            self.check("perform_verify")
         }
-        fn deny_verify(&mut self, _reason: DenyReason) -> Result<(), ResponseCode> {
-            self.check("deny_verify")
+        fn reject_verify(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
+            self.check("reject_verify")
         }
-        fn grant_apply(&mut self) -> Result<(), ResponseCode> {
-            self.check("grant_apply")
+        fn perform_apply(&mut self) -> Result<(), ResponseCode> {
+            self.check("perform_apply")
         }
-        fn deny_apply(&mut self, _reason: DenyReason) -> Result<(), ResponseCode> {
-            self.check("deny_apply")
+        fn reject_apply(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
+            self.check("reject_apply")
         }
         fn query_status(&mut self) -> Result<FdStatus, ResponseCode> {
             self.last_op = Some("query_status");
@@ -213,20 +213,20 @@ mod tests {
                 None => Ok(self.status),
             }
         }
-        fn grant_activate(&mut self) -> Result<(), ResponseCode> {
-            self.check("grant_activate")
+        fn perform_activate(&mut self) -> Result<(), ResponseCode> {
+            self.check("perform_activate")
         }
-        fn deny_activate(&mut self, _reason: DenyReason) -> Result<(), ResponseCode> {
-            self.check("deny_activate")
+        fn reject_activate(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
+            self.check("reject_activate")
         }
         fn ack_cancel(&mut self) -> Result<(), ResponseCode> {
             self.check("ack_cancel")
         }
-        fn grant_svn_commit(&mut self) -> Result<(), ResponseCode> {
-            self.check("grant_svn_commit")
+        fn perform_svn_commit(&mut self) -> Result<(), ResponseCode> {
+            self.check("perform_svn_commit")
         }
-        fn deny_svn_commit(&mut self, _reason: DenyReason) -> Result<(), ResponseCode> {
-            self.check("deny_svn_commit")
+        fn reject_svn_commit(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
+            self.check("reject_svn_commit")
         }
     }
 
@@ -258,41 +258,41 @@ mod tests {
     }
 
     #[test]
-    fn grant_verify_dispatches() {
-        roundtrip_success(|buf| wire::encode_grant_verify(buf), "grant_verify");
+    fn perform_verify_dispatches() {
+        roundtrip_success(|buf| wire::encode_perform_verify(buf), "perform_verify");
     }
 
     #[test]
-    fn deny_verify_dispatches() {
+    fn reject_verify_dispatches() {
         roundtrip_success(
-            |buf| wire::encode_deny_verify(buf, DenyReason::Isolated),
-            "deny_verify",
+            |buf| wire::encode_reject_verify(buf, RejectReason::Isolated),
+            "reject_verify",
         );
     }
 
     #[test]
-    fn grant_apply_dispatches() {
-        roundtrip_success(|buf| wire::encode_grant_apply(buf), "grant_apply");
+    fn perform_apply_dispatches() {
+        roundtrip_success(|buf| wire::encode_perform_apply(buf), "perform_apply");
     }
 
     #[test]
-    fn deny_apply_dispatches() {
+    fn reject_apply_dispatches() {
         roundtrip_success(
-            |buf| wire::encode_deny_apply(buf, DenyReason::PolicyViolation),
-            "deny_apply",
+            |buf| wire::encode_reject_apply(buf, RejectReason::PolicyViolation),
+            "reject_apply",
         );
     }
 
     #[test]
-    fn grant_activate_dispatches() {
-        roundtrip_success(|buf| wire::encode_grant_activate(buf), "grant_activate");
+    fn perform_activate_dispatches() {
+        roundtrip_success(|buf| wire::encode_perform_activate(buf), "perform_activate");
     }
 
     #[test]
-    fn deny_activate_dispatches() {
+    fn reject_activate_dispatches() {
         roundtrip_success(
-            |buf| wire::encode_deny_activate(buf, DenyReason::Busy),
-            "deny_activate",
+            |buf| wire::encode_reject_activate(buf, RejectReason::Busy),
+            "reject_activate",
         );
     }
 
@@ -302,15 +302,18 @@ mod tests {
     }
 
     #[test]
-    fn grant_svn_commit_dispatches() {
-        roundtrip_success(|buf| wire::encode_grant_svn_commit(buf), "grant_svn_commit");
+    fn perform_svn_commit_dispatches() {
+        roundtrip_success(
+            |buf| wire::encode_perform_svn_commit(buf),
+            "perform_svn_commit",
+        );
     }
 
     #[test]
-    fn deny_svn_commit_dispatches() {
+    fn reject_svn_commit_dispatches() {
         roundtrip_success(
-            |buf| wire::encode_deny_svn_commit(buf, DenyReason::PolicyViolation),
-            "deny_svn_commit",
+            |buf| wire::encode_reject_svn_commit(buf, RejectReason::PolicyViolation),
+            "reject_svn_commit",
         );
     }
 
@@ -337,7 +340,7 @@ mod tests {
     #[test]
     fn handler_error_becomes_error_response() {
         let mut req = [0u8; 16];
-        let req_len = wire::encode_grant_verify(&mut req).unwrap();
+        let req_len = wire::encode_perform_verify(&mut req).unwrap();
         let mut resp = [0u8; MAX_RESPONSE_SIZE];
         let mut fd = MockFd::returning_error(ResponseCode::WrongPhase);
         let resp_len = dispatch(&mut fd, &req[..req_len], &mut resp).unwrap();
@@ -374,10 +377,10 @@ mod tests {
     }
 
     #[test]
-    fn deny_verify_missing_reason_returns_malformed_request() {
+    fn reject_verify_missing_reason_returns_malformed_request() {
         let mut req = [0u8; 16];
         let h = RequestHeader {
-            op: PldmOp::DenyVerify as u8,
+            op: PldmOp::RejectVerify as u8,
             flags: 0,
             generation: 0,
         };
@@ -391,10 +394,10 @@ mod tests {
     }
 
     #[test]
-    fn deny_verify_bad_reason_returns_malformed_request() {
+    fn reject_verify_bad_reason_returns_malformed_request() {
         let mut req = [0u8; 16];
         let h = RequestHeader {
-            op: PldmOp::DenyVerify as u8,
+            op: PldmOp::RejectVerify as u8,
             flags: 0,
             generation: 0,
         };
@@ -464,7 +467,7 @@ mod loopback_tests {
     }
     use pldm_api::status::TransferMode;
     use pldm_api::wire::{self, MAX_RESPONSE_SIZE};
-    use pldm_api::{DenyReason, FdStatus, ResponseCode};
+    use pldm_api::{FdStatus, RejectReason, ResponseCode};
 
     /// Minimal handler for loopback tests.
     struct StubFd {
@@ -503,39 +506,39 @@ mod loopback_tests {
             self.status = FdStatus::Idle { reason: 0 };
             Ok(())
         }
-        fn grant_verify(&mut self) -> Result<(), ResponseCode> {
+        fn perform_verify(&mut self) -> Result<(), ResponseCode> {
             self.status = FdStatus::ApplyPending;
             Ok(())
         }
-        fn deny_verify(&mut self, _reason: DenyReason) -> Result<(), ResponseCode> {
+        fn reject_verify(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
             Ok(())
         }
-        fn grant_apply(&mut self) -> Result<(), ResponseCode> {
+        fn perform_apply(&mut self) -> Result<(), ResponseCode> {
             self.status = FdStatus::ActivationPending;
             Ok(())
         }
-        fn deny_apply(&mut self, _reason: DenyReason) -> Result<(), ResponseCode> {
+        fn reject_apply(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
             Ok(())
         }
         fn query_status(&mut self) -> Result<FdStatus, ResponseCode> {
             Ok(self.status)
         }
-        fn grant_activate(&mut self) -> Result<(), ResponseCode> {
+        fn perform_activate(&mut self) -> Result<(), ResponseCode> {
             self.status = FdStatus::Idle { reason: 0 };
             Ok(())
         }
-        fn deny_activate(&mut self, _reason: DenyReason) -> Result<(), ResponseCode> {
+        fn reject_activate(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
             Ok(())
         }
         fn ack_cancel(&mut self) -> Result<(), ResponseCode> {
             self.status = FdStatus::Idle { reason: 0 };
             Ok(())
         }
-        fn grant_svn_commit(&mut self) -> Result<(), ResponseCode> {
+        fn perform_svn_commit(&mut self) -> Result<(), ResponseCode> {
             self.status = FdStatus::Idle { reason: 0 };
             Ok(())
         }
-        fn deny_svn_commit(&mut self, _reason: DenyReason) -> Result<(), ResponseCode> {
+        fn reject_svn_commit(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
             Ok(())
         }
     }
@@ -693,20 +696,20 @@ mod loopback_tests {
     }
 
     // Transfer is UA-driven (no IPC op). The FD enters VerifyPending
-    // when the transfer completes, so the grant sequence starts there.
+    // when the transfer completes, so the command sequence starts there.
     #[test]
-    fn grant_sequence_verify_through_idle() {
+    fn command_sequence_verify_through_idle() {
         let mut t = Loopback::<_, MAX_RESPONSE_SIZE>::new(FdIpcServer::new(StubFd::at(
             FdStatus::VerifyPending,
         )));
 
-        send_ok(&mut t, |b| wire::encode_grant_verify(b));
+        send_ok(&mut t, |b| wire::encode_perform_verify(b));
         assert_eq!(query_status(&mut t), FdStatus::ApplyPending);
 
-        send_ok(&mut t, |b| wire::encode_grant_apply(b));
+        send_ok(&mut t, |b| wire::encode_perform_apply(b));
         assert_eq!(query_status(&mut t), FdStatus::ActivationPending);
 
-        send_ok(&mut t, |b| wire::encode_grant_activate(b));
+        send_ok(&mut t, |b| wire::encode_perform_activate(b));
         assert_eq!(query_status(&mut t), FdStatus::Idle { reason: 0 });
     }
 
@@ -716,7 +719,7 @@ mod loopback_tests {
             FdStatus::SvnCommitPending { component: 1 },
         )));
 
-        send_ok(&mut t, |b| wire::encode_grant_svn_commit(b));
+        send_ok(&mut t, |b| wire::encode_perform_svn_commit(b));
         assert_eq!(query_status(&mut t), FdStatus::Idle { reason: 0 });
     }
 

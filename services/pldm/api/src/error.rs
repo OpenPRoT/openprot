@@ -16,7 +16,7 @@ pub enum WireError {
     InvalidOpcode(u8),
     /// Input buffer too short for a complete header or payload.
     Truncated,
-    /// Unrecognized enum value (status discriminant, deny reason, etc).
+    /// Unrecognized enum value (status discriminant, reject reason, etc).
     InvalidValue(u8),
 }
 
@@ -83,7 +83,7 @@ impl fmt::Display for ResponseCode {
 /// Reason the orchestrator denied an operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum DenyReason {
+pub enum RejectReason {
     /// Component is isolated (compromise detected).
     Isolated = 0,
     /// Update policy violation.
@@ -94,7 +94,7 @@ pub enum DenyReason {
     Busy = 3,
 }
 
-impl DenyReason {
+impl RejectReason {
     pub const fn from_u8(val: u8) -> Option<Self> {
         match val {
             0 => Some(Self::Isolated),
@@ -106,7 +106,7 @@ impl DenyReason {
     }
 }
 
-impl fmt::Display for DenyReason {
+impl fmt::Display for RejectReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Isolated => f.write_str("isolated"),

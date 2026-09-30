@@ -4,7 +4,7 @@
 //! The client handle and the answers it collects.
 
 use pldm_api::wire::{self, PldmOp, MAX_REQUEST_SIZE, MAX_RESPONSE_SIZE};
-use pldm_api::{DenyReason, FdStatus, WireError};
+use pldm_api::{FdStatus, RejectReason, WireError};
 use util_service::AsyncTransport;
 
 use crate::ClientError;
@@ -65,27 +65,27 @@ impl<T: AsyncTransport> FdIpcClient<T> {
         self.start(PldmOp::RejectOffer, wire::encode_reject_offer)
     }
 
-    /// Let the FD verify what it staged.
-    pub fn grant_verify(&mut self) -> Result<(), ClientError> {
-        self.start(PldmOp::GrantVerify, wire::encode_grant_verify)
+    /// Tell the FD to verify what it staged.
+    pub fn perform_verify(&mut self) -> Result<(), ClientError> {
+        self.start(PldmOp::PerformVerify, wire::encode_perform_verify)
     }
 
-    /// Refuse the verify, with the reason the requester is owed.
-    pub fn deny_verify(&mut self, reason: DenyReason) -> Result<(), ClientError> {
-        self.start(PldmOp::DenyVerify, |buf| {
-            wire::encode_deny_verify(buf, reason)
+    /// Tell the FD not to verify, with the reason the requester is owed.
+    pub fn reject_verify(&mut self, reason: RejectReason) -> Result<(), ClientError> {
+        self.start(PldmOp::RejectVerify, |buf| {
+            wire::encode_reject_verify(buf, reason)
         })
     }
 
-    /// Let the FD apply what it verified.
-    pub fn grant_apply(&mut self) -> Result<(), ClientError> {
-        self.start(PldmOp::GrantApply, wire::encode_grant_apply)
+    /// Tell the FD to apply what it verified.
+    pub fn perform_apply(&mut self) -> Result<(), ClientError> {
+        self.start(PldmOp::PerformApply, wire::encode_perform_apply)
     }
 
-    /// Refuse the apply.
-    pub fn deny_apply(&mut self, reason: DenyReason) -> Result<(), ClientError> {
-        self.start(PldmOp::DenyApply, |buf| {
-            wire::encode_deny_apply(buf, reason)
+    /// Tell the FD not to apply.
+    pub fn reject_apply(&mut self, reason: RejectReason) -> Result<(), ClientError> {
+        self.start(PldmOp::RejectApply, |buf| {
+            wire::encode_reject_apply(buf, reason)
         })
     }
 
@@ -94,23 +94,23 @@ impl<T: AsyncTransport> FdIpcClient<T> {
         self.start(PldmOp::QueryStatus, wire::encode_query_status)
     }
 
-    /// Let the FD activate the applied image.
+    /// Tell the FD to activate the applied image.
     ///
     /// Sent when the FD reports apply complete, not when the UA asks to
     /// activate: `FdOps::activate` answers the UA synchronously, so the
     /// FD stores this verdict and replies from it. The gap before the UA
-    /// asks is unbounded, so the grant stays revocable until then.
-    pub fn grant_activate(&mut self) -> Result<(), ClientError> {
-        self.start(PldmOp::GrantActivate, wire::encode_grant_activate)
+    /// asks is unbounded, so this stays revocable until then.
+    pub fn perform_activate(&mut self) -> Result<(), ClientError> {
+        self.start(PldmOp::PerformActivate, wire::encode_perform_activate)
     }
 
-    /// Refuse the activation, or revoke a grant the FD has stored.
+    /// Refuse the activation, or take back one the FD has stored.
     ///
     /// A revocation loses the race once the UA has asked: by then the FD
     /// has answered and activation is under way.
-    pub fn deny_activate(&mut self, reason: DenyReason) -> Result<(), ClientError> {
-        self.start(PldmOp::DenyActivate, |buf| {
-            wire::encode_deny_activate(buf, reason)
+    pub fn reject_activate(&mut self, reason: RejectReason) -> Result<(), ClientError> {
+        self.start(PldmOp::RejectActivate, |buf| {
+            wire::encode_reject_activate(buf, reason)
         })
     }
 
@@ -119,15 +119,15 @@ impl<T: AsyncTransport> FdIpcClient<T> {
         self.start(PldmOp::AckCancel, wire::encode_ack_cancel)
     }
 
-    /// Let the FD commit its SVN floor.
-    pub fn grant_svn_commit(&mut self) -> Result<(), ClientError> {
-        self.start(PldmOp::GrantSvnCommit, wire::encode_grant_svn_commit)
+    /// Tell the FD the SVN floor is raised, so it can answer the UA.
+    pub fn perform_svn_commit(&mut self) -> Result<(), ClientError> {
+        self.start(PldmOp::PerformSvnCommit, wire::encode_perform_svn_commit)
     }
 
-    /// Refuse the floor commit.
-    pub fn deny_svn_commit(&mut self, reason: DenyReason) -> Result<(), ClientError> {
-        self.start(PldmOp::DenySvnCommit, |buf| {
-            wire::encode_deny_svn_commit(buf, reason)
+    /// Tell the FD the floor did not move.
+    pub fn reject_svn_commit(&mut self, reason: RejectReason) -> Result<(), ClientError> {
+        self.start(PldmOp::RejectSvnCommit, |buf| {
+            wire::encode_reject_svn_commit(buf, reason)
         })
     }
 
@@ -252,17 +252,17 @@ mod tests {
         fn reject_offer(&mut self) -> Result<(), ResponseCode> {
             self.answer("reject_offer")
         }
-        fn grant_verify(&mut self) -> Result<(), ResponseCode> {
-            self.answer("grant_verify")
+        fn perform_verify(&mut self) -> Result<(), ResponseCode> {
+            self.answer("perform_verify")
         }
-        fn deny_verify(&mut self, _reason: DenyReason) -> Result<(), ResponseCode> {
-            self.answer("deny_verify")
+        fn reject_verify(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
+            self.answer("reject_verify")
         }
-        fn grant_apply(&mut self) -> Result<(), ResponseCode> {
-            self.answer("grant_apply")
+        fn perform_apply(&mut self) -> Result<(), ResponseCode> {
+            self.answer("perform_apply")
         }
-        fn deny_apply(&mut self, _reason: DenyReason) -> Result<(), ResponseCode> {
-            self.answer("deny_apply")
+        fn reject_apply(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
+            self.answer("reject_apply")
         }
         fn query_status(&mut self) -> Result<FdStatus, ResponseCode> {
             self.last = Some("query_status");
@@ -271,20 +271,20 @@ mod tests {
                 None => Ok(self.status),
             }
         }
-        fn grant_activate(&mut self) -> Result<(), ResponseCode> {
-            self.answer("grant_activate")
+        fn perform_activate(&mut self) -> Result<(), ResponseCode> {
+            self.answer("perform_activate")
         }
-        fn deny_activate(&mut self, _reason: DenyReason) -> Result<(), ResponseCode> {
-            self.answer("deny_activate")
+        fn reject_activate(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
+            self.answer("reject_activate")
         }
         fn ack_cancel(&mut self) -> Result<(), ResponseCode> {
             self.answer("ack_cancel")
         }
-        fn grant_svn_commit(&mut self) -> Result<(), ResponseCode> {
-            self.answer("grant_svn_commit")
+        fn perform_svn_commit(&mut self) -> Result<(), ResponseCode> {
+            self.answer("perform_svn_commit")
         }
-        fn deny_svn_commit(&mut self, _reason: DenyReason) -> Result<(), ResponseCode> {
-            self.answer("deny_svn_commit")
+        fn reject_svn_commit(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
+            self.answer("reject_svn_commit")
         }
     }
 
@@ -303,11 +303,11 @@ mod tests {
     fn a_granted_operation_is_acked() {
         let mut c = client(StubFd::new());
 
-        c.grant_verify().unwrap();
-        assert_eq!(c.in_flight(), Some(PldmOp::GrantVerify));
+        c.perform_verify().unwrap();
+        assert_eq!(c.in_flight(), Some(PldmOp::PerformVerify));
         assert_eq!(c.poll(), Ok(Some(Reply::Acked)));
 
-        assert_eq!(handler(&c).last, Some("grant_verify"));
+        assert_eq!(handler(&c).last, Some("perform_verify"));
         assert_eq!(c.in_flight(), None);
     }
 
@@ -325,10 +325,10 @@ mod tests {
     fn a_denial_carries_its_reason() {
         let mut c = client(StubFd::new());
 
-        c.deny_verify(DenyReason::Isolated).unwrap();
+        c.reject_verify(RejectReason::Isolated).unwrap();
         assert_eq!(c.poll(), Ok(Some(Reply::Acked)));
 
-        assert_eq!(handler(&c).last, Some("deny_verify"));
+        assert_eq!(handler(&c).last, Some("reject_verify"));
     }
 
     #[test]
@@ -352,7 +352,7 @@ mod tests {
     fn a_refusal_ends_the_round_trip_with_the_code() {
         let mut c = client(StubFd::refusing(ResponseCode::WrongPhase));
 
-        c.grant_apply().unwrap();
+        c.perform_apply().unwrap();
 
         assert_eq!(
             c.poll(),
@@ -365,10 +365,10 @@ mod tests {
     fn a_second_request_while_one_is_in_flight_is_refused() {
         let mut c = client(StubFd::new());
 
-        c.grant_verify().unwrap();
+        c.perform_verify().unwrap();
 
-        assert_eq!(c.grant_apply(), Err(ClientError::Busy));
-        assert_eq!(c.in_flight(), Some(PldmOp::GrantVerify));
+        assert_eq!(c.perform_apply(), Err(ClientError::Busy));
+        assert_eq!(c.in_flight(), Some(PldmOp::PerformVerify));
     }
 
     #[test]
@@ -381,14 +381,14 @@ mod tests {
     #[test]
     fn cancel_frees_the_client_for_the_next_request() {
         let mut c = client(StubFd::new());
-        c.grant_verify().unwrap();
+        c.perform_verify().unwrap();
 
         c.cancel().unwrap();
 
         assert_eq!(c.in_flight(), None);
-        c.grant_apply().unwrap();
+        c.perform_apply().unwrap();
         assert_eq!(c.poll(), Ok(Some(Reply::Acked)));
-        assert_eq!(handler(&c).last, Some("grant_apply"));
+        assert_eq!(handler(&c).last, Some("perform_apply"));
     }
 
     #[test]
@@ -408,11 +408,11 @@ mod tests {
             2,
         ));
 
-        c.grant_verify().unwrap();
+        c.perform_verify().unwrap();
 
         assert_eq!(c.poll(), Ok(None));
         assert_eq!(c.poll(), Ok(None));
-        assert_eq!(c.in_flight(), Some(PldmOp::GrantVerify), "still waiting");
+        assert_eq!(c.in_flight(), Some(PldmOp::PerformVerify), "still waiting");
         assert_eq!(c.poll(), Ok(Some(Reply::Acked)));
         assert_eq!(c.in_flight(), None);
     }
@@ -428,7 +428,7 @@ mod tests {
             FdIpcClient::new(Loopback::new(FdIpcServer::new(StubFd::new())));
 
         assert_eq!(
-            c.grant_verify(),
+            c.perform_verify(),
             Err(ClientError::Transport(TransportError::TooLarge))
         );
         assert_eq!(c.in_flight(), None);
@@ -456,7 +456,7 @@ mod tests {
     #[test]
     fn a_failed_poll_ends_the_round_trip() {
         let mut c = FdIpcClient::new(DeadChannel);
-        c.grant_verify().unwrap();
+        c.perform_verify().unwrap();
 
         assert_eq!(
             c.poll(),
@@ -464,7 +464,7 @@ mod tests {
         );
         assert_eq!(c.in_flight(), None);
         // The client is free to try again rather than wedged.
-        c.grant_verify().unwrap();
+        c.perform_verify().unwrap();
     }
 
     /// Answers with a frame too short to be a response header.
@@ -491,11 +491,11 @@ mod tests {
     #[test]
     fn a_response_that_does_not_decode_ends_the_round_trip() {
         let mut c = FdIpcClient::new(GarbageChannel);
-        c.grant_verify().unwrap();
+        c.perform_verify().unwrap();
 
         assert_eq!(c.poll(), Err(ClientError::Wire(WireError::Truncated)));
         assert_eq!(c.in_flight(), None);
-        c.grant_verify().unwrap();
+        c.perform_verify().unwrap();
     }
 
     /// Refuses every cancel, the way a channel that cannot take its
@@ -521,7 +521,7 @@ mod tests {
     #[test]
     fn a_failed_cancel_is_reported_and_leaves_the_client_idle() {
         let mut c = FdIpcClient::new(UncancellableChannel);
-        c.grant_verify().unwrap();
+        c.perform_verify().unwrap();
 
         assert_eq!(
             c.cancel(),

@@ -57,17 +57,17 @@ pub enum FdStatus {
         svn_delayed: bool,
     },
 
-    /// Transfer complete, FD waiting for GrantVerify.
+    /// Transfer complete, FD waiting for PerformVerify.
     VerifyPending,
 
-    /// Verify complete, FD waiting for GrantApply.
+    /// Verify complete, FD waiting for PerformApply.
     ApplyPending,
 
-    /// Apply complete, FD waiting for GrantActivate.
+    /// Apply complete, FD waiting for PerformActivate.
     ActivationPending,
 
     /// UA sent UpdateSecurityRevision, FD waiting for
-    /// GrantSvnCommit. `component` is the target identifier.
+    /// PerformSvnCommit. `component` is the target identifier.
     SvnCommitPending { component: u16 },
 
     /// Verify or apply failed. `phase` and `result_code` are the

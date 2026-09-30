@@ -23,7 +23,7 @@
 //! use pldm_client::{ClientError, FdIpcClient, Reply};
 //!
 //! // One turn of the orchestrator's event loop starts the round-trip.
-//! client.grant_verify()?;
+//! client.perform_verify()?;
 //!
 //! // A later turn, once the channel signals readable, collects it.
 //! match client.poll() {
