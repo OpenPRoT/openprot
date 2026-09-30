@@ -16,8 +16,8 @@ driver is a trait linked at build time, not a service; board-specific behavior
 enters via trait implementations. Before download via AcceptOffer, before
 verify and before apply, the FD nudges the orchestrator and waits for an order;
 activation is decided one step earlier, see below. The orchestrator is a
-gatekeeper: it can block any phase (e.g. deny verify for an isolated component
-with DenyVerify; the FD reports it to the UA as a verify failure), but it does
+gatekeeper: it can block any phase (e.g. refuse verify for an isolated component
+with RejectVerify; the FD reports it to the UA as a verify failure), but it does
 not execute the operations itself. The orchestrator never blocks: it must stay
 responsive to async events (e.g. CompromiseDetected). All outbound operations
 (IPC to FD, SVN bump, write filter) go through ServiceCall, and their
@@ -261,7 +261,7 @@ sequenceDiagram
     activate Orch
     Orch->>FD: ServiceCall: QueryStatus
     FD-->>Orch: Status::SvnCommitPending { component }
-    Note right of Orch: a confirmed trial only,<br/>else DenySvnCommit
+    Note right of Orch: a confirmed trial only,<br/>else RejectSvnCommit
     Orch->>DevSrv: ServiceCall: SvnFloor::advance
     DevSrv-->>Orch: signal: Ok
     Orch->>FD: ServiceCall: PerformSvnCommit
@@ -435,7 +435,7 @@ sequenceDiagram
     activate Orch
     Orch->>FD: ServiceCall: QueryStatus
     FD-->>Orch: Status::SvnCommitPending { component }
-    Note right of Orch: a confirmed trial only,<br/>else DenySvnCommit
+    Note right of Orch: a confirmed trial only,<br/>else RejectSvnCommit
     Orch->>DevSrv: ServiceCall: SvnFloor::advance
     DevSrv-->>Orch: signal: Ok
     Orch->>FD: ServiceCall: PerformSvnCommit
@@ -495,7 +495,7 @@ the rest of this design.
 Both windows close before PerformVerify and stay closed until the next
 AcceptOffer. Verify hashes what is on flash, and the verdict has to match the
 image that apply later commits, so nothing may write staging from the order
-onward. The window closes on the verify-pending nudge, on DenyVerify, on
+onward. The window closes on the verify-pending nudge, on RejectVerify, on
 Cancelled, on PhaseFailed, and when the backstop timer from the FD-death answer
 fires. Closing twice is harmless.
 Disarming the device server is itself a ServiceCall, so PerformVerify goes out
@@ -531,14 +531,14 @@ is synchronous, and what it returns is the completion code in the
 ActivateFirmware response. fd_progress never polls Activate either, so the FD
 cannot report 0% and wait there the way it does for verify and apply. Instead
 the FD nudges when apply completes, the orchestrator checks its policy while
-nothing is waiting on it, and sends PerformActivate or DenyActivate. The FD
+nothing is waiting on it, and sends PerformActivate or RejectActivate. The FD
 stores that verdict and answers ActivateFirmware from it: an order returns
 success and starts the boot-preference ServiceCall, a denial returns
 INCOMPLETE_UPDATE, which per DSP0267 leaves the FD in READY XFER without
 activating. The gap before the UA asks is unbounded, so the order is revocable:
-a DenyActivate arriving later overrides a stored order, so CompromiseDetected
+a RejectActivate arriving later overrides a stored order, so CompromiseDetected
 can still stop an activation the UA has not asked for yet. Once the UA does
-ask, the FD has answered and the boot-preference call is running, so a deny
+ask, the FD has answered and the boot-preference call is running, so a refusal
 racing that request loses. Closing that race needs the device server to refuse
 activate without an orchestrator-side order, which is the containment gap
 above. A session that ends any way but activation, a cancel or an FD_T1 timeout
@@ -602,15 +602,15 @@ const sized against the tightest watchdog, not a round number.
 | AcceptOffer | orch -> FD | Accept with a staging base address |
 | RejectOffer | orch -> FD | Reject (FD tells UA in the next response) |
 | PerformVerify | orch -> FD | Order the FD to run FdOps::verify |
-| DenyVerify | orch -> FD | Block verify (e.g. isolated component); FD returns failure to UA |
+| RejectVerify | orch -> FD | Block verify (e.g. isolated component); FD returns failure to UA |
 | PerformApply | orch -> FD | Order the FD to run FdOps::apply |
-| DenyApply | orch -> FD | Block apply; FD returns failure to UA |
+| RejectApply | orch -> FD | Block apply; FD returns failure to UA |
 | QueryStatus | orch -> FD | Read current FD state (phase, result, error); when OfferPending, includes offer data (target, total, transfer mode, SVN delayed) |
 | PerformActivate | orch -> FD | Order activation ahead of the UA's request; the FD stores it |
-| DenyActivate | orch -> FD | Refuse activation, or revoke a stored order; FD answers the UA with INCOMPLETE_UPDATE |
+| RejectActivate | orch -> FD | Refuse activation, or revoke a stored order; FD answers the UA with INCOMPLETE_UPDATE |
 | AckCancel | orch -> FD | Acknowledge cancel, release orchestrator-side resources |
 | PerformSvnCommit | orch -> FD | Tell the FD the floor is raised, so it can answer the UA |
-| DenySvnCommit | orch -> FD | Block the commit, reason PolicyViolation (no confirmed trial); FD answers the UA with UPDATE_SECURITY_REVISION_NOT_PERMITTED |
+| RejectSvnCommit | orch -> FD | Block the commit, reason PolicyViolation (no confirmed trial); FD answers the UA with UPDATE_SECURITY_REVISION_NOT_PERMITTED |
 
 A rejected offer ends with TransferComplete. The diagrams answer
 UpdateComponent before the orchestrator's QueryStatus, so by the time the
@@ -681,10 +681,10 @@ a panic. Decode failures get their own type: Truncated, InvalidOpcode,
 BufferTooSmall, PayloadTooLarge. MAX_REQUEST_SIZE and MAX_RESPONSE_SIZE live in
 the api crate and size the buffers on both sides.
 
-`code` is the on-wire result. The error type the orchestrator's client hands
-back is a separate type that wraps it, the way MctpError wraps ResponseCode. A
-deny carries its reason: Isolated, PolicyViolation, UnknownTarget, Busy. The FD
-maps each one onto a DSP0267 completion code for the UA.
+`code` is the on-wire result. The orchestrator's client hands it back as
+ClientError::Refused, carrying the code unchanged. A refusal carries its
+reason: Isolated, PolicyViolation, UnknownTarget, Busy. The FD maps each one
+onto a DSP0267 completion code for the UA.
 
 The FD answers RequestUpdate from its own state machine: an update already in
 progress gets ALREADY_IN_UPDATE_MODE and the UA retries. No nudge.
@@ -815,7 +815,7 @@ service owns the full read-hash-check pipeline.
 ## Open questions
 
 Whether PerformVerify/PerformApply should carry additional data (e.g. a nonce,
-a policy token) or just be bare order/deny signals.
+a policy token) or just be bare order/refusal signals.
 
 What the orchestrator does when the UA omits SVNDelayedUpdate. The DSP0267
 default is an automatic bump during the update, which spends the floor before
