@@ -14,7 +14,7 @@ device server itself. `apply` and `activate` take the board-specific logic from
 the platform driver trait and run it through the device server. The platform
 driver is a trait linked at build time, not a service; board-specific behavior
 enters via trait implementations. Before download via AcceptOffer, before
-verify and before apply, the FD nudges the orchestrator and waits for a grant;
+verify and before apply, the FD nudges the orchestrator and waits for an order;
 activation is decided one step earlier, see below. The orchestrator is a
 gatekeeper: it can block any phase (e.g. deny verify for an isolated component
 with DenyVerify; the FD reports it to the UA as a verify failure), but it does
@@ -26,7 +26,7 @@ FdOps callbacks must not block for long because the UA can send CancelUpdate
 asynchronously, and the FD's responder path needs to stay live to handle it.
 
 Out-of-transport, a third party writes the image to staging, and it has to be
-there before GrantVerify. The platform driver knows the staging address, and
+there before PerformVerify. The platform driver knows the staging address, and
 how the third party learns it is open. The FD does not pull firmware bytes but
 still runs verify and apply through FdOps.
 
@@ -63,7 +63,7 @@ Design decisions:
   ServiceCall completions (SVN bump, write filter), CompromiseDetected, and
   timers. Any event gets handled on the next wake, regardless of what else
   is in flight. The FD never parks either. A polled FdOps callback returns at
-  once whether or not the grant has arrived, reporting 0% progress until it
+  once whether or not the order has arrived, reporting 0% progress until it
   has, so the dispatch loop and the MCTP responder stay live through the
   wait.
 - The FD executes download, verify, and apply through FdOps callbacks. Our
@@ -73,16 +73,16 @@ Design decisions:
   relays image data. The orchestrator does not read flash or check
   signatures itself.
 - Gatekeeper pattern: before verify and apply the FD nudges the orchestrator
-  and waits for a grant or deny, and for activation it asks as soon as apply
+  and waits for an order or denial, and for activation it asks as soon as apply
   finishes. The orchestrator can reject
   any phase (e.g. component is isolated, update policy violation) and the FD
   returns the rejection to the UA via FdOps return value. This keeps the
   orchestrator lightweight and non-blocking.
-- Grant gates add no PLDM states. The FD enters Verify and Apply
+- Perform gates add no PLDM states. The FD enters Verify and Apply
   automatically per DSP0267. The gate lives inside the polled FdOps
   callback: pldm-lib calls verify/apply repeatedly via `fd_progress`, and
   our implementation returns success with 0% progress until the orchestrator
-  grants. Between polls the dispatch loop and MCTP responder stay live, so
+  orders. Between polls the dispatch loop and MCTP responder stay live, so
   there is no deadlock and no spec violation.
 - Delegated verification. FdOps::verify sends a single "verify this image"
   request to the crypto service on the first poll, then checks for the
@@ -93,7 +93,7 @@ Design decisions:
 - Nudges are FD to orchestrator only, level-triggered USER signals. Same
   mechanism the i2c server-runtime uses to announce a latched slave receive
   (services/i2c/server-runtime/src/lib.rs:18). The FD raises the signal
-  when the orchestrator needs to act (offer ready, grant needed, phase
+  when the orchestrator needs to act (offer ready, order needed, phase
   complete). The FD clears it when it answers the orchestrator's QueryStatus.
 - All orchestrator-to-FD IPC ops get an immediate `Reply`, no
   `DispatchOutcome::Pending`.
@@ -115,7 +115,7 @@ server over IPC. Firmware bytes do not pass through the orchestrator. After
 transfer, the FD asks the orchestrator for permission to verify, then runs
 FdOps::verify (which delegates to the crypto service; the crypto service
 reads the staged image directly from the device server). The orchestrator
-also grants apply before the FD commits the image. The orchestrator handles
+also orders apply before the FD commits the image. The orchestrator handles
 activation. It does not touch the security revision here; that is a separate
 command the UA sends later, see "Security revision commit" below.
 
@@ -163,7 +163,7 @@ sequenceDiagram
     end
     end
 
-    Note over FD, Orch: transfer done, ask orchestrator to grant verify
+    Note over FD, Orch: transfer done, ask orchestrator to order verify
 
     FD->>UA: TransferComplete (MCTP)
     FD->>Orch: USER signal (nudge: verify pending)
@@ -173,7 +173,7 @@ sequenceDiagram
     Orch->>FD: ServiceCall: QueryStatus
     FD-->>Orch: Status::VerifyPending
     Note right of Orch: check isolation, update policy,<br/>close staging window
-    Orch->>FD: ServiceCall: GrantVerify
+    Orch->>FD: ServiceCall: PerformVerify
     FD-->>Orch: Ok
     deactivate Orch
     end
@@ -192,7 +192,7 @@ sequenceDiagram
     end
     FD->>UA: VerifyComplete (MCTP)
 
-    Note over FD, Orch: verify done, ask orchestrator to grant apply
+    Note over FD, Orch: verify done, ask orchestrator to order apply
 
     FD->>Orch: USER signal (nudge: apply pending)
 
@@ -200,7 +200,7 @@ sequenceDiagram
     activate Orch
     Orch->>FD: ServiceCall: QueryStatus
     FD-->>Orch: Status::ApplyPending
-    Orch->>FD: ServiceCall: GrantApply
+    Orch->>FD: ServiceCall: PerformApply
     FD-->>Orch: Ok
     deactivate Orch
     end
@@ -226,7 +226,7 @@ sequenceDiagram
     Orch->>FD: ServiceCall: QueryStatus
     FD-->>Orch: Status::ActivationPending
     Note right of Orch: check isolation, update policy
-    Orch->>FD: ServiceCall: GrantActivate
+    Orch->>FD: ServiceCall: PerformActivate
     FD-->>Orch: Ok
     deactivate Orch
     end
@@ -234,7 +234,7 @@ sequenceDiagram
     Note over UA, Orch: ACTIVATION (FdOps::activate, any time later)
 
     UA->>FD: ActivateFirmware (MCTP)
-    FD-->>UA: ActivateFirmware response (accepted, from the stored grant)
+    FD-->>UA: ActivateFirmware response (accepted, from the stored order)
 
     rect rgb(230, 255, 230)
     FD->>DevSrv: ServiceCall: FdOps::activate: set boot preference
@@ -264,7 +264,7 @@ sequenceDiagram
     Note right of Orch: a confirmed trial only,<br/>else DenySvnCommit
     Orch->>DevSrv: ServiceCall: SvnFloor::advance
     DevSrv-->>Orch: signal: Ok
-    Orch->>FD: ServiceCall: GrantSvnCommit
+    Orch->>FD: ServiceCall: PerformSvnCommit
     FD-->>Orch: Ok
     deactivate Orch
     end
@@ -293,7 +293,7 @@ sequenceDiagram
 ## Out-of-transport image transfer
 
 A third party writes the firmware image into the staging region, and it has to
-be there before GrantVerify. The platform driver knows where each component's
+be there before PerformVerify. The platform driver knows where each component's
 image belongs. Two things are open: whether that address is fixed per
 component, so the writer knows it without asking, or handed over at AcceptOffer
 while the session is already running, and what tells the orchestrator the copy
@@ -338,7 +338,7 @@ sequenceDiagram
 
     FD->>UA: TransferComplete (MCTP)
 
-    Note over FD, Orch: ask orchestrator to grant verify
+    Note over FD, Orch: ask orchestrator to order verify
 
     FD->>Orch: USER signal (nudge: verify pending)
 
@@ -347,7 +347,7 @@ sequenceDiagram
     Orch->>FD: ServiceCall: QueryStatus
     FD-->>Orch: Status::VerifyPending
     Note right of Orch: check isolation, update policy,<br/>close staging window
-    Orch->>FD: ServiceCall: GrantVerify
+    Orch->>FD: ServiceCall: PerformVerify
     FD-->>Orch: Ok
     deactivate Orch
     end
@@ -366,7 +366,7 @@ sequenceDiagram
     end
     FD->>UA: VerifyComplete (MCTP)
 
-    Note over FD, Orch: verify done, ask orchestrator to grant apply
+    Note over FD, Orch: verify done, ask orchestrator to order apply
 
     FD->>Orch: USER signal (nudge: apply pending)
 
@@ -374,7 +374,7 @@ sequenceDiagram
     activate Orch
     Orch->>FD: ServiceCall: QueryStatus
     FD-->>Orch: Status::ApplyPending
-    Orch->>FD: ServiceCall: GrantApply
+    Orch->>FD: ServiceCall: PerformApply
     FD-->>Orch: Ok
     deactivate Orch
     end
@@ -400,7 +400,7 @@ sequenceDiagram
     Orch->>FD: ServiceCall: QueryStatus
     FD-->>Orch: Status::ActivationPending
     Note right of Orch: check isolation, update policy
-    Orch->>FD: ServiceCall: GrantActivate
+    Orch->>FD: ServiceCall: PerformActivate
     FD-->>Orch: Ok
     deactivate Orch
     end
@@ -408,7 +408,7 @@ sequenceDiagram
     Note over UA, Orch: ACTIVATION (same as in-transport)
 
     UA->>FD: ActivateFirmware (MCTP)
-    FD-->>UA: ActivateFirmware response (accepted, from the stored grant)
+    FD-->>UA: ActivateFirmware response (accepted, from the stored order)
 
     rect rgb(230, 255, 230)
     FD->>DevSrv: ServiceCall: FdOps::activate: set boot preference
@@ -438,7 +438,7 @@ sequenceDiagram
     Note right of Orch: a confirmed trial only,<br/>else DenySvnCommit
     Orch->>DevSrv: ServiceCall: SvnFloor::advance
     DevSrv-->>Orch: signal: Ok
-    Orch->>FD: ServiceCall: GrantSvnCommit
+    Orch->>FD: ServiceCall: PerformSvnCommit
     FD-->>Orch: Ok
     deactivate Orch
     end
@@ -492,22 +492,22 @@ select is the current preference, and it is also what keeps the host off
 staging. Picking one needs the AST10x0 register layout, and it does not block
 the rest of this design.
 
-Both windows close before GrantVerify and stay closed until the next
+Both windows close before PerformVerify and stay closed until the next
 AcceptOffer. Verify hashes what is on flash, and the verdict has to match the
-image that apply later commits, so nothing may write staging from the grant
+image that apply later commits, so nothing may write staging from the order
 onward. The window closes on the verify-pending nudge, on DenyVerify, on
 Cancelled, on PhaseFailed, and when the backstop timer from the FD-death answer
 fires. Closing twice is harmless.
-Disarming the device server is itself a ServiceCall, so GrantVerify goes out
+Disarming the device server is itself a ServiceCall, so PerformVerify goes out
 after its completion signal arrives, not after start(). A board whose apply
 writes into the staging slot would break that rule, and how to handle one is
 left until such a board exists.
 
 Both layers cover staging only. Apply and activate are a separate problem: the
-FD initiates both as ServiceCalls to the device server, and the grant gate for
+FD initiates both as ServiceCalls to the device server, and the order gate for
 them lives inside the FD's own FdOps callback. A compromised FD skips its own
 gate and calls the device server directly. Closing that means the device server
-refuses apply and activate without a grant it got from the orchestrator, not
+refuses apply and activate without an order it got from the orchestrator, not
 from the FD. Open, and not covered by the write filter, which spans staging
 only.
 
@@ -520,7 +520,7 @@ Out-of-transport is different. The FD writes nothing, so the first layer does
 not apply to it. The writer is the third party the orchestrator handed the
 staging address to, and the same two questions land on that path: what bounds
 its writes, and who opens the filter for it. Not answered here. The same close
-applies: whatever window that writer has shuts before GrantVerify. The
+applies: whatever window that writer has shuts before PerformVerify. The
 orchestrator closes it when it learns the copy finished, and how it learns that
 is the open question above.
 
@@ -531,18 +531,18 @@ is synchronous, and what it returns is the completion code in the
 ActivateFirmware response. fd_progress never polls Activate either, so the FD
 cannot report 0% and wait there the way it does for verify and apply. Instead
 the FD nudges when apply completes, the orchestrator checks its policy while
-nothing is waiting on it, and sends GrantActivate or DenyActivate. The FD
-stores that verdict and answers ActivateFirmware from it: a grant returns
+nothing is waiting on it, and sends PerformActivate or DenyActivate. The FD
+stores that verdict and answers ActivateFirmware from it: an order returns
 success and starts the boot-preference ServiceCall, a denial returns
 INCOMPLETE_UPDATE, which per DSP0267 leaves the FD in READY XFER without
-activating. The gap before the UA asks is unbounded, so the grant is revocable:
-a DenyActivate arriving later overrides a stored grant, so CompromiseDetected
+activating. The gap before the UA asks is unbounded, so the order is revocable:
+a DenyActivate arriving later overrides a stored order, so CompromiseDetected
 can still stop an activation the UA has not asked for yet. Once the UA does
 ask, the FD has answered and the boot-preference call is running, so a deny
 racing that request loses. Closing that race needs the device server to refuse
-activate without an orchestrator-side grant, which is the containment gap
+activate without an orchestrator-side order, which is the containment gap
 above. A session that ends any way but activation, a cancel or an FD_T1 timeout
-alike, invalidates a stored grant, and the FD nudges again when activation is
+alike, invalidates a stored order, and the FD nudges again when activation is
 done so the orchestrator can release staging and start judging the boot.
 
 CancelUpdate answers immediately too, from the FD's own state, the way pldm-lib
@@ -576,7 +576,7 @@ minutes or days after activation. It acts on the active running image, not a
 pending one, which is what makes it safe to gate on the boot verdict.
 
 The orchestrator owns the write. On a confirmed trial it advances `SvnFloor`
-for that component, then sends GrantSvnCommit so the FD can answer the UA. The
+for that component, then sends PerformSvnCommit so the FD can answer the UA. The
 FD relays the request and the answer and never touches the floor, the same
 split the rest of this design uses for anything irreversible. On an
 unconfirmed or absent trial the orchestrator denies with PolicyViolation and
@@ -601,15 +601,15 @@ const sized against the tightest watchdog, not a round number.
 |---|---|---|
 | AcceptOffer | orch -> FD | Accept with a staging base address |
 | RejectOffer | orch -> FD | Reject (FD tells UA in the next response) |
-| GrantVerify | orch -> FD | Authorize FD to run FdOps::verify |
+| PerformVerify | orch -> FD | Order the FD to run FdOps::verify |
 | DenyVerify | orch -> FD | Block verify (e.g. isolated component); FD returns failure to UA |
-| GrantApply | orch -> FD | Authorize FD to run FdOps::apply |
+| PerformApply | orch -> FD | Order the FD to run FdOps::apply |
 | DenyApply | orch -> FD | Block apply; FD returns failure to UA |
 | QueryStatus | orch -> FD | Read current FD state (phase, result, error); when OfferPending, includes offer data (target, total, transfer mode, SVN delayed) |
-| GrantActivate | orch -> FD | Authorize activation ahead of the UA's request; the FD stores it |
-| DenyActivate | orch -> FD | Refuse activation, or revoke a stored grant; FD answers the UA with INCOMPLETE_UPDATE |
+| PerformActivate | orch -> FD | Order activation ahead of the UA's request; the FD stores it |
+| DenyActivate | orch -> FD | Refuse activation, or revoke a stored order; FD answers the UA with INCOMPLETE_UPDATE |
 | AckCancel | orch -> FD | Acknowledge cancel, release orchestrator-side resources |
-| GrantSvnCommit | orch -> FD | Tell the FD the floor is raised, so it can answer the UA |
+| PerformSvnCommit | orch -> FD | Tell the FD the floor is raised, so it can answer the UA |
 | DenySvnCommit | orch -> FD | Block the commit, reason PolicyViolation (no confirmed trial); FD answers the UA with UPDATE_SECURITY_REVISION_NOT_PERMITTED |
 
 A rejected offer ends with TransferComplete. The diagrams answer
@@ -646,7 +646,7 @@ puts it in Idle.
 Cancelled is a session condition with a lifetime. The FD reports it from the
 UA's CancelUpdate until the orchestrator's AckCancel, and afterwards reports
 Idle or ReadyXfer depending on which cancel command arrived. That is what
-AckCancel does to the FD's state; it grants nothing.
+AckCancel does to the FD's state; it orders nothing.
 
 A QueryStatus between nudges answers with the phase in flight, which is what
 the orchestrator's backstop timer probes for. Any well-formed answer means the
@@ -690,7 +690,7 @@ The FD answers RequestUpdate from its own state machine: an update already in
 progress gets ALREADY_IN_UPDATE_MODE and the UA retries. No nudge.
 
 `gen` is the FD's phase generation, still open. See the open question on
-whether a grant carries a token.
+whether an order carries a token.
 
 ## Nudges
 
@@ -714,8 +714,8 @@ that stays right if the loop ever yields mid-reply, and it is what i2c does.
 
 Events that trigger a nudge:
 - Offer ready (UA sent UpdateComponent, FD has target + total)
-- Verify pending (transfer complete, FD waiting for GrantVerify)
-- Apply pending (verify complete, FD waiting for GrantApply)
+- Verify pending (transfer complete, FD waiting for PerformVerify)
+- Apply pending (verify complete, FD waiting for PerformApply)
 - Activation decision needed (apply complete)
 - Activated (FdOps::activate done, boot preference set, FD back in Idle)
 - SVN commit requested (UA sent UpdateSecurityRevision)
@@ -746,7 +746,7 @@ Two crates are kernel-tagged and neither holds protocol logic. That is what
 lets the loopback run the real client encoders against the real dispatch with
 no kernel, the way services/i2c/server/src/loopback.rs does. It is also the
 debugging seam for interfacing problems between the two processes: malformed
-frames, reserved bits set, a grant with no offer, an op in the wrong phase.
+frames, reserved bits set, an order with no offer, an op in the wrong phase.
 
 The FD's runtime is not an i2c clone. It multiplexes the orchestrator channel
 with the MCTP responder and run_terminus in one WaitGroup, where i2c's
@@ -803,19 +803,19 @@ service owns the full read-hash-check pipeline.
 | IPC initiator | PLDM | Orchestrator |
 | Blocking direction | PLDM blocks on channel_transact | Nobody blocks; all IPC via ServiceCall + WaitGroup |
 | Who runs verify/apply | Polled via poll_stage (one step per call) | FD runs both through FdOps callbacks |
-| Orchestrator role | Drives verify/apply | Gatekeeper: grants or denies each phase |
+| Orchestrator role | Drives verify/apply | Gatekeeper: orders or denies each phase |
 | Nudge direction | Orchestrator -> PLDM | FD -> Orchestrator |
 | Transfer (in-transport) | PLDM writes via FdOps | FdOps::download_fw_data writes via device server |
 | Transfer (out-of-transport) | Not covered | Image pre-staged by a third party (platform decides where) |
 | Crypto | Inline | Separate service; reads staged image directly from device server |
 | Channel count | 2 (notify + intake) | 1 orchestrator-FD channel (device server + crypto channels are separate) |
-| MCTP responsiveness | PLDM free after Complete | FD keeps MCTP responder live; polled callbacks report 0% until granted |
+| MCTP responsiveness | PLDM free after Complete | FD keeps MCTP responder live; polled callbacks report 0% until ordered |
 | Orchestrator responsiveness | Always responsive | Never blocks; WaitGroup multiplexes ServiceCalls + async events |
 
 ## Open questions
 
-Whether GrantVerify/GrantApply should carry additional data (e.g. a nonce,
-a policy token) or just be bare ok/deny signals.
+Whether PerformVerify/PerformApply should carry additional data (e.g. a nonce,
+a policy token) or just be bare order/deny signals.
 
 What the orchestrator does when the UA omits SVNDelayedUpdate. The DSP0267
 default is an automatic bump during the update, which spends the floor before
@@ -870,7 +870,7 @@ not a bound on transfer time, so a polling UA can keep a live FD from ever
 cancelling; that is harmless here only because staging is already released at
 PhaseFailed.
 
-What bounds the FD's wait for a grant. FD death has an answer above, a wedged
+What bounds the FD's wait for an order. FD death has an answer above, a wedged
 or dead orchestrator does not: the FD sits in its polled callback at 0% and
 nothing FD-side ends that. The backstop is the UA giving up and sending
 CancelUpdate, which the FD answers on its own. FD_T1 only bounds an abandoned
