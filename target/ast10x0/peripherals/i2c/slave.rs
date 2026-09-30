@@ -13,6 +13,11 @@ use super::{constants, controller::Ast1060I2c, error::I2cError};
 /// Hardware buffer size (32 bytes / 8 DWORDs)
 const BUFFER_SIZE: usize = 32;
 
+/// Byte the slave clocks out for a master read the application never answered.
+///
+/// This is the value a master reads back from a released SDA line.
+const SLAVE_READ_FILLER: u8 = 0xFF;
+
 /// Maximum slave receive buffer size (hardware limitation)
 pub const SLAVE_BUFFER_SIZE: usize = 256;
 
@@ -467,6 +472,57 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
         }
     }
 
+    /// Answer a master read, with a filler byte where no reply was staged.
+    ///
+    /// The controller stops a read at `WAIT_TX_DMA` and holds SCL low until a
+    /// byte reaches the transmit path, so an unanswered read would hold the
+    /// bus. Returns the byte count the hardware will clock out.
+    ///
+    /// A reply `slave_write` staged never reaches here: the hardware serves it
+    /// from the arming that call wrote, so `WAIT_TX_DMA` never occurs.
+    ///
+    /// Pass `rearm_rx` as false where this transaction already received bytes
+    /// the caller has yet to drain: re-arming resets the length registers
+    /// `slave_read` reads, and the drain re-arms receive itself.
+    ///
+    /// Byte mode has no filler path.
+    fn answer_slave_read(&mut self, cmd: &mut u32, rearm_rx: bool) -> usize {
+        if self.xfer_mode == I2cXferMode::ByteMode {
+            return usize::from(self.regs().i2cc0c().read().tx_data_byte_count().bits()) + 1;
+        }
+
+        // Replace byte 0 alone: a whole-DWORD write zeroes bytes 1 to 3, which
+        // in buffer mode are received data the caller has yet to drain.
+        let dword = self.buff_regs().buff(0).read().bits();
+        // SAFETY: `buff(0)` is in range and every 32-bit pattern is valid.
+        unsafe {
+            self.buff_regs()
+                .buff(0)
+                .write(|w| w.bits((dword & !0xFF) | u32::from(SLAVE_READ_FILLER)));
+        }
+
+        if rearm_rx {
+            self.arm_slave_receive(cmd);
+        }
+        *cmd |= constants::AST_I2CS_TX_BUFF_EN;
+
+        // Both fields share i2cc0c, so this last write names both: naming one
+        // writes zero into the other.
+        // SAFETY: both values sit inside their field widths.
+        self.regs().i2cc0c().write(|w| unsafe {
+            w.tx_data_byte_count()
+                .bits(0)
+                .rx_pool_buffer_size()
+                .bits(constants::I2C_BUF_SIZE - 1)
+        });
+        // SAFETY: `cmd` is a command word built from the `AST_I2CS_*` constants.
+        unsafe {
+            self.regs().i2cs28().write(|w| w.bits(*cmd));
+        }
+
+        1
+    }
+
     /// Handle slave mode interrupt
     #[allow(clippy::too_many_lines)]
     pub fn handle_slave_interrupt(&mut self) -> Option<SlaveEvent> {
@@ -559,23 +615,19 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
                         | constants::AST_I2CS_RX_DONE
                         | constants::AST_I2CS_WAIT_TX_DMA
             {
-                // S: rx_done | wait_tx
-                return Some(SlaveEvent::DataReceivedAndSent {
-                    rx_len: self.slave_rx_len(),
-                    tx_len: usize::from(
-                        self.regs().i2cc0c().read().tx_data_byte_count().bits() + 1,
-                    ),
-                });
-            } else if sts == constants::AST_I2CS_SLAVE_MATCH | constants::AST_I2CS_WAIT_TX_DMA {
-                // S: Sw | wait_tx
-                return Some(SlaveEvent::DataSent {
-                    len: usize::from(self.regs().i2cc0c().read().tx_data_byte_count().bits() + 1),
-                });
-            } else if sts == constants::AST_I2CS_WAIT_TX_DMA {
-                // S: wait_tx
-                return Some(SlaveEvent::DataSent {
-                    len: usize::from(self.regs().i2cc0c().read().tx_data_byte_count().bits() + 1),
-                });
+                // S: rx_done | wait_tx: a write, then a read on a repeated
+                // START. Read the receive length first: the staging below
+                // writes the register it comes from.
+                let rx_len = self.slave_rx_len();
+                let tx_len = self.answer_slave_read(&mut cmd, false);
+                return Some(SlaveEvent::DataReceivedAndSent { rx_len, tx_len });
+            } else if sts == constants::AST_I2CS_SLAVE_MATCH | constants::AST_I2CS_WAIT_TX_DMA
+                || sts == constants::AST_I2CS_WAIT_TX_DMA
+            {
+                // S: Sw | wait_tx is a read's first byte, wait_tx alone a later
+                // byte of the same read. Both answer the same way.
+                let len = self.answer_slave_read(&mut cmd, true);
+                return Some(SlaveEvent::DataSent { len });
             } else if sts == constants::AST_I2CS_TX_NAK | constants::AST_I2CS_STOP
                 || sts == constants::AST_I2CS_STOP
                 || sts
