@@ -1943,6 +1943,39 @@ fn update_request_in_ready_starts_update_not_deferred() {
     assert!(!effects.contains(&Effect::ReportUpdateDeferred));
 }
 
+/// A sibling reporting healthy says nothing about the image that was just
+/// activated: it must not advance that sibling's floor, and it must not
+/// close the activated component's commit window, which would leave that
+/// component neither committed nor locked.
+#[test]
+fn an_unrelated_boot_confirmed_leaves_the_commit_window_open() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_required()),
+            (C1, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::VerificationPassed(C1),
+            Event::UpdateRequest,
+            Event::UpdateVerified(C0),
+            Event::BootConfirmed(C1),
+            Event::CommitTimeout,
+        ],
+    );
+
+    assert!(
+        !effects.contains(&Effect::CommitSvnFloor(C1)),
+        "floor advanced for C1, which activated nothing"
+    );
+    assert_eq!(
+        state,
+        State::Locked,
+        "commit-or-lock defeated: window closed by an unrelated component"
+    );
+}
+
 /// UpdateVerified activates the staged image and returns to Ready.
 /// (Complements update_rollback_is_not_recovery which tests UpdateRejected.)
 #[test]
@@ -1953,7 +1986,7 @@ fn update_verified_activates_update() {
             BOOT,
             Event::VerificationPassed(C0),
             Event::UpdateRequest,
-            Event::UpdateVerified,
+            Event::UpdateVerified(C0),
         ],
     );
     assert_eq!(state, State::Ready);
@@ -1976,7 +2009,7 @@ fn svn_floor_commits_on_boot_confirmed_not_on_activation() {
             BOOT,
             Event::VerificationPassed(C0),
             Event::UpdateRequest,
-            Event::UpdateVerified,
+            Event::UpdateVerified(C0),
         ],
     );
     assert_eq!(activated_state, State::Ready);
@@ -1990,7 +2023,7 @@ fn svn_floor_commits_on_boot_confirmed_not_on_activation() {
             BOOT,
             Event::VerificationPassed(C0),
             Event::UpdateRequest,
-            Event::UpdateVerified,
+            Event::UpdateVerified(C0),
             Event::BootConfirmed(C0),
         ],
     );
@@ -2010,7 +2043,7 @@ fn commit_timeout_while_pending_latches_locked() {
             BOOT,
             Event::VerificationPassed(C0),
             Event::UpdateRequest,
-            Event::UpdateVerified,
+            Event::UpdateVerified(C0),
             // Window open: activated, awaiting BootConfirmed. Watchdog fires.
             Event::CommitTimeout,
         ],
@@ -2033,7 +2066,7 @@ fn commit_timeout_after_confirm_is_stale_noop() {
             BOOT,
             Event::VerificationPassed(C0),
             Event::UpdateRequest,
-            Event::UpdateVerified,
+            Event::UpdateVerified(C0),
             Event::BootConfirmed(C0),
             // Window already closed by the commit above.
             Event::CommitTimeout,
@@ -2069,7 +2102,7 @@ fn recovery_clears_commit_window() {
             BOOT,
             Event::VerificationPassed(C0),
             Event::UpdateRequest,
-            Event::UpdateVerified,
+            Event::UpdateVerified(C0),
             // Window open, then a Required corruption preempts to recovery.
             Event::CorruptionDetected(C0),
             // Restore succeeds (retry < MAX_RETRY) and re-walk re-verifies.
@@ -2626,7 +2659,7 @@ fn random_event(rng: &mut SplitMix64, ids: &[ComponentId]) -> Event {
         }
         8 => Event::AttestationChallenge,
         9 => Event::UpdateRequest,
-        10 => Event::UpdateVerified,
+        10 => Event::UpdateVerified(id),
         11 => Event::UpdateRejected,
         12 => Event::RecoveryFailed,
         13 => Event::CommitTimeout,

@@ -12,8 +12,8 @@ use crate::board::{
     Board, BoardCapabilities, ImageSource, Report, ReportSink, SvnFloorBinding, Verdict, Verifier,
 };
 use orchestrator_capabilities::{
-    BootControl, BootWatch, FailureCause, Progress, Recovery, RestoreOutcome, StageProgress, Svn,
-    SvnFloor, Updatable, WalkVerdict,
+    trial_outcome, BootControl, BootWatch, FailureCause, Progress, Recovery, RestoreOutcome,
+    SelfUpdate, StageProgress, Svn, SvnFloor, TrialOutcome, Updatable, WalkVerdict,
 };
 use util_io::{ByteSource, ByteWindow};
 
@@ -41,6 +41,15 @@ pub enum DriverError {
     UpdateBusy,
     /// The device refused to activate what it staged.
     UpdateFault,
+    /// The machine is in a state that answers nothing: pre-service or
+    /// locked down. The request is refused instead of being dropped
+    /// inside the state machine with no report.
+    Unsupervised,
+    /// The eRoT's own update session could not be read or written.
+    SelfUpdateFault,
+    /// A floor commit was asked for with no confirmed self-update behind
+    /// it. Nothing has proven an image at that SVN, so the floor stays.
+    NoSelfUpdateToCommit,
     /// The recovery mechanism faulted (bus error, unreachable source).
     /// Distinct from source exhaustion, which is a verdict, not a fault.
     RecoveryFault,
@@ -73,6 +82,9 @@ impl core::fmt::Display for DriverError {
             DriverError::SvnFloorFault => "svn floor could not be advanced",
             DriverError::UpdateBusy => "an update is already in flight",
             DriverError::UpdateFault => "device refused to activate the staged image",
+            DriverError::Unsupervised => "the platform is not in a state that answers requests",
+            DriverError::SelfUpdateFault => "self-update session could not be read or written",
+            DriverError::NoSelfUpdateToCommit => "no confirmed self-update to commit the floor to",
             DriverError::RecoveryFault => "recovery mechanism faulted",
             DriverError::NoUpdateJob => "no update job for this effect",
             DriverError::CandidateOutOfRange => "candidate does not fit the staging region",
@@ -102,6 +114,10 @@ pub struct PlatformDriver<B: BoardCapabilities, const N: usize> {
     /// The update job submitted by the frontend. Held until the update is
     /// activated or discarded.
     pending_update: Option<UpdateJob>,
+    /// The component and candidate length of the last activation, so a
+    /// commit can re-stage the same payload into the spare slot. Cleared
+    /// once that re-sync is armed.
+    last_activated: Option<(ComponentId, u64)>,
 }
 
 /// What one pump call established, before the stall rule is applied.
@@ -153,6 +169,10 @@ enum UpdatePhase {
     /// The device holds the complete payload. The crypto service has not
     /// started yet.
     Staged,
+    /// The committed image is being written a second time, to bring the
+    /// slot the device just stopped booting from up to date. The SM is
+    /// not involved: this job ends in the driver.
+    Resyncing,
     // Authenticating and Authenticated arrive with the crypto
     // verify-client trait. Until then the pump parks at Staged.
 }
@@ -167,6 +187,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             watching: [false; N],
             verified_svn: [None; N],
             pending_update: None,
+            last_activated: None,
         }
     }
 
@@ -177,6 +198,12 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     #[cfg(test)]
     pub(crate) fn board(&self) -> &Board<B, N> {
         &self.board
+    }
+
+    /// The board wiring, to fault a capability mid-test.
+    #[cfg(test)]
+    pub(crate) fn board_mut(&mut self) -> &mut Board<B, N> {
+        &mut self.board
     }
 
     /// The frontend half of the update handshake: record `target` as the
@@ -198,6 +225,10 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// The length stays on the job because the staging region is board
     /// geometry and usually larger, so the reader needs to know where
     /// the candidate ends.
+    ///
+    /// A slot re-sync counts as in flight: it is writing the staging
+    /// region's bytes to a device, and a new candidate would overwrite
+    /// them mid-pass.
     pub fn submit_update(&mut self, target: ComponentId, len: u64) -> Result<(), DriverError> {
         self.board
             .updatables
@@ -209,6 +240,9 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         if self.pending_update.is_some() {
             return Err(DriverError::UpdateBusy);
         }
+        // The region is about to hold a different candidate, so the last
+        // activation loses its claim on a re-sync from it.
+        self.last_activated = None;
         self.pending_update = Some(UpdateJob {
             target,
             len,
@@ -239,6 +273,9 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             .ok_or(DriverError::UnknownComponent)?;
         updatable.abandon();
         self.pending_update = None;
+        // Whatever the region held is being dropped, so a later commit
+        // must not re-stage from it.
+        self.last_activated = None;
         Ok(())
     }
 
@@ -268,7 +305,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             // trait is wired into the board.
             return Err(DriverError::CandidateNotStaged);
         }
-        let target = job.target;
+        let (target, len) = (job.target, job.len);
         let updatable = self
             .board
             .updatables
@@ -276,7 +313,92 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             .ok_or(DriverError::UnknownComponent)?;
         updatable.activate().map_err(|_| DriverError::UpdateFault)?;
         self.pending_update = None;
+        self.last_activated = Some((target, len));
         Ok(())
+    }
+
+    /// Settles the eRoT's last self-update, once, at boot before the walk.
+    ///
+    /// The eRoT's own update is judged by a boot that has to read what the
+    /// previous one left behind, so the verdict comes from durable state:
+    /// the session plus the image this boot is running.
+    ///
+    /// - No session, or a trial that is running right now: nothing to
+    ///   settle. A trial in progress is judged later, by the boot it is
+    ///   part of, not here.
+    /// - A session nothing will confirm (the trial fell back, or was
+    ///   never armed): reverted, so the next update can start.
+    /// - Confirmed but the floor has not taken the SVN: held. The floor
+    ///   advance is the update agent's to ask for, with
+    ///   UpdateSecurityRevision once the platform is in service, so this
+    ///   boot must not advance it. If the floor already reads at or above
+    ///   the session's SVN the advance did land before the crash, and the
+    ///   session is completed here: that is the one gap between advancing
+    ///   the floor and closing the session.
+    ///
+    /// Must run before the machine can grant a new update: `prepare`
+    /// overwrites any earlier session, so a new update recorded over a
+    /// `Committed` one would drop the floor advance it still owes.
+    pub fn resume_self_update(&mut self) -> Result<(), DriverError> {
+        let session = &mut self.board.self_update;
+        let state = session.state().map_err(|_| DriverError::SelfUpdateFault)?;
+        let running = session
+            .running()
+            .map_err(|_| DriverError::SelfUpdateFault)?;
+        match trial_outcome(state, running) {
+            TrialOutcome::NoSession | TrialOutcome::InProgress => Ok(()),
+            TrialOutcome::Unconfirmed => session.revert().map_err(|_| DriverError::SelfUpdateFault),
+            TrialOutcome::ConfirmedUncommitted { svn } => {
+                let floor = self
+                    .board
+                    .self_svn_floor
+                    .floor()
+                    .map_err(|_| DriverError::SvnFloorFault)?;
+                if floor >= svn {
+                    self.board
+                        .self_update
+                        .complete()
+                        .map_err(|_| DriverError::SelfUpdateFault)?;
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// Advances the eRoT's own floor to the SVN its confirmed session
+    /// recorded, then closes the session.
+    ///
+    /// This is the update agent's request arriving as
+    /// UpdateSecurityRevision, which the FD reports as
+    /// `SvnCommitPending`: the caller runs this and grants on `Ok`, or
+    /// denies on `Err`. The floor never moves at activation, so a
+    /// downgrade needs a confirmed trial boot first.
+    ///
+    /// Refuses unless the session is confirmed and uncommitted. A
+    /// request with nothing behind it must not move the floor, because
+    /// nothing has proven the image that SVN belongs to.
+    ///
+    /// Replay-safe, which is what makes the crash window harmless:
+    /// `advance` is a no-op at or below the floor and `complete`
+    /// succeeds from `Idle`, so a request repeated after a crash between
+    /// the two lands in the same place.
+    pub fn commit_self_svn_floor(&mut self) -> Result<(), DriverError> {
+        let session = &mut self.board.self_update;
+        let state = session.state().map_err(|_| DriverError::SelfUpdateFault)?;
+        let running = session
+            .running()
+            .map_err(|_| DriverError::SelfUpdateFault)?;
+        let TrialOutcome::ConfirmedUncommitted { svn } = trial_outcome(state, running) else {
+            return Err(DriverError::NoSelfUpdateToCommit);
+        };
+        self.board
+            .self_svn_floor
+            .advance(svn)
+            .map_err(|_| DriverError::SvnFloorFault)?;
+        self.board
+            .self_update
+            .complete()
+            .map_err(|_| DriverError::SelfUpdateFault)
     }
 
     /// One step of the in-flight update, called by the event loop between
@@ -291,6 +413,10 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// `UpdateVerified` arrives with the crypto verify-client; until
     /// then the pump parks at `Staged` and returns idle. The job stays
     /// until the SM answers with `ActivateUpdate` or `DiscardStaged`.
+    ///
+    /// A slot re-sync is the exception: it ends here with no event,
+    /// because the SM never asked for it and a verdict would start a
+    /// second activation.
     pub fn pump_update(&mut self, now_millis: u64) -> UpdatePoll {
         let Some(job) = self.pending_update.as_mut() else {
             return UpdatePoll::idle();
@@ -311,7 +437,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             // or the device already holds the payload and the SM owns
             // the next move.
             UpdatePhase::Submitted | UpdatePhase::Staged => return UpdatePoll::idle(),
-            UpdatePhase::Staging => self.poll_staging(),
+            UpdatePhase::Staging | UpdatePhase::Resyncing => self.poll_staging(),
         };
 
         let step = match stepped {
@@ -330,12 +456,22 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
                     job.progress_since_millis = Some(now_millis);
                 } else if now_millis.saturating_sub(since) >= self.board.update_stall_budget_millis
                 {
-                    return self.reject_job();
+                    return match phase {
+                        UpdatePhase::Resyncing => self.end_resync(),
+                        _ => self.reject_job(),
+                    };
                 }
                 UpdatePoll {
                     event: None,
                     progress: Some(progress),
                 }
+            }
+            // A re-sync ends in the driver. Telling the SM the payload
+            // is staged would start a second activation of an image the
+            // device is already running.
+            Step::Staged if phase == UpdatePhase::Resyncing => {
+                self.pending_update = None;
+                UpdatePoll::idle()
             }
             Step::Staged => {
                 job.phase = UpdatePhase::Staged;
@@ -346,10 +482,14 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             Step::Authenticated => {
                 // Unreachable until Authenticating is a real phase.
                 UpdatePoll {
-                    event: Some(Event::UpdateVerified),
+                    event: Some(Event::UpdateVerified(job.target)),
                     progress: None,
                 }
             }
+            // A failed re-sync leaves the running image committed and the
+            // spare slot stale, which is a report rather than a verdict
+            // the SM acts on.
+            Step::Rejected if phase == UpdatePhase::Resyncing => self.end_resync(),
             Step::Rejected => self.reject_job(),
         }
     }
@@ -379,6 +519,20 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         }
     }
 
+    /// Ends a re-sync that failed or stalled. The SM never knew about
+    /// this job, so nothing else would clear it and the pump would
+    /// retry the same failure forever. The running image is committed
+    /// either way, so this is a report, not a verdict.
+    fn end_resync(&mut self) -> UpdatePoll {
+        let target = self.pending_update.as_ref().map(|job| job.target);
+        self.abandon_job();
+        self.pending_update = None;
+        if let Some(target) = target {
+            self.report(Report::SlotResyncFailed(target));
+        }
+        UpdatePoll::idle()
+    }
+
     /// Ends the job the way the SM understands: the device drops what it
     /// staged and the verdict travels as `UpdateRejected`. The job itself
     /// stays until the SM answers with `DiscardStaged`, so the two sides
@@ -387,14 +541,24 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         if let Some(job) = self.pending_update.as_mut() {
             job.phase = UpdatePhase::Submitted;
             job.prepare_commanded = false;
-            let target = job.target.get() as usize;
-            if let Some(updatable) = self.board.updatables.get_mut(target) {
-                updatable.abandon();
-            }
         }
+        self.abandon_job();
         UpdatePoll {
             event: Some(Event::UpdateRejected),
             progress: None,
+        }
+    }
+
+    /// Tells the device to drop what it was staging. Leaves the job
+    /// itself alone: who clears it differs between an update, which the
+    /// SM answers for, and a re-sync, which ends here.
+    fn abandon_job(&mut self) {
+        let Some(job) = self.pending_update.as_ref() else {
+            return;
+        };
+        let target = job.target.get() as usize;
+        if let Some(updatable) = self.board.updatables.get_mut(target) {
+            updatable.abandon();
         }
     }
 
@@ -463,7 +627,41 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             return Ok(());
         };
         let svn = self.verified_svn[idx].ok_or(DriverError::NoVerifiedImage)?;
-        floor.advance(svn).map_err(|_| DriverError::SvnFloorFault)
+        floor.advance(svn).map_err(|_| DriverError::SvnFloorFault)?;
+        self.arm_slot_resync(id);
+        Ok(())
+    }
+
+    /// Queues a second staging pass for the image just committed, so the
+    /// slot the device stopped booting from stops holding the version
+    /// before it. The pump runs it and nothing activates afterwards: the
+    /// payload lands in the inactive slot and stays there.
+    ///
+    /// Re-stages rather than copying between slots, because `Updatable`
+    /// keeps slot identity on the device's side. The candidate is still
+    /// in the staging region: one job at a time, so nothing has
+    /// overwritten it since the activation.
+    ///
+    /// Silent when there is nothing to re-sync (a confirmed boot with no
+    /// update behind it) and when a job is already in flight, which a
+    /// re-sync must never displace. A failure during the pass is a
+    /// report, not an error: the running image is committed either way.
+    fn arm_slot_resync(&mut self, id: ComponentId) {
+        let Some((target, len)) = self.last_activated else {
+            return;
+        };
+        if target != id || self.pending_update.is_some() {
+            return;
+        }
+        self.last_activated = None;
+        self.pending_update = Some(UpdateJob {
+            target,
+            len,
+            phase: UpdatePhase::Resyncing,
+            prepare_commanded: true,
+            progress: Progress::start(len),
+            progress_since_millis: None,
+        });
     }
 
     /// `id`'s reset actuator.
@@ -598,7 +796,7 @@ pub struct UpdatePoll {
     /// at Staged instead.
     pub event: Option<Event>,
     /// How far the job has come, for the update source's progress
-    /// report. `None` once there is nothing left to report.
+    /// report. `None` once the job has ended, whichever way it ended.
     pub progress: Option<Progress>,
 }
 
@@ -693,12 +891,22 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
 /// `AuthenticateStageUpdate` can never run without a target. On refusal no
 /// event is injected and the frontend answers the requester over its own
 /// protocol.
+///
+/// Exactly one answer per request. A supervised machine always produces
+/// one: `Ready` runs the update, and the other supervised states report
+/// it deferred. An unsupervised one (pre-service, or locked down) drops
+/// what it does not handle, so the request is refused here rather than
+/// recorded and forgotten. Refusing outside is what keeps `Locked` inert:
+/// giving it an arm that emits a report would breach that.
 pub fn request_update<B: BoardCapabilities, const N: usize, const E: usize>(
     orchestrator: &mut Orchestrator<N, E>,
     driver: &mut PlatformDriver<B, N>,
     target: ComponentId,
     len: u64,
 ) -> Result<(), DriverError> {
+    if !orchestrator.state().is_supervised() {
+        return Err(DriverError::Unsupervised);
+    }
     driver.submit_update(target, len)?;
     orchestrator.dispatch(driver, Event::UpdateRequest);
     Ok(())
