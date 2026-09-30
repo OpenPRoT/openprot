@@ -281,6 +281,7 @@ impl MockFloor {
 struct MockUpdatable {
     ready: bool,
     active: bool,
+    abandons: usize,
 }
 
 impl MockUpdatable {
@@ -288,6 +289,7 @@ impl MockUpdatable {
         Self {
             ready: false,
             active: false,
+            abandons: 0,
         }
     }
 }
@@ -323,6 +325,7 @@ impl orchestrator_capabilities::Updatable for MockUpdatable {
 
     fn abandon(&mut self) {
         self.ready = false;
+        self.abandons += 1;
     }
 
     fn activate(&mut self) -> Result<(), orchestrator_capabilities::UpdateError> {
@@ -1315,8 +1318,8 @@ fn submit_update_refuses_a_second_in_flight() {
 
 // The frontend connection end to end: request_update records the job and
 // the SM receives UpdateRequest. Ready accepts it and enters Updating,
-// whose entry effect (AuthenticateStageUpdate) has no executor
-// yet, so the machine latches Locked — that latch is the proof the event
+// whose entry effect (AuthenticateStageUpdate) has no executor yet, so
+// the machine latches Locked — that latch is the proof the event
 // arrived. Flips to an Updating/Ready assertion when the pump lands.
 #[test]
 fn request_update_reaches_the_sm() {
@@ -1345,6 +1348,27 @@ fn refused_request_update_injects_no_event() {
 
     assert_eq!(driver.pending_update(), None);
     assert_eq!(orch.state(), State::Ready);
+}
+
+// DiscardStaged is the SM's way back to Ready: the job is gone, the
+// device dropped what it staged, and the next update can proceed.
+#[test]
+fn discard_staged_clears_the_job_and_abandons_the_device() {
+    let mut driver = driver([MemImage::holding(valid_image())]);
+    driver.submit_update(C0).unwrap();
+
+    driver.discard_staged().expect("discard failed");
+
+    assert_eq!(driver.pending_update(), None);
+    assert_eq!(driver.board().updatables[0].abandons, 1);
+}
+
+// The SM only emits DiscardStaged with an update in flight.
+#[test]
+fn discard_staged_without_a_job_is_refused() {
+    let mut driver = driver([MemImage::holding(valid_image())]);
+
+    assert_eq!(driver.discard_staged(), Err(DriverError::NoPendingUpdate));
 }
 
 // ReportUpdateDeferred clears pending_update so the next request is not

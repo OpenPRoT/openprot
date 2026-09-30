@@ -12,7 +12,8 @@ use crate::board::{
     Board, BoardCapabilities, ImageSource, Report, ReportSink, SvnFloorBinding, Verdict, Verifier,
 };
 use orchestrator_capabilities::{
-    BootControl, BootWatch, FailureCause, Recovery, RestoreOutcome, Svn, SvnFloor, WalkVerdict,
+    BootControl, BootWatch, FailureCause, Recovery, RestoreOutcome, Svn, SvnFloor, Updatable,
+    WalkVerdict,
 };
 
 /// Why the driver could not carry out an effect.
@@ -40,6 +41,10 @@ pub enum DriverError {
     /// The recovery mechanism faulted (bus error, unreachable source).
     /// Distinct from source exhaustion, which is a verdict, not a fault.
     RecoveryFault,
+    /// An update effect ran with no update pending. The frontend records
+    /// the target before the SM sees `UpdateRequest`, so this means the
+    /// two have drifted apart.
+    NoPendingUpdate,
 }
 
 impl core::fmt::Display for DriverError {
@@ -54,6 +59,7 @@ impl core::fmt::Display for DriverError {
             DriverError::SvnFloorFault => "svn floor could not be advanced",
             DriverError::UpdateBusy => "an update is already in flight",
             DriverError::RecoveryFault => "recovery mechanism faulted",
+            DriverError::NoPendingUpdate => "no pending update for this effect",
         })
     }
 }
@@ -75,15 +81,9 @@ pub struct PlatformDriver<B: BoardCapabilities, const N: usize> {
     /// authenticated image — the only value a floor commit may trust.
     /// `None` until a verification passes; cleared again on rejection.
     verified_svn: [Option<Svn>; N],
-    /// The update job submitted by the frontend, target only for now; the
-    /// pump state joins it when the executors land. Held until the update
-    /// is activated or discarded.
-    pending_update: Option<UpdateJob>,
-}
-
-/// One in-flight update, recorded by [`PlatformDriver::submit_update`].
-struct UpdateJob {
-    target: ComponentId,
+    /// The component the frontend submitted an update for. Held until the
+    /// update is activated or discarded.
+    pending_update: Option<ComponentId>,
 }
 
 impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
@@ -110,10 +110,16 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
 
     /// The frontend half of the update handshake: record `target` as the
     /// component the staged candidate is for. Must succeed BEFORE
-    /// [`Event::UpdateRequest`] is dispatched; `AuthenticateStageUpdate` with no stored
-    /// job fails closed. Refuses an unknown id and a second submit while
-    /// one update is in flight; nothing is stored on refusal, so a refused
-    /// request can never surface as an update event.
+    /// [`Event::UpdateRequest`] is dispatched; `AuthenticateStageUpdate`
+    /// with no stored job fails closed. Refuses an unknown id and a
+    /// second submit while one update is in flight; nothing is stored on
+    /// refusal, so a refused request can never surface as an update
+    /// event.
+    ///
+    /// The candidate's size is not the driver's business. Whether it fits
+    /// is settled when the offer is answered, before a byte transfers:
+    /// refusing there costs nothing, refusing here costs the whole
+    /// transfer. See `RejectOffer` in the PLDM IPC design.
     pub fn submit_update(&mut self, target: ComponentId) -> Result<(), DriverError> {
         self.board
             .updatables
@@ -122,13 +128,33 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         if self.pending_update.is_some() {
             return Err(DriverError::UpdateBusy);
         }
-        self.pending_update = Some(UpdateJob { target });
+        self.pending_update = Some(target);
+        Ok(())
+    }
+
+    /// Discards the in-flight update: tells the device to drop what it
+    /// staged and clears the job.
+    ///
+    /// Infallible on the device side ([`Updatable::abandon`] cannot fail),
+    /// so the only refusal is having nothing pending, which means the SM
+    /// and the driver have drifted apart.
+    pub fn discard_staged(&mut self) -> Result<(), DriverError> {
+        let target = self.pending_update.ok_or(DriverError::NoPendingUpdate)?;
+        // submit_update refused an id the board does not have, so the
+        // lookup cannot miss; UnknownComponent keeps it total anyway.
+        let updatable = self
+            .board
+            .updatables
+            .get_mut(target.get() as usize)
+            .ok_or(DriverError::UnknownComponent)?;
+        updatable.abandon();
+        self.pending_update = None;
         Ok(())
     }
 
     /// Target of the in-flight update, if one was submitted.
     pub fn pending_update(&self) -> Option<ComponentId> {
-        self.pending_update.as_ref().map(|job| job.target)
+        self.pending_update
     }
 
     /// `id`'s image source. Takes the array rather than `&mut self` so the
@@ -378,16 +404,16 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
             Effect::RecoverComponent { id, attempt } => {
                 self.recover_component(id, attempt).map(Some)
             }
+            Effect::DiscardStaged => self.discard_staged().map(|_| None),
             // No board capability is composed for these seams yet, so they
             // fail closed here instead of behind stub methods. Each group
             // gains an executor when its capability joins
-            // [`BoardCapabilities`], as BootControl did above: staging
-            // plus verification, trial activation and discard for the
-            // update effects; evidence signing for SignAttestation; the
-            // terminal latch for LatchLockdown.
+            // [`BoardCapabilities`], as BootControl did above: staging plus
+            // verification and trial activation for the update effects;
+            // evidence signing for SignAttestation; the terminal latch for
+            // LatchLockdown.
             Effect::AuthenticateStageUpdate
             | Effect::ActivateUpdate
-            | Effect::DiscardStaged
             | Effect::SignAttestation
             | Effect::LatchLockdown => return Err(EffectError),
             // Emit is consumed by the orchestrator; receiving one is a
