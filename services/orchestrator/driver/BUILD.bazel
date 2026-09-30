@@ -17,6 +17,7 @@ rust_library(
     deps = [
         "//services/orchestrator/capabilities:orchestrator_capabilities",
         "//services/orchestrator/sm:orchestrator_sm",
+        "//util/io",
         "@rust_crates//:heapless",
     ],
 )

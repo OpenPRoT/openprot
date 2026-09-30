@@ -4,6 +4,7 @@
 //! The [`Updatable`] update capability contract.
 
 use crate::Progress;
+use util_io::{ByteReadError, ByteSource};
 
 /// Update capability: stage a payload on one managed device and mark the
 /// staged image as its boot candidate.
@@ -21,22 +22,25 @@ use crate::Progress;
 /// that an update runs; the driver owns the adapter, polls the transfer
 /// on its own clock, and reports the outcome back as an event. The
 /// update source that delivered the payload fills what backs
-/// [`PayloadSource`] and never drives the device.
+/// [`ByteSource`] and never drives the device.
 ///
-/// What this trait deliberately does not claim:
+/// What this trait does not claim:
 ///
-/// - **Verification** runs on the candidate before staging as
-///   orchestrator policy. Post-write readback is no capability either:
-///   it is the implementor's staging discipline (see `Ready` below).
-/// - **Commit.** Activation is always tentative: it proposes the staged
-///   image as the preferred boot target, never commits it. The commit
-///   gate is the orchestrator's confirmed-boot flow (`BootConfirmed`
-///   gating `SvnFloor::advance`, or the device committing internally);
-///   there is no second slot-selection owner.
-/// - **Booting.** Resetting the device into the candidate is
-///   [`BootControl`](crate::BootControl). When activation takes effect
-///   (next reset, or a device-internal restart on self-activating
-///   devices) is device-defined; sequencing belongs to the flows.
+/// Verification belongs to the crypto service: the orchestrator
+/// commands it to start, but never reads flash or runs hash steps.
+/// Post-write readback is no capability either: it is the
+/// implementor's staging discipline (see `Ready` below).
+///
+/// Activation is always tentative: it proposes the staged image as
+/// the preferred boot target, never commits it. The commit gate is
+/// the orchestrator's confirmed-boot flow (`BootConfirmed` gating
+/// `SvnFloor::advance`, or the device committing internally); there
+/// is no second slot-selection owner.
+///
+/// Resetting the device into the candidate is
+/// [`BootControl`](crate::BootControl). When activation takes effect
+/// (next reset, or a device-internal restart on self-activating
+/// devices) is device-defined; sequencing belongs to the flows.
 ///
 /// # Contract
 ///
@@ -93,7 +97,7 @@ pub trait Updatable {
     /// `BootWatch`.
     ///
     /// [`Ready`]: StageProgress::Ready
-    fn poll_stage(&mut self, payload: &dyn PayloadSource) -> Result<StageProgress, UpdateError>;
+    fn poll_stage(&mut self, payload: &dyn ByteSource) -> Result<StageProgress, UpdateError>;
 
     /// Discards the in-progress transfer or staged, unactivated payload.
     ///
@@ -141,7 +145,7 @@ pub enum UpdateError {
     /// A payload read failed. Carries the read fault, so out-of-range
     /// (a bug on the pulling side) stays distinct from storage (maybe
     /// transient).
-    Payload(PayloadReadError),
+    Payload(ByteReadError),
     /// The device failed or refused the step; staging anew may succeed.
     Device,
     /// Written data did not read back as written. Distinct from
@@ -182,83 +186,32 @@ impl core::error::Error for UpdateError {
     }
 }
 
-impl From<PayloadReadError> for UpdateError {
-    fn from(e: PayloadReadError) -> Self {
+impl From<ByteReadError> for UpdateError {
+    fn from(e: ByteReadError) -> Self {
         Self::Payload(e)
     }
 }
-
-/// Chunked, random-access read seam [`Updatable::poll_stage`] pulls from.
-///
-/// The candidate payload is streamed and never RAM-resident;
-/// this is the window a device adapter reads it through. Where the bytes
-/// live — frontend staging flash, a mapped blob, a test slice — stays
-/// behind the source.
-pub trait PayloadSource {
-    /// Total payload length in bytes, constant for the lifetime of the
-    /// source: adapters allocate staging buffers from it and treat the
-    /// transfer as complete once this many bytes are written.
-    fn len(&self) -> u64;
-
-    /// True if the payload is empty.
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// Fills `buf` from `offset`. The read is exact: short fills are a
-    /// fault, and `offset + buf.len()` beyond [`len`](Self::len) is out
-    /// of range. There are no partial reads: the length is known up
-    /// front, so a short read can only mean the source cannot serve
-    /// what `len` promised, and a partial-read API would put a retry
-    /// loop into every adapter.
-    fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<(), PayloadReadError>;
-}
-
-/// Why a payload read failed — the one distinction retry policy needs.
-///
-/// No further detail crosses the seam (mirroring `BootWatch`): the source
-/// logs the concrete cause while it is still in scope.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PayloadReadError {
-    /// The requested range is outside the payload — a caller bug, never
-    /// retriable.
-    OutOfRange,
-    /// The backing storage failed the read — possibly transient; staging
-    /// anew may succeed.
-    Storage,
-}
-
-impl core::fmt::Display for PayloadReadError {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str(match self {
-            PayloadReadError::OutOfRange => "payload read out of range",
-            PayloadReadError::Storage => "payload storage fault",
-        })
-    }
-}
-
-impl core::error::Error for PayloadReadError {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use core::error::Error as _;
 
-    // A PayloadSource over a plain slice — the seam must be satisfiable
+    // A ByteSource over a plain slice — the seam must be satisfiable
     // with no storage stack at all.
     struct SliceSource(&'static [u8]);
 
-    impl PayloadSource for SliceSource {
+    impl ByteSource for SliceSource {
         fn len(&self) -> u64 {
             self.0.len() as u64
         }
 
-        fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<(), PayloadReadError> {
-            let start = usize::try_from(offset).map_err(|_| PayloadReadError::OutOfRange)?;
+        fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<(), ByteReadError> {
+            let start = usize::try_from(offset).map_err(|_| ByteReadError::OutOfRange)?;
             let end = start
                 .checked_add(buf.len())
-                .ok_or(PayloadReadError::OutOfRange)?;
-            buf.copy_from_slice(self.0.get(start..end).ok_or(PayloadReadError::OutOfRange)?);
+                .ok_or(ByteReadError::OutOfRange)?;
+            buf.copy_from_slice(self.0.get(start..end).ok_or(ByteReadError::OutOfRange)?);
             Ok(())
         }
     }
@@ -288,10 +241,7 @@ mod tests {
     }
 
     impl Updatable for MockDevice {
-        fn poll_stage(
-            &mut self,
-            payload: &dyn PayloadSource,
-        ) -> Result<StageProgress, UpdateError> {
+        fn poll_stage(&mut self, payload: &dyn ByteSource) -> Result<StageProgress, UpdateError> {
             if payload.is_empty() {
                 return Err(UpdateError::EmptyPayload);
             }
@@ -340,7 +290,7 @@ mod tests {
 
     /// Polls to completion — the orchestrator's staging loop shape,
     /// written against the erased seam.
-    fn stage_all(dev: &mut dyn Updatable, payload: &dyn PayloadSource) -> Result<(), UpdateError> {
+    fn stage_all(dev: &mut dyn Updatable, payload: &dyn ByteSource) -> Result<(), UpdateError> {
         loop {
             if let StageProgress::Ready = dev.poll_stage(payload)? {
                 return Ok(());
@@ -386,12 +336,12 @@ mod tests {
 
         // Claims more bytes than it can serve — the adapter's pull runs
         // past the real end and must surface the fault.
-        impl PayloadSource for Lying {
+        impl ByteSource for Lying {
             fn len(&self) -> u64 {
                 8
             }
 
-            fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<(), PayloadReadError> {
+            fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<(), ByteReadError> {
                 SliceSource(b"shrt").read_at(offset, buf)
             }
         }
@@ -400,7 +350,7 @@ mod tests {
 
         let err = stage_all(&mut dev, &Lying).expect_err("expected the pull fault");
 
-        assert_eq!(err, UpdateError::Payload(PayloadReadError::OutOfRange));
+        assert_eq!(err, UpdateError::Payload(ByteReadError::OutOfRange));
         // The cause chain carries the fault, per the UpdateError impl.
         assert!(err.source().is_some());
 
@@ -455,7 +405,7 @@ mod tests {
         impl Updatable for BusyDevice {
             fn poll_stage(
                 &mut self,
-                payload: &dyn PayloadSource,
+                payload: &dyn ByteSource,
             ) -> Result<StageProgress, UpdateError> {
                 self.busy = !self.busy;
                 if self.busy {
@@ -542,10 +492,7 @@ mod tests {
     }
 
     impl Updatable for MockPldmDevice {
-        fn poll_stage(
-            &mut self,
-            payload: &dyn PayloadSource,
-        ) -> Result<StageProgress, UpdateError> {
+        fn poll_stage(&mut self, payload: &dyn ByteSource) -> Result<StageProgress, UpdateError> {
             if payload.is_empty() {
                 return Err(UpdateError::EmptyPayload);
             }
@@ -699,10 +646,7 @@ mod tests {
     }
 
     impl Updatable for MockFlashDevice {
-        fn poll_stage(
-            &mut self,
-            payload: &dyn PayloadSource,
-        ) -> Result<StageProgress, UpdateError> {
+        fn poll_stage(&mut self, payload: &dyn ByteSource) -> Result<StageProgress, UpdateError> {
             if payload.is_empty() {
                 return Err(UpdateError::EmptyPayload);
             }
@@ -829,7 +773,7 @@ mod tests {
         let flash_payload = SliceSource(b"8 bytes!");
         let pldm_payload = SliceSource(b"chunked");
 
-        let fleet: [(&mut dyn Updatable, &dyn PayloadSource); 2] =
+        let fleet: [(&mut dyn Updatable, &dyn ByteSource); 2] =
             [(&mut flash, &flash_payload), (&mut pldm, &pldm_payload)];
         for (dev, payload) in fleet {
             stage_all(dev, payload).expect("staging failed");

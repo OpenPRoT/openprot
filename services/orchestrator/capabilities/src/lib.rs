@@ -17,10 +17,10 @@
 //! board's reader gives the ids meaning.
 //!
 //! `Updatable` is the update capability: stage a payload on one device
-//! (polled, one bounded step at a time) and mark it the boot candidate —
-//! always tentatively; the commit gate lives elsewhere. `PayloadSource` is
-//! the chunked read seam staging pulls from — transports and slot
-//! bookkeeping stay behind the adapter.
+//! (polled, one bounded step at a time) and mark it the boot candidate,
+//! always tentatively; the commit gate lives elsewhere. The bytes come
+//! through `util_io::ByteSource`; transports and slot bookkeeping stay
+//! behind the adapter.
 //!
 //! `DeviceTrialBoot` is the commit gate activation leaves open, whether
 //! `Updatable` did the activating or a PLDM firmware device did it for the
@@ -89,4 +89,4 @@ pub use progress::Progress;
 pub use recovery::{Recovery, RestoreOutcome};
 pub use self_update::{trial_outcome, RunningImage, SelfUpdate, SelfUpdateState, TrialOutcome};
 pub use svn_floor::{Svn, SvnFloor};
-pub use updatable::{PayloadReadError, PayloadSource, StageProgress, Updatable, UpdateError};
+pub use updatable::{StageProgress, Updatable, UpdateError};

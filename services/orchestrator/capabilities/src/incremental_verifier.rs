@@ -3,7 +3,8 @@
 
 //! The [`IncrementalVerifier`] update-verification capability contract.
 
-use crate::{PayloadSource, Progress};
+use crate::Progress;
+use util_io::ByteSource;
 
 /// Factory for incremental verification sessions. Call [`start`] to
 /// begin hashing a candidate image; the returned [`VerifySession`] does
@@ -61,7 +62,7 @@ pub trait VerifySession: Sized {
     /// Processes one bounded step. Never waits on device progress, never
     /// sleeps. An empty payload is a fault, never a vacuous
     /// `Authenticated`.
-    fn poll(self, payload: &dyn PayloadSource) -> PollOutcome<Self>;
+    fn poll(self, payload: &dyn ByteSource) -> PollOutcome<Self>;
 
     /// Discards the session and returns the verifier.
     /// Infallible: a half-finished hash state is simply dropped.
@@ -88,22 +89,22 @@ pub enum PollOutcome<S: VerifySession> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{PayloadReadError, PayloadSource};
+    use util_io::{ByteReadError, ByteSource};
 
-    // A PayloadSource over a plain byte slice.
+    // A ByteSource over a plain byte slice.
     struct SlicePayload(&'static [u8]);
 
-    impl PayloadSource for SlicePayload {
+    impl ByteSource for SlicePayload {
         fn len(&self) -> u64 {
             self.0.len() as u64
         }
 
-        fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<(), PayloadReadError> {
-            let start = usize::try_from(offset).map_err(|_| PayloadReadError::OutOfRange)?;
+        fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<(), ByteReadError> {
+            let start = usize::try_from(offset).map_err(|_| ByteReadError::OutOfRange)?;
             let end = start
                 .checked_add(buf.len())
-                .ok_or(PayloadReadError::OutOfRange)?;
-            buf.copy_from_slice(self.0.get(start..end).ok_or(PayloadReadError::OutOfRange)?);
+                .ok_or(ByteReadError::OutOfRange)?;
+            buf.copy_from_slice(self.0.get(start..end).ok_or(ByteReadError::OutOfRange)?);
             Ok(())
         }
     }
@@ -143,7 +144,7 @@ mod tests {
         type Verifier = ChunkedVerifier;
         type Error = VerifierFault;
 
-        fn poll(mut self, payload: &dyn PayloadSource) -> PollOutcome<Self> {
+        fn poll(mut self, payload: &dyn ByteSource) -> PollOutcome<Self> {
             if self.total == 0 {
                 self.total = payload.len();
             }
@@ -182,7 +183,7 @@ mod tests {
     // whether it authenticated.
     fn drive(
         mut session: ChunkedSession,
-        payload: &dyn PayloadSource,
+        payload: &dyn ByteSource,
     ) -> (ChunkedVerifier, Option<bool>) {
         loop {
             match session.poll(payload) {
@@ -297,14 +298,14 @@ mod tests {
         // Reads succeed for the first chunk, fail after.
         struct FailsAfterFirstChunk;
 
-        impl PayloadSource for FailsAfterFirstChunk {
+        impl ByteSource for FailsAfterFirstChunk {
             fn len(&self) -> u64 {
                 12
             }
 
-            fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<(), PayloadReadError> {
+            fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<(), ByteReadError> {
                 if offset >= 4 {
-                    return Err(PayloadReadError::Storage);
+                    return Err(ByteReadError::Storage);
                 }
                 buf.fill(0xFF);
                 Ok(())
@@ -351,16 +352,16 @@ mod tests {
         assert_eq!(verdict, Some(true));
     }
 
-    // A PayloadSource whose read_at always fails.
+    // A ByteSource whose read_at always fails.
     struct Lying;
 
-    impl PayloadSource for Lying {
+    impl ByteSource for Lying {
         fn len(&self) -> u64 {
             64
         }
 
-        fn read_at(&self, _offset: u64, _buf: &mut [u8]) -> Result<(), PayloadReadError> {
-            Err(PayloadReadError::Storage)
+        fn read_at(&self, _offset: u64, _buf: &mut [u8]) -> Result<(), ByteReadError> {
+            Err(ByteReadError::Storage)
         }
     }
 

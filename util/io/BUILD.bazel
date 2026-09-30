@@ -6,9 +6,12 @@ load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 rust_library(
     name = "io",
     srcs = [
+        "byte_source.rs",
+        "byte_window.rs",
         "io.rs",
     ],
     crate_name = "util_io",
+    crate_root = "io.rs",
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [

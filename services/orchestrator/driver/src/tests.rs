@@ -316,7 +316,7 @@ impl orchestrator_capabilities::SvnFloor for MockFloor {
 impl orchestrator_capabilities::Updatable for MockUpdatable {
     fn poll_stage(
         &mut self,
-        _payload: &dyn orchestrator_capabilities::PayloadSource,
+        _payload: &dyn util_io::ByteSource,
     ) -> Result<orchestrator_capabilities::StageProgress, orchestrator_capabilities::UpdateError>
     {
         self.ready = true;
@@ -1416,21 +1416,22 @@ fn aborted_update_clears_pending_update() {
 // rule so the wiring cannot rot in the meantime.
 #[test]
 fn updatable_seam_is_satisfiable_by_the_mock() {
-    use orchestrator_capabilities::{PayloadReadError, PayloadSource, StageProgress, Updatable};
+    use orchestrator_capabilities::{StageProgress, Updatable};
+    use util_io::{ByteReadError, ByteSource};
 
     struct SlicePayload(&'static [u8]);
 
-    impl PayloadSource for SlicePayload {
+    impl ByteSource for SlicePayload {
         fn len(&self) -> u64 {
             self.0.len() as u64
         }
 
-        fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<(), PayloadReadError> {
-            let start = usize::try_from(offset).map_err(|_| PayloadReadError::OutOfRange)?;
+        fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<(), ByteReadError> {
+            let start = usize::try_from(offset).map_err(|_| ByteReadError::OutOfRange)?;
             let end = start
                 .checked_add(buf.len())
-                .ok_or(PayloadReadError::OutOfRange)?;
-            buf.copy_from_slice(self.0.get(start..end).ok_or(PayloadReadError::OutOfRange)?);
+                .ok_or(ByteReadError::OutOfRange)?;
+            buf.copy_from_slice(self.0.get(start..end).ok_or(ByteReadError::OutOfRange)?);
             Ok(())
         }
     }

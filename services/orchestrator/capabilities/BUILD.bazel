@@ -21,6 +21,7 @@ rust_library(
     ],
     edition = "2024",
     visibility = ["//visibility:public"],
+    deps = ["//util/io"],
 )
 
 # Host tests: build on the host platform, no kernel/QEMU.
