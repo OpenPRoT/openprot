@@ -228,7 +228,8 @@ pub enum SvnFloorBinding<F: SvnFloor> {
 ///     report_sink,
 ///     updatables: [bmc_update, cpld_update],
 ///     recovery: [bmc_recovery, cpld_recovery],
-///     update_staging: staging_flash,
+///     update_staging,
+///     update_stall_budget_millis: 30_000,
 /// };
 /// ```
 pub struct Board<B: BoardCapabilities, const N: usize> {
@@ -261,7 +262,13 @@ pub struct Board<B: BoardCapabilities, const N: usize> {
     /// sources, same indexing as `images`. `()` for a board with no
     /// recovery path.
     pub recovery: [B::Recovery; N],
-    /// Where an update candidate is staged. One region, not one per
-    /// component: one update runs at a time.
+    /// Where an update source leaves the candidate. Not per component:
+    /// the SM allows one update at a time, so one region serves all of
+    /// them.
     pub update_staging: B::Staging,
+    /// How long an update may make no progress before the pump abandons
+    /// it. Board policy, not the update source's: a device that stops
+    /// answering has to lose the job in bounded time whatever the source
+    /// would prefer.
+    pub update_stall_budget_millis: u64,
 }
