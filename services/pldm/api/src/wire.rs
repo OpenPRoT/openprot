@@ -47,7 +47,8 @@ pub enum PldmOp {
     QueryStatus = 6,
     /// Authorize activation ahead of the UA's request.
     GrantActivate = 7,
-    /// Refuse activation; FD answers the UA with INCOMPLETE_UPDATE.
+    /// Refuse activation, or revoke a grant the FD has stored and the UA
+    /// has not yet claimed. FD answers the UA with INCOMPLETE_UPDATE.
     DenyActivate = 8,
     /// Acknowledge cancel, release orchestrator-side resources.
     AckCancel = 9,
