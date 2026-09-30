@@ -1,9 +1,9 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! PLDM Update Agent app (card B, the mock BMC).
+//! PLDM Update Agent app (the mock BMC).
 //!
-//! Stimulus for the firmware device on card A, not a second root of trust. It
+//! Stimulus for the firmware device on the RoT, not a second root of trust. It
 //! walks the whole DSP0267 sequence: it identifies the device with
 //! `QueryDeviceIdentifiers` and `GetFirmwareParameters`, hands over an image
 //! with `RequestUpdate`, `PassComponentTable` and `UpdateComponent`, answers
@@ -18,6 +18,9 @@
 
 use core::cell::Cell;
 
+use app_pldm_ua_regions::take_mmaps;
+use ast10x0_peripherals::create_pins;
+use ast10x0_peripherals::gpio::{bind_gpio, GpioBlock, OutputPin};
 use openprot_mctp_client_ipc::IpcMctpClient;
 use openprot_pldm_service::error::PldmMemError;
 use openprot_pldm_service::{MctpPldmTransport, PldmServiceError};
@@ -52,9 +55,9 @@ use userspace::{entry, syscall};
 
 use app_pldm_ua::handle;
 
-/// This card's EID, matching the MCTP server app underneath it.
+/// This board's EID, matching the MCTP server app underneath it.
 const UA_EID: u8 = 9;
-/// The firmware device's EID on card A.
+/// The firmware device's EID on the RoT.
 const FD_EID: u8 = 8;
 
 /// Size of the demo image, in bytes. Must match the firmware device's.
@@ -369,6 +372,17 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
 
 #[entry]
 fn entry() {
+    // SAFETY: mints this process's memory mappings once, at its entry point.
+    let mmaps = unsafe { take_mmaps() };
+    // SAFETY: sole pin creation site in this binary, at boot; the pins! table is this chip's true pin map.
+    let pins = unsafe { create_pins() };
+    let gpio = GpioBlock::new(mmaps.gpio_regs);
+    // GPIOH5: this board's alive line, driven high for as long as it is running.
+    // The RoT watches it fall to confirm the reset it requested over GPIOJ0
+    // actually landed. Jumper: this pin -> RoT's GPIOH4.
+    let mut alive_pin = bind_gpio(pins.scu414_29, &gpio).into_output();
+    let _ = alive_pin.set_high();
+
     let transport = MctpPldmTransport::new(IpcMctpClient::new(handle::MCTP));
 
     if transport.stack().set_eid(UA_EID).is_err() {
@@ -378,8 +392,8 @@ fn entry() {
     }
 
     pw_log::info!("UA: driving an update against EID {}", FD_EID as u32);
-    // The harness watches both cards and requires a verdict from each, so this
-    // card reports whether it saw the update through, not just card A.
+    // The harness watches both boards and requires a verdict from each, so this
+    // one reports whether it saw the update through, not just the RoT.
     match run_update(&transport) {
         Ok(true) => {
             let _ = syscall::debug_shutdown(Ok(()));

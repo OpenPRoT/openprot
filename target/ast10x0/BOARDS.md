@@ -38,6 +38,11 @@ GPIO connections should be as follows:
 | 18               | A             | FWSPICK (PIN2) |
 | 25               | B             | SRST (PIN1)    |
 | 24               | B             | FWSPICK (PIN2) |
+| 8                | A             | GPIOJ0 (J15 pin 15) |
+
+The last row is only needed for tests where device A asks for device B to be reset. Only the Pi
+can drive a board's SRST, so device A raises GPIOJ0 and the Pi mirrors that level onto device B's
+SRST.
 
 For I2C communication, connect pins 1 and 2 of J15. This links I2C2 between the devices.
 

@@ -57,10 +57,10 @@ rust_binary(
     ],
 )
 
-# Device B (the peer/UA board) needs its own kernel binary: the shared `:target`
+# The mock BMC's board needs its own kernel binary: the shared `:target`
 # above is compiled only against `:system_config`, so its baked-in MemoryConfig
 # has no region for anything `:peer_system_config` declares that `:system_config`
-# doesn't (e.g. GPIOK5's gpio_regs) -- the MPU would reject it at runtime even
+# doesn't (e.g. GPIOJ0's gpio_regs) -- the MPU would reject it at runtime even
 # though the peer app's own codegen believes the mapping exists.
 target_codegen(
     name = "peer_codegen",
@@ -164,10 +164,10 @@ rust_app(
         "//services/mctp/client-ipc:mctp_client_ipc",
         "//services/orchestrator/adapters/hal:orchestrator_hal_adapters",
         "//services/orchestrator/adapters/pldm:orchestrator_pldm_adapter",
+        "//services/orchestrator/capabilities:orchestrator_capabilities",
         "//services/orchestrator/sm:orchestrator_sm",
         "//services/pldm:pldm_service",
         "//target/ast10x0/backend/flash:flash_backend_ast10x0",
-        "//target/ast10x0/board:ast10x0_board",
         "//target/ast10x0/peripherals",
         "//util/error",
         "//util/region",
@@ -243,6 +243,8 @@ rust_app(
         ":app_pldm_ua_regions",
         "//services/mctp/client-ipc:mctp_client_ipc",
         "//services/pldm:pldm_service",
+        "//target/ast10x0/peripherals",
+        "@ast1060_pac",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
@@ -280,13 +282,14 @@ system_image(
     visibility = ["//visibility:public"],
 )
 
-# `slave_image` is flashed first, so the firmware device is listening before the
-# update agent boots and sends RequestUpdate.
+# `image` goes to device A, the only board whose reset-passthrough pin the Pi
+# watches, so the firmware device has to be that one. Device A is also flashed
+# first, so it is listening before the update agent boots and sends RequestUpdate.
 system_image_test(
     name = "pldm_firmware_update_test",
     timeout = "eternal",
-    image = ":pldm_ua_image",
-    slave_image = ":pldm_fd_image",
+    image = ":pldm_fd_image",
+    slave_image = ":pldm_ua_image",
     tags = [
         "hardware",
         "manual",

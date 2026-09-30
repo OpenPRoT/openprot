@@ -45,7 +45,7 @@ def _gpio_read(pin: int) -> bool:
     out = subprocess.run(
         ["pinctrl", "get", str(pin)], check=True, capture_output=True, text=True
     ).stdout
-    return "hi" in out
+    return "| hi" in out
 
 
 def _sequence_to_fwspick_mode(
@@ -61,35 +61,36 @@ def _sequence_to_fwspick_mode(
     time.sleep(1)
 
 
-# A deliberate request pulse (fd_main.rs's RESET_PULSE_DURATION) is held high
-# for 300ms. A power-on/reset transient on an otherwise-undriven pin is not:
-# requiring this many consecutive 100ms-spaced samples to read high before
-# acting rejects the transient without meaningfully delaying a real request.
-_DEBOUNCE_SAMPLES = 3
-
-
-def _watch_reset_passthrough(
-    pin: int, srst_pin: int, stop: threading.Event, lock: threading.Lock
+def _mirror_reset_passthrough(
+    pin: int,
+    srst_pin: int,
+    fwspick_pin: int,
+    stop: threading.Event,
+    lock: threading.Lock,
 ) -> None:
-    """Reset device A whenever device B requests it over the passthrough GPIO.
+    """Stand in for a jumper from the RoT's passthrough GPIO to mock BMC reset.
 
-    Device B can't toggle the Pi's reset lines itself, so it asks by driving
-    `pin` high; this only plain-resets device A (srst_pin alone, fwspick_pin
-    untouched) so it reboots the firmware already in flash rather than
-    entering the bootloader.
+    The RoT can't reach the Pi's reset lines, so the Pi copies the level it
+    drives onto `srst_pin` (active low): passthrough high holds the mock BMC in
+    reset, low releases it into the firmware already in flash. `fwspick_pin` is
+    driven low before the release, so it reboots rather than re-entering flash mode.
     """
+    # Pulled down, so a disconnected or undriven line reads as "no reset requested".
     _gpio_set_input(pin, "pd")
-    triggered = False
-    high_streak = 0
-    while not stop.wait(0.1):
+    # The RoT's pin reads high out of chip reset, so a high seen before its firmware
+    # has driven the line low once is that reset state, not a request.
+    armed = False
+    last = None
+    polls = 0
+    while not stop.wait(0.05):
         is_high = _gpio_read(pin)
-        high_streak = high_streak + 1 if is_high else 0
-        if not is_high:
-            triggered = False
-        elif high_streak >= _DEBOUNCE_SAMPLES and not triggered:
-            stamped = (
-                b"[%7.2f watch] Reset-passthrough asserted; resetting device A\n"
-                % (time.monotonic() - _T0,)
+        # Roughly once a second, so a line that never moves is reported as the level it is stuck
+        # at rather than as an absence of mirror output.
+        if polls % 20 == 0:
+            stamped = b"[%7.2f mirror] passthrough reads %s; armed=%d\n" % (
+                time.monotonic() - _T0,
+                b"high" if is_high else b"low",
+                armed,
             )
             try:
                 with lock:
@@ -97,12 +98,30 @@ def _watch_reset_passthrough(
                     sys.stdout.buffer.flush()
             except (BrokenPipeError, OSError):
                 pass
-            _gpio_set(srst_pin, "dl")
-            time.sleep(0.1)
-            _gpio_set(srst_pin, "dh")
-            time.sleep(0.5)
-            triggered = True
-            high_streak = 0
+        polls += 1
+        if not armed:
+            if is_high:
+                continue
+            armed = True
+            last = False
+            continue
+        if is_high == last:
+            continue
+        last = is_high
+        if not is_high:
+            _gpio_set(fwspick_pin, "pn dl")
+        _gpio_set(srst_pin, "dl" if is_high else "dh")
+        stamped = b"[%7.2f mirror] passthrough %s; mock BMC %s\n" % (
+            time.monotonic() - _T0,
+            b"high" if is_high else b"low",
+            b"held in reset" if is_high else b"released",
+        )
+        try:
+            with lock:
+                sys.stdout.buffer.write(stamped)
+                sys.stdout.buffer.flush()
+        except (BrokenPipeError, OSError):
+            pass
 
 
 def _wait_for_uart_ready(port: serial.Serial, timeout: int = 30) -> bool:
@@ -206,21 +225,45 @@ def _run_paired(args, firmware_path: Path, slave_firmware_path: Path) -> bool:
     stop_watch = threading.Event()
     watcher = None
     try:
+        # Before either board comes out of reset: the RoT drives this line, so
+        # anything the Pi leaves driving it is a short between two outputs.
+        if args.reset_passthrough_pin is not None:
+            _gpio_set_input(args.reset_passthrough_pin, "pd")
+
+        # Device A is flashed first so that it is already watching when device B
+        # boots, rather than joining late and missing the start of its output.
+        _sequence_to_fwspick_mode(args.srst_pin, args.fwspick_pin, port_a)
+        if not _wait_for_uart_ready(port_a):
+            return False
+        _upload_firmware(port_a, firmware_path)
+
+        results = [None, None]
+
+        def _monitor(idx, port, label):
+            results[idx] = _stream_uart(port, _stdout_lock, label)
+
+        # Started before device B is flashed: device A boots a full upload
+        # earlier, and its output would otherwise sit in the tty buffer and
+        # arrive all at once with the wrong timestamps.
+        threads = [
+            threading.Thread(target=_monitor, args=(0, port_a, "A"), daemon=True)
+        ]
+        threads[0].start()
+
         _sequence_to_fwspick_mode(args.slave_srst_pin, args.slave_fwspick_pin, port_b)
         if not _wait_for_uart_ready(port_b):
             return False
         _upload_firmware(port_b, slave_firmware_path)
 
-        # Started only once card B's own firmware is running: until then the
-        # passthrough pin has no defined driver (previous firmware, reset
-        # transients, boot-time pinmux defaults), so watching any earlier
-        # would react to noise instead of a real request.
+        # Started only now: the mirror drives the same srst line that the mock
+        # BMC's own flash sequence above toggles, so the two would fight.
         if args.reset_passthrough_pin is not None:
             watcher = threading.Thread(
-                target=_watch_reset_passthrough,
+                target=_mirror_reset_passthrough,
                 args=(
                     args.reset_passthrough_pin,
-                    args.srst_pin,
+                    args.slave_srst_pin,
+                    args.slave_fwspick_pin,
                     stop_watch,
                     _stdout_lock,
                 ),
@@ -228,26 +271,8 @@ def _run_paired(args, firmware_path: Path, slave_firmware_path: Path) -> bool:
             )
             watcher.start()
 
-        results = [None, None]
-
-        def _monitor(idx, port, label):
-            results[idx] = _stream_uart(port, _stdout_lock, label)
-
-        # Started before card A is flashed: the slave boots a full upload
-        # earlier, and its output would otherwise sit in the tty buffer and
-        # arrive all at once with the wrong timestamps.
-        threads = [
-            threading.Thread(target=_monitor, args=(1, port_b, "slave"), daemon=True)
-        ]
-        threads[0].start()
-
-        _sequence_to_fwspick_mode(args.srst_pin, args.fwspick_pin, port_a)
-        if not _wait_for_uart_ready(port_a):
-            return False
-        _upload_firmware(port_a, firmware_path)
-
         threads.append(
-            threading.Thread(target=_monitor, args=(0, port_a, "main"), daemon=True)
+            threading.Thread(target=_monitor, args=(1, port_b, "B"), daemon=True)
         )
         threads[1].start()
         for t in threads:
@@ -326,7 +351,7 @@ def main() -> int:
         "--reset-passthrough-pin",
         type=int,
         default=None,
-        help="BCM GPIO pin device B drives high to request a device A reset",
+        help="BCM GPIO pin device A drives high to request a device B reset",
     )
     args = parser.parse_args()
 

@@ -1,12 +1,12 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-// AST10x0 PLDM firmware-update test, RoT side (card A, the Firmware Device).
+// AST10x0 PLDM firmware-update test, RoT side (the Firmware Device).
 //
 // Multi-app configuration:
 // - i2c_server: owns i2c hardware and runs i2c_server_runtime
 // - mctp_server: uses i2c transport over IPC + serves MCTP control channel
-// - pldm_fd: runs the PLDM Firmware Device against the update agent on card B
+// - pldm_fd: runs the PLDM Firmware Device against the update agent on the mock BMC
 {
     arch: {
         type: "armv7m",
