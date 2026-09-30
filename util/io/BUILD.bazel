@@ -9,6 +9,8 @@ rust_library(
         "byte_source.rs",
         "byte_window.rs",
         "io.rs",
+        "random_read.rs",
+        "storage.rs",
     ],
     crate_name = "util_io",
     crate_root = "io.rs",
