@@ -354,6 +354,135 @@ impl ImageLayout {
     }
 }
 
+/// Names one region of state the eRoT keeps across resets. Like
+/// [`SlotId`], the value is a name and not an index: ids only have to be
+/// unique inside one [`RecordLayout`], and the board decides what each one
+/// means.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecordId(pub u8);
+
+/// One region of eRoT-owned state: the SVN floor, the lockdown latch, a
+/// pending-update record. State is not an image, so it is never booted,
+/// never recovered, and never described by an [`ImageLayout`].
+///
+/// The store has to be one only the eRoT can write. That is a hardware
+/// property the board guarantees and this crate cannot check.
+#[derive(Debug, Clone, Copy)]
+pub struct RecordRegion {
+    id: RecordId,
+    region: Region,
+}
+
+impl RecordRegion {
+    /// Declares one state region. Const, so a bad board table fails the
+    /// build.
+    #[must_use]
+    pub const fn new(id: RecordId, region: Region) -> Self {
+        Self { id, region }
+    }
+
+    /// This region's id, unique within the layout (checked by
+    /// [`RecordLayout::new`]).
+    #[must_use]
+    pub const fn id(&self) -> RecordId {
+        self.id
+    }
+
+    /// Where this state lives in the eRoT's store.
+    #[must_use]
+    pub const fn region(&self) -> Region {
+        self.region
+    }
+}
+
+/// Every region of eRoT-owned state in one store, checked against each
+/// other and against the images sharing that store.
+///
+/// Offsets are counted from the start of the store, the same way
+/// [`Region`] counts a device's images from the start of that device's
+/// area. State and images can only be compared when they are counted from
+/// the same place, which is what the `images` argument of
+/// [`new`](Self::new) says: pass the layout of the images in this store,
+/// or `None` when the state has a store to itself.
+#[derive(Debug, Clone, Copy)]
+pub struct RecordLayout {
+    regions: &'static [RecordRegion],
+}
+
+impl RecordLayout {
+    /// Declares the state in one store. Const, so a board that puts the
+    /// SVN floor inside a slot fails the build instead of corrupting the
+    /// slot at the first commit.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the layout is empty, if two regions share an id, if two
+    /// regions overlap, or if a region overlaps one of `images`.
+    ///
+    /// The overlap check only covers addresses. Two regions that share a
+    /// flash erase block still wipe each other, and this crate does not
+    /// know the erase block size, so a board checks that in its own const
+    /// fence.
+    #[must_use]
+    pub const fn new(regions: &'static [RecordRegion], images: Option<ImageLayout>) -> Self {
+        assert!(!regions.is_empty(), "a state layout must hold a region");
+        let mut s = 0;
+        while s < regions.len() {
+            if let Some(images) = images {
+                let slots = images.slots();
+                let mut i = 0;
+                while i < slots.len() {
+                    assert!(
+                        !regions[s].region.overlaps(&slots[i].region),
+                        "state must not overlap a slot"
+                    );
+                    i += 1;
+                }
+                if let Some(golden) = images.golden() {
+                    assert!(
+                        !regions[s].region.overlaps(&golden.region),
+                        "state must not overlap the golden image"
+                    );
+                }
+            }
+            let mut t = s + 1;
+            while t < regions.len() {
+                assert!(
+                    regions[s].id.0 != regions[t].id.0,
+                    "state ids must be unique within a layout"
+                );
+                assert!(
+                    !regions[s].region.overlaps(&regions[t].region),
+                    "state regions must not overlap"
+                );
+                t += 1;
+            }
+            s += 1;
+        }
+        Self { regions }
+    }
+
+    /// Where the named state lives, or `None` when the layout does not
+    /// declare it.
+    #[must_use]
+    pub const fn region(&self, id: RecordId) -> Option<Region> {
+        let mut s = 0;
+        while s < self.regions.len() {
+            if self.regions[s].id.0 == id.0 {
+                return Some(self.regions[s].region);
+            }
+            s += 1;
+        }
+        None
+    }
+
+    /// Every region the layout declares, in declaration order.
+    #[must_use]
+    pub const fn regions(&self) -> &'static [RecordRegion] {
+        self.regions
+    }
+}
+
 /// Fails the build if `max_retry` is too small for a device to boot every
 /// image. Recovery restores one image per attempt, and the orchestrator
 /// counts the restore before it decides whether to boot, so the last
@@ -691,6 +820,91 @@ mod tests {
         const DEVICES: &[DeviceConfig<u8, u8>] =
             &[DeviceConfig::new("dev", 0, &[BOOT_COMPLETE], Some(LAYOUT))];
         assert_retry_reaches_every_image(3, DEVICES);
+    }
+
+    /// State sits above every slot `slot` can place, so the two only
+    /// collide when a test means them to.
+    const FLOOR: RecordRegion = RecordRegion::new(RecordId(0), Region::new(0xE000_0000, SLOT_LEN));
+    const LATCH: RecordRegion = RecordRegion::new(RecordId(1), Region::new(0xE010_0000, SLOT_LEN));
+
+    #[test]
+    fn finds_state_by_id() {
+        let state = RecordLayout::new(const { &[FLOOR, LATCH] }, Some(LAYOUT));
+        assert_eq!(state.region(RecordId(1)), Some(LATCH.region()));
+        assert_eq!(state.regions().len(), 2);
+    }
+
+    #[test]
+    fn undeclared_state_has_no_region() {
+        let state = RecordLayout::new(const { &[FLOOR] }, Some(LAYOUT));
+        assert_eq!(state.region(RecordId(7)), None);
+    }
+
+    /// State in a store of its own has no images to be checked against.
+    #[test]
+    fn accepts_state_without_images() {
+        let state = RecordLayout::new(
+            const { &[RecordRegion::new(RecordId(0), Region::new(0, 4096))] },
+            None,
+        );
+        assert_eq!(state.region(RecordId(0)).map(|r| r.len()), Some(4096));
+    }
+
+    #[test]
+    #[should_panic(expected = "state ids must be unique")]
+    fn rejects_duplicate_state_ids() {
+        let _ = RecordLayout::new(
+            const {
+                &[
+                    RecordRegion::new(RecordId(0), Region::new(0xE000_0000, SLOT_LEN)),
+                    RecordRegion::new(RecordId(0), Region::new(0xE010_0000, SLOT_LEN)),
+                ]
+            },
+            None,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "state regions must not overlap")]
+    fn rejects_overlapping_state_regions() {
+        let _ = RecordLayout::new(
+            const {
+                &[
+                    RecordRegion::new(RecordId(0), Region::new(0xE000_0000, SLOT_LEN)),
+                    RecordRegion::new(RecordId(1), Region::new(0xE000_0000, SLOT_LEN)),
+                ]
+            },
+            None,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "state must not overlap a slot")]
+    fn rejects_state_inside_a_slot() {
+        let _ = RecordLayout::new(
+            const { &[RecordRegion::new(RecordId(0), Region::new(0, SLOT_LEN))] },
+            Some(LAYOUT),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "state must not overlap the golden image")]
+    fn rejects_state_inside_the_golden_image() {
+        let _ = RecordLayout::new(
+            const {
+                &[RecordRegion::new(
+                    RecordId(0),
+                    Region::new(0xF000_0000, SLOT_LEN),
+                )]
+            },
+            Some(LAYOUT),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "a state layout must hold a region")]
+    fn rejects_an_empty_state_layout() {
+        let _ = RecordLayout::new(&[], None);
     }
 
     #[test]
