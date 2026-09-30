@@ -6,6 +6,7 @@
 
 use openprot_orchestrator_sm::{BootFailureKind, ComponentId, ComponentKind};
 use orchestrator_capabilities::Updatable;
+use util_io::ByteSource;
 
 pub use orchestrator_capabilities::{BootControl, BootWatch};
 use orchestrator_capabilities::{Recovery, Svn, SvnFloor};
@@ -183,6 +184,9 @@ pub trait BoardCapabilities {
     /// `()` for a board with no recovery path: every attempt reports
     /// source exhaustion immediately.
     type Recovery: Recovery;
+    /// The region an update source writes a candidate into. One region,
+    /// because one update runs at a time.
+    type Staging: ByteSource;
 }
 
 /// Who keeps one component's anti-rollback floor. Spelled as its own type
@@ -212,6 +216,7 @@ pub enum SvnFloorBinding<F: SvnFloor> {
 ///     type ReportSink = MctpReports;      // reports out over the management transport
 ///     type Updatable = PldmDevice;        // device pulls its own chunks
 ///     type Recovery = SlotRecovery;       // A/B + golden, attempt-indexed
+///     type Staging = StagingFlash;        // where the update source writes
 /// }
 /// let board = Board::<Ast1060Board, 2> {
 ///     images: [bmc_image, cpld_image],
@@ -223,6 +228,7 @@ pub enum SvnFloorBinding<F: SvnFloor> {
 ///     report_sink,
 ///     updatables: [bmc_update, cpld_update],
 ///     recovery: [bmc_recovery, cpld_recovery],
+///     update_staging: staging_flash,
 /// };
 /// ```
 pub struct Board<B: BoardCapabilities, const N: usize> {
@@ -255,4 +261,7 @@ pub struct Board<B: BoardCapabilities, const N: usize> {
     /// sources, same indexing as `images`. `()` for a board with no
     /// recovery path.
     pub recovery: [B::Recovery; N],
+    /// Where an update candidate is staged. One region, not one per
+    /// component: one update runs at a time.
+    pub update_staging: B::Staging,
 }

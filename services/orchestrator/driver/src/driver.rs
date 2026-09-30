@@ -15,6 +15,7 @@ use orchestrator_capabilities::{
     BootControl, BootWatch, FailureCause, Recovery, RestoreOutcome, Svn, SvnFloor, Updatable,
     WalkVerdict,
 };
+use util_io::ByteSource;
 
 /// Why the driver could not carry out an effect.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -41,10 +42,13 @@ pub enum DriverError {
     /// The recovery mechanism faulted (bus error, unreachable source).
     /// Distinct from source exhaustion, which is a verdict, not a fault.
     RecoveryFault,
-    /// An update effect ran with no update pending. The frontend records
-    /// the target before the SM sees `UpdateRequest`, so this means the
-    /// two have drifted apart.
-    NoPendingUpdate,
+    /// An update effect ran with no job recorded. The frontend records
+    /// the job before the SM sees `UpdateRequest`, so this means the two
+    /// have drifted apart.
+    NoUpdateJob,
+    /// The candidate does not fit the staging region the board wired, so
+    /// there is nothing well-formed to read.
+    CandidateOutOfRange,
 }
 
 impl core::fmt::Display for DriverError {
@@ -59,7 +63,8 @@ impl core::fmt::Display for DriverError {
             DriverError::SvnFloorFault => "svn floor could not be advanced",
             DriverError::UpdateBusy => "an update is already in flight",
             DriverError::RecoveryFault => "recovery mechanism faulted",
-            DriverError::NoPendingUpdate => "no pending update for this effect",
+            DriverError::NoUpdateJob => "no update job for this effect",
+            DriverError::CandidateOutOfRange => "candidate does not fit the staging region",
         })
     }
 }
@@ -81,9 +86,32 @@ pub struct PlatformDriver<B: BoardCapabilities, const N: usize> {
     /// authenticated image — the only value a floor commit may trust.
     /// `None` until a verification passes; cleared again on rejection.
     verified_svn: [Option<Svn>; N],
-    /// The component the frontend submitted an update for. Held until the
-    /// update is activated or discarded.
-    pending_update: Option<ComponentId>,
+    /// The update job submitted by the frontend. Held until the update is
+    /// activated or discarded.
+    pending_update: Option<UpdateJob>,
+}
+
+/// One in-flight update, recorded by [`PlatformDriver::submit_update`].
+#[allow(dead_code)]
+struct UpdateJob {
+    target: ComponentId,
+    /// Candidate length in bytes, from the offer the source accepted. The
+    /// staging region is board geometry and usually larger, so the job
+    /// carries what part of it holds this candidate.
+    len: u64,
+    phase: UpdatePhase,
+    /// Set when the SM commands `AuthenticateStageUpdate`. The pump reads
+    /// this to know the SM has spoken; `phase` tracks how far execution
+    /// has gotten. Setting it twice is harmless, so a repeated command
+    /// needs no guard.
+    prepare_commanded: bool,
+}
+
+/// How far the in-flight update has come.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UpdatePhase {
+    /// Recorded by the frontend, no executor has run yet.
+    Submitted,
 }
 
 impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
@@ -109,26 +137,41 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     }
 
     /// The frontend half of the update handshake: record `target` as the
-    /// component the staged candidate is for. Must succeed BEFORE
+    /// component the staged candidate is for and `len` as how much of the
+    /// staging region the candidate occupies. Must succeed BEFORE
     /// [`Event::UpdateRequest`] is dispatched; `AuthenticateStageUpdate`
     /// with no stored job fails closed. Refuses an unknown id and a
     /// second submit while one update is in flight; nothing is stored on
     /// refusal, so a refused request can never surface as an update
     /// event.
     ///
-    /// The candidate's size is not the driver's business. Whether it fits
-    /// is settled when the offer is answered, before a byte transfers:
-    /// refusing there costs nothing, refusing here costs the whole
-    /// transfer. See `RejectOffer` in the PLDM IPC design.
-    pub fn submit_update(&mut self, target: ComponentId) -> Result<(), DriverError> {
+    /// `len` is checked against the staging region here, the first point
+    /// the driver sees it. Whether the candidate fits is settled for the
+    /// requester when the offer is answered, before a byte transfers
+    /// (see `RejectOffer` in the PLDM IPC design); this is the driver
+    /// failing closed behind that. Refusing here keeps the SM out of
+    /// `Updating` on a job that could never finish.
+    ///
+    /// The length stays on the job because the staging region is board
+    /// geometry and usually larger, so the reader needs to know where
+    /// the candidate ends.
+    pub fn submit_update(&mut self, target: ComponentId, len: u64) -> Result<(), DriverError> {
         self.board
             .updatables
             .get(target.get() as usize)
             .ok_or(DriverError::UnknownComponent)?;
+        if len > self.board.update_staging.len() {
+            return Err(DriverError::CandidateOutOfRange);
+        }
         if self.pending_update.is_some() {
             return Err(DriverError::UpdateBusy);
         }
-        self.pending_update = Some(target);
+        self.pending_update = Some(UpdateJob {
+            target,
+            len,
+            phase: UpdatePhase::Submitted,
+            prepare_commanded: false,
+        });
         Ok(())
     }
 
@@ -136,12 +179,14 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// staged and clears the job.
     ///
     /// Infallible on the device side ([`Updatable::abandon`] cannot fail),
-    /// so the only refusal is having nothing pending, which means the SM
-    /// and the driver have drifted apart.
+    /// so the only refusal is having no job at all, which means the SM and
+    /// the driver have drifted apart.
     pub fn discard_staged(&mut self) -> Result<(), DriverError> {
-        let target = self.pending_update.ok_or(DriverError::NoPendingUpdate)?;
-        // submit_update refused an id the board does not have, so the
-        // lookup cannot miss; UnknownComponent keeps it total anyway.
+        let target = self
+            .pending_update
+            .as_ref()
+            .ok_or(DriverError::NoUpdateJob)?
+            .target;
         let updatable = self
             .board
             .updatables
@@ -152,9 +197,28 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         Ok(())
     }
 
+    /// Records the SM's `AuthenticateStageUpdate` command. Setting it
+    /// twice is harmless, so a repeated command needs no guard.
+    pub fn prepare_update(&mut self) -> Result<(), DriverError> {
+        let job = self
+            .pending_update
+            .as_mut()
+            .ok_or(DriverError::NoUpdateJob)?;
+        job.prepare_commanded = true;
+        Ok(())
+    }
+
+    /// Whether the SM has commanded preparation of the in-flight update.
+    #[cfg(test)]
+    pub(crate) fn is_prepare_commanded(&self) -> Option<bool> {
+        self.pending_update
+            .as_ref()
+            .map(|job| job.prepare_commanded)
+    }
+
     /// Target of the in-flight update, if one was submitted.
     pub fn pending_update(&self) -> Option<ComponentId> {
-        self.pending_update
+        self.pending_update.as_ref().map(|job| job.target)
     }
 
     /// `id`'s image source. Takes the array rather than `&mut self` so the
@@ -404,18 +468,17 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
             Effect::RecoverComponent { id, attempt } => {
                 self.recover_component(id, attempt).map(Some)
             }
+            Effect::AuthenticateStageUpdate => self.prepare_update().map(|_| None),
             Effect::DiscardStaged => self.discard_staged().map(|_| None),
             // No board capability is composed for these seams yet, so they
             // fail closed here instead of behind stub methods. Each group
             // gains an executor when its capability joins
-            // [`BoardCapabilities`], as BootControl did above: staging plus
-            // verification and trial activation for the update effects;
-            // evidence signing for SignAttestation; the terminal latch for
-            // LatchLockdown.
-            Effect::AuthenticateStageUpdate
-            | Effect::ActivateUpdate
-            | Effect::SignAttestation
-            | Effect::LatchLockdown => return Err(EffectError),
+            // [`BoardCapabilities`], as BootControl did above: trial
+            // activation for the update effects; evidence signing for
+            // SignAttestation; the terminal latch for LatchLockdown.
+            Effect::ActivateUpdate | Effect::SignAttestation | Effect::LatchLockdown => {
+                return Err(EffectError)
+            }
             // Emit is consumed by the orchestrator; receiving one is a
             // driver bug.
             Effect::Emit(_) => return Err(EffectError),
@@ -434,8 +497,9 @@ pub fn request_update<B: BoardCapabilities, const N: usize, const E: usize>(
     orchestrator: &mut Orchestrator<N, E>,
     driver: &mut PlatformDriver<B, N>,
     target: ComponentId,
+    len: u64,
 ) -> Result<(), DriverError> {
-    driver.submit_update(target)?;
+    driver.submit_update(target, len)?;
     orchestrator.dispatch(driver, Event::UpdateRequest);
     Ok(())
 }

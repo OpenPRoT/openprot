@@ -11,6 +11,7 @@ use openprot_orchestrator_sm::{
 use orchestrator_capabilities::{
     BootWatch, FailureCause, Recovery, RestoreOutcome, Svn, SvnFloor, WalkVerdict,
 };
+use util_io::{ByteReadError, ByteSource};
 
 const C0: ComponentId = ComponentId::new(0);
 
@@ -294,6 +295,46 @@ impl MockUpdatable {
     }
 }
 
+/// The staging region: a fixed buffer an update source would have
+/// written into.
+struct MemStaging {
+    bytes: [u8; STAGING_LEN],
+}
+
+/// Room for the candidate plus slack, so a test can tell the region's
+/// length from the candidate's.
+const STAGING_LEN: usize = 64;
+
+/// What `mock_board` declares as its candidate length: shorter than the
+/// region, so the job carries the actual occupied range.
+const CANDIDATE_LEN: u64 = 32;
+
+impl MemStaging {
+    fn new() -> Self {
+        Self {
+            bytes: core::array::from_fn(|i| i as u8),
+        }
+    }
+}
+
+impl ByteSource for MemStaging {
+    fn len(&self) -> u64 {
+        self.bytes.len() as u64
+    }
+
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<(), ByteReadError> {
+        let start = offset as usize;
+        let end = start
+            .checked_add(buf.len())
+            .ok_or(ByteReadError::OutOfRange)?;
+        if end > self.bytes.len() {
+            return Err(ByteReadError::OutOfRange);
+        }
+        buf.copy_from_slice(&self.bytes[start..end]);
+        Ok(())
+    }
+}
+
 impl orchestrator_capabilities::SvnFloor for MockFloor {
     type Error = FloorFaultInjected;
 
@@ -349,6 +390,7 @@ impl BoardCapabilities for MockBoard {
     type ReportSink = RecordingSink;
     type Updatable = MockUpdatable;
     type Recovery = ();
+    type Staging = MemStaging;
 }
 
 /// The SVN `mock_board`'s verifier vouches for. Tests that read the floor
@@ -371,6 +413,7 @@ fn mock_board<const N: usize>() -> Board<MockBoard, N> {
         report_sink: RecordingSink::new(),
         updatables: core::array::from_fn(|_| MockUpdatable::new()),
         recovery: core::array::from_fn(|_| ()),
+        update_staging: MemStaging::new(),
     }
 }
 
@@ -599,6 +642,7 @@ impl BoardCapabilities for WatchBoard {
     type ReportSink = ();
     type Updatable = MockUpdatable;
     type Recovery = ();
+    type Staging = MemStaging;
 }
 
 // The at-rest guarantee end to end: the component is still held while its
@@ -625,6 +669,7 @@ fn release_follows_verification() {
         report_sink: (),
         updatables: [MockUpdatable::new()],
         recovery: [()],
+        update_staging: MemStaging::new(),
     });
     let mut orch = orchestrator();
 
@@ -970,6 +1015,7 @@ impl BoardCapabilities for RecoverableBoard {
     type ReportSink = RecordingSink;
     type Updatable = MockUpdatable;
     type Recovery = MockRecovery;
+    type Staging = MemStaging;
 }
 
 fn recoverable_board<const N: usize>(sources: u8) -> Board<RecoverableBoard, N> {
@@ -989,6 +1035,7 @@ fn recoverable_board<const N: usize>(sources: u8) -> Board<RecoverableBoard, N> 
             sources,
             fail_on: None,
         }),
+        update_staging: MemStaging::new(),
     }
 }
 
@@ -1299,7 +1346,7 @@ fn submit_update_refuses_an_unknown_component() {
     let mut driver = driver([MemImage::holding(valid_image())]);
 
     assert_eq!(
-        driver.submit_update(ComponentId::new(9)),
+        driver.submit_update(ComponentId::new(9), CANDIDATE_LEN),
         Err(DriverError::UnknownComponent)
     );
     assert_eq!(driver.pending_update(), None);
@@ -1311,16 +1358,18 @@ fn submit_update_refuses_an_unknown_component() {
 fn submit_update_refuses_a_second_in_flight() {
     let mut driver = driver([MemImage::holding(valid_image())]);
 
-    driver.submit_update(C0).unwrap();
-    assert_eq!(driver.submit_update(C0), Err(DriverError::UpdateBusy));
+    driver.submit_update(C0, CANDIDATE_LEN).unwrap();
+    assert_eq!(
+        driver.submit_update(C0, CANDIDATE_LEN),
+        Err(DriverError::UpdateBusy)
+    );
     assert_eq!(driver.pending_update(), Some(C0));
 }
 
 // The frontend connection end to end: request_update records the job and
 // the SM receives UpdateRequest. Ready accepts it and enters Updating,
-// whose entry effect (AuthenticateStageUpdate) has no executor yet, so
-// the machine latches Locked — that latch is the proof the event
-// arrived. Flips to an Updating/Ready assertion when the pump lands.
+// whose sole entry effect AuthenticateStageUpdate has an executor, so
+// the SM stays in Updating (no latch).
 #[test]
 fn request_update_reaches_the_sm() {
     let mut orch = orchestrator();
@@ -1328,10 +1377,10 @@ fn request_update_reaches_the_sm() {
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
     assert_eq!(orch.state(), State::Ready);
 
-    request_update(&mut orch, &mut driver, C0).unwrap();
+    request_update(&mut orch, &mut driver, C0, CANDIDATE_LEN).unwrap();
 
     assert_eq!(driver.pending_update(), Some(C0));
-    assert_eq!(orch.state(), State::Locked);
+    assert_eq!(orch.state(), State::Updating);
 }
 
 // A refused submit injects nothing: no job, no event, the SM stays Ready.
@@ -1342,7 +1391,7 @@ fn refused_request_update_injects_no_event() {
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
 
     assert_eq!(
-        request_update(&mut orch, &mut driver, ComponentId::new(9)),
+        request_update(&mut orch, &mut driver, ComponentId::new(9), CANDIDATE_LEN),
         Err(DriverError::UnknownComponent)
     );
 
@@ -1350,12 +1399,50 @@ fn refused_request_update_injects_no_event() {
     assert_eq!(orch.state(), State::Ready);
 }
 
+// The candidate is described by the offer, not by the region it sits
+// in: a length past the end of the staging region is refused before
+// anything is recorded.
+#[test]
+fn submit_update_refuses_a_candidate_past_the_staging_region() {
+    let mut driver = driver([MemImage::holding(valid_image())]);
+
+    assert_eq!(
+        driver.submit_update(C0, STAGING_LEN as u64 + 1),
+        Err(DriverError::CandidateOutOfRange)
+    );
+    assert_eq!(driver.pending_update(), None);
+}
+
+// AuthenticateStageUpdate sets the prepare flag. Idempotent: a re-entry
+// to Updating re-emits the effect, which sets it again harmlessly.
+#[test]
+fn prepare_update_sets_the_flag() {
+    let mut driver = driver([MemImage::holding(valid_image())]);
+    driver.submit_update(C0, CANDIDATE_LEN).unwrap();
+    assert_eq!(driver.is_prepare_commanded(), Some(false));
+
+    driver.prepare_update().expect("prepare failed");
+    assert_eq!(driver.is_prepare_commanded(), Some(true));
+
+    driver.prepare_update().expect("idempotent second call");
+    assert_eq!(driver.is_prepare_commanded(), Some(true));
+}
+
+// The job is recorded by the frontend before the SM emits anything, so a
+// prepare with no job means the two have drifted apart.
+#[test]
+fn prepare_update_without_a_job_is_refused() {
+    let mut driver = driver([MemImage::holding(valid_image())]);
+
+    assert_eq!(driver.prepare_update(), Err(DriverError::NoUpdateJob));
+}
+
 // DiscardStaged is the SM's way back to Ready: the job is gone, the
 // device dropped what it staged, and the next update can proceed.
 #[test]
 fn discard_staged_clears_the_job_and_abandons_the_device() {
     let mut driver = driver([MemImage::holding(valid_image())]);
-    driver.submit_update(C0).unwrap();
+    driver.submit_update(C0, CANDIDATE_LEN).unwrap();
 
     driver.discard_staged().expect("discard failed");
 
@@ -1363,12 +1450,13 @@ fn discard_staged_clears_the_job_and_abandons_the_device() {
     assert_eq!(driver.board().updatables[0].abandons, 1);
 }
 
-// The SM only emits DiscardStaged with an update in flight.
+// Same drift as the authenticate case: the SM only emits DiscardStaged
+// with an update in flight.
 #[test]
 fn discard_staged_without_a_job_is_refused() {
     let mut driver = driver([MemImage::holding(valid_image())]);
 
-    assert_eq!(driver.discard_staged(), Err(DriverError::NoPendingUpdate));
+    assert_eq!(driver.discard_staged(), Err(DriverError::NoUpdateJob));
 }
 
 // ReportUpdateDeferred clears pending_update so the next request is not
@@ -1376,7 +1464,7 @@ fn discard_staged_without_a_job_is_refused() {
 #[test]
 fn deferred_report_clears_pending_update() {
     let mut driver = driver([MemImage::holding(valid_image())]);
-    driver.submit_update(C0).unwrap();
+    driver.submit_update(C0, CANDIDATE_LEN).unwrap();
     assert_eq!(driver.pending_update(), Some(C0));
 
     driver.execute(Effect::ReportUpdateDeferred).unwrap();
@@ -1388,7 +1476,7 @@ fn deferred_report_clears_pending_update() {
     );
 
     // A subsequent submit succeeds: the slot is free.
-    driver.submit_update(C0).unwrap();
+    driver.submit_update(C0, CANDIDATE_LEN).unwrap();
     assert_eq!(driver.pending_update(), Some(C0));
 }
 
@@ -1397,7 +1485,7 @@ fn deferred_report_clears_pending_update() {
 #[test]
 fn aborted_update_clears_pending_update() {
     let mut driver = driver([MemImage::holding(valid_image())]);
-    driver.submit_update(C0).unwrap();
+    driver.submit_update(C0, CANDIDATE_LEN).unwrap();
 
     driver.execute(Effect::ReportUpdateAborted).unwrap();
 
@@ -1407,7 +1495,7 @@ fn aborted_update_clears_pending_update() {
         "aborted report must clear the pending job"
     );
 
-    driver.submit_update(C0).unwrap();
+    driver.submit_update(C0, CANDIDATE_LEN).unwrap();
     assert_eq!(driver.pending_update(), Some(C0));
 }
 
