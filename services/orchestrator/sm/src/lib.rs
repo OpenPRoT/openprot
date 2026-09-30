@@ -220,21 +220,37 @@ pub struct Rot<const N: usize, const E: usize> {
     /// resets it.
     statuses: heapless::Vec<ComponentStatus, N>,
     max_retry: u8,
-    /// Set when an update has been activated ([`Effect::ActivateUpdate`]) but
-    /// its anti-rollback floor has not yet been committed, i.e. the machine is
-    /// in the *activated-but-not-committed* window inside [`State::Ready`]. A
-    /// [`Event::BootConfirmed`] commits the floor and clears this; a
-    /// [`Event::CommitTimeout`] fired while this is set latches
+    /// The component whose update has been activated
+    /// ([`Effect::ActivateUpdate`]) but whose anti-rollback floor has not yet
+    /// been committed: the machine is in that component's
+    /// *activated-but-not-committed* window inside [`State::Ready`]. `None`
+    /// when no window is open.
+    ///
+    /// Its own [`Event::BootConfirmed`] commits the floor and closes the
+    /// window; a [`Event::CommitTimeout`] fired while a window is open latches
     /// [`State::Locked`] (commit-or-lock: the floor is never advanced for an
-    /// image that has not proven healthy, and the downgrade window is never left
-    /// open indefinitely). Cleared on [`Event::BootConfirmed`] (the window
-    /// closes normally) and on entry to the two states that end the window by
-    /// leaving `Ready` while still running — [`State::Updating`] (a superseding
-    /// update) and [`State::Recovering`] (corruption/timeout) — so any path that
-    /// leaves and later re-enters `Ready` resets the window without per-branch
+    /// image that has not proven healthy, and the downgrade window is never
+    /// left open indefinitely).
+    ///
+    /// The id is what makes the window that component's. A healthy report from
+    /// a sibling says nothing about the image that was just activated, so it
+    /// neither commits a floor nor closes the window.
+    ///
+    /// The window spans the walk that follows an activation: the device only
+    /// boots the candidate once it is reset, so the window cannot close before
+    /// that walk finishes. Every state it passes through answers
+    /// [`Event::CommitTimeout`], including the unsupervised
+    /// [`State::PreSupervision`], or a fire during the walk would be dropped
+    /// and never come again.
+    ///
+    /// Cleared on the matching [`Event::BootConfirmed`] (the window closes
+    /// normally) and on entry to the two states that end the window by leaving
+    /// `Ready` while still running — [`State::Updating`] (a superseding update)
+    /// and [`State::Recovering`] (corruption/timeout) — so any path that leaves
+    /// and later re-enters `Ready` resets the window without per-branch
     /// bookkeeping. (It is *not* cleared on `Ready` entry, because activation
     /// sets it while transitioning *into* `Ready`.)
-    pending_commit: bool,
+    pending_commit: Option<ComponentId>,
     /// Ties the effect-buffer size `E` to this type (zero-sized).
     _effect_cap: PhantomData<[u8; E]>,
 }
@@ -262,7 +278,7 @@ impl<const N: usize, const E: usize> Rot<N, E> {
             cursor: 0,
             statuses,
             max_retry,
-            pending_commit: false,
+            pending_commit: None,
             _effect_cap: PhantomData,
         }
     }
@@ -581,6 +597,18 @@ impl<const N: usize, const E: usize> Rot<N, E> {
 
             // Cursor walk via Outcome::Handled — a self-transition would reset cursor.
             State::PreSupervision => match event {
+                // The commit window can span this walk: an activation enters
+                // `PreSupervision` with the window open. `PreSupervision` is
+                // unsupervised, so without this arm the watchdog fire would be
+                // dropped and never come again, leaving commit-or-lock
+                // unenforced for the length of a boot.
+                Event::CommitTimeout => {
+                    if self.pending_commit.is_some() {
+                        Outcome::Transition(State::Locked)
+                    } else {
+                        Outcome::Handled
+                    }
+                }
                 Event::VerificationPassed(id) => {
                     // Only the component currently under verification
                     // (`chain[cursor]`, whose `VerifyFirmware` was just emitted)
@@ -775,9 +803,16 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 // running image is not a state change. Closing the window clears
                 // `pending_commit` so a later `CommitTimeout` cannot lock a
                 // device that has already committed.
+                //
+                // Only the component whose window is open: a sibling reporting
+                // healthy has no floor to advance here (nothing was activated
+                // on it) and must not close someone else's window, which would
+                // leave the activated component neither committed nor locked.
                 Event::BootConfirmed(id) => {
-                    ctx.emit(Effect::CommitSvnFloor(*id));
-                    self.pending_commit = false;
+                    if self.pending_commit == Some(*id) {
+                        ctx.emit(Effect::CommitSvnFloor(*id));
+                        self.pending_commit = None;
+                    }
                     Outcome::Handled
                 }
                 // Commit watchdog. If the activated-but-not-committed window is
@@ -785,7 +820,7 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 // never leave the downgrade window open indefinitely. Outside
                 // the window this is a stale watchdog fire and is dropped.
                 Event::CommitTimeout => {
-                    if self.pending_commit {
+                    if self.pending_commit.is_some() {
                         Outcome::Transition(State::Locked)
                     } else {
                         Outcome::Handled
@@ -795,14 +830,22 @@ impl<const N: usize, const E: usize> Rot<N, E> {
             },
 
             State::Updating => match event {
-                Event::UpdateVerified => {
+                Event::UpdateVerified(id) => {
                     ctx.emit(Effect::ActivateUpdate);
                     // Open the activated-but-not-committed window: the floor is
                     // NOT advanced here; it waits for `BootConfirmed`. The
                     // driver arms its commit watchdog on `ActivateUpdate`, and
                     // `CommitTimeout` bounds this window (commit-or-lock).
-                    self.pending_commit = true;
-                    Outcome::Transition(State::Ready)
+                    self.pending_commit = Some(*id);
+                    // Re-walk rather than returning to `Ready`. Activation only
+                    // proposes the image; the device runs the old one until it
+                    // is reset, and `PreSupervision` entry quiesces every live
+                    // component before verifying at rest. That reset is what
+                    // boots the candidate, and the walk's `VerifyFirmware` is
+                    // what records its SVN, which the floor commit then takes.
+                    // Without it a `BootConfirmed` would commit the previous
+                    // image's SVN and leave the downgrade window open.
+                    Outcome::Transition(State::PreSupervision)
                 }
                 Event::UpdateRejected => {
                     ctx.emit(Effect::DiscardStaged);
@@ -954,6 +997,16 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 ctx.emit(Effect::ReportUpdateDeferred);
                 Outcome::Handled
             }
+            // Same window, same reason as `PreSupervision`'s arm: the walk
+            // that follows an activation passes through the supervised
+            // states too, and a dropped watchdog fire never returns.
+            Event::CommitTimeout => {
+                if self.pending_commit.is_some() {
+                    Outcome::Transition(State::Locked)
+                } else {
+                    Outcome::Handled
+                }
+            }
             Event::EffectFailed => Outcome::Transition(State::Locked),
             _ => Outcome::Super,
         }
@@ -977,14 +1030,14 @@ impl<const N: usize, const E: usize> Rot<N, E> {
             State::Updating => {
                 // A new update supersedes any activated-but-not-committed image;
                 // the prior commit window is void.
-                self.pending_commit = false;
+                self.pending_commit = None;
                 ctx.emit(Effect::AuthenticateStageUpdate);
             }
             State::Recovering(failed) => {
                 // Recovery voids any activated-but-not-committed image: the
                 // running image is now under suspicion, so its commit window
                 // ends here.
-                self.pending_commit = false;
+                self.pending_commit = None;
                 // The component under recovery is being restored, not booting;
                 // drop any pending boot-progress watchdog so a late `Timeout`
                 // can't re-enter recovery for it. It is also held (not live)
@@ -1112,18 +1165,6 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
         self.state
     }
 
-    /// Whether `state` is nested under the supervising handler
-    /// ([`Rot::handle_supervising`]) — i.e. whether an [`Outcome::Super`] from
-    /// its leaf handler has anywhere to go. The four supervised states are the
-    /// ones the eRoT can be in after it has exited [`State::PreSupervision`],
-    /// and before it locks down.
-    const fn is_supervised(state: State) -> bool {
-        matches!(
-            state,
-            State::AwaitingReady(_) | State::Ready | State::Updating | State::Recovering(_)
-        )
-    }
-
     /// Reduce one event: dispatch, fall through to the supervisor if needed, and
     /// apply the resulting outcome.
     ///
@@ -1155,7 +1196,7 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
         //    event — including the `EffectFailed` from a failed `LatchLockdown`,
         //    which would otherwise loop.
         if let Outcome::Super = outcome
-            && Self::is_supervised(self.state)
+            && self.state.is_supervised()
         {
             outcome = self.rot.handle_supervising(event, ctx);
         }

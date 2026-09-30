@@ -1943,6 +1943,39 @@ fn update_request_in_ready_starts_update_not_deferred() {
     assert!(!effects.contains(&Effect::ReportUpdateDeferred));
 }
 
+/// A sibling reporting healthy says nothing about the image that was just
+/// activated: it must not advance that sibling's floor, and it must not
+/// close the activated component's commit window, which would leave that
+/// component neither committed nor locked.
+#[test]
+fn an_unrelated_boot_confirmed_leaves_the_commit_window_open() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_required()),
+            (C1, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::VerificationPassed(C1),
+            Event::UpdateRequest,
+            Event::UpdateVerified(C0),
+            Event::BootConfirmed(C1),
+            Event::CommitTimeout,
+        ],
+    );
+
+    assert!(
+        !effects.contains(&Effect::CommitSvnFloor(C1)),
+        "floor advanced for C1, which activated nothing"
+    );
+    assert_eq!(
+        state,
+        State::Locked,
+        "commit-or-lock defeated: window closed by an unrelated component"
+    );
+}
+
 /// UpdateVerified activates the staged image and returns to Ready.
 /// (Complements update_rollback_is_not_recovery which tests UpdateRejected.)
 #[test]
@@ -1953,13 +1986,99 @@ fn update_verified_activates_update() {
             BOOT,
             Event::VerificationPassed(C0),
             Event::UpdateRequest,
-            Event::UpdateVerified,
+            Event::UpdateVerified(C0),
         ],
     );
-    assert_eq!(state, State::Ready);
+    // Activation only proposes the image. The device runs the old one
+    // until the walk resets it, so the machine walks rather than
+    // returning to Ready.
+    assert_eq!(state, State::PreSupervision);
     assert!(effects.contains(&Effect::ActivateUpdate));
     assert!(!effects.contains(&Effect::DiscardStaged));
     assert!(!effects.contains(&Effect::RecoverComponent { id: C0, attempt: 0 }));
+}
+
+/// The re-walk is what boots the candidate: the activated component is
+/// quiesced, verified at rest, and released again. Its `VerifyFirmware`
+/// is also what records the new image's SVN for a later floor commit.
+#[test]
+fn an_activation_resets_and_re_verifies_the_component() {
+    let (effects, state) = drive(
+        passive_required(&[C0]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::UpdateRequest,
+            Event::UpdateVerified(C0),
+            Event::VerificationPassed(C0),
+        ],
+    );
+
+    assert_eq!(state, State::Ready);
+    let activated = effects
+        .iter()
+        .position(|e| *e == Effect::ActivateUpdate)
+        .expect("never activated");
+    let after = &effects[activated..];
+    assert!(after.contains(&Effect::AssertReset(C0)), "never reset");
+    assert!(
+        after.contains(&Effect::VerifyFirmware(C0)),
+        "never re-verified"
+    );
+    assert!(after.contains(&Effect::ReleaseReset(C0)), "never released");
+}
+
+/// The walk that follows an activation passes through the supervised
+/// states too, and the watchdog has to be answered there as well. An
+/// active component parks the walk in `AwaitingReady` until its iRoT
+/// reports, which is where this fire lands.
+#[test]
+fn a_commit_timeout_while_the_post_update_walk_awaits_readiness_latches_locked() {
+    // Two components, so the walk moves on to C1 and parks in
+    // AwaitingReady(C0) instead of finishing in Ready.
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::active_required()),
+            (C1, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::ComponentReady(C0),
+            Event::VerificationPassed(C1),
+            Event::UpdateRequest,
+            Event::UpdateVerified(C0),
+            // The re-walk releases C0 and moves to C1, so the machine is
+            // in AwaitingReady when the watchdog fires: the supervising
+            // handler is what has to answer it.
+            Event::VerificationPassed(C0),
+            Event::CommitTimeout,
+        ],
+    );
+
+    assert_eq!(state, State::Locked);
+    assert!(effects.contains(&Effect::LatchLockdown));
+    assert!(!effects.contains(&Effect::CommitSvnFloor(C0)));
+}
+
+/// A spurious watchdog fire during an ordinary boot walk, with no update
+/// activated, must not brick the boot: there is no window to fail closed
+/// on, so the walk carries on.
+#[test]
+fn a_commit_timeout_during_a_plain_boot_walk_is_ignored() {
+    let (effects, state) = drive(
+        passive_required(&[C0]),
+        &[
+            BOOT,
+            // Mid-walk: C0 is verified but the machine has not left
+            // PreSupervision yet.
+            Event::CommitTimeout,
+            Event::VerificationPassed(C0),
+        ],
+    );
+
+    assert_eq!(state, State::Ready);
+    assert!(!effects.contains(&Effect::LatchLockdown));
 }
 
 /// The anti-rollback floor is committed only on a proven-healthy boot, never
@@ -1976,10 +2095,10 @@ fn svn_floor_commits_on_boot_confirmed_not_on_activation() {
             BOOT,
             Event::VerificationPassed(C0),
             Event::UpdateRequest,
-            Event::UpdateVerified,
+            Event::UpdateVerified(C0),
         ],
     );
-    assert_eq!(activated_state, State::Ready);
+    assert_eq!(activated_state, State::PreSupervision);
     assert!(activated.contains(&Effect::ActivateUpdate));
     assert!(!activated.contains(&Effect::CommitSvnFloor(C0)));
 
@@ -1990,7 +2109,10 @@ fn svn_floor_commits_on_boot_confirmed_not_on_activation() {
             BOOT,
             Event::VerificationPassed(C0),
             Event::UpdateRequest,
-            Event::UpdateVerified,
+            Event::UpdateVerified(C0),
+            // The walk the activation started has to finish: the floor
+            // commit takes the SVN that walk verified.
+            Event::VerificationPassed(C0),
             Event::BootConfirmed(C0),
         ],
     );
@@ -2010,8 +2132,10 @@ fn commit_timeout_while_pending_latches_locked() {
             BOOT,
             Event::VerificationPassed(C0),
             Event::UpdateRequest,
-            Event::UpdateVerified,
-            // Window open: activated, awaiting BootConfirmed. Watchdog fires.
+            Event::UpdateVerified(C0),
+            // Window open and the re-walk still running: the watchdog
+            // fires in PreSupervision, which is unsupervised, so the arm
+            // has to be there or the fire is dropped for good.
             Event::CommitTimeout,
         ],
     );
@@ -2033,7 +2157,8 @@ fn commit_timeout_after_confirm_is_stale_noop() {
             BOOT,
             Event::VerificationPassed(C0),
             Event::UpdateRequest,
-            Event::UpdateVerified,
+            Event::UpdateVerified(C0),
+            Event::VerificationPassed(C0),
             Event::BootConfirmed(C0),
             // Window already closed by the commit above.
             Event::CommitTimeout,
@@ -2069,7 +2194,7 @@ fn recovery_clears_commit_window() {
             BOOT,
             Event::VerificationPassed(C0),
             Event::UpdateRequest,
-            Event::UpdateVerified,
+            Event::UpdateVerified(C0),
             // Window open, then a Required corruption preempts to recovery.
             Event::CorruptionDetected(C0),
             // Restore succeeds (retry < MAX_RETRY) and re-walk re-verifies.
@@ -2626,7 +2751,7 @@ fn random_event(rng: &mut SplitMix64, ids: &[ComponentId]) -> Event {
         }
         8 => Event::AttestationChallenge,
         9 => Event::UpdateRequest,
-        10 => Event::UpdateVerified,
+        10 => Event::UpdateVerified(id),
         11 => Event::UpdateRejected,
         12 => Event::RecoveryFailed,
         13 => Event::CommitTimeout,
