@@ -600,7 +600,7 @@ const sized against the tightest watchdog, not a round number.
 | Op | Direction | Purpose |
 |---|---|---|
 | AcceptOffer | orch -> FD | Accept with a staging base address |
-| RejectOffer | orch -> FD | Reject (FD tells UA in the next response) |
+| RejectOffer | orch -> FD | Refuse the offer, with the reason the requester is owed (FD tells UA in the next response) |
 | PerformVerify | orch -> FD | Order the FD to run FdOps::verify |
 | RejectVerify | orch -> FD | Block verify (e.g. isolated component); FD returns failure to UA |
 | PerformApply | orch -> FD | Order the FD to run FdOps::apply |
