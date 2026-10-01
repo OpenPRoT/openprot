@@ -25,10 +25,11 @@ completion signals sit in the orchestrator's WaitGroup alongside event signals.
 FdOps callbacks must not block for long because the UA can send CancelUpdate
 asynchronously, and the FD's responder path needs to stay live to handle it.
 
-Out-of-transport, a third party writes the image to staging, and it has to be
-there before PerformVerify. The platform driver knows the staging address, and
-how the third party learns it is open. The FD does not pull firmware bytes but
-still runs verify and apply through FdOps.
+Out-of-transport is a different UA command. A third party writes the image to
+staging and the UA sends ActivatePendingComponentImage, which pldm-lib answers
+only in Idle, so the FD never enters update mode. The orchestrator arms the FD
+beforehand, and verify and apply then run the same code behind the same
+orchestrator gates. See the out-of-transport section below.
 
 Design decisions:
 
@@ -99,9 +100,13 @@ Design decisions:
   `DispatchOutcome::Pending`.
 - Dispatch follows the MCTP server pattern: `dispatch_pldm_op` decodes a
   request header, calls the appropriate method, encodes the response.
-- In-transport vs out-of-transport is the transfer mechanism, not the IPC
-  protocol. The IPC ops are the same; what differs is who writes firmware
-  bytes to flash.
+- In-transport and out-of-transport are two UA commands, not one flow with a
+  step removed. In-transport runs the DSP0267 update state machine;
+  out-of-transport is a single ActivatePendingComponentImage answered in Idle.
+  The per-phase gates are the same on both; what differs is the ops around
+  them. AcceptOffer, RejectOffer and AckCancel are in-transport only, and
+  ArmPendingImage is out-of-transport only, because there the decision has to
+  precede the UA command.
 - Minimal copies: firmware lands in its final staging region and is verified
   in place. FdOps::download_fw_data writes directly to the staging address;
   FdOps::verify reads from there. No intermediate buffers or extra copies
@@ -292,13 +297,41 @@ sequenceDiagram
 
 ## Out-of-transport image transfer
 
-A third party writes the firmware image into the staging region, and it has to
-be there before PerformVerify. The platform driver knows where each component's
-image belongs. Two things are open: whether that address is fixed per
-component, so the writer knows it without asking, or handed over at AcceptOffer
-while the session is already running, and what tells the orchestrator the copy
-finished. The FD does not pull firmware bytes. The verify and apply phases
-still run through FdOps with the same gatekeeper pattern.
+Out-of-transport is a different UA command, not the same session with the
+transfer step removed. A third party writes the image into the staging region,
+and the UA then sends ActivatePendingComponentImage (DSP0267 0x1F). pldm-lib
+answers that command only in Idle and rejects it in every other state
+(activate_pending_component_rsp in
+pldm-interface/src/firmware_device/fd_context.rs), so there is no
+RequestUpdate, no PassComponentTable, no UpdateComponent and no update mode on
+this path. The FD never enters the download/verify/apply state machine.
+
+Everything we do hangs off one callback. pldm-lib decodes the request and calls
+FdOps::handle_pending_component, which is synchronous and returns a
+PendingComponentResult: Activated with an estimated time, ActivationNotRequired,
+or NotPermitted. It must not block, so it cannot ask the orchestrator for an
+order and wait for the answer.
+
+The decision therefore moves ahead of the UA command. The orchestrator arms the
+FD with ArmPendingImage once the image is staged, naming the component and where
+it sits. handle_pending_component answers from that arming: armed returns
+Activated and starts the local pipeline, not armed returns ActivationNotRequired,
+which is Table 44's "no pending image" and is what not-armed means to the UA.
+NotPermitted is for an FD that does not do pending activation at all, so we
+never return it. The arming is one-shot, consumed when the pipeline starts, so a
+failed run does not leave an image the next 0x1F would retry; the orchestrator
+has to arm again.
+
+The per-phase gates still run. Verify, apply and activate go through the same
+ServiceCalls and the same orchestrator nudges as in-transport, driven by the
+FD's own dispatch loop after the 0x1F response has gone back to the UA. pldm-lib
+is not driving anything here: its state machine stays Idle, so there is no
+fd_progress to poll and no PLDM state to report through.
+
+What this costs: Activated is a promise to attempt, not a result. A later verify
+or apply failure reaches the UA through our status path, not the 0x1F completion
+code. And a policy refusal reads to the UA as no pending image, because Table 44
+has no other code for it; the distinction lives orchestrator-side.
 
 ```mermaid
 sequenceDiagram
@@ -310,35 +343,23 @@ sequenceDiagram
 
     Note over UA, Crypto: Blue background: orchestrator IPC. Green background: FdOps service IPC.
 
-    Note over UA, Orch: NEGOTIATION (same as in-transport)
+    Note over UA, Crypto: STAGING (no PLDM session, FD state machine in Idle)
 
-    UA->>FD: RequestUpdate (MCTP)
-    FD-->>UA: RequestUpdate response (accepted)
-    UA->>FD: PassComponentTable (MCTP)
-    FD-->>UA: PassComponentTable response
-    UA->>FD: UpdateComponent (MCTP, out-of-transport)
-    FD-->>UA: UpdateComponent response
-
-    Note over FD, Orch: FD has an offer, nudge the orchestrator
-
-    FD->>Orch: USER signal (nudge: offer ready)
+    Note right of Orch: a third party writes the image<br/>into the staging region.<br/>How it learns the address,<br/>and what tells the orchestrator<br/>the copy finished, are open
 
     rect rgb(230, 240, 255)
-    activate Orch
-    Orch->>FD: ServiceCall: QueryStatus
-    FD-->>Orch: Status::OfferPending { target, total, mode: OutOfTransport }
-    Note right of Orch: validate target + total,<br/>platform driver picks<br/>staging address
-    Orch->>FD: ServiceCall: AcceptOffer { base: FlashAddress }
-    Note left of FD: FD does not write in<br/>out-of-transport. A third party<br/>pre-stages the image, and how it<br/>learns the address is open
+    Note right of Orch: platform driver picks<br/>the staging address,<br/>reserve staging,<br/>close the writer's window
+    Orch->>FD: ServiceCall: ArmPendingImage { component, base, total }
     FD-->>Orch: Ok
-    deactivate Orch
     end
 
-    Note over FD, Orch: no transfer phase, image already staged
+    Note over UA, FD: ACTIVATION REQUEST (DSP0267 0x1F, answered only in Idle)
 
-    FD->>UA: TransferComplete (MCTP)
+    UA->>FD: ActivatePendingComponentImage (MCTP)
+    Note over FD: FdOps::handle_pending_component:<br/>armed, so start the pipeline<br/>and answer at once
+    FD-->>UA: response: Activated (estimated time)
 
-    Note over FD, Orch: ask orchestrator to order verify
+    Note over FD, Crypto: VERIFY (FD's own loop, the pldm-lib state machine stays Idle)
 
     FD->>Orch: USER signal (nudge: verify pending)
 
@@ -346,25 +367,18 @@ sequenceDiagram
     activate Orch
     Orch->>FD: ServiceCall: QueryStatus
     FD-->>Orch: Status::VerifyPending
-    Note right of Orch: check isolation, update policy,<br/>close staging window
+    Note right of Orch: check isolation, update policy
     Orch->>FD: ServiceCall: PerformVerify
     FD-->>Orch: Ok
     deactivate Orch
     end
 
-    Note over FD, Crypto: FdOps::verify
-
     rect rgb(230, 255, 230)
     FD->>Crypto: ServiceCall::start(VerifyRequest { addr, size })
     Crypto->>DevSrv: read staged image
     DevSrv-->>Crypto: image data
-    loop fd_progress poll
-        Note over FD: verify() returns 0%, no signal yet
-    end
     Crypto-->>FD: signal: Verdict
-    Note over FD: verify() poll: try_recv -> 100% + verdict
     end
-    FD->>UA: VerifyComplete (MCTP)
 
     Note over FD, Orch: verify done, ask orchestrator to order apply
 
@@ -379,19 +393,12 @@ sequenceDiagram
     deactivate Orch
     end
 
-    Note over FD, DevSrv: FdOps::apply
-
     rect rgb(230, 255, 230)
-    FD->>DevSrv: ServiceCall::start(apply: commit staged image)
-    loop fd_progress poll
-        Note over FD: apply() returns 0%, no signal yet
-    end
+    FD->>DevSrv: ServiceCall: apply: commit staged image
     DevSrv-->>FD: signal: Ok
-    Note over FD: apply() poll: try_recv -> 100%
     end
-    FD->>UA: ApplyComplete (MCTP)
 
-    Note over FD, Orch: apply done, decide activation before the UA asks
+    Note over FD, Orch: apply done, ask orchestrator to order activation
 
     FD->>Orch: USER signal (nudge: activation decision)
 
@@ -405,13 +412,8 @@ sequenceDiagram
     deactivate Orch
     end
 
-    Note over UA, Orch: ACTIVATION (same as in-transport)
-
-    UA->>FD: ActivateFirmware (MCTP)
-    FD-->>UA: ActivateFirmware response (accepted, from the stored order)
-
     rect rgb(230, 255, 230)
-    FD->>DevSrv: ServiceCall: FdOps::activate: set boot preference
+    FD->>DevSrv: ServiceCall: set boot preference
     DevSrv-->>FD: signal: Ok
     end
 
@@ -425,44 +427,29 @@ sequenceDiagram
     deactivate Orch
     end
 
-    Note over UA, DevSrv: SVN COMMIT (later, FD back in IDLE, new image running)
+    Note over UA, DevSrv: SVN COMMIT (same as in-transport)
 
     Note right of Orch: judge the boot, then<br/>TrialBoot::confirm or revert
     UA->>FD: UpdateSecurityRevision (MCTP, 0x22)
-    FD->>Orch: USER signal (nudge: SVN commit requested)
+    Note over FD, Orch: nudge, QueryStatus, PerformSvnCommit or RejectSvnCommit
+
+    Note over UA, Orch: FAILURE (verify or apply)
+
+    FD->>Orch: USER signal (nudge: phase failed)
 
     rect rgb(230, 240, 255)
     activate Orch
     Orch->>FD: ServiceCall: QueryStatus
-    FD-->>Orch: Status::SvnCommitPending { component }
-    Note right of Orch: a confirmed trial only,<br/>else RejectSvnCommit
-    Orch->>DevSrv: ServiceCall: SvnFloor::advance
-    DevSrv-->>Orch: signal: Ok
-    Orch->>FD: ServiceCall: PerformSvnCommit
-    FD-->>Orch: Ok
-    deactivate Orch
-    end
-
-    FD-->>UA: UpdateSecurityRevision response (success)
-
-    Note over UA, Orch: CANCEL (between AcceptOffer and activation)
-    UA->>FD: CancelUpdate (MCTP)
-    rect rgb(230, 255, 230)
-    FD->>DevSrv: ServiceCall: FdOps::cancel_update_component
-    DevSrv-->>FD: signal: Ok
-    end
-    FD-->>UA: CancelUpdate response
-    FD->>Orch: USER signal (nudge: cancelled)
-    rect rgb(230, 240, 255)
-    activate Orch
-    Orch->>FD: ServiceCall: QueryStatus
-    FD-->>Orch: Status::Cancelled
-    Note right of Orch: discard the accepted offer
-    Orch->>FD: ServiceCall: AckCancel
-    FD-->>Orch: Ok
+    FD-->>Orch: Status::PhaseFailed { phase, result }
+    Note right of Orch: release staging,<br/>the arming is already spent
     deactivate Orch
     end
 ```
+
+There is no CancelUpdate on this path. The UA sent one command and already has
+its answer, and cancel_update_rsp returns NOT_IN_UPDATE_MODE because the FD is
+not in update mode. What stops a pipeline that is already
+running, and how the UA learns it stopped, is open; see the open questions.
 
 ## Write-access containment
 
@@ -520,9 +507,9 @@ Out-of-transport is different. The FD writes nothing, so the first layer does
 not apply to it. The writer is the third party the orchestrator handed the
 staging address to, and the same two questions land on that path: what bounds
 its writes, and who opens the filter for it. Not answered here. The same close
-applies: whatever window that writer has shuts before PerformVerify. The
-orchestrator closes it when it learns the copy finished, and how it learns that
-is the open question above.
+applies: whatever window that writer has shuts before ArmPendingImage, which is
+what makes the image eligible for activation at all. The orchestrator closes it
+when it learns the copy finished, and how it learns that is open.
 
 ## Activation reporting
 
@@ -599,13 +586,14 @@ const sized against the tightest watchdog, not a round number.
 
 | Op | Direction | Purpose |
 |---|---|---|
-| AcceptOffer | orch -> FD | Accept with a staging base address |
+| AcceptOffer | orch -> FD | Accept with a staging base address (in-transport) |
+| ArmPendingImage | orch -> FD | Out-of-transport: a staged image is eligible for activation; the FD answers the UA's ActivatePendingComponentImage from this. Not a Perform* op because it precedes the UA command rather than ordering a phase |
 | RejectOffer | orch -> FD | Refuse the offer, with the reason the requester is owed (FD tells UA in the next response) |
 | PerformVerify | orch -> FD | Order the FD to run FdOps::verify |
 | RejectVerify | orch -> FD | Block verify (e.g. isolated component); FD returns failure to UA |
 | PerformApply | orch -> FD | Order the FD to run FdOps::apply |
 | RejectApply | orch -> FD | Block apply; FD returns failure to UA |
-| QueryStatus | orch -> FD | Read current FD state (phase, result, error); when OfferPending, includes offer data (target, total, transfer mode, SVN delayed) |
+| QueryStatus | orch -> FD | Read current FD state (phase, result, error); when OfferPending, includes offer data (target, total, SVN delayed) |
 | PerformActivate | orch -> FD | Order activation ahead of the UA's request; the FD stores it |
 | RejectActivate | orch -> FD | Refuse activation, or revoke a stored order; FD answers the UA with INCOMPLETE_UPDATE |
 | AckCancel | orch -> FD | Acknowledge cancel, release orchestrator-side resources |
@@ -641,7 +629,9 @@ orchestrator therefore releases staging and closes the window on PhaseFailed
 rather than on the cancel that may follow much later; a retry re-enters through
 a new offer and reserves again. How the session continues is the UA's choice,
 not a field: a CancelUpdateComponent puts the FD in ReadyXfer, a CancelUpdate
-puts it in Idle.
+puts it in Idle. That exit is in-transport only. Out-of-transport the state
+machine is already Idle and cancel returns NOT_IN_UPDATE_MODE, so PhaseFailed
+there is a condition of the FD's own loop that the UA cannot clear.
 
 Cancelled is a session condition with a lifetime. The FD reports it from the
 UA's CancelUpdate until the orchestrator's AckCancel, and afterwards reports
@@ -806,7 +796,7 @@ service owns the full read-hash-check pipeline.
 | Orchestrator role | Drives verify/apply | Gatekeeper: orders or denies each phase |
 | Nudge direction | Orchestrator -> PLDM | FD -> Orchestrator |
 | Transfer (in-transport) | PLDM writes via FdOps | FdOps::download_fw_data writes via device server |
-| Transfer (out-of-transport) | Not covered | Image pre-staged by a third party (platform decides where) |
+| Transfer (out-of-transport) | Not covered | Image pre-staged by a third party; UA activates it with ActivatePendingComponentImage |
 | Crypto | Inline | Separate service; reads staged image directly from device server |
 | Channel count | 2 (notify + intake) | 1 orchestrator-FD channel (device server + crypto channels are separate) |
 | MCTP responsiveness | PLDM free after Complete | FD keeps MCTP responder live; polled callbacks report 0% until ordered |
@@ -835,6 +825,19 @@ CapabilitiesDuringUpdate bit 9 in GetFirmwareParameters only says the FD
 supports the delayed update at all. Open whether the orchestrator should
 surface the outstanding commit itself.
 
+How the UA learns an out-of-transport activation failed. The 0x1F response
+goes back before verify runs, so a failure afterwards has no response left to
+carry it. The pldm-lib state machine is Idle throughout, so GetStatus reports
+Idle rather than the phase we are actually in, and the FD cannot report
+progress against the estimated time it promised either. Either we report
+through something outside the FD state machine, or the UA finds out from the
+component's active version at the next GetFirmwareParameters.
+
+What stops an out-of-transport pipeline once it is running. CancelUpdate is
+answered with NOT_IN_UPDATE_MODE because the FD is not in update mode, so the
+UA has no way to stop it, and nothing says whether the orchestrator should be
+able to.
+
 Whether FdOps callbacks need priv_data for fw_download/verify/apply.
 
 How the orchestrator finds out the FD died. Right now it does not. The
@@ -842,8 +845,9 @@ orchestrator sleeps until the FD nudges it, a dead FD never nudges, and there
 is no "the other side went away" signal to wait on instead: the set is
 READABLE, WRITEABLE, ERROR, JOINABLE, USER and the interrupt bits (the
 `Signals` bitflags in pw_kernel/syscall/syscall_defs.rs). That matters because
-the staging reservation stays held from AcceptOffer until the activated nudge,
-a cancel, or PhaseFailed. It is released by orchestrator code that only runs
+the staging reservation stays held, from AcceptOffer in-transport and from
+before ArmPendingImage out-of-transport, until the activated nudge, a cancel,
+or PhaseFailed. It is released by orchestrator code that only runs
 when the FD sends something, so nothing releases it until the chip resets.
 
 The plan is to let the FD tell us after the fact. A supervisor restarts it, the
