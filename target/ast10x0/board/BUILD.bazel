@@ -23,6 +23,7 @@ rust_library(
         "//services/orchestrator/adapters/hal:orchestrator_hal_adapters",
         "//services/orchestrator/capabilities:orchestrator_capabilities",
         "//services/orchestrator/config:orchestrator_config",
+        "//services/orchestrator/sm:orchestrator_sm",
         "//target/ast10x0/backend/i2c:i2c_backend_ast10x0",
         "//target/ast10x0/peripherals",
         "@ast1060_pac",
@@ -46,6 +47,7 @@ rust_test(
         "//services/orchestrator/adapters/walk:orchestrator_checkpoint_walk",
         "//services/orchestrator/capabilities:orchestrator_capabilities",
         "//services/orchestrator/config:orchestrator_config",
+        "//services/orchestrator/sm:orchestrator_sm",
         "@rust_crates//:embedded-hal",
     ],
 )

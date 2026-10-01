@@ -6,6 +6,7 @@ load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 rust_library(
     name = "orchestrator_config",
     srcs = [
+        "src/chain.rs",
         "src/checkpoint.rs",
         "src/device.rs",
         "src/layout.rs",
@@ -14,10 +15,16 @@ rust_library(
     ],
     edition = "2024",
     visibility = ["//visibility:public"],
+    deps = [
+        "//services/orchestrator/sm:orchestrator_sm",
+    ],
 )
 
 # Host tests: build on the host platform, no kernel/QEMU.
 rust_test(
     name = "orchestrator_config_test",
     crate = ":orchestrator_config",
+    deps = [
+        "@rust_crates//:heapless",
+    ],
 )

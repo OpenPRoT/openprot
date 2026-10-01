@@ -4,7 +4,7 @@
 //! What the board supplies to the driver: traits and wiring data only.
 //! Boards (or test mocks) implement these.
 
-use openprot_orchestrator_sm::{BootFailureKind, ComponentId, ComponentKind};
+use openprot_orchestrator_sm::{BootFailureKind, ComponentId};
 use orchestrator_capabilities::Updatable;
 use util_io::ByteSource;
 
@@ -202,8 +202,10 @@ pub enum SvnFloorBinding<F: SvnFloor> {
 }
 
 /// Everything the board supplies, built once at bring-up and handed to
-/// `PlatformDriver::new`. Fields are public: executors may need two parts at once
-/// (disjoint borrows).
+/// [`bring_up`](crate::bring_up). Holds only what a board composes by hand:
+/// anything the chain already states, the driver derives instead of taking it
+/// here. Fields are public because a board writes this as a literal, and
+/// because executors may need two parts at once (disjoint borrows).
 ///
 /// ```ignore
 /// struct Ast1060Board;
@@ -217,20 +219,30 @@ pub enum SvnFloorBinding<F: SvnFloor> {
 ///     type Updatable = PldmDevice;        // device pulls its own chunks
 ///     type Recovery = SlotRecovery;       // A/B + golden, attempt-indexed
 ///     type Staging = StagingFlash;        // where the update source writes
+///     type SelfUpdate = SelfUpdateSession; // session record in the eRoT's own flash
 /// }
-/// let board = Board::<Ast1060Board, 2> {
-///     images: [bmc_image, cpld_image],
-///     verifier,
-///     boot_controls: [bmc_reset, cpld_reset],
-///     boot_watches: [bmc_walk, cpld_walk],
-///     component_kinds: [ComponentKind::Active, ComponentKind::Passive],
-///     svn_floors: [SvnFloorBinding::Erot(bmc_floor), SvnFloorBinding::SelfManaged],
-///     report_sink,
-///     updatables: [bmc_update, cpld_update],
-///     recovery: [bmc_recovery, cpld_recovery],
-///     update_staging,
-///     update_stall_budget_millis: 30_000,
-/// };
+///
+/// // One chain, from the board's device table, for both halves. The const
+/// // item is load-bearing: it forces chain_of's validation at build time.
+/// const CHAIN: orchestrator_config::ChainEntries<2> = orchestrator_config::chain_of(&DEVICES);
+/// let (orchestrator, driver) = bring_up::<Ast1060Board, 2, 6>(
+///     &CHAIN,
+///     Board {
+///         images: [bmc_image, cpld_image],
+///         verifier,
+///         boot_controls: [bmc_reset, cpld_reset],
+///         boot_watches: [bmc_walk, cpld_walk],
+///         svn_floors: [SvnFloorBinding::Erot(bmc_floor), SvnFloorBinding::SelfManaged],
+///         report_sink,
+///         updatables: [bmc_update, cpld_update],
+///         recovery: [bmc_recovery, cpld_recovery],
+///         update_staging,
+///         update_stall_budget_millis: 30_000,
+///         self_update,
+///         self_svn_floor,
+///     },
+///     MAX_RETRY,
+/// );
 /// ```
 pub struct Board<B: BoardCapabilities, const N: usize> {
     /// `images[i]` belongs to `ComponentId(i)` — device index = chain
@@ -244,10 +256,6 @@ pub struct Board<B: BoardCapabilities, const N: usize> {
     /// `boot_watches[i]` supervises `ComponentId(i)`'s boot walk, same
     /// indexing as `images`.
     pub boot_watches: [B::BootWatch; N],
-    /// `component_kinds[i]` classifies `ComponentId(i)`: a completed walk becomes
-    /// `ComponentReady` for `Active`, `Booted` for `Passive`. Comes from
-    /// the same board table as the SM's chain, so both sides agree.
-    pub component_kinds: [ComponentKind; N],
     /// `svn_floors[i]` says who keeps `ComponentId(i)`'s anti-rollback
     /// floor, same indexing as `images`.
     pub svn_floors: [SvnFloorBinding<B::SvnFloor>; N],

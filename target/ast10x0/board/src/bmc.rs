@@ -15,8 +15,9 @@
 use core::time::Duration;
 use openprot_hal_blocking::gpio_port::ActivePolarity;
 use openprot_hal_blocking::{DelayNs, InputPin, OutputPin};
+use openprot_orchestrator_sm::ComponentAttrs;
 use orchestrator_capabilities::{BootStatus, EvidenceReader};
-use orchestrator_config::{BootCheckpoint, DeviceConfig};
+use orchestrator_config::{chain_of, BootCheckpoint, ChainEntries, DeviceConfig};
 use orchestrator_hal_adapters::{
     GpioReadyMonitor, GpioResetControl, ReadyLineError, ResetLineError,
 };
@@ -49,9 +50,22 @@ const CHECKPOINTS: &[BootCheckpoint<BmcProbe>] = &[BootCheckpoint::new(
     READY_WINDOW,
 )];
 
-/// The mock BMC's entry in this board's device table.
-pub const BMC: DeviceConfig<BmcReset, BmcProbe> =
-    DeviceConfig::new("bmc", BmcReset::Bmc, CHECKPOINTS, None);
+/// The mock BMC's entry in this board's device table. Passive: it has no
+/// iRoT to self-verify, so its ready line is the only post-release signal
+/// it produces. Required: the platform has nothing to run without it.
+pub const BMC: DeviceConfig<BmcReset, BmcProbe> = DeviceConfig::new(
+    "bmc",
+    BmcReset::Bmc,
+    CHECKPOINTS,
+    None,
+    ComponentAttrs::passive_required(),
+);
+
+/// Every device this board manages, in the order that assigns their ids.
+pub const DEVICES: [DeviceConfig<BmcReset, BmcProbe>; 1] = [BMC];
+
+/// The orchestrator's chain, derived from [`DEVICES`].
+pub const CHAIN: ChainEntries<{ DEVICES.len() }> = chain_of(&DEVICES);
 
 /// The BMC's ready line is driven high when it has booted.
 ///

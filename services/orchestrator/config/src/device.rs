@@ -5,6 +5,7 @@
 
 use crate::checkpoint::BootCheckpoint;
 use crate::layout::ImageLayout;
+use openprot_orchestrator_sm::ComponentAttrs;
 
 /// Fails the build if `max_retry` is too small for a device to boot every
 /// image. Recovery restores one image per attempt, and the orchestrator
@@ -48,10 +49,9 @@ pub const fn assert_retry_reaches_every_image<R, P>(max_retry: u8, devices: &[De
 /// implementation) and its boot-probe vocabulary `P`, for the same
 /// reason: probes are board-specific.
 ///
-/// Deliberately says nothing about attestation or commit requirements:
-/// those follow from what kind of device this is (iRoT-backed or
-/// symbiont, the orchestrator's `ComponentKind`), not from a table
-/// setting — a second knob would only let the two disagree.
+/// Says nothing about attestation or commit requirements: those follow from
+/// what kind of device this is, which `attrs` carries, not from a second
+/// table setting that could disagree with it.
 ///
 /// Fields are private so a device entry that violates the schema is
 /// unrepresentable: [`new`](Self::new) is the only way in, and it checks.
@@ -61,6 +61,7 @@ pub struct DeviceConfig<R, P: 'static> {
     reset_signal: R,
     checkpoints: &'static [BootCheckpoint<P>],
     layout: Option<ImageLayout>,
+    attrs: ComponentAttrs,
 }
 
 impl<R, P> DeviceConfig<R, P> {
@@ -79,6 +80,7 @@ impl<R, P> DeviceConfig<R, P> {
         reset_signal: R,
         checkpoints: &'static [BootCheckpoint<P>],
         layout: Option<ImageLayout>,
+        attrs: ComponentAttrs,
     ) -> Self {
         assert!(!name.is_empty(), "device name must not be empty");
         assert!(
@@ -102,7 +104,14 @@ impl<R, P> DeviceConfig<R, P> {
             reset_signal,
             checkpoints,
             layout,
+            attrs,
         }
+    }
+
+    /// The orchestrator's per-component policy for this device.
+    #[must_use]
+    pub const fn attrs(&self) -> ComponentAttrs {
+        self.attrs
     }
 
     /// The device's name in reports and logs.
@@ -182,6 +191,7 @@ mod tests {
     /// The golden image, above every slot `slot` can place.
     const GOLDEN: Golden = Golden::new(Region::new(0xF000_0000, SLOT_LEN));
 
+    const ATTRS: ComponentAttrs = ComponentAttrs::passive_required();
     const LAYOUT: ImageLayout = ImageLayout::new(const { &[slot(0), slot(1)] }, Some(GOLDEN));
 
     #[test]
@@ -192,12 +202,13 @@ mod tests {
             0u8,
             &[BOOT_COMPLETE, BOOT_COMPLETE_DUPLICATE_NAME],
             None,
+            ATTRS,
         );
     }
 
     #[test]
     fn accepts_a_valid_table() {
-        let device = DeviceConfig::new("dev", 0u8, &[BOOT_COMPLETE], Some(LAYOUT));
+        let device = DeviceConfig::new("dev", 0u8, &[BOOT_COMPLETE], Some(LAYOUT), ATTRS);
         assert_eq!(device.name(), "dev");
         assert_eq!(*device.reset_signal(), 0);
         assert_eq!(device.checkpoints().len(), 1);
@@ -219,28 +230,33 @@ mod tests {
     /// included: the eRoT never addresses a byte range for it.
     #[test]
     fn accepts_a_device_without_a_layout() {
-        let device = DeviceConfig::new("dev", 0u8, &[BOOT_COMPLETE], None);
+        let device = DeviceConfig::new("dev", 0u8, &[BOOT_COMPLETE], None, ATTRS);
         assert!(device.layout().is_none());
     }
 
     #[test]
     #[should_panic(expected = "device name must not be empty")]
     fn rejects_an_empty_device_name() {
-        let _ = DeviceConfig::new("", 0u8, &[BOOT_COMPLETE], None);
+        let _ = DeviceConfig::new("", 0u8, &[BOOT_COMPLETE], None, ATTRS);
     }
 
     #[test]
     #[should_panic(expected = "at least one boot checkpoint")]
     fn rejects_an_empty_checkpoint_list() {
-        let _ = DeviceConfig::new("dev", 0u8, &[] as &[BootCheckpoint<u8>], None);
+        let _ = DeviceConfig::new("dev", 0u8, &[] as &[BootCheckpoint<u8>], None, ATTRS);
     }
 
     /// Two slots and a golden image need four attempts: three restores
     /// plus the one the last restore would otherwise never get.
     #[test]
     fn accepts_a_retry_budget_that_boots_the_golden_image() {
-        const DEVICES: &[DeviceConfig<u8, u8>] =
-            &[DeviceConfig::new("dev", 0, &[BOOT_COMPLETE], Some(LAYOUT))];
+        const DEVICES: &[DeviceConfig<u8, u8>] = &[DeviceConfig::new(
+            "dev",
+            0,
+            &[BOOT_COMPLETE],
+            Some(LAYOUT),
+            ATTRS,
+        )];
         assert_retry_reaches_every_image(4, DEVICES);
     }
 
@@ -249,7 +265,7 @@ mod tests {
     #[test]
     fn accepts_any_retry_budget_for_a_device_without_a_layout() {
         const DEVICES: &[DeviceConfig<u8, u8>] =
-            &[DeviceConfig::new("dev", 0, &[BOOT_COMPLETE], None)];
+            &[DeviceConfig::new("dev", 0, &[BOOT_COMPLETE], None, ATTRS)];
         assert_retry_reaches_every_image(0, DEVICES);
     }
 
@@ -257,8 +273,13 @@ mod tests {
     /// Three attempts restore the golden image and stop before booting it.
     #[should_panic(expected = "max_retry is too small")]
     fn rejects_a_retry_budget_that_never_boots_the_golden_image() {
-        const DEVICES: &[DeviceConfig<u8, u8>] =
-            &[DeviceConfig::new("dev", 0, &[BOOT_COMPLETE], Some(LAYOUT))];
+        const DEVICES: &[DeviceConfig<u8, u8>] = &[DeviceConfig::new(
+            "dev",
+            0,
+            &[BOOT_COMPLETE],
+            Some(LAYOUT),
+            ATTRS,
+        )];
         assert_retry_reaches_every_image(3, DEVICES);
     }
 }

@@ -485,10 +485,13 @@ impl State {
 ///   dependency is always walked before its dependents),
 /// - the length fits `u8`, the `cursor` index type.
 ///
+/// Boards build it from their device table rather than entry by entry, so the
+/// table stays the only place a component is declared:
+///
 /// ```ignore
-/// let mut v = heapless::Vec::<_, 4>::new();
-/// v.push((ComponentId::new(0), ComponentAttrs::passive_required())).unwrap();
-/// let chain: Chain<4> = v.try_into()?;
+/// let validated = orchestrator_config::chain_of(&DEVICES);
+/// let entries = heapless::Vec::from_slice(validated.entries())?;
+/// let chain: Chain<2> = entries.try_into()?;
 /// ```
 #[derive(Clone, Debug)]
 pub struct Chain<const N: usize> {

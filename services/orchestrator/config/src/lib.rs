@@ -12,11 +12,14 @@
 
 #![cfg_attr(not(test), no_std)]
 
+pub mod chain;
 pub mod checkpoint;
 pub mod device;
 pub mod layout;
 pub mod record;
 
+#[doc(inline)]
+pub use chain::{chain_of, ChainEntries};
 #[doc(inline)]
 pub use checkpoint::BootCheckpoint;
 #[doc(inline)]

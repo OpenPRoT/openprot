@@ -130,14 +130,19 @@ impl<R: EvidenceReader<P>, P> BootWatch for CheckpointWalk<R, P> {
 mod tests {
     use super::*;
     use core::time::Duration;
+    use openprot_orchestrator_sm::ComponentAttrs;
     use orchestrator_config::DeviceConfig;
+
+    const ATTRS: ComponentAttrs = ComponentAttrs::passive_required();
 
     const BL1: BootCheckpoint<u8> = BootCheckpoint::new("bl1", 1, Duration::from_millis(100));
     const KERNEL: BootCheckpoint<u8> = BootCheckpoint::new("kernel", 2, Duration::from_millis(200));
     const CHECKPOINTS: &[BootCheckpoint<u8>] = &[BL1, KERNEL];
 
-    static DEVICE: DeviceConfig<u8, u8> = DeviceConfig::new("test-dev", 0, CHECKPOINTS, None);
-    static ONE_CP_DEVICE: DeviceConfig<u8, u8> = DeviceConfig::new("one-cp-dev", 0, &[BL1], None);
+    static DEVICE: DeviceConfig<u8, u8> =
+        DeviceConfig::new("test-dev", 0, CHECKPOINTS, None, ATTRS);
+    static ONE_CP_DEVICE: DeviceConfig<u8, u8> =
+        DeviceConfig::new("one-cp-dev", 0, &[BL1], None, ATTRS);
 
     // A progress-register reader: probe N is Booted once progress >= N.
     // Mirrors the SocReader archetype in the evidence tests.

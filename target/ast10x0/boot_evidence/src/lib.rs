@@ -71,6 +71,7 @@ pub const BMC_DEVICE: orchestrator_config::DeviceConfig<u8, BmcSignal> =
             core::time::Duration::from_millis(500),
         )],
         None,
+        openprot_orchestrator_sm::ComponentAttrs::passive_required(),
     );
 
 #[cfg(test)]

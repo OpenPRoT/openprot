@@ -5,8 +5,11 @@
 //! the SM through the [`Platform`] impl.
 
 use openprot_orchestrator_sm::{
-    BootFailureKind, ComponentId, ComponentKind, Effect, EffectError, Event, Orchestrator, Platform,
+    BootFailureKind, Chain, ComponentAttrs, ComponentId, ComponentKind, Effect, EffectError, Event,
+    Orchestrator, Platform,
 };
+
+use orchestrator_config::ChainEntries;
 
 use crate::board::{
     Board, BoardCapabilities, ImageSource, Report, ReportSink, SvnFloorBinding, Verdict, Verifier,
@@ -92,6 +95,10 @@ impl core::error::Error for DriverError {}
 /// the driver's own fields are bookkeeping.
 pub struct PlatformDriver<B: BoardCapabilities, const N: usize> {
     board: Board<B, N>,
+    /// `kinds[i]` classifies `ComponentId(i)`, derived from the chain the
+    /// state machine runs on. A completed walk becomes `ComponentReady` for
+    /// an `Active` component and `Booted` for a `Passive` one.
+    kinds: [ComponentKind; N],
     /// Component whose image is staged (source opened) for verification.
     staged: Option<ComponentId>,
     /// `watching[i]`: `ComponentId(i)` is out of reset with a walk in
@@ -162,11 +169,31 @@ enum UpdatePhase {
 }
 
 impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
-    pub fn new(board: Board<B, N>) -> Self {
-        // ComponentId is a u8, so ids for N > 256 components would wrap.
-        const { assert!(N <= 256) };
+    /// Derives what the chain already states instead of taking it twice: the
+    /// component kinds come from `entries`, the same entries the state machine
+    /// is built from.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an entry's id is not its position. The driver indexes every
+    /// per-component array by `id.get()`, so an entry out of position would
+    /// address the wrong component's reset line, flash and floor.
+    pub(crate) fn new(entries: &[(ComponentId, ComponentAttrs); N], board: Board<B, N>) -> Self {
+        // ComponentId is a u8; Chain rejects more than u8::MAX entries.
+        const { assert!(N <= u8::MAX as usize) };
+        let mut kinds = [ComponentKind::Passive; N];
+        let mut i = 0;
+        while i < N {
+            assert!(
+                entries[i].0.get() as usize == i,
+                "a chain entry's id must be its position in the chain"
+            );
+            kinds[i] = entries[i].1.kind;
+            i += 1;
+        }
         Self {
             board,
+            kinds,
             staged: None,
             watching: [false; N],
             verified_svn: [None; N],
@@ -532,7 +559,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
                 }
                 WalkVerdict::Complete => {
                     self.watching[idx] = false;
-                    let event = match self.board.component_kinds[idx] {
+                    let event = match self.kinds[idx] {
                         ComponentKind::Active => Event::ComponentReady(id),
                         ComponentKind::Passive => Event::Booted(id),
                     };
@@ -688,6 +715,32 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
         }
         .map_err(|_| EffectError)
     }
+}
+
+/// Brings a platform up from one chain: the state machine that decides and the
+/// driver that acts, built from the same entries so neither can be holding a
+/// different list of components than the other.
+///
+/// Takes a [`ChainEntries`] returned by `orchestrator_config::chain_of`,
+/// which validates the table at const time. Boards declare the result as a
+/// `const` item, so an invalid table is a build error, not a runtime panic.
+pub fn bring_up<B: BoardCapabilities, const N: usize, const E: usize>(
+    chain_entries: &'static ChainEntries<N>,
+    board: Board<B, N>,
+    max_retry: u8,
+) -> (Orchestrator<N, E>, PlatformDriver<B, N>) {
+    let entries = chain_entries.entries();
+    // chain_of validated: nonempty, at most u8::MAX, ids are positions,
+    // deps strictly earlier. Chain::try_from rechecks the same invariants
+    // at runtime, so the expect cannot fire.
+    let chain: Chain<N> = heapless::Vec::from_slice(entries)
+        .expect("same length as the capacity")
+        .try_into()
+        .expect("chain_of validated the entries");
+    (
+        Orchestrator::new(chain, max_retry),
+        PlatformDriver::new(entries, board),
+    )
 }
 
 /// The connection between an update frontend and the SM: called (by the

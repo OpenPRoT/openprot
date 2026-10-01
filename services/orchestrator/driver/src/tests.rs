@@ -276,6 +276,28 @@ impl MockFloor {
     }
 }
 
+/// Chain entries for an all-passive chain of `N` components, which is what
+/// most of these tests want. Ids are positions, as the driver requires.
+fn passive_entries<const N: usize>() -> [(ComponentId, ComponentAttrs); N] {
+    core::array::from_fn(|i| {
+        (
+            ComponentId::new(i as u8),
+            ComponentAttrs::passive_required(),
+        )
+    })
+}
+
+/// The same, with the kinds a test cares about.
+fn entries_with_kinds<const N: usize>(
+    kinds: [ComponentKind; N],
+) -> [(ComponentId, ComponentAttrs); N] {
+    core::array::from_fn(|i| {
+        let mut attrs = ComponentAttrs::passive_required();
+        attrs.kind = kinds[i];
+        (ComponentId::new(i as u8), attrs)
+    })
+}
+
 /// Update adapter without a HAL. Wiring-only for now: it stages the whole
 /// payload in one step. The update pump replaces it with a stepping mock
 /// when the executors land.
@@ -471,7 +493,6 @@ fn mock_board<const N: usize>() -> Board<MockBoard, N> {
         },
         boot_controls: core::array::from_fn(|_| MockReset::new()),
         boot_watches: core::array::from_fn(|_| MockWalk::idle()),
-        component_kinds: core::array::from_fn(|_| ComponentKind::Passive),
         svn_floors: core::array::from_fn(|_| SvnFloorBinding::Erot(MockFloor::new())),
         report_sink: RecordingSink::new(),
         updatables: core::array::from_fn(|_| MockUpdatable::new()),
@@ -482,10 +503,13 @@ fn mock_board<const N: usize>() -> Board<MockBoard, N> {
 }
 
 fn driver(images: [MemImage; 1]) -> PlatformDriver<MockBoard, 1> {
-    PlatformDriver::new(Board {
-        images,
-        ..mock_board()
-    })
+    PlatformDriver::new(
+        &passive_entries(),
+        Board {
+            images,
+            ..mock_board()
+        },
+    )
 }
 
 fn orchestrator() -> Orchestrator<1, 4> {
@@ -562,13 +586,16 @@ fn unreadable_source_fails_closed() {
 #[test]
 fn verifier_fault_fails_closed() {
     let mut orch = orchestrator();
-    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
-        verifier: XorVerifier {
-            fault: true,
-            svn: MOCK_SVN,
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(
+        &passive_entries(),
+        Board {
+            verifier: XorVerifier {
+                fault: true,
+                svn: MOCK_SVN,
+            },
+            ..mock_board()
         },
-        ..mock_board()
-    });
+    );
 
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
 
@@ -579,7 +606,7 @@ const C1: ComponentId = ComponentId::new(1);
 
 #[test]
 fn verify_for_a_different_component_is_refused() {
-    let mut driver = PlatformDriver::<MockBoard, 2>::new(mock_board());
+    let mut driver = PlatformDriver::<MockBoard, 2>::new(&passive_entries(), mock_board());
 
     driver.stage_firmware(C0).unwrap();
 
@@ -609,7 +636,7 @@ fn verify_of_unknown_component_is_refused() {
 
 #[test]
 fn reset_release_and_assert_reach_the_boot_control() {
-    let mut driver = PlatformDriver::<MockBoard, 1>::new(mock_board());
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(&passive_entries(), mock_board());
 
     driver.release_reset(C0).unwrap();
     assert!(!driver.board().boot_controls[0].held.get());
@@ -636,10 +663,13 @@ fn reset_of_unknown_component_is_refused() {
 fn reset_line_fault_is_reported() {
     let mut control = MockReset::new();
     control.fail = true;
-    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
-        boot_controls: [control],
-        ..mock_board()
-    });
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(
+        &passive_entries(),
+        Board {
+            boot_controls: [control],
+            ..mock_board()
+        },
+    );
 
     assert_eq!(driver.release_reset(C0), Err(DriverError::BootControlFault));
     assert_eq!(driver.assert_reset(C0), Err(DriverError::BootControlFault));
@@ -716,26 +746,28 @@ fn release_follows_verification() {
     let control = MockReset::new();
     let held = control.held.clone();
     let held_during_verify = std::rc::Rc::new(core::cell::Cell::new(false));
-    let mut driver = PlatformDriver::<WatchBoard, 1>::new(Board {
-        images: [MemImage::holding(valid_image())],
-        verifier: LineWatchingVerifier {
-            inner: XorVerifier {
-                fault: false,
-                svn: MOCK_SVN,
+    let mut driver = PlatformDriver::<WatchBoard, 1>::new(
+        &passive_entries(),
+        Board {
+            images: [MemImage::holding(valid_image())],
+            verifier: LineWatchingVerifier {
+                inner: XorVerifier {
+                    fault: false,
+                    svn: MOCK_SVN,
+                },
+                line: held.clone(),
+                held_during_verify: held_during_verify.clone(),
             },
-            line: held.clone(),
-            held_during_verify: held_during_verify.clone(),
+            boot_controls: [control],
+            boot_watches: [MockWalk::idle()],
+            svn_floors: [SvnFloorBinding::Erot(MockFloor::new())],
+            report_sink: (),
+            updatables: [MockUpdatable::new()],
+            recovery: [()],
+            update_staging: MemStaging::new(),
+            update_stall_budget_millis: STALL_BUDGET_MILLIS,
         },
-        boot_controls: [control],
-        boot_watches: [MockWalk::idle()],
-        component_kinds: [ComponentKind::Passive],
-        svn_floors: [SvnFloorBinding::Erot(MockFloor::new())],
-        report_sink: (),
-        updatables: [MockUpdatable::new()],
-        recovery: [()],
-        update_staging: MemStaging::new(),
-        update_stall_budget_millis: STALL_BUDGET_MILLIS,
-    });
+    );
     let mut orch = orchestrator();
 
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
@@ -755,10 +787,13 @@ fn failed_release_fails_closed() {
     let mut control = MockReset::new();
     control.fail = true;
     let held = control.held.clone();
-    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
-        boot_controls: [control],
-        ..mock_board()
-    });
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(
+        &passive_entries(),
+        Board {
+            boot_controls: [control],
+            ..mock_board()
+        },
+    );
     let mut orch = orchestrator();
 
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
@@ -777,11 +812,13 @@ fn walk_driver(
     walks: [MockWalk; 2],
     component_kinds: [ComponentKind; 2],
 ) -> PlatformDriver<MockBoard, 2> {
-    PlatformDriver::new(Board {
-        boot_watches: walks,
-        component_kinds,
-        ..mock_board()
-    })
+    PlatformDriver::new(
+        &entries_with_kinds(component_kinds),
+        Board {
+            boot_watches: walks,
+            ..mock_board()
+        },
+    )
 }
 
 // A completed walk becomes ComponentReady for Active, Booted for Passive.
@@ -981,10 +1018,13 @@ fn rerelease_arms_a_fresh_walk() {
 #[test]
 fn booted_walk_settles_in_ready() {
     let mut orch = orchestrator();
-    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
-        boot_watches: [MockWalk::scripted(std::vec![WalkVerdict::Complete])],
-        ..mock_board()
-    });
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(
+        &passive_entries(),
+        Board {
+            boot_watches: [MockWalk::scripted(std::vec![WalkVerdict::Complete])],
+            ..mock_board()
+        },
+    );
 
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
     assert_eq!(orch.state(), State::Ready);
@@ -1002,13 +1042,16 @@ fn booted_walk_settles_in_ready() {
 #[test]
 fn boot_failure_locks_when_recovery_is_exhausted() {
     let mut orch = orchestrator();
-    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
-        boot_watches: [MockWalk::scripted(std::vec![WalkVerdict::Failed {
-            checkpoint: "heartbeat",
-            cause: FailureCause::TimedOut,
-        }])],
-        ..mock_board()
-    });
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(
+        &passive_entries(),
+        Board {
+            boot_watches: [MockWalk::scripted(std::vec![WalkVerdict::Failed {
+                checkpoint: "heartbeat",
+                cause: FailureCause::TimedOut,
+            }])],
+            ..mock_board()
+        },
+    );
 
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
     assert_eq!(orch.state(), State::Ready);
@@ -1092,7 +1135,6 @@ fn recoverable_board<const N: usize>(sources: u8) -> Board<RecoverableBoard, N> 
         },
         boot_controls: core::array::from_fn(|_| MockReset::new()),
         boot_watches: core::array::from_fn(|_| MockWalk::idle()),
-        component_kinds: core::array::from_fn(|_| ComponentKind::Passive),
         svn_floors: core::array::from_fn(|_| SvnFloorBinding::Erot(MockFloor::new())),
         report_sink: RecordingSink::new(),
         updatables: core::array::from_fn(|_| MockUpdatable::new()),
@@ -1108,7 +1150,8 @@ fn recoverable_board<const N: usize>(sources: u8) -> Board<RecoverableBoard, N> 
 // RecoverComponent with a successful restore returns Restored(id).
 #[test]
 fn recover_component_returns_restored() {
-    let mut driver = PlatformDriver::<RecoverableBoard, 1>::new(recoverable_board(2));
+    let mut driver =
+        PlatformDriver::<RecoverableBoard, 1>::new(&passive_entries(), recoverable_board(2));
 
     assert_eq!(driver.recover_component(C0, 0), Ok(Event::Restored(C0)));
     assert_eq!(driver.recover_component(C0, 1), Ok(Event::Restored(C0)));
@@ -1117,7 +1160,8 @@ fn recover_component_returns_restored() {
 // RecoverComponent past the last source returns RecoveryUnavailable(id).
 #[test]
 fn recover_component_returns_unavailable_when_exhausted() {
-    let mut driver = PlatformDriver::<RecoverableBoard, 1>::new(recoverable_board(1));
+    let mut driver =
+        PlatformDriver::<RecoverableBoard, 1>::new(&passive_entries(), recoverable_board(1));
 
     assert_eq!(driver.recover_component(C0, 0), Ok(Event::Restored(C0)));
     assert_eq!(
@@ -1130,13 +1174,16 @@ fn recover_component_returns_unavailable_when_exhausted() {
 // succeeds, so a fault does not poison the path.
 #[test]
 fn recovery_fault_is_reported() {
-    let mut driver = PlatformDriver::<RecoverableBoard, 1>::new(Board {
-        recovery: [MockRecovery {
-            sources: 2,
-            fail_on: Some(0),
-        }],
-        ..recoverable_board(2)
-    });
+    let mut driver = PlatformDriver::<RecoverableBoard, 1>::new(
+        &passive_entries(),
+        Board {
+            recovery: [MockRecovery {
+                sources: 2,
+                fail_on: Some(0),
+            }],
+            ..recoverable_board(2)
+        },
+    );
 
     assert_eq!(
         driver.recover_component(C0, 0),
@@ -1149,7 +1196,8 @@ fn recovery_fault_is_reported() {
 // An unknown component is refused before the mechanism is consulted.
 #[test]
 fn recover_unknown_component_is_refused() {
-    let mut driver = PlatformDriver::<RecoverableBoard, 1>::new(recoverable_board(2));
+    let mut driver =
+        PlatformDriver::<RecoverableBoard, 1>::new(&passive_entries(), recoverable_board(2));
 
     assert_eq!(
         driver.recover_component(ComponentId::new(9), 0),
@@ -1160,7 +1208,7 @@ fn recover_unknown_component_is_refused() {
 // The `()` impl reports exhaustion on every attempt: no sources exist.
 #[test]
 fn unit_recovery_always_exhausted() {
-    let mut driver = PlatformDriver::<MockBoard, 1>::new(mock_board());
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(&passive_entries(), mock_board());
 
     assert_eq!(
         driver.recover_component(C0, 0),
@@ -1174,20 +1222,24 @@ fn unit_recovery_always_exhausted() {
 fn execute_routes_recover_component() {
     use openprot_orchestrator_sm::{Effect, EffectError, Platform};
 
-    let mut driver = PlatformDriver::<RecoverableBoard, 1>::new(recoverable_board(2));
+    let mut driver =
+        PlatformDriver::<RecoverableBoard, 1>::new(&passive_entries(), recoverable_board(2));
 
     assert_eq!(
         driver.execute(Effect::RecoverComponent { id: C0, attempt: 0 }),
         Ok(Some(Event::Restored(C0)))
     );
 
-    let mut faulting_driver = PlatformDriver::<RecoverableBoard, 1>::new(Board {
-        recovery: [MockRecovery {
-            sources: 2,
-            fail_on: Some(0),
-        }],
-        ..recoverable_board(2)
-    });
+    let mut faulting_driver = PlatformDriver::<RecoverableBoard, 1>::new(
+        &passive_entries(),
+        Board {
+            recovery: [MockRecovery {
+                sources: 2,
+                fail_on: Some(0),
+            }],
+            ..recoverable_board(2)
+        },
+    );
 
     assert_eq!(
         faulting_driver.execute(Effect::RecoverComponent { id: C0, attempt: 0 }),
@@ -1258,7 +1310,7 @@ fn every_report_reaches_a_sink() {
 // after a verification has passed — the two halves of the commit contract.
 #[test]
 fn commit_advances_the_floor_to_the_verified_svn() {
-    let mut driver = PlatformDriver::<MockBoard, 1>::new(mock_board());
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(&passive_entries(), mock_board());
 
     driver
         .execute(Effect::ReadFirmware(C0))
@@ -1284,10 +1336,13 @@ fn commit_advances_the_floor_to_the_verified_svn() {
 // mis-advance.
 #[test]
 fn commit_without_an_erot_floor_is_a_no_op() {
-    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
-        svn_floors: [SvnFloorBinding::SelfManaged],
-        ..mock_board()
-    });
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(
+        &passive_entries(),
+        Board {
+            svn_floors: [SvnFloorBinding::SelfManaged],
+            ..mock_board()
+        },
+    );
 
     assert_eq!(driver.execute(Effect::CommitSvnFloor(C0)), Ok(None));
 }
@@ -1308,10 +1363,13 @@ fn commit_without_a_verified_image_fails_closed() {
 fn rejected_image_clears_the_verified_svn() {
     let mut corrupt = valid_image();
     corrupt[7] ^= 0x01;
-    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
-        images: [MemImage::holding(valid_image()).reflash_on_reopen(corrupt)],
-        ..mock_board()
-    });
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(
+        &passive_entries(),
+        Board {
+            images: [MemImage::holding(valid_image()).reflash_on_reopen(corrupt)],
+            ..mock_board()
+        },
+    );
 
     driver.stage_firmware(C0).expect("stage failed");
     assert_eq!(
@@ -1337,10 +1395,13 @@ fn rejected_image_clears_the_verified_svn() {
 fn floor_fault_is_reported() {
     let mut mock = MockFloor::new();
     mock.fail = true;
-    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
-        svn_floors: [SvnFloorBinding::Erot(mock)],
-        ..mock_board()
-    });
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(
+        &passive_entries(),
+        Board {
+            svn_floors: [SvnFloorBinding::Erot(mock)],
+            ..mock_board()
+        },
+    );
 
     driver.stage_firmware(C0).expect("stage failed");
     driver.verify_firmware(C0).expect("verify failed");
@@ -1352,13 +1413,16 @@ fn floor_fault_is_reported() {
 // hands back an error for the SM to fail closed on.
 #[test]
 fn reports_reach_the_board_sink() {
-    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
-        verifier: XorVerifier {
-            fault: false,
-            svn: 0,
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(
+        &passive_entries(),
+        Board {
+            verifier: XorVerifier {
+                fault: false,
+                svn: 0,
+            },
+            ..mock_board()
         },
-        ..mock_board()
-    });
+    );
 
     for effect in [
         Effect::ReportIsolated(C0),
@@ -1382,13 +1446,16 @@ fn reports_reach_the_board_sink() {
 // fail-closed path.
 #[test]
 fn reporting_an_isolated_component_does_not_lock_the_platform() {
-    let mut driver = PlatformDriver::<MockBoard, 2>::new(Board {
-        verifier: XorVerifier {
-            fault: false,
-            svn: 0,
+    let mut driver = PlatformDriver::<MockBoard, 2>::new(
+        &passive_entries(),
+        Board {
+            verifier: XorVerifier {
+                fault: false,
+                svn: 0,
+            },
+            ..mock_board()
         },
-        ..mock_board()
-    });
+    );
     let mut chain = heapless::Vec::<_, 2>::new();
     chain
         .push((C0, ComponentAttrs::passive_required()))
@@ -1551,10 +1618,13 @@ fn aborted_update_clears_pending_update() {
 }
 
 fn update_driver(updatable: MockUpdatable) -> PlatformDriver<MockBoard, 1> {
-    PlatformDriver::new(Board {
-        updatables: [updatable],
-        ..mock_board()
-    })
+    PlatformDriver::new(
+        &passive_entries(),
+        Board {
+            updatables: [updatable],
+            ..mock_board()
+        },
+    )
 }
 
 /// Submits a job and runs the entry executor, as entry to `Updating`
@@ -1793,6 +1863,36 @@ fn a_rejected_update_returns_the_platform_to_ready() {
     assert!(!driver.board().updatables[0].active);
 }
 
+// bring_up takes a ChainEntries, the validated output of chain_of. The
+// machine and the driver cannot be holding different component lists
+// because the entries come from one const-validated device table.
+#[test]
+fn bring_up_builds_both_halves_from_one_chain() {
+    use core::time::Duration;
+    use orchestrator_config::{chain_of, BootCheckpoint, ChainEntries, DeviceConfig};
+
+    const CP: BootCheckpoint<u8> = BootCheckpoint::new("up", 1, Duration::from_millis(10));
+    const fn dev(attrs: ComponentAttrs) -> DeviceConfig<u8, u8> {
+        DeviceConfig::new("dev", 0, &[CP], None, attrs)
+    }
+    const TABLE: [DeviceConfig<u8, u8>; 1] = [dev(ComponentAttrs::active_required())];
+    const CHAIN: ChainEntries<1> = chain_of(&TABLE);
+
+    let (orch, driver) = bring_up::<MockBoard, 1, 4>(&CHAIN, mock_board(), 3);
+
+    assert_eq!(orch.state(), State::PowerOnReset);
+    assert!(driver.pending_update().is_none());
+}
+
+// The driver indexes every per-component array by id, so an entry out of
+// position would address the wrong component's reset line and flash.
+#[test]
+#[should_panic(expected = "id must be its position")]
+fn an_entry_out_of_position_is_refused() {
+    let entries = [(ComponentId::new(3), ComponentAttrs::passive_required())];
+    let _ = PlatformDriver::<MockBoard, 1>::new(&entries, mock_board());
+}
+
 // Before the platform is in service nothing would report the request
 // deferred, so it is refused and no job is recorded.
 #[test]
@@ -1813,13 +1913,16 @@ fn a_request_before_the_platform_is_in_service_is_refused() {
 #[test]
 fn a_request_to_a_locked_platform_is_refused() {
     let mut orch = orchestrator();
-    let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
-        verifier: XorVerifier {
-            fault: true,
-            svn: MOCK_SVN,
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(
+        &passive_entries(),
+        Board {
+            verifier: XorVerifier {
+                fault: true,
+                svn: MOCK_SVN,
+            },
+            ..mock_board()
         },
-        ..mock_board()
-    });
+    );
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
     assert_eq!(orch.state(), State::Locked);
 

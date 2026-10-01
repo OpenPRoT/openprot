@@ -14,6 +14,7 @@ rust_library(
     deps = [
         "//services/orchestrator/capabilities:orchestrator_capabilities",
         "//services/orchestrator/config:orchestrator_config",
+        "//services/orchestrator/sm:orchestrator_sm",
     ],
 )
 
