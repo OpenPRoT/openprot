@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-// AST10x0 PLDM firmware-update test, mock-BMC side (card B, the Update Agent).
+// AST10x0 PLDM firmware-update test, mock-BMC side (the Update Agent).
 {
     arch: {
         type: "armv7m",
@@ -107,6 +107,14 @@
                             type: "thread",
                             name: "pldm_ua_thread",
                             kernel_stack_size_bytes: 4096,
+                        },
+                    ],
+                    memory_mappings: [
+                        {
+                            name: "gpio_regs",
+                            type: "device",
+                            start_address: 0x7e780000,
+                            size_bytes: 0x1000,
                         },
                     ],
                 },

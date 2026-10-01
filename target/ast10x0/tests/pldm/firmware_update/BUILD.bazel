@@ -57,6 +57,48 @@ rust_binary(
     ],
 )
 
+# The mock BMC's board needs its own kernel binary: the shared `:target`
+# above is compiled only against `:system_config`, so its baked-in MemoryConfig
+# has no region for anything `:peer_system_config` declares that `:system_config`
+# doesn't (e.g. GPIOJ0's gpio_regs) -- the MPU would reject it at runtime even
+# though the peer app's own codegen believes the mapping exists.
+target_codegen(
+    name = "peer_codegen",
+    arch = "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+    crate_name = "codegen",
+    system_config = ":peer_system_config",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+target_linker_script(
+    name = "peer_linker_script",
+    system_config = ":peer_system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    template = "//target/ast10x0:linker_script_template",
+)
+
+rust_binary(
+    name = "peer_target",
+    srcs = ["target.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":peer_codegen",
+        ":peer_linker_script",
+        "//target/ast10x0:entry",
+        "//target/ast10x0/board:ast10x0_board",
+        "//target/ast10x0/peripherals",
+        "@ast1060_pac",
+        "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/subsys/console:console_backend",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_kernel/userspace",
+    ],
+)
+
 rust_app(
     name = "i2c_server",
     srcs = ["//target/ast10x0/tests/mctp/server:i2c_server_main.rs"],
@@ -117,14 +159,23 @@ rust_app(
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
         ":app_pldm_fd_regions",
+        "//hal/blocking",
         "//hal/blocking/flash",
         "//services/mctp/client-ipc:mctp_client_ipc",
+        "//services/orchestrator/adapters/hal:orchestrator_hal_adapters",
+        "//services/orchestrator/adapters/pldm:orchestrator_pldm_adapter",
+        "//services/orchestrator/capabilities:orchestrator_capabilities",
+        "//services/orchestrator/sm:orchestrator_sm",
         "//services/pldm:pldm_service",
         "//target/ast10x0/backend/flash:flash_backend_ast10x0",
+        "//target/ast10x0/peripherals",
         "//util/error",
+        "//util/region",
+        "@ast1060_pac",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:heapless",
         "@rust_crates//:pldm-common",
         "@rust_crates//:pldm-interface",
     ],
@@ -171,6 +222,15 @@ rust_app(
     ],
 )
 
+app_regions(
+    name = "app_pldm_ua_regions",
+    app_name = "pldm_ua",
+    edition = "2024",
+    system_config = ":peer_system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
 rust_app(
     name = "pldm_ua",
     srcs = ["ua_main.rs"],
@@ -180,8 +240,11 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
+        ":app_pldm_ua_regions",
         "//services/mctp/client-ipc:mctp_client_ipc",
         "//services/pldm:pldm_service",
+        "//target/ast10x0/peripherals",
+        "@ast1060_pac",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
@@ -211,7 +274,7 @@ system_image(
         ":mctp_server_peer",
         ":pldm_ua",
     ],
-    kernel = ":target",
+    kernel = ":peer_target",
     platform = "//target/ast10x0",
     system_config = ":peer_system_config",
     tags = ["kernel"],
@@ -219,13 +282,14 @@ system_image(
     visibility = ["//visibility:public"],
 )
 
-# `slave_image` is flashed first, so the firmware device is listening before the
-# update agent boots and sends RequestUpdate.
+# `image` goes to device A, the only board whose reset-passthrough pin the Pi
+# watches, so the firmware device has to be that one. Device A is also flashed
+# first, so it is listening before the update agent boots and sends RequestUpdate.
 system_image_test(
     name = "pldm_firmware_update_test",
     timeout = "eternal",
-    image = ":pldm_ua_image",
-    slave_image = ":pldm_fd_image",
+    image = ":pldm_fd_image",
+    slave_image = ":pldm_ua_image",
     tags = [
         "hardware",
         "manual",
