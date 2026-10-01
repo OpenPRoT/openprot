@@ -137,20 +137,24 @@ impl DelayNs for BoardDelay {
 /// How often [`wait_for_mock_bmc_reset`] re-reads the alive line while waiting.
 const ALIVE_POLL_INTERVAL_MICROS: u32 = 10_000;
 
-/// How long [`wait_for_mock_bmc_reset`] waits for the mock BMC to go quiet. The
-/// Pi's mirror samples the passthrough line every 50ms, so this is dominated by
-/// the mock BMC's own reset time rather than by the harness.
-const RESET_WINDOW: Duration = Duration::from_secs(10);
+/// How long [`wait_for_mock_bmc_reset`] waits for the mock BMC to go quiet.
+/// By the time it looks the press is over, so this is a sanity bound rather
+/// than the expected cost.
+const RESET_WINDOW: Duration = Duration::from_secs(1);
 
-/// A [`Platform`] that asserts the mock BMC's reset on [`Effect::ActivateUpdate`]
+/// How long GPIOJ0 is held high to request the reset. The Pi's mirror samples
+/// every 50ms plus a `pinctrl` subprocess, so the press spans several samples.
+const RESET_PULSE: Duration = Duration::from_millis(500);
+
+/// A [`Platform`] that presses the mock BMC's reset on [`Effect::ActivateUpdate`]
 /// — standing in for the reboot a real activation would cause. Every other
 /// effect is a no-op: boot verification and update staging aren't what this
 /// test proves, only that a real RequestUpdate, arriving over the wire from
 /// the update agent, drives the orchestrator through to activation.
 ///
-/// `execute` never manufactures the reboot's outcome: it returns without
-/// blocking, and [`wait_for_mock_bmc_reset`] supplies `Event::BootConfirmed`
-/// from outside, once the mock BMC's alive line actually says so.
+/// `execute` never manufactures the reboot's outcome: it only drives the line,
+/// and [`wait_for_mock_bmc_reset`] supplies `Event::BootConfirmed` from
+/// outside, once the mock BMC's alive line actually says so.
 struct TestPlatform<OutP, InP> {
     reset: GpioResetControl<OutP, BoardDelay, PassthroughReset>,
     ready: GpioReadyMonitor<InP>,
@@ -160,17 +164,17 @@ impl<OutP: OutputPin, InP: InputPin> Platform for TestPlatform<OutP, InP> {
     fn execute(&mut self, effect: Effect) -> Result<Option<Event>, EffectError> {
         match effect {
             Effect::ActivateUpdate => {
-                // Only asserts the line; entry() waits for the mock BMC to go
-                // quiet and deasserts it there, so this call never blocks.
+                // A press, not a hold: the mock BMC cannot leave reset, let
+                // alone go quiet, while the line is still high.
                 //
                 // The `expect` documents an unreachable branch, not a
                 // swallowed error: the GPIO output's error type is
                 // `Infallible`, and `PassthroughReset` has a single variant,
                 // so `GpioResetControl`'s own id check always matches.
                 self.reset
-                    .reset_assert(&PassthroughReset::MockBmc)
+                    .reset_pulse(&PassthroughReset::MockBmc, RESET_PULSE)
                     .expect("GPIOJ0 is Infallible and PassthroughReset has one variant");
-                pw_log::info!("FD: asserted GPIOJ0 to reset the mock BMC");
+                pw_log::info!("FD: pulsed GPIOJ0 to reset the mock BMC");
                 Ok(None)
             }
             _ => Ok(None),
@@ -587,9 +591,6 @@ fn entry() {
         // request travelled through the Pi and landed on the mock BMC. It does
         // not say new firmware booted — nothing on this side can observe that.
         let reset_landed = wait_for_mock_bmc_reset(&mut platform.ready);
-        // Release the mock BMC once the fall is in hand, so the line ends at a
-        // defined level rather than holding the board in reset indefinitely.
-        let _ = platform.reset.reset_deassert(&PassthroughReset::MockBmc);
         if reset_landed {
             orchestrator.dispatch(&mut platform, Event::BootConfirmed(ORCH_COMPONENT));
         } else {
