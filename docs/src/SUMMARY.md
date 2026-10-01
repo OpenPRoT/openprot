@@ -33,6 +33,7 @@
   * [Pigweed Integration Overview](./design/pigweed-overview.md)
   * [pw_kernel IPC](./design/pw-kernel-ipc.md)
   * [IPC service stack](./design/ipc-service-stack.md)
+  * [Trust Boundaries](./design/trust-boundaries.md)
   * [Orchestrator](./design/orchestrator/orchestrator-overview.md)
     * [Verification Model](./design/orchestrator/orchestrator-model.md)
     * [State Machine](./design/orchestrator/orchestrator-machine.md)
