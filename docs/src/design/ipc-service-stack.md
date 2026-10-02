@@ -57,7 +57,7 @@ path.
 ```mermaid
 sequenceDiagram
     participant C as Client<br/>(test code)
-    participant L as Loopback&lt;D, N&gt;<br/>(util/service)
+    participant L as Loopback<br/>(util/service)
     participant D as dispatch()<br/>(pldm/server)
     participant H as FdIpcHandler
 
