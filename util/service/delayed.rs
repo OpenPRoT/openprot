@@ -42,11 +42,11 @@ impl<T: AsyncTransport> AsyncTransport for Delayed<T> {
     }
 
     fn poll(&mut self, resp: &mut [u8]) -> Result<Option<usize>, TransportError> {
-        if let Some(n) = self.polls {
-            if n < self.ready_after {
-                self.polls = Some(n + 1);
-                return Ok(None);
-            }
+        if let Some(n) = self.polls
+            && n < self.ready_after
+        {
+            self.polls = Some(n + 1);
+            return Ok(None);
         }
         let result = self.inner.poll(resp);
         // Anything but "not yet" ends the round-trip, so the next call
