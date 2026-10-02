@@ -6,7 +6,7 @@ on:
   push:
     branches: [ main, develop ]
   pull_request:
-    branches: [ main, earlgrey-hwe ]
+    branches: [ main, earlgrey-hwe, ocp-global-demo-wip ]
 
 env:
   CARGO_TERM_COLOR: always
