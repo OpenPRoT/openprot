@@ -265,7 +265,7 @@ mod tests {
 
     #[test]
     fn perform_verify_dispatches() {
-        roundtrip_success(|buf| wire::encode_perform_verify(buf), "perform_verify");
+        roundtrip_success(wire::encode_perform_verify, "perform_verify");
     }
 
     #[test]
@@ -278,7 +278,7 @@ mod tests {
 
     #[test]
     fn perform_apply_dispatches() {
-        roundtrip_success(|buf| wire::encode_perform_apply(buf), "perform_apply");
+        roundtrip_success(wire::encode_perform_apply, "perform_apply");
     }
 
     #[test]
@@ -291,7 +291,7 @@ mod tests {
 
     #[test]
     fn perform_activate_dispatches() {
-        roundtrip_success(|buf| wire::encode_perform_activate(buf), "perform_activate");
+        roundtrip_success(wire::encode_perform_activate, "perform_activate");
     }
 
     #[test]
@@ -304,15 +304,12 @@ mod tests {
 
     #[test]
     fn ack_cancel_dispatches() {
-        roundtrip_success(|buf| wire::encode_ack_cancel(buf), "ack_cancel");
+        roundtrip_success(wire::encode_ack_cancel, "ack_cancel");
     }
 
     #[test]
     fn perform_svn_commit_dispatches() {
-        roundtrip_success(
-            |buf| wire::encode_perform_svn_commit(buf),
-            "perform_svn_commit",
-        );
+        roundtrip_success(wire::encode_perform_svn_commit, "perform_svn_commit");
     }
 
     #[test]
@@ -728,13 +725,13 @@ mod loopback_tests {
             FdStatus::VerifyPending,
         )));
 
-        send_ok(&mut t, |b| wire::encode_perform_verify(b));
+        send_ok(&mut t, wire::encode_perform_verify);
         assert_eq!(query_status(&mut t), FdStatus::ApplyPending);
 
-        send_ok(&mut t, |b| wire::encode_perform_apply(b));
+        send_ok(&mut t, wire::encode_perform_apply);
         assert_eq!(query_status(&mut t), FdStatus::ActivationPending);
 
-        send_ok(&mut t, |b| wire::encode_perform_activate(b));
+        send_ok(&mut t, wire::encode_perform_activate);
         assert_eq!(query_status(&mut t), FdStatus::Idle { reason: 0 });
     }
 
@@ -744,7 +741,7 @@ mod loopback_tests {
             FdStatus::SvnCommitPending { component: 1 },
         )));
 
-        send_ok(&mut t, |b| wire::encode_perform_svn_commit(b));
+        send_ok(&mut t, wire::encode_perform_svn_commit);
         assert_eq!(query_status(&mut t), FdStatus::Idle { reason: 0 });
     }
 
@@ -754,7 +751,7 @@ mod loopback_tests {
             FdStatus::Cancelled,
         )));
 
-        send_ok(&mut t, |b| wire::encode_ack_cancel(b));
+        send_ok(&mut t, wire::encode_ack_cancel);
         assert_eq!(query_status(&mut t), FdStatus::Idle { reason: 0 });
     }
 

@@ -59,6 +59,12 @@ impl Region {
         self.len
     }
 
+    /// Whether the region holds no bytes.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
     /// Offset one past the last byte.
     #[must_use]
     pub const fn end(&self) -> u32 {

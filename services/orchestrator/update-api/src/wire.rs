@@ -162,6 +162,7 @@ impl RequestHeader {
     }
 
     /// The chunk length on [`UpdateOp::Write`], zero otherwise.
+    #[allow(clippy::len_without_is_empty)] // a wire field, not a container
     pub fn len(&self) -> u16 {
         u16::from_le(self.len)
     }

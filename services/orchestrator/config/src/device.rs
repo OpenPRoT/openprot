@@ -31,12 +31,11 @@ use crate::layout::ImageLayout;
 pub const fn assert_retry_reaches_every_image<R, P>(max_retry: u8, devices: &[DeviceConfig<R, P>]) {
     let mut i = 0;
     while i < devices.len() {
-        match devices[i].layout() {
-            Some(layout) => assert!(
+        if let Some(layout) = devices[i].layout() {
+            assert!(
                 max_retry as usize > layout.image_count(),
                 "max_retry is too small to boot every image of a device"
-            ),
-            None => {}
+            );
         }
         i += 1;
     }
