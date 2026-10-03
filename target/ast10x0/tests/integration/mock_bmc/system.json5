@@ -1,0 +1,109 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 mock-BMC integration QEMU test.
+//
+// Two processes standing in for two chips:
+//
+//   orchestrator  — drives the reset line, latches boot evidence
+//   mock_bmc      — the managed device: reacts to reset, reports ready
+//
+// The two wires are IPC channels, not GPIO. QEMU models one chip, and both
+// ends live inside it, so a GPIO block would connect to nothing. Commands
+// go out orchestrator -> mock_bmc; evidence comes back the other way on its
+// own channel, because EvidenceReader::read is synchronous and must not
+// block, so the orchestrator has to hold a latch rather than ask.
+//
+// Memory map (AST10x0: 768 KB SRAM, no XIP, so code and data share it):
+//   0x00000000 - 0x00000500  vector table (1280 B)
+//   0x00000500 - 0x00020500  kernel flash (~127 KB)
+//   0x00020500 - 0x00060500  app flash (256 KB total; 128 KB per app)
+//   0x00060000 - 0x00080000  kernel RAM (128 KB)
+//   0x00080000 - 0x000C0000  app RAM (256 KB region; 32 KB per process used)
+//
+// App flash is the window between the kernel's flash and the kernel's RAM,
+// 0x20500 to 0x60000, which is 254.8 KB. Two apps at 128 KB fill it exactly.
+// A third app does not fit at that size: the linker places it over kernel RAM
+// and the build still succeeds, with only PMSAv7 MPU subregion overlap
+// warnings to say the protection is wrong. Three apps need 84 KB each, four
+// need 63 KB. The hardware firmware-update card already runs pldm_fd and
+// i2c_server at 64 KB, so that is a normal size rather than a squeeze.
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,
+    },
+    kernel: {
+        flash_start_address: 0x00000500,
+        flash_size_bytes: 129792,
+        ram_start_address: 0x00060000,
+        ram_size_bytes: 131072,
+    },
+    apps: [
+        {
+            name: "mock_bmc",
+            flash_size_bytes: 131072,
+            processes: [
+                {
+                    name: "mock_bmc_process",
+                    ram_size_bytes: 32768,
+                    objects: [
+                        {
+                            name: "wg",
+                            type: "wait_group",
+                        },
+                        {
+                            // Orchestrator -> device: assert or release reset.
+                            name: "reset_cmd",
+                            type: "channel_handler",
+                        },
+                        {
+                            // Device -> orchestrator: the ready line changed.
+                            name: "boot_evt",
+                            type: "channel_initiator",
+                            handler_process: "orchestrator_process",
+                            handler_object_name: "boot_evt",
+                        },
+                        {
+                            type: "thread",
+                            name: "mock_bmc_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            name: "orchestrator",
+            flash_size_bytes: 131072,
+            processes: [
+                {
+                    name: "orchestrator_process",
+                    ram_size_bytes: 32768,
+                    objects: [
+                        {
+                            name: "wg",
+                            type: "wait_group",
+                        },
+                        {
+                            name: "boot_evt",
+                            type: "channel_handler",
+                        },
+                        {
+                            name: "reset_cmd",
+                            type: "channel_initiator",
+                            handler_process: "mock_bmc_process",
+                            handler_object_name: "reset_cmd",
+                        },
+                        {
+                            type: "thread",
+                            name: "orchestrator_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}
