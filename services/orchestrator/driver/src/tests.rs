@@ -1410,7 +1410,7 @@ fn floor_fault_is_reported() {
 }
 
 // Every report effect reaches the board's sink, in emission order, and none
-// hands back an error for the SM to fail closed on.
+// hands back an error for the SM to fail secure on.
 #[test]
 fn reports_reach_the_board_sink() {
     let mut driver = PlatformDriver::<MockBoard, 1>::new(
@@ -1443,7 +1443,7 @@ fn reports_reach_the_board_sink() {
 
 // An Isolable component is contained and reported, and the platform keeps
 // running: executing a report returns no error, so it never reaches the
-// fail-closed path.
+// fail-secure path.
 #[test]
 fn reporting_an_isolated_component_does_not_lock_the_platform() {
     let mut driver = PlatformDriver::<MockBoard, 2>::new(

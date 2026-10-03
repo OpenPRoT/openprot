@@ -138,7 +138,7 @@ pub enum Report {
 ///
 /// Infallible by design: a report names something that already happened, so
 /// an undeliverable one costs information, not containment. An error channel
-/// would put reports on the fail-closed path, letting the act of reporting a
+/// would put reports on the fail-secure path, letting the act of reporting a
 /// contained failure escalate it.
 pub trait ReportSink {
     /// Receives one report. A sink that cannot deliver immediately queues on

@@ -31,6 +31,6 @@ loop {
 ```
 
 Implemented executors: `ReadFirmware`, `VerifyFirmware`, `ReleaseReset`
-(arms the boot walk), `AssertReset` (stops it). Everything else fails closed
+(arms the boot walk), `AssertReset` (stops it). Everything else fails secure
 until its pillar lands (recovery, update path, attestation, reporting,
 lockdown latch).

@@ -7,7 +7,7 @@
 //! [`PlatformDriver`] implements the SM's [`Platform`] seam, delegating each
 //! `Effect` to a board-composed capability per the platform-boundary contract
 //! (`docs/src/design/orchestrator/orchestrator-model.md` §6). Effects whose
-//! capability is not composed yet fail closed in `execute`; the driver grows
+//! capability is not composed yet fail secure in `execute`; the driver grows
 //! an executor only when the capability it delegates to exists.
 //!
 //! Synchronous results (the verification verdict) return through `execute`;

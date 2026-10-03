@@ -35,7 +35,7 @@ pub enum DriverError {
     /// The component's boot control could not actuate the reset line.
     BootControlFault,
     /// A floor commit was asked for a component with no verified image,
-    /// so the SVN to advance to is unknown; fail closed.
+    /// so the SVN to advance to is unknown; fail secure.
     NoVerifiedImage,
     /// The component's SVN floor could not be advanced.
     SvnFloorFault,
@@ -214,7 +214,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// component the staged candidate is for and `len` as how much of the
     /// staging region the candidate occupies. Must succeed BEFORE
     /// [`Event::UpdateRequest`] is dispatched; `AuthenticateStageUpdate`
-    /// with no stored job fails closed. Refuses an unknown id and a
+    /// with no stored job fails secure. Refuses an unknown id and a
     /// second submit while one update is in flight; nothing is stored on
     /// refusal, so a refused request can never surface as an update
     /// event.
@@ -370,7 +370,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             }
             Step::Staged => {
                 job.phase = UpdatePhase::Staged;
-                // Fail closed: no UpdateVerified until the crypto
+                // Fail secure: no UpdateVerified until the crypto
                 // verify-client is wired. The pump parks here.
                 UpdatePoll::idle()
             }
@@ -595,7 +595,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// Restore `id`'s image from its recovery source. The verdict travels
     /// as an event, not an error: `Restored` and `SourceExhausted` are
     /// outcomes the SM handles per failure policy, while an `Err` from
-    /// the mechanism is a genuine actuation fault that fails closed.
+    /// the mechanism is a genuine actuation fault that fails secure.
     pub fn recover_component(
         &mut self,
         id: ComponentId,
@@ -614,7 +614,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     }
 
     /// Hands one report to the board's sink. Cannot fail, so reporting stays
-    /// off the fail-closed path; reports arrive in the order the SM emitted
+    /// off the fail-secure path; reports arrive in the order the SM emitted
     /// them.
     pub fn report(&mut self, report: Report) {
         self.board.report_sink.report(report);
@@ -660,7 +660,7 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
     /// variant must get an executor before this compiles. Synchronous
     /// results (the verification verdict) come back as the returned event;
     /// every executor error reports as [`EffectError`], the SM treats all
-    /// actuation failures the same, fail-closed.
+    /// actuation failures the same, fail-secure.
     fn execute(&mut self, effect: Effect) -> Result<Option<Event>, EffectError> {
         match effect {
             Effect::ReadFirmware(id) => self.stage_firmware(id).map(|_| None),
@@ -668,7 +668,7 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
             Effect::ReleaseReset(id) => self.release_reset(id).map(|_| None),
             Effect::AssertReset(id) => self.assert_reset(id).map(|_| None),
             Effect::CommitSvnFloor(id) => self.commit_svn_floor(id).map(|_| None),
-            // Reports carry no error, so they never reach the fail-closed
+            // Reports carry no error, so they never reach the fail-secure
             // group below.
             Effect::ReportIsolated(id) => {
                 self.report(Report::Isolated(id));
@@ -707,7 +707,7 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
             Effect::ActivateUpdate => self.activate_update().map(|_| None),
             Effect::DiscardStaged => self.discard_staged().map(|_| None),
             // No board capability is composed for these seams yet, so they
-            // fail closed here instead of behind stub methods.
+            // fail secure here instead of behind stub methods.
             Effect::SignAttestation | Effect::LatchLockdown => return Err(EffectError),
             // Emit is consumed by the orchestrator; receiving one is a
             // driver bug.

@@ -5,7 +5,7 @@ use crate::model::{Effect, Event};
 
 /// Signals that the platform driver could not carry out an [`Effect`]. The machine does
 /// not need the driver's error detail — **every** actuation failure is treated
-/// the same, fail-closed: the orchestrator injects [`Event::EffectFailed`] and the
+/// the same, fail-secure: the orchestrator injects [`Event::EffectFailed`] and the
 /// machine latches to [`State::Locked`]. This blanket policy is deliberate and
 /// is what lets the failure signal stay a payload-less marker; a future design
 /// that needs per-effect recovery must add a *new*, descriptive event rather
@@ -56,7 +56,7 @@ pub struct EffectError;
 ///   component are exhausted, it feeds back [`Event::RecoveryUnavailable`]
 ///   instead — never [`EffectError`]. `EffectError` from a `RecoverComponent`
 ///   call is reserved for a genuine actuation fault (e.g. a bus error during
-///   the image swap), which fails closed to [`State::Locked`] unconditionally.
+///   the image swap), which fails secure to [`State::Locked`] unconditionally.
 ///   Reporting "out of images" that way would lock the whole platform down
 ///   even for an `Isolable`/`Cascading` component, instead of letting it be
 ///   gated per [`FailurePolicy`] like the count-driven exhaustion path.

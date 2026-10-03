@@ -34,7 +34,7 @@ pub enum RestoreOutcome {
 /// and the orchestrator gates the component per its failure policy right
 /// away instead of waiting for the retry cap. Errors are actuation faults
 /// only, such as an unreachable source or a failed write, and the
-/// orchestrator treats them fail-closed. Source exhaustion travels on the
+/// orchestrator treats them fail-secure. Source exhaustion travels on the
 /// `Ok` side because it is a known condition: the orchestrator applies
 /// per-component policy to it instead of locking unconditionally.
 ///

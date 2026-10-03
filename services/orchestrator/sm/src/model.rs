@@ -282,7 +282,7 @@ pub enum Event {
     /// when it executes [`Effect::ActivateUpdate`] and cancels it on
     /// [`Effect::CommitSvnFloor`].
     CommitTimeout,
-    /// The platform driver could not carry out an emitted [`Effect`]; fail-closed, it
+    /// The platform driver could not carry out an emitted [`Effect`]; fail-secure, it
     /// latches to [`State::Locked`] from any state. Injected by the driver when
     /// a [`Platform::execute`](crate::Platform::execute) call fails; never
     /// produced by a handler.
@@ -302,7 +302,7 @@ impl Event {
     /// [`Event::UpdateRequest`] is the exception: it carries a component but
     /// returns `None`. The caller records the job before dispatching it, so
     /// dropping the event here would leave that job with nothing to answer it
-    /// and wedge every later request. An unknown target instead fails closed in
+    /// and wedge every later request. An unknown target instead fails secure in
     /// the executor, which has the board's component list to check against.
     pub(crate) fn component_id(&self) -> Option<ComponentId> {
         match self {
@@ -476,7 +476,7 @@ impl State {
 /// Build one with [`TryFrom`]/[`TryInto`] from a `heapless::Vec` of
 /// `(ComponentId, ComponentAttrs)` pairs. The conversion is the single place
 /// the state machine's structural invariants are enforced, so a malformed chain
-/// fails closed at the boundary instead of misbehaving later:
+/// fails secure at the boundary instead of misbehaving later:
 ///
 /// - the chain is non-empty,
 /// - every [`ComponentId`] is unique,

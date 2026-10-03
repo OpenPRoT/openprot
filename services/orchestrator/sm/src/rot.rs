@@ -596,7 +596,7 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                     Outcome::Handled
                 }
                 // Commit watchdog. If the activated-but-not-committed window is
-                // still open, fail closed: never commit an unproven image, and
+                // still open, fail secure: never commit an unproven image, and
                 // never leave the downgrade window open indefinitely. Outside
                 // the window this is a stale watchdog fire and is dropped.
                 Event::CommitTimeout => {

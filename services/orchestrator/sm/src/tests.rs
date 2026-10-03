@@ -2106,7 +2106,7 @@ fn svn_floor_commits_on_boot_confirmed_not_on_activation() {
 
 /// Commit-or-lock watchdog: while the activated-but-not-committed window is
 /// open (update activated, `BootConfirmed` not yet seen), a `CommitTimeout`
-/// fails closed — the machine latches `Locked` rather than leaving the
+/// fails secure — the machine latches `Locked` rather than leaving the
 /// downgrade window open indefinitely, and never commits the unproven image.
 #[test]
 fn commit_timeout_while_pending_latches_locked() {
@@ -2438,7 +2438,7 @@ impl Platform for FailOn {
     }
 }
 
-/// A failed reset actuation is fail-closed: the orchestrator injects `EffectFailed`
+/// A failed reset actuation is fail-secure: the orchestrator injects `EffectFailed`
 /// and the machine latches to `Locked`, emitting `LatchLockdown`.
 #[test]
 fn effect_failure_latches_lockdown() {
@@ -2456,7 +2456,7 @@ fn effect_failure_latches_lockdown() {
     assert!(plat.recorded.contains(&Effect::LatchLockdown));
 }
 
-/// A failed isolation actuation (`AssertReset`) is equally fail-closed: even a
+/// A failed isolation actuation (`AssertReset`) is equally fail-secure: even a
 /// non-required component's containment failing latches the platform.
 #[test]
 fn failed_isolation_actuation_latches_lockdown() {
@@ -2477,7 +2477,7 @@ fn failed_isolation_actuation_latches_lockdown() {
     assert!(plat.recorded.contains(&Effect::LatchLockdown));
 }
 
-/// A failed recovery actuation is fail-closed too: if the platform driver cannot even
+/// A failed recovery actuation is fail-secure too: if the platform driver cannot even
 /// recover a required component, the platform latches rather
 /// than continuing with an unrecovered component.
 #[test]
@@ -2964,7 +2964,7 @@ fn returned_verdicts_settle_in_one_dispatch() {
 }
 
 /// A batch whose executors return more events than the pending queue holds
-/// fails closed: the run latches `Locked` instead of losing feedback.
+/// fails secure: the run latches `Locked` instead of losing feedback.
 #[test]
 fn returned_event_overflow_latches_locked() {
     struct Chatty;

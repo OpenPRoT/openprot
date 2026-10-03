@@ -79,7 +79,7 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
     ///
     /// If `on_effect` reports an [`EffectError`], the orchestrator injects an
     /// [`Event::EffectFailed`] at the *front* of the queue, so a failed
-    /// actuation is handled fail-closed: the latch settles next, and feedback
+    /// actuation is handled fail-secure: the latch settles next, and feedback
     /// still queued behind it drains into [`State::Locked`] (discarded)
     /// instead of actuating hardware after a failure. A pending-queue
     /// overflow is handled the same way: losing a returned event would break
@@ -89,7 +89,7 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
         event: Event,
         mut on_effect: impl FnMut(Effect) -> Result<Option<Event>, EffectError>,
     ) {
-        // Fail-closed latch: `EffectFailed` goes to the *front*, so it settles
+        // Fail-secure latch: `EffectFailed` goes to the *front*, so it settles
         // next and everything still queued drains into `Locked` (discarded)
         // instead of actuating hardware after a failure. Prefer evicting the
         // newest queued event over losing the latch itself.
@@ -122,7 +122,7 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
                     external => match on_effect(external) {
                         Ok(follow_up) => follow_up,
                         Err(_) => {
-                            // Fail-closed AND fail-fast: abandon the rest of
+                            // Fail-secure AND fail-fast: abandon the rest of
                             // this batch. `step` has already advanced the
                             // state as if the whole batch applied, and the
                             // latch overrides that transition, so nothing
@@ -140,7 +140,7 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
                     && !failed
                 {
                     // Queue full: `next` would be lost, breaking the
-                    // honest-feedback contract. Fail closed instead.
+                    // honest-feedback contract. Fail secure instead.
                     failed = true;
                     latch(&mut pending);
                     break;

@@ -11,7 +11,7 @@ use crate::model::{Effect, State};
 /// pops as it settles, so this bounds *in-flight* events, not a run's total
 /// length: one batch can queue at most one `Emit` follow-up plus one returned
 /// event per external effect. Executors that return an event for many effects
-/// of one batch can overflow this; overflow is fail-closed (see
+/// of one batch can overflow this; overflow is fail-secure (see
 /// `dispatch_with`), never silent loss.
 pub(crate) const PENDING_CAP: usize = 8;
 
@@ -63,7 +63,7 @@ impl<const E: usize> Sink<E> {
     /// handler emits more than `2 * N + 2` effects into one `Sink`, so the push
     /// below can never fail. A `cfg(test)` assert catches a stale derivation
     /// in the test suite; in the release binary the push is unchecked
-    /// (fail-closed: fewer effects means more lockdown, never less).
+    /// (fail-secure: fewer effects means more lockdown, never less).
     ///
     /// The driver runs the effects from one handler in the order they were
     /// emitted, and it does not run them as a single all-or-nothing group: if
