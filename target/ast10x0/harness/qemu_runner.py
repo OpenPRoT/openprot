@@ -131,14 +131,37 @@ def _sentinel_watcher(
         print(f"Exception watching sentinel: {e}", file=sys.stderr)
 
 
-def _seed_flash_image(path: str, size: int, fill: int = 0xFF) -> None:
-    """Create/overwrite `path` with `size` bytes of `fill` (0xFF = erased)."""
+def _seed_flash_image(
+    path: str, size: int, fill: int = 0xFF, contents: str = ""
+) -> None:
+    """Create/overwrite `path` with `size` bytes.
+
+    Without `contents` the image is `size` bytes of `fill` (0xFF = erased).
+    With it, the file is copied in at offset 0 and the remainder is left
+    erased, so a test can hand the device a real image to read.
+
+    A `contents` file longer than `size` is an error rather than a truncation:
+    a half-written image still parses far enough to fail verification, which
+    would make a verify-failure scenario pass for the wrong reason.
+    """
+    if not contents:
+        with open(path, "wb") as f:
+            f.write(bytes([fill & 0xFF]) * size)
+        return
+
+    data = Path(contents).read_bytes()
+    if len(data) > size:
+        raise ValueError(
+            f"{contents} is {len(data)} bytes, larger than the {size}-byte "
+            f"flash it seeds"
+        )
     with open(path, "wb") as f:
-        f.write(bytes([fill & 0xFF]) * size)
+        f.write(data)
+        f.write(b"\xff" * (size - len(data)))
 
 
 def _resolve_flash_drives(args):
-    """Return a list of (index, path, size, fill) FMC backing images.
+    """Return a list of (index, path, size, fill, contents) FMC backing images.
 
     index 0 -> FMC CS0, index 1 -> FMC CS1. Each image is re-seeded on every
     run so tests start from a known device state. An explicit --flash-image
@@ -146,20 +169,26 @@ def _resolve_flash_drives(args):
     AST10X0_CS0_IMAGE / AST10X0_CS1_IMAGE (basenames) plus AST10X0_FLASH_SIZE
     and per-CS AST10X0_CS0_FILL / AST10X0_CS1_FILL, resolved against
     $TEST_TMPDIR so each run gets private, freshly-seeded images.
+
+    AST10X0_CS0_CONTENTS / AST10X0_CS1_CONTENTS name a file to copy in at
+    offset 0 instead of filling, for a test that needs the device to already
+    hold an image. The path is a runfile, resolved by the test rule.
     """
     base = os.environ.get("TEST_TMPDIR", tempfile.gettempdir())
     size = int(os.environ.get("AST10X0_FLASH_SIZE", str(args.flash_size)))
     drives = []
     if args.flash_image:
-        drives.append((1, args.flash_image, size, 0xFF))
+        drives.append((1, args.flash_image, size, 0xFF, ""))
     cs0 = os.environ.get("AST10X0_CS0_IMAGE")
     if cs0:
         fill = int(os.environ.get("AST10X0_CS0_FILL", "255"))
-        drives.append((0, os.path.join(base, cs0), size, fill))
+        contents = os.environ.get("AST10X0_CS0_CONTENTS", "")
+        drives.append((0, os.path.join(base, cs0), size, fill, contents))
     cs1 = os.environ.get("AST10X0_CS1_IMAGE")
     if cs1:
         fill = int(os.environ.get("AST10X0_CS1_FILL", "255"))
-        drives.append((1, os.path.join(base, cs1), size, fill))
+        contents = os.environ.get("AST10X0_CS1_CONTENTS", "")
+        drives.append((1, os.path.join(base, cs1), size, fill, contents))
     return drives
 
 
@@ -191,8 +220,8 @@ def _main(args) -> None:
         args.image,
     ]
 
-    for index, path, size, fill in drives:
-        _seed_flash_image(path, size, fill)
+    for index, path, size, fill, contents in drives:
+        _seed_flash_image(path, size, fill, contents)
         qemu_args += [
             "-drive",
             f"file={path},format=raw,if=mtd,index={index}",
