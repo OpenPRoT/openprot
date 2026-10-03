@@ -1,0 +1,28 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "mock_bmc",
+    srcs = [
+        "src/boot.rs",
+        "src/error.rs",
+        "src/lib.rs",
+        "src/model.rs",
+        "src/tests.rs",
+    ],
+    crate_name = "openprot_mock_bmc",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking",
+        "@rust_crates//:embedded-hal",
+    ],
+)
+
+# Host tests: the model is pin-generic, so it runs without a kernel.
+rust_test(
+    name = "mock_bmc_test",
+    crate = ":mock_bmc",
+)
