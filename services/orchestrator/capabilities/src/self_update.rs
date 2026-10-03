@@ -18,8 +18,9 @@
 //!
 //! The session carries the state, not only the verified SVN, because the state
 //! is what tells two crashes apart. A session that knew only the SVN would read
-//! the same after a crash before the trial was armed and after a confirmed
-//! trial whose floor advance had not run yet, and those need opposite actions:
+//! the same after a crash before the trial was marked pending and after a
+//! confirmed trial whose floor advance had not run yet, and those need opposite
+//! actions:
 //! the first has to be dropped, the second has to advance the anti-rollback
 //! floor. Advancing it on the first would push the floor past the image that is
 //! running.
@@ -33,14 +34,14 @@ use crate::Svn;
 
 /// Which image the eRoT is running, as durable storage records it.
 ///
-/// This, not whether an arming is still held, is what tells a trial boot from
-/// a fallback. Platforms differ on the arming: a boot selector that consumes
-/// the arming leaves nothing held by the time the trial image runs, while one
-/// that holds it until the trial is decided still does. Which image booted
-/// reads the same on both.
+/// This, not whether the pending mark is still set, is what tells a trial boot
+/// from a fallback. Platforms differ on the mark: a boot selector that consumes
+/// it leaves nothing set by the time the trial image runs, while one that holds
+/// it until the trial is decided still does. Which image booted reads the same
+/// on both.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum RunningImage {
-    /// The image a trial armed. This boot is the trial.
+    /// The image the pending mark selects. This boot is the trial.
     Trial,
     /// The image the last confirmed update left in place.
     Confirmed,
@@ -54,14 +55,15 @@ pub enum SelfUpdateState {
     /// No update in flight.
     Idle,
     /// An image was authenticated with this SVN and written to the inactive
-    /// slot. Nothing is armed yet, so the next reset boots the running image.
+    /// slot. Nothing is marked pending yet, so the next reset boots the running
+    /// image.
     Prepared {
         /// The SVN the verifier read from the image's manifest before
         /// activation. The only authenticated reading of it, so the only
         /// value the anti-rollback commit may trust.
         svn: Svn,
     },
-    /// The trial is armed: the next reset boots the prepared image once.
+    /// The trial is pending: the next reset boots the prepared image once.
     TrialPending {
         /// The SVN recorded by [`prepare`](SelfUpdate::prepare).
         svn: Svn,
@@ -86,9 +88,9 @@ pub enum TrialOutcome {
     /// No update was in flight and the confirmed image is running.
     NoSession,
     /// A session exists that nothing will confirm: the trial booted and fell
-    /// back, or it was never armed, or an image is running that the session
-    /// does not claim. All of them leave an update that has to be dropped
-    /// before another can start.
+    /// back, or it was never marked pending, or an image is running that the
+    /// session does not claim. All of them leave an update that has to be
+    /// dropped before another can start.
     ///
     /// When the unclaimed trial is the image running right now, reverting
     /// only moves slot metadata: the part keeps running it until the next
@@ -108,17 +110,18 @@ pub enum TrialOutcome {
 /// self-reset that activation needs.
 ///
 /// Where the session lives (protected flash, a reserved region, a mock in
-/// tests) is the implementor's concern, as is how the platform arms the boot
+/// tests) is the implementor's concern, as is how the platform marks the boot
 /// selector. A platform whose boot selector reads a record the eRoT writes
-/// folds the arming into the session's own write, and its
-/// [`arm_trial`](Self::arm_trial) does nothing beyond moving the state. A
-/// platform whose boot selector is a register or a ROM-defined table writes
-/// twice behind the seam. Neither shows here.
+/// folds the pending mark into the session's own write, and its
+/// [`set_trial_pending`](Self::set_trial_pending) does nothing beyond moving
+/// the state. A platform whose boot selector is a register or a ROM-defined
+/// table writes twice behind the seam. Neither shows here.
 ///
 /// # Transitions
 ///
 /// [`prepare`](Self::prepare) records a new session from any state,
-/// [`arm_trial`](Self::arm_trial) moves `Prepared` to `TrialPending`,
+/// [`set_trial_pending`](Self::set_trial_pending) moves `Prepared` to
+/// `TrialPending`,
 /// [`confirm`](Self::confirm) moves `TrialPending` to `Committed`,
 /// [`complete`](Self::complete) ends a committed session, and
 /// [`revert`](Self::revert) drops whatever is in flight. Both endings land on
@@ -141,19 +144,21 @@ pub enum TrialOutcome {
 ///
 /// # Boot bound
 ///
-/// A boot selector that holds the arming across resets boots the trial again
+/// A boot selector that holds the pending mark across resets boots the trial
+/// again
 /// after every reset, so a trial image that dies before anything confirms it
 /// loops forever unless something counts attempts. A selector that consumes
-/// the arming does not have this problem: the second boot runs the confirmed
+/// the mark does not have this problem: the second boot runs the confirmed
 /// image. Platforms in the first category need a ROM-side boot counter or
 /// equivalent bound on how many boots a trial gets.
 ///
 /// # Ordering
 ///
-/// Record first, then arm. A crash between the two leaves `TrialPending` with
+/// Record first, then mark pending. A crash between the two leaves
+/// `TrialPending` with
 /// the confirmed image still running, which [`trial_outcome`] already reads as
 /// a trial nothing confirmed, so the window needs no further distinction.
-/// Arming first would boot a trial with no session to judge it.
+/// Marking pending first would boot a trial with no session to judge it.
 pub trait SelfUpdate {
     /// The error type of this session's storage.
     ///
@@ -168,8 +173,8 @@ pub trait SelfUpdate {
     /// Which image this boot is running.
     ///
     /// [`Confirmed`](RunningImage::Confirmed) whenever no trial is in flight,
-    /// an `Idle` session included: with nothing armed there is nothing else to
-    /// be running.
+    /// an `Idle` session included: with nothing pending there is nothing else
+    /// to be running.
     ///
     /// Read together with [`state`](Self::state) once at boot, as one
     /// snapshot. Nothing moves the pair in between: the eRoT is the only
@@ -182,15 +187,15 @@ pub trait SelfUpdate {
     /// records the same SVN again.
     fn prepare(&mut self, svn: Svn) -> Result<(), Self::Error>;
 
-    /// Arms the trial, leaving the state `TrialPending`. Called after the
-    /// image is in the inactive slot and before the reset that boots it.
+    /// Marks the trial pending, leaving the state `TrialPending`. Called after
+    /// the image is in the inactive slot and before the reset that boots it.
     ///
     /// # Errors
     ///
     /// When the session is not `Prepared` or `TrialPending`: there is nothing
-    /// to arm, and arming a boot with no session behind it is what the
-    /// ordering rule exists to prevent.
-    fn arm_trial(&mut self) -> Result<(), Self::Error>;
+    /// to mark, and marking a boot pending with no session behind it is what
+    /// the ordering rule exists to prevent.
+    fn set_trial_pending(&mut self) -> Result<(), Self::Error>;
 
     /// Records that the trial was judged good, leaving the state
     /// `Committed`. The anti-rollback floor is advanced by the caller
@@ -215,8 +220,8 @@ pub trait SelfUpdate {
     /// Drops whatever is in flight, leaving the state `Idle`. Succeeds from
     /// any state, `Idle` included.
     ///
-    /// Undoing the arming is the implementor's, when the platform holds it
-    /// outside the session.
+    /// Clearing the pending mark is the implementor's, when the platform holds
+    /// it outside the session.
     fn revert(&mut self) -> Result<(), Self::Error>;
 }
 
@@ -235,7 +240,7 @@ pub const fn trial_outcome(state: SelfUpdateState, running: RunningImage) -> Tri
         // Prepared, and the reset that would have started the trial never
         // came.
         (SelfUpdateState::Prepared { .. }, RunningImage::Confirmed) => TrialOutcome::Unconfirmed,
-        // A trial booted while the session still reads Prepared: the arming
+        // A trial booted while the session still reads Prepared: the mark
         // ran ahead of the record, the ordering rule's other side.
         (SelfUpdateState::Prepared { .. }, RunningImage::Trial) => TrialOutcome::Unconfirmed,
         // The trial is what is running now.
@@ -294,7 +299,7 @@ mod tests {
             }
         }
 
-        /// Stands in for the reset that boots what `arm_trial` armed.
+        /// Stands in for the reset that boots what `set_trial_pending` marked.
         fn reboot_into_the_trial(&self) {
             self.running.set(RunningImage::Trial);
         }
@@ -325,7 +330,7 @@ mod tests {
             Ok(())
         }
 
-        fn arm_trial(&mut self) -> Result<(), MockFault> {
+        fn set_trial_pending(&mut self) -> Result<(), MockFault> {
             if self.fail {
                 return Err(MockFault);
             }
@@ -381,7 +386,7 @@ mod tests {
         let mut session = MockSession::idle();
         session.prepare(SVN).expect("store answers");
         assert_eq!(session.state(), Ok(SelfUpdateState::Prepared { svn: SVN }));
-        session.arm_trial().expect("prepared");
+        session.set_trial_pending().expect("prepared");
         assert_eq!(
             session.state(),
             Ok(SelfUpdateState::TrialPending { svn: SVN })
@@ -418,8 +423,8 @@ mod tests {
     fn repeating_a_transition_changes_nothing() {
         let mut session = MockSession::idle();
         session.prepare(SVN).expect("store answers");
-        session.arm_trial().expect("prepared");
-        session.arm_trial().expect("already armed");
+        session.set_trial_pending().expect("prepared");
+        session.set_trial_pending().expect("already pending");
         assert_eq!(
             session.state(),
             Ok(SelfUpdateState::TrialPending { svn: SVN })
@@ -446,7 +451,7 @@ mod tests {
     fn completing_a_pending_trial_fails() {
         let mut session = MockSession::idle();
         session.prepare(SVN).expect("store answers");
-        session.arm_trial().expect("prepared");
+        session.set_trial_pending().expect("prepared");
         assert_eq!(session.complete(), Err(MockFault));
         assert_eq!(
             session.state(),
@@ -457,7 +462,7 @@ mod tests {
     #[test]
     fn arming_with_no_session_fails() {
         let mut session = MockSession::idle();
-        assert_eq!(session.arm_trial(), Err(MockFault));
+        assert_eq!(session.set_trial_pending(), Err(MockFault));
         assert_eq!(session.state(), Ok(SelfUpdateState::Idle));
     }
 
@@ -477,7 +482,7 @@ mod tests {
         assert_eq!(session.state(), Err(MockFault));
         assert_eq!(session.running(), Err(MockFault));
         assert_eq!(session.prepare(SVN), Err(MockFault));
-        assert_eq!(session.arm_trial(), Err(MockFault));
+        assert_eq!(session.set_trial_pending(), Err(MockFault));
         assert_eq!(session.confirm(), Err(MockFault));
         assert_eq!(session.complete(), Err(MockFault));
         assert_eq!(session.revert(), Err(MockFault));
@@ -515,7 +520,7 @@ mod tests {
     }
 
     /// A trial booted while the session still reads Prepared, the other side
-    /// of the record-then-arm rule.
+    /// of the record-then-mark rule.
     #[test]
     fn reports_a_trial_ahead_of_its_session_unconfirmed() {
         assert_eq!(
@@ -525,7 +530,7 @@ mod tests {
     }
 
     /// The boot that is running is the trial itself, on a selector that
-    /// consumes the arming and on one that holds it alike.
+    /// consumes the pending mark and on one that holds it alike.
     #[test]
     fn reports_the_running_trial_in_progress() {
         assert_eq!(
