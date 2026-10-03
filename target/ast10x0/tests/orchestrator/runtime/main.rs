@@ -70,6 +70,8 @@ const SOC: DeviceConfig<u8, u8> = DeviceConfig::new(
     ],
     // The boot walk never looks at images; no layout is legal.
     None,
+    // Same attrs new_core gives every component in the chain.
+    ComponentAttrs::passive_required(),
 );
 
 /// The device table speaks `core::time::Duration`; the runtime speaks the
