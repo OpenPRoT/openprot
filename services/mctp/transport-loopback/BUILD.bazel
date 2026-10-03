@@ -1,0 +1,30 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "mctp_transport_loopback",
+    srcs = [
+        "src/lib.rs",
+        "src/queue.rs",
+        "src/sender.rs",
+        "src/tests.rs",
+    ],
+    crate_name = "openprot_mctp_transport_loopback",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@rust_crates//:heapless",
+        "@rust_crates//:mctp",
+        "@rust_crates//:mctp-lib",
+    ],
+)
+
+# Host tests: the round trip goes through a real server, which is why the
+# server is a test-only dependency rather than a dependency of the library.
+rust_test(
+    name = "mctp_transport_loopback_test",
+    crate = ":mctp_transport_loopback",
+    deps = ["//services/mctp/server:mctp_server_lib"],
+)
