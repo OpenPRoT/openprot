@@ -1,0 +1,40 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+load(":defs.bzl", "flash_image")
+
+# Host build tool: makes the flash image a QEMU test hands the device.
+rust_binary(
+    name = "flash_image",
+    srcs = [
+        "main.rs",
+        "tests.rs",
+    ],
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["//services/orchestrator/config:orchestrator_config"],
+)
+
+rust_test(
+    name = "flash_image_test",
+    crate = ":flash_image",
+)
+
+# Proves the rule wiring end to end: the builder runs under Bazel, both
+# payloads land at their bases, and the result is usable as cs0_contents or
+# cs1_contents on a flash_system_image_test.
+flash_image(
+    name = "example_image",
+    flash_size = 64,
+    slots = {
+        "0:0x0:0x20": "testdata/slot_a.bin",
+        "1:0x20:0x20": "testdata/slot_b.bin",
+    },
+)
+
+sh_test(
+    name = "example_image_test",
+    srcs = ["example_image_test.sh"],
+    data = [":example_image"],
+)
