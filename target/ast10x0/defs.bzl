@@ -9,7 +9,7 @@ TARGET_COMPATIBLE_WITH = select({
     "//conditions:default": ["@platforms//:incompatible"],
 })
 
-def _system_image_test_impl(ctx):
+def _system_image_test_impl(ctx, extra_runfiles = []):
     image_info = ctx.attr.image[SystemImageInfo]
     executable_symlink = ctx.actions.declare_file(ctx.label.name)
     ctx.actions.symlink(output = executable_symlink, target_file = image_info.elf)
@@ -31,15 +31,15 @@ def _system_image_test_impl(ctx):
             runfiles.merge(ctx.attr.slave_image[DefaultInfo].default_runfiles),
         )
 
+    if extra_runfiles:
+        runfiles = runfiles.merge(ctx.runfiles(files = extra_runfiles))
+
     return [DefaultInfo(
         executable = executable_symlink,
         runfiles = runfiles,
     )]
 
 def _flash_system_image_test_impl(ctx):
-    default_info = _system_image_test_impl(ctx)[0]
-    providers = [default_info]
-
     # fmc_model describes the QEMU FMC device uniformly (JEDEC ID + SFDP
     # geometry), shared by both chip selects. The qemu_runner seeds fresh
     # images at $TEST_TMPDIR/<name> and attaches each present CS image as
@@ -54,6 +54,19 @@ def _flash_system_image_test_impl(ctx):
     if ctx.attr.cs1_image:
         env["AST10X0_CS1_IMAGE"] = ctx.attr.cs1_image
         env["AST10X0_CS1_FILL"] = str(ctx.attr.cs1_fill)
+
+    # A contents file is copied into the image instead of filling it, so the
+    # device already holds something when the guest boots. The runner opens
+    # the path relative to the runfiles tree the test runs in.
+    contents = []
+    if ctx.file.cs0_contents:
+        contents.append(ctx.file.cs0_contents)
+        env["AST10X0_CS0_CONTENTS"] = ctx.file.cs0_contents.short_path
+    if ctx.file.cs1_contents:
+        contents.append(ctx.file.cs1_contents)
+        env["AST10X0_CS1_CONTENTS"] = ctx.file.cs1_contents.short_path
+
+    providers = [_system_image_test_impl(ctx, extra_runfiles = contents)[0]]
     if ctx.attr.cs0_image or ctx.attr.cs1_image:
         providers.append(RunEnvironmentInfo(environment = env))
     return providers
@@ -83,6 +96,11 @@ flash_system_image_test = rule(
     implementation = _flash_system_image_test_impl,
     test = True,
     attrs = {
+        "cs0_contents": attr.label(
+            doc = "File copied into cs0_image at offset 0 instead of filling " +
+                  "it. The rest stays erased. Longer than flash_size is an error.",
+            allow_single_file = True,
+        ),
         "cs0_fill": attr.int(
             doc = "Byte value the qemu_runner seeds cs0_image with (default 0xFF, erased).",
             default = 0xFF,
@@ -91,6 +109,11 @@ flash_system_image_test = rule(
             doc = "Basename of the SPI-NOR image seeded in $TEST_TMPDIR and " +
                   "attached as FMC CS0 flash (if=mtd, index=0).",
             default = "",
+        ),
+        "cs1_contents": attr.label(
+            doc = "File copied into cs1_image at offset 0 instead of filling " +
+                  "it. The rest stays erased. Longer than flash_size is an error.",
+            allow_single_file = True,
         ),
         "cs1_fill": attr.int(
             doc = "Byte value the qemu_runner seeds cs1_image with (default 0xFF, erased).",
