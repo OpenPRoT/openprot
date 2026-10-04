@@ -892,6 +892,92 @@ impl<S: core::error::Error + 'static, F: core::error::Error + 'static> core::err
     }
 }
 
+/// Advances the eRoT's own anti-rollback floor to the SVN of its confirmed
+/// self-update, then closes the session.
+///
+/// Call this when the update agent sends UpdateSecurityRevision, which the FD
+/// reports as `SvnCommitPending`. The caller answers the agent with what comes
+/// back: done on `Ok`, refused on `Err`. Activating an image never moves the
+/// floor. It moves only here, when the update agent asks after a trial boot
+/// was confirmed.
+///
+/// Refuses unless the session says confirmed and is still open. With no
+/// confirmed session, nothing has run the image this SVN belongs to, so the
+/// floor stays where it is.
+///
+/// Asking twice is safe. If the eRoT crashes after the floor moved but before
+/// the session closed, the next UpdateSecurityRevision advances the floor to
+/// the same value again, which changes nothing, and closes the session. Once
+/// the session is closed, any further one gets
+/// [`CommitFloorError::NotConfirmed`]: an answer lost on the way back means
+/// the agent's retry is refused even though the floor is already at the SVN
+/// it asked for.
+///
+/// If the floor cannot be written, the session stays open, so the next
+/// UpdateSecurityRevision runs the whole thing again and the advance is not
+/// lost. The update agent is the only thing that retries; nothing here does.
+///
+/// Takes the session and the floor as arguments, as [`settle_self_update`]
+/// does. Neither is wired into the board yet.
+pub fn commit_self_svn_floor<S: SelfUpdate, F: SvnFloor>(
+    session: &mut S,
+    floor: &mut F,
+) -> Result<(), CommitFloorError<S::Error, F::Error>> {
+    let state = session.state().map_err(CommitFloorError::Session)?;
+    let running = session.running().map_err(CommitFloorError::Session)?;
+    let TrialOutcome::ConfirmedUncommitted { svn } =
+        orchestrator_capabilities::trial_outcome(state, running)
+    else {
+        return Err(CommitFloorError::NotConfirmed(state));
+    };
+    floor.advance(svn).map_err(CommitFloorError::Floor)?;
+    session.complete().map_err(CommitFloorError::Session)
+}
+
+/// Why [`commit_self_svn_floor`] could not advance the floor.
+///
+/// Keeps the session's or the floor's own error inside instead of flattening
+/// both into one code, the same as [`SettleError`] does.
+#[derive(Debug, PartialEq, Eq)]
+pub enum CommitFloorError<S, F> {
+    /// Reading or writing the session failed.
+    Session(S),
+    /// Writing the eRoT's own anti-rollback floor failed.
+    Floor(F),
+    /// No confirmed self-update is waiting for the floor, so there is no SVN
+    /// an image has proven itself at. Carries what the session says: `Idle`
+    /// when no self-update is in flight or the request arrived a second time,
+    /// `TrialPending` when it arrived before the trial boot was judged.
+    NotConfirmed(SelfUpdateState),
+}
+
+impl<S: core::fmt::Display, F: core::fmt::Display> core::fmt::Display for CommitFloorError<S, F> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            CommitFloorError::Session(err) => write!(f, "self-update session: {err}"),
+            CommitFloorError::Floor(err) => write!(f, "self-update floor: {err}"),
+            CommitFloorError::NotConfirmed(state) => {
+                write!(
+                    f,
+                    "no confirmed self-update to commit the floor to: session reads {state:?}"
+                )
+            }
+        }
+    }
+}
+
+impl<S: core::error::Error + 'static, F: core::error::Error + 'static> core::error::Error
+    for CommitFloorError<S, F>
+{
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        match self {
+            CommitFloorError::Session(err) => Some(err),
+            CommitFloorError::Floor(err) => Some(err),
+            CommitFloorError::NotConfirmed(_) => None,
+        }
+    }
+}
+
 /// The connection between an update frontend and the SM: called (by the
 /// event loop, on the frontend's behalf) once a complete candidate for
 /// `target` sits in the staging region. Records the job first, then injects

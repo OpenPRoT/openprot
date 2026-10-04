@@ -2220,3 +2220,112 @@ fn settle_reports_an_unclaimed_image_and_reverts_the_session() {
 
     assert_eq!(session.state, SelfUpdateState::Idle);
 }
+
+// The ordinary case. The trial boot was confirmed, so the floor moves up to
+// the SVN the session recorded and the session ends.
+#[test]
+fn commit_advances_the_floor_and_closes_the_session() {
+    let mut session = MockSelfUpdate::with_session(
+        SelfUpdateState::Committed { svn: Svn(7) },
+        RunningImage::Trial,
+    );
+    let mut floor = MockFloor::with_floor(Svn(3));
+
+    assert_eq!(commit_self_svn_floor(&mut session, &mut floor), Ok(()));
+
+    assert_eq!(floor.floor(), Ok(Svn(7)));
+    assert_eq!(session.state, SelfUpdateState::Idle);
+}
+
+// There is no session, so no image has run at any SVN. The floor stays where
+// it was and the caller tells the update agent no.
+#[test]
+fn commit_without_a_session_is_refused() {
+    let mut session = MockSelfUpdate::idle();
+    let mut floor = MockFloor::with_floor(Svn(3));
+
+    assert_eq!(
+        commit_self_svn_floor(&mut session, &mut floor),
+        Err(CommitFloorError::NotConfirmed(SelfUpdateState::Idle))
+    );
+
+    assert_eq!(floor.floor(), Ok(Svn(3)));
+}
+
+// The trial is still running, so nothing has judged it yet. The floor waits
+// for the boot that does.
+#[test]
+fn commit_during_a_trial_is_refused() {
+    let pending = SelfUpdateState::TrialPending { svn: Svn(7) };
+    let mut session = MockSelfUpdate::with_session(pending, RunningImage::Trial);
+    let mut floor = MockFloor::with_floor(Svn(3));
+
+    assert_eq!(
+        commit_self_svn_floor(&mut session, &mut floor),
+        Err(CommitFloorError::NotConfirmed(pending))
+    );
+
+    assert_eq!(floor.floor(), Ok(Svn(3)));
+}
+
+// The eRoT crashed after the floor moved to 7 but before the session closed.
+// The update agent asks again: advancing to 7 a second time changes nothing,
+// and this run closes the session. A third request has no session left to
+// commit, so it is refused.
+#[test]
+fn commit_repeated_after_a_crash_finishes_the_close() {
+    let mut session = MockSelfUpdate::with_session(
+        SelfUpdateState::Committed { svn: Svn(7) },
+        RunningImage::Trial,
+    );
+    let mut floor = MockFloor::with_floor(Svn(7));
+
+    assert_eq!(commit_self_svn_floor(&mut session, &mut floor), Ok(()));
+
+    assert_eq!(floor.floor(), Ok(Svn(7)));
+    assert_eq!(session.state, SelfUpdateState::Idle);
+    assert_eq!(
+        commit_self_svn_floor(&mut session, &mut floor),
+        Err(CommitFloorError::NotConfirmed(SelfUpdateState::Idle)),
+        "the session is closed, so the floor cannot move again"
+    );
+    assert_eq!(floor.floor(), Ok(Svn(7)));
+}
+
+// Writing the floor fails. The session has to stay as it was, so the update
+// agent's next request can advance the floor instead of the advance being
+// lost.
+#[test]
+fn commit_with_a_floor_that_cannot_advance_leaves_the_session_open() {
+    let committed = SelfUpdateState::Committed { svn: Svn(7) };
+    let mut session = MockSelfUpdate::with_session(committed, RunningImage::Trial);
+
+    assert_eq!(
+        commit_self_svn_floor(&mut session, &mut MockFloor::faulting()),
+        Err(CommitFloorError::Floor(FloorFaultInjected))
+    );
+
+    assert_eq!(
+        session.state, committed,
+        "the floor still owes this SVN, so the agent's next request can retry"
+    );
+}
+
+// The session cannot be read, so nothing says which SVN to advance to.
+// Refuse and leave the floor alone rather than guess.
+#[test]
+fn commit_with_an_unreadable_session_fails_secure() {
+    let mut session = MockSelfUpdate::with_session(
+        SelfUpdateState::Committed { svn: Svn(7) },
+        RunningImage::Trial,
+    );
+    session.fail = true;
+    let mut floor = MockFloor::with_floor(Svn(3));
+
+    assert_eq!(
+        commit_self_svn_floor(&mut session, &mut floor),
+        Err(CommitFloorError::Session(SelfSessionFault))
+    );
+
+    assert_eq!(floor.floor(), Ok(Svn(3)));
+}
