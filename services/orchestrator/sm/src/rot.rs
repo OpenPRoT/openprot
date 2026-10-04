@@ -43,10 +43,21 @@ pub struct Rot<const N: usize, const E: usize> {
     /// [`Event::CommitTimeout`] while it is still set goes to
     /// [`State::Locked`].
     ///
-    /// Also cleared on entry to [`State::Updating`] (a newer update replaces
-    /// this one) and [`State::Recovering`] (the running image is now suspect),
-    /// the two ways to leave `Ready` while still running. Not cleared on
-    /// `Ready` entry, because activation sets it on the way in.
+    /// The window spans the walk that follows an activation: the device only
+    /// boots the candidate once it is reset, so the window cannot close before
+    /// that walk finishes. Every state it passes through answers
+    /// [`Event::CommitTimeout`], including the unsupervised
+    /// [`State::PreSupervision`], or a fire during the walk would be dropped
+    /// and never come again. In a multi-component chain, the updated device
+    /// can boot (and confirm) while the walk is still verifying later
+    /// neighbours; `BootConfirmed` is only handled in `Ready`, so the
+    /// emitter must re-raise or hold it until the walk finishes.
+    ///
+    /// Cleared on the matching [`Event::BootConfirmed`] (the window closes
+    /// normally) and on entry to the two states that end the window by leaving
+    /// `Ready` while still running, [`State::Updating`] (a superseding update)
+    /// and [`State::Recovering`] (the running image is now suspect). Not cleared
+    /// on `Ready` entry, because activation sets it on the way in.
     pending_commit: Option<ComponentId>,
     /// Ties the effect-buffer size `E` to this type (zero-sized).
     _effect_cap: PhantomData<[u8; E]>,
@@ -394,6 +405,18 @@ impl<const N: usize, const E: usize> Rot<N, E> {
 
             // Cursor walk via Outcome::Handled — a self-transition would reset cursor.
             State::PreSupervision => match event {
+                // The commit window can span this walk: an activation enters
+                // `PreSupervision` with the window open. `PreSupervision` is
+                // unsupervised, so without this match arm the watchdog fire would be
+                // dropped and never come again, leaving commit-or-lock
+                // unenforced for the length of a boot.
+                Event::CommitTimeout => {
+                    if self.pending_commit.is_some() {
+                        Outcome::Transition(State::Locked)
+                    } else {
+                        Outcome::Handled
+                    }
+                }
                 Event::VerificationPassed(id) => {
                     // Only the component currently under verification
                     // (`chain[cursor]`, whose `VerifyFirmware` was just emitted)
@@ -617,7 +640,15 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                     // driver arms its commit watchdog on `ActivateUpdate`, and
                     // `CommitTimeout` bounds this window (commit-or-lock).
                     self.pending_commit = Some(target);
-                    Outcome::Transition(State::Ready)
+                    // Re-walk rather than returning to `Ready`. Activation only
+                    // proposes the image; the device runs the old one until it
+                    // is reset, and `PreSupervision` entry quiesces every live
+                    // component before verifying at rest. That reset is what
+                    // boots the candidate, and the walk's `VerifyFirmware` is
+                    // what records its SVN, which the floor commit then takes.
+                    // Without it a `BootConfirmed` would commit the previous
+                    // image's SVN and leave the downgrade window open.
+                    Outcome::Transition(State::PreSupervision)
                 }
                 Event::UpdateRejected => {
                     ctx.emit(Effect::DiscardStaged);
@@ -768,6 +799,16 @@ impl<const N: usize, const E: usize> Rot<N, E> {
             Event::UpdateRequest(_) => {
                 ctx.emit(Effect::ReportUpdateDeferred);
                 Outcome::Handled
+            }
+            // Same window, same reason as `PreSupervision`'s match arm: the walk
+            // that follows an activation passes through the supervised
+            // states too, and a dropped watchdog fire never returns.
+            Event::CommitTimeout => {
+                if self.pending_commit.is_some() {
+                    Outcome::Transition(State::Locked)
+                } else {
+                    Outcome::Handled
+                }
             }
             Event::EffectFailed => Outcome::Transition(State::Locked),
             _ => Outcome::Super,

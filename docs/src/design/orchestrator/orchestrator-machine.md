@@ -25,7 +25,7 @@ stateDiagram-v2
 
     state SupervisingPlatform {
         Ready         --> Updating      : UpdateRequest(id)<br/>/ AuthenticateStageUpdate
-        Updating      --> Ready         : UpdateVerified / ActivateUpdate
+        Updating      --> PreSupervision : UpdateVerified / ActivateUpdate
         Updating      --> Ready         : UpdateRejected / DiscardStaged
         Ready         --> Recovering    : CorruptionDetected<br/>/ RestoreGoldenImage
         Updating      --> Recovering    : CorruptionDetected<br/>/ RestoreGoldenImage
@@ -116,6 +116,8 @@ here — they persist across re-walks so exhausted components are not re-verifie
 | `VerificationFailed(id)` | — | — | `Recovering(id)` — recovery is attempted first, regardless of the component's recovery-failure policy |
 | `CorruptionDetected(id)` | `Required`/unknown | `RestoreGoldenImage` | `Recovering(id)` |
 | `CorruptionDetected(id)` | `Isolable`/`Cascading` | `AssertReset` · `ReportIsolated` | `Handled` (component gated; walk continues) |
+| `CommitTimeout` | `pending_commit` set | — | `Locked` (commit window spans the post-activation walk; `LatchLockdown` on entry) |
+| `CommitTimeout` | `pending_commit` clear | — | `Handled` (no window open, nothing to enforce) |
 | anything else | — | — | `Outcome::Super` (top level — discarded) |
 
 When advancing the cursor, any component marked `Isolated` is skipped without
@@ -203,7 +205,7 @@ state's payload.
 
 | Event | Guard | Effects | Next state |
 |---|---|---|---|
-| `UpdateVerified` | — | `ActivateUpdate` | `Ready` (commit window opens on the payload) |
+| `UpdateVerified` | — | `ActivateUpdate` | `PreSupervision` (re-walk; commit window spans the walk) |
 | `UpdateRejected` | — | `DiscardStaged` | `Ready` (INV4) |
 | `CorruptionDetected(id)` | `Required`/unknown | `DiscardStaged` (then `RestoreGoldenImage` on entry) | `Recovering(id)` (update preempted; staged image discarded) |
 | `CorruptionDetected(id)` | `Isolable`/`Cascading` | `AssertReset(id)` · `ReportIsolated(id)` | `Handled` (component gated; update continues, staged image kept) |
@@ -333,6 +335,8 @@ handler (`handle_supervising`).
 | `AttestationChallenge` | — | `SignAttestation` | `Handled` (no transition — INV6) |
 | `CorruptionDetected(id)` | `attrs.failure_policy == Required` | — | `Recovering(id)` (INV5) |
 | `CorruptionDetected(id)` | `attrs.failure_policy != Required` | `AssertReset(id)` · `ReportIsolated(id)` | `Handled` (component gated; machine stays in current state) |
+| `CommitTimeout` | `pending_commit` set | — | `Locked` (the post-activation walk passes through supervised states too; `LatchLockdown` on entry) |
+| `CommitTimeout` | `pending_commit` clear | — | `Handled` |
 | anything else | — | — | `Outcome::Super` (discarded) |
 
 ---
