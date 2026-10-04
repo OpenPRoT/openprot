@@ -1,0 +1,137 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app")
+load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image", "system_image_test")
+load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
+
+filegroup(
+    name = "system_config",
+    srcs = ["system.json5"],
+)
+
+target_codegen(
+    name = "codegen",
+    arch = "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+    system_config = ":system_config",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    template = "//target/ast10x0:linker_script_template",
+)
+
+rust_binary(
+    name = "target",
+    srcs = ["target.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":codegen",
+        ":linker_script",
+        "//target/ast10x0:entry",
+        "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/subsys/console:console_backend",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)
+
+# Both MCTP servers and the loopback between them: the wire.
+rust_app(
+    name = "mctp_bus",
+    srcs = ["mctp_bus_main.rs"],
+    codegen_crate_name = "app_mctp_bus",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//services/mctp/api:mctp_api",
+        "//services/mctp/server:mctp_server_lib",
+        "//services/mctp/transport-loopback:mctp_transport_loopback",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:mctp",
+    ],
+)
+
+# The DSP0267 firmware device. Stages into RAM, so no flash service.
+rust_app(
+    name = "pldm_fd",
+    srcs = ["pldm_fd_main.rs"],
+    codegen_crate_name = "app_pldm_fd",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//services/mctp/client-ipc:mctp_client_ipc",
+        "//services/pldm:pldm_service",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:pldm-common",
+        "@rust_crates//:pldm-interface",
+    ],
+)
+
+# The BMC's half of the update: drives the whole DSP0267 sequence.
+rust_app(
+    name = "pldm_ua",
+    srcs = ["pldm_ua_main.rs"],
+    codegen_crate_name = "app_pldm_ua",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//services/mctp/client-ipc:mctp_client_ipc",
+        "//services/pldm:pldm_service",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:pldm-common",
+    ],
+)
+
+system_image(
+    name = "pldm_update_image",
+    apps = [
+        ":mctp_bus",
+        ":pldm_fd",
+        ":pldm_ua",
+    ],
+    kernel = ":target",
+    platform = "//target/ast10x0",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+)
+
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/pldm_update:pldm_update_qemu_test
+system_image_test(
+    name = "pldm_update_qemu_test",
+    image = ":pldm_update_image",
+    tags = ["qemu_only"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+rust_binary_no_panics_test(
+    name = "no_panics_test",
+    binary = ":pldm_update_image",
+    tags = ["kernel"],
+)
