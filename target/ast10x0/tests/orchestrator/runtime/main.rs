@@ -241,7 +241,7 @@ fn walk_device(
     id: ComponentId,
     behavior: DeviceBehavior,
 ) -> Result<Event> {
-    walk.arm();
+    walk.start();
     let mut k = 0usize;
 
     loop {

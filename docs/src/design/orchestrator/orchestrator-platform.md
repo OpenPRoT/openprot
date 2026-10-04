@@ -44,7 +44,7 @@ Two rules follow:
 - **Protection survives its crash.** The SPI monitor filters flash traffic
   in hardware, on its own; the orchestrator only loads its rules at
   boot and is not in the data path, and the hardware write filter stays
-  armed until the device's first fetch, closing the
+  enabled until the device's first fetch, closing the
   time-of-check/time-of-use window. Busy or crashed, the orchestrator
   cannot be bypassed — there is nothing to bypass.
 

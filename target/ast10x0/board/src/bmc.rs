@@ -290,7 +290,7 @@ mod tests {
     #[test]
     fn a_booted_bmc_completes_the_walk_on_the_first_poll() {
         let mut walk = walk(ReadyLine::booted());
-        walk.arm();
+        walk.start();
 
         assert_eq!(walk.poll(0), WalkVerdict::Complete);
     }
@@ -298,7 +298,7 @@ mod tests {
     #[test]
     fn a_bmc_still_booting_holds_the_walk_until_its_line_rises() {
         let mut walk = walk(ReadyLine::late(2));
-        walk.arm();
+        walk.start();
 
         let waiting = WalkVerdict::Waiting {
             deadline_millis: READY_WINDOW.as_millis() as u64,
@@ -312,7 +312,7 @@ mod tests {
     #[test]
     fn a_bmc_that_never_reports_ready_times_out() {
         let mut walk = walk(ReadyLine::hung());
-        walk.arm();
+        walk.start();
 
         let deadline = READY_WINDOW.as_millis() as u64;
         assert_eq!(

@@ -17,7 +17,7 @@ pub trait BootWatch {
     /// every reset release, retries included. Takes no timestamp — reset
     /// actuation has no clock; the attempt starts at the next
     /// [`poll`](BootWatch::poll)'s `now_millis`.
-    fn arm(&mut self);
+    fn start(&mut self);
 
     /// Judges the walk at `now_millis` (monotonic). Never sleeps — time is
     /// injected, so every decision is host-testable.
@@ -93,7 +93,7 @@ mod tests {
     }
 
     impl BootWatch for ScriptedWalk {
-        fn arm(&mut self) {
+        fn start(&mut self) {
             self.next = 0;
         }
 

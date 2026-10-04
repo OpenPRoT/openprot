@@ -33,8 +33,8 @@
 //! outlives the judge: the eRoT resets into the candidate, so the verdict is
 //! reached by a boot that has to read what the previous one left behind. It is
 //! one durable session, one at a time, carrying the state and the verified SVN
-//! together, so the next boot can tell a session that was never armed from a
-//! confirmed trial whose floor advance had not run yet. Downstream devices
+//! together, so the next boot can tell a session whose trial never started
+//! from a confirmed trial whose floor advance had not run yet. Downstream devices
 //! need no session: a reset loses the observation that would judge them, so
 //! abandoning at boot gets the same result with no storage.
 //!

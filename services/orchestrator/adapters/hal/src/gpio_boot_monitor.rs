@@ -89,7 +89,7 @@ impl<E: GpioError> From<E> for MonitorError<E> {
 /// device re-enters reset (typically by wiring the latch's clear to the
 /// device's reset line) — [`BootStatus`] requires that evidence from a
 /// previous boot never reads as [`BootStatus::Booted`], and this reader only
-/// reads the line, it cannot re-arm it.
+/// reads the line, it cannot clear the latch.
 ///
 /// [`HalBootControl`]: crate::HalBootControl
 pub struct GpioBootMonitor<'a, P: GpioPort> {

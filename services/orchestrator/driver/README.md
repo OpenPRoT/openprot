@@ -15,7 +15,7 @@ Everything device-specific arrives through the seams in `board.rs`
 Synchronous results (the verification verdict) return through `execute` and
 settle within the same dispatch run — there is no driver-side event queue.
 
-Boot-walk verdicts are the one asynchronous read. `ReleaseReset` arms the
+Boot-walk verdicts are the one asynchronous read. `ReleaseReset` starts the
 component's walk; the run loop polls and dispatches until quiet, then sleeps
 until the earliest walk deadline:
 
@@ -31,6 +31,6 @@ loop {
 ```
 
 Implemented executors: `ReadFirmware`, `VerifyFirmware`, `ReleaseReset`
-(arms the boot walk), `AssertReset` (stops it). Everything else fails secure
+(starts the boot walk), `AssertReset` (stops it). Everything else fails secure
 until its pillar lands (recovery, update path, attestation, reporting,
 lockdown latch).

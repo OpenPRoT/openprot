@@ -506,9 +506,9 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             .ok_or(DriverError::UnknownComponent)
     }
 
-    /// Release `id` from reset and arm its boot walk;
+    /// Release `id` from reset and start its boot walk;
     /// [`poll_boot_walks`](Self::poll_boot_walks) feeds the verdict back
-    /// as `ComponentReady(id)`/`Booted(id)`/`BootFailed { id, .. }`. Arms on every
+    /// as `ComponentReady(id)`/`Booted(id)`/`BootFailed { id, .. }`. Starts on every
     /// release: a retry re-release starts a fresh walk.
     pub fn release_reset(&mut self, id: ComponentId) -> Result<(), DriverError> {
         self.boot_control(id)?
@@ -516,7 +516,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             .map_err(|_| DriverError::BootControlFault)?;
         let idx = id.get() as usize;
         // In bounds: boot_control(id) above already rejected unknown ids.
-        self.board.boot_watches[idx].arm();
+        self.board.boot_watches[idx].start();
         self.watching[idx] = true;
         Ok(())
     }

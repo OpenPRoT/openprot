@@ -18,7 +18,7 @@
 //! has to read what the previous one left behind. That needs durable state
 //! this trait deliberately does not carry, and the verdict is the
 //! orchestrator's own supervised boot coming up, not a call from the image
-//! that armed the trial.
+//! that set the trial pending.
 //!
 //! A board that wants one gate for both can implement this trait over its
 //! [`SelfUpdate`] session; nothing here forbids it. What does not work is one
@@ -49,11 +49,11 @@
 /// plus the state a verdict reached after a reset needs.
 ///
 /// `confirm` and `revert` take no arguments. A device has at most one trial
-/// open at a time, the one the last activation armed, so there is nothing to
+/// open at a time, the one the last activation set pending, so there is nothing to
 /// name. Which slot is which stays behind the seam, as it does in
 /// `Updatable`.
 ///
-/// The arming counts for the next boot only, but the record of the trial
+/// The record counts for the next boot only, but the trial
 /// outlives it. An image that hangs, or an eRoT that loses power during the
 /// trial, boots the confirmed slot again without anyone calling anything.
 /// What makes that happen (a boot-select register the boot ROM clears, or
@@ -74,7 +74,7 @@
 /// anything; they only move slot metadata. Restarting the device is
 /// [`BootControl`](crate::BootControl).
 ///
-/// `is_pending` is a yes or no. It does not say whether the armed image has
+/// `is_pending` is a yes or no. It does not say whether the pending image has
 /// booted, and this trait cannot tell a `confirm` that came after a watched
 /// boot from one that did not. Nothing needs that difference: a half-done
 /// update is rerun from the start, not picked up where it left off.
@@ -135,7 +135,7 @@ mod tests {
     }
 
     /// The one flow both implementations go through: apply the verdict to
-    /// whatever the last activation armed, then check the record came out
+    /// whatever the last activation set pending, then check the record came out
     /// clear. A record left open means a later boot finds a trial nobody
     /// owns. Generic over `DeviceTrialBoot`, so every device runs the same code
     /// whether the orchestrator held the instance all along or built it
@@ -152,7 +152,7 @@ mod tests {
         Ok(())
     }
 
-    /// A slot-selection record whose arming counts for the next boot only,
+    /// A slot-selection record that counts for the next boot only,
     /// the way a device's eRoT-held store behaves.
     struct SlotRecord {
         confirmed_slot: u8,
@@ -176,7 +176,7 @@ mod tests {
         }
 
         /// Boots the device and returns the slot it ran: the trial slot if
-        /// the next boot is still armed, the confirmed slot otherwise.
+        /// the next boot is still pending, the confirmed slot otherwise.
         fn boot(&mut self) -> u8 {
             match self.trial_slot {
                 Some(slot) if self.next_boot_armed => {
@@ -270,7 +270,7 @@ mod tests {
         assert_eq!(
             device.record.boot(),
             0,
-            "the arming is one-shot: no confirm, no second trial boot"
+            "the record is one-shot: no confirm, no second trial boot"
         );
         assert_eq!(
             device.is_pending(),
@@ -286,8 +286,8 @@ mod tests {
         let mut record = SlotRecord::new(0);
         record.activate(1);
 
-        // The boot that arming triggered. The armed image is now running,
-        // and the orchestrator that armed it has since restarted.
+        // The boot the record triggered. The pending image is now running,
+        // and the orchestrator that set it has since restarted.
         assert_eq!(record.boot(), 1);
 
         let mut trial = TrialRecord::from(&mut record);

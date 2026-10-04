@@ -13,8 +13,9 @@ use orchestrator_config::{BootCheckpoint, DeviceConfig};
 /// (`Booting`), so a transient bus glitch does not kill a healthy boot.
 /// A lapsed window is a timeout with no final read: a device that has not
 /// reported cannot be judged on a race. Each checkpoint's deadline
-/// starts from the first poll after arm, not from the arm call, so
-/// time between arming and polling does not count against the window.
+/// starts from the first poll after the start call, not from the call
+/// itself, so time between starting and polling does not count against
+/// the window.
 /// An unarmed or post-terminal poll
 /// returns `Waiting { deadline_millis: u64::MAX }` (no deadline).
 pub struct CheckpointWalk<R, P: 'static> {
@@ -25,7 +26,7 @@ pub struct CheckpointWalk<R, P: 'static> {
 
 enum Phase {
     Idle,
-    Armed,
+    Started,
     Walking { cursor: usize, deadline_millis: u64 },
 }
 
@@ -48,12 +49,12 @@ impl<R, P> CheckpointWalk<R, P> {
 }
 
 impl<R: EvidenceReader<P>, P> BootWatch for CheckpointWalk<R, P> {
-    fn arm(&mut self) {
-        self.phase = Phase::Armed;
+    fn start(&mut self) {
+        self.phase = Phase::Started;
     }
 
     fn poll(&mut self, now_millis: u64) -> WalkVerdict {
-        if let Phase::Armed = self.phase {
+        if let Phase::Started = self.phase {
             let timeout_millis = self.checkpoints[0].timeout().as_millis() as u64;
             let deadline = now_millis.saturating_add(timeout_millis);
             self.phase = Phase::Walking {
@@ -201,7 +202,7 @@ mod tests {
     fn two_checkpoint_walk_completes_when_both_pass() {
         let mut w = walk();
         w.reader_mut().level = 2;
-        w.arm();
+        w.start();
 
         let v = w.poll(0);
         assert_eq!(
@@ -220,7 +221,7 @@ mod tests {
     fn single_checkpoint_walk_completes_in_one_poll() {
         let mut w = CheckpointWalk::new(ProgressReader::new(), &ONE_CP_DEVICE);
         w.reader_mut().level = 1;
-        w.arm();
+        w.start();
 
         assert_eq!(w.poll(0), WalkVerdict::Complete);
     }
@@ -228,7 +229,7 @@ mod tests {
     #[test]
     fn progress_between_polls_advances_the_walk() {
         let mut w = walk();
-        w.arm();
+        w.start();
 
         let v = w.poll(0);
         assert_eq!(
@@ -258,7 +259,7 @@ mod tests {
     #[test]
     fn first_checkpoint_times_out_when_device_is_silent() {
         let mut w = walk();
-        w.arm();
+        w.start();
 
         let v = w.poll(0);
         assert_eq!(
@@ -281,7 +282,7 @@ mod tests {
     #[test]
     fn second_checkpoint_times_out_after_first_passes() {
         let mut w = walk();
-        w.arm();
+        w.start();
 
         w.reader_mut().level = 1;
         let v = w.poll(0);
@@ -307,7 +308,7 @@ mod tests {
     #[test]
     fn retriable_failure_ends_the_walk_early() {
         let mut w = walk();
-        w.arm();
+        w.start();
         w.reader_mut().fault = Some(BootStatus::FailedRetriable);
 
         let v = w.poll(0);
@@ -323,7 +324,7 @@ mod tests {
     #[test]
     fn fatal_failure_ends_the_walk_early() {
         let mut w = walk();
-        w.arm();
+        w.start();
         w.reader_mut().fault = Some(BootStatus::FailedFatal);
 
         let v = w.poll(0);
@@ -341,7 +342,7 @@ mod tests {
     #[test]
     fn read_error_treated_as_silence() {
         let mut w = walk();
-        w.arm();
+        w.start();
         w.reader_mut().fail_read = true;
 
         let v = w.poll(0);
@@ -366,13 +367,13 @@ mod tests {
         assert_eq!(w.poll(10), WalkVerdict::Complete);
     }
 
-    // ── arm() rewinds ───────────────────────────────────────────────────
+    // ── start() rewinds ─────────────────────────────────────────────────
 
     #[test]
     fn arm_rewinds_to_the_first_checkpoint() {
         let mut w = walk();
         w.reader_mut().level = 2;
-        w.arm();
+        w.start();
         assert_eq!(
             w.poll(0),
             WalkVerdict::Waiting {
@@ -381,16 +382,16 @@ mod tests {
         );
         assert_eq!(w.poll(0), WalkVerdict::Complete);
 
-        // Re-arm: back to checkpoint 0.
+        // Started again: back to checkpoint 0.
         w.reader_mut().level = 0;
-        w.arm();
+        w.start();
         let v = w.poll(1000);
         assert_eq!(
             v,
             WalkVerdict::Waiting {
                 deadline_millis: 1100
             },
-            "fresh deadline from the re-arm"
+            "fresh deadline from the restart"
         );
     }
 
@@ -398,10 +399,10 @@ mod tests {
     fn arm_mid_walk_restarts_from_the_beginning() {
         let mut w = walk();
         w.reader_mut().level = 1;
-        w.arm();
+        w.start();
         w.poll(0); // passes bl1, now at kernel
 
-        w.arm(); // restart
+        w.start(); // from the top
         w.reader_mut().level = 0;
         let v = w.poll(500);
         assert_eq!(
@@ -429,8 +430,8 @@ mod tests {
     #[test]
     fn idle_after_terminal_waits_indefinitely() {
         let mut w = walk();
-        w.arm();
-        w.poll(0); // Armed -> Walking, deadline = 100
+        w.start();
+        w.poll(0); // Started -> Walking, deadline = 100
         let v = w.poll(100); // now >= deadline -> TimedOut
         assert!(matches!(v, WalkVerdict::Failed { .. }));
 
@@ -447,7 +448,7 @@ mod tests {
     #[test]
     fn deadline_is_relative_to_first_poll_not_arm() {
         let mut w = walk();
-        w.arm();
+        w.start();
         // First poll at t=1000: deadline should be 1000 + 100, not 0 + 100.
         let v = w.poll(1000);
         assert_eq!(
@@ -462,7 +463,7 @@ mod tests {
     fn next_checkpoint_deadline_is_relative_to_the_passing_poll() {
         let mut w = walk();
         w.reader_mut().level = 1;
-        w.arm();
+        w.start();
 
         // bl1 passes at t=50, kernel deadline = 50 + 200.
         let v = w.poll(50);
@@ -479,8 +480,8 @@ mod tests {
     #[test]
     fn booted_at_expiry_is_still_timeout() {
         let mut w = walk();
-        w.arm();
-        w.poll(0); // Armed -> Walking, deadline = 100
+        w.start();
+        w.poll(0); // Started -> Walking, deadline = 100
 
         w.reader_mut().level = 1;
         let v = w.poll(100); // device ready, but window already lapsed
@@ -500,7 +501,7 @@ mod tests {
     fn device_fault_at_second_checkpoint_names_it() {
         let mut w = walk();
         w.reader_mut().level = 1;
-        w.arm();
+        w.start();
         w.poll(0); // bl1 passes, now at kernel
 
         w.reader_mut().fault = Some(BootStatus::FailedFatal);

@@ -203,9 +203,9 @@ impl orchestrator_capabilities::BootControl for MockReset {
 }
 
 /// Boot walk without a device; scripted verdicts. An exhausted script
-/// holds its last verdict; an empty script waits forever. `arm` rewinds
+/// holds its last verdict; an empty script waits forever. `start` rewinds
 /// to the script start, so a fresh attempt is observable from the
-/// verdicts alone — no poll or arm counters needed.
+/// verdicts alone — no poll or start counters needed.
 struct MockWalk {
     verdicts: std::vec::Vec<WalkVerdict>,
     next: usize,
@@ -225,7 +225,7 @@ impl MockWalk {
 }
 
 impl BootWatch for MockWalk {
-    fn arm(&mut self) {
+    fn start(&mut self) {
         self.next = 0;
     }
 
@@ -1092,7 +1092,7 @@ fn only_released_components_are_watched() {
     assert_eq!(driver.poll_boot_walks(0).event, Some(Event::Booted(C0)));
 }
 
-// Every release re-arms the walk: a retry judges a new attempt from the
+// Every release starts the walk again: a retry judges a new attempt from
 // first checkpoint, not the failed one resumed. With a script of
 // [Failed, Complete], a resumed walk would report Complete on the second
 // attempt; a fresh one reports Failed again.
