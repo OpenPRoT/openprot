@@ -1,0 +1,136 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 PLDM update QEMU test.
+//
+// Three processes: the two endpoints of an update, and the stack between
+// them.
+//
+//   pldm_ua:   the update agent, the BMC's half of the update
+//   pldm_fd:   the DSP0267 firmware device
+//   mctp_bus:  an MCTP server per endpoint, joined by the loopback
+//
+// PLDM reaches the wire the same way it does on hardware: each endpoint is
+// an IpcMctpClient to an MCTP server. Only the bottom binding differs,
+// transport-loopback instead of transport-i2c, so EID routing,
+// fragmentation and reassembly are the shipped code.
+//
+// Its own image rather than a scenario inside the mock-BMC test. The runner
+// greps one sentinel per run, so one scenario per image is what lets a
+// failure name itself.
+//
+// Memory map (AST10x0: 768 KB SRAM, no XIP, so code and data share it):
+//   0x00000000 - 0x00000500  vector table (1280 B)
+//   0x00000500 - 0x00010000  kernel flash (64256 B)
+//   0x00010000 - 0x00040000  app flash (3 x 64 KB)
+//   0x00060000 - 0x00080000  kernel RAM (128 KB)
+//   0x00080000 - 0x000C0000  app RAM (3 x 32 KB used of a 256 KB region)
+//
+// The kernel's flash size is 0x10000 minus the 0x500 vector table, not a
+// round 64 KB, so that app flash starts at 0x10000. The MPU wants regions
+// power-of-2 sized and aligned; apps starting at 0x10500 overlap each
+// other's subregions however neatly their sizes divide the window. The
+// upstream tests do the same thing with 129792, which is 0x20000 - 0x500.
+//
+// The kernel was holding 127 KB for 35 KB of code, so taking 64256 leaves
+// 320 KB of window, and three apps at 64 KB use 192 KB of it.
+//
+// Oversizing and misalignment are both quiet: the image still builds and
+// the only sign is a PMSAv7 subregion overlap warning saying the
+// protection is wrong. Check for those after changing any size here.
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,
+    },
+    kernel: {
+        flash_start_address: 0x00000500,
+        flash_size_bytes: 64256,
+        ram_start_address: 0x00060000,
+        ram_size_bytes: 131072,
+    },
+    apps: [
+        {
+            name: "mctp_bus",
+            flash_size_bytes: 65536,
+            processes: [
+                {
+                    name: "mctp_bus_process",
+                    ram_size_bytes: 32768,
+                    objects: [
+                        {
+                            name: "wg",
+                            type: "wait_group",
+                        },
+                        {
+                            // The firmware device's side of the wire.
+                            name: "fd",
+                            type: "channel_handler",
+                        },
+                        {
+                            // The update agent's side.
+                            name: "ua",
+                            type: "channel_handler",
+                        },
+                        {
+                            type: "thread",
+                            name: "mctp_bus_thread",
+                            // Two packet queues live on this stack. At
+                            // QUEUE_DEPTH 32 they overflowed 4 KB and the
+                            // app died before its first log line, with no
+                            // panic and no warning.
+                            kernel_stack_size_bytes: 16384,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            name: "pldm_fd",
+            flash_size_bytes: 65536,
+            processes: [
+                {
+                    name: "pldm_fd_process",
+                    ram_size_bytes: 32768,
+                    objects: [
+                        {
+                            name: "mctp",
+                            type: "channel_initiator",
+                            handler_process: "mctp_bus_process",
+                            handler_object_name: "fd",
+                        },
+                        {
+                            type: "thread",
+                            name: "pldm_fd_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            name: "pldm_ua",
+            flash_size_bytes: 65536,
+            processes: [
+                {
+                    name: "pldm_ua_process",
+                    ram_size_bytes: 32768,
+                    objects: [
+                        {
+                            name: "mctp",
+                            type: "channel_initiator",
+                            handler_process: "mctp_bus_process",
+                            handler_object_name: "ua",
+                        },
+                        {
+                            type: "thread",
+                            name: "pldm_ua_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}
