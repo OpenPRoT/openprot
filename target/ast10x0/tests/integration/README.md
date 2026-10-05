@@ -203,6 +203,10 @@ not enforced yet.
 
 ## What is not proven yet
 
+GAPS.md has the full list, including the arcs of the update state machine
+with no scenario yet and the assertions that are looser than they look.
+The short version:
+
 Signature checking is stubbed until the crypto service exists, so all the
 verifiers are content checks rather than signature checks. The driver's
 `Updatable` stages nothing, because in DSP0267 the device pulls its own
