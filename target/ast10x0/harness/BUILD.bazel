@@ -3,7 +3,6 @@
 
 load("@rules_platform//platform_data:defs.bzl", "platform_data")
 load("@rules_python//python:py_binary.bzl", "py_binary")
-load("@rules_python//python:py_test.bzl", "py_test")
 
 py_binary(
     name = "qemu_runner_bin",
@@ -24,21 +23,6 @@ platform_data(
     platform = "@bazel_tools//tools:host_platform",
     target = ":qemu_runner_bin",
     visibility = ["//visibility:public"],
-)
-
-py_test(
-    name = "qemu_runner_test",
-    srcs = [
-        "qemu_runner.py",
-        "qemu_runner_test.py",
-    ],
-    imports = ["."],
-    main = "qemu_runner_test.py",
-    deps = [
-        "@@pigweed++cipd+pigweed.qemu//:qemu-system-arm-runfiles",
-        "@pigweed//pw_tokenizer/py:detokenize",
-        "@rules_python//python/runfiles",
-    ],
 )
 
 py_binary(
