@@ -208,21 +208,26 @@ fn entry() {
     loop {
         // Parking removes a channel from the wait group, so both sides
         // parked leaves it empty, and object_wait on an empty group
-        // returns InvalidArgument at once rather than blocking. It becomes
-        // a spin that no deadline ever interrupts.
+        // returns InvalidArgument at once rather than blocking.
         //
-        // Never park both. A client that asks with a short timeout wants
-        // to be told "nothing yet" so it can get on with sending, so the
-        // nearer deadline is answered now rather than waited out.
+        // So with both parked there is nothing to wait on, and the loop
+        // watches the clock instead, answering each side when its own
+        // deadline passes. Answering the nearer one straight away would be
+        // simpler and is wrong: a receive that still has seconds to run
+        // gets a timeout it did not earn, and the client reports the
+        // transfer failed. Nothing can arrive while both sides are parked
+        // anyway, because neither can send with its transaction open, so
+        // the spin ends at the first real deadline.
         if fd.pending.is_some() && ua.pending.is_some() {
-            let fd_first = match (fd.pending.as_ref(), ua.pending.as_ref()) {
-                (Some(a), Some(b)) => a.deadline <= b.deadline,
-                _ => true,
-            };
-            if fd_first {
+            let now = SystemClock::now();
+            if fd.pending.as_ref().is_some_and(|p| p.deadline <= now) {
                 time_out(&mut fd, &mut response);
-            } else {
+            }
+            if ua.pending.as_ref().is_some_and(|p| p.deadline <= now) {
                 time_out(&mut ua, &mut response);
+            }
+            if fd.pending.is_some() && ua.pending.is_some() {
+                continue;
             }
         }
 
