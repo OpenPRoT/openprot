@@ -1,11 +1,31 @@
 # QEMU integration tests
 
-Two scenarios, each its own system image, both running under QEMU with no
+Five scenarios, each its own system image, all running under QEMU with no
 hardware. The AST1030 is the black box; everything it talks to is another
 app in the same image, reached through the same traits a real board wires.
 
 The runner greps one pass/fail sentinel per run, so one scenario per image
 is what lets a failure name itself.
+
+Two of the five are the thing working. The other three are the thing
+failing, and they pass when the failure is caught. A scenario that only
+ever passes proves nothing: the first version of the boot scenario passed
+with the device wedged, because it asserted the wrong thing. Each negative
+also names the failure it arranged, so a run that died of something else
+fails rather than looking like the proof.
+
+| Scenario | What it arranges | Passes when |
+| --- | --- | --- |
+| `mock_bmc` | the device boots | the walk completes |
+| `mock_bmc/device_hangs` | the device never reports | the platform locks |
+| `pldm_update` | a clean update | the update commits |
+| `pldm_update/corrupt_image` | one byte of the image is flipped | the device catches it |
+| `pldm_update/refused_update` | the RoT refuses the request | nothing is activated |
+
+A negative scenario is a package of its own, built from the same sources
+and the same system config with one `--cfg` added. `scenario.bzl` holds
+the rules every scenario needs and `SCENARIO_CFGS` lists every flag, so
+adding one is a BUILD file and a `#[cfg]`, not a copy of the image.
 
 ## Running them
 
@@ -18,6 +38,12 @@ One scenario at a time, with the console:
 
     bazel test --config=virt_ast10x0 --test_output=all \
         //target/ast10x0/tests/integration/pldm_update:pldm_update_qemu_test
+
+The negatives, same shape:
+
+    //target/ast10x0/tests/integration/mock_bmc/device_hangs:device_hangs_qemu_test
+    //target/ast10x0/tests/integration/pldm_update/corrupt_image:corrupt_image_qemu_test
+    //target/ast10x0/tests/integration/pldm_update/refused_update:refused_update_qemu_test
 
 Bazel caches a passing test, so add `--nocache_test_results` when you want
 the run to actually happen. Checking for a flake:
@@ -63,20 +89,15 @@ released speculatively, so the machine is `Ready` as soon as the last
 component verifies, whether or not the device ever came up. The walk's own
 verdict is what proves the boot.
 
-To watch it fail, set the device to hang in `mock_bmc_main.rs`:
-
-```rust
-BootBehaviour::Hangs,
-```
-
-The window closes, the walk names the checkpoint, recovery has no source
-and the platform locks:
+`device_hangs` is the same image with the device set to never report. The
+window closes, the walk names the checkpoint, recovery has no source and
+the platform locks, which is what that scenario passes on:
 
     [ERR] device failed at checkpoint ready
     [INF] report: component 0 failed at ready
     [INF] report: component 0 out of recovery sources
-    [ERR] orchestrator locked the platform
-    TEST_RESULT:FAIL
+    [INF] the device never came up and the platform locked
+    TEST_RESULT:PASS
 
 ## The update scenario
 
@@ -141,28 +162,26 @@ back and checks it against the pattern the agent sent; the RoT's own
 verifier reads the staging region and does the same. The update goes
 through only when both say yes.
 
-To watch it fail, corrupt one byte of what the agent sends, in
-`pldm_ua_main.rs`:
-
-```rust
-*byte = expected_byte(offset + i) ^ if offset + i == 700 { 0xFF } else { 0 };
-```
-
-The device catches it at download:
+`corrupt_image` flips one byte of what the agent sends. The device catches
+it at download, and the scenario passes on that rather than on the run
+merely failing:
 
     [ERR] FD: byte 700 is wrong
-    [ERR] FD: the update ran without the orchestrator's consent
-    TEST_RESULT:FAIL
+    [INF] FD: the corrupt image was caught and the update refused
+    TEST_RESULT:PASS
 
-Or refuse the request, in `orchestrator_main.rs`:
+`refused_update` has the RoT refuse the request before looking at
+anything. The update never reaches `Updating`, and the orchestrator
+afterwards agrees to nothing else either:
 
-```rust
-fn handle_update_requested(...) -> u8 {
-    return REPLY_REFUSED;
-```
+    [ERR] ORCH: a verdict arrived with no update in flight
+    [ERR] ORCH: a boot was reported for an update that never activated
+    [INF] FD: the orchestrator withheld consent and the update did not happen
+    TEST_RESULT:PASS
 
-The update never reaches `Updating` and the run fails at the consent
-check.
+That second one also shows a gap rather than hiding it. The device
+finishes the PLDM flow and activates, because a refusal is recorded and
+not enforced yet.
 
 ## What is not proven yet
 

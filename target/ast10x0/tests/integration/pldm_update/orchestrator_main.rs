@@ -31,9 +31,13 @@ use core::convert::Infallible;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use openprot_orchestrator_driver::{
-    bring_up, request_update, Board, BoardCapabilities, ImageSource, Report, ReportSink,
-    SvnFloorBinding, Verdict, Verifier,
+    bring_up, Board, BoardCapabilities, ImageSource, Report, ReportSink, SvnFloorBinding, Verdict,
+    Verifier,
 };
+// Only the accepting path records a job or pumps it, so the scenario that
+// refuses every request needs neither.
+#[cfg(not(refused_update))]
+use openprot_orchestrator_driver::request_update;
 use openprot_orchestrator_sm::{ComponentAttrs, ComponentId, Event, PowerOnResult, State};
 use orchestrator_capabilities::{
     BootControl, BootStatus, EvidenceReader, IncrementalVerifier, PollOutcome, StageProgress, Svn,
@@ -46,7 +50,9 @@ use orchestrator_config::{
 use util_io::{ByteReadError, ByteSource};
 
 use userspace::syscall::Signals;
-use userspace::time::{Clock, Instant, SystemClock};
+use userspace::time::Instant;
+#[cfg(not(refused_update))]
+use userspace::time::{Clock, SystemClock};
 use userspace::{entry, syscall};
 
 use app_orchestrator::handle;
@@ -364,6 +370,7 @@ fn board() -> Board<UpdateBoard, N> {
     }
 }
 
+#[cfg(not(refused_update))]
 fn now_millis() -> u64 {
     SystemClock::now().ticks() * 1000 / SystemClock::TICKS_PER_SEC
 }
@@ -430,6 +437,16 @@ type Driver = openprot_orchestrator_driver::PlatformDriver<UpdateBoard, N>;
 
 /// Records the job and dispatches the request. Refusing here keeps the
 /// machine out of `Updating` on a job that could never finish.
+/// The negative scenario refuses before looking at anything, which is the
+/// one refusal that cannot be mistaken for a judgement about the
+/// candidate.
+#[cfg(refused_update)]
+fn handle_update_requested(_core: &mut Core, _driver: &mut Driver, _candidate_len: u64) -> u8 {
+    pw_log::info!("ORCH: refusing the update, as this scenario asks");
+    REPLY_REFUSED
+}
+
+#[cfg(not(refused_update))]
 fn handle_update_requested(core: &mut Core, driver: &mut Driver, candidate_len: u64) -> u8 {
     if request_update(core, driver, TARGET, candidate_len).is_err() {
         pw_log::error!("ORCH: refused the update request");

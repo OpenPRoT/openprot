@@ -1,0 +1,7 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# Holds scenario.bzl, which every scenario in this tree loads. No targets
+# of its own.
+
+exports_files(["scenario.bzl"])

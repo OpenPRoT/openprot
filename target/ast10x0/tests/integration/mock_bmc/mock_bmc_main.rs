@@ -29,7 +29,18 @@ use app_mock_bmc::handle;
 
 /// How long this device takes to boot once reset is released. Well inside
 /// any window the orchestrator waits, so the happy path is the happy path.
+#[cfg(not(device_hangs))]
 const BOOT_MILLIS: u64 = 50;
+
+/// What the device does when released. The scenario picks it at build
+/// time, so the negative case is a target of its own rather than an edit
+/// somebody has to remember to undo.
+#[cfg(not(device_hangs))]
+const BEHAVIOUR: BootBehaviour = BootBehaviour::Boots {
+    after_millis: BOOT_MILLIS,
+};
+#[cfg(device_hangs)]
+const BEHAVIOUR: BootBehaviour = BootBehaviour::Hangs;
 
 /// How often the model is polled while it is booting. The delay is measured
 /// from release rather than counted in polls, so this only bounds how late
@@ -90,9 +101,7 @@ fn entry() {
         ActivePolarity::ActiveLow,
         Line(&ready),
         ActivePolarity::ActiveHigh,
-        BootBehaviour::Boots {
-            after_millis: BOOT_MILLIS,
-        },
+        BEHAVIOUR,
     );
 
     if syscall::wait_group_add(handle::WG, handle::RESET_CMD, Signals::READABLE, 0usize).is_err() {
