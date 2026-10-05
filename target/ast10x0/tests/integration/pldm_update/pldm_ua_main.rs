@@ -75,6 +75,10 @@ const DEVICE_UUID: [u8; 16] = [
 /// reports for its running firmware or the component is refused.
 const COMP_COMPARISON_STAMP: u32 = 1;
 
+/// How many times the agent asks who is there before giving up. The device
+/// may still be claiming its endpoint id on the first try.
+const DISCOVERY_ATTEMPTS: u32 = 5;
+
 /// How long each UA-initiated request waits for the firmware device's reply.
 const REQUEST_TIMEOUT_MILLIS: u32 = 5_000;
 /// How long the UA waits for each firmware-device-initiated request.
@@ -205,11 +209,31 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
     };
 
     // ---- QueryDeviceIdentifiers: confirm which device answered ----
-    let query_devid = QueryDeviceIdentifiersRequest::new(instance_id, PldmMsgType::Request);
-    let len = query_devid
-        .encode(&mut buf[1..])
-        .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-    let (cc, resp_len) = transact(len, &mut buf)?;
+    //
+    // Retried, unlike every later step. The apps in this image start in
+    // whatever order the kernel allocates them, so the agent can reach the
+    // bus before the device has claimed its endpoint id, and a packet
+    // addressed to an id nobody holds goes nowhere. A real agent discovers a
+    // device that may not be up yet and does the same. Later steps are
+    // answered by a device that has already replied once, so a timeout there
+    // is a failure rather than a race.
+    let mut discovery_attempt = 0;
+    let (cc, resp_len) = loop {
+        let query_devid = QueryDeviceIdentifiersRequest::new(instance_id, PldmMsgType::Request);
+        let len = query_devid
+            .encode(&mut buf[1..])
+            .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
+        match transact(len, &mut buf) {
+            Ok(answer) => break answer,
+            Err(e) => {
+                discovery_attempt += 1;
+                if discovery_attempt >= DISCOVERY_ATTEMPTS {
+                    pw_log::error!("UA: the device never answered discovery");
+                    return Err(e);
+                }
+            }
+        }
+    };
     if cc != 0 {
         pw_log::error!("UA: QueryDeviceIdentifiers rejected, cc={}", cc as u32);
         return Ok(false);
