@@ -58,6 +58,12 @@ def _flash_system_image_test_impl(ctx):
     # A contents file is copied into the image instead of filling it, so the
     # device already holds something when the guest boots. The runner opens
     # the path relative to the runfiles tree the test runs in.
+    # Read back after the run: what the guest left in CS1 has to match the
+    # file, at the offset it was told to write.
+    if ctx.file.cs1_expect:
+        env["AST10X0_CS1_EXPECT"] = ctx.file.cs1_expect.short_path
+        env["AST10X0_CS1_EXPECT_OFFSET"] = str(ctx.attr.cs1_expect_offset)
+
     contents = []
     if ctx.file.cs0_contents:
         contents.append(ctx.file.cs0_contents)
@@ -65,6 +71,8 @@ def _flash_system_image_test_impl(ctx):
     if ctx.file.cs1_contents:
         contents.append(ctx.file.cs1_contents)
         env["AST10X0_CS1_CONTENTS"] = ctx.file.cs1_contents.short_path
+    if ctx.file.cs1_expect:
+        contents.append(ctx.file.cs1_expect)
 
     providers = [_system_image_test_impl(ctx, extra_runfiles = contents)[0]]
     if ctx.attr.cs0_image or ctx.attr.cs1_image:
@@ -114,6 +122,16 @@ flash_system_image_test = rule(
             doc = "File copied into cs1_image at offset 0 instead of filling " +
                   "it. The rest stays erased. Longer than flash_size is an error.",
             allow_single_file = True,
+        ),
+        "cs1_expect": attr.label(
+            doc = "File the CS1 image must hold at cs1_expect_offset once " +
+                  "the run is over. The host reads it back, so a guest that " +
+                  "says it wrote an image and did not fails the test.",
+            allow_single_file = True,
+        ),
+        "cs1_expect_offset": attr.int(
+            doc = "Offset in cs1_image that cs1_expect is compared against.",
+            default = 0,
         ),
         "cs1_fill": attr.int(
             doc = "Byte value the qemu_runner seeds cs1_image with (default 0xFF, erased).",

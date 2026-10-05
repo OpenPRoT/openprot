@@ -1,6 +1,7 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
+load("@rules_python//python:py_binary.bzl", "py_binary")
 load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
 load(":apps.bzl", "APPS", "FLASH", "SYSTEM_CONFIG", "TARGET_DEPS", "TARGET_SRC")
 
@@ -19,11 +20,30 @@ exports_files([
     "pldm_ua_main.rs",
 ])
 
+py_binary(
+    name = "make_staged_image",
+    srcs = ["make_staged_image.py"],
+)
+
+# What the device's flash must hold once the update is through. Only the
+# happy path checks it: a scenario that refuses the update is asserting
+# the image did not land, and its guest-side verdict says that already.
+genrule(
+    name = "staged_image",
+    outs = ["staged_image.bin"],
+    cmd = "$(location :make_staged_image) $@",
+    tools = [":make_staged_image"],
+)
+
 # bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/pldm_update:pldm_update_qemu_test
 qemu_scenario(
     name = "pldm_update_qemu",
     apps = APPS,
-    flash = FLASH,
+    flash = dict(
+        FLASH,
+        cs1_expect = ":staged_image",
+        cs1_expect_offset = 0x100000,
+    ),
     system_config = SYSTEM_CONFIG,
     target_deps = TARGET_DEPS,
     target_src = TARGET_SRC,
