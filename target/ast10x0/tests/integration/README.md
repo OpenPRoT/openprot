@@ -158,9 +158,27 @@ device. The design has the RoT grant or refuse and the device obey, and
 that means nothing when both are the same thread with the same state.
 
 Two verdicts land on the same candidate. The device reads its staged image
-back and checks it against the pattern the agent sent; the RoT's own
-verifier reads the staging region and does the same. The update goes
-through only when both say yes.
+back out of flash and checks it against the pattern the agent sent; the
+RoT's own verifier reads the staging region and does the same. The update
+goes through only when both say yes.
+
+The device stages into real SPI NOR on chip select 1, at `0x10_0000`, not
+into a RAM buffer. Both chip selects are attached, because with both
+present the FMC aperture splits and CS1 moves to `0x88000000`, which is
+the window the device maps. The kernel applies the FMC pinmux before any
+process starts, so no app touches the SCU.
+
+A third verdict comes from outside the guest. After QEMU exits, the runner
+reads the CS1 backing file and compares it with the image the update was
+supposed to write (`cs1_expect` and `cs1_expect_offset` on the test). Every
+other check is the guest talking about its own memory; this one is the host
+reading the device's flash, and it is the only one a confused guest cannot
+talk its way past. Flipping a byte of the expected file gives:
+
+    TEST_RESULT:PASS
+    CS1 differs from the expected image at 0x10012c: got 0x31, want 0x30
+
+with the test failing anyway, which is the point.
 
 `corrupt_image` flips one byte of what the agent sends. The device catches
 it at download, and the scenario passes on that rather than on the run
@@ -185,7 +203,7 @@ not enforced yet.
 
 ## What is not proven yet
 
-Signature checking is stubbed until the crypto service exists, so both
+Signature checking is stubbed until the crypto service exists, so all the
 verifiers are content checks rather than signature checks. The driver's
 `Updatable` stages nothing, because in DSP0267 the device pulls its own
 chunks from the agent, so `activate` is the only side of that seam with a
