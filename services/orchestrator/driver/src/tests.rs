@@ -444,10 +444,45 @@ impl ByteSource for MemStaging {
     }
 }
 
-/// Stub verifier for tests: accepts every image on the first poll.
-struct AcceptVerifier;
+/// Test verifier. Reads `chunk` bytes per poll, so it can be made to
+/// take several polls like a real one.
+///
+/// It reads the bytes it is handed and checks them, which catches a
+/// window opened at the wrong offset. It cannot catch a window of the
+/// wrong length, because MemStaging's bytes repeat the same pattern all
+/// the way across. The length is checked in
+/// `verification_advances_one_bounded_step_per_pump` instead, through
+/// the total it asserts.
+struct StubVerifier {
+    /// Bytes read per poll. A chunk shorter than the candidate makes
+    /// verification take several polls, as a real verifier does.
+    chunk: u64,
+    /// One verdict per session, in order. The last entry repeats, so a
+    /// list of one answers every session the same way.
+    verdicts: &'static [StubVerdict],
+    /// Sessions started so far, the index into `verdicts`.
+    sessions: usize,
+}
 
-struct AcceptSession;
+/// How a stub session is told to end.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum StubVerdict {
+    Authenticate,
+    Reject,
+    Fault,
+    /// Never reaches a verdict and never moves `written`: the stalled
+    /// verifier the pump's budget exists for.
+    Stall,
+}
+
+/// A live stub session. Holds the verifier so a terminal outcome can
+/// hand it back.
+struct StubSession {
+    verifier: StubVerifier,
+    /// Bytes read so far.
+    offset: u64,
+    verdict: StubVerdict,
+}
 
 #[derive(Debug)]
 struct StubVerifierFault;
@@ -460,52 +495,127 @@ impl core::fmt::Display for StubVerifierFault {
 
 impl core::error::Error for StubVerifierFault {}
 
-impl orchestrator_capabilities::IncrementalVerifier for AcceptVerifier {
-    type Error = StubVerifierFault;
-    type Session = AcceptSession;
+impl StubVerifier {
+    /// Gets through the whole candidate in one poll.
+    fn new(verdicts: &'static [StubVerdict]) -> Self {
+        Self {
+            chunk: CANDIDATE_LEN,
+            verdicts,
+            sessions: 0,
+        }
+    }
 
-    fn start(self) -> AcceptSession {
-        AcceptSession
+    fn accepting() -> Self {
+        Self::new(&[StubVerdict::Authenticate])
+    }
+
+    fn rejecting() -> Self {
+        Self::new(&[StubVerdict::Reject])
+    }
+
+    fn faulting() -> Self {
+        Self::new(&[StubVerdict::Fault])
+    }
+
+    fn stalling() -> Self {
+        Self::new(&[StubVerdict::Stall])
+    }
+
+    /// Rejects the first session and accepts the second, so one driver
+    /// can run a failed update and then a good one. The pump opens one
+    /// session per candidate, so that is one candidate each.
+    fn rejecting_then_accepting() -> Self {
+        Self::new(&[StubVerdict::Reject, StubVerdict::Authenticate])
+    }
+
+    /// Takes `polls` polls to get through a `CANDIDATE_LEN` candidate.
+    fn chunked(polls: u64) -> Self {
+        Self::chunked_verdicts(polls, &[StubVerdict::Authenticate])
+    }
+
+    /// A chunked verifier with a verdict per session, for tests that
+    /// have to tell a new session from a leftover one.
+    fn chunked_verdicts(polls: u64, verdicts: &'static [StubVerdict]) -> Self {
+        assert!(
+            polls > 0 && CANDIDATE_LEN % polls == 0,
+            "a chunk that does not divide the candidate makes the poll count a guess"
+        );
+        Self {
+            chunk: CANDIDATE_LEN / polls,
+            ..Self::new(verdicts)
+        }
     }
 }
 
-impl orchestrator_capabilities::VerifySession for AcceptSession {
-    type Verifier = AcceptVerifier;
+impl orchestrator_capabilities::IncrementalVerifier for StubVerifier {
     type Error = StubVerifierFault;
+    type Session = StubSession;
 
-    fn poll(self, _payload: &dyn ByteSource) -> orchestrator_capabilities::PollOutcome<Self> {
-        orchestrator_capabilities::PollOutcome::Authenticated(AcceptVerifier)
-    }
-
-    fn abandon(self) -> AcceptVerifier {
-        AcceptVerifier
+    fn start(mut self) -> StubSession {
+        let verdict = self.verdicts[self.sessions.min(self.verdicts.len() - 1)];
+        self.sessions += 1;
+        StubSession {
+            verifier: self,
+            offset: 0,
+            verdict,
+        }
     }
 }
 
-/// Stub verifier for tests: rejects every image on the first poll.
-struct RejectVerifier;
-
-struct RejectSession;
-
-impl orchestrator_capabilities::IncrementalVerifier for RejectVerifier {
-    type Error = StubVerifierFault;
-    type Session = RejectSession;
-
-    fn start(self) -> RejectSession {
-        RejectSession
-    }
-}
-
-impl orchestrator_capabilities::VerifySession for RejectSession {
-    type Verifier = RejectVerifier;
+impl orchestrator_capabilities::VerifySession for StubSession {
+    type Verifier = StubVerifier;
     type Error = StubVerifierFault;
 
-    fn poll(self, _payload: &dyn ByteSource) -> orchestrator_capabilities::PollOutcome<Self> {
-        orchestrator_capabilities::PollOutcome::Rejected(RejectVerifier)
+    fn poll(mut self, payload: &dyn ByteSource) -> orchestrator_capabilities::PollOutcome<Self> {
+        use orchestrator_capabilities::PollOutcome;
+
+        let total = payload.len();
+        if total == 0 {
+            return PollOutcome::Fault(self.verifier, StubVerifierFault);
+        }
+        if self.verdict == StubVerdict::Stall {
+            let progress = Progress::start(total);
+            return PollOutcome::Processing {
+                session: self,
+                progress,
+            };
+        }
+
+        let chunk = self.verifier.chunk.min(total - self.offset) as usize;
+        let mut buf = [0u8; STAGING_LEN];
+        if payload.read_at(self.offset, &mut buf[..chunk]).is_err() {
+            return PollOutcome::Fault(self.verifier, StubVerifierFault);
+        }
+        // MemStaging holds byte i at offset i. If the driver opened the
+        // window at the wrong offset, these bytes do not match.
+        for (i, byte) in buf[..chunk].iter().enumerate() {
+            if *byte != (self.offset + i as u64) as u8 {
+                return PollOutcome::Fault(self.verifier, StubVerifierFault);
+            }
+        }
+
+        self.offset += chunk as u64;
+        if self.offset < total {
+            let progress = Progress {
+                written: self.offset,
+                total,
+            };
+            return PollOutcome::Processing {
+                session: self,
+                progress,
+            };
+        }
+        match self.verdict {
+            StubVerdict::Authenticate => PollOutcome::Authenticated(self.verifier),
+            StubVerdict::Reject => PollOutcome::Rejected(self.verifier),
+            StubVerdict::Fault | StubVerdict::Stall => {
+                PollOutcome::Fault(self.verifier, StubVerifierFault)
+            }
+        }
     }
 
-    fn abandon(self) -> RejectVerifier {
-        RejectVerifier
+    fn abandon(self) -> StubVerifier {
+        self.verifier
     }
 }
 
@@ -700,7 +810,7 @@ impl BoardCapabilities for MockBoard {
     type Updatable = MockUpdatable;
     type Recovery = ();
     type Staging = MemStaging;
-    type UpdateVerifier = AcceptVerifier;
+    type UpdateVerifier = StubVerifier;
 }
 
 /// The SVN `mock_board`'s verifier vouches for. Tests that read the floor
@@ -727,7 +837,7 @@ fn mock_board<const N: usize>() -> Board<MockBoard, N> {
         recovery: core::array::from_fn(|_| ()),
         update_staging: MemStaging::new(),
         update_stall_budget_millis: STALL_BUDGET_MILLIS,
-        update_verifier: Some(AcceptVerifier),
+        update_verifier: Some(StubVerifier::accepting()),
     }
 }
 
@@ -966,7 +1076,7 @@ impl BoardCapabilities for WatchBoard {
     type Updatable = MockUpdatable;
     type Recovery = ();
     type Staging = MemStaging;
-    type UpdateVerifier = AcceptVerifier;
+    type UpdateVerifier = StubVerifier;
 }
 
 // The at-rest guarantee end to end: the component is still held while its
@@ -996,7 +1106,7 @@ fn release_follows_verification() {
             recovery: [()],
             update_staging: MemStaging::new(),
             update_stall_budget_millis: STALL_BUDGET_MILLIS,
-            update_verifier: Some(AcceptVerifier),
+            update_verifier: Some(StubVerifier::accepting()),
         },
     );
     let mut orch = orchestrator();
@@ -1355,7 +1465,7 @@ impl BoardCapabilities for RecoverableBoard {
     type Updatable = MockUpdatable;
     type Recovery = MockRecovery;
     type Staging = MemStaging;
-    type UpdateVerifier = AcceptVerifier;
+    type UpdateVerifier = StubVerifier;
 }
 
 fn recoverable_board<const N: usize>(sources: u8) -> Board<RecoverableBoard, N> {
@@ -1376,7 +1486,7 @@ fn recoverable_board<const N: usize>(sources: u8) -> Board<RecoverableBoard, N> 
         }),
         update_staging: MemStaging::new(),
         update_stall_budget_millis: STALL_BUDGET_MILLIS,
-        update_verifier: Some(AcceptVerifier),
+        update_verifier: Some(StubVerifier::accepting()),
     }
 }
 
@@ -1860,11 +1970,34 @@ fn update_driver(updatable: MockUpdatable) -> PlatformDriver<MockBoard, 1> {
     )
 }
 
-/// Submits a job and runs the entry executor, as entry to `Updating`
-/// does.
-fn updating(driver: &mut PlatformDriver<MockBoard, 1>) {
+/// Does what entry to `State::Updating` does: record the job, then run
+/// `prepare_update`, the executor for `Effect::AuthenticateStageUpdate`.
+fn enter_updating(driver: &mut PlatformDriver<MockBoard, 1>) {
     driver.submit_update(C0, CANDIDATE_LEN).unwrap();
     driver.prepare_update().unwrap();
+}
+
+/// A one-component driver whose board verifies with `verifier`.
+fn verifying_driver(verifier: StubVerifier) -> PlatformDriver<MockBoard, 1> {
+    PlatformDriver::new(
+        &passive_entries(),
+        Board {
+            update_verifier: Some(verifier),
+            ..mock_board()
+        },
+    )
+}
+
+/// Pumps until the pump answers with an event, one millisecond per
+/// call so the stall budget never runs out. `None` means no event came,
+/// which every caller treats as a failure.
+fn pump_to_event(driver: &mut PlatformDriver<MockBoard, 1>, first_tick: u64) -> Option<Event> {
+    for tick in first_tick..first_tick + 12 {
+        if let Some(event) = driver.pump_update(tick).event {
+            return Some(event);
+        }
+    }
+    None
 }
 
 #[test]
@@ -1889,17 +2022,9 @@ fn pumping_a_submitted_job_is_idle() {
 #[test]
 fn a_pumped_job_verifies_after_staging() {
     let mut driver = update_driver(MockUpdatable::new());
-    updating(&mut driver);
+    enter_updating(&mut driver);
 
-    let mut event = None;
-    for tick in 0..8 {
-        if let Some(e) = driver.pump_update(tick).event {
-            event = Some(e);
-            break;
-        }
-    }
-
-    assert_eq!(event, Some(Event::UpdateVerified));
+    assert_eq!(pump_to_event(&mut driver, 0), Some(Event::UpdateVerified));
     assert!(driver.board().updatables[0].ready);
 }
 
@@ -1908,7 +2033,7 @@ fn a_pumped_job_verifies_after_staging() {
 #[test]
 fn staging_advances_one_bounded_step_per_pump() {
     let mut driver = update_driver(MockUpdatable::stepping(4));
-    updating(&mut driver);
+    enter_updating(&mut driver);
 
     // Tick 0: Submitted -> Staging transition, device not staged yet.
     driver.pump_update(0);
@@ -1928,21 +2053,14 @@ fn staging_advances_one_bounded_step_per_pump() {
     assert!(driver.board().updatables[0].ready, "tick 5: device staged");
 
     // After staging, the next pumps start and complete verification.
-    let mut event = None;
-    for tick in 6..12 {
-        if let Some(e) = driver.pump_update(tick).event {
-            event = Some(e);
-            break;
-        }
-    }
-    assert_eq!(event, Some(Event::UpdateVerified));
+    assert_eq!(pump_to_event(&mut driver, 6), Some(Event::UpdateVerified));
 }
 
 // A device that fails a staging step ends the job.
 #[test]
 fn a_device_fault_rejects_the_update() {
     let mut driver = update_driver(MockUpdatable::faulting());
-    updating(&mut driver);
+    enter_updating(&mut driver);
 
     let mut event = None;
     for tick in 0..8 {
@@ -1961,7 +2079,7 @@ fn a_device_fault_rejects_the_update() {
 #[test]
 fn a_stalled_transfer_is_rejected_at_the_budget() {
     let mut driver = update_driver(MockUpdatable::stalling());
-    updating(&mut driver);
+    enter_updating(&mut driver);
 
     // The device answers Transferring without moving.
     assert_eq!(driver.pump_update(0).event, None);
@@ -1978,7 +2096,7 @@ fn a_stalled_transfer_is_rejected_at_the_budget() {
 #[test]
 fn progress_restarts_the_stall_budget() {
     let mut driver = update_driver(MockUpdatable::stepping(4));
-    updating(&mut driver);
+    enter_updating(&mut driver);
 
     // One step per budget window: every call moves `written`, so the
     // budget never runs out even though each step takes nearly all of it.
@@ -2032,7 +2150,7 @@ fn activate_update_without_a_job_is_refused() {
 #[test]
 fn activate_update_requires_authentication() {
     let mut driver = update_driver(MockUpdatable::new());
-    updating(&mut driver);
+    enter_updating(&mut driver);
 
     assert_eq!(
         driver.activate_update(),
@@ -2050,7 +2168,7 @@ fn activate_update_requires_authentication() {
 #[test]
 fn activate_update_refuses_an_unverified_candidate() {
     let mut driver = update_driver(MockUpdatable::new());
-    updating(&mut driver);
+    enter_updating(&mut driver);
     driver.pump_update(0); // Submitted -> Staging
     driver.pump_update(1); // Staging -> device Ready -> Staged
     assert!(driver.board().updatables[0].ready, "bytes are staged");
@@ -2060,62 +2178,120 @@ fn activate_update_refuses_an_unverified_candidate() {
     );
 }
 
-// A verifier that rejects the candidate produces UpdateRejected and
-// the device abandons its staged image.
-struct RejectBoard;
+// Verification is polled the way staging is: one step per call, with
+// the bytes read so far reported as progress. The verdict comes on the
+// poll that finishes the payload.
+#[test]
+fn verification_advances_one_bounded_step_per_pump() {
+    let mut driver = verifying_driver(StubVerifier::chunked(4));
+    enter_updating(&mut driver);
 
-impl BoardCapabilities for RejectBoard {
-    type Image = MemImage;
-    type Verifier = XorVerifier;
-    type BootControl = MockReset;
-    type BootWatch = MockWalk;
-    type SvnFloor = MockFloor;
-    type ReportSink = RecordingSink;
-    type Updatable = MockUpdatable;
-    type Recovery = ();
-    type Staging = MemStaging;
-    type UpdateVerifier = RejectVerifier;
-}
+    assert_eq!(driver.pump_update(0).event, None, "tick 0: Submitted");
+    assert_eq!(driver.pump_update(1).event, None, "tick 1: staging");
+    assert!(driver.board().updatables[0].ready, "tick 1: device staged");
 
-fn reject_board() -> Board<RejectBoard, 1> {
-    Board {
-        images: [MemImage::holding(valid_image())],
-        verifier: XorVerifier {
-            fault: false,
-            svn: MOCK_SVN,
-        },
-        boot_controls: [MockReset::new()],
-        boot_watches: [MockWalk::idle()],
-        svn_floors: [SvnFloorBinding::Erot(MockFloor::new())],
-        report_sink: RecordingSink::new(),
-        updatables: [MockUpdatable::new()],
-        recovery: [()],
-        update_staging: MemStaging::new(),
-        update_stall_budget_millis: STALL_BUDGET_MILLIS,
-        update_verifier: Some(RejectVerifier),
+    let opened = driver.pump_update(2);
+    assert_eq!(opened.event, None, "tick 2: the session only opens");
+    assert_eq!(opened.progress, Some(Progress::start(CANDIDATE_LEN)));
+
+    for (tick, written) in [(3, 8), (4, 16), (5, 24)] {
+        let poll = driver.pump_update(tick);
+        assert_eq!(poll.event, None, "tick {tick}: a verdict before the end");
+        assert_eq!(
+            poll.progress,
+            Some(Progress {
+                written,
+                total: CANDIDATE_LEN
+            })
+        );
     }
+
+    assert_eq!(driver.pump_update(6).event, Some(Event::UpdateVerified));
 }
 
+// A verifier that rejects the candidate produces UpdateRejected and the
+// device throws away what it staged. The job stays, so the SM can still
+// end it with DiscardStaged.
 #[test]
 fn a_rejected_candidate_emits_update_rejected() {
-    let mut driver = PlatformDriver::new(&passive_entries(), reject_board());
-    driver.submit_update(C0, CANDIDATE_LEN).unwrap();
-    driver.prepare_update().unwrap();
+    let mut driver = verifying_driver(StubVerifier::rejecting());
+    enter_updating(&mut driver);
 
-    let mut event = None;
-    for tick in 0..8 {
-        if let Some(e) = driver.pump_update(tick).event {
-            event = Some(e);
-            break;
-        }
-    }
-
-    assert_eq!(event, Some(Event::UpdateRejected));
+    assert_eq!(pump_to_event(&mut driver, 0), Some(Event::UpdateRejected));
     assert_eq!(
         driver.board().updatables[0].abandons,
         1,
         "device abandons the staged image after rejection"
     );
+    assert!(
+        driver.pending_update().is_some(),
+        "the job waits for DiscardStaged"
+    );
+}
+
+// A verifier that cannot run its check is as fatal to the job as one
+// that fails it. Fail secure: nothing activates on a fault.
+#[test]
+fn a_verifier_fault_rejects_the_candidate() {
+    let mut driver = verifying_driver(StubVerifier::faulting());
+    enter_updating(&mut driver);
+
+    assert_eq!(pump_to_event(&mut driver, 0), Some(Event::UpdateRejected));
+    assert_eq!(driver.board().updatables[0].abandons, 1);
+}
+
+// A verifier that stops getting through the payload is dropped on the
+// same budget as a stalled transfer.
+#[test]
+fn a_stalled_verification_is_rejected_at_the_budget() {
+    let mut driver = verifying_driver(StubVerifier::stalling());
+    enter_updating(&mut driver);
+
+    driver.pump_update(0);
+    driver.pump_update(1);
+    driver.pump_update(2); // opens the session, which restarts the budget
+    assert_eq!(driver.pump_update(3).event, None, "budget not spent yet");
+
+    let poll = driver.pump_update(2 + STALL_BUDGET_MILLIS);
+
+    assert_eq!(poll.event, Some(Event::UpdateRejected));
+    assert_eq!(driver.board().updatables[0].abandons, 1);
+}
+
+// The verifier comes back after a rejection. If it did not, the next
+// update would find no verifier and never finish.
+#[test]
+fn the_verifier_is_reusable_after_a_rejection() {
+    let mut driver = verifying_driver(StubVerifier::rejecting_then_accepting());
+
+    enter_updating(&mut driver);
+    assert_eq!(pump_to_event(&mut driver, 0), Some(Event::UpdateRejected));
+    driver.discard_staged().expect("discard failed");
+
+    enter_updating(&mut driver);
+    assert_eq!(pump_to_event(&mut driver, 20), Some(Event::UpdateVerified));
+}
+
+// Discarding mid-verification returns the verifier too, not just a
+// finished session. The verdicts are ordered so only a second session
+// can authenticate: a leftover session still carries Reject, and would
+// end the next update instead.
+#[test]
+fn the_verifier_is_reusable_after_a_discard_mid_verification() {
+    let mut driver = verifying_driver(StubVerifier::chunked_verdicts(
+        4,
+        &[StubVerdict::Reject, StubVerdict::Authenticate],
+    ));
+
+    enter_updating(&mut driver);
+    driver.pump_update(0);
+    driver.pump_update(1);
+    driver.pump_update(2);
+    driver.pump_update(3); // one chunk in, session still live
+    driver.discard_staged().expect("discard failed");
+
+    enter_updating(&mut driver);
+    assert_eq!(pump_to_event(&mut driver, 20), Some(Event::UpdateVerified));
 }
 
 // The job ends at activation: the device runs the candidate on its next
@@ -2123,12 +2299,8 @@ fn a_rejected_candidate_emits_update_rejected() {
 #[test]
 fn activate_update_ends_the_job() {
     let mut driver = update_driver(MockUpdatable::new());
-    updating(&mut driver);
-    for tick in 0..8 {
-        if driver.pump_update(tick).event.is_some() {
-            break;
-        }
-    }
+    enter_updating(&mut driver);
+    pump_to_event(&mut driver, 0);
 
     driver.activate_update().expect("activate failed");
 
@@ -2143,15 +2315,12 @@ fn verifier_survives_two_update_cycles() {
     let mut driver = update_driver(MockUpdatable::new());
 
     for cycle in 0..2u64 {
-        updating(&mut driver);
-        let mut verified = false;
-        for tick in 0..8 {
-            if let Some(Event::UpdateVerified) = driver.pump_update(cycle * 10 + tick).event {
-                verified = true;
-                break;
-            }
-        }
-        assert!(verified, "cycle {cycle}: expected UpdateVerified");
+        enter_updating(&mut driver);
+        assert_eq!(
+            pump_to_event(&mut driver, cycle * 20),
+            Some(Event::UpdateVerified),
+            "cycle {cycle}"
+        );
         driver.activate_update().expect("activate failed");
     }
 }
