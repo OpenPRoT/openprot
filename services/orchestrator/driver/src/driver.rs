@@ -411,10 +411,10 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             Step::Staged if phase == UpdatePhase::Resyncing => {
                 self.pending_update = None;
                 // Both slots hold the image now, so the floor may move.
-                if let Some((id, svn)) = self.held_floor.take() {
-                    if self.advance_floor(id, svn).is_err() {
-                        self.report(Report::SvnFloorCommitFailed(id));
-                    }
+                if let Some((id, svn)) = self.held_floor.take()
+                    && self.advance_floor(id, svn).is_err()
+                {
+                    self.report(Report::SvnFloorCommitFailed(id));
                 }
                 UpdatePoll::idle()
             }
