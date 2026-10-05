@@ -271,8 +271,11 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             .map_err(|_| DriverError::VerifierFault)?;
         let idx = id.get() as usize;
         Ok(match verdict {
-            Verdict::Authenticated { svn } => {
+            Verdict::Authenticated { svn, measurement } => {
                 self.verified_svn[idx] = Some(svn);
+                if let Some(measurement) = measurement {
+                    self.report(Report::Measured { id, measurement });
+                }
                 Event::VerificationPassed(id)
             }
             Verdict::Rejected => {
