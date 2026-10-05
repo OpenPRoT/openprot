@@ -160,6 +160,52 @@ def _seed_flash_image(
         f.write(b"\xff" * (size - len(data)))
 
 
+def _check_flash_contents(drives) -> bool:
+    """Compare a backing image against what the guest said it wrote.
+
+    AST10X0_CS1_EXPECT names a file, AST10X0_CS1_EXPECT_OFFSET where in the
+    CS1 image it should appear. The guest's own verdict is a log line it
+    produced about its own memory; this is the host reading the device's
+    flash afterwards, which is the only check the guest cannot talk its way
+    past. Returns True when there is nothing to check.
+    """
+    expect = os.environ.get("AST10X0_CS1_EXPECT")
+    if not expect:
+        return True
+
+    cs1 = [path for index, path, _, _, _ in drives if index == 1]
+    if not cs1:
+        _LOG.error("AST10X0_CS1_EXPECT is set but no CS1 image was attached")
+        return False
+
+    want = Path(expect).read_bytes()
+    offset = int(os.environ.get("AST10X0_CS1_EXPECT_OFFSET", "0"))
+    with open(cs1[0], "rb") as f:
+        f.seek(offset)
+        got = f.read(len(want))
+
+    if got == want:
+        _LOG.info("CS1 holds the expected %d bytes at %#x", len(want), offset)
+        return True
+
+    if len(got) != len(want):
+        _LOG.error(
+            "CS1 image ends at %#x, short of the expected %d bytes",
+            offset + len(got),
+            len(want),
+        )
+        return False
+
+    first = next(i for i, (a, b) in enumerate(zip(got, want)) if a != b)
+    _LOG.error(
+        "CS1 differs from the expected image at %#x: got %#04x, want %#04x",
+        offset + first,
+        got[first],
+        want[first],
+    )
+    return False
+
+
 def _resolve_flash_drives(args):
     """Return a list of (index, path, size, fill, contents) FMC backing images.
 
@@ -269,15 +315,19 @@ def _main(args) -> None:
 
         stdout_thread.join(timeout=5)
 
+    # Checked whatever the guest said, so a run that claims to have written
+    # an image and did not fails here rather than passing.
+    flash_ok = _check_flash_contents(drives)
+
     if result[0] is None:
         # No UART sentinel — check if QEMU exited naturally via semihosting.
         # Processes killed by timeout have a negative returncode (SIGKILL = -9).
         if proc.returncode >= 0:
-            sys.exit(0 if proc.returncode == 0 else 1)
+            sys.exit(0 if proc.returncode == 0 and flash_ok else 1)
         _LOG.error("No TEST_RESULT sentinel found in UART output")
         sys.exit(1)
 
-    sys.exit(result[0])
+    sys.exit(result[0] if flash_ok else 1)
 
 
 if __name__ == "__main__":
