@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
-load(":apps.bzl", "APPS", "SYSTEM_CONFIG", "TARGET_SRC")
+load(":apps.bzl", "APPS", "FLASH", "SYSTEM_CONFIG", "TARGET_DEPS", "TARGET_SRC")
 
 package(default_visibility = ["//target/ast10x0/tests/integration:__subpackages__"])
 
@@ -23,6 +23,8 @@ exports_files([
 qemu_scenario(
     name = "pldm_update_qemu",
     apps = APPS,
+    flash = FLASH,
     system_config = SYSTEM_CONFIG,
+    target_deps = TARGET_DEPS,
     target_src = TARGET_SRC,
 )

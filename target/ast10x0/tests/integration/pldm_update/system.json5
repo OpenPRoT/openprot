@@ -7,7 +7,7 @@
 // and the RoT the firmware device answers to.
 //
 //   pldm_ua:       the update agent, the BMC's half of the update
-//   pldm_fd:       the DSP0267 firmware device
+//   pldm_fd:       the DSP0267 firmware device, staging into CS1 flash
 //   mctp_bus:      an MCTP server per endpoint, joined by the loopback
 //   orchestrator:  the RoT, which decides whether the update may proceed
 //
@@ -111,7 +111,39 @@
                         {
                             type: "thread",
                             name: "pldm_fd_thread",
-                            kernel_stack_size_bytes: 4096,
+                            // Staging reads a window back from flash on this
+                            // stack, on top of the PLDM message buffer.
+                            kernel_stack_size_bytes: 8192,
+                        },
+                    ],
+                    memory_mappings: [
+                        // The kernel applies the FMC pinmux before any
+                        // process starts, so this one does not map the SCU.
+                        {
+                            // FMC controller registers.
+                            name: "fmc_regs",
+                            type: "device",
+                            start_address: 0x7e620000,
+                            size_bytes: 0x1000,
+                        },
+                        {
+                            // FMC CS0 memory-mapped flash read window (8 MiB).
+                            // The backend takes both windows even though
+                            // nothing here reads CS0.
+                            name: "fmc_cs0_window",
+                            type: "device",
+                            start_address: 0x80000000,
+                            size_bytes: 0x800000,
+                        },
+                        {
+                            // FMC CS1 memory-mapped flash read window (64 MiB),
+                            // where the staged image lands. With both chip
+                            // selects present the 256 MiB FMC aperture splits
+                            // in half, which is why CS1 sits at 0x88000000.
+                            name: "fmc_cs1_window",
+                            type: "device",
+                            start_address: 0x88000000,
+                            size_bytes: 0x04000000,
                         },
                     ],
                 },

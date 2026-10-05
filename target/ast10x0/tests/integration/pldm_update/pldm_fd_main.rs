@@ -20,6 +20,8 @@
 use core::cell::{Cell, RefCell};
 use core::sync::atomic::{AtomicBool, Ordering};
 
+use flash_backend::{Backend, NoWaitBlocking};
+use hal_flash::{BlockingFlash, Flash, FlashAddress};
 use openprot_mctp_client_ipc::IpcMctpClient;
 use openprot_pldm_service::firmware_device::{
     FdEvent, FdEventSink, FirmwareDevice, RunTerminusResult,
@@ -43,7 +45,11 @@ use pw_status::Error;
 use userspace::time::{Clock, Instant, SystemClock};
 use userspace::{entry, syscall};
 
+use util_error::ErrorCode;
+use util_region::Region;
+
 use app_pldm_fd::handle;
+use app_pldm_fd_regions::{take_mmaps, FmcCs0Window, FmcCs1Window, FmcRegs};
 
 /// This device's endpoint id, matching the bus's firmware-device side.
 const FD_EID: u8 = 8;
@@ -76,6 +82,17 @@ const REQUESTER_TIMEOUT_MILLIS: u32 = 5_000;
 
 /// Working buffer for one PLDM message.
 const FD_BUF_SIZE: usize = 1024;
+
+/// Where the image lands on CS1, standing in for the managed device's boot
+/// flash. A scratch region, erased at startup and overwritten without
+/// backup: holding the image is what this test is for.
+const IMAGE_BASE: u32 = 0x10_0000;
+
+/// Readback chunk used by `verify`, one SPI NOR page.
+const READBACK_CHUNK: usize = 256;
+
+/// The FMC backend bound to this process's register mapping.
+type Backend_ = Backend<FmcRegs>;
 
 /// Message opcodes to the orchestrator, and the answers it gives. The
 /// orchestrator decides; this device reports and obeys.
@@ -147,7 +164,7 @@ fn expected_byte(offset: usize) -> u8 {
 
 /// Staging, plus what the run loop needs to judge the outcome afterwards.
 struct QemuFdOps {
-    image: RefCell<[u8; IMAGE_SIZE]>,
+    flash: RefCell<BlockingFlash<Backend_, NoWaitBlocking>>,
     bytes_received: Cell<usize>,
     corrupt: Cell<bool>,
     verified: Cell<bool>,
@@ -155,9 +172,9 @@ struct QemuFdOps {
 }
 
 impl QemuFdOps {
-    fn new() -> Self {
+    fn new(flash: BlockingFlash<Backend_, NoWaitBlocking>) -> Self {
         Self {
-            image: RefCell::new([0u8; IMAGE_SIZE]),
+            flash: RefCell::new(flash),
             bytes_received: Cell::new(0),
             corrupt: Cell::new(false),
             verified: Cell::new(false),
@@ -268,7 +285,21 @@ impl FdOps for QemuFdOps {
                 return Ok(TransferResult::FdAbortedTransfer);
             }
         }
-        self.image.borrow_mut()[offset..offset + data.len()].copy_from_slice(data);
+        // Written only after the content check, so a wrong byte never
+        // reaches flash and the image on the device stays whatever it was.
+        if let Err(e) = self
+            .flash
+            .borrow_mut()
+            .program(FlashAddress::new(IMAGE_BASE + offset as u32), data)
+        {
+            self.corrupt.set(true);
+            pw_log::error!(
+                "FD: program at {} failed: {:08x}",
+                offset as u32,
+                e.0.get() as u32
+            );
+            return Ok(TransferResult::FdAbortedTransfer);
+        }
         self.bytes_received.set(done + data.len());
         Ok(TransferResult::TransferSuccess)
     }
@@ -306,23 +337,40 @@ impl FdOps for QemuFdOps {
             return Ok(VerifyResult::VerifyGenericError);
         }
 
-        // Read the staged image back rather than trusting the running
-        // tally. Signature checking belongs to the crypto service and is
-        // stubbed until after the demo, so this is a content check.
-        let image = self.image.borrow();
-        for (offset, byte) in image.iter().enumerate() {
-            if *byte != expected_byte(offset) {
-                pw_log::error!("FD: staged byte {} is wrong", offset as u32);
+        // Read the image back out of flash rather than trusting the
+        // running tally. A write that silently did not land, or landed
+        // somewhere else, fails here instead of passing. Signature
+        // checking belongs to the crypto service and is stubbed until
+        // after the demo, so this is a content check.
+        let mut flash = self.flash.borrow_mut();
+        let mut chunk = [0u8; READBACK_CHUNK];
+        for base in (0..IMAGE_SIZE).step_by(READBACK_CHUNK) {
+            if let Err(e) = flash.read(FlashAddress::new(IMAGE_BASE + base as u32), &mut chunk) {
+                pw_log::error!(
+                    "FD: read at {} failed: {:08x}",
+                    base as u32,
+                    e.0.get() as u32
+                );
                 ORCH_TOOK_VERDICT.store(
                     tell_orchestrator(&[MSG_VERIFY_OUTCOME, 0]),
                     Ordering::Relaxed,
                 );
                 return Ok(VerifyResult::VerifyGenericError);
             }
+            for (i, byte) in chunk.iter().enumerate() {
+                if *byte != expected_byte(base + i) {
+                    pw_log::error!("FD: flash byte {} is wrong", (base + i) as u32);
+                    ORCH_TOOK_VERDICT.store(
+                        tell_orchestrator(&[MSG_VERIFY_OUTCOME, 0]),
+                        Ordering::Relaxed,
+                    );
+                    return Ok(VerifyResult::VerifyGenericError);
+                }
+            }
         }
 
         self.verified.set(true);
-        pw_log::info!("FD: image verified, {} bytes", IMAGE_SIZE as u32);
+        pw_log::info!("FD: image verified in flash, {} bytes", IMAGE_SIZE as u32);
         ORCH_TOOK_VERDICT.store(
             tell_orchestrator(&[MSG_VERIFY_OUTCOME, 1]),
             Ordering::Relaxed,
@@ -359,10 +407,45 @@ impl FdOps for QemuFdOps {
     }
 }
 
+/// Brings up the FMC and erases the sector the image lands in.
+///
+/// The kernel applied the FMC pinmux before any process started, so there
+/// is no SCU access here.
+fn init_flash(
+    fmc_regs: Region<FmcRegs>,
+    fmc_cs0_window: Region<FmcCs0Window>,
+    fmc_cs1_window: Region<FmcCs1Window>,
+) -> Result<BlockingFlash<Backend_, NoWaitBlocking>, ErrorCode> {
+    let driver = Backend::new(fmc_regs, fmc_cs0_window, fmc_cs1_window)?;
+    let mut flash = BlockingFlash {
+        driver,
+        blocking: NoWaitBlocking,
+    };
+    let (capacity, sector, _) = flash.geometry()?;
+    pw_log::info!(
+        "FD: CS1 is {} bytes, {} byte sectors",
+        capacity.get() as u32,
+        sector.get() as u32
+    );
+    flash.erase(FlashAddress::new(IMAGE_BASE), sector)?;
+    Ok(flash)
+}
+
 #[entry]
 fn entry() {
     pw_log::info!("FD: app started");
-    let fd_ops = QemuFdOps::new();
+
+    // SAFETY: mints this process's memory mappings once, at its entry point.
+    let mmaps = unsafe { take_mmaps() };
+    let flash = match init_flash(mmaps.fmc_regs, mmaps.fmc_cs0_window, mmaps.fmc_cs1_window) {
+        Ok(flash) => flash,
+        Err(e) => {
+            pw_log::error!("FD: flash init failed: {:08x}", e.0.get() as u32);
+            let _ = syscall::debug_shutdown(Err(Error::Internal));
+            loop {}
+        }
+    };
+    let fd_ops = QemuFdOps::new(flash);
 
     // Both transports reach the same MCTP server over the same channel.
     // Nothing is in flight on both at once: run_terminus alternates its
