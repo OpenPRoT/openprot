@@ -21,7 +21,8 @@ load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
-load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH", "flash_system_image_test")
+load("//util/region:defs.bzl", "app_regions")
 
 # Every `--cfg` name any scenario in this tree uses. Declared on every
 # build, not just the one that sets it, because an undeclared cfg name is
@@ -49,6 +50,8 @@ def qemu_scenario(
         target_src,
         apps,
         cfgs = None,
+        target_deps = None,
+        flash = None,
         test_tags = None):
     """Builds one scenario image and the QEMU test that runs it.
 
@@ -65,6 +68,12 @@ def qemu_scenario(
             scenario that inverts its own verdict reads these, so the
             negative case passes when the failure is caught rather than
             failing like a broken build.
+        target_deps: Extra kernel deps, for a scenario whose `target.rs`
+            touches the SoC (applying a pinmux, say).
+        flash: Set it and the test runs under `flash_system_image_test`,
+            so an app that maps the FMC has real flash underneath. The
+            dict is passed through to that rule: `cs0_image`, `cs1_image`,
+            `flash_size`, `fmc_model`, `cs1_contents`.
         test_tags: Extra tags for the QEMU test.
     """
     cfgs = cfgs or []
@@ -99,11 +108,28 @@ def qemu_scenario(
         deps = [
             ":codegen",
             ":linker_script",
-        ] + KERNEL_DEPS,
+        ] + KERNEL_DEPS + (target_deps or []),
     )
 
     app_labels = []
     for app in apps:
+        deps = list(app["deps"])
+
+        # An app that maps MMIO gets the generated regions crate its
+        # take_mmaps comes from. Generated per scenario, because it is
+        # built from that scenario's system config.
+        if app.get("regions"):
+            regions = "app_" + app["name"] + "_regions"
+            app_regions(
+                name = regions,
+                app_name = app["name"],
+                edition = "2024",
+                system_config = system_config,
+                tags = ["kernel"],
+                target_compatible_with = TARGET_COMPATIBLE_WITH,
+            )
+            deps.append(":" + regions)
+
         rust_app(
             name = app["name"],
             srcs = [app["src"]],
@@ -113,7 +139,7 @@ def qemu_scenario(
             system_config = system_config,
             tags = ["kernel"],
             target_compatible_with = TARGET_COMPATIBLE_WITH,
-            deps = app["deps"],
+            deps = deps,
         )
         app_labels.append(":" + app["name"])
 
@@ -128,12 +154,21 @@ def qemu_scenario(
         visibility = ["//visibility:public"],
     )
 
-    system_image_test(
-        name = name + "_test",
-        image = ":" + name,
-        tags = ["qemu_only"] + (test_tags or []),
-        target_compatible_with = TARGET_COMPATIBLE_WITH,
-    )
+    if flash:
+        flash_system_image_test(
+            name = name + "_test",
+            image = ":" + name,
+            tags = ["qemu_only"] + (test_tags or []),
+            target_compatible_with = TARGET_COMPATIBLE_WITH,
+            **flash
+        )
+    else:
+        system_image_test(
+            name = name + "_test",
+            image = ":" + name,
+            tags = ["qemu_only"] + (test_tags or []),
+            target_compatible_with = TARGET_COMPATIBLE_WITH,
+        )
 
     rust_binary_no_panics_test(
         name = name + "_no_panics_test",

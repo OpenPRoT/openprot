@@ -40,11 +40,15 @@ APPS = [
         "name": "orchestrator",
         "src": HERE + "orchestrator_main.rs",
     },
-    # The DSP0267 firmware device.
+    # The DSP0267 firmware device, staging into flash on CS1.
     {
         "deps": [
+            "//hal/blocking/flash",
             "//services/mctp/client-ipc:mctp_client_ipc",
             "//services/pldm:pldm_service",
+            "//target/ast10x0/backend/flash:flash_backend_ast10x0",
+            "//util/error",
+            "//util/region",
             "@pigweed//pw_kernel/userspace",
             "@pigweed//pw_log/rust:pw_log",
             "@pigweed//pw_status/rust:pw_status",
@@ -52,6 +56,7 @@ APPS = [
             "@rust_crates//:pldm-interface",
         ],
         "name": "pldm_fd",
+        "regions": True,
         "src": HERE + "pldm_fd_main.rs",
     },
     # The update agent, the BMC's half of the update.
@@ -68,6 +73,21 @@ APPS = [
         "src": HERE + "pldm_ua_main.rs",
     },
 ]
+
+# The kernel applies the FMC pinmux before any process starts, so it needs
+# the SoC's registers.
+TARGET_DEPS = ["//target/ast10x0/peripherals"]
+
+# Two chip selects, because with both present the FMC aperture splits and
+# CS1 lands at 0x88000000, which is the address the firmware device maps.
+# w25q512jv is the 64 MiB part; the default 1 MiB model refuses a backing
+# file this size.
+FLASH = {
+    "cs0_image": "cs0.img",
+    "cs1_image": "cs1.img",
+    "flash_size": 64 * 1024 * 1024,
+    "fmc_model": "w25q512jv",
+}
 
 SYSTEM_CONFIG = HERE + "system_config"
 TARGET_SRC = HERE + "target.rs"

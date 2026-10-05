@@ -8,13 +8,15 @@
 # report.
 
 load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
-load("//target/ast10x0/tests/integration/pldm_update:apps.bzl", "APPS", "SYSTEM_CONFIG", "TARGET_SRC")
+load("//target/ast10x0/tests/integration/pldm_update:apps.bzl", "APPS", "FLASH", "SYSTEM_CONFIG", "TARGET_DEPS", "TARGET_SRC")
 
 # bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/pldm_update/refused_update:refused_update_qemu_test
 qemu_scenario(
     name = "refused_update_qemu",
     apps = APPS,
     cfgs = ["refused_update"],
+    flash = FLASH,
     system_config = SYSTEM_CONFIG,
+    target_deps = TARGET_DEPS,
     target_src = TARGET_SRC,
 )
