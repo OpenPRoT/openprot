@@ -8,6 +8,7 @@ rust_library(
     srcs = [
         "src/board.rs",
         "src/driver.rs",
+        "src/driver/update.rs",
         "src/lib.rs",
         "src/tests.rs",
     ],
