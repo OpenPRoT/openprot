@@ -63,6 +63,17 @@ const BOOT_WINDOW_MILLIS: u64 = 2_000;
 /// cut short here.
 const RUN_BUDGET_MILLIS: u64 = 10_000;
 
+/// Whether this build expects the device to come up.
+///
+/// The negative scenario is the same image with a device that never
+/// reports, and it passes when the platform locks. Inverting the verdict
+/// here rather than letting the target fail keeps a build error and a
+/// caught failure from looking the same to the runner.
+#[cfg(not(device_hangs))]
+const EXPECT_LOCKDOWN: bool = false;
+#[cfg(device_hangs)]
+const EXPECT_LOCKDOWN: bool = true;
+
 /// Reset command bytes, read by the device as its reset line.
 const RESET_ASSERT: u8 = 0;
 const RESET_RELEASE: u8 = 1;
@@ -375,10 +386,18 @@ fn run() -> Result<(), ()> {
 
     loop {
         if core.state() == State::Locked {
+            if EXPECT_LOCKDOWN {
+                pw_log::info!("the device never came up and the platform locked");
+                return Ok(());
+            }
             pw_log::error!("orchestrator locked the platform");
             return Err(());
         }
         if booted {
+            if EXPECT_LOCKDOWN {
+                pw_log::error!("the device reported ready when it should not have");
+                return Err(());
+            }
             pw_log::info!("device booted and the orchestrator is in Ready");
             return Ok(());
         }
@@ -410,6 +429,8 @@ fn run() -> Result<(), ()> {
         }
 
         if SystemClock::now() >= give_up {
+            // Expecting lockdown and not getting one is a failure too: a
+            // walk that never finished judged nothing.
             pw_log::error!("run budget expired with the machine still deciding");
             return Err(());
         }

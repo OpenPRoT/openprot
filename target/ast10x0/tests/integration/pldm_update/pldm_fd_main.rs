@@ -405,21 +405,67 @@ fn entry() {
     let orchestrator_consented = ORCH_ALLOWED_UPDATE.load(Ordering::Relaxed)
         && ORCH_TOOK_VERDICT.load(Ordering::Relaxed)
         && ORCH_COMMITTED.load(Ordering::Relaxed);
-    if !orchestrator_consented {
-        pw_log::error!("FD: the update ran without the orchestrator's consent");
-    }
+    let completed = fd_ops.image_is_good() && fd_ops.activated.get() && orchestrator_consented;
 
-    if fd_ops.image_is_good() && fd_ops.activated.get() && orchestrator_consented {
-        pw_log::info!("FD: update flow complete");
+    if verdict(&fd_ops, completed) {
         let _ = syscall::debug_shutdown(Ok(()));
     } else {
-        pw_log::error!(
-            "FD: update flow did not complete, {} bytes received",
-            fd_ops.bytes_received.get() as u32
-        );
         let _ = syscall::debug_shutdown(Err(Error::Internal));
     }
     loop {}
+}
+
+/// Whether the run did what this scenario asked of it.
+///
+/// A negative scenario does not just expect the update to fail. It names
+/// the failure it arranged, because a run that died of something else
+/// would otherwise look like the thing being proven.
+#[cfg(not(any(corrupt_image, refused_update)))]
+fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
+    if completed {
+        pw_log::info!("FD: update flow complete");
+        return true;
+    }
+    pw_log::error!(
+        "FD: update flow did not complete, {} bytes received",
+        fd_ops.bytes_received.get() as u32
+    );
+    false
+}
+
+/// One byte of the agent's image was flipped, so the device must have
+/// caught it and the update must not have gone through.
+#[cfg(corrupt_image)]
+fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
+    if completed {
+        pw_log::error!("FD: a corrupt image went through");
+        return false;
+    }
+    if !fd_ops.corrupt.get() {
+        pw_log::error!("FD: the run failed, but not because of the corrupt byte");
+        return false;
+    }
+    pw_log::info!("FD: the corrupt image was caught and the update refused");
+    true
+}
+
+/// The orchestrator refused, so nothing it was asked may have been
+/// accepted, and the update must not have gone through.
+#[cfg(refused_update)]
+fn verdict(_fd_ops: &QemuFdOps, completed: bool) -> bool {
+    if completed {
+        pw_log::error!("FD: the update went through without consent");
+        return false;
+    }
+    if ORCH_ALLOWED_UPDATE.load(Ordering::Relaxed)
+        || ORCH_TOOK_VERDICT.load(Ordering::Relaxed)
+        || ORCH_COMMITTED.load(Ordering::Relaxed)
+    {
+        pw_log::error!("FD: the orchestrator refused the request but agreed to something else");
+        return false;
+    }
+    pw_log::info!("FD: the orchestrator withheld consent and the update did not happen");
+    true
 }
 
 #[panic_handler]

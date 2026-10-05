@@ -75,6 +75,29 @@ const DEVICE_UUID: [u8; 16] = [
 /// reports for its running firmware or the component is refused.
 const COMP_COMPARISON_STAMP: u32 = 1;
 
+/// Offset of the byte the negative scenario flips. Inside the image and
+/// not on a window boundary, so it is the content check that catches it
+/// rather than a length check.
+#[cfg(corrupt_image)]
+const CORRUPT_OFFSET: usize = 700;
+
+/// The byte the agent actually sends at `offset`. The same everywhere
+/// except in the negative scenario, which flips one, so the device has
+/// something to catch.
+#[cfg(not(corrupt_image))]
+fn corrupted(_offset: usize, byte: u8) -> u8 {
+    byte
+}
+
+#[cfg(corrupt_image)]
+fn corrupted(offset: usize, byte: u8) -> u8 {
+    if offset == CORRUPT_OFFSET {
+        !byte
+    } else {
+        byte
+    }
+}
+
 /// How many times the agent asks who is there before giving up. The device
 /// may still be claiming its endpoint id on the first try.
 const DISCOVERY_ATTEMPTS: u32 = 5;
@@ -158,7 +181,7 @@ fn serve_fd_request(
             }
             let mut chunk = [0u8; MAX_TRANSFER_SIZE];
             for (i, byte) in chunk[..length].iter_mut().enumerate() {
-                *byte = expected_byte(offset + i);
+                *byte = corrupted(offset + i, expected_byte(offset + i));
             }
             let msg = RequestFirmwareDataResponse::new(instance_id, success, &chunk[..length]);
             PldmCodecWithLifetime::encode(&msg, resp)

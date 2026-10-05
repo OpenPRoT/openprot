@@ -1,0 +1,20 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# The update scenario's negative case: the agent sends one wrong byte.
+#
+# It passes when the device catches that byte and the update does not go
+# through. Failing for any other reason fails the test, so a green here
+# says the content check is what stopped it.
+
+load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
+load("//target/ast10x0/tests/integration/pldm_update:apps.bzl", "APPS", "SYSTEM_CONFIG", "TARGET_SRC")
+
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/pldm_update/corrupt_image:corrupt_image_qemu_test
+qemu_scenario(
+    name = "corrupt_image_qemu",
+    apps = APPS,
+    cfgs = ["corrupt_image"],
+    system_config = SYSTEM_CONFIG,
+    target_src = TARGET_SRC,
+)
