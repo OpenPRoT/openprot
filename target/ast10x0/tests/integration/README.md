@@ -1,0 +1,189 @@
+# QEMU integration tests
+
+Two scenarios, each its own system image, both running under QEMU with no
+hardware. The AST1030 is the black box; everything it talks to is another
+app in the same image, reached through the same traits a real board wires.
+
+The runner greps one pass/fail sentinel per run, so one scenario per image
+is what lets a failure name itself.
+
+## Running them
+
+    bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/...
+
+One scenario at a time, with the console:
+
+    bazel test --config=virt_ast10x0 --test_output=all \
+        //target/ast10x0/tests/integration/mock_bmc:mock_bmc_qemu_test
+
+    bazel test --config=virt_ast10x0 --test_output=all \
+        //target/ast10x0/tests/integration/pldm_update:pldm_update_qemu_test
+
+Bazel caches a passing test, so add `--nocache_test_results` when you want
+the run to actually happen. Checking for a flake:
+
+    for i in $(seq 1 20); do
+        bazel test --config=virt_ast10x0 --test_output=summary \
+            --nocache_test_results \
+            //target/ast10x0/tests/integration/... 2>&1 | grep 'tests pass'
+    done
+
+Each image also has a `no_panics_test`, which fails if any panic path
+survives into the binary. It builds for the host and needs no QEMU.
+
+## The boot scenario
+
+`mock_bmc/` watches a managed device through a boot. The orchestrator app
+runs the shipped state machine and platform driver; what the test supplies
+is the board.
+
+```mermaid
+flowchart LR
+    subgraph image["system image"]
+        orch["orchestrator<br/>Orchestrator + PlatformDriver<br/>CheckpointWalk"]
+        bmc["mock_bmc<br/>BootBehaviour"]
+    end
+    orch -- "reset_cmd: assert / release" --> bmc
+    bmc -- "boot_evt: ready" --> orch
+```
+
+The two lines are IPC channels, not GPIO. Reset and ready are board traces
+between two chips, QEMU models one chip, and the mock BMC is a process
+inside it, so even a working GPIO block would connect to nothing. The
+adapters in `board/src/bmc.rs` are swapped out at the trait seam rather
+than exercised; the pin wiring is what the hardware tests are for.
+
+Evidence arrives as a request on `boot_evt` and is latched in a static,
+because `EvidenceReader::read` is synchronous and may not block. Both
+directions of the reset line clear the latch, so a report from an earlier
+attempt cannot satisfy the next walk.
+
+Reaching `Ready` is not the pass condition. A passive component is
+released speculatively, so the machine is `Ready` as soon as the last
+component verifies, whether or not the device ever came up. The walk's own
+verdict is what proves the boot.
+
+To watch it fail, set the device to hang in `mock_bmc_main.rs`:
+
+```rust
+BootBehaviour::Hangs,
+```
+
+The window closes, the walk names the checkpoint, recovery has no source
+and the platform locks:
+
+    [ERR] device failed at checkpoint ready
+    [INF] report: component 0 failed at ready
+    [INF] report: component 0 out of recovery sources
+    [ERR] orchestrator locked the platform
+    TEST_RESULT:FAIL
+
+## The update scenario
+
+`pldm_update/` runs a full DSP0267 update, update agent to firmware
+device, with the RoT deciding whether it may go on.
+
+```mermaid
+flowchart LR
+    subgraph image["system image"]
+        ua["pldm_ua<br/>update agent"]
+        bus["mctp_bus<br/>one MCTP server per endpoint<br/>joined by transport-loopback"]
+        fd["pldm_fd<br/>FirmwareDevice"]
+        orch["orchestrator<br/>Orchestrator + PlatformDriver"]
+    end
+    ua <-- "MCTP, EID 42" --> bus
+    bus <-- "MCTP, EID 8" --> fd
+    fd -- "update lifecycle" --> orch
+    orch -- "accepted / refused" --> fd
+```
+
+PLDM reaches the wire the way it does on hardware: each endpoint is an
+`IpcMctpClient` to an MCTP server. Only the bottom binding differs,
+`transport-loopback` instead of `transport-i2c`, so EID routing,
+fragmentation and reassembly are the shipped code.
+
+The firmware device decides nothing. It reports what the update agent
+asked for and what came of it, and the orchestrator says whether the
+update may proceed:
+
+```mermaid
+sequenceDiagram
+    participant UA as pldm_ua
+    participant FD as pldm_fd
+    participant RoT as orchestrator
+    UA->>FD: RequestUpdate
+    FD->>RoT: UpdateRequested, 1024 bytes
+    Note over RoT: request_update records the job,<br/>the pump verifies the candidate
+    RoT-->>FD: accepted
+    UA->>FD: image, in windows
+    Note over FD: reads the staged image back
+    FD->>RoT: VerifyOutcome, good
+    Note over RoT: both verdicts agree,<br/>ActivateUpdate reaches the device
+    RoT-->>FD: accepted
+    UA->>FD: ActivateFirmware
+    FD->>RoT: Activated
+    Note over RoT: BootConfirmed commits the floor
+    RoT-->>FD: accepted
+```
+
+The accepted `RequestUpdate` travels through an `FdEventSink`, so it is
+sent while `run_terminus` is running rather than after it returns. That is
+what lets the orchestrator be in `Updating` before the verdict arrives.
+Verify and activation are reported from the `FdOps` calls that settle
+them, because only those know the outcome.
+
+The orchestrator is its own process rather than a core inside the firmware
+device. The design has the RoT grant or refuse and the device obey, and
+that means nothing when both are the same thread with the same state.
+
+Two verdicts land on the same candidate. The device reads its staged image
+back and checks it against the pattern the agent sent; the RoT's own
+verifier reads the staging region and does the same. The update goes
+through only when both say yes.
+
+To watch it fail, corrupt one byte of what the agent sends, in
+`pldm_ua_main.rs`:
+
+```rust
+*byte = expected_byte(offset + i) ^ if offset + i == 700 { 0xFF } else { 0 };
+```
+
+The device catches it at download:
+
+    [ERR] FD: byte 700 is wrong
+    [ERR] FD: the update ran without the orchestrator's consent
+    TEST_RESULT:FAIL
+
+Or refuse the request, in `orchestrator_main.rs`:
+
+```rust
+fn handle_update_requested(...) -> u8 {
+    return REPLY_REFUSED;
+```
+
+The update never reaches `Updating` and the run fails at the consent
+check.
+
+## What is not proven yet
+
+Signature checking is stubbed until the crypto service exists, so both
+verifiers are content checks rather than signature checks. The driver's
+`Updatable` stages nothing, because in DSP0267 the device pulls its own
+chunks from the agent, so `activate` is the only side of that seam with a
+real caller. And a refusal is recorded rather than enforced: the device
+finishes the PLDM flow and fails the run at the end instead of answering
+the agent with an error.
+
+## Memory layout
+
+Both images are tight. The AST1030 has 768 KB of SRAM and no XIP, so code
+and data share it. `system.json5` carries the map and the reasoning; the
+short version is that app flash starts at `0x10000` and each app starts
+64 KB aligned, because the MPU wants power-of-2 alignment and apps that
+merely fit arithmetically overlap each other's subregions.
+
+Oversizing and misalignment are both quiet. The image still builds, and
+the only sign is a PMSAv7 subregion overlap warning on the console. Check
+for one after changing any size. A thread whose stack is too small is
+quieter still: the app dies before its first log line, with no panic and
+no warning.
