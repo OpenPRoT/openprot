@@ -36,7 +36,8 @@ use openprot_orchestrator_driver::{
 };
 use openprot_orchestrator_sm::{ComponentAttrs, ComponentId, Event, PowerOnResult, State};
 use orchestrator_capabilities::{
-    BootControl, BootStatus, EvidenceReader, StageProgress, Svn, SvnFloor, Updatable, UpdateError,
+    BootControl, BootStatus, EvidenceReader, IncrementalVerifier, PollOutcome, StageProgress, Svn,
+    SvnFloor, Updatable, UpdateError, VerifySession,
 };
 use orchestrator_checkpoint_walk::CheckpointWalk;
 use orchestrator_config::{
@@ -89,6 +90,11 @@ static DEVICES: [DeviceConfig<u8, u8>; N] = [DeviceConfig::new(
 static CHAIN: ChainEntries<N> = chain_of(&DEVICES);
 
 const _: () = assert_retry_reaches_every_image(MAX_RETRY, &DEVICES);
+
+/// Set when the RoT's own verifier authenticates the candidate. The device
+/// verifies its image too, and the update only goes through when both say
+/// so, so this records one half of that.
+static ROT_AUTHENTICATED: AtomicBool = AtomicBool::new(false);
 
 /// Set when the driver actually calls `Updatable::activate`. The board sits
 /// inside the driver, so this is how the run loop sees that activation
@@ -246,6 +252,64 @@ impl ByteSource for PatternStaging {
     }
 }
 
+/// The RoT's own check of the staged candidate.
+///
+/// Signature checking belongs to the crypto service and is stubbed until
+/// after the demo, so this reads the staging region and compares it with the
+/// pattern the update agent is expected to have sent. That makes the RoT's
+/// verdict depend on the bytes rather than on nothing, which is what keeps
+/// the authenticated path from passing vacuously.
+///
+/// One poll does the whole image. The trait asks for bounded steps so a long
+/// check cannot stall the loop; at a kilobyte that does not arise.
+struct PatternVerifier;
+
+struct PatternSession;
+
+impl IncrementalVerifier for PatternVerifier {
+    type Error = BoardFault;
+    type Session = PatternSession;
+
+    fn start(self) -> PatternSession {
+        PatternSession
+    }
+}
+
+impl VerifySession for PatternSession {
+    type Verifier = PatternVerifier;
+    type Error = BoardFault;
+
+    fn poll(self, payload: &dyn ByteSource) -> PollOutcome<Self> {
+        let len = payload.len() as usize;
+        if len == 0 {
+            // An empty payload is a fault, never a vacuous pass.
+            return PollOutcome::Fault(PatternVerifier, BoardFault);
+        }
+
+        let mut chunk = [0u8; 64];
+        let mut offset = 0usize;
+        while offset < len {
+            let take = core::cmp::min(chunk.len(), len - offset);
+            if payload.read_at(offset as u64, &mut chunk[..take]).is_err() {
+                return PollOutcome::Fault(PatternVerifier, BoardFault);
+            }
+            for (i, byte) in chunk[..take].iter().enumerate() {
+                if *byte != expected_byte(offset + i) {
+                    return PollOutcome::Rejected(PatternVerifier);
+                }
+            }
+            offset += take;
+        }
+
+        ROT_AUTHENTICATED.store(true, Ordering::Relaxed);
+        PollOutcome::Authenticated(PatternVerifier)
+    }
+
+    fn abandon(self) -> PatternVerifier {
+        PatternVerifier
+    }
+}
+
 /// Reports go to the console, where the test reads them as an operator would.
 struct LogSink;
 
@@ -281,6 +345,7 @@ impl BoardCapabilities for UpdateBoard {
     type Updatable = FdUpdatable;
     type Recovery = ();
     type Staging = PatternStaging;
+    type UpdateVerifier = PatternVerifier;
 }
 
 fn board() -> Board<UpdateBoard, N> {
@@ -294,6 +359,7 @@ fn board() -> Board<UpdateBoard, N> {
         updatables: [FdUpdatable],
         recovery: [()],
         update_staging: PatternStaging,
+        update_verifier: Some(PatternVerifier),
         update_stall_budget_millis: 5_000,
     }
 }
@@ -374,16 +440,31 @@ fn handle_update_requested(core: &mut Core, driver: &mut Driver, candidate_len: 
         return REPLY_REFUSED;
     }
 
-    // Walk the job to Staged. The device already holds the candidate, so
-    // each step is a bookkeeping move rather than a transfer, but the phase
-    // still has to advance or `ActivateUpdate` refuses an unstaged image.
-    for _ in 0..4 {
+    // Walk the job to Authenticated. The device already holds the candidate,
+    // so staging is a bookkeeping move, but the RoT's own verifier still
+    // reads the staging region, and `ActivateUpdate` refuses a candidate
+    // that did not reach Authenticated.
+    //
+    // The pump's `UpdateVerified` is not dispatched here. It is the RoT's
+    // half of the verdict; the device's half arrives separately, and the
+    // update only goes through when both agree. Eight rounds is slack: the
+    // pump takes three to get from Submitted to Authenticated.
+    for _ in 0..8 {
         let poll = driver.pump_update(now_millis());
-        if let Some(event) = poll.event {
-            pw_log::error!("ORCH: the update pump gave up on the job");
-            core.dispatch(driver, event);
-            return REPLY_REFUSED;
+        match poll.event {
+            Some(Event::UpdateVerified) => break,
+            Some(event) => {
+                pw_log::error!("ORCH: the update pump gave up on the job");
+                core.dispatch(driver, event);
+                return REPLY_REFUSED;
+            }
+            None => {}
         }
+    }
+
+    if !ROT_AUTHENTICATED.load(Ordering::Relaxed) {
+        pw_log::error!("ORCH: the candidate never authenticated");
+        return REPLY_REFUSED;
     }
 
     pw_log::info!("ORCH: update accepted, {} bytes", candidate_len as u32);
@@ -392,19 +473,28 @@ fn handle_update_requested(core: &mut Core, driver: &mut Driver, candidate_len: 
 
 /// Turns the device's verdict into the event that lets the machine leave
 /// `Updating`. PR #515 proposes the same mapping as a function on the PLDM
-/// adapter; it is two lines here until that lands.
+/// adapter; it is a few lines here until that lands.
+///
+/// The RoT verified the candidate for itself while the request was being
+/// accepted, so an update goes through only when both checks passed. Either
+/// one saying no is a rejection.
 fn handle_verify_outcome(core: &mut Core, driver: &mut Driver, good: bool) -> u8 {
     if core.state() != State::Updating(TARGET) {
         pw_log::error!("ORCH: a verdict arrived with no update in flight");
         return REPLY_REFUSED;
     }
 
-    let event = if good {
+    let both_agree = good && ROT_AUTHENTICATED.load(Ordering::Relaxed);
+    if good && !both_agree {
+        pw_log::error!("ORCH: the device accepted a candidate the RoT did not");
+    }
+    let event = if both_agree {
         Event::UpdateVerified
     } else {
         Event::UpdateRejected
     };
     core.dispatch(driver, event);
+    let good = both_agree;
 
     if !good {
         pw_log::info!("ORCH: the device rejected the candidate, nothing activated");

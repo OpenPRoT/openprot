@@ -34,7 +34,8 @@ use openprot_orchestrator_driver::{
 };
 use openprot_orchestrator_sm::{ComponentAttrs, ComponentId, Event, PowerOnResult, State};
 use orchestrator_capabilities::{
-    BootControl, BootStatus, EvidenceReader, StageProgress, Svn, SvnFloor, Updatable, UpdateError,
+    BootControl, BootStatus, EvidenceReader, IncrementalVerifier, PollOutcome, StageProgress, Svn,
+    SvnFloor, Updatable, UpdateError, VerifySession,
 };
 use orchestrator_checkpoint_walk::CheckpointWalk;
 use orchestrator_config::{
@@ -240,6 +241,35 @@ impl Updatable for NoUpdate {
     }
 }
 
+/// No update is verified in a boot scenario, so being polled at all is a
+/// wiring mistake rather than a verdict. It reports a fault, which the pump
+/// turns into a rejection, instead of accepting an image nothing checked.
+struct NeverVerifier;
+
+struct NeverSession;
+
+impl IncrementalVerifier for NeverVerifier {
+    type Error = BoardFault;
+    type Session = NeverSession;
+
+    fn start(self) -> NeverSession {
+        NeverSession
+    }
+}
+
+impl VerifySession for NeverSession {
+    type Verifier = NeverVerifier;
+    type Error = BoardFault;
+
+    fn poll(self, _payload: &dyn ByteSource) -> PollOutcome<Self> {
+        PollOutcome::Fault(NeverVerifier, BoardFault)
+    }
+
+    fn abandon(self) -> NeverVerifier {
+        NeverVerifier
+    }
+}
+
 /// No staging region, because nothing stages here.
 struct NoStaging;
 
@@ -289,6 +319,7 @@ impl BoardCapabilities for MockBmcBoard {
     type Updatable = NoUpdate;
     type Recovery = ();
     type Staging = NoStaging;
+    type UpdateVerifier = NeverVerifier;
 }
 
 fn board() -> Board<MockBmcBoard, N> {
@@ -302,6 +333,7 @@ fn board() -> Board<MockBmcBoard, N> {
         updatables: [NoUpdate],
         recovery: [()],
         update_staging: NoStaging,
+        update_verifier: Some(NeverVerifier),
         update_stall_budget_millis: 1_000,
     }
 }
