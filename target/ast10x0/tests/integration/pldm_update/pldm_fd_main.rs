@@ -18,15 +18,13 @@
 #![no_std]
 
 use core::cell::{Cell, RefCell};
-use core::sync::atomic::{AtomicBool, Ordering};
 
 use flash_backend::{Backend, NoWaitBlocking};
 use hal_flash::{BlockingFlash, Flash, FlashAddress};
 use openprot_mctp_client_ipc::IpcMctpClient;
-use openprot_pldm_service::firmware_device::{
-    FdEvent, FdEventSink, FirmwareDevice, RunTerminusResult,
-};
+use openprot_pldm_service::firmware_device::{FirmwareDevice, RunTerminusResult};
 use openprot_pldm_service::{MctpPldmTransport, PldmServiceError};
+use pldm_api::{FdStatus, RejectReason, ResponseCode, TransferMode};
 use pldm_common::message::firmware_update::apply_complete::ApplyResult;
 use pldm_common::message::firmware_update::get_fw_params::FirmwareParameters;
 use pldm_common::message::firmware_update::get_status::ProgressPercent;
@@ -41,7 +39,9 @@ use pldm_common::protocol::firmware_update::{
 };
 use pldm_common::util::fw_component::FirmwareComponent;
 use pldm_interface::firmware_device::fd_ops::{ComponentOperation, FdOps, FdOpsError};
+use pldm_server::{dispatch, FdIpcHandler};
 use pw_status::Error;
+use userspace::syscall::Signals;
 use userspace::time::{Clock, Instant, SystemClock};
 use userspace::{entry, syscall};
 
@@ -94,63 +94,69 @@ const READBACK_CHUNK: usize = 256;
 /// The FMC backend bound to this process's register mapping.
 type Backend_ = Backend<FmcRegs>;
 
-/// Message opcodes to the orchestrator, and the answers it gives. The
-/// orchestrator decides; this device reports and obeys.
-const MSG_UPDATE_REQUESTED: u8 = 1;
-const MSG_VERIFY_OUTCOME: u8 = 2;
-const MSG_ACTIVATED: u8 = 3;
-const REPLY_ACCEPTED: u8 = 1;
+/// How long the device waits for the RoT to command it. The RoT is a local
+/// process with nothing to do but answer, so this bounds a deadlock rather
+/// than budgeting work.
+const DECISION_TIMEOUT_MILLIS: u64 = 5_000;
 
-/// How long an orchestrator answer may take. It is a local process with no
-/// work to do but answer, so this is a deadlock bound, not a budget.
-const ORCH_TIMEOUT_MILLIS: u64 = 2_000;
+/// Largest IPC frame either way on the RoT's channel.
+const IPC_BUF_SIZE: usize = 128;
 
-/// What the orchestrator said to each report. Read after the flow ends: a
-/// refusal anywhere means the update ran without the RoT's consent, which
-/// fails the run even if PLDM itself was happy.
-static ORCH_ALLOWED_UPDATE: AtomicBool = AtomicBool::new(false);
-static ORCH_TOOK_VERDICT: AtomicBool = AtomicBool::new(false);
-static ORCH_COMMITTED: AtomicBool = AtomicBool::new(false);
+/// The component the RoT is asked about. A PLDM component identifier, not
+/// an orchestrator `ComponentId`: the RoT maps one to the other, and this
+/// side of the channel speaks PLDM.
+const ORCH_TARGET: u16 = COMP_IDENTIFIER;
 
-/// Reports one update-lifecycle step to the orchestrator and returns whether
-/// it was accepted. Blocks until the answer arrives: the next PLDM step must
-/// not run ahead of the RoT's decision.
-fn tell_orchestrator(message: &[u8]) -> bool {
-    let deadline = Instant::from_ticks(
-        SystemClock::now().ticks() + ORCH_TIMEOUT_MILLIS * SystemClock::TICKS_PER_SEC / 1000,
-    );
-    let mut reply = [0u8; 1];
-    match syscall::channel_transact(handle::ORCH, message, &mut reply, deadline) {
-        Ok(len) => len == 1 && reply[0] == REPLY_ACCEPTED,
-        Err(_) => {
-            pw_log::error!("FD: the orchestrator did not answer");
-            false
-        }
-    }
+/// Which way the RoT answered the decision the device was waiting on.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Decision {
+    Perform,
+    Reject,
 }
 
-/// Forwards the PLDM state machine's lifecycle events to the orchestrator as
-/// they happen, rather than after the flow ends. An accepted `RequestUpdate`
-/// is the orchestrator's cue to record the job and enter `Updating`, and it
-/// has to be in that state before the verdict arrives.
-struct OrchestratorLink;
+/// Where the device is in the update, as `QueryStatus` reports it.
+///
+/// The first four are points DSP0267 already lets the firmware device take
+/// time at, which is why the device can sit at one serving its channel
+/// instead of running the update. `Failed` is not a wait: the device has
+/// already told the agent the phase failed, and raises the signal once so
+/// the RoT hears the same thing.
+///
+/// There is no step for "verify succeeded". Asking for apply is that: the
+/// device only reaches `Apply` after reading the image back and finding it
+/// whole, so `ApplyPending` is the device's verdict and `PhaseFailed` is
+/// the other half of it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Awaiting {
+    Nothing,
+    Offer,
+    Verify,
+    Apply,
+    Activation,
+    Failed,
+}
 
-impl FdEventSink for OrchestratorLink {
-    fn notify(&mut self, event: FdEvent) {
-        match event {
-            FdEvent::UpdateRequested => {
-                let len = (IMAGE_SIZE as u32).to_le_bytes();
-                let message = [MSG_UPDATE_REQUESTED, len[0], len[1], len[2], len[3]];
-                let allowed = tell_orchestrator(&message);
-                ORCH_ALLOWED_UPDATE.store(allowed, Ordering::Relaxed);
-                if !allowed {
-                    pw_log::error!("FD: the orchestrator refused the update");
-                }
-            }
-            // The other lifecycle events have no orchestrator mapping yet.
-            // Verify and activation are reported from the FdOps calls that
-            // settle them, because only those know the outcome.
-            _ => {}
+impl Awaiting {
+    /// What `QueryStatus` answers at this step.
+    fn status(self, total: u32) -> FdStatus {
+        match self {
+            Awaiting::Nothing => FdStatus::Idle { reason: 0 },
+            Awaiting::Offer => FdStatus::OfferPending {
+                target: ORCH_TARGET,
+                total,
+                // The device pulls its own chunks from the agent, which
+                // is what DSP0267 has a firmware device do.
+                mode: TransferMode::InTransport,
+                svn_delayed: false,
+            },
+            Awaiting::Verify => FdStatus::VerifyPending,
+            Awaiting::Apply => FdStatus::ApplyPending,
+            Awaiting::Activation => FdStatus::ActivationPending,
+            // The phase and result code the device already sent the agent.
+            Awaiting::Failed => FdStatus::PhaseFailed {
+                phase: 0,
+                result_code: 1,
+            },
         }
     }
 }
@@ -169,6 +175,24 @@ struct QemuFdOps {
     corrupt: Cell<bool>,
     verified: Cell<bool>,
     activated: Cell<bool>,
+    /// A rendezvous pair, not two independent flags: `awaiting` is the
+    /// step `QueryStatus` reports, `decision` is the answer the serve loop
+    /// ends on. One outstanding at a time, because the device is not
+    /// running the update while it waits.
+    awaiting: Cell<Awaiting>,
+    decision: Cell<Option<Decision>>,
+    /// Set when the RoT asked what this device is doing. The failure path
+    /// waits for one of these rather than for a command, because there is
+    /// nothing to command once a phase has failed.
+    status_asked: Cell<bool>,
+    /// Set when the RoT rejected a step. The run fails on this even if
+    /// PLDM itself was happy, because an update the RoT refused must not
+    /// look like a success.
+    refused: Cell<bool>,
+    /// Set when the channel itself broke: no signal, no answer, a command
+    /// for the wrong step. Kept apart from `refused` so a scenario that
+    /// claims the RoT refused cannot pass on an IPC that never happened.
+    ipc_failed: Cell<bool>,
 }
 
 impl QemuFdOps {
@@ -179,11 +203,199 @@ impl QemuFdOps {
             corrupt: Cell::new(false),
             verified: Cell::new(false),
             activated: Cell::new(false),
+            awaiting: Cell::new(Awaiting::Nothing),
+            decision: Cell::new(None),
+            status_asked: Cell::new(false),
+            refused: Cell::new(false),
+            ipc_failed: Cell::new(false),
         }
+    }
+
+    /// Asks the RoT to decide `step` and blocks until it answers.
+    ///
+    /// The device raises the peer's `USER` signal and then serves its own
+    /// channel until a command lands. It is not running the update while it
+    /// waits, so serving here costs nothing: the RoT's `QueryStatus` is
+    /// answered from the same loop that is waiting for its command.
+    fn await_decision(&self, step: Awaiting) -> Decision {
+        if !self.serve(step, |ops| ops.decision.get().is_some()) {
+            // No answer. Treat it as a refusal so the update stops, but
+            // record that the channel broke rather than that the RoT said
+            // no, so a scenario asserting a refusal cannot pass on this.
+            self.ipc_failed.set(true);
+            return Decision::Reject;
+        }
+
+        let decision = self.decision.get().unwrap_or(Decision::Reject);
+        if decision == Decision::Reject {
+            self.refused.set(true);
+        }
+        decision
+    }
+
+    /// Tells the RoT a phase failed, and waits only long enough for it to
+    /// ask. Nothing is commanded after a failure, so waiting for a command
+    /// would wait forever.
+    fn report_failure(&self) {
+        if !self.serve(Awaiting::Failed, |ops| ops.status_asked.get()) {
+            self.ipc_failed.set(true);
+        }
+    }
+
+    /// Raises the RoT's signal, then answers its requests until `done` or
+    /// the deadline. Returns whether `done` came true.
+    ///
+    /// The device is not running the update while it sits here, so serving
+    /// the channel from this loop costs nothing: the RoT's `QueryStatus`
+    /// is answered by the same loop that is waiting for its command.
+    fn serve(&self, step: Awaiting, done: impl Fn(&Self) -> bool) -> bool {
+        self.awaiting.set(step);
+        self.decision.set(None);
+        self.status_asked.set(false);
+
+        if syscall::object_set_peer_user_signal(handle::ORCH, true).is_err() {
+            pw_log::error!("FD: could not raise the RoT's signal");
+            self.awaiting.set(Awaiting::Nothing);
+            return false;
+        }
+
+        let deadline = Instant::from_ticks(
+            SystemClock::now().ticks()
+                + DECISION_TIMEOUT_MILLIS * SystemClock::TICKS_PER_SEC / 1000,
+        );
+        let mut request = [0u8; IPC_BUF_SIZE];
+        let mut response = [0u8; IPC_BUF_SIZE];
+        let mut answered = false;
+
+        while !done(self) {
+            if syscall::object_wait(handle::ORCH, Signals::READABLE, deadline).is_err() {
+                pw_log::error!("FD: the RoT never answered");
+                break;
+            }
+            let Ok(len) = syscall::channel_read(handle::ORCH, 0usize, &mut request) else {
+                continue;
+            };
+            let mut gate = OrchGate { ops: self };
+            // dispatch only errors when even an error frame will not fit,
+            // which IPC_BUF_SIZE rules out. Answering nothing would leave
+            // the RoT reading a truncated frame, so say so instead.
+            let written = match dispatch(&mut gate, &request[..len], &mut response) {
+                Ok(written) => written,
+                Err(_) => {
+                    pw_log::error!("FD: {} byte IPC buffer is too small", IPC_BUF_SIZE as u32);
+                    break;
+                }
+            };
+            let _ = syscall::channel_respond(handle::ORCH, &response[..written]);
+            answered = true;
+        }
+
+        // Leaving with a request unanswered strands the RoT's transaction:
+        // its buffers stay lent to the kernel and its next command fails.
+        // The loop above answers whatever it read, so this only has to
+        // cover the deadline case, where nothing was read at all.
+        let settled = done(self);
+        if !settled && answered {
+            pw_log::error!("FD: giving up with the RoT mid-exchange");
+        }
+
+        let _ = syscall::object_set_peer_user_signal(handle::ORCH, false);
+        // Single-threaded: nothing reads these between the two writes.
+        self.awaiting.set(Awaiting::Nothing);
+        settled
+    }
+
+    /// True when the RoT allowed every step it was asked about, and the
+    /// channel worked.
+    fn orchestrator_consented(&self) -> bool {
+        !self.refused.get() && !self.ipc_failed.get()
     }
 
     fn image_is_good(&self) -> bool {
         self.verified.get() && !self.corrupt.get() && self.bytes_received.get() == IMAGE_SIZE
+    }
+}
+
+/// The RoT's view of this device: one method per command it can send.
+///
+/// Every method records a decision and returns. Nothing here runs the
+/// update; the `FdOps` call that is waiting picks the decision up and
+/// carries on.
+struct OrchGate<'a> {
+    ops: &'a QemuFdOps,
+}
+
+impl OrchGate<'_> {
+    /// Records `decision` if the device is waiting on `step`, and refuses
+    /// otherwise. A command for a step the device is not at is a bug in
+    /// the RoT, not something to act on.
+    fn answer(&self, step: Awaiting, decision: Decision) -> Result<(), ResponseCode> {
+        if self.ops.awaiting.get() != step {
+            pw_log::error!("FD: a command arrived for a step this device is not at");
+            self.ops.ipc_failed.set(true);
+            return Err(ResponseCode::InvalidOp);
+        }
+        self.ops.decision.set(Some(decision));
+        Ok(())
+    }
+
+    /// The device never reaches this step in this scenario, so being
+    /// commanded here means the RoT thinks it is somewhere it is not.
+    fn not_reached(&self) -> Result<(), ResponseCode> {
+        pw_log::error!("FD: commanded a step this scenario never reaches");
+        self.ops.ipc_failed.set(true);
+        Err(ResponseCode::InvalidOp)
+    }
+}
+
+impl FdIpcHandler for OrchGate<'_> {
+    fn accept_offer(&mut self, _staging_base: u32) -> Result<(), ResponseCode> {
+        self.answer(Awaiting::Offer, Decision::Perform)
+    }
+
+    fn reject_offer(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
+        self.answer(Awaiting::Offer, Decision::Reject)
+    }
+
+    fn perform_verify(&mut self) -> Result<(), ResponseCode> {
+        self.answer(Awaiting::Verify, Decision::Perform)
+    }
+
+    fn reject_verify(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
+        self.answer(Awaiting::Verify, Decision::Reject)
+    }
+
+    fn perform_apply(&mut self) -> Result<(), ResponseCode> {
+        self.answer(Awaiting::Apply, Decision::Perform)
+    }
+
+    fn reject_apply(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
+        self.answer(Awaiting::Apply, Decision::Reject)
+    }
+
+    fn perform_activate(&mut self) -> Result<(), ResponseCode> {
+        self.answer(Awaiting::Activation, Decision::Perform)
+    }
+
+    fn reject_activate(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
+        self.answer(Awaiting::Activation, Decision::Reject)
+    }
+
+    fn query_status(&mut self) -> Result<FdStatus, ResponseCode> {
+        self.ops.status_asked.set(true);
+        Ok(self.ops.awaiting.get().status(IMAGE_SIZE as u32))
+    }
+
+    fn ack_cancel(&mut self) -> Result<(), ResponseCode> {
+        self.not_reached()
+    }
+
+    fn perform_svn_commit(&mut self) -> Result<(), ResponseCode> {
+        self.not_reached()
+    }
+
+    fn reject_svn_commit(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
+        self.not_reached()
     }
 }
 
@@ -242,11 +454,23 @@ impl FdOps for QemuFdOps {
         &self,
         component: &FirmwareComponent,
         fw_params: &FirmwareParameters,
-        _op: ComponentOperation,
+        op: ComponentOperation,
     ) -> Result<ComponentResponseCode, FdOpsError> {
         let code = component.evaluate_update_eligibility(fw_params);
         if code != ComponentResponseCode::CompCanBeUpdated {
             pw_log::error!("FD: component refused, code {}", code as u32);
+            return Ok(code);
+        }
+        // The agent asks twice, once to pass the component table and once
+        // to start the component. The RoT is asked on the second: that is
+        // the one that commits to a transfer, and asking twice would have
+        // it record the job and then refuse its own job as already in
+        // flight.
+        if op == ComponentOperation::UpdateComponent
+            && self.await_decision(Awaiting::Offer) == Decision::Reject
+        {
+            pw_log::error!("FD: the RoT refused the offer");
+            return Ok(ComponentResponseCode::CompNotSupported);
         }
         Ok(code)
     }
@@ -330,10 +554,13 @@ impl FdOps for QemuFdOps {
                 "FD: image incomplete, {} bytes",
                 self.bytes_received.get() as u32
             );
-            ORCH_TOOK_VERDICT.store(
-                tell_orchestrator(&[MSG_VERIFY_OUTCOME, 0]),
-                Ordering::Relaxed,
-            );
+            self.report_failure();
+            return Ok(VerifyResult::VerifyGenericError);
+        }
+
+        if self.await_decision(Awaiting::Verify) == Decision::Reject {
+            // No report: the RoT refused this itself and knows the outcome.
+            pw_log::error!("FD: the RoT refused the verify");
             return Ok(VerifyResult::VerifyGenericError);
         }
 
@@ -351,19 +578,15 @@ impl FdOps for QemuFdOps {
                     base as u32,
                     e.0.get() as u32
                 );
-                ORCH_TOOK_VERDICT.store(
-                    tell_orchestrator(&[MSG_VERIFY_OUTCOME, 0]),
-                    Ordering::Relaxed,
-                );
+                drop(flash);
+                self.report_failure();
                 return Ok(VerifyResult::VerifyGenericError);
             }
             for (i, byte) in chunk.iter().enumerate() {
                 if *byte != expected_byte(base + i) {
                     pw_log::error!("FD: flash byte {} is wrong", (base + i) as u32);
-                    ORCH_TOOK_VERDICT.store(
-                        tell_orchestrator(&[MSG_VERIFY_OUTCOME, 0]),
-                        Ordering::Relaxed,
-                    );
+                    drop(flash);
+                    self.report_failure();
                     return Ok(VerifyResult::VerifyGenericError);
                 }
             }
@@ -371,10 +594,6 @@ impl FdOps for QemuFdOps {
 
         self.verified.set(true);
         pw_log::info!("FD: image verified in flash, {} bytes", IMAGE_SIZE as u32);
-        ORCH_TOOK_VERDICT.store(
-            tell_orchestrator(&[MSG_VERIFY_OUTCOME, 1]),
-            Ordering::Relaxed,
-        );
         Ok(VerifyResult::VerifySuccess)
     }
 
@@ -383,6 +602,10 @@ impl FdOps for QemuFdOps {
         _component: &FirmwareComponent,
         _progress_percent: &mut ProgressPercent,
     ) -> Result<ApplyResult, FdOpsError> {
+        if self.await_decision(Awaiting::Apply) == Decision::Reject {
+            pw_log::error!("FD: the RoT refused the apply");
+            return Ok(ApplyResult::ApplyGenericError);
+        }
         Ok(ApplyResult::ApplySuccess)
     }
 
@@ -393,12 +616,12 @@ impl FdOps for QemuFdOps {
     ) -> Result<u8, FdOpsError> {
         // Nothing is deferred, so the agent is told to expect no wait.
         *estimated_time = 0;
+        if self.await_decision(Awaiting::Activation) == Decision::Reject {
+            pw_log::error!("FD: the RoT refused the activation");
+            return Ok(PldmBaseCompletionCode::Error as u8);
+        }
         self.activated.set(true);
         pw_log::info!("FD: activated");
-        // Stands in for the updated device coming back up. Nothing in this
-        // image reboots, so the report is what the orchestrator treats as a
-        // healthy first boot.
-        ORCH_COMMITTED.store(tell_orchestrator(&[MSG_ACTIVATED]), Ordering::Relaxed);
         Ok(PldmBaseCompletionCode::Success as u8)
     }
 
@@ -474,7 +697,7 @@ fn entry() {
         &mut buf,
         IDLE_TIMEOUT_MILLIS,
         REQUESTER_TIMEOUT_MILLIS,
-        &mut OrchestratorLink,
+        &mut (),
     ) {
         RunTerminusResult::Completed => {}
         RunTerminusResult::StoppedByError(PldmServiceError::Mctp(e)) => {
@@ -485,10 +708,8 @@ fn entry() {
         }
     }
 
-    let orchestrator_consented = ORCH_ALLOWED_UPDATE.load(Ordering::Relaxed)
-        && ORCH_TOOK_VERDICT.load(Ordering::Relaxed)
-        && ORCH_COMMITTED.load(Ordering::Relaxed);
-    let completed = fd_ops.image_is_good() && fd_ops.activated.get() && orchestrator_consented;
+    let completed =
+        fd_ops.image_is_good() && fd_ops.activated.get() && fd_ops.orchestrator_consented();
 
     if verdict(&fd_ops, completed) {
         let _ = syscall::debug_shutdown(Ok(()));
@@ -535,15 +756,12 @@ fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
 /// The orchestrator refused, so nothing it was asked may have been
 /// accepted, and the update must not have gone through.
 #[cfg(refused_update)]
-fn verdict(_fd_ops: &QemuFdOps, completed: bool) -> bool {
+fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
     if completed {
         pw_log::error!("FD: the update went through without consent");
         return false;
     }
-    if ORCH_ALLOWED_UPDATE.load(Ordering::Relaxed)
-        || ORCH_TOOK_VERDICT.load(Ordering::Relaxed)
-        || ORCH_COMMITTED.load(Ordering::Relaxed)
-    {
+    if fd_ops.orchestrator_consented() {
         pw_log::error!("FD: the orchestrator refused the request but agreed to something else");
         return false;
     }

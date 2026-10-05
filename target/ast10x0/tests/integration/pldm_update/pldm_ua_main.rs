@@ -431,25 +431,24 @@ fn entry() {
     }
 
     pw_log::info!("UA: driving an update against EID {}", FD_EID as u32);
-    // Only failure ends the run here. Both endpoints live in one image, so
-    // the first app to report success ends it for everyone, and the agent
-    // finishing its sequence is the weaker claim: it says the messages were
-    // exchanged, not that the device holds a verified image. pldm_fd checks
-    // that and owns the verdict.
+    // The agent never ends the run. pldm_fd owns the verdict, because the
+    // agent finishing its sequence is the weaker claim: it says the
+    // messages were exchanged, not that the device holds a verified image.
+    // A scenario where the RoT refuses is one where the agent's update
+    // fails and the test still passes, so an agent that could shut the
+    // system down would race the device to the sentinel and sometimes win.
     match run_update(&transport) {
         Ok(true) => {
             pw_log::info!("UA: sequence complete, leaving the verdict to the device");
         }
         Ok(false) => {
-            let _ = syscall::debug_shutdown(Err(Error::Internal));
+            pw_log::error!("UA: the device refused the update");
         }
         Err(PldmServiceError::Mctp(e)) => {
             pw_log::error!("UA: update flow failed, MCTP code {}", e.code as u32);
-            let _ = syscall::debug_shutdown(Err(Error::Internal));
         }
         Err(_) => {
             pw_log::error!("UA: update flow failed on a PLDM error");
-            let _ = syscall::debug_shutdown(Err(Error::Internal));
         }
     }
 

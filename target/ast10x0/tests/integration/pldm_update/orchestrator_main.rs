@@ -38,7 +38,10 @@ use openprot_orchestrator_driver::{
 // refuses every request needs neither.
 #[cfg(not(refused_update))]
 use openprot_orchestrator_driver::request_update;
-use openprot_orchestrator_sm::{ComponentAttrs, ComponentId, Event, PowerOnResult, State};
+use openprot_orchestrator_sm::{ComponentAttrs, ComponentId, Event, PowerOnResult};
+// Only the accepting path checks the state it reached.
+#[cfg(not(refused_update))]
+use openprot_orchestrator_sm::State;
 use orchestrator_capabilities::{
     BootControl, BootStatus, EvidenceReader, IncrementalVerifier, PollOutcome, StageProgress, Svn,
     SvnFloor, Updatable, UpdateError, VerifySession,
@@ -47,15 +50,25 @@ use orchestrator_checkpoint_walk::CheckpointWalk;
 use orchestrator_config::{
     assert_retry_reaches_every_image, chain_of, BootCheckpoint, ChainEntries, DeviceConfig,
 };
+use pldm_api::wire::{MAX_REQUEST_SIZE, MAX_RESPONSE_SIZE};
+use pldm_api::{FdStatus, RejectReason};
+use pldm_client::{ClientError, FdIpcClient, Reply};
 use util_io::{ByteReadError, ByteSource};
 
 use userspace::syscall::Signals;
-use userspace::time::Instant;
-#[cfg(not(refused_update))]
-use userspace::time::{Clock, SystemClock};
+use userspace::time::{Clock, Instant, SystemClock};
 use userspace::{entry, syscall};
 
+use util_ipc::{AsyncChannelTransport, IpcHandle};
+
 use app_orchestrator::handle;
+
+/// The PLDM IPC buffers this process lends the kernel, sized to the
+/// protocol's own maxima.
+static mut SEND_BUF: [u8; MAX_REQUEST_SIZE] = [0; MAX_REQUEST_SIZE];
+static mut RECV_BUF: [u8; MAX_RESPONSE_SIZE] = [0; MAX_RESPONSE_SIZE];
+
+type Fd = FdIpcClient<AsyncChannelTransport<IpcHandle>>;
 
 /// The component the firmware device updates. One device, so its id is
 /// fixed rather than carried in the messages.
@@ -70,14 +83,19 @@ const MAX_RETRY: u8 = 3;
 /// firmware device's image, because the staging region is sized from it.
 const IMAGE_SIZE: usize = 1024;
 
-/// Message opcodes from the firmware device.
-const MSG_UPDATE_REQUESTED: u8 = 1;
-const MSG_VERIFY_OUTCOME: u8 = 2;
-const MSG_ACTIVATED: u8 = 3;
+/// Where the device is told to stage. It stages into its own flash and
+/// ignores this, but the offer carries it, so the value has to be the one
+/// the device actually uses or the message would be a lie.
+const STAGING_BASE: u32 = 0x10_0000;
 
-/// Answers to those messages.
-const REPLY_ACCEPTED: u8 = 1;
-const REPLY_REFUSED: u8 = 0;
+/// How long the device may take to answer a command. It serves its channel
+/// whenever it is waiting on the RoT, so this bounds a device that stopped
+/// serving, not one that is busy.
+const DEVICE_TIMEOUT_MILLIS: u64 = 10_000;
+
+/// How many device steps one update may take. A full run is four, so this
+/// only catches a device that reports the same step forever.
+const MAX_DEVICE_STEPS: usize = 16;
 
 /// The device table. No device boots in this image, so the window is
 /// nominal: what is being proven is the update path, not a boot walk.
@@ -375,14 +393,68 @@ fn now_millis() -> u64 {
     SystemClock::now().ticks() * 1000 / SystemClock::TICKS_PER_SEC
 }
 
+fn deadline_in(millis: u64) -> Instant {
+    Instant::from_ticks(SystemClock::now().ticks() + millis * SystemClock::TICKS_PER_SEC / 1000)
+}
+
+type Core = openprot_orchestrator_sm::Orchestrator<N, E>;
+type Driver = openprot_orchestrator_driver::PlatformDriver<UpdateBoard, N>;
+
+/// The negative scenario refuses before looking at anything, which is the
+/// one refusal that cannot be mistaken for a judgement about the candidate.
+#[cfg(refused_update)]
+fn accept_update(_core: &mut Core, _driver: &mut Driver, _candidate_len: u64) -> bool {
+    pw_log::info!("ORCH: refusing the update, as this scenario asks");
+    false
+}
+
+/// Records the job and walks it to authenticated.
+///
+/// The pump's `UpdateVerified` is not dispatched here. It is the RoT's half
+/// of the verdict; the device's half arrives as `ApplyPending`, and the
+/// update only goes through when both agree. Eight rounds is slack: the pump
+/// takes three to get from Submitted to Authenticated.
+#[cfg(not(refused_update))]
+fn accept_update(core: &mut Core, driver: &mut Driver, candidate_len: u64) -> bool {
+    if request_update(core, driver, TARGET, candidate_len).is_err() {
+        pw_log::error!("ORCH: refused the update request");
+        return false;
+    }
+    if core.state() != State::Updating(TARGET) {
+        pw_log::error!("ORCH: the request did not reach Updating");
+        return false;
+    }
+
+    for _ in 0..8 {
+        let poll = driver.pump_update(now_millis());
+        match poll.event {
+            Some(Event::UpdateVerified) => break,
+            Some(event) => {
+                pw_log::error!("ORCH: the update pump gave up on the job");
+                core.dispatch(driver, event);
+                return false;
+            }
+            None => {}
+        }
+    }
+
+    if !ROT_AUTHENTICATED.load(Ordering::Relaxed) {
+        pw_log::error!("ORCH: the candidate never authenticated");
+        return false;
+    }
+    true
+}
+
 #[entry]
 fn entry() {
     pw_log::info!("ORCH: app started");
 
-    if syscall::wait_group_add(handle::WG, handle::UPDATE_EVT, Signals::READABLE, 0usize).is_err() {
-        pw_log::error!("ORCH: wait group add failed");
-        loop {}
-    }
+    // SAFETY: taken once, at this process's entry point, and handed
+    // straight to the transport that owns them from here on.
+    let send = unsafe { &mut *core::ptr::addr_of_mut!(SEND_BUF) };
+    let recv = unsafe { &mut *core::ptr::addr_of_mut!(RECV_BUF) };
+    let transport = AsyncChannelTransport::new(IpcHandle::new(handle::FD), send, recv);
+    let mut fd = FdIpcClient::new(transport);
 
     let (mut core, mut driver) = bring_up::<UpdateBoard, N, E>(&CHAIN, board(), MAX_RETRY);
 
@@ -393,156 +465,185 @@ fn entry() {
     core.dispatch(&mut driver, Event::VerificationPassed(TARGET));
     pw_log::info!("ORCH: supervising, waiting for the firmware device");
 
-    let mut request = [0u8; 8];
-    loop {
-        if syscall::object_wait(handle::WG, Signals::READABLE, Instant::MAX).is_err() {
-            continue;
-        }
-
-        let len = match syscall::channel_read(handle::UPDATE_EVT, 0usize, &mut request) {
-            Ok(len) => len,
-            Err(_) => continue,
-        };
-        if len == 0 {
-            let _ = syscall::channel_respond(handle::UPDATE_EVT, &[REPLY_REFUSED]);
-            continue;
-        }
-
-        let reply = match request[0] {
-            MSG_UPDATE_REQUESTED => {
-                let candidate_len = if len >= 5 {
-                    u32::from_le_bytes([request[1], request[2], request[3], request[4]]) as u64
-                } else {
-                    0
-                };
-                handle_update_requested(&mut core, &mut driver, candidate_len)
-            }
-            MSG_VERIFY_OUTCOME => {
-                let good = len >= 2 && request[1] == 1;
-                handle_verify_outcome(&mut core, &mut driver, good)
-            }
-            MSG_ACTIVATED => handle_activated(&mut core, &mut driver),
-            other => {
-                pw_log::error!("ORCH: unknown opcode {}", other as u32);
-                REPLY_REFUSED
-            }
-        };
-
-        let _ = syscall::channel_respond(handle::UPDATE_EVT, &[reply]);
-    }
-}
-
-type Core = openprot_orchestrator_sm::Orchestrator<N, E>;
-type Driver = openprot_orchestrator_driver::PlatformDriver<UpdateBoard, N>;
-
-/// Records the job and dispatches the request. Refusing here keeps the
-/// machine out of `Updating` on a job that could never finish.
-/// The negative scenario refuses before looking at anything, which is the
-/// one refusal that cannot be mistaken for a judgement about the
-/// candidate.
-#[cfg(refused_update)]
-fn handle_update_requested(_core: &mut Core, _driver: &mut Driver, _candidate_len: u64) -> u8 {
-    pw_log::info!("ORCH: refusing the update, as this scenario asks");
-    REPLY_REFUSED
-}
-
-#[cfg(not(refused_update))]
-fn handle_update_requested(core: &mut Core, driver: &mut Driver, candidate_len: u64) -> u8 {
-    if request_update(core, driver, TARGET, candidate_len).is_err() {
-        pw_log::error!("ORCH: refused the update request");
-        return REPLY_REFUSED;
-    }
-    if core.state() != State::Updating(TARGET) {
-        pw_log::error!("ORCH: the request did not reach Updating");
-        return REPLY_REFUSED;
-    }
-
-    // Walk the job to Authenticated. The device already holds the candidate,
-    // so staging is a bookkeeping move, but the RoT's own verifier still
-    // reads the staging region, and `ActivateUpdate` refuses a candidate
-    // that did not reach Authenticated.
-    //
-    // The pump's `UpdateVerified` is not dispatched here. It is the RoT's
-    // half of the verdict; the device's half arrives separately, and the
-    // update only goes through when both agree. Eight rounds is slack: the
-    // pump takes three to get from Submitted to Authenticated.
-    for _ in 0..8 {
-        let poll = driver.pump_update(now_millis());
-        match poll.event {
-            Some(Event::UpdateVerified) => break,
-            Some(event) => {
-                pw_log::error!("ORCH: the update pump gave up on the job");
-                core.dispatch(driver, event);
-                return REPLY_REFUSED;
-            }
-            None => {}
-        }
-    }
-
-    if !ROT_AUTHENTICATED.load(Ordering::Relaxed) {
-        pw_log::error!("ORCH: the candidate never authenticated");
-        return REPLY_REFUSED;
-    }
-
-    pw_log::info!("ORCH: update accepted, {} bytes", candidate_len as u32);
-    REPLY_ACCEPTED
-}
-
-/// Turns the device's verdict into the event that lets the machine leave
-/// `Updating`. PR #515 proposes the same mapping as a function on the PLDM
-/// adapter; it is a few lines here until that lands.
-///
-/// The RoT verified the candidate for itself while the request was being
-/// accepted, so an update goes through only when both checks passed. Either
-/// one saying no is a rejection.
-fn handle_verify_outcome(core: &mut Core, driver: &mut Driver, good: bool) -> u8 {
-    if core.state() != State::Updating(TARGET) {
-        pw_log::error!("ORCH: a verdict arrived with no update in flight");
-        return REPLY_REFUSED;
-    }
-
-    let both_agree = good && ROT_AUTHENTICATED.load(Ordering::Relaxed);
-    if good && !both_agree {
-        pw_log::error!("ORCH: the device accepted a candidate the RoT did not");
-    }
-    let event = if both_agree {
-        Event::UpdateVerified
+    // The firmware device declares the run's verdict, as it did before: the
+    // runner greps one sentinel, and in a scenario where the RoT refuses,
+    // the RoT reaching a failure is what the test passes on. So this logs
+    // what it reached and parks.
+    if run(&mut core, &mut driver, &mut fd) {
+        pw_log::info!("ORCH: the update completed");
     } else {
-        Event::UpdateRejected
-    };
-    core.dispatch(driver, event);
-    let good = both_agree;
-
-    if !good {
-        pw_log::info!("ORCH: the device rejected the candidate, nothing activated");
-        return REPLY_ACCEPTED;
+        pw_log::error!("ORCH: the update did not complete");
     }
+    #[expect(clippy::empty_loop)]
+    loop {}
+}
+
+/// Drives one update, device step by device step.
+///
+/// Asks what the device is waiting for, decides, commands, and asks again.
+/// The device raises `Signals::USER` when it starts waiting, which this loop
+/// does not need: a `QueryStatus` sits in the channel until the device next
+/// serves it, and this orchestrator has nothing else to do meanwhile. An
+/// orchestrator that did would wait on the signal instead of parking here.
+fn run(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
+    for _ in 0..MAX_DEVICE_STEPS {
+        let Some(status) = query(fd) else {
+            return false;
+        };
+
+        match status {
+            FdStatus::OfferPending { total, .. } => {
+                if !offer(core, driver, fd, total) {
+                    return false;
+                }
+            }
+            // Consent to start verifying, not a verdict: the device has
+            // not read its image back yet.
+            FdStatus::VerifyPending => {
+                if !command(fd, "PerformVerify", |fd| fd.perform_verify()) {
+                    return false;
+                }
+            }
+            // The device only asks for apply once it has read the image
+            // back and found it whole, so this is its verdict.
+            FdStatus::ApplyPending => {
+                if !verified(core, driver, fd) {
+                    return false;
+                }
+            }
+            FdStatus::ActivationPending => {
+                if !activate(core, driver, fd) {
+                    return true;
+                }
+                return true;
+            }
+            FdStatus::PhaseFailed { phase, result_code } => {
+                pw_log::error!(
+                    "ORCH: the device failed phase {} with code {}",
+                    phase as u32,
+                    result_code as u32
+                );
+                core.dispatch(driver, Event::UpdateRejected);
+                return false;
+            }
+            FdStatus::Idle { .. } => {
+                pw_log::error!("ORCH: the device went idle mid-update");
+                return false;
+            }
+            _ => {
+                pw_log::error!("ORCH: the device reported a status this scenario does not drive");
+                return false;
+            }
+        }
+    }
+
+    pw_log::error!("ORCH: the device never finished");
+    false
+}
+
+/// Records the job, walks it to authenticated, and answers the offer.
+fn offer(core: &mut Core, driver: &mut Driver, fd: &mut Fd, total: u32) -> bool {
+    if !accept_update(core, driver, u64::from(total)) {
+        let _ = fd.reject_offer(RejectReason::PolicyViolation);
+        let _ = settle(fd);
+        pw_log::error!("ORCH: refused the offer");
+        return false;
+    }
+    pw_log::info!("ORCH: update accepted, {} bytes", total as u32);
+    command(fd, "AcceptOffer", |fd| fd.accept_offer(STAGING_BASE))
+}
+
+/// The device says it verified. The update goes on only if the RoT's own
+/// verifier agreed too.
+fn verified(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
+    if !ROT_AUTHENTICATED.load(Ordering::Relaxed) {
+        pw_log::error!("ORCH: the device accepted a candidate the RoT did not");
+        core.dispatch(driver, Event::UpdateRejected);
+        let _ = fd.reject_apply(RejectReason::PolicyViolation);
+        let _ = settle(fd);
+        return false;
+    }
+
+    core.dispatch(driver, Event::UpdateVerified);
     if !ACTIVATED.load(Ordering::Relaxed) {
         pw_log::error!("ORCH: the verdict did not reach the device");
-        return REPLY_REFUSED;
+        return false;
     }
-
-    pw_log::info!("ORCH: activated, awaiting the device's first boot");
-    REPLY_ACCEPTED
+    pw_log::info!("ORCH: both verdicts agree, activating");
+    command(fd, "PerformApply", |fd| fd.perform_apply())
 }
 
-/// The updated device came back. The floor advances here and nowhere
-/// earlier: activation proposes an image, a healthy boot is what commits it.
-fn handle_activated(core: &mut Core, driver: &mut Driver) -> u8 {
-    // Nothing was activated, so there is no image whose first boot this
-    // could be. Confirming one anyway would let a device that never got
-    // past the gate report itself healthy.
-    if !ACTIVATED.load(Ordering::Relaxed) {
-        pw_log::error!("ORCH: a boot was reported for an update that never activated");
-        return REPLY_REFUSED;
+/// Commands the activation and closes the commit window.
+fn activate(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
+    if !command(fd, "PerformActivate", |fd| fd.perform_activate()) {
+        return false;
     }
+    // Stands in for the updated device coming back up. Nothing in this
+    // image reboots, so the acknowledged activation is what this scenario
+    // treats as a healthy first boot.
     core.dispatch(driver, Event::BootConfirmed(TARGET));
-    if core.state() != State::Ready {
-        pw_log::error!("ORCH: the machine did not settle in Ready");
-        return REPLY_REFUSED;
-    }
     pw_log::info!("ORCH: update committed");
-    REPLY_ACCEPTED
+    true
+}
+
+/// Asks the device what it is waiting for.
+fn query(fd: &mut Fd) -> Option<FdStatus> {
+    if fd.query_status().is_err() {
+        pw_log::error!("ORCH: could not ask the device for its status");
+        return None;
+    }
+    match settle(fd) {
+        Some(Reply::Status(status)) => Some(status),
+        Some(Reply::Acked) => {
+            pw_log::error!("ORCH: QueryStatus was acknowledged instead of answered");
+            None
+        }
+        None => None,
+    }
+}
+
+/// Sends one command and waits for the device to take it.
+fn command(
+    fd: &mut Fd,
+    name: &str,
+    start: impl FnOnce(&mut Fd) -> Result<(), ClientError>,
+) -> bool {
+    if start(fd).is_err() {
+        pw_log::error!("ORCH: could not send a command");
+        let _ = name;
+        return false;
+    }
+    match settle(fd) {
+        Some(Reply::Acked) => true,
+        Some(Reply::Status(_)) => {
+            pw_log::error!("ORCH: a command was answered with a status");
+            false
+        }
+        None => false,
+    }
+}
+
+/// Waits for the answer to whatever is in flight.
+///
+/// The deadline is the one that matters in this scenario: a device that
+/// stops serving its channel leaves this loop with a log line rather than
+/// stalling the run until the harness times out.
+fn settle(fd: &mut Fd) -> Option<Reply> {
+    let deadline = deadline_in(DEVICE_TIMEOUT_MILLIS);
+    loop {
+        match fd.poll() {
+            Ok(Some(reply)) => return Some(reply),
+            Ok(None) => {}
+            Err(_) => {
+                pw_log::error!("ORCH: the device's answer did not decode");
+                return None;
+            }
+        }
+        if syscall::object_wait(handle::FD, Signals::READABLE, deadline).is_err() {
+            pw_log::error!("ORCH: the device stopped answering");
+            return None;
+        }
+    }
 }
 
 #[panic_handler]

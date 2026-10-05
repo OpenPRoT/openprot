@@ -7,7 +7,8 @@
 // and the RoT the firmware device answers to.
 //
 //   pldm_ua:       the update agent, the BMC's half of the update
-//   pldm_fd:       the DSP0267 firmware device, staging into CS1 flash
+//   pldm_fd:       the DSP0267 firmware device, staging into CS1 flash,
+//                  and the IPC server the RoT commands it through
 //   mctp_bus:      an MCTP server per endpoint, joined by the loopback
 //   orchestrator:  the RoT, which decides whether the update may proceed
 //
@@ -102,11 +103,10 @@
                             handler_object_name: "fd",
                         },
                         {
-                            // Update lifecycle, firmware device to RoT.
+                            // The RoT's channel into this device. The device
+                            // answers; it does not command.
                             name: "orch",
-                            type: "channel_initiator",
-                            handler_process: "orchestrator_process",
-                            handler_object_name: "update_evt",
+                            type: "channel_handler",
                         },
                         {
                             type: "thread",
@@ -162,9 +162,12 @@
                             type: "wait_group",
                         },
                         {
-                            // Update lifecycle, from the firmware device.
-                            name: "update_evt",
-                            type: "channel_handler",
+                            // Into the firmware device: QueryStatus and the
+                            // Perform and Reject commands.
+                            name: "fd",
+                            type: "channel_initiator",
+                            handler_process: "pldm_fd_process",
+                            handler_object_name: "orch",
                         },
                         {
                             type: "thread",
