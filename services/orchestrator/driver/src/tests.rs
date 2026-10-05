@@ -2449,10 +2449,11 @@ fn a_commit_runs_a_second_staging_pass() {
     assert_eq!(orch.state(), State::Ready);
 }
 
-// The component keeps its own SVN, so the eRoT has no floor to move. It
-// still has a spare slot holding the old image.
+// The component keeps its own SVN. A device that owns its anti-rollback
+// owns its slot metadata too, so the eRoT has no floor to move here and
+// no slot of its own to fill.
 #[test]
-fn a_commit_resyncs_a_component_that_tracks_its_own_svn() {
+fn a_commit_leaves_a_component_that_tracks_its_own_svn_alone() {
     let mut orch = orchestrator();
     let mut driver = PlatformDriver::<MockBoard, 1>::new(
         &passive_entries(),
@@ -2465,19 +2466,17 @@ fn a_commit_resyncs_a_component_that_tracks_its_own_svn() {
     activated(&mut driver, &mut orch);
     let staged_before = driver.board().updatables[0].stagings;
 
-    // Commit called straight on the driver. With SelfManaged there is
-    // no floor to advance, so the whole body of this call is the
-    // re-sync.
     driver.commit_svn_floor(C0).expect("commit failed");
 
-    assert_eq!(driver.pending_update(), Some(C0), "the re-sync is queued");
-    for tick in 0..16 {
-        if driver.pending_update().is_none() {
-            break;
-        }
+    assert_eq!(driver.pending_update(), None, "nothing was queued");
+    for tick in 0..4 {
         driver.pump_update(tick);
     }
-    assert!(driver.board().updatables[0].stagings > staged_before);
+    assert_eq!(
+        driver.board().updatables[0].stagings,
+        staged_before,
+        "the device was sent the image a second time"
+    );
 }
 
 /// Reads `C0`'s floor back through the capability's own seam.

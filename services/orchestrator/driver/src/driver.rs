@@ -568,10 +568,16 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     }
 
     /// Queue the spare slot's re-sync, then advance `id`'s anti-rollback
-    /// floor to its verified image's SVN. A self-managed component keeps
-    /// its own floor; the commit is a no-op and the re-sync still runs. A
-    /// target at or below the current floor is the capability's
-    /// documented no-op, so a replayed commit is harmless.
+    /// floor to its verified image's SVN. A target at or below the
+    /// current floor is the capability's documented no-op, so a replayed
+    /// commit is harmless.
+    ///
+    /// A self-managed component gets neither. It keeps its own floor, and
+    /// a device that owns its anti-rollback owns its slot metadata too,
+    /// the same split `DeviceTrialBoot` draws. Writing into a slot the
+    /// eRoT does not control would reach past that seam. This reads slot
+    /// ownership off the floor binding, which is strictly a floor fact;
+    /// a board that needs the two apart wants its own attribute.
     ///
     /// CSA 5.3.2 wants both slots at the same SVN before the floor moves,
     /// so when a re-sync is queued the advance waits for it. The pump
@@ -585,36 +591,31 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// has no job to fail, so the two postures differ.
     pub fn commit_svn_floor(&mut self, id: ComponentId) -> Result<(), DriverError> {
         let idx = id.get() as usize;
-        let svn = match self
+        let SvnFloorBinding::Erot(_) = self
             .board
             .svn_floors
             .get(idx)
             .ok_or(DriverError::UnknownComponent)?
-        {
-            SvnFloorBinding::Erot(_) => {
-                Some(self.verified_svn[idx].ok_or(DriverError::NoVerifiedImage)?)
-            }
+        else {
             // The component tracks its own SVN, so there is no floor
-            // here to move. The spare slot still needs the image.
-            SvnFloorBinding::SelfManaged => None,
+            // here to move and no slot of ours to bring up to date.
+            return Ok(());
         };
-        let resyncing = self.queue_slot_resync(id);
-        match svn {
+        let svn = self.verified_svn[idx].ok_or(DriverError::NoVerifiedImage)?;
+        if self.queue_slot_resync(id) {
             // The spare still holds the old image. Hold the advance
             // until the pass has put the new one there.
-            Some(svn) if resyncing => {
-                self.held_floor = Some((id, svn));
-                Ok(())
-            }
+            self.held_floor = Some((id, svn));
+            return Ok(());
+        }
+        if self.held_floor.is_some() {
             // A pass is already running with an advance held behind it,
             // so this commit arrived twice. Leave the held one to the
             // pump rather than writing the floor while the spare is
             // still being written.
-            Some(_) if self.held_floor.is_some() => Ok(()),
-            // Nothing to wait for, so the floor moves now.
-            Some(svn) => self.advance_floor(id, svn),
-            None => Ok(()),
+            return Ok(());
         }
+        self.advance_floor(id, svn)
     }
 
     /// Writes `svn` to `id`'s floor. Only reached for a component whose
@@ -636,9 +637,10 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// transfer. Nothing activates afterwards, so the payload stays in
     /// the inactive slot.
     ///
-    /// CSA 5.3.2 makes this the eRoT's job, not the device's, so the
-    /// pass runs for every component. A device that keeps its own SVN
-    /// gets one too. Its spare slot is just as stale.
+    /// CSA 5.3.2 puts slot parity on the eRoT and its tooling. For a
+    /// component whose floor the eRoT holds, that is this pass. A
+    /// component that keeps its own SVN keeps its own slots as well, so
+    /// the commit never gets this far.
     ///
     /// It re-stages instead of copying slot to slot, because `Updatable`
     /// keeps slot identity on the device's side. The candidate is still
