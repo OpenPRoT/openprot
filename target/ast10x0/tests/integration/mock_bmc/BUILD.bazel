@@ -77,6 +77,12 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
+        "//services/orchestrator/adapters/walk:orchestrator_checkpoint_walk",
+        "//services/orchestrator/capabilities:orchestrator_capabilities",
+        "//services/orchestrator/config:orchestrator_config",
+        "//services/orchestrator/driver:orchestrator_driver",
+        "//services/orchestrator/sm:orchestrator_sm",
+        "//util/io",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
