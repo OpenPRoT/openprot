@@ -9,7 +9,7 @@ use orchestrator_capabilities::Updatable;
 use util_io::ByteSource;
 
 pub use orchestrator_capabilities::{BootControl, BootWatch};
-use orchestrator_capabilities::{Recovery, Svn, SvnFloor};
+use orchestrator_capabilities::{IncrementalVerifier, Recovery, Svn, SvnFloor};
 
 /// Access to one component's active firmware image, however it is reached —
 /// interposed flash, a PLDM/MCTP transfer, a RAM copy in tests.
@@ -200,6 +200,8 @@ pub trait BoardCapabilities {
     /// The region an update source writes a candidate into. One region,
     /// because one update runs at a time.
     type Staging: ByteSource;
+    /// Incremental verification of staged update candidates.
+    type UpdateVerifier: IncrementalVerifier;
 }
 
 /// Who keeps one component's anti-rollback floor. Spelled as its own type
@@ -232,6 +234,7 @@ pub enum SvnFloorBinding<F: SvnFloor> {
 ///     type Updatable = PldmDevice;        // device pulls its own chunks
 ///     type Recovery = SlotRecovery;       // A/B + golden, attempt-indexed
 ///     type Staging = StagingFlash;        // where the update source writes
+///     type UpdateVerifier = CryptoVerifier; // incremental signature check
 ///     type SelfUpdate = SelfUpdateSession; // session record in the eRoT's own flash
 /// }
 ///
@@ -251,6 +254,7 @@ pub enum SvnFloorBinding<F: SvnFloor> {
 ///         recovery: [bmc_recovery, cpld_recovery],
 ///         update_staging,
 ///         update_stall_budget_millis: 30_000,
+///         update_verifier: Some(crypto_verifier),
 ///         self_update,
 ///         self_svn_floor,
 ///     },
@@ -292,4 +296,7 @@ pub struct Board<B: BoardCapabilities, const N: usize> {
     /// answering has to lose the job in bounded time whatever the source
     /// would prefer.
     pub update_stall_budget_millis: u64,
+    /// Incremental verifier for staged update candidates. The driver
+    /// takes ownership at construction; boards supply `Some(verifier)`.
+    pub update_verifier: Option<B::UpdateVerifier>,
 }

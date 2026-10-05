@@ -15,9 +15,9 @@ use crate::board::{
     Board, BoardCapabilities, ImageSource, Report, ReportSink, SvnFloorBinding, Verdict, Verifier,
 };
 use orchestrator_capabilities::{
-    BootControl, BootWatch, FailureCause, Progress, Recovery, RestoreOutcome, RunningImage,
-    SelfUpdate, SelfUpdateState, StageProgress, Svn, SvnFloor, TrialOutcome, Updatable,
-    WalkVerdict,
+    BootControl, BootWatch, FailureCause, IncrementalVerifier, PollOutcome, Progress, Recovery,
+    RestoreOutcome, RunningImage, SelfUpdate, SelfUpdateState, StageProgress, Svn, SvnFloor,
+    TrialOutcome, Updatable, VerifySession, WalkVerdict,
 };
 use util_io::{ByteSource, ByteWindow};
 
@@ -59,9 +59,9 @@ pub enum DriverError {
     /// there is nothing well-formed to read. Refused at submit; the
     /// pump's window gives the same answer if it ever gets that far.
     CandidateOutOfRange,
-    /// Activation was asked for before the device held the whole
-    /// payload. The job survives, so `DiscardStaged` can still end it.
-    CandidateNotStaged,
+    /// Activation was asked before the candidate passed verification.
+    /// The job survives, so `DiscardStaged` can still end it.
+    CandidateNotAuthenticated,
     /// A staging step ran before anything commanded the work. Updates
     /// get the flag from `AuthenticateStageUpdate`, and a slot re-sync
     /// sets it when it queues the job. So the phase and the flag
@@ -85,13 +85,20 @@ impl core::fmt::Display for DriverError {
             DriverError::RecoveryFault => "recovery mechanism faulted",
             DriverError::NoUpdateJob => "no update job for this effect",
             DriverError::CandidateOutOfRange => "candidate does not fit the staging region",
-            DriverError::CandidateNotStaged => "device does not hold the whole candidate yet",
+            DriverError::CandidateNotAuthenticated => "candidate has not passed verification yet",
             DriverError::UpdateNotCommanded => "staging ran before the SM commanded it",
         })
     }
 }
 
 impl core::error::Error for DriverError {}
+
+/// Whether the update verifier is idle or mid-session. Move semantics
+/// on the traits require this enum so the driver can hold either state.
+enum VerifierState<V: IncrementalVerifier> {
+    Idle(V),
+    Verifying(V::Session),
+}
 
 /// The effect executors. Everything device-specific lives in the [`Board`];
 /// the driver's own fields are bookkeeping.
@@ -124,6 +131,10 @@ pub struct PlatformDriver<B: BoardCapabilities, const N: usize> {
     /// commit holds the advance here and the pump applies it when the
     /// re-sync finishes.
     held_floor: Option<(ComponentId, Svn)>,
+    /// The incremental verifier, idle or mid-session. Moved out of the
+    /// board at construction so the pump can drive it without borrowing
+    /// the whole board. `None` only transiently during a pump step.
+    update_verifier: Option<VerifierState<B::UpdateVerifier>>,
 }
 
 /// What one pump call established, before the stall rule is applied.
@@ -132,8 +143,7 @@ enum Step {
     Working(Progress),
     /// The device holds the complete payload; verification is next.
     Staged,
-    /// The crypto service authenticated the candidate.
-    #[allow(dead_code)]
+    /// The verifier authenticated the candidate.
     Authenticated,
     /// The candidate failed, or the device did.
     Rejected,
@@ -172,15 +182,15 @@ enum UpdatePhase {
     Submitted,
     /// `poll_stage` is pushing bytes to the device.
     Staging,
-    /// The device holds the complete payload. The crypto service has not
-    /// started yet.
+    /// The device holds the complete payload. Whether verification has
+    /// started is the verifier's to say, not a second flag here.
     Staged,
     /// The committed image is being written a second time, into the
     /// slot the device just stopped booting from. The SM does not know
     /// about this job. It ends in the driver.
     Resyncing,
-    // Authenticating and Authenticated arrive with the crypto
-    // verify-client trait. Until then the pump parks at Staged.
+    /// The verifier accepted the candidate; activation is next.
+    Authenticated,
 }
 
 impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
@@ -193,6 +203,10 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// Panics if an entry's id is not its position. The driver indexes every
     /// per-component array by `id.get()`, so an entry out of position would
     /// address the wrong component's reset line, flash and floor.
+    ///
+    /// Panics if the board's `update_verifier` is `None`. The driver takes
+    /// it out of the board here and owns it from then on, so a board that
+    /// leaves it empty could never verify an update.
     pub(crate) fn new(entries: &[(ComponentId, ComponentAttrs); N], board: Board<B, N>) -> Self {
         // ComponentId is a u8; Chain rejects more than u8::MAX entries.
         const { assert!(N <= u8::MAX as usize) };
@@ -206,8 +220,14 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             kinds[i] = entries[i].1.kind;
             i += 1;
         }
+        let mut board = board;
+        let update_verifier = board
+            .update_verifier
+            .take()
+            .expect("Board::update_verifier must be Some");
         Self {
             board,
+            update_verifier: Some(VerifierState::Idle(update_verifier)),
             kinds,
             staged: None,
             watching: [false; N],
@@ -297,6 +317,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         // The region's contents are being dropped. A later commit must
         // not re-stage from it.
         self.last_activated = None;
+        self.abandon_verification();
         Ok(())
     }
 
@@ -321,10 +342,8 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             .pending_update
             .as_ref()
             .ok_or(DriverError::NoUpdateJob)?;
-        if job.phase != UpdatePhase::Staged {
-            // TODO: gate on Authenticated once the crypto verify-client
-            // trait is wired into the board.
-            return Err(DriverError::CandidateNotStaged);
+        if job.phase != UpdatePhase::Authenticated {
+            return Err(DriverError::CandidateNotAuthenticated);
         }
         let (target, len) = (job.target, job.len);
         let updatable = self
@@ -341,19 +360,19 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// One step of the in-flight update, called by the event loop between
     /// events, as [`poll_boot_walks`](Self::poll_boot_walks) is.
     ///
-    /// Staging runs one bounded step per call, so the loop stays live
-    /// through a transfer that takes minutes. A job that stops making
-    /// progress for longer than the board's stall budget is abandoned
-    /// here rather than waited out.
+    /// Staging and verification each run one bounded step per call, so
+    /// the loop stays live through a transfer that takes minutes. A job
+    /// that stops making progress for longer than the board's stall
+    /// budget is abandoned here rather than waited out.
     ///
-    /// Only `UpdateRejected` is emitted today (fault or stall).
-    /// `UpdateVerified` arrives with the crypto verify-client; until
-    /// then the pump parks at `Staged` and returns idle. The job stays
-    /// until the SM answers with `ActivateUpdate` or `DiscardStaged`.
+    /// An update ends in `UpdateVerified` or `UpdateRejected`, and the
+    /// job stays until the SM answers with `ActivateUpdate` or
+    /// `DiscardStaged`.
     ///
-    /// A slot re-sync is different. It ends here with no event. The SM
-    /// never asked for it, and a verdict would activate the image a
-    /// second time.
+    /// A slot re-sync is different. It ends here with no event and
+    /// without verification. The SM never asked for it, a verdict would
+    /// activate the image a second time, and the image is the one the
+    /// device is already running, which was verified on its way in.
     pub fn pump_update(&mut self, now_millis: u64) -> UpdatePoll {
         let Some(job) = self.pending_update.as_mut() else {
             return UpdatePoll::idle();
@@ -371,10 +390,20 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
                 };
             }
             // Nothing to pump: the SM has not commanded the work yet,
-            // or the device already holds the payload and the SM owns
-            // the next move.
-            UpdatePhase::Submitted | UpdatePhase::Staged => return UpdatePoll::idle(),
+            // or the SM owns the next move (Authenticated waits for
+            // ActivateUpdate).
+            UpdatePhase::Submitted | UpdatePhase::Authenticated => return UpdatePoll::idle(),
             UpdatePhase::Staging | UpdatePhase::Resyncing => self.poll_staging(),
+            // Bytes are in. The verifier's state says whether this pump
+            // starts a session or advances one.
+            UpdatePhase::Staged => match self.update_verifier.take() {
+                Some(VerifierState::Idle(verifier)) => {
+                    self.update_verifier = Some(VerifierState::Verifying(verifier.start()));
+                    return self.opened_verification(now_millis);
+                }
+                Some(VerifierState::Verifying(session)) => self.poll_verification(session),
+                None => return self.reject_job(),
+            },
         };
 
         let step = match stepped {
@@ -420,12 +449,13 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             }
             Step::Staged => {
                 job.phase = UpdatePhase::Staged;
-                // Fail secure: no UpdateVerified until the crypto
-                // verify-client is wired. The pump parks here.
-                UpdatePoll::idle()
+                UpdatePoll {
+                    event: None,
+                    progress: Some(job.progress),
+                }
             }
             Step::Authenticated => {
-                // Unreachable until Authenticating is a real phase.
+                job.phase = UpdatePhase::Authenticated;
                 UpdatePoll {
                     event: Some(Event::UpdateVerified),
                     progress: None,
@@ -437,6 +467,70 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             Step::Rejected if phase == UpdatePhase::Resyncing => self.end_resync(),
             Step::Rejected => self.reject_job(),
         }
+    }
+
+    /// Runs on the pump that starts the session. Verification counts its
+    /// own bytes from zero, so the progress and the stall budget start
+    /// over here.
+    fn opened_verification(&mut self, now_millis: u64) -> UpdatePoll {
+        let Some(job) = self.pending_update.as_mut() else {
+            return UpdatePoll::idle();
+        };
+        job.progress = Progress::start(job.len);
+        job.progress_since_millis = Some(now_millis);
+        UpdatePoll {
+            event: None,
+            progress: Some(job.progress),
+        }
+    }
+
+    /// Drops a session the driver cannot poll and returns `error`.
+    /// `poll_verification` takes the session before it knows the step can
+    /// run, so every early return has to put the verifier back. Miss one
+    /// and `update_verifier` stays `None`, and nothing is ever verified
+    /// again.
+    fn drop_session(
+        &mut self,
+        session: <B::UpdateVerifier as IncrementalVerifier>::Session,
+        error: DriverError,
+    ) -> DriverError {
+        self.update_verifier = Some(VerifierState::Idle(session.abandon()));
+        error
+    }
+
+    /// One verification step: polls `session` over the staging region,
+    /// the same window staging wrote through. An error means the driver
+    /// could not run the step. A bad candidate is `Step::Rejected`.
+    fn poll_verification(
+        &mut self,
+        session: <B::UpdateVerifier as IncrementalVerifier>::Session,
+    ) -> Result<Step, DriverError> {
+        let len = match self.pending_update.as_ref() {
+            Some(job) => job.len,
+            None => return Err(self.drop_session(session, DriverError::NoUpdateJob)),
+        };
+        let window = match ByteWindow::new(&self.board.update_staging, 0, len) {
+            Ok(window) => window,
+            Err(_) => return Err(self.drop_session(session, DriverError::CandidateOutOfRange)),
+        };
+        Ok(match session.poll(&window) {
+            PollOutcome::Processing { session, progress } => {
+                self.update_verifier = Some(VerifierState::Verifying(session));
+                Step::Working(progress)
+            }
+            PollOutcome::Authenticated(v) => {
+                self.update_verifier = Some(VerifierState::Idle(v));
+                Step::Authenticated
+            }
+            PollOutcome::Rejected(v) => {
+                self.update_verifier = Some(VerifierState::Idle(v));
+                Step::Rejected
+            }
+            PollOutcome::Fault(v, _) => {
+                self.update_verifier = Some(VerifierState::Idle(v));
+                Step::Rejected
+            }
+        })
     }
 
     /// One staging step: borrows the staging region and the device as
@@ -499,6 +593,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             job.prepare_commanded = false;
         }
         self.abandon_job();
+        self.abandon_verification();
         UpdatePoll {
             event: Some(Event::UpdateRejected),
             progress: None,
@@ -515,6 +610,16 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         if let Some(updatable) = self.board.updatables.get_mut(target) {
             updatable.abandon();
         }
+    }
+
+    /// If a verification session is active, abandons it and returns the
+    /// verifier to idle.
+    fn abandon_verification(&mut self) {
+        let state = self.update_verifier.take();
+        self.update_verifier = match state {
+            Some(VerifierState::Verifying(session)) => Some(VerifierState::Idle(session.abandon())),
+            other => other,
+        };
     }
 
     /// Target of the in-flight update, if one was submitted.
@@ -827,9 +932,8 @@ pub enum SelfUpdateSettlement {
 /// One [`PlatformDriver::pump_update`] round.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct UpdatePoll {
-    /// `UpdateRejected` on fault or stall. `UpdateVerified` is not
-    /// emitted until the crypto verify-client is wired; the pump parks
-    /// at Staged instead.
+    /// `UpdateVerified` when the verifier accepts the candidate, or
+    /// `UpdateRejected` on fault, rejection, or stall.
     pub event: Option<Event>,
     /// How far the job has come, for the update source's progress
     /// report. `None` once the job has ended.
