@@ -131,6 +131,12 @@ pub enum Report {
     /// discarded and no verdict for that request follows. Platform-wide for
     /// the same reason as [`Report::UpdateDeferred`].
     UpdateAborted,
+    /// The verifier could not run its check: a crypto fault, or a
+    /// staging region it could not read. The update is rejected either
+    /// way, so without this report a broken verifier looks exactly like
+    /// a bad image. Platform-wide for the same reason as
+    /// [`Report::UpdateDeferred`].
+    UpdateVerifierFault,
     /// The spare slot could not be brought up to date after a commit.
     /// The running image is fine. The other slot still holds the
     /// firmware from before the update, so a fallback boots the old

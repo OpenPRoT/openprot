@@ -528,6 +528,9 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             }
             PollOutcome::Fault(v, _) => {
                 self.update_verifier = Some(VerifierState::Idle(v));
+                // A fault and a bad image both end the job with
+                // UpdateRejected. The report says which one happened.
+                self.report(Report::UpdateVerifierFault);
                 Step::Rejected
             }
         })

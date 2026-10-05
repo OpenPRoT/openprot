@@ -1613,7 +1613,8 @@ impl ReportSink for RecordingSink {
     }
 }
 
-/// One of each report, so a test covers the whole enum.
+/// One of each report the SM commands through an Effect. The driver
+/// raises the rest itself, so they are not in the list.
 fn every_report() -> [Report; 5] {
     [
         Report::Isolated(C0),
@@ -2227,17 +2228,26 @@ fn a_rejected_candidate_emits_update_rejected() {
         driver.pending_update().is_some(),
         "the job waits for DiscardStaged"
     );
+    assert!(
+        driver.board().report_sink.seen.is_empty(),
+        "a bad image is the verifier working, not faulting"
+    );
 }
 
-// A verifier that cannot run its check is as fatal to the job as one
-// that fails it. Fail secure: nothing activates on a fault.
+// A verifier that cannot run its check ends the job, the same as one
+// that rejects the image. Nothing activates. The SM sees UpdateRejected
+// both times, so the report is the only place the difference shows.
 #[test]
-fn a_verifier_fault_rejects_the_candidate() {
+fn a_verifier_fault_rejects_the_candidate_and_is_reported() {
     let mut driver = verifying_driver(StubVerifier::faulting());
     enter_updating(&mut driver);
 
     assert_eq!(pump_to_event(&mut driver, 0), Some(Event::UpdateRejected));
     assert_eq!(driver.board().updatables[0].abandons, 1);
+    assert_eq!(
+        driver.board().report_sink.seen,
+        [Report::UpdateVerifierFault]
+    );
 }
 
 // A verifier that stops getting through the payload is dropped on the
