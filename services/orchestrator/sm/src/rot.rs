@@ -654,6 +654,13 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                     ctx.emit(Effect::DiscardStaged);
                     Outcome::Transition(State::Ready)
                 }
+                // Same disposal, no report. The requester withdrew this
+                // itself, so telling it the update is over says nothing it
+                // does not already know.
+                Event::UpdateCancelled => {
+                    ctx.emit(Effect::DiscardStaged);
+                    Outcome::Transition(State::Ready)
+                }
                 Event::CorruptionDetected(id) => {
                     let outcome = self.handle_corruption(*id, ctx);
                     // Only a *preemption* (transition out to recovery) orphans
