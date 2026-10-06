@@ -1,0 +1,26 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# The full scenario's negative: the managed device takes the update and
+# never comes back from the reset that was supposed to boot it.
+#
+# This is the one that matters. The update itself succeeds, so every
+# scenario that stops at activation would still pass; only a run that
+# waits for the device to boot what it was given can tell the difference.
+
+load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
+load("//target/ast10x0/tests/integration/full_update:apps.bzl", "APPS", "FLASH", "SYSTEM_CONFIG", "TARGET_DEPS", "TARGET_SRC")
+
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/full_update/device_stays_down:device_stays_down_qemu_test
+qemu_scenario(
+    name = "device_stays_down_qemu",
+    apps = APPS,
+    cfgs = [
+        "rot_owns_verdict",
+        "device_stays_down",
+    ],
+    flash = FLASH,
+    system_config = SYSTEM_CONFIG,
+    target_deps = TARGET_DEPS,
+    target_src = TARGET_SRC,
+)

@@ -1,13 +1,13 @@
 # QEMU integration tests
 
-Six scenarios, each its own system image, all running under QEMU with no
+Eight scenarios, each its own system image, all running under QEMU with no
 hardware. The AST1030 is the black box; everything it talks to is another
 app in the same image, reached through the same traits a real board wires.
 
 The runner greps one pass/fail sentinel per run, so one scenario per image
 is what lets a failure name itself.
 
-Two of the five are the thing working. The other three are the thing
+Three of the eight are the thing working. The other five are the thing
 failing, and they pass when the failure is caught. A scenario that only
 ever passes proves nothing: the first version of the boot scenario passed
 with the device wedged, because it asserted the wrong thing. Each negative
@@ -22,6 +22,8 @@ fails rather than looking like the proof.
 | `pldm_update/corrupt_image` | one byte of the image is flipped | the device catches it |
 | `pldm_update/refused_update` | the RoT refuses the request | nothing is activated |
 | `full_update` | boot, update, reboot in one image | the device boots the image it was given |
+| `full_update/device_hangs` | the device never comes up | no update is ever offered |
+| `full_update/device_stays_down` | the device takes the update, then stays down | the RoT notices it never came back |
 
 A negative scenario is a package of its own, built from the same sources
 and the same system config with one `--cfg` added. `scenario.bzl` holds
@@ -139,10 +141,25 @@ device's own flow ends at activation and tells it nothing about the reset
 that has to follow. The first version had the device declaring it, and the
 run passed while the device never rebooted.
 
-That is also the negative this scenario was checked against: stop the
-managed device reporting after a reset and the run fails on `the device
-failed at checkpoint ready`, with recovery exhausted and the platform
-locked.
+Two negatives, and the second is the one that matters.
+`full_update/device_hangs` has the device never come up, so the first walk
+fails and no update is ever offered: that says the supervision half is
+live before the update half. `full_update/device_stays_down` lets the
+update succeed and then keeps the device from coming back:
+
+    [INF] ORCH: update accepted, 1024 bytes
+    [INF] ORCH: both verdicts agree, activating
+    [ERR] ORCH: the device failed at checkpoint ready
+    [INF] ORCH: the device took the update and never came back
+    TEST_RESULT:PASS
+
+Every scenario that stops at activation passes that run. Only one that
+waits for the device to boot what it was given can tell the difference,
+which is the whole reason this scenario exists.
+
+The RoT names which of the four outcomes it reached rather than returning
+a bare failure, so a run that died somewhere else fails instead of looking
+like the proof.
 
 ## The update scenario
 

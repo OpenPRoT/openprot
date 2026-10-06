@@ -123,7 +123,10 @@ fn entry() {
                 let asserted = cmd[0] == RESET_ASSERTED;
                 // Active low: asserted means the line is driven low.
                 reset.set(!asserted);
-                if asserted {
+                // A reset clears the flag so the next boot reports again,
+                // except where the scenario asks for a device that comes
+                // up once and never again.
+                if asserted && !cfg!(device_stays_down) {
                     reported = false;
                 }
             }

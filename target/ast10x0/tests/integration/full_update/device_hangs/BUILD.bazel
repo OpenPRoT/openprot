@@ -1,0 +1,30 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# The full scenario's negative: the managed device never comes up.
+#
+# It passes when the first walk fails, so no update is ever offered. That
+# is what says the supervision half is live before the update half, rather
+# than the RoT accepting an update for a device that is not there.
+#
+# The RoT ends this run, on the failed first walk, before the agent gets
+# as far as offering anything. So the firmware device never waits on a RoT
+# that is not listening, and the run does not sit out its decision
+# timeout: it finishes in about a second.
+
+load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
+load("//target/ast10x0/tests/integration/full_update:apps.bzl", "APPS", "FLASH", "SYSTEM_CONFIG", "TARGET_DEPS", "TARGET_SRC")
+
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/full_update/device_hangs:device_hangs_qemu_test
+qemu_scenario(
+    name = "device_hangs_qemu",
+    apps = APPS,
+    cfgs = [
+        "rot_owns_verdict",
+        "device_hangs",
+    ],
+    flash = FLASH,
+    system_config = SYSTEM_CONFIG,
+    target_deps = TARGET_DEPS,
+    target_src = TARGET_SRC,
+)

@@ -118,6 +118,57 @@ static ROT_AUTHENTICATED: AtomicBool = AtomicBool::new(false);
 /// Set when the driver calls `Updatable::activate`.
 static ACTIVATED: AtomicBool = AtomicBool::new(false);
 
+/// How far the run got. A negative scenario arranges one of these and
+/// passes on that one, so a run that died somewhere else fails rather
+/// than looking like the proof.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Outcome {
+    /// The device booted, took an update, rebooted into it, and the floor
+    /// committed.
+    Committed,
+    /// The device never came up at all, so no update was ever offered.
+    FirstBootFailed,
+    /// The update itself did not go through.
+    UpdateFailed,
+    /// The device took the update but never came back from the reset that
+    /// was supposed to boot it.
+    SecondBootFailed,
+}
+
+/// Whether the run did what this scenario asked of it.
+fn verdict(outcome: Outcome) -> bool {
+    match outcome {
+        Outcome::Committed => {
+            if cfg!(any(device_hangs, device_stays_down)) {
+                pw_log::error!("ORCH: the update committed, which this scenario rules out");
+                return false;
+            }
+            pw_log::info!("ORCH: the device booted the image it was given");
+            true
+        }
+        Outcome::FirstBootFailed => {
+            if cfg!(device_hangs) {
+                pw_log::info!("ORCH: the device never came up, so no update was offered");
+                return true;
+            }
+            pw_log::error!("ORCH: the device never came up");
+            false
+        }
+        Outcome::SecondBootFailed => {
+            if cfg!(device_stays_down) {
+                pw_log::info!("ORCH: the device took the update and never came back");
+                return true;
+            }
+            pw_log::error!("ORCH: the device never came back from the activation reset");
+            false
+        }
+        Outcome::UpdateFailed => {
+            pw_log::error!("ORCH: the update did not go through");
+            false
+        }
+    }
+}
+
 /// One board fault, for every seam that has to name an error type.
 #[derive(Debug)]
 struct BoardFault;
@@ -417,11 +468,10 @@ fn entry() {
     // The RoT declares this run. Its claim is the ordering, and only it
     // sees the whole of it: the firmware device's flow ends at activation
     // and tells it nothing about the reset that has to follow.
-    if run(&mut core, &mut driver, &mut fd) {
-        pw_log::info!("ORCH: the device booted the image it was given");
+    let outcome = run(&mut core, &mut driver, &mut fd);
+    if verdict(outcome) {
         let _ = syscall::debug_shutdown(Ok(()));
     } else {
-        pw_log::error!("ORCH: the run did not reach a committed update");
         let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal));
     }
     #[expect(clippy::empty_loop)]
@@ -429,21 +479,21 @@ fn entry() {
 }
 
 /// The whole scenario, in the order the claim is about.
-fn run(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
+fn run(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> Outcome {
     // Power on. The driver releases the device, which arms its walk.
     core.dispatch(driver, Event::PowerGood(PowerOnResult::Provisioned));
     if !supervise_boot(core, driver, "first") {
-        return false;
+        return Outcome::FirstBootFailed;
     }
     if core.state() != State::Ready {
         pw_log::error!("ORCH: not supervising after the first boot");
-        return false;
+        return Outcome::FirstBootFailed;
     }
 
     let resets_before = RESETS.load(Ordering::Relaxed);
 
     if !drive_update(core, driver, fd) {
-        return false;
+        return Outcome::UpdateFailed;
     }
 
     // Activation only proposed the image. The state machine re-walks, and
@@ -451,21 +501,21 @@ fn run(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
     let resets_after = RESETS.load(Ordering::Relaxed);
     if resets_after <= resets_before {
         pw_log::error!("ORCH: the device was never reset after the activation");
-        return false;
+        return Outcome::UpdateFailed;
     }
 
     if !supervise_boot(core, driver, "second") {
-        return false;
+        return Outcome::SecondBootFailed;
     }
 
     // Only now has the image proved it can run.
     core.dispatch(driver, Event::BootConfirmed(TARGET));
     if core.state() != State::Ready {
         pw_log::error!("ORCH: the machine did not settle after the second boot");
-        return false;
+        return Outcome::SecondBootFailed;
     }
     pw_log::info!("ORCH: update committed after the device booted it");
-    true
+    Outcome::Committed
 }
 
 /// Waits for the managed device's walk to complete.
