@@ -165,6 +165,89 @@ fn update_rollback_is_not_recovery() {
     assert!(!effects.contains(&Effect::LatchLockdown));
 }
 
+/// A withdrawn update disposes of what was staged and leaves the platform
+/// supervising, the same ending a rejection has.
+#[test]
+fn a_cancelled_update_discards_the_staged_image() {
+    let (effects, state) = drive(
+        passive_required(&[C0]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::UpdateRequest(C0),
+            Event::UpdateCancelled,
+        ],
+    );
+    let tail = &effects[effects.len() - 2..];
+    assert_eq!(
+        tail,
+        &[Effect::AuthenticateStageUpdate, Effect::DiscardStaged],
+    );
+    assert_eq!(state, State::Ready);
+}
+
+/// A withdrawal is not a verdict on the image, so nothing is reported.
+/// The requester asked for this, and the only other way out of `Updating`
+/// that discards a staged image, a recovery preempting it, does report.
+#[test]
+fn a_cancelled_update_is_not_reported() {
+    let (effects, _) = drive(
+        passive_required(&[C0]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::UpdateRequest(C0),
+            Event::UpdateCancelled,
+        ],
+    );
+    assert!(!effects.contains(&Effect::ReportUpdateAborted));
+    assert!(!effects.contains(&Effect::ReportUpdateDeferred));
+}
+
+/// A locked platform stays locked and stays silent. `Locked` is inert by
+/// design, and a new event is the usual way that stops being true.
+#[test]
+fn a_cancel_cannot_disturb_a_locked_platform() {
+    let (effects, state) = drive(
+        passive_required(&[C0]),
+        &[
+            BOOT,
+            Event::VerificationFailed(C0),
+            Event::RecoveryUnavailable(C0),
+        ],
+    );
+    assert_eq!(state, State::Locked, "the fixture did not lock");
+
+    let (after, locked_after) = drive(
+        passive_required(&[C0]),
+        &[
+            BOOT,
+            Event::VerificationFailed(C0),
+            Event::RecoveryUnavailable(C0),
+            Event::UpdateCancelled,
+        ],
+    );
+    assert_eq!(after, effects);
+    assert_eq!(locked_after, State::Locked);
+}
+
+/// A cancel with no update in flight is dropped. Nothing staged, nothing
+/// to dispose of, and no state worth changing.
+#[test]
+fn a_cancel_with_no_update_in_flight_changes_nothing() {
+    let (settled, settled_state) = drive(
+        passive_required(&[C0]),
+        &[BOOT, Event::VerificationPassed(C0)],
+    );
+    let (effects, state) = drive(
+        passive_required(&[C0]),
+        &[BOOT, Event::VerificationPassed(C0), Event::UpdateCancelled],
+    );
+    assert_eq!(effects, settled);
+    assert_eq!(state, settled_state);
+    assert_eq!(state, State::Ready);
+}
+
 /// INV5: runtime corruption targets the named component and re-walks from
 /// the top after restore.
 #[test]
@@ -2802,7 +2885,7 @@ fn random_chain(rng: &mut SplitMix64) -> heapless::Vec<(ComponentId, ComponentAt
 /// Build one random event over the given id palette. Id-less events ignore it.
 fn random_event(rng: &mut SplitMix64, ids: &[ComponentId]) -> Event {
     let id = ids[rng.below(ids.len() as u32) as usize];
-    match rng.below(16) {
+    match rng.below(17) {
         0 => Event::VerificationPassed(id),
         1 => Event::VerificationFailed(id),
         2 => Event::ComponentReady(id),
@@ -2835,6 +2918,7 @@ fn random_event(rng: &mut SplitMix64, ids: &[ComponentId]) -> Event {
         12 => Event::RecoveryFailed,
         13 => Event::CommitTimeout,
         14 => Event::RecoveryUnavailable(id),
+        15 => Event::UpdateCancelled,
         _ => Event::EffectFailed,
     }
 }

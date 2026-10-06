@@ -225,6 +225,19 @@ pub enum Event {
     UpdateVerified,
     /// The staged update failed authentication.
     UpdateRejected,
+    /// The requester withdrew the update it had asked for.
+    ///
+    /// Distinct from [`UpdateRejected`](Event::UpdateRejected), which says
+    /// the candidate was judged and found wanting. A withdrawal judges
+    /// nothing: the image may have been perfectly good and the requester
+    /// simply stopped wanting it. Both end the update and dispose of what
+    /// was staged, but only a rejection is a verdict on the image, and
+    /// only a rejection is worth reporting to the requester, who in this
+    /// case is the one who asked.
+    ///
+    /// Carries no component, for the same reason the other two do not:
+    /// [`State::Updating`] already names the one being updated.
+    UpdateCancelled,
     /// The activated image proved itself healthy at runtime (supervised
     /// health / attestation pass — not mere boot). Gates the anti-rollback
     /// commit: only now is it safe to advance the SVN floor past this image,
@@ -321,6 +334,7 @@ impl Event {
             | Event::UpdateRequest(_)
             | Event::UpdateVerified
             | Event::UpdateRejected
+            | Event::UpdateCancelled
             | Event::RecoveryFailed
             | Event::CommitTimeout
             | Event::EffectFailed => None,
