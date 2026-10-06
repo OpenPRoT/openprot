@@ -33,6 +33,7 @@ SCENARIO_CFGS = [
     "corrupt_image",
     "refused_update",
     "rot_owns_verdict",
+    "device_stays_down",
 ]
 
 KERNEL_DEPS = [

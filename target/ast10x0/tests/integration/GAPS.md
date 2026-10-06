@@ -10,9 +10,9 @@ followed by the device being reset into it and reporting ready a second
 time. Checked against its negative, a device that stops reporting after
 the post-activation reset.
 
-What that scenario still does not do is carry the negatives. `mock_bmc`
-and `pldm_update` keep theirs, and `full_update` has none of its own as a
-target yet.
+It carries two negatives of its own: a device that never comes up, and a
+device that takes the update and never comes back. `mock_bmc` and
+`pldm_update` keep theirs.
 
 ## The lines are IPC channels, not GPIOs
 
