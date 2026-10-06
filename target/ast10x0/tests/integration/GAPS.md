@@ -29,6 +29,37 @@ on its state from in there. The only observations from outside the guest
 are the UART sentinel and the CS1 backing file, and only the happy path
 checks the latter.
 
+## Parts of the DSP0267 Type 5 flow with no scenario
+
+`full_update` covers the happy path: inventory, request, pass-component,
+update-component, the data loop, transfer, verify, apply, activate, reset,
+and the device booting what it was given. The following parts of the
+specification are not exercised:
+
+- Automatic activation without ActivateFirmware. The device advertises
+  self-contained activation and the agent sends ActivateFirmware. A flow
+  where the RoT writing the image and resetting the device is the
+  activation, with `activate()` never called and `PerformActivate` never
+  produced, has no scenario.
+- The pending-reset handshake: a pending reset signal to the device, the
+  device preparing for shutdown, and an acknowledgement. This exists
+  nowhere, not in DSP0267, not in pldm-lib, not in the orchestrator.
+- Type 0 terminus discovery: GetPLDMTypes, GetPLDMVersion above 1.2, and
+  GetPLDMCommands covering inventory and update. The device answers these
+  already, through the control context in pldm-lib, so this is an addition
+  to the agent in the test.
+- Authenticating the running image before the first release. The verifier
+  reads nothing and the device table carries no layout, so the first boot
+  is unverified. Doing it for real means two processes mapping the FMC,
+  with the firmware device writing CS1 while the RoT reads it.
+- Updating the backup partition after the commit. #512 merged, but the
+  component here binds `SvnFloorBinding::SelfManaged`, and since 993219b8
+  a self-managed component's slots are left to the device. The re-sync
+  cannot trigger until a scenario variant binds an eRoT floor.
+- Boot progress over MCTP. The managed device in the spec is one device
+  that is the update agent, the reset target and the progress reporter at
+  once. Here those are two apps, and progress arrives on an IPC channel.
+
 ## Arcs of the update state machine with no scenario
 
 - Cancel mid-transfer. The agent's `CancelUpdate` and the `AckCancel` that
