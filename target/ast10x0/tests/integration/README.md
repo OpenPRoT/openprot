@@ -214,13 +214,32 @@ the agent with an error.
 ## Memory layout
 
 Both images are tight. The AST1030 has 768 KB of SRAM and no XIP, so code
-and data share it. `system.json5` carries the map and the reasoning; the
-short version is that app flash starts at `0x10000` and each app starts
-64 KB aligned, because the MPU wants power-of-2 alignment and apps that
-merely fit arithmetically overlap each other's subregions.
+and data share it. Each `system.json5` carries its own map and the
+reasoning. The rule both follow: an app's flash has to start at a multiple
+of its own size. The pldm_update image runs four 64 KB apps from
+`0x10000`; the mock_bmc image runs two 128 KB apps from `0x20000`.
 
-Oversizing and misalignment are both quiet. The image still builds, and
-the only sign is a PMSAv7 subregion overlap warning on the console. Check
-for one after changing any size. A thread whose stack is too small is
-quieter still: the app dies before its first log line, with no panic and
-no warning.
+That rule comes from the MPU. It protects memory in regions, and a region
+has to be a power of two in size and start at a multiple of its size, so a
+64 KB app has to start on a 64 KB boundary. The MPU also cuts each region
+into eight subregions, which is how it covers a span that is not itself a
+power of two.
+
+So the apps cannot be packed end to end behind the kernel. Give the kernel
+a round 64 KB and its flash runs to `0x10500`, past the vector table at the
+bottom. An app placed there cannot have a region starting there, because
+`0x10500` is not a multiple of 64 KB. The nearest legal start is `0x10000`,
+and that region's last subregions then reach into the next app, so two apps
+share subregions and neither is protected from the other. The sizes fit and
+the addresses still do not.
+
+That is why the kernel's flash is 64256 bytes rather than a round 64 KB:
+`0x10000` minus the 1280-byte vector table, which puts the first app at
+exactly `0x10000`. The mock_bmc image does the same thing one power of two
+up, with 129792 bytes.
+
+Getting a size wrong is quiet. The image still builds, and the only sign is
+a PMSAv7 subregion overlap warning on the console, which means the
+protection is wrong. Check for one after changing any size. A thread whose
+stack is too small is quieter still: the app dies before its first log
+line, with no panic and no warning.

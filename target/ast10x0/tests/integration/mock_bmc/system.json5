@@ -5,8 +5,8 @@
 //
 // Two processes standing in for two chips:
 //
-//   orchestrator  — drives the reset line, latches boot evidence
-//   mock_bmc      — the managed device: reacts to reset, reports ready
+//   orchestrator: drives the reset line, latches boot evidence
+//   mock_bmc:     the managed device, reacts to reset and reports ready
 //
 // The two wires are IPC channels, not GPIO. QEMU models one chip, and both
 // ends live inside it, so a GPIO block would connect to nothing. Commands
@@ -16,18 +16,24 @@
 //
 // Memory map (AST10x0: 768 KB SRAM, no XIP, so code and data share it):
 //   0x00000000 - 0x00000500  vector table (1280 B)
-//   0x00000500 - 0x00020500  kernel flash (~127 KB)
-//   0x00020500 - 0x00060500  app flash (256 KB total; 128 KB per app)
+//   0x00000500 - 0x00020000  kernel flash (129792 B)
+//   0x00020000 - 0x00060000  app flash (2 x 128 KB)
 //   0x00060000 - 0x00080000  kernel RAM (128 KB)
 //   0x00080000 - 0x000C0000  app RAM (256 KB region; 32 KB per process used)
 //
-// App flash is the window between the kernel's flash and the kernel's RAM,
-// 0x20500 to 0x60000, which is 254.8 KB. Two apps at 128 KB fill it exactly.
-// A third app does not fit at that size: the linker places it over kernel RAM
-// and the build still succeeds, with only PMSAv7 MPU subregion overlap
-// warnings to say the protection is wrong. Three apps need 84 KB each, four
-// need 63 KB. The hardware firmware-update card already runs pldm_fd and
-// i2c_server at 64 KB, so that is a normal size rather than a squeeze.
+// The kernel's flash size is 129792 bytes, which is 0x20000 minus the 0x500
+// vector table, not a round 128 KB. That puts app flash at 0x20000, so each
+// 128 KB app starts on a 128 KB boundary. The MPU wants a region power-of-2
+// sized and aligned; an app starting at 0x20500 would be given a region from
+// 0x20000 whose last subregions reach into the next app, and neither would be
+// protected from the other.
+//
+// App flash is then 0x20000 to 0x60000, where kernel RAM starts, so 256 KB.
+// Two apps at 128 KB fill it exactly. A third at that size is placed over
+// kernel RAM and still builds, with only PMSAv7 subregion overlap warnings to
+// say the protection is wrong. Three apps need 84 KB each, four need 63 KB.
+// The hardware firmware-update card already runs pldm_fd and i2c_server at
+// 64 KB, so that is a normal size rather than a squeeze.
 {
     arch: {
         type: "armv7m",
