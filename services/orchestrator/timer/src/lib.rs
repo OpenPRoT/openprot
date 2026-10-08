@@ -56,6 +56,11 @@ struct BootDeadline<T, Id> {
 pub struct TimerManager<T, Id, const N: usize> {
     boot: heapless::Vec<BootDeadline<T, Id>, N>,
     commit: Option<T>,
+    /// Which component the commit watchdog was last armed or cancelled for, so
+    /// [`follow_commit`](Self::follow_commit) can tell a window that just
+    /// opened from one that was already open. Not a copy of the machine's
+    /// window: it is how far this type has followed it.
+    followed: Option<Id>,
 }
 
 impl<T: Copy + Ord, Id: Copy + Eq, const N: usize> TimerManager<T, Id, N> {
@@ -63,6 +68,7 @@ impl<T: Copy + Ord, Id: Copy + Eq, const N: usize> TimerManager<T, Id, N> {
         Self {
             boot: heapless::Vec::new(),
             commit: None,
+            followed: None,
         }
     }
 
@@ -105,6 +111,36 @@ impl<T: Copy + Ord, Id: Copy + Eq, const N: usize> TimerManager<T, Id, N> {
     /// Cancel the commit watchdog. No-op if it is not armed.
     pub fn cancel_commit(&mut self) {
         self.commit = None;
+    }
+
+    /// Follow the state machine's activated-but-not-committed window: arm the
+    /// commit watchdog to fire at `deadline` when the window opens, cancel it
+    /// when the window closes, and leave it alone while it stays open on the
+    /// same component.
+    ///
+    /// `pending` is the machine's own window, so the runtime mirrors it rather
+    /// than working out for itself which events open and close it. Call it after
+    /// every dispatch; the deadline is read only when something changed, so a
+    /// caller that computes `deadline` eagerly pays nothing for the calls that
+    /// do nothing.
+    ///
+    /// Leaving an open window alone is the point: re-arming on every call would
+    /// push the deadline out for as long as the window stayed open, which is the
+    /// one thing the commit watchdog exists to bound. A window that closes and
+    /// reopens on another component re-arms, because that is a new window.
+    ///
+    /// After the watchdog fires, [`poll`](Self::poll) has taken it and the
+    /// machine is locked with its window still open. This does not re-arm it:
+    /// the window has not changed, so there is nothing to follow.
+    pub fn follow_commit(&mut self, pending: Option<Id>, deadline: T) {
+        if pending == self.followed {
+            return;
+        }
+        match pending {
+            Some(_) => self.arm_commit(deadline),
+            None => self.cancel_commit(),
+        }
+        self.followed = pending;
     }
 
     /// The nearest outstanding deadline, or `None` when nothing is armed. Feed
@@ -200,6 +236,60 @@ mod tests {
         tm.arm_boot(C0, 100).unwrap();
         assert_eq!(tm.poll(99), None);
         assert_eq!(tm.poll(100), Some(Expired::Boot(C0)));
+    }
+
+    #[test]
+    fn follow_commit_arms_when_the_window_opens() {
+        let mut tm = Tm::new();
+        tm.follow_commit(Some(C0), 20);
+        assert_eq!(tm.next_deadline(), Some(20));
+        assert_eq!(tm.poll(20), Some(Expired::Commit));
+    }
+
+    #[test]
+    fn follow_commit_cancels_when_the_window_closes() {
+        let mut tm = Tm::new();
+        tm.follow_commit(Some(C0), 20);
+        tm.follow_commit(None, 40);
+        assert_eq!(tm.next_deadline(), None);
+        assert_eq!(tm.poll(100), None);
+    }
+
+    #[test]
+    fn follow_commit_leaves_an_open_window_alone() {
+        let mut tm = Tm::new();
+        tm.follow_commit(Some(C0), 20);
+        // Later calls carry later deadlines, as a caller computing "now plus
+        // the window" every time would. The first one is the bound.
+        tm.follow_commit(Some(C0), 60);
+        tm.follow_commit(Some(C0), 100);
+        assert_eq!(tm.next_deadline(), Some(20));
+    }
+
+    #[test]
+    fn follow_commit_rearms_for_another_component() {
+        let mut tm = Tm::new();
+        tm.follow_commit(Some(C0), 20);
+        tm.follow_commit(Some(C1), 60);
+        assert_eq!(tm.next_deadline(), Some(60));
+    }
+
+    #[test]
+    fn follow_commit_does_not_rearm_after_firing() {
+        let mut tm = Tm::new();
+        tm.follow_commit(Some(C0), 20);
+        assert_eq!(tm.poll(20), Some(Expired::Commit));
+        // The machine locks with its window still open, so the runtime keeps
+        // reporting the same component. Nothing changed, so nothing re-arms.
+        tm.follow_commit(Some(C0), 60);
+        assert_eq!(tm.next_deadline(), None);
+    }
+
+    #[test]
+    fn follow_commit_ignores_a_window_that_was_never_open() {
+        let mut tm = Tm::new();
+        tm.follow_commit(None, 20);
+        assert_eq!(tm.next_deadline(), None);
     }
 
     #[test]
