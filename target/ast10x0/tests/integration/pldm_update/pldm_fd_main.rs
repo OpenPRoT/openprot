@@ -3,8 +3,8 @@
 
 //! The PLDM firmware device, running the real DSP0267 state machine.
 //!
-//! The same `FirmwareDevice` the demo ships, reached over the same
-//! `IpcMctpClient` call path. What differs from the hardware card is one
+//! The same `FirmwareDevice` the production image ships, reached over the
+//! same `IpcMctpClient` call path. What differs from the hardware card is one
 //! layer at the bottom and one at the side: the wire is the loopback bus
 //! rather than I2C, and the image is staged into RAM rather than SPI NOR.
 //!
@@ -579,7 +579,7 @@ impl FdOps for QemuFdOps {
         // running tally. A write that silently did not land, or landed
         // somewhere else, fails here instead of passing. Signature
         // checking belongs to the crypto service and is stubbed until
-        // after the demo, so this is a content check.
+        // until the crypto service exists, so this is a content check.
         let mut flash = self.flash.borrow_mut();
         let mut chunk = [0u8; READBACK_CHUNK];
         for base in (0..IMAGE_SIZE).step_by(READBACK_CHUNK) {

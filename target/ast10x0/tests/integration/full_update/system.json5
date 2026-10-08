@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-// AST10x0 full update QEMU test: one image, the whole demo script.
+// AST10x0 full update QEMU test: boot, update, reboot in one image.
 //
 // Five processes:
 //
