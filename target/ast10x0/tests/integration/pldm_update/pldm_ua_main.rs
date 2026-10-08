@@ -109,9 +109,21 @@ fn corrupted(offset: usize, byte: u8) -> u8 {
 }
 
 /// Returns an error code for a specific chunk, or `None` to send data.
-#[cfg(not(transfer_error))]
+#[cfg(not(any(transfer_error, retry_chunk)))]
 fn chunk_error(_chunk: u32) -> Option<u8> {
     None
+}
+
+/// Answers chunk 2 with `RetryRequestFwData`, which is not a failure: the
+/// device waits out FD_T2, asks for the same window again, and the update
+/// goes through anyway. Chunk 2 puts the retry mid-transfer rather than at
+/// either end, and it fires once because the re-request counts as a later
+/// chunk.
+#[cfg(retry_chunk)]
+fn chunk_error(chunk: u32) -> Option<u8> {
+    use pldm_common::protocol::firmware_update::FwUpdateCompletionCode;
+
+    (chunk == 2).then_some(FwUpdateCompletionCode::RetryRequestFwData as u8)
 }
 
 /// Errors on chunk 2: not the first (the transfer has to be running), and
@@ -247,8 +259,8 @@ fn serve_fd_request(
             }
             served.chunks.set(served.chunks.get() + 1);
             if let Some(code) = chunk_error(served.chunks.get()) {
-                pw_log::error!(
-                    "UA: answering chunk {} with cc={} instead of data",
+                pw_log::info!(
+                    "UA: answering chunk {} with cc={:02x} instead of data",
                     served.chunks.get() as u32,
                     code as u32
                 );
