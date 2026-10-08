@@ -113,6 +113,9 @@ impl core::error::Error for VerifierError {}
 /// chunks.
 struct XorVerifier {
     fault: bool,
+    /// What this verifier reports as the image's measurement. A real one
+    /// hashes the image; this one is told what to say.
+    measurement: Option<Measurement>,
     /// The manifest SVN this verifier reports for an authenticated image.
     /// A real verifier reads it from the signed manifest of the image it
     /// just checked; the test image format has no manifest, so tests pin it.
@@ -148,7 +151,10 @@ impl Verifier for XorVerifier {
         }
         let ok = len > IMAGE_MAGIC.len() && magic == IMAGE_MAGIC && xor == 0;
         Ok(if ok {
-            Verdict::Authenticated { svn: Svn(self.svn) }
+            Verdict::Authenticated {
+                svn: Svn(self.svn),
+                measurement: self.measurement,
+            }
         } else {
             Verdict::Rejected
         })
@@ -828,6 +834,7 @@ fn mock_board<const N: usize>() -> Board<MockBoard, N> {
         verifier: XorVerifier {
             fault: false,
             svn: MOCK_SVN,
+            measurement: None,
         },
         boot_controls: core::array::from_fn(|_| MockReset::new()),
         boot_watches: core::array::from_fn(|_| MockWalk::idle()),
@@ -870,6 +877,87 @@ fn boot_verifies_the_first_component() {
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
 
     assert_eq!(orch.state(), State::Ready);
+}
+
+/// A driver whose verifier measures what it verifies.
+fn measuring_driver(measurement: Measurement) -> PlatformDriver<MockBoard, 1> {
+    PlatformDriver::new(
+        &passive_entries(),
+        Board {
+            images: [MemImage::holding(valid_image())],
+            verifier: XorVerifier {
+                fault: false,
+                svn: MOCK_SVN,
+                measurement: Some(measurement),
+            },
+            ..mock_board()
+        },
+    )
+}
+
+// A board that measures gets the digest out through the report sink, as
+// part of the same pass that verified the image.
+#[test]
+fn a_measured_image_is_reported() {
+    let measurement = Measurement([0xAB; Measurement::LEN]);
+    let mut driver = measuring_driver(measurement);
+
+    driver.stage_firmware(C0).expect("stage failed");
+
+    assert_eq!(
+        driver.verify_firmware(C0),
+        Ok(Event::VerificationPassed(C0))
+    );
+    assert_eq!(
+        driver.board().report_sink.seen,
+        [Report::Measured {
+            id: C0,
+            measurement
+        }]
+    );
+}
+
+// Measuring is optional. A board that composes no hash engine reports
+// None, and the driver says nothing rather than inventing a digest.
+#[test]
+fn a_board_that_does_not_measure_reports_nothing() {
+    let mut driver = driver([MemImage::holding(valid_image())]);
+
+    driver.stage_firmware(C0).expect("stage failed");
+
+    assert_eq!(
+        driver.verify_firmware(C0),
+        Ok(Event::VerificationPassed(C0))
+    );
+    assert!(driver.board().report_sink.seen.is_empty());
+}
+
+// A measurement is a reading of an image the verifier vouched for.
+// A rejected image has none, however far the hashing got.
+#[test]
+fn a_rejected_image_is_not_measured() {
+    let mut corrupt = valid_image();
+    corrupt[7] ^= 0x01;
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(
+        &passive_entries(),
+        Board {
+            images: [MemImage::holding(corrupt)],
+            verifier: XorVerifier {
+                fault: false,
+                svn: MOCK_SVN,
+                measurement: Some(Measurement([0xAB; Measurement::LEN])),
+            },
+            ..mock_board()
+        },
+    );
+
+    driver.stage_firmware(C0).expect("stage failed");
+
+    assert_eq!(
+        driver.verify_firmware(C0),
+        Ok(Event::VerificationFailed(C0))
+    );
+    assert!(driver.board().report_sink.seen.is_empty());
 }
 
 #[test]
@@ -931,6 +1019,7 @@ fn verifier_fault_fails_closed() {
             verifier: XorVerifier {
                 fault: true,
                 svn: MOCK_SVN,
+                measurement: None,
             },
             ..mock_board()
         },
@@ -1094,6 +1183,7 @@ fn release_follows_verification() {
                 inner: XorVerifier {
                     fault: false,
                     svn: MOCK_SVN,
+                    measurement: None,
                 },
                 line: held.clone(),
                 held_during_verify: held_during_verify.clone(),
@@ -1474,6 +1564,7 @@ fn recoverable_board<const N: usize>(sources: u8) -> Board<RecoverableBoard, N> 
         verifier: XorVerifier {
             fault: false,
             svn: MOCK_SVN,
+            measurement: None,
         },
         boot_controls: core::array::from_fn(|_| MockReset::new()),
         boot_watches: core::array::from_fn(|_| MockWalk::idle()),
@@ -1763,6 +1854,7 @@ fn reports_reach_the_board_sink() {
             verifier: XorVerifier {
                 fault: false,
                 svn: 0,
+                measurement: None,
             },
             ..mock_board()
         },
@@ -1796,6 +1888,7 @@ fn reporting_an_isolated_component_does_not_lock_the_platform() {
             verifier: XorVerifier {
                 fault: false,
                 svn: 0,
+                measurement: None,
             },
             ..mock_board()
         },
@@ -2459,6 +2552,7 @@ fn a_request_to_a_locked_platform_is_refused() {
             verifier: XorVerifier {
                 fault: true,
                 svn: MOCK_SVN,
+                measurement: None,
             },
             ..mock_board()
         },

@@ -47,6 +47,11 @@
 //! consumes the verifier into a `VerifySession` whose `poll` does one
 //! bounded hash step per call. See the trait docs for the full lifecycle.
 //!
+//! `Measurer` is the polled firmware measurement seam: same
+//! factory-session-poll pattern as `IncrementalVerifier`, but the
+//! terminal outcome is a SHA-256 digest, not a signature verdict. The
+//! implementation reads directly from the image source.
+//!
 //! `BootWatch` is the seam the orchestrator polls: one device's boot walk,
 //! erased of every device-specific type, answering with a `WalkVerdict`.
 //!
@@ -73,6 +78,7 @@ mod device_trial_boot;
 mod evidence;
 mod incremental_verifier;
 mod lockdown_latch;
+mod measurer;
 mod progress;
 mod recovery;
 mod self_update;
@@ -85,6 +91,7 @@ pub use device_trial_boot::DeviceTrialBoot;
 pub use evidence::{BootStatus, EvidenceReader};
 pub use incremental_verifier::{IncrementalVerifier, PollOutcome, VerifySession};
 pub use lockdown_latch::LockdownLatch;
+pub use measurer::{MeasureOutcome, MeasureSession, Measurement, Measurer};
 pub use progress::Progress;
 pub use recovery::{Recovery, RestoreOutcome};
 pub use self_update::{trial_outcome, RunningImage, SelfUpdate, SelfUpdateState, TrialOutcome};

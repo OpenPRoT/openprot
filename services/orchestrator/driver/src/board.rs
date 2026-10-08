@@ -8,7 +8,7 @@ use openprot_orchestrator_sm::{BootFailureKind, ComponentId};
 use orchestrator_capabilities::Updatable;
 use util_io::ByteSource;
 
-pub use orchestrator_capabilities::{BootControl, BootWatch};
+pub use orchestrator_capabilities::{BootControl, BootWatch, Measurement};
 use orchestrator_capabilities::{IncrementalVerifier, Recovery, Svn, SvnFloor};
 
 /// Access to one component's active firmware image, however it is reached —
@@ -94,14 +94,17 @@ pub enum Verdict {
     Authenticated {
         /// The verified image's security version number.
         svn: Svn,
+        /// SHA-256 digest of the image, or `None` if this board has
+        /// no hash engine wired up.
+        measurement: Option<Measurement>,
     },
     /// Reported as `Event::VerificationFailed`.
     Rejected,
 }
 
-/// One fact about the platform running degraded, carried outward to
-/// management software. `#[non_exhaustive]`: a sink routes what it
-/// recognises and ignores the rest, so a new report is not a trait break.
+/// Something the orchestrator tells management software about.
+/// `#[non_exhaustive]` so a sink just ignores variants it doesn't
+/// know, and adding one doesn't break anyone.
 ///
 /// Payloads stay `Copy` and lifetime-free, like the effects these mirror. A
 /// report names a component only where the effect it mirrors does.
@@ -137,6 +140,14 @@ pub enum Report {
     /// a bad image. Platform-wide for the same reason as
     /// [`Report::UpdateDeferred`].
     UpdateVerifierFault,
+    /// A component's image digest, computed during verification.
+    /// The driver sends it through the sink and forgets it.
+    Measured {
+        /// The component whose image this measures.
+        id: ComponentId,
+        /// The digest over that image.
+        measurement: Measurement,
+    },
     /// The spare slot could not be brought up to date after a commit.
     /// The running image is fine. The other slot still holds the
     /// firmware from before the update, so a fallback boots the old
