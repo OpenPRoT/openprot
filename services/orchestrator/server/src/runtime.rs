@@ -59,6 +59,21 @@ impl<const N: usize> BootWatchdogs<N> {
         self.timers.cancel_commit();
     }
 
+    /// Follow the machine's activated-but-not-committed window, arming the
+    /// commit watchdog `window` from now when it opens and cancelling it when
+    /// it closes.
+    ///
+    /// Call it after every dispatch with
+    /// [`Orchestrator::pending_commit`](openprot_orchestrator_sm::Orchestrator::pending_commit).
+    /// The machine bounds that window with [`Event::CommitTimeout`] and owns no
+    /// clock, so this is what makes the bound real: a run loop that never calls
+    /// it leaves an activated image uncommitted for as long as the platform
+    /// stays up.
+    pub fn follow_commit(&mut self, pending: Option<ComponentId>, window: Duration) {
+        self.timers
+            .follow_commit(pending, Self::deadline_in(window));
+    }
+
     /// Absolute deadline to pass to `object_wait`; [`Instant::MAX`] when nothing
     /// is armed, so the loop blocks until a signal wakes it.
     pub fn wait_deadline(&self) -> Instant {
