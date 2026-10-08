@@ -44,6 +44,7 @@
 use openprot_mctp_api::MctpClient;
 use pldm_interface::cmd_interface::CmdInterface;
 use pldm_interface::control_context::ProtocolCapability;
+use pldm_interface::error::MsgHandlerError;
 use pldm_interface::firmware_device::fd_context::FirmwareDeviceContext;
 use pldm_interface::firmware_device::fd_ops::FdOps;
 
@@ -241,10 +242,25 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
             // responder poll below (no `continue`) so an Update Agent command
             // such as CancelUpdate is serviced between every RequestFirmwareData.
             let initiator_active = self.cmd_interface.fd_ctx.should_start_initiator_mode();
-            if initiator_active
-                && let Some(pldm_len) =
-                    self.cmd_interface.generate_initiator_request(&mut fw_buf)?
-            {
+            let outbound = if initiator_active {
+                match self.cmd_interface.generate_initiator_request(&mut fw_buf) {
+                    Ok(pldm_len) => pldm_len,
+                    // TEMPORARY. `fd_progress_*` answers "the FD_T2 retry
+                    // timer has not elapsed" with the same error it uses for
+                    // a state mismatch, so a device waiting to re-send has
+                    // nothing else to report. Taken as nothing to send this
+                    // round. The same error covers a request left in
+                    // `Failed`, which then waits for the UA to cancel with no
+                    // timeout, because the T1 check in `fd_progress` sits
+                    // after it. Remove once pldm-lib returns `Ok(0)` for the
+                    // wait, so the T1 check runs again.
+                    Err(MsgHandlerError::FdInitiatorModeError) => None,
+                    Err(e) => return Err(e.into()),
+                }
+            } else {
+                None
+            };
+            if let Some(pldm_len) = outbound {
                 let resp_len = self.requester_transport.send_request(
                     remote_eid,
                     pldm_len,
