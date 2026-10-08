@@ -618,7 +618,7 @@ fn command(
     start: impl FnOnce(&mut Fd) -> Result<(), ClientError>,
 ) -> bool {
     if start(fd).is_err() {
-        pw_log::error!("ORCH: could not send {}", name);
+        pw_log::error!("ORCH: could not send {}", name as &str);
         return false;
     }
     match settle(fd) {

@@ -251,7 +251,12 @@ impl Verifier for StubVerifier {
         _id: ComponentId,
         _image: &mut impl ImageSource,
     ) -> Result<Verdict, BoardFault> {
-        Ok(Verdict::Authenticated { svn: Svn(1) })
+        Ok(Verdict::Authenticated {
+            svn: Svn(1),
+            // No hash engine on a test board: the stub verifier reads
+            // nothing, so there is nothing to measure.
+            measurement: None,
+        })
     }
 }
 
