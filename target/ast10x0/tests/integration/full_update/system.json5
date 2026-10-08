@@ -1,0 +1,241 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 full update QEMU test: one image, the whole demo script.
+//
+// Five processes:
+//
+//   pldm_ua:       the update agent, the BMC's half of the update
+//   pldm_fd:       the DSP0267 firmware device, staging into CS1 flash,
+//                  and the IPC server the RoT commands it through
+//   mctp_bus:      an MCTP server per endpoint, joined by the loopback
+//   orchestrator:  the RoT, which supervises the device and decides
+//                  whether the update may proceed
+//   mock_bmc:      the managed device, on a reset line and a ready line
+//
+// What this scenario claims, and what the others cannot: the device boots
+// under supervision, an update arrives over PLDM, the RoT accepts it, the
+// device stages and verifies it, the RoT activates it, the device is reset
+// into the new image, it reports ready a second time, and only then does
+// the floor commit. The ordering is the claim, not the individual steps.
+//
+// Memory map (AST10x0: 768 KB SRAM, no XIP, so code and data share it):
+//   0x00000000 - 0x00000500  vector table (1280 B)
+//   0x00000500 - 0x00010000  kernel flash (64256 B)
+//   0x00010000 - 0x00060000  app flash (5 x 64 KB)
+//   0x00060000 - 0x00080000  kernel RAM (128 KB)
+//   0x00080000 - 0x000C0000  app RAM (5 x 32 KB used of a 256 KB region)
+//
+// Every app starts 64 KB aligned, because the MPU wants power-of-2
+// alignment and apps that merely fit arithmetically overlap each other's
+// subregions. Oversizing and misalignment are both quiet: the image still
+// builds, and the only sign is a PMSAv7 subregion overlap warning. Check
+// for one after changing any size here.
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,
+    },
+    kernel: {
+        flash_start_address: 0x00000500,
+        flash_size_bytes: 64256,
+        ram_start_address: 0x00060000,
+        ram_size_bytes: 131072,
+    },
+    apps: [
+        {
+            name: "mctp_bus",
+            flash_size_bytes: 65536,
+            processes: [
+                {
+                    name: "mctp_bus_process",
+                    ram_size_bytes: 32768,
+                    objects: [
+                        {
+                            name: "wg",
+                            type: "wait_group",
+                        },
+                        {
+                            // The firmware device's side of the wire.
+                            name: "fd",
+                            type: "channel_handler",
+                        },
+                        {
+                            // The update agent's side.
+                            name: "ua",
+                            type: "channel_handler",
+                        },
+                        {
+                            type: "thread",
+                            name: "mctp_bus_thread",
+                            // Two packet queues live on this stack. At
+                            // QUEUE_DEPTH 32 they overflowed 4 KB and the
+                            // app died before its first log line, with no
+                            // panic and no warning.
+                            kernel_stack_size_bytes: 16384,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            name: "pldm_fd",
+            flash_size_bytes: 65536,
+            processes: [
+                {
+                    name: "pldm_fd_process",
+                    ram_size_bytes: 32768,
+                    objects: [
+                        {
+                            name: "mctp",
+                            type: "channel_initiator",
+                            handler_process: "mctp_bus_process",
+                            handler_object_name: "fd",
+                        },
+                        {
+                            // The RoT's channel into this device. The device
+                            // answers; it does not command.
+                            name: "orch",
+                            type: "channel_handler",
+                        },
+                        {
+                            type: "thread",
+                            name: "pldm_fd_thread",
+                            // Staging reads a window back from flash on this
+                            // stack, on top of the PLDM message buffer.
+                            kernel_stack_size_bytes: 8192,
+                        },
+                    ],
+                    memory_mappings: [
+                        // The kernel applies the FMC pinmux before any
+                        // process starts, so this one does not map the SCU.
+                        {
+                            // FMC controller registers.
+                            name: "fmc_regs",
+                            type: "device",
+                            start_address: 0x7e620000,
+                            size_bytes: 0x1000,
+                        },
+                        {
+                            // FMC CS0 memory-mapped flash read window (8 MiB).
+                            // The backend takes both windows even though
+                            // nothing here reads CS0.
+                            name: "fmc_cs0_window",
+                            type: "device",
+                            start_address: 0x80000000,
+                            size_bytes: 0x800000,
+                        },
+                        {
+                            // FMC CS1 memory-mapped flash read window (64 MiB),
+                            // where the staged image lands. With both chip
+                            // selects present the 256 MiB FMC aperture splits
+                            // in half, which is why CS1 sits at 0x88000000.
+                            name: "fmc_cs1_window",
+                            type: "device",
+                            start_address: 0x88000000,
+                            size_bytes: 0x04000000,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            name: "orchestrator",
+            flash_size_bytes: 65536,
+            processes: [
+                {
+                    name: "orchestrator_process",
+                    ram_size_bytes: 32768,
+                    objects: [
+                        {
+                            name: "wg",
+                            type: "wait_group",
+                        },
+                        {
+                            // Into the firmware device: QueryStatus and the
+                            // Perform and Reject commands.
+                            name: "fd",
+                            type: "channel_initiator",
+                            handler_process: "pldm_fd_process",
+                            handler_object_name: "orch",
+                        },
+                        {
+                            // The managed device's ready report arrives here.
+                            name: "boot_evt",
+                            type: "channel_handler",
+                        },
+                        {
+                            // The managed device's reset line.
+                            name: "reset_cmd",
+                            type: "channel_initiator",
+                            handler_process: "mock_bmc_process",
+                            handler_object_name: "reset_cmd",
+                        },
+                        {
+                            type: "thread",
+                            name: "orchestrator_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            name: "pldm_ua",
+            flash_size_bytes: 65536,
+            processes: [
+                {
+                    name: "pldm_ua_process",
+                    ram_size_bytes: 32768,
+                    objects: [
+                        {
+                            name: "mctp",
+                            type: "channel_initiator",
+                            handler_process: "mctp_bus_process",
+                            handler_object_name: "ua",
+                        },
+                        {
+                            type: "thread",
+                            name: "pldm_ua_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            name: "mock_bmc",
+            flash_size_bytes: 65536,
+            processes: [
+                {
+                    name: "mock_bmc_process",
+                    ram_size_bytes: 32768,
+                    objects: [
+                        {
+                            name: "wg",
+                            type: "wait_group",
+                        },
+                        {
+                            // The RoT drives this device's reset line.
+                            name: "reset_cmd",
+                            type: "channel_handler",
+                        },
+                        {
+                            // This device reports ready through here.
+                            name: "boot_evt",
+                            type: "channel_initiator",
+                            handler_process: "orchestrator_process",
+                            handler_object_name: "boot_evt",
+                        },
+                        {
+                            type: "thread",
+                            name: "mock_bmc_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}

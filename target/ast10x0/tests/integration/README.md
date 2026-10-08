@@ -1,6 +1,6 @@
 # QEMU integration tests
 
-Five scenarios, each its own system image, all running under QEMU with no
+Six scenarios, each its own system image, all running under QEMU with no
 hardware. The AST1030 is the black box; everything it talks to is another
 app in the same image, reached through the same traits a real board wires.
 
@@ -21,6 +21,7 @@ fails rather than looking like the proof.
 | `pldm_update` | a clean update | the update commits |
 | `pldm_update/corrupt_image` | one byte of the image is flipped | the device catches it |
 | `pldm_update/refused_update` | the RoT refuses the request | nothing is activated |
+| `full_update` | boot, update, reboot in one image | the device boots the image it was given |
 
 A negative scenario is a package of its own, built from the same sources
 and the same system config with one `--cfg` added. `scenario.bzl` holds
@@ -98,6 +99,50 @@ the platform locks, which is what that scenario passes on:
     [INF] report: component 0 out of recovery sources
     [INF] the device never came up and the platform locked
     TEST_RESULT:PASS
+
+## The full update scenario
+
+`full_update/` is the other two joined: five apps, one image, the agent and
+the firmware device and the bus from `pldm_update`, the managed device from
+`mock_bmc`, and a RoT that does both jobs.
+
+```mermaid
+flowchart LR
+    subgraph image["system image"]
+        ua["pldm_ua"]
+        bus["mctp_bus"]
+        fd["pldm_fd"]
+        orch["orchestrator<br/>supervises and commands"]
+        bmc["mock_bmc<br/>the managed device"]
+    end
+    ua <--> bus
+    bus <--> fd
+    orch <-- "QueryStatus, Perform, Reject" --> fd
+    orch -- "reset" --> bmc
+    bmc -- "ready" --> orch
+```
+
+The claim is an ordering, which is the one thing the other scenarios cannot
+test apart: the device boots under supervision, an update arrives, the RoT
+accepts it, the device stages and verifies it, the RoT activates it, the
+device is reset into the new image, it reports ready a second time, and only
+then does the floor commit.
+
+    [INF] ORCH: the device reported ready, first boot
+    [INF] ORCH: update accepted, 1024 bytes
+    [INF] ORCH: both verdicts agree, activating
+    [INF] ORCH: the device reported ready, second boot
+    [INF] ORCH: update committed after the device booted it
+
+The RoT declares this run rather than the firmware device, because the
+device's own flow ends at activation and tells it nothing about the reset
+that has to follow. The first version had the device declaring it, and the
+run passed while the device never rebooted.
+
+That is also the negative this scenario was checked against: stop the
+managed device reporting after a reset and the run fails on `the device
+failed at checkpoint ready`, with recovery exhausted and the platform
+locked.
 
 ## The update scenario
 
