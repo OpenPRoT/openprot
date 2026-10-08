@@ -2225,6 +2225,45 @@ fn commit_timeout_while_pending_latches_locked() {
     assert!(!effects.contains(&Effect::CommitSvnFloor(C0)));
 }
 
+/// `pending_commit` is the window a run loop arms its commit watchdog from, so
+/// it has to name the component from the activation until the confirmation and
+/// nothing after it.
+#[test]
+fn pending_commit_tracks_the_activated_window() {
+    let mut orch =
+        Orchestrator::<CAPACITY, ECAP>::new(passive_required(&[C0]).try_into().unwrap(), MAX_RETRY);
+    let mut platform = Recorder::new();
+    let mut dispatch = |orch: &mut Orchestrator<CAPACITY, ECAP>, event| {
+        orch.dispatch(&mut platform, event);
+    };
+
+    dispatch(&mut orch, BOOT);
+    dispatch(&mut orch, Event::VerificationPassed(C0));
+    assert_eq!(orch.pending_commit(), None, "nothing activated yet");
+
+    dispatch(&mut orch, Event::UpdateRequest(C0));
+    dispatch(&mut orch, Event::UpdateVerified);
+    assert_eq!(
+        orch.pending_commit(),
+        Some(C0),
+        "the activation opened the window"
+    );
+
+    dispatch(&mut orch, Event::VerificationPassed(C0));
+    assert_eq!(
+        orch.pending_commit(),
+        Some(C0),
+        "the re-walk does not close it"
+    );
+
+    dispatch(&mut orch, Event::BootConfirmed(C0));
+    assert_eq!(
+        orch.pending_commit(),
+        None,
+        "the confirmation closed the window"
+    );
+}
+
 /// Once `BootConfirmed` has committed the floor the window is closed, so a
 /// later (stale) `CommitTimeout` is a no-op: the machine stays `Ready` and does
 /// not lock.

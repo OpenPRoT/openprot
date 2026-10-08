@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::model::{Chain, Effect, Event, State};
+use crate::model::{Chain, ComponentId, Effect, Event, State};
 use crate::platform::{EffectError, Platform};
 use crate::rot::Rot;
 use crate::sink::{Outcome, Sink, PENDING_CAP};
@@ -27,6 +27,19 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
 
     pub fn state(&self) -> State {
         self.state
+    }
+
+    /// The component whose update was activated and whose anti-rollback floor
+    /// has not been committed yet, or `None` when nothing is waiting to
+    /// commit.
+    ///
+    /// This is the activated-but-not-committed window, which the machine
+    /// bounds with [`Event::CommitTimeout`] but holds no clock for. A caller's
+    /// run loop reads it after each dispatch to keep its commit watchdog in
+    /// step, rather than working out for itself which events open and close
+    /// the window.
+    pub fn pending_commit(&self) -> Option<ComponentId> {
+        self.rot.pending_commit()
     }
 
     /// Reduce one event: dispatch, fall through to the supervisor if needed, and

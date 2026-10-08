@@ -114,6 +114,10 @@ impl<const N: usize, const E: usize> Rot<N, E> {
         self.status_index(id).is_some()
     }
 
+    pub(crate) fn pending_commit(&self) -> Option<ComponentId> {
+        self.pending_commit
+    }
+
     fn is_gated(&self, id: ComponentId) -> bool {
         self.status_index(id)
             .is_some_and(|i| self.statuses[i].lifecycle == ComponentLifecycle::Isolated)
