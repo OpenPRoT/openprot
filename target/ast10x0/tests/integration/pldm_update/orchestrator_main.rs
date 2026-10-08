@@ -425,10 +425,14 @@ fn accept_update(core: &mut Core, driver: &mut Driver, candidate_len: u64) -> bo
         return false;
     }
 
+    let mut verified = false;
     for _ in 0..8 {
         let poll = driver.pump_update(now_millis());
         match poll.event {
-            Some(Event::UpdateVerified) => break,
+            Some(Event::UpdateVerified) => {
+                verified = true;
+                break;
+            }
             Some(event) => {
                 pw_log::error!("ORCH: the update pump gave up on the job");
                 core.dispatch(driver, event);
@@ -436,6 +440,11 @@ fn accept_update(core: &mut Core, driver: &mut Driver, candidate_len: u64) -> bo
             }
             None => {}
         }
+    }
+
+    if !verified {
+        pw_log::error!("ORCH: the pump never produced UpdateVerified");
+        return false;
     }
 
     if !ROT_AUTHENTICATED.load(Ordering::Relaxed) {
@@ -513,7 +522,7 @@ fn run(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
             }
             FdStatus::ActivationPending => {
                 if !activate(core, driver, fd) {
-                    return true;
+                    return false;
                 }
                 return true;
             }
@@ -609,8 +618,7 @@ fn command(
     start: impl FnOnce(&mut Fd) -> Result<(), ClientError>,
 ) -> bool {
     if start(fd).is_err() {
-        pw_log::error!("ORCH: could not send a command");
-        let _ = name;
+        pw_log::error!("ORCH: could not send {}", name);
         return false;
     }
     match settle(fd) {

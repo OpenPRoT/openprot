@@ -152,7 +152,9 @@ impl Awaiting {
             Awaiting::Verify => FdStatus::VerifyPending,
             Awaiting::Apply => FdStatus::ApplyPending,
             Awaiting::Activation => FdStatus::ActivationPending,
-            // The phase and result code the device already sent the agent.
+            // All report_failure() callers are in verify today, so phase
+            // 0 is correct. If a non-verify caller appears, this needs a
+            // field on Awaiting::Failed.
             Awaiting::Failed => FdStatus::PhaseFailed {
                 phase: 0,
                 result_code: 1,
@@ -492,10 +494,19 @@ impl FdOps for QemuFdOps {
         _component: &FirmwareComponent,
     ) -> Result<TransferResult, FdOpsError> {
         let done = self.bytes_received.get();
-        if offset != done {
+        if offset < done {
             // A retry re-delivers a window already staged. Accepting it
             // without rewriting keeps the cursor honest.
             return Ok(TransferResult::TransferSuccess);
+        }
+        if offset > done {
+            self.corrupt.set(true);
+            pw_log::error!(
+                "FD: gap at offset {}, expected {}",
+                offset as u32,
+                done as u32
+            );
+            return Ok(TransferResult::FdAbortedTransfer);
         }
         if offset + data.len() > IMAGE_SIZE {
             self.corrupt.set(true);

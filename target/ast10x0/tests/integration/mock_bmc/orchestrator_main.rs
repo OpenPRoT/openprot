@@ -405,7 +405,9 @@ fn run() -> Result<(), ()> {
         let poll = driver.poll_boot_walks(now_millis());
         if let Some(event) = poll.event {
             match event {
-                Event::Booted(_) | Event::ComponentReady(_) => booted = true,
+                Event::Booted(_) => booted = true,
+                // Released speculatively; not boot proof.
+                Event::ComponentReady(_) => {}
                 Event::BootFailed { checkpoint, .. } => {
                     pw_log::error!("device failed at checkpoint {}", checkpoint as &str);
                 }
