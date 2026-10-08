@@ -1,0 +1,32 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
+load(":apps.bzl", "APPS", "FLASH", "SYSTEM_CONFIG", "TARGET_DEPS", "TARGET_SRC")
+
+package(default_visibility = ["//target/ast10x0/tests/integration:__subpackages__"])
+
+filegroup(
+    name = "system_config",
+    srcs = ["system.json5"],
+)
+
+exports_files([
+    "target.rs",
+    "orchestrator_main.rs",
+])
+
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/full_update:full_update_qemu_test
+qemu_scenario(
+    name = "full_update_qemu",
+    apps = APPS,
+    cfgs = ["rot_owns_verdict"],
+    flash = dict(
+        FLASH,
+        cs1_expect = "//target/ast10x0/tests/integration/pldm_update:staged_image",
+        cs1_expect_offset = 0x100000,
+    ),
+    system_config = SYSTEM_CONFIG,
+    target_deps = TARGET_DEPS,
+    target_src = TARGET_SRC,
+)

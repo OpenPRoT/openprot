@@ -722,7 +722,18 @@ fn entry() {
     let completed =
         fd_ops.image_is_good() && fd_ops.activated.get() && fd_ops.orchestrator_consented();
 
-    if verdict(&fd_ops, completed) {
+    // A scenario whose claim is about the device alone ends here. One
+    // whose claim is about what the RoT did with the device cannot: this
+    // app sees its own PLDM flow finish and nothing of the reset that
+    // follows, so it would report success while the RoT was still
+    // waiting.
+    if cfg!(rot_owns_verdict) {
+        if verdict(&fd_ops, completed) {
+            pw_log::info!("FD: the device's own flow is done");
+        } else {
+            pw_log::error!("FD: the device's own flow did not complete");
+        }
+    } else if verdict(&fd_ops, completed) {
         let _ = syscall::debug_shutdown(Ok(()));
     } else {
         let _ = syscall::debug_shutdown(Err(Error::Internal));

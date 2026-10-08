@@ -3,18 +3,16 @@
 Written 2026-10-05. The scenarios and how to run them are in README.md;
 this is the list of what a green run still does not say.
 
-## The two halves have not met
+## The two halves have met, in one scenario
 
-The boot scenario has the reset and boot-worked lines but no PLDM. The
-update scenario has the full PLDM path but no managed device, so its
-`BootConfirmed` is a stand-in for a device coming back rather than one
-that was watched coming back. Nothing yet runs an update and then sees
-the device reboot into it.
+`full_update` closes this: five apps in one image, an update over PLDM
+followed by the device being reset into it and reporting ready a second
+time. Checked against its negative, a device that stops reporting after
+the post-activation reset.
 
-Merging the two images is the next piece of work and the one the demo
-script needs: the agent offers an image over PLDM, the RoT stages it,
-activates, resets the device, the device reports ready, the floor
-commits.
+What that scenario still does not do is carry the negatives. `mock_bmc`
+and `pldm_update` keep theirs, and `full_update` has none of its own as a
+target yet.
 
 ## The lines are IPC channels, not GPIOs
 
@@ -41,22 +39,28 @@ checks the latter.
   activated-but-not-committed window.
 - Recovery preempting an update: `Updating` to `Recovering`, with the
   staged image discarded.
-- The re-walk after an activation. It happens, since `UpdateVerified`
-  enters `PreSupervision`, but nothing asserts the device was reset into
-  the image it just activated.
 - The spare slot re-sync after a commit, and the floor advance held until
   the spare has the image.
 
 ## Assertions that are looser than they look
 
-`handle_activated` checks the machine is back in `Ready`. Since
-`UpdateVerified` enters `PreSupervision`, the path back to `Ready` runs
-through verification, and the stub verifier passes synchronously, so the
-check would hold even if no boot walk were ever polled. The boot scenario
-had the same shape before its negative case caught it: a green that does
-not depend on the thing being tested.
+`pldm_update` has no managed device, so its `BootConfirmed` is a
+stand-in: it is dispatched once the activation is acknowledged, not once
+anything booted. `full_update` is where that claim is actually tested.
+
+The same scenario checks the machine is back in `Ready` after the update.
+Since `UpdateVerified` enters `PreSupervision`, the path back to `Ready`
+runs through verification, and the stub verifier passes synchronously, so
+that check would hold even with no boot walk ever polled.
 
 ## Known weaknesses in the test apps
+
+- In `full_update` the RoT owns the sentinel, so a firmware-device failure
+  after the activation is acknowledged shows in the log but does not fail
+  the run. The orchestrator's own path covers the cases that matter today,
+  because every step needs the device's acknowledgement and a missing one
+  times out, and the host checks CS1 afterwards. It does not cover the
+  device's consent flags.
 
 - The RoT's own verifier reads the staging region, which in this scenario
   is a synthetic pattern rather than the bytes the device actually staged.
@@ -84,3 +88,6 @@ not depend on the thing being tested.
   with no panic and no warning.
 - An app that is misaligned or oversized still builds; the only sign is a
   PMSAv7 subregion overlap warning on the console.
+- Whichever app owns the sentinel decides the run. `full_update` passed
+  while the device never rebooted, because the firmware device was still
+  declaring the verdict and its own flow had finished.
