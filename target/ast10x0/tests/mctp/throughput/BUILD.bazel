@@ -1,0 +1,191 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app")
+load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
+load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH", "system_image_test")
+
+# MCTP-over-I2C throughput between two physical AST1060 EVBs (Bus 2 wired
+# bus-to-bus), using the echo apps. Card A runs a passive echo responder; card B
+# (the "requester" image) runs the requester that times round trips.
+#
+# On each card the I2C driver and the MCTP server live in ONE process
+# (`mctp_i2c_server`), so MCTP packets reach the bus without an I2C IPC hop.
+# The echo app is a separate process talking to that server over IPC.
+
+filegroup(
+    name = "system_config",
+    srcs = ["system.json5"],
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "requester_system_config",
+    srcs = ["requester_system.json5"],
+    visibility = ["//visibility:public"],
+)
+
+target_codegen(
+    name = "codegen",
+    arch = "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+    system_config = ":system_config",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    template = "//target/ast10x0:linker_script_template",
+)
+
+rust_binary(
+    name = "target",
+    srcs = ["target.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":codegen",
+        ":linker_script",
+        "//target/ast10x0:entry",
+        "//target/ast10x0/board:ast10x0_board",
+        "//target/ast10x0/peripherals",
+        "@ast1060_pac",
+        "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/subsys/console:console_backend",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_kernel/userspace",
+    ],
+)
+
+SERVER_DEPS = [
+    "//services/i2c/api:i2c_api",
+    "//services/mctp/api:mctp_api",
+    "//services/mctp/server:mctp_server_lib",
+    "//services/mctp/transport-i2c:mctp_transport_i2c",
+    "//target/ast10x0/backend/i2c:i2c_backend_ast10x0",
+    "//target/ast10x0/peripherals",
+    "@pigweed//pw_kernel/syscall:syscall_user",
+    "@pigweed//pw_kernel/userspace",
+    "@pigweed//pw_log/rust:pw_log",
+    "@pigweed//pw_status/rust:pw_status",
+    "@rust_crates//:embedded-hal",
+    "@rust_crates//:mctp",
+    "@rust_crates//:mctp-lib",
+]
+
+rust_app(
+    name = "mctp_i2c_server",
+    srcs = [
+        "server_common.rs",
+        "server_main.rs",
+    ],
+    codegen_crate_name = "app_mctp_i2c_server",
+    crate_root = "server_main.rs",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = SERVER_DEPS,
+)
+
+rust_app(
+    name = "mctp_i2c_server_peer",
+    srcs = [
+        "server_common.rs",
+        "server_main_peer.rs",
+    ],
+    codegen_crate_name = "app_mctp_i2c_server_peer",
+    crate_root = "server_main_peer.rs",
+    edition = "2024",
+    system_config = ":requester_system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = SERVER_DEPS,
+)
+
+rust_app(
+    name = "mctp_echo_client",
+    srcs = ["echo_responder_main.rs"],
+    codegen_crate_name = "app_mctp_echo_client",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//services/mctp/api:mctp_api",
+        "//services/mctp/client-ipc:mctp_client_ipc",
+        "//services/mctp/echo:mctp_echo",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)
+
+rust_app(
+    name = "mctp_echo_client_peer",
+    srcs = ["throughput_main.rs"],
+    codegen_crate_name = "app_mctp_echo_client_peer",
+    edition = "2024",
+    system_config = ":requester_system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//services/mctp/api:mctp_api",
+        "//services/mctp/client-ipc:mctp_client_ipc",
+        "//services/mctp/echo:mctp_echo",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
+system_image(
+    name = "throughput_responder_image",
+    apps = [
+        ":mctp_i2c_server",
+        ":mctp_echo_client",
+    ],
+    kernel = ":target",
+    platform = "//target/ast10x0",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+)
+
+system_image(
+    name = "throughput_requester_image",
+    apps = [
+        ":mctp_i2c_server_peer",
+        ":mctp_echo_client_peer",
+    ],
+    kernel = ":target",
+    platform = "//target/ast10x0",
+    system_config = ":requester_system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+)
+
+# `slave_image` is flashed first so the responder is listening before the
+# requester boots. Passes when the requester completes every round trip.
+system_image_test(
+    name = "mctp_throughput_test",
+    timeout = "long",
+    image = ":throughput_requester_image",
+    slave_image = ":throughput_responder_image",
+    tags = [
+        "hardware",
+        "manual",
+    ],
+    target_compatible_with = select({
+        "//target/ast10x0:qemu_enabled": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)
