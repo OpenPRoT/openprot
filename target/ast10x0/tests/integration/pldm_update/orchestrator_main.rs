@@ -279,7 +279,7 @@ impl ByteSource for PatternStaging {
 /// The RoT's own check of the staged candidate.
 ///
 /// Signature checking belongs to the crypto service and is stubbed until
-/// after the demo, so this reads the staging region and compares it with the
+/// the service exists, so this reads the staging region and compares it with the
 /// pattern the update agent is expected to have sent. That makes the RoT's
 /// verdict depend on the bytes rather than on nothing, which is what keeps
 /// the authenticated path from passing vacuously.

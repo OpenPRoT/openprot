@@ -62,7 +62,7 @@ const UA_EID: u8 = 42;
 /// The firmware device's EID, matching the bus's other side.
 const FD_EID: u8 = 8;
 
-/// Size of the demo image, in bytes. Must match the firmware device's.
+/// Size of the test image, in bytes. Must match the firmware device's.
 const IMAGE_SIZE: u32 = 1024;
 
 /// The UUID this agent expects the firmware device to report. It only updates
@@ -114,7 +114,7 @@ const MAX_SERVED_REQUESTS: u32 = 64;
 
 const UA_BUF_SIZE: usize = 1024;
 
-/// The byte the demo image carries at `offset`. The firmware device generates
+/// The byte the test image carries at `offset`. The firmware device generates
 /// the same sequence and rejects anything that does not match.
 fn expected_byte(offset: usize) -> u8 {
     (offset % 251) as u8
