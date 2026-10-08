@@ -25,6 +25,8 @@ import tomllib
 from pathlib import Path
 
 AST1060_EVB_PI_HOST = "AST1060_EVB_PI_HOST"
+AST10X0_REBOOT_FROM_FLASH = "AST10X0_REBOOT_FROM_FLASH"
+AST10X0_SLAVE_STAGES_TO_FLASH = "AST10X0_SLAVE_STAGES_TO_FLASH"
 
 # ── pw_tokenizer discovery ────────────────────────────────────────────────────
 # When run as a Bazel py_binary, pw_tokenizer is already on sys.path via deps.
@@ -338,6 +340,8 @@ def _run_remote(
     )
     if args.parse_only:
         remote_cmd += " --stream-only"
+    if os.environ.get(AST10X0_REBOOT_FROM_FLASH):
+        remote_cmd += " --reboot-from-flash"
     if remote_slave_fw:
         device_b = config["device_b"]
         remote_cmd += (
@@ -346,6 +350,11 @@ def _run_remote(
             f" --slave-srst-pin {device_b['srst_pin']}"
             f" --slave-fwspick-pin {device_b['fwspick_pin']}"
         )
+        reset_passthrough_pin = gpio.get("reset_passthrough_pin")
+        if reset_passthrough_pin is not None:
+            remote_cmd += f" --reset-passthrough-pin {reset_passthrough_pin}"
+        if os.environ.get(AST10X0_SLAVE_STAGES_TO_FLASH):
+            remote_cmd += " --slave-stages-to-flash"
 
     proc = _ssh_stream(host, remote_cmd)
     try:
@@ -434,11 +443,17 @@ def main() -> int:
     # that file is how we enter paired mode without any extra CLI arguments.
     args.slave_firmware = None
     slave_elf_path = None
+    token_elf_paths = []
     if not image.suffix:
         slave_symlink = image.parent / (image.name + ".slave.elf")
         if slave_symlink.exists():
             slave_elf_path = slave_symlink.resolve()
             args.slave_firmware = str(slave_elf_path.with_suffix(".bin"))
+        # <name>.tokensN.elf are never uploaded; they only widen the
+        # detokenizer so logs from a payload image are readable too.
+        token_elf_paths = [
+            p.resolve() for p in sorted(image.parent.glob(image.name + ".tokens*.elf"))
+        ]
         image = image.resolve()
         args.firmware = str(image.with_suffix(".bin"))
     else:
@@ -452,7 +467,7 @@ def main() -> int:
     args.pi_host = os.environ.get(AST1060_EVB_PI_HOST) or args.pi_host
 
     runner = Path(__file__).parent / "pi_test_runner.py"
-    monitor = UartMonitor(args, elf_path, slave_elf_path)
+    monitor = UartMonitor(args, elf_path, slave_elf_path, *token_elf_paths)
 
     signal.signal(signal.SIGINT, lambda s, f: sys.exit(130))
 

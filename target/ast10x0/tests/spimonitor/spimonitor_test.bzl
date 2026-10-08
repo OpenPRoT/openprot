@@ -93,6 +93,17 @@ def spimonitor_setup_all(target_compatible_with):
         visibility = ["//visibility:public"],
     )
 
+    system_image_test(
+        name = "setup_all_spim_evb_test",
+        image = ":setup_all_spim_image",
+        tags = ["hardware"],
+        target_compatible_with = select({
+            "//target/ast10x0:qemu_enabled": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+        visibility = ["//visibility:public"],
+    )
+
     rust_binary_no_panics_test(
         name = "setup_all_spim_no_panics_test",
         binary = ":setup_all_spim_image",

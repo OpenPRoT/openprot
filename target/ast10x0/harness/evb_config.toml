@@ -4,6 +4,10 @@
 [gpio]
 srst_pin = 23
 fwspick_pin = 18
+# GPIOJ0 on device A -> this Pi BCM pin: device A requests a plain reset of
+# device B by driving this line high, since only the Pi can toggle a board's
+# srst_pin directly.
+reset_passthrough_pin = 8
 
 [uart]
 serial_port = "/dev/ttyUSB0"

@@ -62,11 +62,6 @@ impl<C: I2c<u8>> mctp_lib::Sender for I2cSender<C> {
         let addr = self.remote_addr;
         let encoder = MctpI2cEncap::new(self.own_addr);
         let mtu = self.get_mtu();
-        pw_log::info!(
-            "Starting fragmentation: MTU=0x{:04x}, buffer size=0x{:04x}",
-            mtu as u32,
-            mctp_lib::serial::MTU_MAX as u32
-        );
 
         loop {
             let mut pkt = [0u8; MCTP_I2C_MAXMTU + 4]; // MTU + MCTP transport header
@@ -114,10 +109,7 @@ impl<C: I2c<u8>> mctp_lib::Sender for I2cSender<C> {
                     }
                     pw_log::info!("packet sent");
                 }
-                mctp_lib::fragment::SendOutput::Complete { tag, .. } => {
-                    pw_log::info!("complete");
-                    break Ok(tag);
-                }
+                mctp_lib::fragment::SendOutput::Complete { tag, .. } => break Ok(tag),
                 mctp_lib::fragment::SendOutput::Error { err, .. } => {
                     let err_code: u8 = match err {
                         mctp::Error::TxFailure => 0,

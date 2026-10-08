@@ -173,11 +173,9 @@ where
                                 );
                             }
                         },
-                        Ok(None) => {
-                            pw_log::debug!(
-                                "slave IRQ fired but no data ready — spurious or non-data event"
-                            );
-                        }
+                        // No slave event: the shared IRQ line was held up by the master
+                        // half, which the driver already cleared. Real faults log there.
+                        Ok(None) => {}
                         Err(_) => {
                             pw_log::error!("try_next_slave_event failed");
                         }

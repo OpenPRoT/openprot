@@ -24,11 +24,29 @@ pub const fn covers<T: Mmap>(start: usize, len: usize) -> bool {
     start >= T::START && T::LEN >= len && start - T::START <= T::LEN - len
 }
 
+/// Stand-in for a window a driver takes but its configuration never uses.
+///
+/// Zero length, so `covers` rejects every range and a driver that does reach
+/// for it fails its const check instead of touching an address it was not given.
+pub struct Unmapped;
+
+impl Mmap for Unmapped {
+    const START: usize = 0;
+    const LEN: usize = 0;
+}
+
 /// Exclusive ownership of the region described by `T`.
 ///
 /// Move-only, so handing it to a driver transfers sole access and a second
 /// claim is a compile error rather than an aliasing hazard.
 pub struct Region<T: Mmap>(PhantomData<T>);
+
+impl Region<Unmapped> {
+    /// Safe because it grants nothing: `Unmapped` names no address range.
+    pub const fn unmapped() -> Self {
+        Self(PhantomData)
+    }
+}
 
 impl<T: Mmap> Region<T> {
     /// # Safety

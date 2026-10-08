@@ -169,6 +169,31 @@ pub fn apply_spim_external_mux(instance: SpiMonitorInstance, mux: ScuExtMuxSelec
     crate::delay_us(1_000);
 }
 
+/// Select this module's own flash mux without touching the board-level SGPIO
+/// select, which belongs to whichever chip owns the board mux.
+///
+/// A module whose clock and data reach the flash from the fixture still routes
+/// chip select through its local mux, so it must make that selection itself or
+/// the flash never sees CS assert.
+pub fn apply_spim_module_mux(instance: SpiMonitorInstance, mux: ScuExtMuxSelect) {
+    let high = matches!(mux, ScuExtMuxSelect::Mux1);
+    let gpio = unsafe { &*device::Gpio::ptr() };
+    match instance {
+        SpiMonitorInstance::Spim0 | SpiMonitorInstance::Spim1 => {
+            gpio.gpio000()
+                .modify(|r, w| unsafe { w.bits(update_bit(r.bits(), 1 << 12, high)) });
+            gpio.gpio004()
+                .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 12)) });
+        }
+        SpiMonitorInstance::Spim2 | SpiMonitorInstance::Spim3 => {
+            gpio.gpio020()
+                .modify(|r, w| unsafe { w.bits(update_bit(r.bits(), 1 << 8, high)) });
+            gpio.gpio024()
+                .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 8)) });
+        }
+    }
+}
+
 /// Read back the board-level external mux selection.
 #[must_use]
 pub fn spim_external_mux_state(instance: SpiMonitorInstance) -> Option<ScuExtMuxSelect> {

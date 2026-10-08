@@ -1,0 +1,19 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 mock-BMC bootstrap: kernel-only, carrying the real pldm_ua image as a
+// data payload. The payload alone is ~516 KiB, so RAM has to sit above it
+// instead of at the usual 0x40000.
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,
+    },
+    kernel: {
+        flash_start_address: 0x00000500,
+        flash_size_bytes: 0x8db00,        // payload + code, ends at 0x0008E000
+        ram_start_address: 0x0008e000,
+        ram_size_bytes: 0x12000,          // ends at RAM_NC boundary (0x000A0000)
+    },
+}

@@ -440,6 +440,7 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
 
         // Check for errors first
         if (status & constants::AST_I2CS_PKT_ERROR) != 0 {
+            pw_log::warn!("i2c slave packet error, status {:#x}", status as u32);
             self.clear_slave_interrupts();
             return None;
         }
@@ -602,6 +603,7 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
             }
             // TODO byte slave sts
         }
+        pw_log::warn!("i2c slave unhandled status {:#x}", status as u32);
         None
     }
 }

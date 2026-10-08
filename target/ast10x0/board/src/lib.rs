@@ -22,9 +22,9 @@ pub mod spim_wiring;
 pub use board::Pins;
 pub use spi_monitor::Ast1060SpiMonitor;
 pub use spim_wiring::{
-    apply_spim_external_mux, apply_spim_pinctrl, apply_spim_wiring, apply_spim_wiring_with_log,
-    bmc_spim_csin_levels, bmc_spim_path_debug, enable_flash_power, presets,
-    release_spi_flash_resets, set_bmc_resets, spim_external_mux_state, BmcSpimPathDebug,
+    apply_spim_external_mux, apply_spim_module_mux, apply_spim_pinctrl, apply_spim_wiring,
+    apply_spim_wiring_with_log, bmc_spim_csin_levels, bmc_spim_path_debug, enable_flash_power,
+    presets, release_spi_flash_resets, set_bmc_resets, spim_external_mux_state, BmcSpimPathDebug,
     SpimWiring, SpimWiringError,
 };
 

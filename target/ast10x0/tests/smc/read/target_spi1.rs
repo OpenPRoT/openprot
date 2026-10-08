@@ -55,6 +55,22 @@ fn config_spi1_master_controller() -> Result<(), SmcError> {
     Ok(())
 }
 
+fn smc_error_str(e: SmcError) -> &'static str {
+    match e {
+        SmcError::HardwareError => "HardwareError",
+        SmcError::Timeout => "Timeout",
+        SmcError::DmaAborted => "DmaAborted",
+        SmcError::DmaLengthMismatch => "DmaLengthMismatch",
+        SmcError::InvalidChipSelect => "InvalidChipSelect",
+        SmcError::InvalidCapacity => "InvalidCapacity",
+        SmcError::DeviceNotSupported => "DeviceNotSupported",
+        SmcError::WriteProtected => "WriteProtected",
+        SmcError::WriteInProgress => "WriteInProgress",
+        SmcError::ControllerNotReady => "ControllerNotReady",
+        SmcError::DmaNotEnabled => "DmaNotEnabled",
+    }
+}
+
 fn run_spi1_read_test() -> Result<(), SmcError> {
     config_spi1_master_controller()?;
 
@@ -123,10 +139,12 @@ impl TargetInterface for Target {
     const NAME: &'static str = "AST10x0 SMC SPI1 read Test";
 
     fn main() -> ! {
-        let sentinel = if run_spi1_read_test().is_ok() {
-            b"TEST_RESULT:PASS\n"
-        } else {
-            b"TEST_RESULT:FAIL\n"
+        let sentinel = match run_spi1_read_test() {
+            Ok(()) => b"TEST_RESULT:PASS\n",
+            Err(e) => {
+                pw_log::error!("SPI1 read test failed: {}", smc_error_str(e) as &str);
+                b"TEST_RESULT:FAIL\n"
+            }
         };
         let _ = console_backend_write_all(sentinel);
 

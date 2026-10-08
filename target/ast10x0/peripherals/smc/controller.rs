@@ -727,12 +727,6 @@ impl Cs<'_> {
     pub fn read(&self, offset: u32, buf: &mut [u8]) -> Result<usize, SmcError> {
         let offset = validate_mapped_range(offset, buf.len(), self.capacity_bytes())?;
         let flash_ptr = (self.window_base as *const u8).wrapping_add(offset);
-        pw_log::debug!(
-            "read: offset0x{:08x}, size:0x{:08x}, flash ptr:0x{:08x}",
-            offset as u32,
-            buf.len() as u32,
-            flash_ptr as u32
-        );
         // SAFETY: `flash_ptr` is derived from the controller's fixed MMIO flash
         // window via `wrapping_add`; the validated `[offset, offset + buf.len())`
         // range lies within this chip's mapped aperture, and `buf` is a valid,

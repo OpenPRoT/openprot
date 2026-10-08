@@ -1,12 +1,12 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-// AST10x0 PLDM firmware-update test, RoT side (card A, the Firmware Device).
+// AST10x0 PLDM firmware-update test, RoT side (the Firmware Device).
 //
 // Multi-app configuration:
 // - i2c_server: owns i2c hardware and runs i2c_server_runtime
 // - mctp_server: uses i2c transport over IPC + serves MCTP control channel
-// - pldm_fd: runs the PLDM Firmware Device against the update agent on card B
+// - pldm_fd: runs the PLDM Firmware Device against the update agent on the mock BMC
 {
     arch: {
         type: "armv7m",
@@ -115,32 +115,35 @@
                         },
                     ],
                     memory_mappings: [
-                        // FMC pinctrl is applied by the kernel target's
-                        // pre-task init, so this app does not map the SCU.
+                        // SPI1 pinctrl and the SPIM0 route to the staging flash are
+                        // applied by the kernel target's pre-task init; this app maps
+                        // the SCU only to hand that route over to the mock BMC.
                         {
-                            // FMC controller registers.
-                            name: "fmc_regs",
+                            // SPI1 controller registers.
+                            name: "spi1_regs",
                             type: "device",
-                            start_address: 0x7e620000,
+                            start_address: 0x7e630000,
                             size_bytes: 0x1000,
                         },
                         {
-                            // FMC CS0 boot flash, 1 MiB on the AST1060. Mapped
-                            // because init resolves geometry and runs timing
-                            // calibration against every configured chip select,
-                            // not just the one this app uses.
-                            name: "fmc_cs0_window",
+                            // SPI1 CS0 memory-mapped flash read window (64 MiB);
+                            // the staging flash the BMC can also read.
+                            name: "spi1_cs0_window",
                             type: "device",
-                            start_address: 0x80000000,
-                            size_bytes: 0x100000,
+                            start_address: 0x90000000,
+                            size_bytes: 0x04000000,
                         },
                         {
-                            // FMC CS1 memory-mapped flash read window (64 MiB);
-                            // the image lands here.
-                            name: "fmc_cs1_window",
+                            name: "gpio_regs",
                             type: "device",
-                            start_address: 0x88000000,
-                            size_bytes: 0x04000000,
+                            start_address: 0x7e780000,
+                            size_bytes: 0x1000,
+                        },
+                        {
+                            name: "scu_regs",
+                            type: "device",
+                            start_address: 0x7e6e2000,
+                            size_bytes: 0x1000,
                         },
                     ],
                 },
