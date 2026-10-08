@@ -1,0 +1,24 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# The update scenario with a retry in the middle of the transfer: the
+# agent answers one RequestFirmwareData with RetryRequestFwData.
+#
+# Not a negative. The device has to wait out FD_T2, ask for the same
+# window again, and finish the update. It is here because nothing else
+# makes the device request a window twice, and the re-delivery branch in
+# the device's download callback had no caller.
+
+load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
+load("//target/ast10x0/tests/integration/pldm_update:apps.bzl", "APPS", "FLASH", "SYSTEM_CONFIG", "TARGET_DEPS", "TARGET_SRC")
+
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/pldm_update/retry_chunk:retry_chunk_qemu_test
+qemu_scenario(
+    name = "retry_chunk_qemu",
+    apps = APPS,
+    cfgs = ["retry_chunk"],
+    flash = FLASH,
+    system_config = SYSTEM_CONFIG,
+    target_deps = TARGET_DEPS,
+    target_src = TARGET_SRC,
+)

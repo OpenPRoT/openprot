@@ -7,20 +7,21 @@ app in the same image, reached through the same traits a real board wires.
 The runner greps one pass/fail sentinel per run, so one scenario per image
 is what lets a failure name itself.
 
-Three of the eleven are the thing working. Seven are the thing
-failing, and they pass when the failure is caught. The eleventh is the
-agent withdrawing the update, which is neither: nothing failed and
-nothing was installed. A scenario that only
-ever passes proves nothing: the first version of the boot scenario passed
-with the device wedged, because it asserted the wrong thing. Each negative
-also names the failure it arranged, so a run that died of something else
-fails rather than looking like the proof.
+Four of the twelve are the thing working. Seven are the thing failing,
+and they pass when the failure is caught. The twelfth is the agent
+withdrawing the update, which is neither: nothing failed and nothing was
+installed. A scenario that only ever passes proves nothing: the first
+version of the boot scenario passed with the device wedged, because it
+asserted the wrong thing. Each negative also names the failure it
+arranged, so a run that died of something else fails rather than looking
+like the proof.
 
 | Scenario | What it arranges | Passes when |
 | --- | --- | --- |
 | `mock_downstream_device` | the device boots | the walk completes |
 | `mock_downstream_device/device_hangs` | the device never reports | the platform locks |
 | `pldm_update` | a clean update | the update commits |
+| `pldm_update/retry_chunk` | the agent answers one data request with a retry | the device asks for that window again and the update completes |
 | `pldm_update/corrupt_image` | one byte of the image is flipped | the device catches it |
 | `pldm_update/refused_update` | the RoT refuses the request | nothing is activated |
 | `pldm_update/transfer_error` | the agent errors on one data request | the device aborts the transfer |
@@ -46,6 +47,9 @@ One scenario at a time, with the console:
 
     bazel test --config=virt_ast10x0 --test_output=all \
         //target/ast10x0/tests/integration/pldm_update:pldm_update_qemu_test
+
+    bazel test --config=virt_ast10x0 --test_output=all \
+        //target/ast10x0/tests/integration/pldm_update/retry_chunk:retry_chunk_qemu_test
 
 The negatives, same shape:
 

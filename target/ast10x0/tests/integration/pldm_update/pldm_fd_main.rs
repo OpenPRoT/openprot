@@ -34,7 +34,7 @@ use pldm_common::message::firmware_update::verify_complete::VerifyResult;
 use pldm_common::protocol::base::PldmBaseCompletionCode;
 use pldm_common::protocol::firmware_update::{
     ComponentActivationMethods, ComponentClassification, ComponentParameterEntry,
-    ComponentResponseCode, Descriptor, DescriptorType, FirmwareDeviceCapability,
+    ComponentResponseCode, Descriptor, DescriptorType, FirmwareDeviceCapability, PldmFdTime,
     PldmFirmwareString, PldmFirmwareVersion,
 };
 use pldm_common::util::fw_component::FirmwareComponent;
@@ -669,6 +669,13 @@ impl FdOps for QemuFdOps {
         }
         Ok(())
     }
+
+    /// The device's clock, which every FD timer is measured against. The
+    /// trait's default returns a constant, so without this the FD_T1 and
+    /// FD_T2 windows never elapse and a retry never comes.
+    fn now(&self) -> PldmFdTime {
+        SystemClock::now().ticks() * 1000 / SystemClock::TICKS_PER_SEC
+    }
 }
 
 /// Brings up the FMC and erases the sector the image lands in.
@@ -781,7 +788,8 @@ fn entry() {
     refused_update,
     transfer_error,
     cancel_mid_transfer,
-    offer_before_supervising
+    offer_before_supervising,
+    retry_chunk
 )))]
 fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
     if completed {
@@ -848,6 +856,33 @@ fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
         return false;
     }
     pw_log::info!("FD: the cancel was acknowledged and nothing was activated");
+    true
+}
+
+/// The agent answered one RequestFirmwareData with RetryRequestFwData, so
+/// the update must still have gone through.
+#[cfg(retry_chunk)]
+fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
+    // One more request than delivery: the retried window is asked for
+    // twice and answered with data once.
+    let requested = fd_ops.chunks_requested.get();
+    let received = fd_ops.chunks_received.get();
+    if requested != received + 1 {
+        pw_log::error!(
+            "FD: {} chunks asked for and {} received, so no window was requested twice",
+            requested as u32,
+            received as u32
+        );
+        return false;
+    }
+    if !completed {
+        pw_log::error!("FD: the retry was asked for and the update did not complete");
+        return false;
+    }
+    pw_log::info!(
+        "FD: one window was requested twice and the update completed, {} chunks in all",
+        requested as u32
+    );
     true
 }
 
