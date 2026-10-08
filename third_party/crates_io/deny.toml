@@ -24,6 +24,7 @@ allow = [
     "Unicode-3.0",
     "CC0-1.0",
     "Zlib",
+    "BlueOak-1.0.0",
 ]
 
 
