@@ -56,6 +56,17 @@ parts of the specification are not exercised:
   that is the update agent, the reset target and the progress reporter at
   once. Here those are two apps, and progress arrives on an IPC channel.
 
+## What the transfer-error scenario does not say
+
+`pldm_update/transfer_error` has the agent answer one RequestFirmwareData
+with an error completion code. The device aborts the transfer, which is the
+claim. Two things it does not cover: a dropped response rather than an
+errored one, which would be a T2 retry and then a T1 timeout, and
+`RetryRequestFwData`, which the device is supposed to answer by asking
+again. The run also ends with `run_terminus` returning an error rather than
+the device going back to idle, so what a second update attempt after an
+abort would do is untested.
+
 ## Arcs of the update state machine with no scenario
 
 - Cancel mid-transfer. The agent's `CancelUpdate` and the `AckCancel` that
