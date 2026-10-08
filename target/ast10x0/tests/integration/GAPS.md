@@ -31,10 +31,10 @@ checks the latter.
 
 ## Parts of the DSP0267 Type 5 flow with no scenario
 
-`full_update` covers the happy path: inventory, request, pass-component,
-update-component, the data loop, transfer, verify, apply, activate, reset,
-and the device booting what it was given. The following parts of the
-specification are not exercised:
+`full_update` covers the happy path: Type 0 discovery, inventory, request,
+pass-component, update-component, the data loop, transfer, verify, apply,
+activate, reset, and the device booting what it was given. The following
+parts of the specification are not exercised:
 
 - Automatic activation without ActivateFirmware. The device advertises
   self-contained activation and the agent sends ActivateFirmware. A flow
@@ -44,10 +44,6 @@ specification are not exercised:
 - The pending-reset handshake: a pending reset signal to the device, the
   device preparing for shutdown, and an acknowledgement. This exists
   nowhere, not in DSP0267, not in pldm-lib, not in the orchestrator.
-- Type 0 terminus discovery: GetPLDMTypes, GetPLDMVersion above 1.2, and
-  GetPLDMCommands covering inventory and update. The device answers these
-  already, through the control context in pldm-lib, so this is an addition
-  to the agent in the test.
 - Authenticating the running image before the first release. The verifier
   reads nothing and the device table carries no layout, so the first boot
   is unverified. Doing it for real means two processes mapping the FMC,
