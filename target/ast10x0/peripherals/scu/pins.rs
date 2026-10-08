@@ -65,6 +65,7 @@ openprot_hal::pins! {
     scu414_31 { I2cSda: &[set(0x414, 31)] => I2cData { ctrl: I2C_CTRL[1] }, Gpio: &[clear(0x414, 31)] => GpioData { bit: 31, map: &EFGH } },
     scu418_0 { I2cScl: &[set(0x418, 0)] => I2cData { ctrl: I2C_CTRL[2] }, Gpio: &[clear(0x418, 0)] => GpioData { bit: 0, map: &IJKL } },
     scu418_1 { I2cSda: &[set(0x418, 1)] => I2cData { ctrl: I2C_CTRL[2] }, Gpio: &[clear(0x418, 1)] => GpioData { bit: 1, map: &IJKL } },
+    scu418_8 { Gpio: &[clear(0x418, 8), clear(0x4b8, 8)] => GpioData { bit: 8, map: &IJKL } },
 
     scu410_0 { Gpio: &[clear(0x410, 0), clear(0x4b0, 0), clear(0x690, 0)] => GpioData { bit: 0, map: &ABCD } },
     scu410_1 { Gpio: &[clear(0x410, 1), clear(0x4b0, 1), clear(0x690, 1)] => GpioData { bit: 1, map: &ABCD } },
