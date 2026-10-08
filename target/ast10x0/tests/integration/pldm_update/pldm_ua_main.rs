@@ -47,7 +47,9 @@ use pldm_common::message::firmware_update::request_fw_data::{
     RequestFirmwareDataRequest, RequestFirmwareDataResponse, MAX_TRANSFER_SIZE,
 };
 use pldm_common::message::firmware_update::request_update::RequestUpdateRequest;
-use pldm_common::message::firmware_update::transfer_complete::TransferCompleteResponse;
+use pldm_common::message::firmware_update::transfer_complete::{
+    TransferCompleteRequest, TransferCompleteResponse, TransferResult,
+};
 use pldm_common::message::firmware_update::update_component::UpdateComponentRequest;
 use pldm_common::message::firmware_update::verify_complete::VerifyCompleteResponse;
 use pldm_common::protocol::base::{
@@ -103,6 +105,22 @@ fn corrupted(offset: usize, byte: u8) -> u8 {
     } else {
         byte
     }
+}
+
+/// Whether the agent answers this chunk with an error instead of data.
+/// `None` everywhere except in the scenario that arranges one.
+#[cfg(not(transfer_error))]
+fn chunk_error(_chunk: u32) -> Option<u8> {
+    None
+}
+
+/// The chunk the agent refuses, and with what. Not the first: the device
+/// has to have a transfer running before it can abort one. The code is a
+/// plain error rather than `RetryRequestFwData`, which the device would
+/// answer by asking again.
+#[cfg(transfer_error)]
+fn chunk_error(chunk: u32) -> Option<u8> {
+    (chunk == 2).then_some(PldmBaseCompletionCode::Error as u8)
 }
 
 /// How many times the agent asks who is there before giving up. The device
@@ -162,16 +180,29 @@ fn fw_string(s: &str) -> PldmFirmwareString {
     }
 }
 
+/// What the agent learned while serving the device's requests.
+#[derive(Default)]
+struct Served {
+    /// The device reported the apply finished, which ends the serving loop.
+    apply_complete: Cell<bool>,
+    /// The device reported a transfer result other than success, so the
+    /// download ended on its terms and there is nothing to activate.
+    aborted: Cell<bool>,
+    /// Chunks answered so far, which is what the scenario that errors on
+    /// one of them counts.
+    chunks: Cell<u32>,
+}
+
 /// Answer one firmware-device-initiated request in place.
 ///
 /// `framed_buf[0]` is the MCTP type byte and the request occupies
 /// `framed_buf[1..req_total_len]`; the response is written back over
 /// `framed_buf[1..]`. Returns the total response length including the type
-/// byte, and sets `saw_apply_complete` once the device reports it is done.
+/// byte, and records in `served` what the device said.
 fn serve_fd_request(
     framed_buf: &mut [u8],
     req_total_len: usize,
-    saw_apply_complete: &Cell<bool>,
+    served: &Served,
 ) -> Result<usize, PldmServiceError> {
     let success = PldmBaseCompletionCode::Success as u8;
 
@@ -208,21 +239,46 @@ fn serve_fd_request(
                 pw_log::error!("UA: FD asked for {} bytes, over the MTU", length as u32);
                 return Ok(0);
             }
-            let mut chunk = [0u8; MAX_TRANSFER_SIZE];
-            for (i, byte) in chunk[..length].iter_mut().enumerate() {
-                *byte = corrupted(offset + i, expected_byte(offset + i));
+            served.chunks.set(served.chunks.get() + 1);
+            if let Some(code) = chunk_error(served.chunks.get()) {
+                pw_log::error!(
+                    "UA: answering chunk {} with cc={} instead of data",
+                    served.chunks.get() as u32,
+                    code as u32
+                );
+                let msg = RequestFirmwareDataResponse::new(instance_id, code, &[]);
+                PldmCodecWithLifetime::encode(&msg, resp)
+            } else {
+                let mut chunk = [0u8; MAX_TRANSFER_SIZE];
+                for (i, byte) in chunk[..length].iter_mut().enumerate() {
+                    *byte = corrupted(offset + i, expected_byte(offset + i));
+                }
+                let msg = RequestFirmwareDataResponse::new(instance_id, success, &chunk[..length]);
+                PldmCodecWithLifetime::encode(&msg, resp)
             }
-            let msg = RequestFirmwareDataResponse::new(instance_id, success, &chunk[..length]);
-            PldmCodecWithLifetime::encode(&msg, resp)
         }
         Ok(FwUpdateCmd::TransferComplete) => {
+            // The agent acknowledges either way; what it does next depends
+            // on the result the device reported.
+            match TransferCompleteRequest::decode(&framed_buf[1..req_total_len]) {
+                Ok(req) if req.tranfer_result != TransferResult::TransferSuccess as u8 => {
+                    pw_log::error!(
+                        "UA: the device aborted the transfer, result={}",
+                        req.tranfer_result as u32
+                    );
+                    served.aborted.set(true);
+                }
+                Ok(_) => {}
+                Err(_) => pw_log::error!("UA: could not decode TransferComplete"),
+            }
+            let resp = &mut framed_buf[1..];
             TransferCompleteResponse::new(instance_id, success).encode(resp)
         }
         Ok(FwUpdateCmd::VerifyComplete) => {
             VerifyCompleteResponse::new(instance_id, success).encode(resp)
         }
         Ok(FwUpdateCmd::ApplyComplete) => {
-            saw_apply_complete.set(true);
+            served.apply_complete.set(true);
             ApplyCompleteResponse::new(instance_id, success).encode(resp)
         }
         _ => {
@@ -527,22 +583,25 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
 
     pw_log::info!("UA: handing over {} bytes", IMAGE_SIZE as u32);
 
-    let saw_apply_complete = Cell::new(false);
+    let served = Served::default();
     for _ in 0..MAX_SERVED_REQUESTS {
         transport.respond_once(
             &mut listener,
             &mut buf,
-            |framed_buf, req_total_len, _eid| {
-                serve_fd_request(framed_buf, req_total_len, &saw_apply_complete)
-            },
+            |framed_buf, req_total_len, _eid| serve_fd_request(framed_buf, req_total_len, &served),
         )?;
-        if saw_apply_complete.get() {
+        if served.apply_complete.get() {
             pw_log::info!("UA: firmware device reported apply complete");
             break;
         }
+        // Nothing follows an aborted transfer: the device is on its way back
+        // to idle and there is no image to activate.
+        if served.aborted.get() {
+            return Ok(false);
+        }
     }
 
-    if !saw_apply_complete.get() {
+    if !served.apply_complete.get() {
         pw_log::error!("UA: gave up after {} requests", MAX_SERVED_REQUESTS as u32);
         return Ok(false);
     }

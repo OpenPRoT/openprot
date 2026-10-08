@@ -175,6 +175,11 @@ struct QemuFdOps {
     flash: RefCell<BlockingFlash<Backend_, NoWaitBlocking>>,
     bytes_received: Cell<usize>,
     corrupt: Cell<bool>,
+    /// Chunks the device has asked the agent for, and chunks it was given.
+    /// They differ by exactly one when a transfer aborts: the device asked
+    /// for a chunk and the answer carried an error instead of data.
+    chunks_requested: Cell<u32>,
+    chunks_received: Cell<u32>,
     verified: Cell<bool>,
     activated: Cell<bool>,
     /// A rendezvous pair, not two independent flags: `awaiting` is the
@@ -203,6 +208,8 @@ impl QemuFdOps {
             flash: RefCell::new(flash),
             bytes_received: Cell::new(0),
             corrupt: Cell::new(false),
+            chunks_requested: Cell::new(0),
+            chunks_received: Cell::new(0),
             verified: Cell::new(false),
             activated: Cell::new(false),
             awaiting: Cell::new(Awaiting::Nothing),
@@ -483,6 +490,7 @@ impl FdOps for QemuFdOps {
     ) -> Result<(usize, usize), FdOpsError> {
         // The state machine keeps no cursor of its own: whatever this
         // returns is the offset of the next RequestFirmwareData.
+        self.chunks_requested.set(self.chunks_requested.get() + 1);
         let done = self.bytes_received.get();
         Ok((done, IMAGE_SIZE - done))
     }
@@ -536,6 +544,7 @@ impl FdOps for QemuFdOps {
             return Ok(TransferResult::FdAbortedTransfer);
         }
         self.bytes_received.set(done + data.len());
+        self.chunks_received.set(self.chunks_received.get() + 1);
         Ok(TransferResult::TransferSuccess)
     }
 
@@ -746,7 +755,7 @@ fn entry() {
 /// A negative scenario does not just expect the update to fail. It names
 /// the failure it arranged, because a run that died of something else
 /// would otherwise look like the thing being proven.
-#[cfg(not(any(corrupt_image, refused_update)))]
+#[cfg(not(any(corrupt_image, refused_update, transfer_error)))]
 fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
     if completed {
         pw_log::info!("FD: update flow complete");
@@ -772,6 +781,40 @@ fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
         return false;
     }
     pw_log::info!("FD: the corrupt image was caught and the update refused");
+    true
+}
+
+/// The agent answered one RequestFirmwareData with an error, so the
+/// device must have aborted the transfer and asked for a chunk it never
+/// got.
+#[cfg(transfer_error)]
+fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
+    if completed {
+        pw_log::error!("FD: the update went through with a chunk missing");
+        return false;
+    }
+    let requested = fd_ops.chunks_requested.get();
+    let received = fd_ops.chunks_received.get();
+    if requested != received + 1 {
+        pw_log::error!(
+            "FD: the run failed with {} chunks asked for and {} received, which is not one short",
+            requested as u32,
+            received as u32
+        );
+        return false;
+    }
+    if fd_ops.corrupt.get() {
+        pw_log::error!("FD: the transfer ended on a content check, not the agent's error");
+        return false;
+    }
+    if fd_ops.activated.get() {
+        pw_log::error!("FD: the transfer aborted and the device activated anyway");
+        return false;
+    }
+    pw_log::info!(
+        "FD: the agent errored on chunk {} and the device aborted the transfer",
+        requested as u32
+    );
     true
 }
 
