@@ -207,9 +207,11 @@ fn serve_fd_request(
             PldmCodecWithLifetime::encode(&msg, resp)
         }
         Ok(FwUpdateCmd::TransferComplete) => {
+            pw_log::info!("UA: firmware device reported transfer complete");
             TransferCompleteResponse::new(instance_id, success).encode(resp)
         }
         Ok(FwUpdateCmd::VerifyComplete) => {
+            pw_log::info!("UA: firmware device reported verify complete");
             VerifyCompleteResponse::new(instance_id, success).encode(resp)
         }
         Ok(FwUpdateCmd::ApplyComplete) => {
@@ -549,6 +551,7 @@ fn run_update(
         pw_log::error!("UA: RequestUpdate rejected, cc={}", cc as u32);
         return Ok(false);
     }
+    pw_log::info!("UA: update requested, device left idle");
 
     // ---- PassComponentTable: describe the single component ----
     instance_id += 1;
@@ -570,6 +573,7 @@ fn run_update(
         pw_log::error!("UA: PassComponentTable rejected, cc={}", cc as u32);
         return Ok(false);
     }
+    pw_log::info!("UA: component {} table accepted", comp_identifier as u32);
 
     // ---- UpdateComponent: the firmware device starts pulling the image ----
     instance_id += 1;
@@ -592,6 +596,10 @@ fn run_update(
         pw_log::error!("UA: UpdateComponent rejected, cc={}", cc as u32);
         return Ok(false);
     }
+    pw_log::info!(
+        "UA: component {} accepted for update",
+        comp_identifier as u32
+    );
 
     pw_log::info!("UA: handing over {} bytes", image_size as u32);
 
@@ -653,7 +661,10 @@ fn run_update(
 
 #[entry]
 fn entry() {
-    pw_log::info!("Hello from BMC version {}", boot_version() as u32);
+    pw_log::info!(
+        "\x1b[93mHello from BMC version {}\x1b[0m",
+        boot_version() as u32
+    );
 
     // SAFETY: mints this process's memory mappings once, at its entry point.
     let mmaps = unsafe { take_mmaps() };

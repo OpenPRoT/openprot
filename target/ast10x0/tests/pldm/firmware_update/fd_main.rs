@@ -382,6 +382,7 @@ impl FdOps for DemoFdOps {
             );
             return Ok(ComponentResponseCode::CompNotSupported);
         }
+        pw_log::info!("FD: component accepted, {} bytes to pull", size as u32);
         Ok(code)
     }
 
@@ -518,6 +519,7 @@ impl FdOps for DemoFdOps {
         _component: &FirmwareComponent,
         _progress_percent: &mut ProgressPercent,
     ) -> Result<ApplyResult, FdOpsError> {
+        pw_log::info!("FD: image applied");
         Ok(ApplyResult::ApplySuccess)
     }
 
