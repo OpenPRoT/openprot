@@ -59,6 +59,22 @@ _BOOT_NOISE = (
     b"Allocating non-privileged",
 )
 
+# Per-fragment MCTP sender chatter, logged by both boards. Hidden from the
+# panes only: the .log files keep it, and the board still emits it either way.
+_PANE_NOISE = (
+    "Calling fragment_vectored",
+    "packet sending to",
+    "Encoded packet length",
+    "packet sent",
+)
+
+
+def _tail_cmd(log: Path) -> str:
+    """tail -F a board log, minus the lines _PANE_NOISE and _BOOT_NOISE name."""
+    noise = list(_PANE_NOISE) + [p.decode() for p in _BOOT_NOISE]
+    pats = " ".join(f"-e {shlex.quote(p)}" for p in noise)
+    return f"tail -F {shlex.quote(str(log))} | grep --line-buffered -vF {pats}"
+
 
 class _QuietStdout:
     """Stands in for sys.stdout, dropping the _BOOT_NOISE lines.
@@ -158,11 +174,16 @@ def _relaunch_in_tmux(session: str) -> int:
 
     Living in a tmux session also means a dropped SSH connection doesn't kill
     the run."""
-    if subprocess.run(
-        ["tmux", "has-session", "-t", session],
-        capture_output=True,
-    ).returncode == 0:
-        print(f"Session '{session}' already exists. Attach to it with:", file=sys.stderr)
+    if (
+        subprocess.run(
+            ["tmux", "has-session", "-t", session],
+            capture_output=True,
+        ).returncode
+        == 0
+    ):
+        print(
+            f"Session '{session}' already exists. Attach to it with:", file=sys.stderr
+        )
         print(f"  tmux attach -t {session}", file=sys.stderr)
         print("Or end it with:", file=sys.stderr)
         print(f"  tmux kill-session -t {session}", file=sys.stderr)
@@ -186,13 +207,31 @@ def _relaunch_in_tmux(session: str) -> int:
     # capital F follows a file through truncation. It also waits for a log that
     # does not exist yet, which is the case until the harness pane starts.
     subprocess.run(
-        ["tmux", "new-session", "-d", "-s", session, "-n", "boards", "-c", here,
-         f"tail -F {_LOG_DIR / 'rot.log'}"],
+        [
+            "tmux",
+            "new-session",
+            "-d",
+            "-s",
+            session,
+            "-n",
+            "boards",
+            "-c",
+            here,
+            _tail_cmd(_LOG_DIR / "rot.log"),
+        ],
         check=True,
     )
     subprocess.run(
-        ["tmux", "split-window", "-h", "-t", f"{session}:boards", "-c", here,
-         f"tail -F {_LOG_DIR / 'bmc.log'}"],
+        [
+            "tmux",
+            "split-window",
+            "-h",
+            "-t",
+            f"{session}:boards",
+            "-c",
+            here,
+            _tail_cmd(_LOG_DIR / "bmc.log"),
+        ],
         check=True,
     )
     # -f makes the split span the whole window rather than just the pane it was
@@ -200,9 +239,19 @@ def _relaunch_in_tmux(session: str) -> int:
     # afterwards so the verdict stays readable instead of the pane closing the
     # moment the run ends.
     subprocess.run(
-        ["tmux", "split-window", "-v", "-f", "-l", "5", "-t", f"{session}:boards",
-         "-c", here,
-         f"{shlex.join(inner)}; echo; echo '[runner exited]'; exec bash"],
+        [
+            "tmux",
+            "split-window",
+            "-v",
+            "-f",
+            "-l",
+            "5",
+            "-t",
+            f"{session}:boards",
+            "-c",
+            here,
+            f"{shlex.join(inner)}; echo; echo '[runner exited]'; exec bash",
+        ],
         check=True,
     )
 
@@ -262,28 +311,41 @@ def main() -> int:
 
     elfs = args.elf if args.elf else sorted(str(p) for p in _HERE.glob("*.elf"))
     if not elfs:
-        print(f"Error: no .elf found in {_HERE}; logs will print as $base64",
-              file=sys.stderr)
+        print(
+            f"Error: no .elf found in {_HERE}; logs will print as $base64",
+            file=sys.stderr,
+        )
         return 1
 
     _LOG_DIR.mkdir(parents=True, exist_ok=True)
-    print(f"Per-board logs: tail -F {_LOG_DIR}/rot.log   (and bmc.log)", file=sys.stderr)
+    print(
+        f"Per-board logs: tail -F {_LOG_DIR}/rot.log   (and bmc.log)", file=sys.stderr
+    )
     if args.repeat and args.tmux:
         print("Repeat prompt is in the bottom pane.", file=sys.stderr)
 
     argv = [
         UART_DEVICE,
         args.firmware,
-        "--srst-pin", str(SRST_PIN),
-        "--fwspick-pin", str(FWSPICK_PIN),
-        "--baudrate", str(BAUDRATE),
-        "--slave-firmware", args.slave_firmware,
-        "--slave-uart-device", SLAVE_UART_DEVICE,
-        "--slave-srst-pin", str(SLAVE_SRST_PIN),
-        "--slave-fwspick-pin", str(SLAVE_FWSPICK_PIN),
+        "--srst-pin",
+        str(SRST_PIN),
+        "--fwspick-pin",
+        str(FWSPICK_PIN),
+        "--baudrate",
+        str(BAUDRATE),
+        "--slave-firmware",
+        args.slave_firmware,
+        "--slave-uart-device",
+        SLAVE_UART_DEVICE,
+        "--slave-srst-pin",
+        str(SLAVE_SRST_PIN),
+        "--slave-fwspick-pin",
+        str(SLAVE_FWSPICK_PIN),
         "--slave-stages-to-flash",
-        "--reset-passthrough-pin", str(RESET_PASSTHROUGH_PIN),
-        "--log-dir", str(_LOG_DIR),
+        "--reset-passthrough-pin",
+        str(RESET_PASSTHROUGH_PIN),
+        "--log-dir",
+        str(_LOG_DIR),
     ]
     for elf in elfs:
         argv += ["--elf", elf]
