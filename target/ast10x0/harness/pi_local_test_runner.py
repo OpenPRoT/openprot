@@ -66,6 +66,8 @@ _PANE_NOISE = (
     "packet sending to",
     "Encoded packet length",
     "packet sent",
+    # tail's own notice when the demo rewrites a log under it.
+    "file truncated",
 )
 
 
@@ -73,7 +75,7 @@ def _tail_cmd(log: Path) -> str:
     """tail -F a board log, minus the lines _PANE_NOISE and _BOOT_NOISE name."""
     noise = list(_PANE_NOISE) + [p.decode() for p in _BOOT_NOISE]
     pats = " ".join(f"-e {shlex.quote(p)}" for p in noise)
-    return f"tail -F {shlex.quote(str(log))} | grep --line-buffered -vF {pats}"
+    return f"tail -F {shlex.quote(str(log))} 2>&1 | grep --line-buffered -vF {pats}"
 
 
 class _QuietStdout:
