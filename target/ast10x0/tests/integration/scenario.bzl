@@ -35,6 +35,7 @@ SCENARIO_CFGS = [
     "rot_owns_verdict",
     "device_stays_down",
     "transfer_error",
+    "cancel_mid_transfer",
 ]
 
 KERNEL_DEPS = [

@@ -134,6 +134,9 @@ enum Awaiting {
     Apply,
     Activation,
     Failed,
+    /// The agent withdrew the update and the device is waiting for the
+    /// RoT to acknowledge before it lets the session go.
+    Cancelled,
 }
 
 impl Awaiting {
@@ -155,6 +158,7 @@ impl Awaiting {
             // All report_failure() callers are in verify today, so phase
             // 0 is correct. If a non-verify caller appears, this needs a
             // field on Awaiting::Failed.
+            Awaiting::Cancelled => FdStatus::Cancelled,
             Awaiting::Failed => FdStatus::PhaseFailed {
                 phase: 0,
                 result_code: 1,
@@ -175,6 +179,9 @@ struct QemuFdOps {
     flash: RefCell<BlockingFlash<Backend_, NoWaitBlocking>>,
     bytes_received: Cell<usize>,
     corrupt: Cell<bool>,
+    /// Set when the RoT acknowledges a cancel, which is what lets the
+    /// device stop waiting and return to idle.
+    cancel_acked: Cell<bool>,
     /// Chunks the device has asked the agent for, and chunks it was given.
     /// They differ by exactly one when a transfer aborts: the device asked
     /// for a chunk and the answer carried an error instead of data.
@@ -208,6 +215,7 @@ impl QemuFdOps {
             flash: RefCell::new(flash),
             bytes_received: Cell::new(0),
             corrupt: Cell::new(false),
+            cancel_acked: Cell::new(false),
             chunks_requested: Cell::new(0),
             chunks_received: Cell::new(0),
             verified: Cell::new(false),
@@ -396,7 +404,11 @@ impl FdIpcHandler for OrchGate<'_> {
     }
 
     fn ack_cancel(&mut self) -> Result<(), ResponseCode> {
-        self.not_reached()
+        if self.ops.awaiting.get() != Awaiting::Cancelled {
+            return self.not_reached();
+        }
+        self.ops.cancel_acked.set(true);
+        Ok(())
     }
 
     fn perform_svn_commit(&mut self) -> Result<(), ResponseCode> {
@@ -645,7 +657,16 @@ impl FdOps for QemuFdOps {
         Ok(PldmBaseCompletionCode::Success as u8)
     }
 
+    /// The agent withdrew the update. The RoT has staged work to drop, so
+    /// the device says so and waits to be acknowledged before it lets the
+    /// session go. Nothing is running here, so serving the channel from
+    /// this call costs nothing.
     fn cancel_update_component(&self, _component: &FirmwareComponent) -> Result<(), FdOpsError> {
+        pw_log::info!("FD: the agent cancelled the update");
+        if !self.serve(Awaiting::Cancelled, |ops| ops.cancel_acked.get()) {
+            pw_log::error!("FD: the RoT never acknowledged the cancel");
+            self.ipc_failed.set(true);
+        }
         Ok(())
     }
 }
@@ -755,7 +776,7 @@ fn entry() {
 /// A negative scenario does not just expect the update to fail. It names
 /// the failure it arranged, because a run that died of something else
 /// would otherwise look like the thing being proven.
-#[cfg(not(any(corrupt_image, refused_update, transfer_error)))]
+#[cfg(not(any(corrupt_image, refused_update, transfer_error, cancel_mid_transfer)))]
 fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
     if completed {
         pw_log::info!("FD: update flow complete");
@@ -781,6 +802,26 @@ fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
         return false;
     }
     pw_log::info!("FD: the corrupt image was caught and the update refused");
+    true
+}
+
+/// The agent withdrew the update mid-transfer, so the device must have
+/// been cancelled, said so, and been acknowledged before stopping.
+#[cfg(cancel_mid_transfer)]
+fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
+    if completed {
+        pw_log::error!("FD: the update completed after it was cancelled");
+        return false;
+    }
+    if !fd_ops.cancel_acked.get() {
+        pw_log::error!("FD: the run stopped without the RoT acknowledging a cancel");
+        return false;
+    }
+    if fd_ops.activated.get() {
+        pw_log::error!("FD: the update was cancelled and the device activated anyway");
+        return false;
+    }
+    pw_log::info!("FD: the cancel was acknowledged and nothing was activated");
     true
 }
 

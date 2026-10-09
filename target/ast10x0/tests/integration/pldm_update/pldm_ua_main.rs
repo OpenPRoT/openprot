@@ -43,6 +43,7 @@ use pldm_common::message::firmware_update::pass_component::PassComponentTableReq
 use pldm_common::message::firmware_update::query_devid::{
     QueryDeviceIdentifiersRequest, QueryDeviceIdentifiersResponse,
 };
+use pldm_common::message::firmware_update::request_cancel::CancelUpdateRequest;
 use pldm_common::message::firmware_update::request_fw_data::{
     RequestFirmwareDataRequest, RequestFirmwareDataResponse, MAX_TRANSFER_SIZE,
 };
@@ -121,6 +122,21 @@ fn chunk_error(_chunk: u32) -> Option<u8> {
 #[cfg(transfer_error)]
 fn chunk_error(chunk: u32) -> Option<u8> {
     (chunk == 2).then_some(PldmBaseCompletionCode::Error as u8)
+}
+
+/// Whether the agent withdraws the update once it has served this many
+/// chunks. False everywhere except in the scenario that arranges it.
+#[cfg(not(cancel_mid_transfer))]
+fn cancel_after(_chunk: u32) -> bool {
+    false
+}
+
+/// The agent withdraws after two chunks: far enough in that the device is
+/// transferring rather than still answering the offer, and short of the
+/// end so there is something to withdraw.
+#[cfg(cancel_mid_transfer)]
+fn cancel_after(chunk: u32) -> bool {
+    chunk == 2
 }
 
 /// How many times the agent asks who is there before giving up. The device
@@ -594,9 +610,27 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
             pw_log::info!("UA: firmware device reported apply complete");
             break;
         }
-        // Nothing follows an aborted transfer: the device is on its way back
-        // to idle and there is no image to activate.
-        if served.aborted.get() {
+        // Either the device gave up on the transfer or this agent is
+        // withdrawing. Both end the same way: the device stays in update
+        // mode until it is told to stop, so tell it.
+        if served.aborted.get() || cancel_after(served.chunks.get()) {
+            if cancel_after(served.chunks.get()) {
+                pw_log::info!(
+                    "UA: withdrawing the update after {} chunks",
+                    served.chunks.get() as u32
+                );
+            }
+            instance_id += 1;
+            let cancel = CancelUpdateRequest::new(instance_id, PldmMsgType::Request);
+            let len = cancel
+                .encode(&mut buf[1..])
+                .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
+            let (cc, _) = transact(transport, len, &mut buf)?;
+            if cc != 0 {
+                pw_log::error!("UA: CancelUpdate rejected, cc={}", cc as u32);
+            } else {
+                pw_log::info!("UA: the device took the cancel");
+            }
             return Ok(false);
         }
     }
