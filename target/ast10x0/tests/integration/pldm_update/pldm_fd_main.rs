@@ -180,6 +180,8 @@ struct QemuFdOps {
     corrupt: Cell<bool>,
     /// The RoT acknowledged a cancel. Lets the device return to idle.
     cancel_acked: Cell<bool>,
+    /// Why the RoT refused, if it did.
+    reject_reason: Cell<Option<RejectReason>>,
     /// Chunks requested vs. received. Off by one when a transfer aborts:
     /// the device asked for one more chunk than it got.
     chunks_requested: Cell<u32>,
@@ -213,6 +215,7 @@ impl QemuFdOps {
             bytes_received: Cell::new(0),
             corrupt: Cell::new(false),
             cancel_acked: Cell::new(false),
+            reject_reason: Cell::new(None),
             chunks_requested: Cell::new(0),
             chunks_received: Cell::new(0),
             verified: Cell::new(false),
@@ -367,7 +370,8 @@ impl FdIpcHandler for OrchGate<'_> {
         self.answer(Awaiting::Offer, Decision::Perform)
     }
 
-    fn reject_offer(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
+    fn reject_offer(&mut self, reason: RejectReason) -> Result<(), ResponseCode> {
+        self.ops.reject_reason.set(Some(reason));
         self.answer(Awaiting::Offer, Decision::Reject)
     }
 
@@ -772,7 +776,13 @@ fn entry() {
 /// A negative scenario does not just expect the update to fail. It names
 /// the failure it arranged, because a run that died of something else
 /// would otherwise look like the thing being proven.
-#[cfg(not(any(corrupt_image, refused_update, transfer_error, cancel_mid_transfer)))]
+#[cfg(not(any(
+    corrupt_image,
+    refused_update,
+    transfer_error,
+    cancel_mid_transfer,
+    offer_before_supervising
+)))]
 fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
     if completed {
         pw_log::info!("FD: update flow complete");
@@ -798,6 +808,26 @@ fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
         return false;
     }
     pw_log::info!("FD: the corrupt image was caught and the update refused");
+    true
+}
+
+/// The RoT was not supervising when the offer arrived. It must have refused
+/// as Busy (not policy), and nothing may have been staged or activated.
+#[cfg(offer_before_supervising)]
+fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
+    if completed {
+        pw_log::error!("FD: the update went through with the RoT supervising nothing");
+        return false;
+    }
+    if fd_ops.reject_reason.get() != Some(RejectReason::Busy) {
+        pw_log::error!("FD: the offer was turned down, but not as busy");
+        return false;
+    }
+    if fd_ops.activated.get() {
+        pw_log::error!("FD: the offer was refused and the device activated anyway");
+        return false;
+    }
+    pw_log::info!("FD: the RoT was not supervising and the offer was refused");
     true
 }
 

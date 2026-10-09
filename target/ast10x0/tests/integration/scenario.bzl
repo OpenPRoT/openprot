@@ -36,6 +36,7 @@ SCENARIO_CFGS = [
     "device_stays_down",
     "transfer_error",
     "cancel_mid_transfer",
+    "offer_before_supervising",
 ]
 
 KERNEL_DEPS = [

@@ -403,9 +403,13 @@ type Driver = openprot_orchestrator_driver::PlatformDriver<UpdateBoard, N>;
 /// The negative scenario refuses before looking at anything, which is the
 /// one refusal that cannot be mistaken for a judgement about the candidate.
 #[cfg(refused_update)]
-fn accept_update(_core: &mut Core, _driver: &mut Driver, _candidate_len: u64) -> bool {
+fn accept_update(
+    _core: &mut Core,
+    _driver: &mut Driver,
+    _candidate_len: u64,
+) -> Option<RejectReason> {
     pw_log::info!("ORCH: refusing the update, as this scenario asks");
-    false
+    Some(RejectReason::PolicyViolation)
 }
 
 /// Records the job and walks it to authenticated.
@@ -415,14 +419,20 @@ fn accept_update(_core: &mut Core, _driver: &mut Driver, _candidate_len: u64) ->
 /// update only goes through when both agree. Eight rounds is slack: the pump
 /// takes three to get from Submitted to Authenticated.
 #[cfg(not(refused_update))]
-fn accept_update(core: &mut Core, driver: &mut Driver, candidate_len: u64) -> bool {
+fn accept_update(core: &mut Core, driver: &mut Driver, candidate_len: u64) -> Option<RejectReason> {
+    // No updates until the platform knows what it has. Busy, not
+    // PolicyViolation: this says "not now", not "not this image".
+    if !core.state().is_supervised() {
+        pw_log::error!("ORCH: an update was offered while the platform was not supervising");
+        return Some(RejectReason::Busy);
+    }
     if request_update(core, driver, TARGET, candidate_len).is_err() {
         pw_log::error!("ORCH: refused the update request");
-        return false;
+        return Some(RejectReason::PolicyViolation);
     }
     if core.state() != State::Updating(TARGET) {
         pw_log::error!("ORCH: the request did not reach Updating");
-        return false;
+        return Some(RejectReason::PolicyViolation);
     }
 
     let mut verified = false;
@@ -436,7 +446,7 @@ fn accept_update(core: &mut Core, driver: &mut Driver, candidate_len: u64) -> bo
             Some(event) => {
                 pw_log::error!("ORCH: the update pump gave up on the job");
                 core.dispatch(driver, event);
-                return false;
+                return Some(RejectReason::PolicyViolation);
             }
             None => {}
         }
@@ -444,14 +454,14 @@ fn accept_update(core: &mut Core, driver: &mut Driver, candidate_len: u64) -> bo
 
     if !verified {
         pw_log::error!("ORCH: the pump never produced UpdateVerified");
-        return false;
+        return Some(RejectReason::PolicyViolation);
     }
 
     if !ROT_AUTHENTICATED.load(Ordering::Relaxed) {
         pw_log::error!("ORCH: the candidate never authenticated");
-        return false;
+        return Some(RejectReason::PolicyViolation);
     }
-    true
+    None
 }
 
 #[entry]
@@ -470,9 +480,15 @@ fn entry() {
     // Power on and verify, which is what puts the machine in Ready. An
     // update request arriving before that is refused, which is the point of
     // the check rather than a race to avoid.
-    core.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
-    core.dispatch(&mut driver, Event::VerificationPassed(TARGET));
-    pw_log::info!("ORCH: supervising, waiting for the firmware device");
+    if cfg!(offer_before_supervising) {
+        // Skip PowerGood and VerificationPassed, so the machine is still
+        // unsupervised when the offer arrives.
+        pw_log::info!("ORCH: not supervising yet, waiting for the firmware device");
+    } else {
+        core.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+        core.dispatch(&mut driver, Event::VerificationPassed(TARGET));
+        pw_log::info!("ORCH: supervising, waiting for the firmware device");
+    }
 
     // The firmware device declares the run's verdict, as it did before: the
     // runner greps one sentinel, and in a scenario where the RoT refuses,
@@ -567,8 +583,8 @@ fn run(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
 
 /// Records the job, walks it to authenticated, and answers the offer.
 fn offer(core: &mut Core, driver: &mut Driver, fd: &mut Fd, total: u32) -> bool {
-    if !accept_update(core, driver, u64::from(total)) {
-        let _ = fd.reject_offer(RejectReason::PolicyViolation);
+    if let Some(reason) = accept_update(core, driver, u64::from(total)) {
+        let _ = fd.reject_offer(reason);
         let _ = settle(fd);
         pw_log::error!("ORCH: refused the offer");
         return false;

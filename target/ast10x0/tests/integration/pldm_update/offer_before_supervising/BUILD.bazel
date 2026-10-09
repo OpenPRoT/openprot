@@ -1,0 +1,23 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# The update scenario with the offer arriving too early: the device
+# offers an update to a RoT that is supervising nothing.
+#
+# Nothing may be updated while the platform has no chain under it. The RoT
+# turns the offer down as busy, which is a different refusal from the
+# policy one in refused_update and has to be told apart from it.
+
+load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
+load("//target/ast10x0/tests/integration/pldm_update:apps.bzl", "APPS", "FLASH", "SYSTEM_CONFIG", "TARGET_DEPS", "TARGET_SRC")
+
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/pldm_update/offer_before_supervising:offer_before_supervising_qemu_test
+qemu_scenario(
+    name = "offer_before_supervising_qemu",
+    apps = APPS,
+    cfgs = ["offer_before_supervising"],
+    flash = FLASH,
+    system_config = SYSTEM_CONFIG,
+    target_deps = TARGET_DEPS,
+    target_src = TARGET_SRC,
+)
