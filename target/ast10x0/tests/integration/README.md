@@ -1,14 +1,16 @@
 # QEMU integration tests
 
-Nine scenarios, each its own system image, all running under QEMU with no
+Ten scenarios, each its own system image, all running under QEMU with no
 hardware. The AST1030 is the black box; everything it talks to is another
 app in the same image, reached through the same traits a real board wires.
 
 The runner greps one pass/fail sentinel per run, so one scenario per image
 is what lets a failure name itself.
 
-Three of the nine are the thing working. The other six are the thing
-failing, and they pass when the failure is caught. A scenario that only
+Three of the ten are the update going through. Six are the thing
+failing, and they pass when the failure is caught. The tenth is the
+agent withdrawing the update, which is neither: nothing failed and
+nothing was installed. A scenario that only
 ever passes proves nothing: the first version of the boot scenario passed
 with the device wedged, because it asserted the wrong thing. Each negative
 also names the failure it arranged, so a run that died of something else
@@ -22,6 +24,7 @@ fails rather than looking like the proof.
 | `pldm_update/corrupt_image` | one byte of the image is flipped | the device catches it |
 | `pldm_update/refused_update` | the RoT refuses the request | nothing is activated |
 | `pldm_update/transfer_error` | the agent errors on one data request | the device aborts the transfer |
+| `pldm_update/cancel_mid_transfer` | the agent withdraws two chunks in | the machine drops the update and the device is acknowledged |
 | `full_update` | boot, update, reboot in one image | the device boots the image it was given |
 | `full_update/device_hangs` | the device never comes up | no update is ever offered |
 | `full_update/device_stays_down` | the device takes the update, then stays down | the RoT notices it never came back |
@@ -49,6 +52,7 @@ The negatives, same shape:
     //target/ast10x0/tests/integration/pldm_update/corrupt_image:corrupt_image_qemu_test
     //target/ast10x0/tests/integration/pldm_update/refused_update:refused_update_qemu_test
     //target/ast10x0/tests/integration/pldm_update/transfer_error:transfer_error_qemu_test
+    //target/ast10x0/tests/integration/pldm_update/cancel_mid_transfer:cancel_mid_transfer_qemu_test
     //target/ast10x0/tests/integration/full_update/device_hangs:device_hangs_qemu_test
     //target/ast10x0/tests/integration/full_update/device_stays_down:device_stays_down_qemu_test
 

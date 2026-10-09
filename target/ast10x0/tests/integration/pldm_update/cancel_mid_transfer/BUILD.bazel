@@ -1,0 +1,23 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# The update scenario with the agent changing its mind: it sends
+# CancelUpdate two chunks into the transfer.
+#
+# Not a failure. The update is withdrawn by the side that asked for it,
+# so the state machine drops what was staged and goes back to Ready,
+# and the device waits to be acknowledged before letting the session go.
+
+load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
+load("//target/ast10x0/tests/integration/pldm_update:apps.bzl", "APPS", "FLASH", "SYSTEM_CONFIG", "TARGET_DEPS", "TARGET_SRC")
+
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/pldm_update/cancel_mid_transfer:cancel_mid_transfer_qemu_test
+qemu_scenario(
+    name = "cancel_mid_transfer_qemu",
+    apps = APPS,
+    cfgs = ["cancel_mid_transfer"],
+    flash = FLASH,
+    system_config = SYSTEM_CONFIG,
+    target_deps = TARGET_DEPS,
+    target_src = TARGET_SRC,
+)

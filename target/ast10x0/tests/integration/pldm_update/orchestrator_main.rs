@@ -535,6 +535,21 @@ fn run(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
                 core.dispatch(driver, Event::UpdateRejected);
                 return false;
             }
+            // The requester withdrew. Drop staged work, ack the cancel.
+            FdStatus::Cancelled => {
+                pw_log::info!("ORCH: the update was withdrawn");
+                core.dispatch(driver, Event::UpdateCancelled);
+                // State is not imported when refused_update is set.
+                #[cfg(not(refused_update))]
+                if core.state() != State::Ready {
+                    pw_log::error!("ORCH: the machine did not settle after the withdrawal");
+                    return false;
+                }
+                if !command(fd, "AckCancel", |fd| fd.ack_cancel()) {
+                    return false;
+                }
+                return false;
+            }
             FdStatus::Idle { .. } => {
                 pw_log::error!("ORCH: the device went idle mid-update");
                 return false;

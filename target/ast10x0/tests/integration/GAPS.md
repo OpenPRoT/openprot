@@ -69,8 +69,6 @@ abort would do is untested.
 
 ## Arcs of the update state machine with no scenario
 
-- Cancel mid-transfer. The agent's `CancelUpdate` and the `AckCancel` that
-  answers it. The device's IPC handler refuses `ack_cancel` today.
 - `UpdateSecurityRevision` and the `SvnCommitPending` status, so
   `commit_self_svn_floor` has no path that reaches it.
 - Commit timeout, and the commit-or-lock latch that bounds the
