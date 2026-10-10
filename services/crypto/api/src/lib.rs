@@ -10,8 +10,8 @@
 //! never crosses this interface.
 //!
 //! Host-buildable, no kernel dependencies. Server and client share
-//! these types; neither side re-invents the encoding. The transport that carries these frames is
-//! `util_service`, shared with every other IPC service.
+//! these types; neither side re-invents the encoding. The transport that carries these frames is a
+//! `util_service::AsyncTransport`, shared with every other IPC service.
 
 #![no_std]
 
@@ -20,6 +20,6 @@ pub mod wire;
 
 pub use error::{ResponseCode, WireError};
 pub use wire::{
-    CryptoOp, RequestHeader, ResponseHeader, VerifyStatus, MAX_PAYLOAD_SIZE, MAX_REQUEST_SIZE,
-    MAX_RESPONSE_SIZE,
+    CryptoOp, RequestHeader, ResponseHeader, VerifyRegion, VerifyStatus, MAX_PAYLOAD_SIZE,
+    MAX_REQUEST_SIZE, MAX_RESPONSE_SIZE,
 };

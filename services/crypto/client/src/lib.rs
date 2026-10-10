@@ -19,9 +19,11 @@
 //! ## Usage
 //!
 //! ```rust,ignore
+//! use crypto_api::VerifyRegion;
 //! use crypto_client::{ClientError, CryptoIpcClient, Reply};
 //!
-//! client.start_verify(0x2000_0000, 0x0008_0000)?;
+//! let region = VerifyRegion { address: 0x2000_0000, length: 0x0008_0000 };
+//! client.start_verify(&region)?;
 //!
 //! match client.poll() {
 //!     Ok(None) => {}                       // not answered yet

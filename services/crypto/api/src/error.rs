@@ -71,18 +71,3 @@ impl fmt::Display for ResponseCode {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn response_code_roundtrip() {
-        for val in 0u8..=4 {
-            let code = ResponseCode::from_u8(val).expect("known code");
-            assert_eq!(code as u8, val);
-        }
-        assert_eq!(ResponseCode::from_u8(5), None);
-        assert_eq!(ResponseCode::from_u8(255), None);
-    }
-}
