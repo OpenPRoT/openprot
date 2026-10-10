@@ -422,6 +422,7 @@ impl BoardCapabilities for UpdateBoard {
     type Recovery = ();
     type Staging = PatternStaging;
     type UpdateVerifier = PatternVerifier;
+    type SelfUpdate = ();
 }
 
 fn board() -> Board<UpdateBoard, N> {
@@ -436,6 +437,7 @@ fn board() -> Board<UpdateBoard, N> {
         recovery: [()],
         update_staging: PatternStaging,
         update_verifier: Some(PatternVerifier),
+        self_image: None,
         update_stall_budget_millis: 5_000,
     }
 }

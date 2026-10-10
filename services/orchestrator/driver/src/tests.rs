@@ -817,6 +817,7 @@ impl BoardCapabilities for MockBoard {
     type Recovery = ();
     type Staging = MemStaging;
     type UpdateVerifier = StubVerifier;
+    type SelfUpdate = MockSelfUpdate;
 }
 
 /// The SVN `mock_board`'s verifier vouches for. Tests that read the floor
@@ -845,6 +846,7 @@ fn mock_board<const N: usize>() -> Board<MockBoard, N> {
         update_staging: MemStaging::new(),
         update_stall_budget_millis: STALL_BUDGET_MILLIS,
         update_verifier: Some(StubVerifier::accepting()),
+        self_image: None,
     }
 }
 
@@ -1166,6 +1168,7 @@ impl BoardCapabilities for WatchBoard {
     type Recovery = ();
     type Staging = MemStaging;
     type UpdateVerifier = StubVerifier;
+    type SelfUpdate = MockSelfUpdate;
 }
 
 // The at-rest guarantee end to end: the component is still held while its
@@ -1197,6 +1200,7 @@ fn release_follows_verification() {
             update_staging: MemStaging::new(),
             update_stall_budget_millis: STALL_BUDGET_MILLIS,
             update_verifier: Some(StubVerifier::accepting()),
+            self_image: None,
         },
     );
     let mut orch = orchestrator();
@@ -1556,6 +1560,7 @@ impl BoardCapabilities for RecoverableBoard {
     type Recovery = MockRecovery;
     type Staging = MemStaging;
     type UpdateVerifier = StubVerifier;
+    type SelfUpdate = MockSelfUpdate;
 }
 
 fn recoverable_board<const N: usize>(sources: u8) -> Board<RecoverableBoard, N> {
@@ -1578,6 +1583,7 @@ fn recoverable_board<const N: usize>(sources: u8) -> Board<RecoverableBoard, N> 
         update_staging: MemStaging::new(),
         update_stall_budget_millis: STALL_BUDGET_MILLIS,
         update_verifier: Some(StubVerifier::accepting()),
+        self_image: None,
     }
 }
 

@@ -331,6 +331,7 @@ impl BoardCapabilities for MockDownstreamDeviceBoard {
     type Recovery = ();
     type Staging = NoStaging;
     type UpdateVerifier = NeverVerifier;
+    type SelfUpdate = ();
 }
 
 fn board() -> Board<MockDownstreamDeviceBoard, N> {
@@ -345,6 +346,7 @@ fn board() -> Board<MockDownstreamDeviceBoard, N> {
         recovery: [()],
         update_staging: NoStaging,
         update_verifier: Some(NeverVerifier),
+        self_image: None,
         update_stall_budget_millis: 1_000,
     }
 }
