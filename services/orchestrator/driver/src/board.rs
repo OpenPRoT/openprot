@@ -9,7 +9,7 @@ use orchestrator_capabilities::Updatable;
 use util_io::ByteSource;
 
 pub use orchestrator_capabilities::{BootControl, BootWatch, Measurement};
-use orchestrator_capabilities::{IncrementalVerifier, Recovery, Svn, SvnFloor};
+use orchestrator_capabilities::{IncrementalVerifier, Recovery, SelfUpdate, Svn, SvnFloor};
 
 /// Access to one component's active firmware image, however it is reached —
 /// interposed flash, a PLDM/MCTP transfer, a RAM copy in tests.
@@ -219,6 +219,24 @@ pub trait BoardCapabilities {
     type Staging: ByteSource;
     /// Incremental verification of staged update candidates.
     type UpdateVerifier: IncrementalVerifier;
+    /// Durable storage that records the eRoT's own update. It has to
+    /// survive the reboot that decides whether the update worked.
+    type SelfUpdate: SelfUpdate;
+}
+
+/// The eRoT's own update session plus the anti-rollback floor it advances.
+///
+/// The two are kept in one struct because nothing uses one without the
+/// other. Both [`settle_self_update`](crate::settle_self_update) and
+/// [`commit_self_svn_floor`](crate::commit_self_svn_floor) need the pair.
+///
+/// This is not a [`SvnFloorBinding`]. That type exists to say who keeps a
+/// component's floor, and the eRoT always keeps its own.
+pub struct SelfImage<S: SelfUpdate, F: SvnFloor> {
+    /// Storage the session lives in across the reboot.
+    pub session: S,
+    /// The eRoT's own anti-rollback floor.
+    pub floor: F,
 }
 
 /// Who keeps one component's anti-rollback floor. Spelled as its own type
@@ -272,8 +290,7 @@ pub enum SvnFloorBinding<F: SvnFloor> {
 ///         update_staging,
 ///         update_stall_budget_millis: 30_000,
 ///         update_verifier: Some(crypto_verifier),
-///         self_update,
-///         self_svn_floor,
+///         self_image: Some(SelfImage { session: self_update, floor: self_floor }),
 ///     },
 ///     MAX_RETRY,
 /// );
@@ -316,4 +333,8 @@ pub struct Board<B: BoardCapabilities, const N: usize> {
     /// Incremental verifier for staged update candidates. The driver
     /// takes ownership at construction; boards supply `Some(verifier)`.
     pub update_verifier: Option<B::UpdateVerifier>,
+    /// The eRoT's own update session and floor. Set this to `None` on a
+    /// board that never updates itself, meaning one that does nothing but
+    /// supervise other components.
+    pub self_image: Option<SelfImage<B::SelfUpdate, B::SvnFloor>>,
 }
