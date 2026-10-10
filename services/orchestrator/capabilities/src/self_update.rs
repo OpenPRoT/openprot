@@ -256,6 +256,60 @@ pub const fn trial_outcome(state: SelfUpdateState, running: RunningImage) -> Tri
     }
 }
 
+/// The self-update session for a board that never updates its own eRoT.
+///
+/// It reports `Idle` and `Confirmed`, which is what having no session looks
+/// like, and returns `NoSession` from every write instead of pretending to
+/// store one. A board that does update itself provides a real implementation
+/// and a `Board::self_image`. This impl is here so the other boards do not
+/// have to name a session type they never use.
+impl SelfUpdate for () {
+    type Error = NoSession;
+
+    fn state(&self) -> Result<SelfUpdateState, Self::Error> {
+        Ok(SelfUpdateState::Idle)
+    }
+
+    fn running(&self) -> Result<RunningImage, Self::Error> {
+        Ok(RunningImage::Confirmed)
+    }
+
+    fn prepare(&mut self, _svn: Svn) -> Result<(), Self::Error> {
+        Err(NoSession)
+    }
+
+    fn set_trial_pending(&mut self) -> Result<(), Self::Error> {
+        Err(NoSession)
+    }
+
+    fn confirm(&mut self) -> Result<(), Self::Error> {
+        Err(NoSession)
+    }
+
+    fn complete(&mut self) -> Result<(), Self::Error> {
+        Err(NoSession)
+    }
+
+    fn revert(&mut self) -> Result<(), Self::Error> {
+        // There is nothing to drop, so this succeeds. `revert` is allowed
+        // to run from `Idle`, and `()` is always `Idle`.
+        Ok(())
+    }
+}
+
+/// Returned when something tries to write a self-update session on a board
+/// that does not keep one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NoSession;
+
+impl core::fmt::Display for NoSession {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("this board keeps no self-update session")
+    }
+}
+
+impl core::error::Error for NoSession {}
+
 #[cfg(test)]
 mod tests {
     use super::*;
