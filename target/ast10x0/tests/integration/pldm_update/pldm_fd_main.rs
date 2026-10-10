@@ -134,8 +134,7 @@ enum Awaiting {
     Apply,
     Activation,
     Failed,
-    /// The agent withdrew the update and the device is waiting for the
-    /// RoT to acknowledge before it lets the session go.
+    /// The agent withdrew. Waiting for the RoT to acknowledge.
     Cancelled,
 }
 
@@ -179,14 +178,12 @@ struct QemuFdOps {
     flash: RefCell<BlockingFlash<Backend_, NoWaitBlocking>>,
     bytes_received: Cell<usize>,
     corrupt: Cell<bool>,
-    /// Set when the RoT acknowledges a cancel, which is what lets the
-    /// device stop waiting and return to idle.
+    /// The RoT acknowledged a cancel. Lets the device return to idle.
     cancel_acked: Cell<bool>,
-    /// Why the RoT turned the offer down, when it did.
+    /// Why the RoT refused, if it did.
     reject_reason: Cell<Option<RejectReason>>,
-    /// Chunks the device has asked the agent for, and chunks it was given.
-    /// They differ by exactly one when a transfer aborts: the device asked
-    /// for a chunk and the answer carried an error instead of data.
+    /// Chunks requested vs. received. Off by one when a transfer aborts:
+    /// the device asked for one more chunk than it got.
     chunks_requested: Cell<u32>,
     chunks_received: Cell<u32>,
     verified: Cell<bool>,
@@ -661,10 +658,9 @@ impl FdOps for QemuFdOps {
         Ok(PldmBaseCompletionCode::Success as u8)
     }
 
-    /// The agent withdrew the update. The RoT has staged work to drop, so
-    /// the device says so and waits to be acknowledged before it lets the
-    /// session go. Nothing is running here, so serving the channel from
-    /// this call costs nothing.
+    /// The agent withdrew. Reports Cancelled to the RoT and blocks until
+    /// acknowledged. The device is idle here, so serving the channel
+    /// inline is fine.
     fn cancel_update_component(&self, _component: &FirmwareComponent) -> Result<(), FdOpsError> {
         pw_log::info!("FD: the agent cancelled the update");
         if !self.serve(Awaiting::Cancelled, |ops| ops.cancel_acked.get()) {
@@ -815,9 +811,8 @@ fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
     true
 }
 
-/// The RoT was not supervising when the offer arrived, so it must have
-/// turned the offer down as busy rather than on policy, and nothing may
-/// have been staged or activated.
+/// The RoT was not supervising when the offer arrived. It must have refused
+/// as Busy (not policy), and nothing may have been staged or activated.
 #[cfg(offer_before_supervising)]
 fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
     if completed {
@@ -836,8 +831,8 @@ fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
     true
 }
 
-/// The agent withdrew the update mid-transfer, so the device must have
-/// been cancelled, said so, and been acknowledged before stopping.
+/// The agent withdrew mid-transfer. The device must have been cancelled,
+/// reported it, and been acknowledged.
 #[cfg(cancel_mid_transfer)]
 fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
     if completed {
@@ -856,9 +851,8 @@ fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
     true
 }
 
-/// The agent answered one RequestFirmwareData with an error, so the
-/// device must have aborted the transfer and asked for a chunk it never
-/// got.
+/// The agent errored on one chunk. The device must have aborted the
+/// transfer with one more chunk requested than received.
 #[cfg(transfer_error)]
 fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
     if completed {

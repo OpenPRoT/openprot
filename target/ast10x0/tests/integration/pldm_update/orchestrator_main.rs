@@ -420,8 +420,8 @@ fn accept_update(
 /// takes three to get from Submitted to Authenticated.
 #[cfg(not(refused_update))]
 fn accept_update(core: &mut Core, driver: &mut Driver, candidate_len: u64) -> Option<RejectReason> {
-    // Nothing may be updated while the platform is still working out what
-    // it has. The device is told the RoT is busy, which is what it is.
+    // No updates until the platform knows what it has. Busy, not
+    // PolicyViolation: this says "not now", not "not this image".
     if !core.state().is_supervised() {
         pw_log::error!("ORCH: an update was offered while the platform was not supervising");
         return Some(RejectReason::Busy);
@@ -481,8 +481,8 @@ fn entry() {
     // update request arriving before that is refused, which is the point of
     // the check rather than a race to avoid.
     if cfg!(offer_before_supervising) {
-        // Left where it powered on, on purpose: an update offered now
-        // reaches a machine that is supervising nothing.
+        // Skip PowerGood and VerificationPassed, so the machine is still
+        // unsupervised when the offer arrives.
         pw_log::info!("ORCH: not supervising yet, waiting for the firmware device");
     } else {
         core.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
@@ -551,14 +551,11 @@ fn run(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
                 core.dispatch(driver, Event::UpdateRejected);
                 return false;
             }
-            // The requester withdrew. The machine drops what was staged
-            // and goes back to Ready; the device is waiting to hear that
-            // before it lets the session go.
+            // The requester withdrew. Drop staged work, ack the cancel.
             FdStatus::Cancelled => {
                 pw_log::info!("ORCH: the update was withdrawn");
                 core.dispatch(driver, Event::UpdateCancelled);
-                // `State` is only in scope where a scenario checks the
-                // state it reached, which the refusing one does not.
+                // State is not imported when refused_update is set.
                 #[cfg(not(refused_update))]
                 if core.state() != State::Ready {
                     pw_log::error!("ORCH: the machine did not settle after the withdrawal");

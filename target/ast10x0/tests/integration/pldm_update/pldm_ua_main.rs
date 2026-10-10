@@ -108,32 +108,27 @@ fn corrupted(offset: usize, byte: u8) -> u8 {
     }
 }
 
-/// Whether the agent answers this chunk with an error instead of data.
-/// `None` everywhere except in the scenario that arranges one.
+/// Returns an error code for a specific chunk, or `None` to send data.
 #[cfg(not(transfer_error))]
 fn chunk_error(_chunk: u32) -> Option<u8> {
     None
 }
 
-/// The chunk the agent refuses, and with what. Not the first: the device
-/// has to have a transfer running before it can abort one. The code is a
-/// plain error rather than `RetryRequestFwData`, which the device would
-/// answer by asking again.
+/// Errors on chunk 2: not the first (the transfer has to be running), and
+/// a plain error, not `RetryRequestFwData` (the device would just retry).
 #[cfg(transfer_error)]
 fn chunk_error(chunk: u32) -> Option<u8> {
     (chunk == 2).then_some(PldmBaseCompletionCode::Error as u8)
 }
 
-/// Whether the agent withdraws the update once it has served this many
-/// chunks. False everywhere except in the scenario that arranges it.
+/// Returns true when the agent should withdraw after this many chunks.
 #[cfg(not(cancel_mid_transfer))]
 fn cancel_after(_chunk: u32) -> bool {
     false
 }
 
-/// The agent withdraws after two chunks: far enough in that the device is
-/// transferring rather than still answering the offer, and short of the
-/// end so there is something to withdraw.
+/// Withdraws after chunk 2: far enough that the transfer is running, short
+/// enough that there is something to cancel.
 #[cfg(cancel_mid_transfer)]
 fn cancel_after(chunk: u32) -> bool {
     chunk == 2
@@ -143,15 +138,12 @@ fn cancel_after(chunk: u32) -> bool {
 /// may still be claiming its endpoint id on the first try.
 const DISCOVERY_ATTEMPTS: u32 = 5;
 
-/// Lowest firmware-update protocol version the agent accepts, BCD-encoded:
-/// 1.3.0, which is what the device reports and the version whose command set
-/// the sequence below uses. Compared as a number, which orders these
-/// single-digit versions correctly.
+/// Lowest firmware-update version the agent accepts: 1.3.0, BCD-encoded.
+/// The sequence below uses this version's command set.
 const MIN_FWUPDATE_VERSION: Ver32 = 0xF1F3F000;
 
-/// Firmware-update commands the update sequence uses, in both directions:
-/// the agent sends six of them and answers the four the device raises. The
-/// device has to report all ten before the agent starts.
+/// Firmware-update commands the sequence uses: six agent-initiated, four
+/// device-initiated. All ten must be present before the agent starts.
 const REQUIRED_FWUPDATE_CMDS: [u8; 10] = [
     FwUpdateCmd::QueryDeviceIdentifiers as u8,
     FwUpdateCmd::GetFirmwareParameters as u8,
@@ -196,16 +188,14 @@ fn fw_string(s: &str) -> PldmFirmwareString {
     }
 }
 
-/// What the agent learned while serving the device's requests.
+/// State the serving loop accumulates from the device's requests.
 #[derive(Default)]
 struct Served {
-    /// The device reported the apply finished, which ends the serving loop.
+    /// The device reported apply-complete. Ends the serving loop.
     apply_complete: Cell<bool>,
-    /// The device reported a transfer result other than success, so the
-    /// download ended on its terms and there is nothing to activate.
+    /// The device aborted the transfer. Nothing to activate.
     aborted: Cell<bool>,
-    /// Chunks answered so far, which is what the scenario that errors on
-    /// one of them counts.
+    /// Chunks answered so far. `chunk_error()` keys on this count.
     chunks: Cell<u32>,
 }
 
@@ -214,7 +204,7 @@ struct Served {
 /// `framed_buf[0]` is the MCTP type byte and the request occupies
 /// `framed_buf[1..req_total_len]`; the response is written back over
 /// `framed_buf[1..]`. Returns the total response length including the type
-/// byte, and records in `served` what the device said.
+/// byte, and updates `served` with what the device reported.
 fn serve_fd_request(
     framed_buf: &mut [u8],
     req_total_len: usize,
@@ -274,8 +264,7 @@ fn serve_fd_request(
             }
         }
         Ok(FwUpdateCmd::TransferComplete) => {
-            // The agent acknowledges either way; what it does next depends
-            // on the result the device reported.
+            // Always ack; what happens next depends on the transfer result.
             match TransferCompleteRequest::decode(&framed_buf[1..req_total_len]) {
                 Ok(req) if req.tranfer_result != TransferResult::TransferSuccess as u8 => {
                     pw_log::error!(
@@ -312,9 +301,8 @@ fn serve_fd_request(
     }
 }
 
-/// Sends one agent-initiated request and waits for the reply. Returns the
-/// completion code and the length of the PLDM response, which starts at
-/// `buf[1]`.
+/// Sends one request and waits for the reply. Returns (completion code,
+/// PLDM response length); the response starts at `buf[1]`.
 fn transact(
     transport: &MctpPldmTransport<IpcMctpClient>,
     pldm_len: usize,
@@ -325,24 +313,20 @@ fn transact(
     Ok((if resp_len > 3 { buf[4] } else { 0xff }, resp_len))
 }
 
-/// Type 0 terminus discovery: asks the device which PLDM types it speaks,
-/// which version of firmware update it speaks and which commands that
-/// version covers, before any firmware-update command is sent. `Ok(false)`
-/// means the device answered but does not speak what this agent needs.
+/// Type 0 discovery: PLDM types, firmware-update version, supported
+/// commands. Returns `Ok(false)` if the device answered but lacks the
+/// right protocol.
 ///
-/// `GetPLDMTypes` is retried, unlike every later step. The apps in this
-/// image start in whatever order the kernel allocates them, so the agent can
-/// reach the bus before the device has claimed its endpoint id, and a packet
-/// addressed to an id nobody holds goes nowhere. A real agent discovers a
-/// device that may not be up yet and does the same. Later steps are answered
-/// by a device that has already replied once, so a timeout there is a failure
-/// rather than a race.
+/// `GetPLDMTypes` is retried because the device might not have claimed
+/// its endpoint id yet (apps start in any order). Later steps talk to a
+/// device that already answered once, so a timeout there is a real
+/// failure.
 fn discover_terminus(
     transport: &MctpPldmTransport<IpcMctpClient>,
     buf: &mut [u8],
     instance_id: &mut u8,
 ) -> Result<bool, PldmServiceError> {
-    // ---- GetPLDMTypes: both halves of the protocol have to be there ----
+    // ---- GetPLDMTypes ----
     let mut attempt = 0;
     let (cc, resp_len) = loop {
         let get_types = GetPldmTypeRequest::new(*instance_id, PldmMsgType::Request);
@@ -368,7 +352,7 @@ fn discover_terminus(
         pw_log::error!("UA: could not decode GetPLDMTypes response");
         return Ok(false);
     };
-    // Copied out of the packed response before the bitmap is borrowed.
+    // The response is packed, so copy the bitmap before referencing it.
     let types_bitmap = types.pldm_types;
     for pldm_type in [PldmSupportedType::Base, PldmSupportedType::FwUpdate] {
         if !is_bit_set(&types_bitmap, pldm_type as u8) {
@@ -380,7 +364,7 @@ fn discover_terminus(
         }
     }
 
-    // ---- GetPLDMVersion: which firmware update the device speaks ----
+    // ---- GetPLDMVersion ----
     *instance_id += 1;
     let get_version = GetPldmVersionRequest::new(
         *instance_id,
@@ -414,7 +398,7 @@ fn discover_terminus(
         return Ok(false);
     }
 
-    // ---- GetPLDMCommands: for the version the device just named ----
+    // ---- GetPLDMCommands ----
     *instance_id += 1;
     let get_cmds = GetPldmCommandsRequest {
         hdr: PldmMsgHeader::new(
@@ -466,7 +450,7 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
     let mut buf = [0u8; UA_BUF_SIZE];
     let mut instance_id = 0u8;
 
-    // ---- Type 0 discovery: who is there and what do they speak ----
+    // ---- Type 0 discovery ----
     if !discover_terminus(transport, &mut buf, &mut instance_id)? {
         return Ok(false);
     }
@@ -610,9 +594,8 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
             pw_log::info!("UA: firmware device reported apply complete");
             break;
         }
-        // Either the device gave up on the transfer or this agent is
-        // withdrawing. Both end the same way: the device stays in update
-        // mode until it is told to stop, so tell it.
+        // Abort or withdrawal: either way, send CancelUpdate so the device
+        // can leave update mode.
         if served.aborted.get() || cancel_after(served.chunks.get()) {
             if cancel_after(served.chunks.get()) {
                 pw_log::info!(
