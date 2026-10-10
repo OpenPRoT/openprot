@@ -20,11 +20,7 @@ jobs:
     - uses: actions/checkout@v7
 
     - name: Setup Bazel
-      uses: bazel-contrib/setup-bazel@0.19.0
-      with:
-        bazelisk-cache: false
-        disk-cache: false
-        repository-cache: false
+      uses: ./.github/actions/setup-bazel-self-hosted
 
     - name: Presubmit Checks
       # The presubmit workflow performs formatting checks, license checks
@@ -40,11 +36,7 @@ jobs:
     - uses: actions/checkout@v7
 
     - name: Setup Bazel
-      uses: bazel-contrib/setup-bazel@0.19.0
-      with:
-        bazelisk-cache: false
-        disk-cache: false
-        repository-cache: false
+      uses: ./.github/actions/setup-bazel-self-hosted
 
     - name: Run tests
       # See workflows.json for the `ci` definition.
@@ -59,11 +51,7 @@ jobs:
     - uses: actions/checkout@v7
 
     - name: Setup Bazel
-      uses: bazel-contrib/setup-bazel@0.19.0
-      with:
-        bazelisk-cache: false
-        disk-cache: false
-        repository-cache: false
+      uses: ./.github/actions/setup-bazel-self-hosted
 
     - name: Build
       # See workflows.json for the `default` definition.
