@@ -25,11 +25,20 @@ use openprot_mctp_client_ipc::IpcMctpClient;
 use openprot_pldm_service::firmware_device::{FirmwareDevice, RunTerminusResult};
 use openprot_pldm_service::{MctpPldmTransport, PldmServiceError};
 use pldm_api::{FdStatus, RejectReason, ResponseCode, TransferMode};
+use pldm_common::message::firmware_update::activate_pending_component::{
+    PendingComponent, PendingComponentResult,
+};
 use pldm_common::message::firmware_update::apply_complete::ApplyResult;
 use pldm_common::message::firmware_update::get_fw_params::FirmwareParameters;
 use pldm_common::message::firmware_update::get_status::ProgressPercent;
+use pldm_common::message::firmware_update::request_cancel::{
+    NonFunctioningComponentBitmap, NonFunctioningComponentIndication,
+};
 use pldm_common::message::firmware_update::request_fw_data::MAX_TRANSFER_SIZE;
 use pldm_common::message::firmware_update::transfer_complete::TransferResult;
+use pldm_common::message::firmware_update::update_security_revision::{
+    SecurityRevisionComponent, SecurityRevisionResult,
+};
 use pldm_common::message::firmware_update::verify_complete::VerifyResult;
 use pldm_common::protocol::base::PldmBaseCompletionCode;
 use pldm_common::protocol::firmware_update::{
@@ -69,6 +78,7 @@ const DEVICE_UUID: [u8; 16] = [
 
 /// The one component this device advertises.
 const COMP_IDENTIFIER: u16 = 0x0001;
+
 const ACTIVE_COMP_VERSION: &str = "v0.9";
 const ACTIVE_IMAGE_SET_VERSION: &str = "openprot-qemu-v0.9";
 
@@ -656,6 +666,46 @@ impl FdOps for QemuFdOps {
         self.activated.set(true);
         pw_log::info!("FD: activated");
         Ok(PldmBaseCompletionCode::Success as u8)
+    }
+
+    /// Nothing in this scenario has a pending image to activate.
+    fn handle_pending_component(
+        &self,
+        _component: &PendingComponent,
+        _fw_params: &FirmwareParameters,
+    ) -> Result<PendingComponentResult, FdOpsError> {
+        Ok(PendingComponentResult::NotPermitted)
+    }
+
+    /// The new image goes to staging, not over the running one, so the
+    /// component keeps working whatever happens to the update.
+    fn get_non_functional_component_info(
+        &self,
+    ) -> Result<
+        (
+            NonFunctioningComponentIndication,
+            NonFunctioningComponentBitmap,
+        ),
+        FdOpsError,
+    > {
+        Ok((
+            NonFunctioningComponentIndication::ComponentsFunctioning,
+            NonFunctioningComponentBitmap::new(0),
+        ))
+    }
+
+    /// Nothing here commits a security revision yet.
+    fn update_security_revision(
+        &self,
+        _component: &SecurityRevisionComponent,
+        _fw_params: &FirmwareParameters,
+    ) -> Result<SecurityRevisionResult, FdOpsError> {
+        Ok(SecurityRevisionResult::NotPermitted)
+    }
+
+    /// What the FD timers measure against. Without it they never fire.
+    fn now(&self) -> PldmFdTime {
+        SystemClock::now().ticks() * 1000 / SystemClock::TICKS_PER_SEC
     }
 
     /// The agent withdrew. Reports Cancelled to the RoT and blocks until

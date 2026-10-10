@@ -31,12 +31,18 @@ use openprot_orchestrator_sm::{ComponentId, Event};
 use openprot_pldm_service::firmware_device::{FirmwareDevice, RunTerminusResult};
 use openprot_pldm_service::{MctpPldmTransport, PldmServiceError};
 use pldm_common::codec::{PldmCodec, PldmCodecWithLifetime};
+use pldm_common::message::firmware_update::activate_pending_component::{
+    PendingComponent, PendingComponentResult,
+};
 use pldm_common::message::firmware_update::apply_complete::{ApplyCompleteResponse, ApplyResult};
 use pldm_common::message::firmware_update::get_fw_params::FirmwareParameters;
 use pldm_common::message::firmware_update::get_status::{
     GetStatusRequest, GetStatusResponse, ProgressPercent,
 };
 use pldm_common::message::firmware_update::pass_component::PassComponentTableRequest;
+use pldm_common::message::firmware_update::request_cancel::{
+    NonFunctioningComponentBitmap, NonFunctioningComponentIndication,
+};
 use pldm_common::message::firmware_update::request_fw_data::{
     RequestFirmwareDataRequest, RequestFirmwareDataResponse, MAX_TRANSFER_SIZE,
 };
@@ -45,12 +51,16 @@ use pldm_common::message::firmware_update::transfer_complete::{
     TransferCompleteResponse, TransferResult,
 };
 use pldm_common::message::firmware_update::update_component::UpdateComponentRequest;
+use pldm_common::message::firmware_update::update_security_revision::{
+    SecurityRevisionComponent, SecurityRevisionResult,
+};
 use pldm_common::message::firmware_update::verify_complete::{
     VerifyCompleteResponse, VerifyResult,
 };
 use pldm_common::protocol::base::{
     PldmBaseCompletionCode, PldmMsgHeader, PldmMsgType, TransferRespFlag,
 };
+use pldm_common::protocol::firmware_update::PldmFdTime;
 use pldm_common::protocol::firmware_update::{
     ComponentClassification, ComponentResponseCode, Descriptor, FirmwareDeviceState, FwUpdateCmd,
     FwUpdateCompletionCode, PldmFirmwareString, UpdateOptionFlags, VersionStringType,
@@ -186,6 +196,7 @@ impl FdOps for MockFdOps {
     fn cancel_update_component(&self, _component: &FirmwareComponent) -> Result<(), FdOpsError> {
         Ok(())
     }
+    fd_ops_nothing_to_say!();
 }
 
 // ---------------------------------------------------------------------------

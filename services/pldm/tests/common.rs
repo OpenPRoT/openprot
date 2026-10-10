@@ -10,6 +10,7 @@ use mctp_lib::fragment::{Fragmenter, SendOutput};
 use mctp_lib::Sender;
 use openprot_mctp_api::{Handle, MctpClient, MctpError, RecvMetadata, ResponseCode};
 use openprot_mctp_server::Server;
+use pldm_common::protocol::firmware_update::PldmFdTime;
 
 pub const FD_EID: u8 = 42;
 pub const UA_EID: u8 = 8;
@@ -119,4 +120,63 @@ impl<S: Sender, const N: usize, F: FnMut()> MctpClient for DirectClientWithPump<
     fn drop_handle(&self, handle: Handle) {
         let _ = self.server.borrow_mut().unbind(handle);
     }
+}
+
+/// The clock the host tests measure FD_T1 and FD_T2 against. The wall
+/// clock is monotonic enough for a test that runs in milliseconds.
+pub fn now_millis() -> PldmFdTime {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as PldmFdTime)
+        .unwrap_or(0)
+}
+
+/// The four `FdOps` callbacks a host test has nothing to say about:
+/// pending-component activation, non-functioning components, the security
+/// revision commit, and the clock. pldm-lib made them required, so every
+/// implementation names them whether or not its test exercises them.
+///
+/// Expands inside an `impl FdOps for ...` block. A test that does exercise
+/// one of them writes it out instead of invoking this.
+#[macro_export]
+macro_rules! fd_ops_nothing_to_say {
+    () => {
+        /// Nothing in this test activates a pending image.
+        fn handle_pending_component(
+            &self,
+            _component: &PendingComponent,
+            _fw_params: &FirmwareParameters,
+        ) -> Result<PendingComponentResult, FdOpsError> {
+            Ok(PendingComponentResult::NotPermitted)
+        }
+
+        /// No component goes non-functional when this device leaves update mode.
+        fn get_non_functional_component_info(
+            &self,
+        ) -> Result<
+            (
+                NonFunctioningComponentIndication,
+                NonFunctioningComponentBitmap,
+            ),
+            FdOpsError,
+        > {
+            Ok((
+                NonFunctioningComponentIndication::ComponentsFunctioning,
+                NonFunctioningComponentBitmap::new(0),
+            ))
+        }
+
+        /// This device does not commit security revisions.
+        fn update_security_revision(
+            &self,
+            _component: &SecurityRevisionComponent,
+            _fw_params: &FirmwareParameters,
+        ) -> Result<SecurityRevisionResult, FdOpsError> {
+            Ok(SecurityRevisionResult::NotPermitted)
+        }
+
+        fn now(&self) -> PldmFdTime {
+            $crate::common::now_millis()
+        }
+    };
 }

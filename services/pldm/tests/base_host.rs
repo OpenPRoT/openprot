@@ -13,12 +13,22 @@ use openprot_pldm_service::firmware_device::{FirmwareDevice, RunTerminusResult};
 use openprot_pldm_service::{MctpPldmTransport, PldmServiceError};
 use pldm_common::codec::PldmCodec;
 use pldm_common::message::control::{GetPldmVersionRequest, GetTidRequest, SetTidRequest};
+use pldm_common::message::firmware_update::activate_pending_component::{
+    PendingComponent, PendingComponentResult,
+};
 use pldm_common::message::firmware_update::apply_complete::ApplyResult;
 use pldm_common::message::firmware_update::get_fw_params::FirmwareParameters;
 use pldm_common::message::firmware_update::get_status::ProgressPercent;
+use pldm_common::message::firmware_update::request_cancel::{
+    NonFunctioningComponentBitmap, NonFunctioningComponentIndication,
+};
 use pldm_common::message::firmware_update::transfer_complete::TransferResult;
+use pldm_common::message::firmware_update::update_security_revision::{
+    SecurityRevisionComponent, SecurityRevisionResult,
+};
 use pldm_common::message::firmware_update::verify_complete::VerifyResult;
 use pldm_common::protocol::base::{PldmMsgType, PldmSupportedType, TransferOperationFlag};
+use pldm_common::protocol::firmware_update::PldmFdTime;
 use pldm_common::protocol::firmware_update::{ComponentResponseCode, Descriptor};
 use pldm_common::util::fw_component::FirmwareComponent;
 use pldm_interface::firmware_device::fd_ops::{ComponentOperation, FdOps, FdOpsError};
@@ -128,6 +138,7 @@ impl FdOps for MockFdOps {
     fn cancel_update_component(&self, _component: &FirmwareComponent) -> Result<(), FdOpsError> {
         Ok(())
     }
+    fd_ops_nothing_to_say!();
 }
 
 #[test]

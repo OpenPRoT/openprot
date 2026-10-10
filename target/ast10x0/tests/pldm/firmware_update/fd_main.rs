@@ -18,21 +18,31 @@ use hal_flash::{BlockingFlash, Flash, FlashAddress};
 use openprot_mctp_client_ipc::IpcMctpClient;
 use openprot_pldm_service::firmware_device::{FirmwareDevice, RunTerminusResult};
 use openprot_pldm_service::{MctpPldmTransport, PldmServiceError};
+use pldm_common::message::firmware_update::activate_pending_component::{
+    PendingComponent, PendingComponentResult,
+};
 use pldm_common::message::firmware_update::apply_complete::ApplyResult;
 use pldm_common::message::firmware_update::get_fw_params::FirmwareParameters;
 use pldm_common::message::firmware_update::get_status::ProgressPercent;
+use pldm_common::message::firmware_update::request_cancel::{
+    NonFunctioningComponentBitmap, NonFunctioningComponentIndication,
+};
 use pldm_common::message::firmware_update::request_fw_data::MAX_TRANSFER_SIZE;
 use pldm_common::message::firmware_update::transfer_complete::TransferResult;
+use pldm_common::message::firmware_update::update_security_revision::{
+    SecurityRevisionComponent, SecurityRevisionResult,
+};
 use pldm_common::message::firmware_update::verify_complete::VerifyResult;
 use pldm_common::protocol::base::PldmBaseCompletionCode;
 use pldm_common::protocol::firmware_update::{
     ComponentActivationMethods, ComponentClassification, ComponentParameterEntry,
-    ComponentResponseCode, Descriptor, DescriptorType, FirmwareDeviceCapability,
+    ComponentResponseCode, Descriptor, DescriptorType, FirmwareDeviceCapability, PldmFdTime,
     PldmFirmwareString, PldmFirmwareVersion,
 };
 use pldm_common::util::fw_component::FirmwareComponent;
 use pldm_interface::firmware_device::fd_ops::{ComponentOperation, FdOps, FdOpsError};
 use pw_status::Error;
+use userspace::time::{Clock, SystemClock};
 use userspace::{entry, syscall};
 use util_error::ErrorCode;
 
@@ -309,6 +319,45 @@ impl FdOps for DemoFdOps {
 
     fn cancel_update_component(&self, _component: &FirmwareComponent) -> Result<(), FdOpsError> {
         Ok(())
+    }
+    /// This demo has no pending image to activate.
+    fn handle_pending_component(
+        &self,
+        _component: &PendingComponent,
+        _fw_params: &FirmwareParameters,
+    ) -> Result<PendingComponentResult, FdOpsError> {
+        Ok(PendingComponentResult::NotPermitted)
+    }
+
+    /// The image lands in staging, so nothing stops working when the
+    /// device leaves update mode.
+    fn get_non_functional_component_info(
+        &self,
+    ) -> Result<
+        (
+            NonFunctioningComponentIndication,
+            NonFunctioningComponentBitmap,
+        ),
+        FdOpsError,
+    > {
+        Ok((
+            NonFunctioningComponentIndication::ComponentsFunctioning,
+            NonFunctioningComponentBitmap::new(0),
+        ))
+    }
+
+    /// This demo does not commit security revisions.
+    fn update_security_revision(
+        &self,
+        _component: &SecurityRevisionComponent,
+        _fw_params: &FirmwareParameters,
+    ) -> Result<SecurityRevisionResult, FdOpsError> {
+        Ok(SecurityRevisionResult::NotPermitted)
+    }
+
+    /// The device's clock, which every FD timer is measured against.
+    fn now(&self) -> PldmFdTime {
+        SystemClock::now().ticks() * 1000 / SystemClock::TICKS_PER_SEC
     }
 }
 
