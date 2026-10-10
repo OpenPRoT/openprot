@@ -11,7 +11,7 @@
 //   mctp_bus:      an MCTP server per endpoint, joined by the loopback
 //   orchestrator:  the RoT, which supervises the device and decides
 //                  whether the update may proceed
-//   mock_bmc:      the managed device, on a reset line and a ready line
+//   mock_downstream_device: the managed device, on a reset line and a ready line
 //
 // What this scenario claims, and what the others cannot: the device boots
 // under supervision, an update arrives over PLDM, the RoT accepts it, the
@@ -169,7 +169,7 @@
                             // The managed device's reset line.
                             name: "reset_cmd",
                             type: "channel_initiator",
-                            handler_process: "mock_bmc_process",
+                            handler_process: "mock_downstream_device_process",
                             handler_object_name: "reset_cmd",
                         },
                         {
@@ -205,11 +205,11 @@
             ],
         },
         {
-            name: "mock_bmc",
+            name: "mock_downstream_device",
             flash_size_bytes: 65536,
             processes: [
                 {
-                    name: "mock_bmc_process",
+                    name: "mock_downstream_device_process",
                     ram_size_bytes: 32768,
                     objects: [
                         {
@@ -230,7 +230,7 @@
                         },
                         {
                             type: "thread",
-                            name: "mock_bmc_thread",
+                            name: "mock_downstream_device_thread",
                             kernel_stack_size_bytes: 4096,
                         },
                     ],

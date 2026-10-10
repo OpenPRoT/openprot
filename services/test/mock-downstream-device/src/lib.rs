@@ -14,7 +14,7 @@
 //! whatever the board wiring supplies. The model is generic over
 //! `InputPin` and `OutputPin` so neither case is special.
 //!
-//! Time arrives as an argument. [`MockBmc::poll`] is given the current
+//! Time arrives as an argument. [`MockDownstreamDevice::poll`] is given the current
 //! millisecond count and never waits, so a caller can drive it from a
 //! kernel event loop, or from a test that moves the clock by hand.
 
@@ -27,7 +27,7 @@ mod model;
 
 pub use boot::{BootBehaviour, Phase};
 pub use error::Error;
-pub use model::MockBmc;
+pub use model::MockDownstreamDevice;
 
 #[cfg(test)]
 mod tests;

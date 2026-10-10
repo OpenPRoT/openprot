@@ -5,11 +5,11 @@
 
 Four of the five are the other scenarios' sources, built from here by
 label: the agent, the firmware device and the bus from pldm_update, the
-managed device from mock_bmc. Only the RoT is new, because it is the only
+managed device from mock_downstream_device. Only the RoT is new, because it is the only
 one that has to do both jobs at once.
 """
 
-load("//target/ast10x0/tests/integration/mock_bmc:apps.bzl", mock_bmc_apps = "APPS")
+load("//target/ast10x0/tests/integration/mock_downstream_device:apps.bzl", mock_downstream_device_apps = "APPS")
 load("//target/ast10x0/tests/integration/pldm_update:apps.bzl", _FLASH = "FLASH", pldm_apps = "APPS")
 
 HERE = "//target/ast10x0/tests/integration/full_update:"
@@ -34,7 +34,7 @@ ORCHESTRATOR_DEPS = [
 def _without_orchestrator(apps):
     return [app for app in apps if app["name"] != "orchestrator"]
 
-APPS = _without_orchestrator(pldm_apps) + _without_orchestrator(mock_bmc_apps) + [
+APPS = _without_orchestrator(pldm_apps) + _without_orchestrator(mock_downstream_device_apps) + [
     # The RoT: supervises the managed device and commands the firmware
     # device, which is what makes this scenario more than the other two
     # running side by side.

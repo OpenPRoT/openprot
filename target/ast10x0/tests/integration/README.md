@@ -18,8 +18,8 @@ fails rather than looking like the proof.
 
 | Scenario | What it arranges | Passes when |
 | --- | --- | --- |
-| `mock_bmc` | the device boots | the walk completes |
-| `mock_bmc/device_hangs` | the device never reports | the platform locks |
+| `mock_downstream_device` | the device boots | the walk completes |
+| `mock_downstream_device/device_hangs` | the device never reports | the platform locks |
 | `pldm_update` | a clean update | the update commits |
 | `pldm_update/corrupt_image` | one byte of the image is flipped | the device catches it |
 | `pldm_update/refused_update` | the RoT refuses the request | nothing is activated |
@@ -42,14 +42,14 @@ adding one is a BUILD file and a `#[cfg]`, not a copy of the image.
 One scenario at a time, with the console:
 
     bazel test --config=virt_ast10x0 --test_output=all \
-        //target/ast10x0/tests/integration/mock_bmc:mock_bmc_qemu_test
+        //target/ast10x0/tests/integration/mock_downstream_device:mock_downstream_device_qemu_test
 
     bazel test --config=virt_ast10x0 --test_output=all \
         //target/ast10x0/tests/integration/pldm_update:pldm_update_qemu_test
 
 The negatives, same shape:
 
-    //target/ast10x0/tests/integration/mock_bmc/device_hangs:device_hangs_qemu_test
+    //target/ast10x0/tests/integration/mock_downstream_device/device_hangs:device_hangs_qemu_test
     //target/ast10x0/tests/integration/pldm_update/corrupt_image:corrupt_image_qemu_test
     //target/ast10x0/tests/integration/pldm_update/refused_update:refused_update_qemu_test
     //target/ast10x0/tests/integration/pldm_update/transfer_error:transfer_error_qemu_test
@@ -72,7 +72,7 @@ survives into the binary. It builds for the host and needs no QEMU.
 
 ## The boot scenario
 
-`mock_bmc/` watches a managed device through a boot. The orchestrator app
+`mock_downstream_device/` watches a managed device through a boot. The orchestrator app
 runs the shipped state machine and platform driver; what the test supplies
 is the board.
 
@@ -80,14 +80,14 @@ is the board.
 flowchart LR
     subgraph image["system image"]
         orch["orchestrator<br/>Orchestrator + PlatformDriver<br/>CheckpointWalk"]
-        bmc["mock_bmc<br/>BootBehaviour"]
+        bmc["mock_downstream_device<br/>BootBehaviour"]
     end
     orch -- "reset_cmd: assert / release" --> bmc
     bmc -- "boot_evt: ready" --> orch
 ```
 
 The two lines are IPC channels, not GPIO. Reset and ready are board traces
-between two chips, QEMU models one chip, and the mock BMC is a process
+between two chips, QEMU models one chip, and the mock downstream device is a process
 inside it, so even a working GPIO block would connect to nothing. The
 adapters in `board/src/bmc.rs` are swapped out at the trait seam rather
 than exercised; the pin wiring is what the hardware tests are for.
@@ -116,7 +116,7 @@ the platform locks, which is what that scenario passes on:
 
 `full_update/` is the other two joined: five apps, one image, the agent and
 the firmware device and the bus from `pldm_update`, the managed device from
-`mock_bmc`, and a RoT that does both jobs.
+`mock_downstream_device`, and a RoT that does both jobs.
 
 ```mermaid
 flowchart LR
@@ -125,7 +125,7 @@ flowchart LR
         bus["mctp_bus"]
         fd["pldm_fd"]
         orch["orchestrator<br/>supervises and commands"]
-        bmc["mock_bmc<br/>the managed device"]
+        bmc["mock_downstream_device<br/>the managed device"]
     end
     ua <--> bus
     bus <--> fd
@@ -293,7 +293,7 @@ Both images are tight. The AST1030 has 768 KB of SRAM and no XIP, so code
 and data share it. Each `system.json5` carries its own map and the
 reasoning. The rule both follow: an app's flash has to start at a multiple
 of its own size. The pldm_update image runs four 64 KB apps from
-`0x10000`; the mock_bmc image runs two 128 KB apps from `0x20000`.
+`0x10000`; the mock_downstream_device image runs two 128 KB apps from `0x20000`.
 
 That rule comes from the MPU. It protects memory in regions, and a region
 has to be a power of two in size and start at a multiple of its size, so a
@@ -311,7 +311,7 @@ the addresses still do not.
 
 That is why the kernel's flash is 64256 bytes rather than a round 64 KB:
 `0x10000` minus the 1280-byte vector table, which puts the first app at
-exactly `0x10000`. The mock_bmc image does the same thing one power of two
+exactly `0x10000`. The mock_downstream_device image does the same thing one power of two
 up, with 129792 bytes.
 
 Getting a size wrong is quiet. The image still builds, and the only sign is

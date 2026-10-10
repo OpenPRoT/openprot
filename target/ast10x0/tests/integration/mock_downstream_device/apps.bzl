@@ -7,11 +7,11 @@ Labels rather than file names, because the negative scenario is a package
 of its own and builds the same sources from there.
 """
 
-HERE = "//target/ast10x0/tests/integration/mock_bmc:"
+HERE = "//target/ast10x0/tests/integration/mock_downstream_device:"
 
 MOCK_BMC_DEPS = [
     "//hal/blocking",
-    "//services/test/mock-bmc:mock_bmc",
+    "//services/test/mock-downstream-device:mock_downstream_device",
     "@pigweed//pw_kernel/userspace",
     "@pigweed//pw_log/rust:pw_log",
     "@pigweed//pw_status/rust:pw_status",
@@ -34,8 +34,8 @@ APPS = [
     # The managed device: drives its ready line in response to its reset line.
     {
         "deps": MOCK_BMC_DEPS,
-        "name": "mock_bmc",
-        "src": HERE + "mock_bmc_main.rs",
+        "name": "mock_downstream_device",
+        "src": HERE + "mock_downstream_device_main.rs",
     },
     # The RoT: releases the device and judges whether it came up.
     {

@@ -10,7 +10,7 @@ use crate::boot::{BootBehaviour, Phase};
 use crate::error::Error;
 
 /// The device on the other end of a reset line and a ready line.
-pub struct MockBmc<Reset, Ready> {
+pub struct MockDownstreamDevice<Reset, Ready> {
     reset: Reset,
     reset_polarity: ActivePolarity,
     ready: Ready,
@@ -19,7 +19,7 @@ pub struct MockBmc<Reset, Ready> {
     phase: Phase,
 }
 
-impl<Reset: InputPin, Ready: OutputPin> MockBmc<Reset, Ready> {
+impl<Reset: InputPin, Ready: OutputPin> MockDownstreamDevice<Reset, Ready> {
     /// Wires the model to its two lines.
     ///
     /// Starts in [`Phase::Held`] without touching either line: the first

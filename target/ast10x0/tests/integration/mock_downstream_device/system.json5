@@ -1,16 +1,16 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-// AST10x0 mock-BMC integration QEMU test.
+// AST10x0 mock-downstream-device integration QEMU test.
 //
 // Two processes standing in for two chips:
 //
 //   orchestrator: drives the reset line, latches boot evidence
-//   mock_bmc:     the managed device, reacts to reset and reports ready
+//   mock_downstream_device: the managed device, reacts to reset and reports ready
 //
 // The two wires are IPC channels, not GPIO. QEMU models one chip, and both
 // ends live inside it, so a GPIO block would connect to nothing. Commands
-// go out orchestrator -> mock_bmc; evidence comes back the other way on its
+// go out orchestrator -> mock_downstream_device; evidence comes back the other way on its
 // own channel, because EvidenceReader::read is synchronous and must not
 // block, so the orchestrator has to hold a latch rather than ask.
 //
@@ -48,11 +48,11 @@
     },
     apps: [
         {
-            name: "mock_bmc",
+            name: "mock_downstream_device",
             flash_size_bytes: 131072,
             processes: [
                 {
-                    name: "mock_bmc_process",
+                    name: "mock_downstream_device_process",
                     ram_size_bytes: 32768,
                     objects: [
                         {
@@ -73,7 +73,7 @@
                         },
                         {
                             type: "thread",
-                            name: "mock_bmc_thread",
+                            name: "mock_downstream_device_thread",
                             kernel_stack_size_bytes: 4096,
                         },
                     ],
@@ -99,7 +99,7 @@
                         {
                             name: "reset_cmd",
                             type: "channel_initiator",
-                            handler_process: "mock_bmc_process",
+                            handler_process: "mock_downstream_device_process",
                             handler_object_name: "reset_cmd",
                         },
                         {
