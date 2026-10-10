@@ -519,6 +519,24 @@ fn run(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
                 if !activate(core, driver, fd) {
                     return false;
                 }
+                // The agent may still ask for the security revision to be
+                // committed, which DSP0267 only takes once the device is
+                // idle. Nothing else follows an activation.
+                if !cfg!(svn_commit) {
+                    return true;
+                }
+            }
+            // Committing the revision is a decision of its own: the image
+            // is installed either way, and this is what stops the device
+            // being rolled back to what it replaced.
+            FdStatus::SvnCommitPending { component } => {
+                pw_log::info!(
+                    "ORCH: the agent asked to commit component {}'s security revision",
+                    component as u32
+                );
+                if !command(fd, "PerformSvnCommit", |fd| fd.perform_svn_commit()) {
+                    return false;
+                }
                 return true;
             }
             FdStatus::PhaseFailed { phase, result_code } => {

@@ -1,0 +1,23 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# The update scenario followed by its anti-rollback commit: once the
+# device is idle again, the agent sends UpdateSecurityRevision.
+#
+# Installing an image and committing its security revision are two
+# decisions. DSP0267 takes the second only in IDLE, so it lands after the
+# activation, and the RoT grants it the way it grants every other step.
+
+load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
+load("//target/ast10x0/tests/integration/pldm_update:apps.bzl", "APPS", "FLASH", "SYSTEM_CONFIG", "TARGET_DEPS", "TARGET_SRC")
+
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/pldm_update/svn_commit:svn_commit_qemu_test
+qemu_scenario(
+    name = "svn_commit_qemu",
+    apps = APPS,
+    cfgs = ["svn_commit"],
+    flash = FLASH,
+    system_config = SYSTEM_CONFIG,
+    target_deps = TARGET_DEPS,
+    target_src = TARGET_SRC,
+)

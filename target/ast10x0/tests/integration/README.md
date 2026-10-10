@@ -1,14 +1,14 @@
 # QEMU integration tests
 
-Eleven scenarios, each its own system image, all running under QEMU with no
+Fourteen scenarios, each its own system image, all running under QEMU with no
 hardware. The AST1030 is the black box; everything it talks to is another
 app in the same image, reached through the same traits a real board wires.
 
 The runner greps one pass/fail sentinel per run, so one scenario per image
 is what lets a failure name itself.
 
-Four of the twelve are the thing working. Seven are the thing failing,
-and they pass when the failure is caught. The twelfth is the agent
+Six of the fourteen are the thing working. Seven are the thing failing,
+and they pass when the failure is caught. The fourteenth is the agent
 withdrawing the update, which is neither: nothing failed and nothing was
 installed. A scenario that only ever passes proves nothing: the first
 version of the boot scenario passed with the device wedged, because it
@@ -28,6 +28,7 @@ like the proof.
 | `pldm_update/transfer_error` | the agent errors on one data request | the device aborts the transfer |
 | `pldm_update/cancel_mid_transfer` | the agent withdraws two chunks in | the machine drops the update and the device is acknowledged |
 | `pldm_update/offer_before_supervising` | the offer arrives before the RoT supervises anything | the RoT refuses it as busy |
+| `pldm_update/svn_commit` | the agent commits the security revision afterwards | the RoT grants it and the device commits |
 | `full_update` | boot, update, reboot in one image | the device boots the image it was given |
 | `full_update/device_hangs` | the device never comes up | no update is ever offered |
 | `full_update/device_stays_down` | the device takes the update, then stays down | the RoT notices it never came back |
@@ -60,6 +61,7 @@ The negatives, same shape:
     //target/ast10x0/tests/integration/pldm_update/transfer_error:transfer_error_qemu_test
     //target/ast10x0/tests/integration/pldm_update/cancel_mid_transfer:cancel_mid_transfer_qemu_test
     //target/ast10x0/tests/integration/pldm_update/offer_before_supervising:offer_before_supervising_qemu_test
+    //target/ast10x0/tests/integration/pldm_update/svn_commit:svn_commit_qemu_test
     //target/ast10x0/tests/integration/full_update/device_hangs:device_hangs_qemu_test
     //target/ast10x0/tests/integration/full_update/device_stays_down:device_stays_down_qemu_test
 

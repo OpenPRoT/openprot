@@ -52,6 +52,7 @@ use pldm_common::message::firmware_update::transfer_complete::{
     TransferCompleteRequest, TransferCompleteResponse, TransferResult,
 };
 use pldm_common::message::firmware_update::update_component::UpdateComponentRequest;
+use pldm_common::message::firmware_update::update_security_revision::UpdateSecurityRevisionRequest;
 use pldm_common::message::firmware_update::verify_complete::VerifyCompleteResponse;
 use pldm_common::protocol::base::{
     PldmBaseCompletionCode, PldmControlCmd, PldmMsgHeader, PldmMsgType, PldmSupportedType,
@@ -74,6 +75,10 @@ const FD_EID: u8 = 8;
 
 /// Size of the test image, in bytes. Must match the firmware device's.
 const IMAGE_SIZE: u32 = 1024;
+
+/// The component the device offers, which is also the one whose security
+/// revision the agent asks to commit. Must match the firmware device's.
+const COMP_IDENTIFIER: u16 = 0x0001;
 
 /// The UUID this agent expects the firmware device to report. It only updates
 /// a device it recognises.
@@ -652,6 +657,31 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
     }
 
     pw_log::info!("UA: firmware activated, update complete");
+
+    // DSP0267 takes UpdateSecurityRevision only in IDLE, which the device
+    // is in now that it has activated. Committing the revision is a
+    // separate decision from installing the image, and this is where the
+    // agent asks for it.
+    if cfg!(svn_commit) {
+        instance_id += 1;
+        let commit = UpdateSecurityRevisionRequest::new(
+            instance_id,
+            PldmMsgType::Request,
+            ComponentClassification::Firmware,
+            COMP_IDENTIFIER,
+            0,
+        );
+        let len = commit
+            .encode(&mut buf[1..])
+            .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
+        let (cc, _) = transact(transport, len, &mut buf)?;
+        if cc != 0 {
+            pw_log::error!("UA: UpdateSecurityRevision refused, cc={:02x}", cc as u32);
+            return Ok(false);
+        }
+        pw_log::info!("UA: the security revision was committed");
+    }
+
     Ok(true)
 }
 
