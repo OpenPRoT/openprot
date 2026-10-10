@@ -89,7 +89,7 @@ type Driver = openprot_orchestrator_driver::PlatformDriver<UpdateBoard, N>;
 /// The device table. One checkpoint: the device reports ready inside the
 /// window or it does not.
 static DEVICES: [DeviceConfig<u8, u8>; N] = [DeviceConfig::new(
-    "bmc",
+    "downstream",
     0,
     &[BootCheckpoint::new(
         "ready",

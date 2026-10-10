@@ -8,9 +8,9 @@
 # here is what says the boot scenario's green means something.
 
 load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
-load("//target/ast10x0/tests/integration/mock_bmc:apps.bzl", "APPS", "SYSTEM_CONFIG", "TARGET_SRC")
+load("//target/ast10x0/tests/integration/mock_downstream_device:apps.bzl", "APPS", "SYSTEM_CONFIG", "TARGET_SRC")
 
-# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/mock_bmc/device_hangs:device_hangs_qemu_test
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/mock_downstream_device/device_hangs:device_hangs_qemu_test
 qemu_scenario(
     name = "device_hangs_qemu",
     apps = APPS,

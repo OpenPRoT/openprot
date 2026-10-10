@@ -11,13 +11,13 @@ time. Checked against its negative, a device that stops reporting after
 the post-activation reset.
 
 It carries two negatives of its own: a device that never comes up, and a
-device that takes the update and never comes back. `mock_bmc` and
+device that takes the update and never comes back. `mock_downstream_device` and
 `pldm_update` keep theirs.
 
 ## The lines are IPC channels, not GPIOs
 
 Reset and boot-worked are board traces between two chips. QEMU models one
-chip and the mock BMC is a process inside it, so there is no second
+chip and the mock downstream device is a process inside it, so there is no second
 device for a pin to reach. The adapters in `board/src/bmc.rs` are swapped
 out at the trait seam rather than exercised. Pin wiring is what the
 hardware tests are for.

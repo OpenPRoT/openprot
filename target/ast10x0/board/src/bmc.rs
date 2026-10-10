@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! The mock BMC as a managed device: this board's supervision vocabulary.
+//! The mock downstream device: this board's supervision vocabulary.
 //!
 //! Everything here is the RoT's view. The RoT drives the BMC's reset line and
 //! reads its ready line, so the ids naming those two wires, the window the RoT
@@ -25,11 +25,11 @@ use orchestrator_hal_adapters::{
 /// Reset lines this board drives. `RoT_BMC_RESET_L` is the only one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BmcReset {
-    /// The mock BMC's reset input.
+    /// The mock downstream device's reset input.
     Bmc,
 }
 
-/// Boot evidence this board can read from the mock BMC.
+/// Boot evidence this board can read from the mock downstream device.
 ///
 /// One ready line answers only "up yet?", so the vocabulary has one entry;
 /// a second checkpoint would need a second wire or a message path.
@@ -50,7 +50,7 @@ const CHECKPOINTS: &[BootCheckpoint<BmcProbe>] = &[BootCheckpoint::new(
     READY_WINDOW,
 )];
 
-/// The mock BMC's entry in this board's device table. Passive: it has no
+/// The mock downstream device's entry in this board's device table. Passive: it has no
 /// iRoT to self-verify, so its ready line is the only post-release signal
 /// it produces. Required: the platform has nothing to run without it.
 pub const BMC: DeviceConfig<BmcReset, BmcProbe> = DeviceConfig::new(

@@ -4,7 +4,7 @@
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
 rust_library(
-    name = "mock_bmc",
+    name = "mock_downstream_device",
     srcs = [
         "src/boot.rs",
         "src/error.rs",
@@ -12,7 +12,7 @@ rust_library(
         "src/model.rs",
         "src/tests.rs",
     ],
-    crate_name = "openprot_mock_bmc",
+    crate_name = "openprot_mock_downstream_device",
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
@@ -23,6 +23,6 @@ rust_library(
 
 # Host tests: the model is pin-generic, so it runs without a kernel.
 rust_test(
-    name = "mock_bmc_test",
-    crate = ":mock_bmc",
+    name = "mock_downstream_device_test",
+    crate = ":mock_downstream_device",
 )

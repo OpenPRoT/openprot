@@ -1,13 +1,13 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! The RoT side of the mock-BMC integration test, running the shipped
+//! The RoT side of the mock-downstream-device integration test, running the shipped
 //! orchestrator rather than a hand-rolled sequence.
 //!
 //! `bring_up` builds the state machine and the platform driver from one
 //! device table, so the chain the SM decides over and the arrays the driver
 //! indexes cannot disagree. What this file supplies is the board: a reset
-//! line that reaches the mock BMC over IPC, a `CheckpointWalk` over a
+//! line that reaches the mock downstream device over IPC, a `CheckpointWalk` over a
 //! latched evidence reader, and stubs for the capabilities a boot scenario
 //! never touches.
 //!
@@ -82,7 +82,7 @@ const RESET_RELEASE: u8 = 1;
 /// the window or it does not. Probe 1 is what the evidence reader answers
 /// `Booted` for once the latch is set.
 static DEVICES: [DeviceConfig<u8, u8>; N] = [DeviceConfig::new(
-    "bmc",
+    "downstream",
     0,
     &[BootCheckpoint::new(
         "ready",
@@ -100,7 +100,7 @@ const _: () = assert_retry_reaches_every_image(MAX_RETRY, &DEVICES);
 
 /// The device's ready line, as the RoT sees it.
 ///
-/// Set when the mock BMC reports in, cleared by the reset path. A static
+/// Set when the mock downstream device reports in, cleared by the reset path. A static
 /// because the reader lives inside the walk, inside the board, inside the
 /// driver, while the run loop that receives the report is outside all three.
 static DEVICE_READY: AtomicBool = AtomicBool::new(false);
@@ -318,9 +318,9 @@ impl ReportSink for LogSink {
     }
 }
 
-struct MockBmcBoard;
+struct MockDownstreamDeviceBoard;
 
-impl BoardCapabilities for MockBmcBoard {
+impl BoardCapabilities for MockDownstreamDeviceBoard {
     type Image = StubImage;
     type Verifier = StubVerifier;
     type BootControl = BmcReset;
@@ -333,7 +333,7 @@ impl BoardCapabilities for MockBmcBoard {
     type UpdateVerifier = NeverVerifier;
 }
 
-fn board() -> Board<MockBmcBoard, N> {
+fn board() -> Board<MockDownstreamDeviceBoard, N> {
     Board {
         images: [StubImage],
         verifier: StubVerifier,
@@ -349,7 +349,7 @@ fn board() -> Board<MockBmcBoard, N> {
     }
 }
 
-/// Drains whatever the mock BMC has reported and latches a ready report.
+/// Drains whatever the mock downstream device has reported and latches a ready report.
 /// Non-blocking: the run loop has already waited.
 fn drain_reports() {
     let mut evt = [0u8; 1];
@@ -365,7 +365,8 @@ fn run() -> Result<(), ()> {
     syscall::wait_group_add(handle::WG, handle::BOOT_EVT, Signals::READABLE, 0usize)
         .map_err(|_| ())?;
 
-    let (mut core, mut driver) = bring_up::<MockBmcBoard, N, E>(&CHAIN, board(), MAX_RETRY);
+    let (mut core, mut driver) =
+        bring_up::<MockDownstreamDeviceBoard, N, E>(&CHAIN, board(), MAX_RETRY);
 
     // Power on and pass verification. The driver's release of the reset
     // line is what arms the walk, so nothing here touches the device

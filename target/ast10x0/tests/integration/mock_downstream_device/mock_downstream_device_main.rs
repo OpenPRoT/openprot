@@ -8,7 +8,7 @@
 //! leaves as a request on `boot_evt`, because QEMU models one chip and both
 //! ends of those traces live inside it.
 //!
-//! The behaviour itself is `openprot_mock_bmc::MockBmc`, which is pin-generic
+//! The behaviour itself is `openprot_mock_downstream_device::MockDownstreamDevice`, which is pin-generic
 //! and host-tested. Here the pins are two cells: the reset cell is written by
 //! the channel handler, and the ready cell is read after each poll to decide
 //! whether the orchestrator needs telling.
@@ -20,12 +20,12 @@ use core::cell::Cell;
 
 use embedded_hal::digital::{ErrorType, InputPin, OutputPin};
 use openprot_hal_blocking::gpio_port::ActivePolarity;
-use openprot_mock_bmc::{BootBehaviour, MockBmc};
+use openprot_mock_downstream_device::{BootBehaviour, MockDownstreamDevice};
 use userspace::syscall::Signals;
 use userspace::time::{Clock, Instant, SystemClock};
 use userspace::{entry, syscall};
 
-use app_mock_bmc::handle;
+use app_mock_downstream_device::handle;
 
 /// How long this device takes to boot once reset is released. Well inside
 /// any window the orchestrator waits, so the happy path is the happy path.
@@ -96,7 +96,7 @@ fn entry() {
     let reset = Cell::new(false);
     let ready = Cell::new(false);
 
-    let mut bmc = MockBmc::new(
+    let mut device = MockDownstreamDevice::new(
         Line(&reset),
         ActivePolarity::ActiveLow,
         Line(&ready),
@@ -133,7 +133,7 @@ fn entry() {
             let _ = syscall::channel_respond(handle::RESET_CMD, &[0u8; 0]);
         }
 
-        if bmc.poll(now_millis()).is_err() {
+        if device.poll(now_millis()).is_err() {
             let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal));
         }
 

@@ -13,13 +13,13 @@ filegroup(
 
 exports_files([
     "target.rs",
-    "mock_bmc_main.rs",
+    "mock_downstream_device_main.rs",
     "orchestrator_main.rs",
 ])
 
-# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/mock_bmc:mock_bmc_qemu_test
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/mock_downstream_device:mock_downstream_device_qemu_test
 qemu_scenario(
-    name = "mock_bmc_qemu",
+    name = "mock_downstream_device_qemu",
     apps = APPS,
     system_config = SYSTEM_CONFIG,
     target_src = TARGET_SRC,

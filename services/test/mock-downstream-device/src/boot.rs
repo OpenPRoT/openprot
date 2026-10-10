@@ -3,7 +3,7 @@
 
 //! What the modelled device does, and where it is in doing it.
 
-/// What the mock BMC does once reset is released.
+/// What the mock downstream device does once reset is released.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BootBehaviour {
     /// Raises the ready line `after_millis` after release. A boot that is
