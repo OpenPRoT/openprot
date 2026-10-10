@@ -196,9 +196,8 @@ impl ResponseHeader {
         self.code == ResponseCode::Success as u8
     }
 
-    /// Unknown codes read as InternalError.
-    pub fn response_code(&self) -> ResponseCode {
-        ResponseCode::from_u8(self.code).unwrap_or(ResponseCode::InternalError)
+    pub fn response_code(&self) -> Result<ResponseCode, WireError> {
+        ResponseCode::from_u8(self.code).ok_or(WireError::InvalidValue(self.code))
     }
 
     pub fn to_bytes(&self) -> [u8; Self::SIZE] {
@@ -232,37 +231,42 @@ pub const MAX_REQUEST_SIZE: usize = RequestHeader::SIZE + 8;
 pub const MAX_RESPONSE_SIZE: usize = ResponseHeader::SIZE + MAX_PAYLOAD_SIZE;
 
 // ============================================================================
+// Request types
+// ============================================================================
+
+/// A flash region to verify: absolute address and byte count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VerifyRegion {
+    pub address: u32,
+    pub length: u32,
+}
+
+// ============================================================================
 // Request encoding (client side)
 // ============================================================================
 
-/// Encode StartVerify. `address` is an absolute flash offset; `length`
-/// is the byte count. The crypto service reads from the flash service.
-pub fn encode_start_verify(buf: &mut [u8], address: u32, length: u32) -> Result<usize, WireError> {
-    let total = RequestHeader::SIZE + 8;
-    if buf.len() < total {
-        return Err(WireError::BufferTooSmall);
-    }
+/// Encode StartVerify. The crypto service reads the region from the
+/// flash service itself.
+pub fn encode_start_verify(region: &VerifyRegion) -> [u8; MAX_REQUEST_SIZE] {
     let h = RequestHeader {
         op: CryptoOp::StartVerify as u8,
         flags: 0,
     };
+    let mut buf = [0u8; MAX_REQUEST_SIZE];
     buf[..RequestHeader::SIZE].copy_from_slice(&h.to_bytes());
-    buf[RequestHeader::SIZE..RequestHeader::SIZE + 4].copy_from_slice(&address.to_le_bytes());
-    buf[RequestHeader::SIZE + 4..total].copy_from_slice(&length.to_le_bytes());
-    Ok(total)
+    buf[RequestHeader::SIZE..RequestHeader::SIZE + 4]
+        .copy_from_slice(&region.address.to_le_bytes());
+    buf[RequestHeader::SIZE + 4..MAX_REQUEST_SIZE].copy_from_slice(&region.length.to_le_bytes());
+    buf
 }
 
 /// Encode QueryStatus. Header only, no args.
-pub fn encode_query_status(buf: &mut [u8]) -> Result<usize, WireError> {
-    if buf.len() < RequestHeader::SIZE {
-        return Err(WireError::BufferTooSmall);
-    }
-    let h = RequestHeader {
+pub fn encode_query_status() -> [u8; RequestHeader::SIZE] {
+    RequestHeader {
         op: CryptoOp::QueryStatus as u8,
         flags: 0,
-    };
-    buf[..RequestHeader::SIZE].copy_from_slice(&h.to_bytes());
-    Ok(RequestHeader::SIZE)
+    }
+    .to_bytes()
 }
 
 // ============================================================================
@@ -341,14 +345,15 @@ pub fn get_request_args(buf: &[u8]) -> &[u8] {
     }
 }
 
-/// Extract address and length from a StartVerify request's args.
-pub fn get_start_verify_args(args: &[u8]) -> Result<(u32, u32), WireError> {
+/// Extract the verify region from a StartVerify request's args.
+pub fn get_start_verify_args(args: &[u8]) -> Result<VerifyRegion, WireError> {
     if args.len() < 8 {
         return Err(WireError::Truncated);
     }
-    let address = u32::from_le_bytes([args[0], args[1], args[2], args[3]]);
-    let length = u32::from_le_bytes([args[4], args[5], args[6], args[7]]);
-    Ok((address, length))
+    Ok(VerifyRegion {
+        address: u32::from_le_bytes([args[0], args[1], args[2], args[3]]),
+        length: u32::from_le_bytes([args[4], args[5], args[6], args[7]]),
+    })
 }
 
 // ============================================================================
@@ -385,22 +390,23 @@ mod tests {
 
     #[test]
     fn start_verify_roundtrip() {
-        let mut buf = [0u8; 32];
-        let len = encode_start_verify(&mut buf, 0x2000_0000, 0x0008_0000).unwrap();
-        assert_eq!(len, 16);
+        let region = VerifyRegion {
+            address: 0x2000_0000,
+            length: 0x0008_0000,
+        };
+        let buf = encode_start_verify(&region);
+        assert_eq!(buf.len(), 16);
         let h = decode_request_header(&buf).unwrap();
         assert_eq!(h.operation(), Some(CryptoOp::StartVerify));
-        let args = get_request_args(&buf[..len]);
-        let (addr, length) = get_start_verify_args(args).unwrap();
-        assert_eq!(addr, 0x2000_0000);
-        assert_eq!(length, 0x0008_0000);
+        let args = get_request_args(&buf);
+        let decoded = get_start_verify_args(args).unwrap();
+        assert_eq!(decoded, region);
     }
 
     #[test]
     fn query_status_roundtrip() {
-        let mut buf = [0u8; 16];
-        let len = encode_query_status(&mut buf).unwrap();
-        assert_eq!(len, RequestHeader::SIZE);
+        let buf = encode_query_status();
+        assert_eq!(buf.len(), RequestHeader::SIZE);
         let h = decode_request_header(&buf).unwrap();
         assert_eq!(h.operation(), Some(CryptoOp::QueryStatus));
     }
@@ -440,6 +446,7 @@ mod tests {
         let status = VerifyStatus::Rejected;
         let mut payload = [0u8; VerifyStatus::MAX_SIZE];
         let len = status.encode(&mut payload).unwrap();
+        assert_eq!(len, 1);
         assert_eq!(VerifyStatus::decode(&payload[..len]).unwrap(), status);
     }
 
@@ -465,7 +472,7 @@ mod tests {
         assert_eq!(len, ResponseHeader::SIZE);
         let h = decode_response_header(&buf).unwrap();
         assert!(!h.is_success());
-        assert_eq!(h.response_code(), ResponseCode::WrongState);
+        assert_eq!(h.response_code().unwrap(), ResponseCode::WrongState);
     }
 
     #[test]
@@ -514,16 +521,8 @@ mod tests {
     }
 
     #[test]
-    fn buffer_too_small_errors() {
+    fn response_buffer_too_small_errors() {
         let mut buf = [0u8; 4];
-        assert_eq!(
-            encode_start_verify(&mut buf, 0, 0),
-            Err(WireError::BufferTooSmall)
-        );
-        assert_eq!(
-            encode_query_status(&mut buf),
-            Err(WireError::BufferTooSmall)
-        );
         assert_eq!(
             encode_success_response(&mut buf),
             Err(WireError::BufferTooSmall)
@@ -551,8 +550,7 @@ mod tests {
 
     #[test]
     fn get_request_args_empty_for_header_only() {
-        let mut buf = [0u8; 16];
-        encode_query_status(&mut buf).unwrap();
-        assert_eq!(get_request_args(&buf[..RequestHeader::SIZE]), &[]);
+        let buf = encode_query_status();
+        assert_eq!(get_request_args(&buf), &[]);
     }
 }
