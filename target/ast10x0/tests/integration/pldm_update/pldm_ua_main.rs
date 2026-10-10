@@ -4,7 +4,8 @@
 //! The PLDM update agent: the BMC's half of the update.
 //!
 //! Stimulus for the firmware device, not a second root of trust. It walks
-//! the whole DSP0267 sequence: it identifies the device with
+//! the whole DSP0267 sequence: it discovers the terminus with `GetPLDMTypes`,
+//! `GetPLDMVersion` and `GetPLDMCommands`, identifies the device with
 //! `QueryDeviceIdentifiers` and `GetFirmwareParameters`, hands over an image
 //! with `RequestUpdate`, `PassComponentTable` and `UpdateComponent`, answers
 //! the requests the firmware device raises on its own while it pulls the image
@@ -27,6 +28,10 @@ use openprot_mctp_client_ipc::IpcMctpClient;
 use openprot_pldm_service::error::PldmMemError;
 use openprot_pldm_service::{MctpPldmTransport, PldmServiceError};
 use pldm_common::codec::{PldmCodec, PldmCodecWithLifetime};
+use pldm_common::message::control::{
+    is_bit_set, GetPldmCommandsRequest, GetPldmCommandsResponse, GetPldmTypeRequest,
+    GetPldmTypeResponse, GetPldmVersionRequest, GetPldmVersionResponse,
+};
 use pldm_common::message::firmware_update::activate_fw::{
     ActivateFirmwareRequest, SelfContainedActivationRequest,
 };
@@ -38,20 +43,25 @@ use pldm_common::message::firmware_update::pass_component::PassComponentTableReq
 use pldm_common::message::firmware_update::query_devid::{
     QueryDeviceIdentifiersRequest, QueryDeviceIdentifiersResponse,
 };
+use pldm_common::message::firmware_update::request_cancel::CancelUpdateRequest;
 use pldm_common::message::firmware_update::request_fw_data::{
     RequestFirmwareDataRequest, RequestFirmwareDataResponse, MAX_TRANSFER_SIZE,
 };
 use pldm_common::message::firmware_update::request_update::RequestUpdateRequest;
-use pldm_common::message::firmware_update::transfer_complete::TransferCompleteResponse;
+use pldm_common::message::firmware_update::transfer_complete::{
+    TransferCompleteRequest, TransferCompleteResponse, TransferResult,
+};
 use pldm_common::message::firmware_update::update_component::UpdateComponentRequest;
 use pldm_common::message::firmware_update::verify_complete::VerifyCompleteResponse;
 use pldm_common::protocol::base::{
-    PldmBaseCompletionCode, PldmMsgHeader, PldmMsgType, TransferRespFlag,
+    PldmBaseCompletionCode, PldmControlCmd, PldmMsgHeader, PldmMsgType, PldmSupportedType,
+    TransferOperationFlag, TransferRespFlag,
 };
 use pldm_common::protocol::firmware_update::{
     ComponentClassification, DescriptorType, FwUpdateCmd, PldmFirmwareString, UpdateOptionFlags,
     VersionStringType, PLDM_FWUP_IMAGE_SET_VER_STR_MAX_LEN,
 };
+use pldm_common::protocol::version::Ver32;
 use pw_status::Error;
 use userspace::{entry, syscall};
 
@@ -98,9 +108,54 @@ fn corrupted(offset: usize, byte: u8) -> u8 {
     }
 }
 
+/// Returns an error code for a specific chunk, or `None` to send data.
+#[cfg(not(transfer_error))]
+fn chunk_error(_chunk: u32) -> Option<u8> {
+    None
+}
+
+/// Errors on chunk 2: not the first (the transfer has to be running), and
+/// a plain error, not `RetryRequestFwData` (the device would just retry).
+#[cfg(transfer_error)]
+fn chunk_error(chunk: u32) -> Option<u8> {
+    (chunk == 2).then_some(PldmBaseCompletionCode::Error as u8)
+}
+
+/// Returns true when the agent should withdraw after this many chunks.
+#[cfg(not(cancel_mid_transfer))]
+fn cancel_after(_chunk: u32) -> bool {
+    false
+}
+
+/// Withdraws after chunk 2: far enough that the transfer is running, short
+/// enough that there is something to cancel.
+#[cfg(cancel_mid_transfer)]
+fn cancel_after(chunk: u32) -> bool {
+    chunk == 2
+}
+
 /// How many times the agent asks who is there before giving up. The device
 /// may still be claiming its endpoint id on the first try.
 const DISCOVERY_ATTEMPTS: u32 = 5;
+
+/// Lowest firmware-update version the agent accepts: 1.3.0, BCD-encoded.
+/// The sequence below uses this version's command set.
+const MIN_FWUPDATE_VERSION: Ver32 = 0xF1F3F000;
+
+/// Firmware-update commands the sequence uses: six agent-initiated, four
+/// device-initiated. All ten must be present before the agent starts.
+const REQUIRED_FWUPDATE_CMDS: [u8; 10] = [
+    FwUpdateCmd::QueryDeviceIdentifiers as u8,
+    FwUpdateCmd::GetFirmwareParameters as u8,
+    FwUpdateCmd::RequestUpdate as u8,
+    FwUpdateCmd::PassComponentTable as u8,
+    FwUpdateCmd::UpdateComponent as u8,
+    FwUpdateCmd::RequestFirmwareData as u8,
+    FwUpdateCmd::TransferComplete as u8,
+    FwUpdateCmd::VerifyComplete as u8,
+    FwUpdateCmd::ApplyComplete as u8,
+    FwUpdateCmd::ActivateFirmware as u8,
+];
 
 /// How long each UA-initiated request waits for the firmware device's reply.
 const REQUEST_TIMEOUT_MILLIS: u32 = 5_000;
@@ -133,16 +188,27 @@ fn fw_string(s: &str) -> PldmFirmwareString {
     }
 }
 
+/// State the serving loop accumulates from the device's requests.
+#[derive(Default)]
+struct Served {
+    /// The device reported apply-complete. Ends the serving loop.
+    apply_complete: Cell<bool>,
+    /// The device aborted the transfer. Nothing to activate.
+    aborted: Cell<bool>,
+    /// Chunks answered so far. `chunk_error()` keys on this count.
+    chunks: Cell<u32>,
+}
+
 /// Answer one firmware-device-initiated request in place.
 ///
 /// `framed_buf[0]` is the MCTP type byte and the request occupies
 /// `framed_buf[1..req_total_len]`; the response is written back over
 /// `framed_buf[1..]`. Returns the total response length including the type
-/// byte, and sets `saw_apply_complete` once the device reports it is done.
+/// byte, and updates `served` with what the device reported.
 fn serve_fd_request(
     framed_buf: &mut [u8],
     req_total_len: usize,
-    saw_apply_complete: &Cell<bool>,
+    served: &Served,
 ) -> Result<usize, PldmServiceError> {
     let success = PldmBaseCompletionCode::Success as u8;
 
@@ -179,21 +245,45 @@ fn serve_fd_request(
                 pw_log::error!("UA: FD asked for {} bytes, over the MTU", length as u32);
                 return Ok(0);
             }
-            let mut chunk = [0u8; MAX_TRANSFER_SIZE];
-            for (i, byte) in chunk[..length].iter_mut().enumerate() {
-                *byte = corrupted(offset + i, expected_byte(offset + i));
+            served.chunks.set(served.chunks.get() + 1);
+            if let Some(code) = chunk_error(served.chunks.get()) {
+                pw_log::error!(
+                    "UA: answering chunk {} with cc={} instead of data",
+                    served.chunks.get() as u32,
+                    code as u32
+                );
+                let msg = RequestFirmwareDataResponse::new(instance_id, code, &[]);
+                PldmCodecWithLifetime::encode(&msg, resp)
+            } else {
+                let mut chunk = [0u8; MAX_TRANSFER_SIZE];
+                for (i, byte) in chunk[..length].iter_mut().enumerate() {
+                    *byte = corrupted(offset + i, expected_byte(offset + i));
+                }
+                let msg = RequestFirmwareDataResponse::new(instance_id, success, &chunk[..length]);
+                PldmCodecWithLifetime::encode(&msg, resp)
             }
-            let msg = RequestFirmwareDataResponse::new(instance_id, success, &chunk[..length]);
-            PldmCodecWithLifetime::encode(&msg, resp)
         }
         Ok(FwUpdateCmd::TransferComplete) => {
+            // Always ack; what happens next depends on the transfer result.
+            match TransferCompleteRequest::decode(&framed_buf[1..req_total_len]) {
+                Ok(req) if req.tranfer_result != TransferResult::TransferSuccess as u8 => {
+                    pw_log::error!(
+                        "UA: the device aborted the transfer, result={}",
+                        req.tranfer_result as u32
+                    );
+                    served.aborted.set(true);
+                }
+                Ok(_) => {}
+                Err(_) => pw_log::error!("UA: could not decode TransferComplete"),
+            }
+            let resp = &mut framed_buf[1..];
             TransferCompleteResponse::new(instance_id, success).encode(resp)
         }
         Ok(FwUpdateCmd::VerifyComplete) => {
             VerifyCompleteResponse::new(instance_id, success).encode(resp)
         }
         Ok(FwUpdateCmd::ApplyComplete) => {
-            saw_apply_complete.set(true);
+            served.apply_complete.set(true);
             ApplyCompleteResponse::new(instance_id, success).encode(resp)
         }
         _ => {
@@ -211,6 +301,143 @@ fn serve_fd_request(
     }
 }
 
+/// Sends one request and waits for the reply. Returns (completion code,
+/// PLDM response length); the response starts at `buf[1]`.
+fn transact(
+    transport: &MctpPldmTransport<IpcMctpClient>,
+    pldm_len: usize,
+    buf: &mut [u8],
+) -> Result<(u8, usize), PldmServiceError> {
+    let resp_len = transport.send_request(FD_EID, pldm_len, buf, REQUEST_TIMEOUT_MILLIS)?;
+    // The completion code follows the 3-byte PLDM header.
+    Ok((if resp_len > 3 { buf[4] } else { 0xff }, resp_len))
+}
+
+/// Type 0 discovery: PLDM types, firmware-update version, supported
+/// commands. Returns `Ok(false)` if the device answered but lacks the
+/// right protocol.
+///
+/// `GetPLDMTypes` is retried because the device might not have claimed
+/// its endpoint id yet (apps start in any order). Later steps talk to a
+/// device that already answered once, so a timeout there is a real
+/// failure.
+fn discover_terminus(
+    transport: &MctpPldmTransport<IpcMctpClient>,
+    buf: &mut [u8],
+    instance_id: &mut u8,
+) -> Result<bool, PldmServiceError> {
+    // ---- GetPLDMTypes ----
+    let mut attempt = 0;
+    let (cc, resp_len) = loop {
+        let get_types = GetPldmTypeRequest::new(*instance_id, PldmMsgType::Request);
+        let len = get_types
+            .encode(&mut buf[1..])
+            .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
+        match transact(transport, len, buf) {
+            Ok(answer) => break answer,
+            Err(e) => {
+                attempt += 1;
+                if attempt >= DISCOVERY_ATTEMPTS {
+                    pw_log::error!("UA: the device never answered GetPLDMTypes");
+                    return Err(e);
+                }
+            }
+        }
+    };
+    if cc != 0 {
+        pw_log::error!("UA: GetPLDMTypes rejected, cc={}", cc as u32);
+        return Ok(false);
+    }
+    let Ok(types) = GetPldmTypeResponse::decode(&buf[1..1 + resp_len]) else {
+        pw_log::error!("UA: could not decode GetPLDMTypes response");
+        return Ok(false);
+    };
+    // The response is packed, so copy the bitmap before referencing it.
+    let types_bitmap = types.pldm_types;
+    for pldm_type in [PldmSupportedType::Base, PldmSupportedType::FwUpdate] {
+        if !is_bit_set(&types_bitmap, pldm_type as u8) {
+            pw_log::error!(
+                "UA: the device does not report PLDM type {}",
+                pldm_type as u32
+            );
+            return Ok(false);
+        }
+    }
+
+    // ---- GetPLDMVersion ----
+    *instance_id += 1;
+    let get_version = GetPldmVersionRequest::new(
+        *instance_id,
+        PldmMsgType::Request,
+        0,
+        TransferOperationFlag::GetFirstPart,
+        PldmSupportedType::FwUpdate,
+    );
+    let len = get_version
+        .encode(&mut buf[1..])
+        .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
+    let (cc, resp_len) = transact(transport, len, buf)?;
+    if cc != 0 {
+        pw_log::error!("UA: GetPLDMVersion rejected, cc={}", cc as u32);
+        return Ok(false);
+    }
+    let Ok(version) = GetPldmVersionResponse::decode(&buf[1..1 + resp_len]) else {
+        pw_log::error!("UA: could not decode GetPLDMVersion response");
+        return Ok(false);
+    };
+    if version.transfer_rsp_flag != TransferRespFlag::StartAndEnd as u8 {
+        pw_log::error!("UA: the device split the version list across transfers");
+        return Ok(false);
+    }
+    let reported_version = version.version_data;
+    if reported_version < MIN_FWUPDATE_VERSION {
+        pw_log::error!(
+            "UA: the device speaks firmware update {:08x}, too old",
+            reported_version as u32
+        );
+        return Ok(false);
+    }
+
+    // ---- GetPLDMCommands ----
+    *instance_id += 1;
+    let get_cmds = GetPldmCommandsRequest {
+        hdr: PldmMsgHeader::new(
+            *instance_id,
+            PldmMsgType::Request,
+            PldmSupportedType::Base,
+            PldmControlCmd::GetPldmCommands as u8,
+        ),
+        pldm_type: PldmSupportedType::FwUpdate as u8,
+        protocol_version: reported_version,
+    };
+    let len = get_cmds
+        .encode(&mut buf[1..])
+        .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
+    let (cc, resp_len) = transact(transport, len, buf)?;
+    if cc != 0 {
+        pw_log::error!("UA: GetPLDMCommands rejected, cc={}", cc as u32);
+        return Ok(false);
+    }
+    let Ok(cmds) = GetPldmCommandsResponse::decode(&buf[1..1 + resp_len]) else {
+        pw_log::error!("UA: could not decode GetPLDMCommands response");
+        return Ok(false);
+    };
+    let cmds_bitmap = cmds.supported_cmds;
+    for cmd in REQUIRED_FWUPDATE_CMDS {
+        if !is_bit_set(&cmds_bitmap, cmd) {
+            pw_log::error!("UA: the device does not report command {:02x}", cmd as u32);
+            return Ok(false);
+        }
+    }
+
+    pw_log::info!(
+        "UA: device speaks firmware update {:08x} with the commands this agent sends",
+        reported_version as u32
+    );
+    *instance_id += 1;
+    Ok(true)
+}
+
 /// Drives the update; `Ok(true)` means the firmware device reported apply
 /// complete and then accepted activation, which is this card's pass condition.
 fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, PldmServiceError> {
@@ -223,40 +450,17 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
     let mut buf = [0u8; UA_BUF_SIZE];
     let mut instance_id = 0u8;
 
-    // Returns the completion code and the length of the PLDM response, which
-    // starts at buf[1].
-    let transact = |pldm_len: usize, buf: &mut [u8]| -> Result<(u8, usize), PldmServiceError> {
-        let resp_len = transport.send_request(FD_EID, pldm_len, buf, REQUEST_TIMEOUT_MILLIS)?;
-        // The completion code follows the 3-byte PLDM header.
-        Ok((if resp_len > 3 { buf[4] } else { 0xff }, resp_len))
-    };
+    // ---- Type 0 discovery ----
+    if !discover_terminus(transport, &mut buf, &mut instance_id)? {
+        return Ok(false);
+    }
 
     // ---- QueryDeviceIdentifiers: confirm which device answered ----
-    //
-    // Retried, unlike every later step. The apps in this image start in
-    // whatever order the kernel allocates them, so the agent can reach the
-    // bus before the device has claimed its endpoint id, and a packet
-    // addressed to an id nobody holds goes nowhere. A real agent discovers a
-    // device that may not be up yet and does the same. Later steps are
-    // answered by a device that has already replied once, so a timeout there
-    // is a failure rather than a race.
-    let mut discovery_attempt = 0;
-    let (cc, resp_len) = loop {
-        let query_devid = QueryDeviceIdentifiersRequest::new(instance_id, PldmMsgType::Request);
-        let len = query_devid
-            .encode(&mut buf[1..])
-            .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-        match transact(len, &mut buf) {
-            Ok(answer) => break answer,
-            Err(e) => {
-                discovery_attempt += 1;
-                if discovery_attempt >= DISCOVERY_ATTEMPTS {
-                    pw_log::error!("UA: the device never answered discovery");
-                    return Err(e);
-                }
-            }
-        }
-    };
+    let query_devid = QueryDeviceIdentifiersRequest::new(instance_id, PldmMsgType::Request);
+    let len = query_devid
+        .encode(&mut buf[1..])
+        .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
+    let (cc, resp_len) = transact(transport, len, &mut buf)?;
     if cc != 0 {
         pw_log::error!("UA: QueryDeviceIdentifiers rejected, cc={}", cc as u32);
         return Ok(false);
@@ -280,7 +484,7 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
     let len = get_params
         .encode(&mut buf[1..])
         .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-    let (cc, resp_len) = transact(len, &mut buf)?;
+    let (cc, resp_len) = transact(transport, len, &mut buf)?;
     if cc != 0 {
         pw_log::error!("UA: GetFirmwareParameters rejected, cc={}", cc as u32);
         return Ok(false);
@@ -328,7 +532,7 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
     let len = req_update
         .encode(&mut buf[1..])
         .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-    let (cc, _) = transact(len, &mut buf)?;
+    let (cc, _) = transact(transport, len, &mut buf)?;
     if cc != 0 {
         pw_log::error!("UA: RequestUpdate rejected, cc={}", cc as u32);
         return Ok(false);
@@ -349,7 +553,7 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
     let len = pass_comp
         .encode(&mut buf[1..])
         .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-    let (cc, _) = transact(len, &mut buf)?;
+    let (cc, _) = transact(transport, len, &mut buf)?;
     if cc != 0 {
         pw_log::error!("UA: PassComponentTable rejected, cc={}", cc as u32);
         return Ok(false);
@@ -371,7 +575,7 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
     let len = update_comp
         .encode(&mut buf[1..])
         .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-    let (cc, _) = transact(len, &mut buf)?;
+    let (cc, _) = transact(transport, len, &mut buf)?;
     if cc != 0 {
         pw_log::error!("UA: UpdateComponent rejected, cc={}", cc as u32);
         return Ok(false);
@@ -379,22 +583,42 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
 
     pw_log::info!("UA: handing over {} bytes", IMAGE_SIZE as u32);
 
-    let saw_apply_complete = Cell::new(false);
+    let served = Served::default();
     for _ in 0..MAX_SERVED_REQUESTS {
         transport.respond_once(
             &mut listener,
             &mut buf,
-            |framed_buf, req_total_len, _eid| {
-                serve_fd_request(framed_buf, req_total_len, &saw_apply_complete)
-            },
+            |framed_buf, req_total_len, _eid| serve_fd_request(framed_buf, req_total_len, &served),
         )?;
-        if saw_apply_complete.get() {
+        if served.apply_complete.get() {
             pw_log::info!("UA: firmware device reported apply complete");
             break;
         }
+        // Abort or withdrawal: either way, send CancelUpdate so the device
+        // can leave update mode.
+        if served.aborted.get() || cancel_after(served.chunks.get()) {
+            if cancel_after(served.chunks.get()) {
+                pw_log::info!(
+                    "UA: withdrawing the update after {} chunks",
+                    served.chunks.get() as u32
+                );
+            }
+            instance_id += 1;
+            let cancel = CancelUpdateRequest::new(instance_id, PldmMsgType::Request);
+            let len = cancel
+                .encode(&mut buf[1..])
+                .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
+            let (cc, _) = transact(transport, len, &mut buf)?;
+            if cc != 0 {
+                pw_log::error!("UA: CancelUpdate rejected, cc={}", cc as u32);
+            } else {
+                pw_log::info!("UA: the device took the cancel");
+            }
+            return Ok(false);
+        }
     }
 
-    if !saw_apply_complete.get() {
+    if !served.apply_complete.get() {
         pw_log::error!("UA: gave up after {} requests", MAX_SERVED_REQUESTS as u32);
         return Ok(false);
     }
@@ -409,7 +633,7 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
     let len = activate
         .encode(&mut buf[1..])
         .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-    let (cc, _) = transact(len, &mut buf)?;
+    let (cc, _) = transact(transport, len, &mut buf)?;
     if cc != 0 {
         pw_log::error!("UA: ActivateFirmware rejected, cc={}", cc as u32);
         return Ok(false);
@@ -442,7 +666,7 @@ fn entry() {
             pw_log::info!("UA: sequence complete, leaving the verdict to the device");
         }
         Ok(false) => {
-            pw_log::error!("UA: the device refused the update");
+            pw_log::error!("UA: the update did not complete");
         }
         Err(PldmServiceError::Mctp(e)) => {
             pw_log::error!("UA: update flow failed, MCTP code {}", e.code as u32);

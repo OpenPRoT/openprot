@@ -31,10 +31,10 @@ checks the latter.
 
 ## Parts of the DSP0267 Type 5 flow with no scenario
 
-`full_update` covers the happy path: inventory, request, pass-component,
-update-component, the data loop, transfer, verify, apply, activate, reset,
-and the device booting what it was given. The following parts of the
-specification are not exercised:
+`full_update` covers the happy path: Type 0 discovery, inventory, request,
+pass-component, update-component, the data loop, transfer, verify, apply,
+activate, reset, and the device booting what it was given. The following
+parts of the specification are not exercised:
 
 - Automatic activation without ActivateFirmware. The device advertises
   self-contained activation and the agent sends ActivateFirmware. A flow
@@ -44,10 +44,6 @@ specification are not exercised:
 - The pending-reset handshake: a pending reset signal to the device, the
   device preparing for shutdown, and an acknowledgement. This exists
   nowhere, not in DSP0267, not in pldm-lib, not in the orchestrator.
-- Type 0 terminus discovery: GetPLDMTypes, GetPLDMVersion above 1.2, and
-  GetPLDMCommands covering inventory and update. The device answers these
-  already, through the control context in pldm-lib, so this is an addition
-  to the agent in the test.
 - Authenticating the running image before the first release. The verifier
   reads nothing and the device table carries no layout, so the first boot
   is unverified. Doing it for real means two processes mapping the FMC,
@@ -60,10 +56,19 @@ specification are not exercised:
   that is the update agent, the reset target and the progress reporter at
   once. Here those are two apps, and progress arrives on an IPC channel.
 
+## What the transfer-error scenario does not say
+
+`pldm_update/transfer_error` has the agent answer one RequestFirmwareData
+with an error completion code. The device aborts the transfer, which is the
+claim. Two things it does not cover: a dropped response rather than an
+errored one, which would be a T2 retry and then a T1 timeout, and
+`RetryRequestFwData`, which the device is supposed to answer by asking
+again. The run also ends with `run_terminus` returning an error rather than
+the device going back to idle, so what a second update attempt after an
+abort would do is untested.
+
 ## Arcs of the update state machine with no scenario
 
-- Cancel mid-transfer. The agent's `CancelUpdate` and the `AckCancel` that
-  answers it. The device's IPC handler refuses `ack_cancel` today.
 - `UpdateSecurityRevision` and the `SvnCommitPending` status, so
   `commit_self_svn_floor` has no path that reaches it.
 - Commit timeout, and the commit-or-lock latch that bounds the

@@ -1,0 +1,24 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# The update scenario's third negative: the agent answers one
+# RequestFirmwareData with an error completion code instead of data.
+#
+# This is a communication failure rather than a bad image: the bytes the
+# device did receive were right, and what went wrong is the answer to one
+# request. The device has to abort the transfer and leave nothing
+# activated.
+
+load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
+load("//target/ast10x0/tests/integration/pldm_update:apps.bzl", "APPS", "FLASH", "SYSTEM_CONFIG", "TARGET_DEPS", "TARGET_SRC")
+
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/pldm_update/transfer_error:transfer_error_qemu_test
+qemu_scenario(
+    name = "transfer_error_qemu",
+    apps = APPS,
+    cfgs = ["transfer_error"],
+    flash = FLASH,
+    system_config = SYSTEM_CONFIG,
+    target_deps = TARGET_DEPS,
+    target_src = TARGET_SRC,
+)
