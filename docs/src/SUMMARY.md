@@ -38,3 +38,4 @@
     * [Verification Model](./design/orchestrator/orchestrator-model.md)
     * [State Machine](./design/orchestrator/orchestrator-machine.md)
     * [Platform Architecture](./design/orchestrator/orchestrator-platform.md)
+    * [PLDM-FD as IPC Server](./design/orchestrator/pldm-server-ipc.md)
