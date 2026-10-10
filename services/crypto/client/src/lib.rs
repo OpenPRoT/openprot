@@ -12,10 +12,6 @@
 //! One round-trip at a time. The response frame does not name the
 //! operation, so the client remembers what it asked.
 //!
-//! Generic over `util_service::AsyncTransport`, so the same encode
-//! and decode paths run behind a kernel channel in production and
-//! inside `util_service::Loopback` in host tests.
-//!
 //! ## Usage
 //!
 //! ```rust,ignore
