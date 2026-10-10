@@ -146,6 +146,9 @@ enum Awaiting {
     Failed,
     /// The agent withdrew. Waiting for the RoT to acknowledge.
     Cancelled,
+    /// The agent asked for the running image's security revision to be
+    /// committed, and the RoT has not answered yet.
+    SvnCommit,
 }
 
 impl Awaiting {
@@ -168,6 +171,9 @@ impl Awaiting {
             // 0 is correct. If a non-verify caller appears, this needs a
             // field on Awaiting::Failed.
             Awaiting::Cancelled => FdStatus::Cancelled,
+            Awaiting::SvnCommit => FdStatus::SvnCommitPending {
+                component: ORCH_TARGET,
+            },
             Awaiting::Failed => FdStatus::PhaseFailed {
                 phase: 0,
                 result_code: 1,
@@ -192,6 +198,8 @@ struct QemuFdOps {
     cancel_acked: Cell<bool>,
     /// Why the RoT refused, if it did.
     reject_reason: Cell<Option<RejectReason>>,
+    /// Set when the RoT lets the security revision commit go through.
+    svn_committed: Cell<bool>,
     /// Chunks requested vs. received. Off by one when a transfer aborts:
     /// the device asked for one more chunk than it got.
     chunks_requested: Cell<u32>,
@@ -226,6 +234,7 @@ impl QemuFdOps {
             corrupt: Cell::new(false),
             cancel_acked: Cell::new(false),
             reject_reason: Cell::new(None),
+            svn_committed: Cell::new(false),
             chunks_requested: Cell::new(0),
             chunks_received: Cell::new(0),
             verified: Cell::new(false),
@@ -423,7 +432,7 @@ impl FdIpcHandler for OrchGate<'_> {
     }
 
     fn perform_svn_commit(&mut self) -> Result<(), ResponseCode> {
-        self.not_reached()
+        self.answer(Awaiting::SvnCommit, Decision::Perform)
     }
 
     fn reject_svn_commit(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
@@ -694,18 +703,21 @@ impl FdOps for QemuFdOps {
         ))
     }
 
-    /// Nothing here commits a security revision yet.
+    /// The agent asks the device to commit the security revision of what
+    /// it is running. The RoT owns that decision, so this waits for it the
+    /// way every other step does.
     fn update_security_revision(
         &self,
         _component: &SecurityRevisionComponent,
         _fw_params: &FirmwareParameters,
     ) -> Result<SecurityRevisionResult, FdOpsError> {
-        Ok(SecurityRevisionResult::NotPermitted)
-    }
-
-    /// What the FD timers measure against. Without it they never fire.
-    fn now(&self) -> PldmFdTime {
-        SystemClock::now().ticks() * 1000 / SystemClock::TICKS_PER_SEC
+        if self.await_decision(Awaiting::SvnCommit) == Decision::Reject {
+            pw_log::error!("FD: the RoT refused the security revision commit");
+            return Ok(SecurityRevisionResult::NotPermitted);
+        }
+        self.svn_committed.set(true);
+        pw_log::info!("FD: the security revision was committed");
+        Ok(SecurityRevisionResult::Updated)
     }
 
     /// The agent withdrew. Reports Cancelled to the RoT and blocks until
@@ -806,6 +818,22 @@ fn entry() {
         }
     }
 
+    // `run_terminus` returns when the device leaves update mode, which the
+    // activation does. UpdateSecurityRevision is an idle-mode command, so
+    // serving it means going back in and waiting there. The second call
+    // ends on the idle timeout, which is the only way out of a loop that
+    // no longer has an update to finish.
+    if cfg!(svn_commit) {
+        pw_log::info!("FD: idle, waiting for the agent to commit the revision");
+        let _ = fd.run_terminus(
+            UA_EID,
+            &mut buf,
+            IDLE_TIMEOUT_MILLIS,
+            REQUESTER_TIMEOUT_MILLIS,
+            &mut (),
+        );
+    }
+
     let completed =
         fd_ops.image_is_good() && fd_ops.activated.get() && fd_ops.orchestrator_consented();
 
@@ -839,7 +867,8 @@ fn entry() {
     transfer_error,
     cancel_mid_transfer,
     offer_before_supervising,
-    retry_chunk
+    retry_chunk,
+    svn_commit
 )))]
 fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
     if completed {
@@ -866,6 +895,26 @@ fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
         return false;
     }
     pw_log::info!("FD: the corrupt image was caught and the update refused");
+    true
+}
+
+/// The agent asked to commit the security revision after the update. The
+/// update has to have completed, and the RoT has to have allowed the
+/// commit.
+#[cfg(svn_commit)]
+fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
+    // Checked first, because this scenario is about the commit. A refused
+    // commit also fails the update's own check, and reporting that would
+    // point at the wrong thing.
+    if !fd_ops.svn_committed.get() {
+        pw_log::error!("FD: the security revision was not committed");
+        return false;
+    }
+    if !completed {
+        pw_log::error!("FD: the revision was committed and the update was not");
+        return false;
+    }
+    pw_log::info!("FD: the image was activated and its security revision committed");
     true
 }
 
