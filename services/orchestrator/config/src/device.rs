@@ -5,7 +5,7 @@
 
 use crate::checkpoint::BootCheckpoint;
 use crate::layout::ImageLayout;
-use openprot_orchestrator_sm::ComponentAttrs;
+use openprot_orchestrator_sm::{ComponentAttrs, ComponentKind};
 
 /// Fails the build if `max_retry` is too small for a device to boot every
 /// image. Recovery restores one image per attempt, and the orchestrator
@@ -32,6 +32,13 @@ use openprot_orchestrator_sm::ComponentAttrs;
 pub const fn assert_retry_reaches_every_image<R, P>(max_retry: u8, devices: &[DeviceConfig<R, P>]) {
     let mut i = 0;
     while i < devices.len() {
+        // The eRoT is never recovered, so no retry budget has to reach its
+        // images. Counting it would let its slot count set MAX_RETRY for
+        // components recovery does visit.
+        if matches!(devices[i].attrs().kind, ComponentKind::Erot) {
+            i += 1;
+            continue;
+        }
         if let Some(layout) = devices[i].layout() {
             assert!(
                 max_retry as usize > layout.image_count(),
@@ -58,7 +65,10 @@ pub const fn assert_retry_reaches_every_image<R, P>(max_retry: u8, devices: &[De
 #[derive(Debug, Clone, Copy)]
 pub struct DeviceConfig<R, P: 'static> {
     name: &'static str,
-    reset_signal: R,
+    /// `None` for a device the orchestrator never resets. Today that is
+    /// only the eRoT, which drives the reset lines and has none pointing
+    /// back at it.
+    reset_signal: Option<R>,
     checkpoints: &'static [BootCheckpoint<P>],
     layout: Option<ImageLayout>,
     attrs: ComponentAttrs,
@@ -101,10 +111,27 @@ impl<R, P> DeviceConfig<R, P> {
         }
         Self {
             name,
-            reset_signal,
+            reset_signal: Some(reset_signal),
             checkpoints,
             layout,
             attrs,
+        }
+    }
+
+    /// The eRoT itself, which goes at chain position 0.
+    ///
+    /// It gets no reset signal and no boot checkpoints, because the
+    /// orchestrator never releases or walks the component it is running on.
+    /// It does get a layout, because a self-update stages the new image
+    /// into the eRoT's own slots.
+    pub const fn erot(name: &'static str, layout: Option<ImageLayout>) -> Self {
+        assert!(!name.is_empty(), "device name must not be empty");
+        Self {
+            name,
+            reset_signal: None,
+            checkpoints: &[],
+            layout,
+            attrs: ComponentAttrs::erot(),
         }
     }
 
@@ -122,14 +149,18 @@ impl<R, P> DeviceConfig<R, P> {
 
     /// Reset signal id, passed to HalBootControl::new.
     #[must_use]
-    pub const fn reset_signal(&self) -> &R {
-        &self.reset_signal
+    pub const fn reset_signal(&self) -> Option<&R> {
+        self.reset_signal.as_ref()
     }
 
     /// Boot checkpoints, in the order the device passes them. The device
     /// counts as booted when the last one is reached; a checkpoint whose
     /// window expires fails the attempt — whether to retry or recover is
     /// the orchestrator's decision, not table data.
+    ///
+    /// Empty for an eRoT entry, which [`erot`](Self::erot) builds without
+    /// the at-least-one checkpoint [`new`](Self::new) requires: nothing
+    /// walks the component the orchestrator runs on.
     #[must_use]
     pub const fn checkpoints(&self) -> &'static [BootCheckpoint<P>] {
         self.checkpoints
@@ -210,7 +241,7 @@ mod tests {
     fn accepts_a_valid_table() {
         let device = DeviceConfig::new("dev", 0u8, &[BOOT_COMPLETE], Some(LAYOUT), ATTRS);
         assert_eq!(device.name(), "dev");
-        assert_eq!(*device.reset_signal(), 0);
+        assert_eq!(device.reset_signal(), Some(&0));
         assert_eq!(device.checkpoints().len(), 1);
         assert_eq!(device.checkpoints()[0].name(), "boot-complete");
         assert_eq!(*device.checkpoints()[0].probe(), 0);

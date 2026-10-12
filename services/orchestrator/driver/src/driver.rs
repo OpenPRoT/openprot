@@ -456,6 +456,12 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
                     let event = match self.kinds[idx] {
                         ComponentKind::Active => Event::ComponentReady(id),
                         ComponentKind::Passive => Event::Booted(id),
+                        // The eRoT is never released, so it is never watched
+                        // and no walk finishes for it. Keep polling. The
+                        // deadline so far covers only the components before
+                        // this one, so returning here would give the caller
+                        // too long a wait.
+                        ComponentKind::Erot => continue,
                     };
                     return BootWalkPoll {
                         event: Some(event),
