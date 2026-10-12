@@ -216,7 +216,7 @@ mod tests {
     #[test]
     fn the_table_declares_one_ready_checkpoint() {
         assert_eq!(BMC.name(), "bmc");
-        assert_eq!(*BMC.reset_signal(), BmcReset::Bmc);
+        assert_eq!(BMC.reset_signal(), Some(&BmcReset::Bmc));
 
         let checkpoints = BMC.checkpoints();
         assert_eq!(checkpoints.len(), 1);

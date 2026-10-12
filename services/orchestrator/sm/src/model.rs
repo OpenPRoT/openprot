@@ -47,6 +47,20 @@ pub enum ComponentKind {
     /// boot-progress checkpointing is device-agnostic — every released device
     /// owes a boot-progress signal, iRoT or not.
     Passive,
+    /// The eRoT itself. It sits at chain position 0 and is already running
+    /// when the walk starts, so the walk steps past it the same way it
+    /// steps past a gated component.
+    ///
+    /// The orchestrator never releases, supervises or recovers the eRoT.
+    /// Nothing can reset it, since the eRoT is what drives the reset lines,
+    /// and if it had failed to boot this code would not be running.
+    ///
+    /// It is still part of the chain, because it is an update target like
+    /// any other component: `updatables[0]` stages the eRoT's own image and
+    /// `svn_floors[0]` holds its anti-rollback floor. What a self-update
+    /// needs on top is a durable session, because the reboot that decides
+    /// it wipes RAM.
+    Erot,
 }
 
 /// Recovery-failure classification: what the machine does once a required
@@ -110,6 +124,17 @@ pub struct ComponentAttrs {
 }
 
 impl ComponentAttrs {
+    /// Attributes for the eRoT itself, which is never released, walked or
+    /// recovered. The failure policy is `Required`, because a platform that
+    /// lost its own RoT has nothing left to supervise anything with.
+    pub const fn erot() -> Self {
+        Self {
+            kind: ComponentKind::Erot,
+            failure_policy: FailurePolicy::Required,
+            recovery_region: RegionId::new(0),
+            depends_on: None,
+        }
+    }
     pub const fn active_required() -> Self {
         Self {
             kind: ComponentKind::Active,
