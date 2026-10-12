@@ -71,8 +71,6 @@ abort would do is untested.
 
 - `UpdateSecurityRevision` and the `SvnCommitPending` status, so
   `commit_self_svn_floor` has no path that reaches it.
-- Commit timeout, and the commit-or-lock latch that bounds the
-  activated-but-not-committed window.
 - Recovery preempting an update: `Updating` to `Recovering`, with the
   staged image discarded.
 - The spare slot re-sync after a commit, and the floor advance held until
