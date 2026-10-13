@@ -75,7 +75,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// bytes halfway through.
     pub fn submit_update(&mut self, target: ComponentId, len: u64) -> Result<(), DriverError> {
         self.board
-            .updatables
+            .components
             .get(target.get() as usize)
             .ok_or(DriverError::UnknownComponent)?;
         if len > self.board.update_staging.len() {
@@ -112,8 +112,9 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             .target;
         let updatable = self
             .board
-            .updatables
+            .components
             .get_mut(target.get() as usize)
+            .map(|component| &mut component.updatable)
             .ok_or(DriverError::UnknownComponent)?;
         updatable.abandon();
         self.pending_update = None;
@@ -151,8 +152,9 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         let (target, len) = (job.target, job.len);
         let updatable = self
             .board
-            .updatables
+            .components
             .get_mut(target.get() as usize)
+            .map(|component| &mut component.updatable)
             .ok_or(DriverError::UnknownComponent)?;
         updatable.activate().map_err(|_| DriverError::UpdateFault)?;
         self.pending_update = None;
@@ -354,8 +356,9 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             .map_err(|_| DriverError::CandidateOutOfRange)?;
         let updatable = self
             .board
-            .updatables
+            .components
             .get_mut(target.get() as usize)
+            .map(|component| &mut component.updatable)
             .ok_or(DriverError::UnknownComponent)?;
         match updatable.poll_stage(&window) {
             Ok(StageProgress::Transferring { progress }) => Ok(Step::Working(progress)),
@@ -378,7 +381,12 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         let Some(job) = self.pending_update.take() else {
             return UpdatePoll::idle();
         };
-        if let Some(updatable) = self.board.updatables.get_mut(job.target.get() as usize) {
+        if let Some(updatable) = self
+            .board
+            .components
+            .get_mut(job.target.get() as usize)
+            .map(|component| &mut component.updatable)
+        {
             updatable.abandon();
         }
         // The spare still holds the old image, so the floor stays where
@@ -413,7 +421,12 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             return;
         };
         let target = job.target.get() as usize;
-        if let Some(updatable) = self.board.updatables.get_mut(target) {
+        if let Some(updatable) = self
+            .board
+            .components
+            .get_mut(target)
+            .map(|component| &mut component.updatable)
+        {
             updatable.abandon();
         }
     }

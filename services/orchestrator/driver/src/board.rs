@@ -251,6 +251,30 @@ pub enum SvnFloorBinding<F: SvnFloor> {
     SelfManaged,
 }
 
+/// Everything one component needs, in one place. `components[i]` is
+/// `ComponentId(i)`: table position assigns the id, the same order the
+/// board's device table declares.
+///
+/// One struct per component rather than one array per capability, so a
+/// component is written and read in one place and its parts cannot be
+/// shuffled against each other.
+pub struct ComponentWiring<B: BoardCapabilities> {
+    /// The component's active firmware image.
+    pub image: B::Image,
+    /// Actuates the component's reset.
+    pub boot_control: B::BootControl,
+    /// Supervises the component's boot walk.
+    pub boot_watch: B::BootWatch,
+    /// Who keeps the component's anti-rollback floor.
+    pub svn_floor: SvnFloorBinding<B::SvnFloor>,
+    /// Stages updates for the component. A device with no update path
+    /// wires an adapter whose `poll_stage` errors.
+    pub updatable: B::Updatable,
+    /// Restores the component's image from its configured sources. `()`
+    /// for a board with no recovery path.
+    pub recovery: B::Recovery,
+}
+
 /// Everything the board supplies, built once at bring-up and handed to
 /// [`bring_up`](crate::bring_up). Holds only what a board composes by hand:
 /// anything the chain already states, the driver derives instead of taking it
@@ -279,14 +303,26 @@ pub enum SvnFloorBinding<F: SvnFloor> {
 /// let (orchestrator, driver) = bring_up::<Ast1060Board, 2, 6>(
 ///     &CHAIN,
 ///     Board {
-///         images: [bmc_image, cpld_image],
+///         components: [
+///             ComponentWiring {
+///                 image: bmc_image,
+///                 boot_control: bmc_reset,
+///                 boot_watch: bmc_walk,
+///                 svn_floor: SvnFloorBinding::Erot(bmc_floor),
+///                 updatable: bmc_update,
+///                 recovery: bmc_recovery,
+///             },
+///             ComponentWiring {
+///                 image: cpld_image,
+///                 boot_control: cpld_reset,
+///                 boot_watch: cpld_walk,
+///                 svn_floor: SvnFloorBinding::SelfManaged,
+///                 updatable: cpld_update,
+///                 recovery: cpld_recovery,
+///             },
+///         ],
 ///         verifier,
-///         boot_controls: [bmc_reset, cpld_reset],
-///         boot_watches: [bmc_walk, cpld_walk],
-///         svn_floors: [SvnFloorBinding::Erot(bmc_floor), SvnFloorBinding::SelfManaged],
 ///         report_sink,
-///         updatables: [bmc_update, cpld_update],
-///         recovery: [bmc_recovery, cpld_recovery],
 ///         update_staging,
 ///         update_stall_budget_millis: 30_000,
 ///         update_verifier: Some(crypto_verifier),
@@ -296,31 +332,14 @@ pub enum SvnFloorBinding<F: SvnFloor> {
 /// );
 /// ```
 pub struct Board<B: BoardCapabilities, const N: usize> {
-    /// `images[i]` belongs to `ComponentId(i)` — device index = chain
-    /// position = table declaration order.
-    pub images: [B::Image; N],
+    /// `components[i]` is `ComponentId(i)`: device index, chain position
+    /// and table declaration order are the same number.
+    pub components: [ComponentWiring<B>; N],
     /// Judges images for every component.
     pub verifier: B::Verifier,
-    /// `boot_controls[i]` actuates `ComponentId(i)`'s reset, same indexing
-    /// as `images`.
-    pub boot_controls: [B::BootControl; N],
-    /// `boot_watches[i]` supervises `ComponentId(i)`'s boot walk, same
-    /// indexing as `images`.
-    pub boot_watches: [B::BootWatch; N],
-    /// `svn_floors[i]` says who keeps `ComponentId(i)`'s anti-rollback
-    /// floor, same indexing as `images`.
-    pub svn_floors: [SvnFloorBinding<B::SvnFloor>; N],
     /// Where the driver hands the SM's reports. One per platform, not one
     /// per component: two of the four reports name no component.
     pub report_sink: B::ReportSink,
-    /// `updatables[i]` stages updates for `ComponentId(i)`, same indexing
-    /// as `images`. A device without an update path wires an adapter whose
-    /// `poll_stage` errors.
-    pub updatables: [B::Updatable; N],
-    /// `recovery[i]` restores `ComponentId(i)`'s image from its configured
-    /// sources, same indexing as `images`. `()` for a board with no
-    /// recovery path.
-    pub recovery: [B::Recovery; N],
     /// Where an update source leaves the candidate. Not per component:
     /// the SM allows one update at a time, so one region serves all of
     /// them.

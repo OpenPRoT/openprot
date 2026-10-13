@@ -31,8 +31,8 @@ use core::convert::Infallible;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use openprot_orchestrator_driver::{
-    bring_up, Board, BoardCapabilities, ImageSource, Report, ReportSink, SvnFloorBinding, Verdict,
-    Verifier,
+    bring_up, Board, BoardCapabilities, ComponentWiring, ImageSource, Report, ReportSink,
+    SvnFloorBinding, Verdict, Verifier,
 };
 // Only the accepting path records a job or pumps it, so the scenario that
 // refuses every request needs neither.
@@ -383,20 +383,22 @@ impl BoardCapabilities for UpdateBoard {
 
 fn board() -> Board<UpdateBoard, N> {
     Board {
+        // Built from the table index, so a component's parts cannot end
+        // up wired to a different slot than the one they sit in.
+        //
         // Index 0 is the eRoT. The walk passes over it, so nothing reads
-        // or actuates these entries. The arrays are indexed by ComponentId,
+        // or actuates that entry. Components are indexed by ComponentId,
         // so index 0 still needs a value.
-        images: [StubImage, StubImage],
+        components: core::array::from_fn(|i| ComponentWiring {
+            image: StubImage,
+            boot_control: NoReset,
+            boot_watch: CheckpointWalk::new(AlwaysBooted, &DEVICES[i]),
+            svn_floor: SvnFloorBinding::SelfManaged,
+            updatable: FdUpdatable,
+            recovery: (),
+        }),
         verifier: StubVerifier,
-        boot_controls: [NoReset, NoReset],
-        boot_watches: [
-            CheckpointWalk::new(AlwaysBooted, &DEVICES[0]),
-            CheckpointWalk::new(AlwaysBooted, &DEVICES[1]),
-        ],
-        svn_floors: [SvnFloorBinding::SelfManaged, SvnFloorBinding::SelfManaged],
         report_sink: LogSink,
-        updatables: [FdUpdatable, FdUpdatable],
-        recovery: [(), ()],
         update_staging: PatternStaging,
         update_verifier: Some(PatternVerifier),
         self_image: None,

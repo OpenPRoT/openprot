@@ -36,8 +36,8 @@ mod driver;
 mod tests;
 
 pub use board::{
-    Board, BoardCapabilities, ImageSource, Measurement, Report, ReportSink, SelfImage,
-    SvnFloorBinding, Verdict, Verifier,
+    Board, BoardCapabilities, ComponentWiring, ImageSource, Measurement, Report, ReportSink,
+    SelfImage, SvnFloorBinding, Verdict, Verifier,
 };
 pub use driver::{
     bring_up, commit_self_svn_floor, request_update, settle_self_image_at_boot, settle_self_update,

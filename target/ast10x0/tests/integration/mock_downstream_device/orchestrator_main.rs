@@ -29,8 +29,8 @@ use core::convert::Infallible;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 
 use openprot_orchestrator_driver::{
-    bring_up, settle_self_image_at_boot, Board, BoardCapabilities, ImageSource, Report, ReportSink,
-    SelfImage, SelfUpdateSettlement, SvnFloorBinding, Verdict, Verifier,
+    bring_up, settle_self_image_at_boot, Board, BoardCapabilities, ComponentWiring, ImageSource,
+    Report, ReportSink, SelfImage, SelfUpdateSettlement, SvnFloorBinding, Verdict, Verifier,
 };
 use openprot_orchestrator_sm::{ComponentAttrs, ComponentId, Event, PowerOnResult, State};
 use orchestrator_capabilities::{
@@ -486,20 +486,22 @@ impl BoardCapabilities for MockDownstreamDeviceBoard {
 
 fn board() -> Board<MockDownstreamDeviceBoard, N> {
     Board {
+        // Built from the table index, so a component's parts cannot end
+        // up wired to a different slot than the one they sit in.
+        //
         // Index 0 is the eRoT. The walk passes over it, so nothing reads
-        // or actuates these entries. The arrays are indexed by ComponentId,
+        // or actuates that entry. Components are indexed by ComponentId,
         // so index 0 still needs a value.
-        images: [StubImage, StubImage],
+        components: core::array::from_fn(|i| ComponentWiring {
+            image: StubImage,
+            boot_control: BmcReset,
+            boot_watch: CheckpointWalk::new(BmcEvidence, &DEVICES[i]),
+            svn_floor: SvnFloorBinding::SelfManaged,
+            updatable: NoUpdate,
+            recovery: (),
+        }),
         verifier: StubVerifier,
-        boot_controls: [BmcReset, BmcReset],
-        boot_watches: [
-            CheckpointWalk::new(BmcEvidence, &DEVICES[0]),
-            CheckpointWalk::new(BmcEvidence, &DEVICES[1]),
-        ],
-        svn_floors: [SvnFloorBinding::SelfManaged, SvnFloorBinding::SelfManaged],
         report_sink: LogSink,
-        updatables: [NoUpdate, NoUpdate],
-        recovery: [(), ()],
         update_staging: NoStaging,
         update_verifier: Some(NeverVerifier),
         self_image: Some(SelfImage {

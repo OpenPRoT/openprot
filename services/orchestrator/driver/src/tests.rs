@@ -859,18 +859,26 @@ const MOCK_SVN: u32 = 5;
 /// How long a job may make no progress before the pump abandons it.
 const STALL_BUDGET_MILLIS: u64 = 1_000;
 
+/// Happy-path wiring for one component. Tests override the one capability
+/// they exercise with `..mock_component()`.
+fn mock_component() -> ComponentWiring<MockBoard> {
+    ComponentWiring {
+        image: MemImage::holding(valid_image()),
+        boot_control: MockReset::new(),
+        boot_watch: MockWalk::idle(),
+        svn_floor: SvnFloorBinding::Erot(MockFloor::new()),
+        updatable: MockUpdatable::new(),
+        recovery: (),
+    }
+}
+
 /// Happy-path wiring for `N` components. Tests override the one field
 /// they exercise with `..mock_board()`.
 fn mock_board<const N: usize>() -> Board<MockBoard, N> {
     Board {
-        images: core::array::from_fn(|_| MemImage::holding(valid_image())),
+        components: core::array::from_fn(|_| mock_component()),
         verifier: XorVerifier::accepting(),
-        boot_controls: core::array::from_fn(|_| MockReset::new()),
-        boot_watches: core::array::from_fn(|_| MockWalk::idle()),
-        svn_floors: core::array::from_fn(|_| SvnFloorBinding::Erot(MockFloor::new())),
         report_sink: RecordingSink::new(),
-        updatables: core::array::from_fn(|_| MockUpdatable::new()),
-        recovery: core::array::from_fn(|_| ()),
         update_staging: MemStaging::new(),
         update_stall_budget_millis: STALL_BUDGET_MILLIS,
         update_verifier: Some(StubVerifier::accepting()),
@@ -882,7 +890,10 @@ fn driver(images: [MemImage; 1]) -> PlatformDriver<MockBoard, 1> {
     PlatformDriver::new(
         &passive_entries(),
         Board {
-            images,
+            components: images.map(|image| ComponentWiring {
+                image,
+                ..mock_component()
+            }),
             ..mock_board()
         },
     )
@@ -914,7 +925,10 @@ fn measuring_driver(measurement: Measurement) -> PlatformDriver<MockBoard, 1> {
     PlatformDriver::new(
         &passive_entries(),
         Board {
-            images: [MemImage::holding(valid_image())],
+            components: [ComponentWiring {
+                image: MemImage::holding(valid_image()),
+                ..mock_component()
+            }],
             verifier: XorVerifier::measuring(measurement),
             ..mock_board()
         },
@@ -967,7 +981,10 @@ fn a_rejected_image_is_not_measured() {
     let mut driver = PlatformDriver::<MockBoard, 1>::new(
         &passive_entries(),
         Board {
-            images: [MemImage::holding(corrupt)],
+            components: [ComponentWiring {
+                image: MemImage::holding(corrupt),
+                ..mock_component()
+            }],
             verifier: XorVerifier::measuring(Measurement([0xAB; Measurement::LEN])),
             ..mock_board()
         },
@@ -1085,10 +1102,10 @@ fn reset_release_and_assert_reach_the_boot_control() {
     let mut driver = PlatformDriver::<MockBoard, 1>::new(&passive_entries(), mock_board());
 
     driver.release_reset(C0).unwrap();
-    assert!(!driver.board().boot_controls[0].held.get());
+    assert!(!driver.board().components[0].boot_control.held.get());
 
     driver.assert_reset(C0).unwrap();
-    assert!(driver.board().boot_controls[0].held.get());
+    assert!(driver.board().components[0].boot_control.held.get());
 }
 
 #[test]
@@ -1112,7 +1129,10 @@ fn reset_line_fault_is_reported() {
     let mut driver = PlatformDriver::<MockBoard, 1>::new(
         &passive_entries(),
         Board {
-            boot_controls: [control],
+            components: [ComponentWiring {
+                boot_control: control,
+                ..mock_component()
+            }],
             ..mock_board()
         },
     );
@@ -1197,18 +1217,20 @@ fn release_follows_verification() {
     let mut driver = PlatformDriver::<WatchBoard, 1>::new(
         &passive_entries(),
         Board {
-            images: [MemImage::holding(valid_image())],
+            components: [ComponentWiring {
+                image: MemImage::holding(valid_image()),
+                boot_control: control,
+                boot_watch: MockWalk::idle(),
+                svn_floor: SvnFloorBinding::Erot(MockFloor::new()),
+                updatable: MockUpdatable::new(),
+                recovery: (),
+            }],
             verifier: LineWatchingVerifier {
                 inner: XorVerifier::accepting(),
                 line: held.clone(),
                 held_during_verify: held_during_verify.clone(),
             },
-            boot_controls: [control],
-            boot_watches: [MockWalk::idle()],
-            svn_floors: [SvnFloorBinding::Erot(MockFloor::new())],
             report_sink: (),
-            updatables: [MockUpdatable::new()],
-            recovery: [()],
             update_staging: MemStaging::new(),
             update_stall_budget_millis: STALL_BUDGET_MILLIS,
             update_verifier: Some(StubVerifier::accepting()),
@@ -1237,7 +1259,10 @@ fn failed_release_fails_closed() {
     let mut driver = PlatformDriver::<MockBoard, 1>::new(
         &passive_entries(),
         Board {
-            boot_controls: [control],
+            components: [ComponentWiring {
+                boot_control: control,
+                ..mock_component()
+            }],
             ..mock_board()
         },
     );
@@ -1262,7 +1287,10 @@ fn walk_driver(
     PlatformDriver::new(
         &entries_with_kinds(component_kinds),
         Board {
-            boot_watches: walks,
+            components: walks.map(|boot_watch| ComponentWiring {
+                boot_watch,
+                ..mock_component()
+            }),
             ..mock_board()
         },
     )
@@ -1468,7 +1496,10 @@ fn booted_walk_settles_in_ready() {
     let mut driver = PlatformDriver::<MockBoard, 1>::new(
         &passive_entries(),
         Board {
-            boot_watches: [MockWalk::scripted(std::vec![WalkVerdict::Complete])],
+            components: [ComponentWiring {
+                boot_watch: MockWalk::scripted(std::vec![WalkVerdict::Complete]),
+                ..mock_component()
+            }],
             ..mock_board()
         },
     );
@@ -1492,10 +1523,13 @@ fn boot_failure_locks_when_recovery_is_exhausted() {
     let mut driver = PlatformDriver::<MockBoard, 1>::new(
         &passive_entries(),
         Board {
-            boot_watches: [MockWalk::scripted(std::vec![WalkVerdict::Failed {
-                checkpoint: "heartbeat",
-                cause: FailureCause::TimedOut,
-            }])],
+            components: [ComponentWiring {
+                boot_watch: MockWalk::scripted(std::vec![WalkVerdict::Failed {
+                    checkpoint: "heartbeat",
+                    cause: FailureCause::TimedOut,
+                }]),
+                ..mock_component()
+            }],
             ..mock_board()
         },
     );
@@ -1575,19 +1609,26 @@ impl BoardCapabilities for RecoverableBoard {
     type SelfUpdate = MockSelfUpdate;
 }
 
-fn recoverable_board<const N: usize>(sources: u8) -> Board<RecoverableBoard, N> {
-    Board {
-        images: core::array::from_fn(|_| MemImage::holding(valid_image())),
-        verifier: XorVerifier::accepting(),
-        boot_controls: core::array::from_fn(|_| MockReset::new()),
-        boot_watches: core::array::from_fn(|_| MockWalk::idle()),
-        svn_floors: core::array::from_fn(|_| SvnFloorBinding::Erot(MockFloor::new())),
-        report_sink: RecordingSink::new(),
-        updatables: core::array::from_fn(|_| MockUpdatable::new()),
-        recovery: core::array::from_fn(|_| MockRecovery {
+/// Happy-path wiring for one component of a board that can recover.
+fn recoverable_component(sources: u8) -> ComponentWiring<RecoverableBoard> {
+    ComponentWiring {
+        image: MemImage::holding(valid_image()),
+        boot_control: MockReset::new(),
+        boot_watch: MockWalk::idle(),
+        svn_floor: SvnFloorBinding::Erot(MockFloor::new()),
+        updatable: MockUpdatable::new(),
+        recovery: MockRecovery {
             sources,
             fail_on: None,
-        }),
+        },
+    }
+}
+
+fn recoverable_board<const N: usize>(sources: u8) -> Board<RecoverableBoard, N> {
+    Board {
+        components: core::array::from_fn(|_| recoverable_component(sources)),
+        verifier: XorVerifier::accepting(),
+        report_sink: RecordingSink::new(),
         update_staging: MemStaging::new(),
         update_stall_budget_millis: STALL_BUDGET_MILLIS,
         update_verifier: Some(StubVerifier::accepting()),
@@ -1625,9 +1666,12 @@ fn recovery_fault_is_reported() {
     let mut driver = PlatformDriver::<RecoverableBoard, 1>::new(
         &passive_entries(),
         Board {
-            recovery: [MockRecovery {
-                sources: 2,
-                fail_on: Some(0),
+            components: [ComponentWiring {
+                recovery: MockRecovery {
+                    sources: 2,
+                    fail_on: Some(0),
+                },
+                ..recoverable_component(2)
             }],
             ..recoverable_board(2)
         },
@@ -1681,9 +1725,12 @@ fn execute_routes_recover_component() {
     let mut faulting_driver = PlatformDriver::<RecoverableBoard, 1>::new(
         &passive_entries(),
         Board {
-            recovery: [MockRecovery {
-                sources: 2,
-                fail_on: Some(0),
+            components: [ComponentWiring {
+                recovery: MockRecovery {
+                    sources: 2,
+                    fail_on: Some(0),
+                },
+                ..recoverable_component(2)
             }],
             ..recoverable_board(2)
         },
@@ -1770,7 +1817,7 @@ fn commit_advances_the_floor_to_the_verified_svn() {
 
     assert_eq!(driver.execute(Effect::CommitSvnFloor(C0)), Ok(None));
     // Read back through the capability's own seam.
-    let SvnFloorBinding::Erot(floor) = &driver.board().svn_floors[0] else {
+    let SvnFloorBinding::Erot(floor) = &driver.board().components[0].svn_floor else {
         panic!("C0 is wired with an eRoT floor");
     };
     assert_eq!(
@@ -1788,7 +1835,10 @@ fn commit_without_an_erot_floor_is_a_no_op() {
     let mut driver = PlatformDriver::<MockBoard, 1>::new(
         &passive_entries(),
         Board {
-            svn_floors: [SvnFloorBinding::SelfManaged],
+            components: [ComponentWiring {
+                svn_floor: SvnFloorBinding::SelfManaged,
+                ..mock_component()
+            }],
             ..mock_board()
         },
     );
@@ -1815,7 +1865,10 @@ fn rejected_image_clears_the_verified_svn() {
     let mut driver = PlatformDriver::<MockBoard, 1>::new(
         &passive_entries(),
         Board {
-            images: [MemImage::holding(valid_image()).reflash_on_reopen(corrupt)],
+            components: [ComponentWiring {
+                image: MemImage::holding(valid_image()).reflash_on_reopen(corrupt),
+                ..mock_component()
+            }],
             ..mock_board()
         },
     );
@@ -1847,7 +1900,10 @@ fn floor_fault_is_reported() {
     let mut driver = PlatformDriver::<MockBoard, 1>::new(
         &passive_entries(),
         Board {
-            svn_floors: [SvnFloorBinding::Erot(mock)],
+            components: [ComponentWiring {
+                svn_floor: SvnFloorBinding::Erot(mock),
+                ..mock_component()
+            }],
             ..mock_board()
         },
     );
@@ -1996,7 +2052,7 @@ fn discard_staged_clears_the_job_and_abandons_the_device() {
     driver.discard_staged().expect("discard failed");
 
     assert_eq!(driver.pending_update(), None);
-    assert_eq!(driver.board().updatables[0].abandons, 1);
+    assert_eq!(driver.board().components[0].updatable.abandons, 1);
 }
 
 // Same drift as the authenticate case: the SM only emits DiscardStaged
@@ -2052,7 +2108,10 @@ fn update_driver(updatable: MockUpdatable) -> PlatformDriver<MockBoard, 1> {
     PlatformDriver::new(
         &passive_entries(),
         Board {
-            updatables: [updatable],
+            components: [ComponentWiring {
+                updatable,
+                ..mock_component()
+            }],
             ..mock_board()
         },
     )
@@ -2113,7 +2172,7 @@ fn a_pumped_job_verifies_after_staging() {
     enter_updating(&mut driver);
 
     assert_eq!(pump_to_event(&mut driver, 0), Some(Event::UpdateVerified));
-    assert!(driver.board().updatables[0].ready);
+    assert!(driver.board().components[0].updatable.ready);
 }
 
 // Staging is polled too: a device that takes four steps is not waited
@@ -2125,20 +2184,26 @@ fn staging_advances_one_bounded_step_per_pump() {
 
     // Tick 0: Submitted -> Staging transition, device not staged yet.
     driver.pump_update(0);
-    assert!(!driver.board().updatables[0].ready, "tick 0: still staging");
+    assert!(
+        !driver.board().components[0].updatable.ready,
+        "tick 0: still staging"
+    );
 
     // Ticks 1..4: one transfer step each.
     for tick in 1..5 {
         driver.pump_update(tick);
         assert!(
-            !driver.board().updatables[0].ready,
+            !driver.board().components[0].updatable.ready,
             "tick {tick}: still staging"
         );
     }
 
     // Tick 5: final step stages the device.
     driver.pump_update(5);
-    assert!(driver.board().updatables[0].ready, "tick 5: device staged");
+    assert!(
+        driver.board().components[0].updatable.ready,
+        "tick 5: device staged"
+    );
 
     // After staging, the next pumps start and complete verification.
     assert_eq!(pump_to_event(&mut driver, 6), Some(Event::UpdateVerified));
@@ -2159,7 +2224,7 @@ fn a_device_fault_rejects_the_update() {
     }
 
     assert_eq!(event, Some(Event::UpdateRejected));
-    assert_eq!(driver.board().updatables[0].abandons, 1);
+    assert_eq!(driver.board().components[0].updatable.abandons, 1);
 }
 
 // A transfer that stops moving is abandoned once the budget is spent,
@@ -2176,7 +2241,7 @@ fn a_stalled_transfer_is_rejected_at_the_budget() {
     let poll = driver.pump_update(STALL_BUDGET_MILLIS);
 
     assert_eq!(poll.event, Some(Event::UpdateRejected));
-    assert_eq!(driver.board().updatables[0].abandons, 1);
+    assert_eq!(driver.board().components[0].updatable.abandons, 1);
 }
 
 // Progress restarts the budget: a slow transfer that keeps moving is not
@@ -2199,7 +2264,10 @@ fn progress_restarts_the_stall_budget() {
         );
     }
 
-    assert!(driver.board().updatables[0].ready, "device staged");
+    assert!(
+        driver.board().components[0].updatable.ready,
+        "device staged"
+    );
 }
 
 // The SM emits AuthenticateStageUpdate on entry to Updating. A job
@@ -2259,7 +2327,10 @@ fn activate_update_refuses_an_unverified_candidate() {
     enter_updating(&mut driver);
     driver.pump_update(0); // Submitted -> Staging
     driver.pump_update(1); // Staging -> device Ready -> Staged
-    assert!(driver.board().updatables[0].ready, "bytes are staged");
+    assert!(
+        driver.board().components[0].updatable.ready,
+        "bytes are staged"
+    );
     assert_eq!(
         driver.activate_update(),
         Err(DriverError::CandidateNotAuthenticated)
@@ -2276,7 +2347,10 @@ fn verification_advances_one_bounded_step_per_pump() {
 
     assert_eq!(driver.pump_update(0).event, None, "tick 0: Submitted");
     assert_eq!(driver.pump_update(1).event, None, "tick 1: staging");
-    assert!(driver.board().updatables[0].ready, "tick 1: device staged");
+    assert!(
+        driver.board().components[0].updatable.ready,
+        "tick 1: device staged"
+    );
 
     let opened = driver.pump_update(2);
     assert_eq!(opened.event, None, "tick 2: the session only opens");
@@ -2307,7 +2381,7 @@ fn a_rejected_candidate_emits_update_rejected() {
 
     assert_eq!(pump_to_event(&mut driver, 0), Some(Event::UpdateRejected));
     assert_eq!(
-        driver.board().updatables[0].abandons,
+        driver.board().components[0].updatable.abandons,
         1,
         "device abandons the staged image after rejection"
     );
@@ -2330,7 +2404,7 @@ fn a_verifier_fault_rejects_the_candidate_and_is_reported() {
     enter_updating(&mut driver);
 
     assert_eq!(pump_to_event(&mut driver, 0), Some(Event::UpdateRejected));
-    assert_eq!(driver.board().updatables[0].abandons, 1);
+    assert_eq!(driver.board().components[0].updatable.abandons, 1);
     assert_eq!(
         driver.board().report_sink.seen,
         [Report::UpdateVerifierFault]
@@ -2352,7 +2426,7 @@ fn a_stalled_verification_is_rejected_at_the_budget() {
     let poll = driver.pump_update(2 + STALL_BUDGET_MILLIS);
 
     assert_eq!(poll.event, Some(Event::UpdateRejected));
-    assert_eq!(driver.board().updatables[0].abandons, 1);
+    assert_eq!(driver.board().components[0].updatable.abandons, 1);
 }
 
 // The verifier comes back after a rejection. If it did not, the next
@@ -2401,7 +2475,7 @@ fn activate_update_ends_the_job() {
 
     driver.activate_update().expect("activate failed");
 
-    assert!(driver.board().updatables[0].active);
+    assert!(driver.board().components[0].updatable.active);
     assert_eq!(driver.pending_update(), None);
 }
 
@@ -2436,7 +2510,7 @@ fn an_update_runs_through_the_sm_and_rewalks() {
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
     assert_eq!(orch.state(), State::Ready);
 
-    let resets_before = driver.board().boot_controls[0].holds.get();
+    let resets_before = driver.board().components[0].boot_control.holds.get();
 
     request_update(&mut orch, &mut driver, C0, CANDIDATE_LEN).unwrap();
     assert_eq!(orch.state(), State::Updating(C0));
@@ -2448,7 +2522,7 @@ fn an_update_runs_through_the_sm_and_rewalks() {
             break;
         }
     }
-    assert!(driver.board().updatables[0].ready, "never staged");
+    assert!(driver.board().components[0].updatable.ready, "never staged");
     assert_eq!(
         verdict,
         Some(Event::UpdateVerified),
@@ -2458,12 +2532,12 @@ fn an_update_runs_through_the_sm_and_rewalks() {
     orch.dispatch(&mut driver, Event::UpdateVerified);
 
     assert_eq!(orch.state(), State::Ready);
-    assert!(driver.board().updatables[0].active);
+    assert!(driver.board().components[0].updatable.active);
     assert_eq!(driver.pending_update(), None);
     // The activation only proposed the image; the walk that followed is
     // what reset the device into it.
     assert!(
-        driver.board().boot_controls[0].holds.get() > resets_before,
+        driver.board().components[0].boot_control.holds.get() > resets_before,
         "the updated component was never reset"
     );
 }
@@ -2487,7 +2561,7 @@ fn a_rejected_update_returns_the_platform_to_ready() {
 
     assert_eq!(orch.state(), State::Ready);
     assert_eq!(driver.pending_update(), None, "DiscardStaged cleared it");
-    assert!(!driver.board().updatables[0].active);
+    assert!(!driver.board().components[0].updatable.active);
 }
 
 // bring_up takes a ChainEntries, the validated output of chain_of. The
@@ -2858,14 +2932,17 @@ fn activated(driver: &mut PlatformDriver<MockBoard, 1>, orch: &mut Orchestrator<
             break;
         }
     }
-    assert!(driver.board().updatables[0].ready, "never staged");
+    assert!(driver.board().components[0].updatable.ready, "never staged");
     assert_eq!(
         verdict,
         Some(Event::UpdateVerified),
         "no verdict from the pump"
     );
     orch.dispatch(driver, Event::UpdateVerified);
-    assert!(driver.board().updatables[0].active, "never activated");
+    assert!(
+        driver.board().components[0].updatable.active,
+        "never activated"
+    );
 }
 
 // A commit sends the committed image to the device a second time. The
@@ -2880,7 +2957,7 @@ fn a_commit_runs_a_second_staging_pass() {
     // An update, staged and activated. The device is running the new
     // image and the spare slot still holds the old one.
     activated(&mut driver, &mut orch);
-    let staged_before = driver.board().updatables[0].stagings;
+    let staged_before = driver.board().components[0].updatable.stagings;
 
     // The boot is confirmed, which commits the floor and is where the
     // re-sync comes from.
@@ -2904,13 +2981,13 @@ fn a_commit_runs_a_second_staging_pass() {
     assert_eq!(driver.pending_update(), None, "the re-sync ended");
 
     // The device was sent the image a second time.
-    assert!(driver.board().updatables[0].stagings > staged_before);
+    assert!(driver.board().components[0].updatable.stagings > staged_before);
 
     // And it was not activated a second time. `active` is already true
     // from the update, so counting activations is the only way to see
     // this.
     assert_eq!(
-        driver.board().updatables[0].activations,
+        driver.board().components[0].updatable.activations,
         1,
         "the device keeps running what it committed"
     );
@@ -2935,13 +3012,16 @@ fn a_commit_leaves_a_component_that_tracks_its_own_svn_alone() {
     let mut driver = PlatformDriver::<MockBoard, 1>::new(
         &passive_entries(),
         Board {
-            updatables: [MockUpdatable::new()],
-            svn_floors: [SvnFloorBinding::SelfManaged],
+            components: [ComponentWiring {
+                updatable: MockUpdatable::new(),
+                svn_floor: SvnFloorBinding::SelfManaged,
+                ..mock_component()
+            }],
             ..mock_board()
         },
     );
     activated(&mut driver, &mut orch);
-    let staged_before = driver.board().updatables[0].stagings;
+    let staged_before = driver.board().components[0].updatable.stagings;
 
     driver.commit_svn_floor(C0).expect("commit failed");
 
@@ -2950,7 +3030,7 @@ fn a_commit_leaves_a_component_that_tracks_its_own_svn_alone() {
         driver.pump_update(tick);
     }
     assert_eq!(
-        driver.board().updatables[0].stagings,
+        driver.board().components[0].updatable.stagings,
         staged_before,
         "the device was sent the image a second time"
     );
@@ -2958,7 +3038,7 @@ fn a_commit_leaves_a_component_that_tracks_its_own_svn_alone() {
 
 /// Reads `C0`'s floor back through the capability's own seam.
 fn floor_of(driver: &PlatformDriver<MockBoard, 1>) -> Svn {
-    let SvnFloorBinding::Erot(floor) = &driver.board().svn_floors[0] else {
+    let SvnFloorBinding::Erot(floor) = &driver.board().components[0].svn_floor else {
         panic!("C0 is wired with an eRoT floor");
     };
     floor.floor().expect("floor unreadable")
@@ -3048,8 +3128,11 @@ fn a_floor_that_cannot_be_written_after_the_pass_is_reported() {
     let mut driver = PlatformDriver::<MockBoard, 1>::new(
         &passive_entries(),
         Board {
-            updatables: [MockUpdatable::new()],
-            svn_floors: [SvnFloorBinding::Erot(MockFloor::faulting())],
+            components: [ComponentWiring {
+                updatable: MockUpdatable::new(),
+                svn_floor: SvnFloorBinding::Erot(MockFloor::faulting()),
+                ..mock_component()
+            }],
             ..mock_board()
         },
     );
@@ -3104,20 +3187,26 @@ fn a_second_commit_does_not_restage_again() {
         }
         driver.pump_update(tick);
     }
-    let staged_after_resync = driver.board().updatables[0].stagings;
+    let staged_after_resync = driver.board().components[0].updatable.stagings;
 
     // A second confirmed boot for the same component.
     orch.dispatch(&mut driver, Event::BootConfirmed(C0));
 
     assert_eq!(driver.pending_update(), None);
-    assert_eq!(driver.board().updatables[0].stagings, staged_after_resync);
-    assert_eq!(driver.board().updatables[0].activations, 1);
+    assert_eq!(
+        driver.board().components[0].updatable.stagings,
+        staged_after_resync
+    );
+    assert_eq!(driver.board().components[0].updatable.activations, 1);
 
     // Straight at the driver, with no commit window to gate it.
     driver.commit_svn_floor(C0).expect("commit failed");
 
     assert_eq!(driver.pending_update(), None);
-    assert_eq!(driver.board().updatables[0].stagings, staged_after_resync);
+    assert_eq!(
+        driver.board().components[0].updatable.stagings,
+        staged_after_resync
+    );
 }
 
 // The device fails the second transfer. The image it is running was
@@ -3154,7 +3243,7 @@ fn a_failed_resync_is_reported_and_ends() {
         .contains(&Report::SlotResyncFailed(C0)));
 
     // Still running the image it committed, and the SM never moved.
-    assert_eq!(driver.board().updatables[0].activations, 1);
+    assert_eq!(driver.board().components[0].updatable.activations, 1);
     assert_eq!(orch.state(), State::Ready);
 }
 
@@ -3231,7 +3320,7 @@ fn a_stalled_resync_is_reported_not_rejected() {
         .report_sink
         .seen
         .contains(&Report::SlotResyncFailed(C0)));
-    assert_eq!(driver.board().updatables[0].activations, 1);
+    assert_eq!(driver.board().components[0].updatable.activations, 1);
     assert_eq!(orch.state(), State::Ready);
 }
 
@@ -3254,7 +3343,7 @@ fn a_discarded_update_cancels_the_pending_resync() {
     driver.discard_staged().unwrap();
 
     // Staging passes so far: update one's. A re-sync would add another.
-    let staged_before = driver.board().updatables[0].stagings;
+    let staged_before = driver.board().components[0].updatable.stagings;
 
     // Update one's boot is confirmed. With no second update in between,
     // this is the dispatch that would queue the re-sync.
@@ -3274,7 +3363,7 @@ fn a_discarded_update_cancels_the_pending_resync() {
         driver.pump_update(tick);
     }
     assert_eq!(
-        driver.board().updatables[0].stagings,
+        driver.board().components[0].updatable.stagings,
         staged_before,
         "and no bytes went to the device"
     );
