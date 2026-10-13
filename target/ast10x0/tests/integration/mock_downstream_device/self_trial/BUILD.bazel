@@ -1,0 +1,23 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# The boot scenario with the eRoT running the trial image of its own
+# update.
+#
+# Same sources, same system config, one flag. The session starts at
+# TrialPending, as the boot after an activation would find it, and the run
+# passes when the chain coming up has moved it to Committed. Without that
+# the update agent's UpdateSecurityRevision has no confirmed session to
+# advance the anti-rollback floor for.
+
+load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
+load("//target/ast10x0/tests/integration/mock_downstream_device:apps.bzl", "APPS", "SYSTEM_CONFIG", "TARGET_SRC")
+
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/mock_downstream_device/self_trial:self_trial_qemu_test
+qemu_scenario(
+    name = "self_trial_qemu",
+    apps = APPS,
+    cfgs = ["self_trial"],
+    system_config = SYSTEM_CONFIG,
+    target_src = TARGET_SRC,
+)

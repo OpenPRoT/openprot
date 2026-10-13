@@ -20,6 +20,7 @@ like the proof.
 | --- | --- | --- |
 | `mock_downstream_device` | the device boots | the walk completes |
 | `mock_downstream_device/device_hangs` | the device never reports | the platform locks |
+| `mock_downstream_device/self_trial` | the eRoT boots the trial image of its own update | the chain coming up confirms the session |
 | `pldm_update` | a clean update | the update commits |
 | `pldm_update/retry_chunk` | the agent answers one data request with a retry | the device asks for that window again and the update completes |
 | `pldm_update/corrupt_image` | one byte of the image is flipped | the device catches it |
@@ -115,6 +116,20 @@ the platform locks, which is what that scenario passes on:
     [INF] report: component 0 out of recovery sources
     [INF] the device never came up and the platform locked
     TEST_RESULT:PASS
+
+`self_trial` is the same image with the eRoT's own update session set up
+as the boot after an activation would find it: `TrialPending`, with the
+trial image running. Nothing judges that session before the walk; what
+judges it is the walk reaching `Ready`, which is where the state machine
+confirms it. The run passes when the session reads `Committed` by the
+time the device has booted, because a session that is still
+`TrialPending` gives the update agent's UpdateSecurityRevision nothing to
+advance the anti-rollback floor for.
+
+The session is two atomics rather than storage. This scenario never
+resets the eRoT, so nothing has to survive a reset; what it exercises is
+the path from the session, through `Event::SelfTrialBooted` and
+`Effect::ConfirmSelfTrial`, back to the session.
 
 ## The full update scenario
 

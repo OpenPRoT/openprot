@@ -30,7 +30,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 
 use openprot_orchestrator_driver::{
     bring_up, settle_self_image_at_boot, Board, BoardCapabilities, ImageSource, Report, ReportSink,
-    SelfImage, SvnFloorBinding, Verdict, Verifier,
+    SelfImage, SelfUpdateSettlement, SvnFloorBinding, Verdict, Verifier,
 };
 use openprot_orchestrator_sm::{ComponentAttrs, ComponentId, Event, PowerOnResult, State};
 use orchestrator_capabilities::{
@@ -75,6 +75,28 @@ const RUN_BUDGET_MILLIS: u64 = 10_000;
 const EXPECT_LOCKDOWN: bool = false;
 #[cfg(device_hangs)]
 const EXPECT_LOCKDOWN: bool = true;
+
+/// Whether this build boots the trial image of the eRoT's own update.
+///
+/// The variant scenario starts the session at `TrialPending` and runs the
+/// same boot. What it adds is the claim that bringing the chain up confirms
+/// the session, so the update agent can advance the floor afterwards.
+#[cfg(not(self_trial))]
+const EXPECT_SELF_TRIAL: bool = false;
+#[cfg(self_trial)]
+const EXPECT_SELF_TRIAL: bool = true;
+
+/// The SVN the trial image carries, as the session recorded it before the
+/// eRoT reset into it.
+const TRIAL_SVN: Svn = Svn(7);
+
+/// What settling the eRoT's own session has to answer in this build. A
+/// self-trial build is mid-trial; any other boot has nothing in flight.
+const EXPECT_SETTLEMENT: SelfUpdateSettlement = if EXPECT_SELF_TRIAL {
+    SelfUpdateSettlement::TrialRunning { svn: TRIAL_SVN }
+} else {
+    SelfUpdateSettlement::Settled
+};
 
 /// Reset command bytes, read by the device as its reset line.
 const RESET_ASSERT: u8 = 0;
@@ -234,9 +256,8 @@ impl ImageSource for StubImage {
 /// scenario never resets the eRoT, so nothing has to survive a reset.
 struct ErotFloor;
 
-/// The eRoT's own anti-rollback floor. Starts at zero: no scenario here
-/// advances it, and a session that recorded an SVN still has the advance
-/// ahead of it.
+/// The eRoT's own anti-rollback floor. Starts at zero, which is below
+/// `TRIAL_SVN`, so a confirmed trial still has the advance ahead of it.
 static EROT_FLOOR: AtomicU32 = AtomicU32::new(0);
 
 impl SvnFloor for ErotFloor {
@@ -275,6 +296,15 @@ const STATE_TRIAL_PENDING: u8 = 2;
 const STATE_COMMITTED: u8 = 3;
 
 impl SelfSession {
+    /// Sets the session up as the boot after an activation would find it.
+    /// An ordinary boot leaves it `Idle`.
+    fn install() {
+        if EXPECT_SELF_TRIAL {
+            SESSION_SVN.store(TRIAL_SVN.0, Ordering::Relaxed);
+            SESSION_STATE.store(STATE_TRIAL_PENDING, Ordering::Relaxed);
+        }
+    }
+
     fn read() -> SelfUpdateState {
         let svn = Svn(SESSION_SVN.load(Ordering::Relaxed));
         match SESSION_STATE.load(Ordering::Relaxed) {
@@ -299,9 +329,13 @@ impl SelfUpdate for SelfSession {
 
     fn running(&self) -> Result<RunningImage, BoardFault> {
         // Which image this boot runs is the boot selector's answer, not the
-        // session's. No scenario here activates an image for the eRoT, so
-        // this boot is always running the confirmed one.
-        Ok(RunningImage::Confirmed)
+        // session's. Here it is the scenario's: a self-trial build is the
+        // boot that runs the trial image.
+        Ok(if EXPECT_SELF_TRIAL {
+            RunningImage::Trial
+        } else {
+            RunningImage::Confirmed
+        })
     }
 
     fn prepare(&mut self, svn: Svn) -> Result<(), BoardFault> {
@@ -492,14 +526,23 @@ fn run() -> Result<(), ()> {
     syscall::wait_group_add(handle::WG, handle::BOOT_EVT, Signals::READABLE, 0usize)
         .map_err(|_| ())?;
 
+    SelfSession::install();
+
     let (mut core, mut driver) =
         bring_up::<MockDownstreamDeviceBoard, N, E>(&CHAIN, board(), MAX_RETRY);
 
     // What the eRoT's last self-update was doing, read before anything
     // walks. A trial running right now has to be declared here, because
     // what judges it is this walk reaching `Ready`.
-    if settle_self_image_at_boot(&mut core, &mut driver).is_err() {
-        pw_log::error!("the eRoT's own session could not be settled");
+    let settlement = match settle_self_image_at_boot(&mut core, &mut driver) {
+        Ok(settlement) => settlement,
+        Err(_) => {
+            pw_log::error!("the eRoT's own session could not be settled");
+            return Err(());
+        }
+    };
+    if settlement != EXPECT_SETTLEMENT {
+        pw_log::error!("the eRoT's own session did not say what this boot is");
         return Err(());
     }
 
@@ -532,6 +575,16 @@ fn run() -> Result<(), ()> {
         if booted {
             if EXPECT_LOCKDOWN {
                 pw_log::error!("the device reported ready when it should not have");
+                return Err(());
+            }
+            // The chain is up. In a self-trial build that is the verdict on
+            // the trial, and the session has to read `Committed`: without it
+            // the update agent's UpdateSecurityRevision has nothing to
+            // advance the floor for.
+            if EXPECT_SELF_TRIAL
+                && SelfSession::read() != (SelfUpdateState::Committed { svn: TRIAL_SVN })
+            {
+                pw_log::error!("the chain came up and the self trial was not confirmed");
                 return Err(());
             }
             pw_log::info!("device booted and the orchestrator is in Ready");

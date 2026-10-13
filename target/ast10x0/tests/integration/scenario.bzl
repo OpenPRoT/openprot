@@ -38,6 +38,7 @@ SCENARIO_CFGS = [
     "cancel_mid_transfer",
     "offer_before_supervising",
     "retry_chunk",
+    "self_trial",
 ]
 
 KERNEL_DEPS = [
