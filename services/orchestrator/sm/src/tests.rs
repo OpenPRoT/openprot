@@ -3264,3 +3264,32 @@ fn sink_overflow_panics_in_tests() {
     // Second emit overflows the 1-slot buffer.
     sink.emit(Effect::LatchLockdown);
 }
+
+/// The eRoT sits at chain position 0 and is already running, so the walk
+/// steps past it. It emits no `ReadFirmware`, `VerifyFirmware` or
+/// `ReleaseReset` for it, and the first component it touches is the one
+/// behind the eRoT.
+#[test]
+fn the_walk_passes_over_the_erot() {
+    let chain = chain(&[
+        (C0, ComponentAttrs::erot()),
+        (C1, ComponentAttrs::passive_required()),
+    ]);
+    let mut orch = Orchestrator::<CAPACITY, ECAP>::new(chain.try_into().unwrap(), MAX_RETRY);
+    let mut platform = Recorder::new();
+
+    orch.dispatch(&mut platform, BOOT);
+
+    let effects = platform.recorded;
+    assert!(
+        !effects.iter().any(|e| matches!(
+            e,
+            Effect::ReadFirmware(C0) | Effect::VerifyFirmware(C0) | Effect::ReleaseReset(C0)
+        )),
+        "the walk touched the eRoT: {effects:?}"
+    );
+    assert!(
+        effects.contains(&Effect::VerifyFirmware(C1)),
+        "the walk did not reach the component behind the eRoT: {effects:?}"
+    );
+}
