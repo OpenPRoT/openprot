@@ -55,7 +55,8 @@ across events and is visible to every handler. States are a plain `State` enum
 | `cursor` | `u8` | Index of the component currently under verification. Reset to 0 on every `PreSupervision` entry. Advances on each `VerificationPassed`, and past any component marked `Isolated` in `statuses` (skipped without verification), via `Outcome::Handled`. |
 | `statuses` | `Vec<ComponentStatus, N>` | One record per chain component, parallel by index. Each `ComponentStatus` is `{ lifecycle: ComponentLifecycle, retry: u8 }`. `lifecycle` (`Nominal` / `Isolated`) marks whether the component has been gated out of service — an `Isolated` component is held in reset and skipped on every walk. `retry` is its consecutive failed-restore count, kept per component so interleaved recoveries never share a budget. Durable across a return to `Ready` (only `retry` is cleared there; `Isolated` persists); reset only by a fresh `Rot` on `PowerOnReset`. |
 | `max_retry` | `u8` | Ceiling for a component's `retry`, chosen by the platform driver. When `statuses[i].retry >= max_retry` recovery is **exhausted** and the failed component's recovery-failure policy (`Isolable`/`Cascading`/`Required`) is applied. |
-| `pending_commit` | `Option<ComponentId>` | The component whose update was activated and whose anti-rollback floor has not been committed yet. Set on `UpdateVerified`, cleared by its own `BootConfirmed` (which emits `CommitSvnFloor`) and on entry to `Updating` or `Recovering`. A `CommitTimeout` while it is set goes to `Locked`. |
+| `pending_commit` | `Option<ComponentId>` | The component whose update was activated and whose image has not proved it runs yet. Set on `UpdateVerified`, cleared by its own `BootConfirmed`, which records the component in `awaiting_floor_advance` instead, and on entry to `Updating` or `Recovering`. A `CommitTimeout` while it is set goes to `Locked`. |
+| `awaiting_floor_advance` | `Option<ComponentId>` | The component whose image has booted and whose anti-rollback floor is still waiting for the update agent to ask. Set by `BootConfirmed`, cleared by the matching `SvnCommitRequest`, which emits `CommitSvnFloor`, on entry to `Updating` or `Recovering` (the SVN the floor would take belongs to the image those two supersede), and when the component is gated out of service, which puts its image under the same suspicion. No watchdog bounds it: an agent that never sends UpdateSecurityRevision leaves the floor where it is. |
 | `self_trial_booted` | `bool` | Set by `SelfTrialBooted`: this boot is the trial run of the eRoT's own update. `Ready` entry emits `ConfirmSelfTrial` and clears it, so the trial is confirmed once, however many times the machine returns to `Ready`. Only ever set at the start of a boot; what survives the reset that decides the trial is the durable session, not this. |
 | `_effect_cap` | `PhantomData<[u8; E]>` | Zero-sized; ties the effect-buffer size `E` to the type so the `E >= 2 * N + 2` bound is enforced at construction. |
 
@@ -193,6 +194,12 @@ likes; before the confirm the ask is refused.
 | Event | Guard | Effects | Next state |
 |---|---|---|---|
 | `UpdateRequest(id)` | — | — | `Updating(id)` |
+| `BootConfirmed(id)` | `pending_commit == Some(id)` | — | `Handled` (window closed; `id` moves to `awaiting_floor_advance`) |
+| `BootConfirmed(id)` | otherwise | — | `Handled` (no window open for `id`) |
+| `SvnCommitRequest(id)` | `awaiting_floor_advance == Some(id)` | `CommitSvnFloor(id)` | `Handled` |
+| `SvnCommitRequest(id)` | otherwise | — | `Handled` (no advance outstanding for `id`; the floor takes the SVN once) |
+| `CommitTimeout` | `pending_commit` set | — | `Locked` (`LatchLockdown` on entry) |
+| `CommitTimeout` | `pending_commit` clear | — | `Handled` |
 | anything else | — | — | `Outcome::Super` → `SupervisingPlatform` |
 
 ---
