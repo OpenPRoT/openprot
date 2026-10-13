@@ -482,6 +482,8 @@ impl BoardCapabilities for MockDownstreamDeviceBoard {
     type Staging = NoStaging;
     type UpdateVerifier = NeverVerifier;
     type SelfUpdate = SelfSession;
+    type ResetSignal = u8;
+    type Probe = u8;
 }
 
 fn board() -> Board<MockDownstreamDeviceBoard, N> {
@@ -493,6 +495,7 @@ fn board() -> Board<MockDownstreamDeviceBoard, N> {
         // or actuates that entry. Components are indexed by ComponentId,
         // so index 0 still needs a value.
         components: core::array::from_fn(|i| ComponentWiring {
+            device: &DEVICES[i],
             image: StubImage,
             boot_control: BmcReset,
             boot_watch: CheckpointWalk::new(BmcEvidence, &DEVICES[i]),
@@ -531,7 +534,7 @@ fn run() -> Result<(), ()> {
     SelfSession::install();
 
     let (mut core, mut driver) =
-        bring_up::<MockDownstreamDeviceBoard, N, E>(&CHAIN, board(), MAX_RETRY);
+        bring_up::<MockDownstreamDeviceBoard, N, E>(&CHAIN, &DEVICES, board(), MAX_RETRY);
 
     // What the eRoT's last self-update was doing, read before anything
     // walks. A trial running right now has to be declared here, because

@@ -6,6 +6,7 @@
 
 use openprot_orchestrator_sm::{BootFailureKind, ComponentId};
 use orchestrator_capabilities::Updatable;
+use orchestrator_config::DeviceConfig;
 use util_io::ByteSource;
 
 pub use orchestrator_capabilities::{BootControl, BootWatch, Measurement};
@@ -222,6 +223,10 @@ pub trait BoardCapabilities {
     /// Durable storage that records the eRoT's own update. It has to
     /// survive the reboot that decides whether the update worked.
     type SelfUpdate: SelfUpdate;
+    /// The board's reset signal ids, as the device table spells them.
+    type ResetSignal: 'static;
+    /// The board's boot-probe vocabulary, as the device table spells it.
+    type Probe: 'static;
 }
 
 /// The eRoT's own update session plus the anti-rollback floor it advances.
@@ -259,6 +264,15 @@ pub enum SvnFloorBinding<F: SvnFloor> {
 /// component is written and read in one place and its parts cannot be
 /// shuffled against each other.
 pub struct ComponentWiring<B: BoardCapabilities> {
+    /// The device table row this wiring claims. `bring_up` checks it
+    /// against the table, so a pair of components wired into each other's
+    /// slots is caught there rather than driving the wrong reset line.
+    ///
+    /// The check reaches this field and no further. A capability built
+    /// against some other row, a boot walk handed `&DEVICES[1]` while this
+    /// says row 0, still passes. Build the array with
+    /// `core::array::from_fn` so one closure writes the index once.
+    pub device: &'static DeviceConfig<B::ResetSignal, B::Probe>,
     /// The component's active firmware image.
     pub image: B::Image,
     /// Actuates the component's reset.
@@ -295,16 +309,25 @@ pub struct ComponentWiring<B: BoardCapabilities> {
 ///     type Staging = StagingFlash;        // where the update source writes
 ///     type UpdateVerifier = CryptoVerifier; // incremental signature check
 ///     type SelfUpdate = SelfUpdateSession; // session record in the eRoT's own flash
+///     type ResetSignal = ExtrstLine;      // as DEVICES spells its reset ids
+///     type Probe = BootProbe;             // as DEVICES spells its boot probes
 /// }
+///
+/// // The table is a static: bring_up checks each wiring against its row by
+/// // address, and a const table can be promoted afresh at every use.
+/// static DEVICES: [orchestrator_config::DeviceConfig<ExtrstLine, BootProbe>; 2] =
+///     [bmc_row, cpld_row];
 ///
 /// // One chain, from the board's device table, for both halves. The const
 /// // item is load-bearing: it forces chain_of's validation at build time.
 /// const CHAIN: orchestrator_config::ChainEntries<2> = orchestrator_config::chain_of(&DEVICES);
 /// let (orchestrator, driver) = bring_up::<Ast1060Board, 2, 6>(
 ///     &CHAIN,
+///     &DEVICES,
 ///     Board {
 ///         components: [
 ///             ComponentWiring {
+///                 device: &DEVICES[0],
 ///                 image: bmc_image,
 ///                 boot_control: bmc_reset,
 ///                 boot_watch: bmc_walk,
@@ -313,6 +336,7 @@ pub struct ComponentWiring<B: BoardCapabilities> {
 ///                 recovery: bmc_recovery,
 ///             },
 ///             ComponentWiring {
+///                 device: &DEVICES[1],
 ///                 image: cpld_image,
 ///                 boot_control: cpld_reset,
 ///                 boot_watch: cpld_walk,

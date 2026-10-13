@@ -379,6 +379,8 @@ impl BoardCapabilities for UpdateBoard {
     type Staging = PatternStaging;
     type UpdateVerifier = PatternVerifier;
     type SelfUpdate = ();
+    type ResetSignal = u8;
+    type Probe = u8;
 }
 
 fn board() -> Board<UpdateBoard, N> {
@@ -390,6 +392,7 @@ fn board() -> Board<UpdateBoard, N> {
         // or actuates that entry. Components are indexed by ComponentId,
         // so index 0 still needs a value.
         components: core::array::from_fn(|i| ComponentWiring {
+            device: &DEVICES[i],
             image: StubImage,
             boot_control: NoReset,
             boot_watch: CheckpointWalk::new(AlwaysBooted, &DEVICES[i]),
@@ -493,7 +496,8 @@ fn entry() {
     let transport = AsyncChannelTransport::new(IpcHandle::new(handle::FD), send, recv);
     let mut fd = FdIpcClient::new(transport);
 
-    let (mut core, mut driver) = bring_up::<UpdateBoard, N, E>(&CHAIN, board(), MAX_RETRY);
+    let (mut core, mut driver) =
+        bring_up::<UpdateBoard, N, E>(&CHAIN, &DEVICES, board(), MAX_RETRY);
 
     // Power on and verify, which is what puts the machine in Ready. An
     // update request arriving before that is refused, which is the point of

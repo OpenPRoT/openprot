@@ -9,7 +9,7 @@ use openprot_orchestrator_sm::{
     Orchestrator, Platform,
 };
 
-use orchestrator_config::ChainEntries;
+use orchestrator_config::{ChainEntries, DeviceConfig};
 
 use crate::board::{
     Board, BoardCapabilities, ComponentWiring, ImageSource, Report, ReportSink, SvnFloorBinding,
@@ -737,11 +737,34 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
 /// Takes a [`ChainEntries`] returned by `orchestrator_config::chain_of`,
 /// which validates the table at const time. Boards declare the result as a
 /// `const` item, so an invalid table is a build error, not a runtime panic.
+///
+/// `chain_entries` and `devices` are expected to come from the same table.
+/// Nothing checks that, so one board's chain passed with another's table
+/// would describe every component wrongly.
+///
+/// # Panics
+///
+/// Panics if a component's wiring does not name its own row of `devices`.
+/// The wiring holds hardware handles, so it cannot be checked at const time
+/// the way `chain_of` checks the table; the assert catches a miswired board
+/// at first bring-up, before it drives another component's reset line.
+///
+/// The table has to be a `static` item. A `const` table is promoted afresh
+/// at each use, so the row a wiring names and the row here would be two
+/// addresses and the check could not hold on a correctly wired board.
 pub fn bring_up<B: BoardCapabilities, const N: usize, const E: usize>(
     chain_entries: &'static ChainEntries<N>,
+    devices: &'static [DeviceConfig<B::ResetSignal, B::Probe>; N],
     board: Board<B, N>,
     max_retry: u8,
 ) -> (Orchestrator<N, E>, PlatformDriver<B, N>) {
+    for (component, device) in board.components.iter().zip(devices.iter()) {
+        assert!(
+            core::ptr::eq(component.device, device),
+            "a component's wiring must name its own device table entry, \
+             and the table has to be a static item"
+        );
+    }
     let entries = chain_entries.entries();
     // chain_of validated: nonempty, at most u8::MAX, ids are positions,
     // deps strictly earlier, eRoT at position 0 and nowhere else.

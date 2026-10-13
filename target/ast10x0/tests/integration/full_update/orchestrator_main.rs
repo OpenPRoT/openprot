@@ -431,6 +431,8 @@ impl BoardCapabilities for UpdateBoard {
     type Staging = PatternStaging;
     type UpdateVerifier = PatternVerifier;
     type SelfUpdate = ();
+    type ResetSignal = u8;
+    type Probe = u8;
 }
 
 fn board() -> Board<UpdateBoard, N> {
@@ -442,6 +444,7 @@ fn board() -> Board<UpdateBoard, N> {
         // or actuates that entry. Components are indexed by ComponentId,
         // so index 0 still needs a value.
         components: core::array::from_fn(|i| ComponentWiring {
+            device: &DEVICES[i],
             image: StubImage,
             boot_control: BmcReset,
             boot_watch: CheckpointWalk::new(BmcEvidence, &DEVICES[i]),
@@ -486,7 +489,8 @@ fn entry() {
     let transport = AsyncChannelTransport::new(IpcHandle::new(handle::FD), send, recv);
     let mut fd = FdIpcClient::new(transport);
 
-    let (mut core, mut driver) = bring_up::<UpdateBoard, N, E>(&CHAIN, board(), MAX_RETRY);
+    let (mut core, mut driver) =
+        bring_up::<UpdateBoard, N, E>(&CHAIN, &DEVICES, board(), MAX_RETRY);
 
     // The RoT declares this run. Its claim is the ordering, and only it
     // sees the whole of it: the firmware device's flow ends at activation
