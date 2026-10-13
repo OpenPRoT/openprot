@@ -56,10 +56,12 @@ pub enum ComponentKind {
     /// and if it had failed to boot this code would not be running.
     ///
     /// It is still part of the chain, because it is an update target like
-    /// any other component: `updatables[0]` stages the eRoT's own image and
-    /// `svn_floors[0]` holds its anti-rollback floor. What a self-update
-    /// needs on top is a durable session, because the reboot that decides
-    /// it wipes RAM.
+    /// any other component: `updatables[0]` stages the eRoT's own image. Its
+    /// anti-rollback floor is the one exception, held in the board's
+    /// self-image next to the update session rather than in `svn_floors[0]`,
+    /// because the floor and the session are advanced together and neither
+    /// is reached through a chain walk. What a self-update needs on top is
+    /// that durable session, because the reboot that decides it wipes RAM.
     Erot,
 }
 
