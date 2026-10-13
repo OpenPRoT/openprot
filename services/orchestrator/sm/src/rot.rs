@@ -199,7 +199,15 @@ impl<const N: usize, const E: usize> Rot<N, E> {
     /// `false` — the caller should treat that as "chain done".
     fn advance_to_next_ungated(&mut self, ctx: &mut Sink<E>, start_idx: usize) -> bool {
         let mut idx = start_idx;
-        while let Some(&(id, _)) = self.chain.get(idx) {
+        while let Some(&(id, attrs)) = self.chain.get(idx) {
+            // The eRoT is chain position 0 and is already running by the
+            // time the walk starts. It is what does the reading, verifying
+            // and releasing, so there is nothing here to read, verify at
+            // rest or release. Step past it, like a gated component.
+            if attrs.kind == ComponentKind::Erot {
+                idx += 1;
+                continue;
+            }
             if !self.is_gated(id) {
                 // `idx < chain.len() <= N`; chain capacity is board-chosen and
                 // assumed to fit `u8`, matching the existing `cursor: u8` contract.
