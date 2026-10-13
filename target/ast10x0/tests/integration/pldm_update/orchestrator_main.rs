@@ -71,11 +71,13 @@ static mut RECV_BUF: [u8; MAX_RESPONSE_SIZE] = [0; MAX_RESPONSE_SIZE];
 type Fd = FdIpcClient<AsyncChannelTransport<IpcHandle>>;
 
 /// The component the firmware device updates. One device, so its id is
-/// fixed rather than carried in the messages.
+/// fixed rather than carried in the messages. Position 1 because the eRoT
+/// holds position 0 in every device table.
 const TARGET: ComponentId = ComponentId::new(1);
 
-/// Chain capacity and the core's effect-sink cap (`E >= 2*N + 2`).
-const N: usize = 2;
+/// Chain capacity and the core's effect-sink cap (`E >= 2*N + 2`). `N`
+/// counts the device table below, so the two cannot disagree.
+const N: usize = DEVICES.len();
 const E: usize = 2 * N + 2;
 const MAX_RETRY: u8 = 3;
 
@@ -102,7 +104,7 @@ const MAX_DEVICE_STEPS: usize = 16;
 /// Chain position 0 is the eRoT itself. It is addressable but never
 /// supervised. This image does not update the eRoT, so the entry carries no
 /// layout.
-static DEVICES: [DeviceConfig<u8, u8>; N] = [
+static DEVICES: [DeviceConfig<u8, u8>; 2] = [
     DeviceConfig::erot("erot", None),
     DeviceConfig::new(
         "device",

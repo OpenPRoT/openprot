@@ -49,8 +49,9 @@ use userspace::{entry, syscall};
 
 use app_orchestrator::handle;
 
-/// Chain capacity and the core's effect-sink cap (`E >= 2*N + 2`).
-const N: usize = 2;
+/// Chain capacity and the core's effect-sink cap (`E >= 2*N + 2`). `N`
+/// counts the device table below, so the two cannot disagree.
+const N: usize = DEVICES.len();
 const E: usize = 2 * N + 2;
 const MAX_RETRY: u8 = 3;
 
@@ -85,7 +86,7 @@ const RESET_RELEASE: u8 = 1;
 /// recovered. It is in the table so the orchestrator can address it, not so
 /// it can supervise it. A boot scenario never updates the eRoT either, so
 /// the entry carries no layout.
-static DEVICES: [DeviceConfig<u8, u8>; N] = [
+static DEVICES: [DeviceConfig<u8, u8>; 2] = [
     DeviceConfig::erot("erot", None),
     DeviceConfig::new(
         "downstream",
