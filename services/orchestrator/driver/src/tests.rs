@@ -331,6 +331,29 @@ impl MockFloor {
     }
 }
 
+/// The device table the mock boards wire against. Two entries, because the
+/// tests only ever build boards of one or two components, and `bring_up`
+/// checks each wiring against its row here.
+///
+/// The rows exist for that identity check and nothing else. A test that
+/// builds its driver directly never reaches `bring_up`, and no other code
+/// reads `ComponentWiring::device`, so a single-component fixture pointing
+/// at row 0 says nothing about what that component is.
+static MOCK_DEVICES: [orchestrator_config::DeviceConfig<u8, u8>; 2] = [
+    orchestrator_config::DeviceConfig::erot("erot", None),
+    orchestrator_config::DeviceConfig::new(
+        "dev",
+        0,
+        &[orchestrator_config::BootCheckpoint::new(
+            "up",
+            1,
+            core::time::Duration::from_millis(10),
+        )],
+        None,
+        ComponentAttrs::active_required(),
+    ),
+];
+
 /// Chain entries for an all-passive chain of `N` components, which is what
 /// most of these tests want. Ids are positions, as the driver requires.
 fn passive_entries<const N: usize>() -> [(ComponentId, ComponentAttrs); N] {
@@ -850,6 +873,8 @@ impl BoardCapabilities for MockBoard {
     type Staging = MemStaging;
     type UpdateVerifier = StubVerifier;
     type SelfUpdate = MockSelfUpdate;
+    type ResetSignal = u8;
+    type Probe = u8;
 }
 
 /// The SVN `mock_board`'s verifier vouches for. Tests that read the floor
@@ -859,10 +884,14 @@ const MOCK_SVN: u32 = 5;
 /// How long a job may make no progress before the pump abandons it.
 const STALL_BUDGET_MILLIS: u64 = 1_000;
 
-/// Happy-path wiring for one component. Tests override the one capability
-/// they exercise with `..mock_component()`.
-fn mock_component() -> ComponentWiring<MockBoard> {
+/// Happy-path wiring for the component at `index`. Tests override the one
+/// capability they exercise with `..mock_component(index)`.
+fn mock_component(index: usize) -> ComponentWiring<MockBoard> {
+    let device = MOCK_DEVICES
+        .get(index)
+        .expect("a mock board wires at most MOCK_DEVICES.len() components");
     ComponentWiring {
+        device,
         image: MemImage::holding(valid_image()),
         boot_control: MockReset::new(),
         boot_watch: MockWalk::idle(),
@@ -872,11 +901,18 @@ fn mock_component() -> ComponentWiring<MockBoard> {
     }
 }
 
+/// The mock chain's length, as the device table declares it.
+const MOCK_N: usize = MOCK_DEVICES.len();
+/// The effect buffer `Rot` requires for `MOCK_N` components.
+const MOCK_E: usize = 2 * MOCK_N + 2;
+/// Consecutive failed restores before a component's failure policy applies.
+const MOCK_MAX_RETRY: u8 = 3;
+
 /// Happy-path wiring for `N` components. Tests override the one field
 /// they exercise with `..mock_board()`.
 fn mock_board<const N: usize>() -> Board<MockBoard, N> {
     Board {
-        components: core::array::from_fn(|_| mock_component()),
+        components: core::array::from_fn(mock_component),
         verifier: XorVerifier::accepting(),
         report_sink: RecordingSink::new(),
         update_staging: MemStaging::new(),
@@ -892,7 +928,7 @@ fn driver(images: [MemImage; 1]) -> PlatformDriver<MockBoard, 1> {
         Board {
             components: images.map(|image| ComponentWiring {
                 image,
-                ..mock_component()
+                ..mock_component(0)
             }),
             ..mock_board()
         },
@@ -927,7 +963,7 @@ fn measuring_driver(measurement: Measurement) -> PlatformDriver<MockBoard, 1> {
         Board {
             components: [ComponentWiring {
                 image: MemImage::holding(valid_image()),
-                ..mock_component()
+                ..mock_component(0)
             }],
             verifier: XorVerifier::measuring(measurement),
             ..mock_board()
@@ -983,7 +1019,7 @@ fn a_rejected_image_is_not_measured() {
         Board {
             components: [ComponentWiring {
                 image: MemImage::holding(corrupt),
-                ..mock_component()
+                ..mock_component(0)
             }],
             verifier: XorVerifier::measuring(Measurement([0xAB; Measurement::LEN])),
             ..mock_board()
@@ -1131,7 +1167,7 @@ fn reset_line_fault_is_reported() {
         Board {
             components: [ComponentWiring {
                 boot_control: control,
-                ..mock_component()
+                ..mock_component(0)
             }],
             ..mock_board()
         },
@@ -1205,6 +1241,8 @@ impl BoardCapabilities for WatchBoard {
     type Staging = MemStaging;
     type UpdateVerifier = StubVerifier;
     type SelfUpdate = MockSelfUpdate;
+    type ResetSignal = u8;
+    type Probe = u8;
 }
 
 // The at-rest guarantee end to end: the component is still held while its
@@ -1218,6 +1256,7 @@ fn release_follows_verification() {
         &passive_entries(),
         Board {
             components: [ComponentWiring {
+                device: &MOCK_DEVICES[0],
                 image: MemImage::holding(valid_image()),
                 boot_control: control,
                 boot_watch: MockWalk::idle(),
@@ -1261,7 +1300,7 @@ fn failed_release_fails_closed() {
         Board {
             components: [ComponentWiring {
                 boot_control: control,
-                ..mock_component()
+                ..mock_component(0)
             }],
             ..mock_board()
         },
@@ -1287,10 +1326,19 @@ fn walk_driver(
     PlatformDriver::new(
         &entries_with_kinds(component_kinds),
         Board {
-            components: walks.map(|boot_watch| ComponentWiring {
-                boot_watch,
-                ..mock_component()
-            }),
+            components: {
+                let [first, second] = walks;
+                [
+                    ComponentWiring {
+                        boot_watch: first,
+                        ..mock_component(0)
+                    },
+                    ComponentWiring {
+                        boot_watch: second,
+                        ..mock_component(1)
+                    },
+                ]
+            },
             ..mock_board()
         },
     )
@@ -1498,7 +1546,7 @@ fn booted_walk_settles_in_ready() {
         Board {
             components: [ComponentWiring {
                 boot_watch: MockWalk::scripted(std::vec![WalkVerdict::Complete]),
-                ..mock_component()
+                ..mock_component(0)
             }],
             ..mock_board()
         },
@@ -1528,7 +1576,7 @@ fn boot_failure_locks_when_recovery_is_exhausted() {
                     checkpoint: "heartbeat",
                     cause: FailureCause::TimedOut,
                 }]),
-                ..mock_component()
+                ..mock_component(0)
             }],
             ..mock_board()
         },
@@ -1607,11 +1655,14 @@ impl BoardCapabilities for RecoverableBoard {
     type Staging = MemStaging;
     type UpdateVerifier = StubVerifier;
     type SelfUpdate = MockSelfUpdate;
+    type ResetSignal = u8;
+    type Probe = u8;
 }
 
 /// Happy-path wiring for one component of a board that can recover.
-fn recoverable_component(sources: u8) -> ComponentWiring<RecoverableBoard> {
+fn recoverable_component(sources: u8, index: usize) -> ComponentWiring<RecoverableBoard> {
     ComponentWiring {
+        device: &MOCK_DEVICES[index],
         image: MemImage::holding(valid_image()),
         boot_control: MockReset::new(),
         boot_watch: MockWalk::idle(),
@@ -1626,7 +1677,7 @@ fn recoverable_component(sources: u8) -> ComponentWiring<RecoverableBoard> {
 
 fn recoverable_board<const N: usize>(sources: u8) -> Board<RecoverableBoard, N> {
     Board {
-        components: core::array::from_fn(|_| recoverable_component(sources)),
+        components: core::array::from_fn(|i| recoverable_component(sources, i)),
         verifier: XorVerifier::accepting(),
         report_sink: RecordingSink::new(),
         update_staging: MemStaging::new(),
@@ -1671,7 +1722,7 @@ fn recovery_fault_is_reported() {
                     sources: 2,
                     fail_on: Some(0),
                 },
-                ..recoverable_component(2)
+                ..recoverable_component(2, 0)
             }],
             ..recoverable_board(2)
         },
@@ -1730,7 +1781,7 @@ fn execute_routes_recover_component() {
                     sources: 2,
                     fail_on: Some(0),
                 },
-                ..recoverable_component(2)
+                ..recoverable_component(2, 0)
             }],
             ..recoverable_board(2)
         },
@@ -1837,7 +1888,7 @@ fn commit_without_an_erot_floor_is_a_no_op() {
         Board {
             components: [ComponentWiring {
                 svn_floor: SvnFloorBinding::SelfManaged,
-                ..mock_component()
+                ..mock_component(0)
             }],
             ..mock_board()
         },
@@ -1867,7 +1918,7 @@ fn rejected_image_clears_the_verified_svn() {
         Board {
             components: [ComponentWiring {
                 image: MemImage::holding(valid_image()).reflash_on_reopen(corrupt),
-                ..mock_component()
+                ..mock_component(0)
             }],
             ..mock_board()
         },
@@ -1902,7 +1953,7 @@ fn floor_fault_is_reported() {
         Board {
             components: [ComponentWiring {
                 svn_floor: SvnFloorBinding::Erot(mock),
-                ..mock_component()
+                ..mock_component(0)
             }],
             ..mock_board()
         },
@@ -2110,7 +2161,7 @@ fn update_driver(updatable: MockUpdatable) -> PlatformDriver<MockBoard, 1> {
         Board {
             components: [ComponentWiring {
                 updatable,
-                ..mock_component()
+                ..mock_component(0)
             }],
             ..mock_board()
         },
@@ -2569,24 +2620,33 @@ fn a_rejected_update_returns_the_platform_to_ready() {
 // because the entries come from one const-validated device table.
 #[test]
 fn bring_up_builds_both_halves_from_one_chain() {
-    use core::time::Duration;
-    use orchestrator_config::{chain_of, BootCheckpoint, ChainEntries, DeviceConfig};
+    use orchestrator_config::{chain_of, ChainEntries};
 
-    const CP: BootCheckpoint<u8> = BootCheckpoint::new("up", 1, Duration::from_millis(10));
-    const fn dev(attrs: ComponentAttrs) -> DeviceConfig<u8, u8> {
-        DeviceConfig::new("dev", 0, &[CP], None, attrs)
-    }
-    // chain_of requires the eRoT at position 0, so the table carries one.
-    const TABLE: [DeviceConfig<u8, u8>; 2] = [
-        DeviceConfig::erot("erot", None),
-        dev(ComponentAttrs::active_required()),
-    ];
-    const CHAIN: ChainEntries<2> = chain_of(&TABLE);
+    // chain_of requires the eRoT at position 0, which MOCK_DEVICES carries.
+    const CHAIN: ChainEntries<MOCK_N> = chain_of(&MOCK_DEVICES);
 
-    let (orch, driver) = bring_up::<MockBoard, 2, 6>(&CHAIN, mock_board(), 3);
+    let (orch, driver) =
+        bring_up::<MockBoard, MOCK_N, MOCK_E>(&CHAIN, &MOCK_DEVICES, mock_board(), MOCK_MAX_RETRY);
 
     assert_eq!(orch.state(), State::PowerOnReset);
     assert!(driver.pending_update().is_none());
+}
+
+// A wiring that names someone else's table row would drive that component's
+// reset line and flash. Nothing in the type system says otherwise, because
+// the wiring holds runtime handles, so bring_up checks it.
+#[test]
+#[should_panic(expected = "must name its own device table entry")]
+fn bring_up_refuses_a_wiring_that_names_another_components_entry() {
+    use orchestrator_config::{chain_of, ChainEntries};
+
+    const CHAIN: ChainEntries<MOCK_N> = chain_of(&MOCK_DEVICES);
+
+    let mut board = mock_board::<MOCK_N>();
+    board.components[0].device = &MOCK_DEVICES[1];
+    board.components[1].device = &MOCK_DEVICES[0];
+
+    let _ = bring_up::<MockBoard, MOCK_N, MOCK_E>(&CHAIN, &MOCK_DEVICES, board, MOCK_MAX_RETRY);
 }
 
 // The driver indexes every per-component array by id, so an entry out of
@@ -3015,7 +3075,7 @@ fn a_commit_leaves_a_component_that_tracks_its_own_svn_alone() {
             components: [ComponentWiring {
                 updatable: MockUpdatable::new(),
                 svn_floor: SvnFloorBinding::SelfManaged,
-                ..mock_component()
+                ..mock_component(0)
             }],
             ..mock_board()
         },
@@ -3131,7 +3191,7 @@ fn a_floor_that_cannot_be_written_after_the_pass_is_reported() {
             components: [ComponentWiring {
                 updatable: MockUpdatable::new(),
                 svn_floor: SvnFloorBinding::Erot(MockFloor::faulting()),
-                ..mock_component()
+                ..mock_component(0)
             }],
             ..mock_board()
         },
