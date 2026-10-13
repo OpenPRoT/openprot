@@ -270,7 +270,30 @@ pub enum Event {
     /// health / attestation pass — not mere boot). Gates the anti-rollback
     /// commit: only now is it safe to advance the SVN floor past this image,
     /// because it has demonstrated it runs, not merely that it authenticated.
+    ///
+    /// Closes the commit-or-lock window and leaves the floor advance
+    /// outstanding until [`Event::SvnCommitRequest`] arrives.
     BootConfirmed(ComponentId),
+    /// The update agent asked for `id`'s anti-rollback floor to move, with
+    /// UpdateSecurityRevision (PLDM 0x22). Injected by the event loop when
+    /// that request arrives. The floor it names is one the eRoT holds (the
+    /// driver's `SvnFloorBinding::Erot`); a component that tracks its own
+    /// SVN gets a no-op from the effect, so there is no device-side commit
+    /// to wait for.
+    ///
+    /// Honoured only while `id`'s advance is outstanding, which
+    /// [`Event::BootConfirmed`] opens: an image that has not proved it boots
+    /// has no floor advance coming. One arriving for any other component, or
+    /// for the same one twice, is dropped, so the floor takes the SVN once.
+    ///
+    /// The event carries no SVN. The driver holds the one the manifest was
+    /// verified against, which is the only authenticated reading of it.
+    ///
+    /// Carries its component unlike [`Event::UpdateRequest`], whose
+    /// `component_id` is `None` so a recorded job gets an answer even for an
+    /// unknown id. Nothing is recorded before this one is dispatched, so an
+    /// unknown id is dropped and nothing is lost.
+    SvnCommitRequest(ComponentId),
     /// This component was found corrupt at runtime.
     CorruptionDetected(ComponentId),
     /// This component has been restored from its configured recovery source.
@@ -320,8 +343,11 @@ pub enum Event {
     /// anti-rollback floor is never advanced for an unproven image, and the
     /// downgrade window may not stay open indefinitely). Outside the window
     /// (nothing pending) it is stale and dropped. The driver arms this watchdog
-    /// when it executes [`Effect::ActivateUpdate`] and cancels it on
-    /// [`Effect::CommitSvnFloor`].
+    /// when it executes [`Effect::ActivateUpdate`] and the event loop cancels
+    /// it when it reports [`Event::BootConfirmed`], which is what closes the
+    /// window. [`Effect::CommitSvnFloor`] cannot stand in for that: the floor
+    /// moves later, when the update agent asks, and for an agent that never
+    /// asks it does not move at all.
     CommitTimeout,
     /// This boot is the trial run of the eRoT's own update: the durable
     /// session says an image was activated and the eRoT came up on it.
@@ -370,6 +396,7 @@ impl Event {
             | Event::ComponentReady(id)
             | Event::Booted(id)
             | Event::BootConfirmed(id)
+            | Event::SvnCommitRequest(id)
             | Event::CorruptionDetected(id)
             | Event::Restored(id)
             | Event::RecoveryUnavailable(id)
@@ -411,11 +438,13 @@ pub enum Effect {
     ActivateUpdate,
     DiscardStaged,
     /// Advance the anti-rollback (SVN) floor past `id`'s now-confirmed image.
-    /// Deliberately decoupled from [`ActivateUpdate`]: activation happens on
-    /// authentication (`UpdateVerified`), but the floor may only move once the
-    /// image has proven healthy ([`Event::BootConfirmed`]). Committing the
-    /// floor earlier would burn anti-rollback on an image that authenticated
-    /// but has not yet demonstrated it can boot and run.
+    /// Decoupled from [`ActivateUpdate`] and from the proven boot alike:
+    /// activation happens on authentication (`UpdateVerified`), the image
+    /// proves itself healthy at [`Event::BootConfirmed`], and the floor moves
+    /// later still, when [`Event::SvnCommitRequest`] says the update agent asked
+    /// for it with UpdateSecurityRevision. Committing earlier would burn
+    /// anti-rollback on an image that authenticated but has not run, or move
+    /// the eRoT's mirror of a device's floor ahead of the device's own.
     CommitSvnFloor(ComponentId),
     /// Confirm the eRoT's own update session: the trial image booted and
     /// brought the chain up. Emitted on entry to [`State::Ready`] when this

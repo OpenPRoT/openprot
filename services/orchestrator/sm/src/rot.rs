@@ -39,9 +39,10 @@ pub struct Rot<const N: usize, const E: usize> {
     max_retry: u8,
     /// The component whose update was activated and whose anti-rollback floor
     /// has not been committed yet. `None` when nothing is waiting to commit.
-    /// Its own [`Event::BootConfirmed`] commits the floor and clears this; a
+    /// Its own [`Event::BootConfirmed`] closes the window and clears this; a
     /// [`Event::CommitTimeout`] while it is still set goes to
-    /// [`State::Locked`].
+    /// [`State::Locked`]. The floor does not move there: `BootConfirmed`
+    /// records the component in `awaiting_floor_advance` instead.
     ///
     /// The window spans the walk that follows an activation: the device only
     /// boots the candidate once it is reset, so the window cannot close before
@@ -59,6 +60,23 @@ pub struct Rot<const N: usize, const E: usize> {
     /// and [`State::Recovering`] (the running image is now suspect). Not cleared
     /// on `Ready` entry, because activation sets it on the way in.
     pending_commit: Option<ComponentId>,
+    /// The component whose image has booted and whose anti-rollback floor is
+    /// still waiting for the update agent to ask. Set by
+    /// [`Event::BootConfirmed`], cleared by the matching
+    /// [`Event::SvnCommitRequest`], which emits [`Effect::CommitSvnFloor`].
+    ///
+    /// No watchdog bounds this one. An agent that never sends
+    /// UpdateSecurityRevision leaves the floor where it is, which costs
+    /// anti-rollback coverage for that image and nothing else; locking the
+    /// platform because a remote agent stayed silent would be worse. That is
+    /// the posture the eRoT's own session takes with `AwaitingFloorAdvance`.
+    ///
+    /// Cleared on entry to [`State::Updating`] and [`State::Recovering`], as
+    /// `pending_commit` is. The SVN the floor would take is the driver's
+    /// reading of the image the update verified, and a superseding update
+    /// overwrites it, so a late `SvnCommitRequest` would otherwise advance the
+    /// floor past an image that has never booted.
+    awaiting_floor_advance: Option<ComponentId>,
     /// Set when this boot started with [`Event::SelfTrialBooted`]: the eRoT
     /// is running the trial image of its own update. Entry to
     /// [`State::Ready`] emits [`Effect::ConfirmSelfTrial`] and clears it, so
@@ -97,6 +115,7 @@ impl<const N: usize, const E: usize> Rot<N, E> {
             statuses,
             max_retry,
             pending_commit: None,
+            awaiting_floor_advance: None,
             self_trial_booted: false,
             _effect_cap: PhantomData,
         }
@@ -148,6 +167,14 @@ impl<const N: usize, const E: usize> Rot<N, E> {
             // It is also no longer live — the `AssertReset` above holds it.
             self.statuses[i].awaiting_boot = false;
             self.statuses[i].released = false;
+        }
+        if self.awaiting_floor_advance == Some(id) {
+            // Gating holds the component in reset as corrupt, which puts
+            // the image it booted under the same suspicion recovery does.
+            // The floor advance the agent has not asked for yet goes with
+            // it, or a later `SvnCommitRequest` would advance the floor for an
+            // image this machine has just taken out of service.
+            self.awaiting_floor_advance = None;
         }
         true
     }
@@ -632,15 +659,28 @@ impl<const N: usize, const E: usize> Rot<N, E> {
             State::Ready => match event {
                 Event::UpdateRequest(id) => Outcome::Transition(State::Updating(*id)),
                 // Proven-boot checkpoint: the image authenticated at
-                // `ActivateUpdate`, but the SVN floor only advances now, once
-                // the driver reports it healthy. Handled in place — confirming a
-                // running image is not a state change. Closing the window clears
-                // `pending_commit` so a later `CommitTimeout` cannot lock a
-                // device that has already committed.
+                // `ActivateUpdate` and has now run. Handled in place —
+                // confirming a running image is not a state change. Closing
+                // the window clears `pending_commit` so a later
+                // `CommitTimeout` cannot lock a device that has already
+                // booted, and records `id` in `awaiting_floor_advance`,
+                // where the floor advance waits for the agent's ask.
                 Event::BootConfirmed(id) => {
                     if self.pending_commit == Some(*id) {
-                        ctx.emit(Effect::CommitSvnFloor(*id));
                         self.pending_commit = None;
+                        self.awaiting_floor_advance = Some(*id);
+                    }
+                    Outcome::Handled
+                }
+                // The update agent asked for the floor with
+                // UpdateSecurityRevision and the device took the SVN. This is
+                // the only thing that moves an eRoT-held floor. One for a
+                // component with no advance outstanding is dropped: the floor
+                // takes the SVN once.
+                Event::SvnCommitRequest(id) => {
+                    if self.awaiting_floor_advance == Some(*id) {
+                        ctx.emit(Effect::CommitSvnFloor(*id));
+                        self.awaiting_floor_advance = None;
                     }
                     Outcome::Handled
                 }
@@ -865,15 +905,19 @@ impl<const N: usize, const E: usize> Rot<N, E> {
             }
             State::Updating(_) => {
                 // A new update supersedes any activated-but-not-committed image;
-                // the prior commit window is void.
+                // the prior commit window is void, and so is any floor advance
+                // the agent has not asked for yet: the SVN it would take
+                // belongs to the image this update replaces.
                 self.pending_commit = None;
+                self.awaiting_floor_advance = None;
                 ctx.emit(Effect::AuthenticateStageUpdate);
             }
             State::Recovering(failed) => {
                 // Recovery voids any activated-but-not-committed image: the
                 // running image is now under suspicion, so its commit window
-                // ends here.
+                // ends here, and an outstanding floor advance goes with it.
                 self.pending_commit = None;
+                self.awaiting_floor_advance = None;
                 // The component under recovery is being restored, not booting;
                 // drop any pending boot-progress watchdog so a late `Timeout`
                 // can't re-enter recovery for it. It is also held (not live)
