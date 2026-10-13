@@ -12,7 +12,8 @@ use openprot_orchestrator_sm::{
 use orchestrator_config::ChainEntries;
 
 use crate::board::{
-    Board, BoardCapabilities, ImageSource, Report, ReportSink, SvnFloorBinding, Verdict, Verifier,
+    Board, BoardCapabilities, ComponentWiring, ImageSource, Report, ReportSink, SvnFloorBinding,
+    Verdict, Verifier,
 };
 use orchestrator_capabilities::{
     BootControl, BootWatch, FailureCause, IncrementalVerifier, Progress, Recovery, RestoreOutcome,
@@ -247,9 +248,13 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
 
     /// `id`'s image source. Takes the array rather than `&mut self` so the
     /// caller can borrow `board.verifier` alongside the returned image.
-    fn source(images: &mut [B::Image; N], id: ComponentId) -> Result<&mut B::Image, DriverError> {
-        images
+    fn source(
+        components: &mut [ComponentWiring<B>; N],
+        id: ComponentId,
+    ) -> Result<&mut B::Image, DriverError> {
+        components
             .get_mut(id.get() as usize)
+            .map(|component| &mut component.image)
             .ok_or(DriverError::UnknownComponent)
     }
 
@@ -257,7 +262,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// [`verify_firmware`](Self::verify_firmware) can read it.
     pub fn stage_firmware(&mut self, id: ComponentId) -> Result<(), DriverError> {
         self.staged = None;
-        let source = Self::source(&mut self.board.images, id)?;
+        let source = Self::source(&mut self.board.components, id)?;
         source.open().map_err(|_| DriverError::ImageUnavailable)?;
         self.staged = Some(id);
         Ok(())
@@ -268,7 +273,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     pub fn verify_firmware(&mut self, id: ComponentId) -> Result<Event, DriverError> {
         // Id validity first: an unknown component is UnknownComponent even
         // though it can never be staged.
-        let source = Self::source(&mut self.board.images, id)?;
+        let source = Self::source(&mut self.board.components, id)?;
         if self.staged != Some(id) {
             return Err(DriverError::NotStaged);
         }
@@ -319,8 +324,9 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         let idx = id.get() as usize;
         let SvnFloorBinding::Erot(_) = self
             .board
-            .svn_floors
+            .components
             .get(idx)
+            .map(|component| &component.svn_floor)
             .ok_or(DriverError::UnknownComponent)?
         else {
             // The component tracks its own SVN, so there is no floor
@@ -351,7 +357,12 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         // Cannot fire: both callers read the binding first and only get
         // an SVN for a component whose floor the eRoT holds. Kept so a
         // third caller cannot write a floor that is not ours.
-        let Some(SvnFloorBinding::Erot(floor)) = self.board.svn_floors.get_mut(idx) else {
+        let Some(SvnFloorBinding::Erot(floor)) = self
+            .board
+            .components
+            .get_mut(idx)
+            .map(|component| &mut component.svn_floor)
+        else {
             return Ok(());
         };
         floor.advance(svn).map_err(|_| DriverError::SvnFloorFault)
@@ -402,8 +413,9 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// `id`'s reset actuator.
     fn boot_control(&mut self, id: ComponentId) -> Result<&mut B::BootControl, DriverError> {
         self.board
-            .boot_controls
+            .components
             .get_mut(id.get() as usize)
+            .map(|component| &mut component.boot_control)
             .ok_or(DriverError::UnknownComponent)
     }
 
@@ -417,7 +429,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             .map_err(|_| DriverError::BootControlFault)?;
         let idx = id.get() as usize;
         // In bounds: boot_control(id) above already rejected unknown ids.
-        self.board.boot_watches[idx].start();
+        self.board.components[idx].boot_watch.start();
         self.watching[idx] = true;
         Ok(())
     }
@@ -452,7 +464,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
                 continue;
             }
             let id: ComponentId = (idx as u8).into();
-            match self.board.boot_watches[idx].poll(now_millis) {
+            match self.board.components[idx].boot_watch.poll(now_millis) {
                 WalkVerdict::Waiting { deadline_millis } => {
                     next_deadline_millis = Some(match next_deadline_millis {
                         Some(d) => d.min(deadline_millis),
@@ -511,8 +523,9 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     ) -> Result<Event, DriverError> {
         let recovery = self
             .board
-            .recovery
+            .components
             .get_mut(id.get() as usize)
+            .map(|component| &mut component.recovery)
             .ok_or(DriverError::UnknownComponent)?;
         match recovery.restore(attempt) {
             Ok(RestoreOutcome::Restored) => Ok(Event::Restored(id)),
