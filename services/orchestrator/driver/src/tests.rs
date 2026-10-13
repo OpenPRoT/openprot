@@ -122,6 +122,38 @@ struct XorVerifier {
     svn: u32,
 }
 
+/// The other constructors are [`accepting`](Self::accepting) with one field
+/// changed, which is all any test varies.
+impl XorVerifier {
+    /// Authenticates an image that passes the magic and XOR check, reporting
+    /// [`MOCK_SVN`] and no measurement.
+    const fn accepting() -> Self {
+        Self {
+            fault: false,
+            svn: MOCK_SVN,
+            measurement: None,
+        }
+    }
+
+    /// Errors out instead of returning a verdict; the image is never read.
+    const fn faulting() -> Self {
+        Self {
+            fault: true,
+            svn: MOCK_SVN,
+            measurement: None,
+        }
+    }
+
+    /// Reports `measurement` for an image that passes the check.
+    const fn measuring(measurement: Measurement) -> Self {
+        Self {
+            fault: false,
+            svn: MOCK_SVN,
+            measurement: Some(measurement),
+        }
+    }
+}
+
 impl Verifier for XorVerifier {
     type Error = VerifierError;
 
@@ -823,19 +855,15 @@ impl BoardCapabilities for MockBoard {
 /// back assert against it.
 const MOCK_SVN: u32 = 5;
 
-/// Happy-path wiring for `N` components. Tests override the one field
-/// they exercise with `..mock_board()`.
 /// How long a job may make no progress before the pump abandons it.
 const STALL_BUDGET_MILLIS: u64 = 1_000;
 
+/// Happy-path wiring for `N` components. Tests override the one field
+/// they exercise with `..mock_board()`.
 fn mock_board<const N: usize>() -> Board<MockBoard, N> {
     Board {
         images: core::array::from_fn(|_| MemImage::holding(valid_image())),
-        verifier: XorVerifier {
-            fault: false,
-            svn: MOCK_SVN,
-            measurement: None,
-        },
+        verifier: XorVerifier::accepting(),
         boot_controls: core::array::from_fn(|_| MockReset::new()),
         boot_watches: core::array::from_fn(|_| MockWalk::idle()),
         svn_floors: core::array::from_fn(|_| SvnFloorBinding::Erot(MockFloor::new())),
@@ -885,11 +913,7 @@ fn measuring_driver(measurement: Measurement) -> PlatformDriver<MockBoard, 1> {
         &passive_entries(),
         Board {
             images: [MemImage::holding(valid_image())],
-            verifier: XorVerifier {
-                fault: false,
-                svn: MOCK_SVN,
-                measurement: Some(measurement),
-            },
+            verifier: XorVerifier::measuring(measurement),
             ..mock_board()
         },
     )
@@ -942,11 +966,7 @@ fn a_rejected_image_is_not_measured() {
         &passive_entries(),
         Board {
             images: [MemImage::holding(corrupt)],
-            verifier: XorVerifier {
-                fault: false,
-                svn: MOCK_SVN,
-                measurement: Some(Measurement([0xAB; Measurement::LEN])),
-            },
+            verifier: XorVerifier::measuring(Measurement([0xAB; Measurement::LEN])),
             ..mock_board()
         },
     );
@@ -1016,11 +1036,7 @@ fn verifier_fault_fails_closed() {
     let mut driver = PlatformDriver::<MockBoard, 1>::new(
         &passive_entries(),
         Board {
-            verifier: XorVerifier {
-                fault: true,
-                svn: MOCK_SVN,
-                measurement: None,
-            },
+            verifier: XorVerifier::faulting(),
             ..mock_board()
         },
     );
@@ -1180,11 +1196,7 @@ fn release_follows_verification() {
         Board {
             images: [MemImage::holding(valid_image())],
             verifier: LineWatchingVerifier {
-                inner: XorVerifier {
-                    fault: false,
-                    svn: MOCK_SVN,
-                    measurement: None,
-                },
+                inner: XorVerifier::accepting(),
                 line: held.clone(),
                 held_during_verify: held_during_verify.clone(),
             },
@@ -1561,11 +1573,7 @@ impl BoardCapabilities for RecoverableBoard {
 fn recoverable_board<const N: usize>(sources: u8) -> Board<RecoverableBoard, N> {
     Board {
         images: core::array::from_fn(|_| MemImage::holding(valid_image())),
-        verifier: XorVerifier {
-            fault: false,
-            svn: MOCK_SVN,
-            measurement: None,
-        },
+        verifier: XorVerifier::accepting(),
         boot_controls: core::array::from_fn(|_| MockReset::new()),
         boot_watches: core::array::from_fn(|_| MockWalk::idle()),
         svn_floors: core::array::from_fn(|_| SvnFloorBinding::Erot(MockFloor::new())),
@@ -1848,17 +1856,7 @@ fn floor_fault_is_reported() {
 // hands back an error for the SM to fail secure on.
 #[test]
 fn reports_reach_the_board_sink() {
-    let mut driver = PlatformDriver::<MockBoard, 1>::new(
-        &passive_entries(),
-        Board {
-            verifier: XorVerifier {
-                fault: false,
-                svn: 0,
-                measurement: None,
-            },
-            ..mock_board()
-        },
-    );
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(&passive_entries(), mock_board());
 
     for effect in [
         Effect::ReportIsolated(C0),
@@ -1882,17 +1880,7 @@ fn reports_reach_the_board_sink() {
 // fail-secure path.
 #[test]
 fn reporting_an_isolated_component_does_not_lock_the_platform() {
-    let mut driver = PlatformDriver::<MockBoard, 2>::new(
-        &passive_entries(),
-        Board {
-            verifier: XorVerifier {
-                fault: false,
-                svn: 0,
-                measurement: None,
-            },
-            ..mock_board()
-        },
-    );
+    let mut driver = PlatformDriver::<MockBoard, 2>::new(&passive_entries(), mock_board());
     let mut chain = heapless::Vec::<_, 2>::new();
     chain
         .push((C0, ComponentAttrs::passive_required()))
@@ -2549,11 +2537,7 @@ fn a_request_to_a_locked_platform_is_refused() {
     let mut driver = PlatformDriver::<MockBoard, 1>::new(
         &passive_entries(),
         Board {
-            verifier: XorVerifier {
-                fault: true,
-                svn: MOCK_SVN,
-                measurement: None,
-            },
+            verifier: XorVerifier::faulting(),
             ..mock_board()
         },
     );
