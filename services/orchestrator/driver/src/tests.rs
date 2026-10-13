@@ -2598,16 +2598,16 @@ fn settle_with_no_session_changes_nothing() {
     assert_eq!(session.state, SelfUpdateState::Idle);
 }
 
-// The trial image is running. The update agent judges it, so the session
+// The trial image is running. The chain walk judges it, so the session
 // stays as it is.
 #[test]
-fn settle_leaves_a_running_trial_for_the_update_agent() {
+fn settle_reports_a_running_trial_and_leaves_the_session() {
     let pending = SelfUpdateState::TrialPending { svn: Svn(7) };
     let mut session = MockSelfUpdate::with_session(pending, RunningImage::Trial);
 
     assert_eq!(
         settle_self_update(&mut session, &MockFloor::new()),
-        Ok(SelfUpdateSettlement::AwaitingUpdateAgent { svn: Svn(7) })
+        Ok(SelfUpdateSettlement::TrialRunning { svn: Svn(7) })
     );
 
     assert_eq!(session.state, pending);
@@ -2642,7 +2642,7 @@ fn settle_keeps_a_confirmed_session_the_floor_has_not_taken() {
 
     assert_eq!(
         settle_self_update(&mut session, &floor),
-        Ok(SelfUpdateSettlement::AwaitingUpdateAgent { svn: Svn(7) })
+        Ok(SelfUpdateSettlement::AwaitingFloorAdvance { svn: Svn(7) })
     );
 
     assert_eq!(session.state, committed);

@@ -533,10 +533,20 @@ pub enum SelfUpdateSettlement {
     /// reverted, or a confirmed session whose floor had already taken its
     /// SVN.
     Settled,
-    /// A session is still being judged, either a trial run waiting on the
-    /// update agent or a confirmed one whose floor is still below `svn`. No
-    /// new self-update may start: recording one would overwrite the session.
-    AwaitingUpdateAgent {
+    /// This boot is the trial run of the eRoT's own update, and nothing has
+    /// judged it yet. The chain walk is what judges it: the trial image
+    /// booted, and bringing the platform up is what it has to prove. No new
+    /// self-update may start: recording one would overwrite the session.
+    TrialRunning {
+        /// The SVN the session recorded, and the floor's target once the
+        /// trial is confirmed.
+        svn: Svn,
+    },
+    /// The trial was confirmed and the floor is still below `svn`. The
+    /// advance is the update agent's to ask for with UpdateSecurityRevision,
+    /// so this boot leaves it alone. No new self-update may start: recording
+    /// one would overwrite the session.
+    AwaitingFloorAdvance {
         /// The SVN the session recorded, and the floor's target.
         svn: Svn,
     },
@@ -661,8 +671,8 @@ pub fn bring_up<B: BoardCapabilities, const N: usize, const E: usize>(
 ///
 /// - No session: nothing happened, carry on.
 /// - The session is pending and the trial image booted: this boot is the trial
-///   run. Nothing here judges it. The update agent does, with
-///   UpdateSecurityRevision, so the session is left alone.
+///   run. Nothing here judges it. The chain walk does, by bringing the
+///   platform up, so the session is left alone.
 /// - The session is prepared or pending but the confirmed image booted: the
 ///   update never ran, or its trial failed and the platform fell back. The
 ///   session is reverted, so the update is done again rather than counted as
@@ -701,13 +711,14 @@ pub fn settle_self_update<S: SelfUpdate, F: SvnFloor>(
     match orchestrator_capabilities::trial_outcome(state, running) {
         TrialOutcome::NoSession => Ok(SelfUpdateSettlement::Settled),
         TrialOutcome::InProgress => {
-            // Nothing here judges the trial. The update agent does.
+            // Nothing here judges the trial. The chain walk that follows
+            // does, by reaching Ready.
             let SelfUpdateState::TrialPending { svn } = state else {
                 // trial_outcome answers InProgress for TrialPending alone.
                 // Fail secure rather than guess which SVN was recorded.
                 return Err(SettleError::InconsistentSession(state));
             };
-            Ok(SelfUpdateSettlement::AwaitingUpdateAgent { svn })
+            Ok(SelfUpdateSettlement::TrialRunning { svn })
         }
         TrialOutcome::Unconfirmed => {
             session.revert().map_err(SettleError::Session)?;
@@ -722,7 +733,7 @@ pub fn settle_self_update<S: SelfUpdate, F: SvnFloor>(
                 session.complete().map_err(SettleError::Session)?;
                 return Ok(SelfUpdateSettlement::Settled);
             }
-            Ok(SelfUpdateSettlement::AwaitingUpdateAgent { svn })
+            Ok(SelfUpdateSettlement::AwaitingFloorAdvance { svn })
         }
     }
 }
