@@ -644,6 +644,11 @@ fn activate(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
     // image reboots, so the acknowledged activation is what this scenario
     // treats as a healthy first boot.
     core.dispatch(driver, Event::BootConfirmed(TARGET));
+    // The floor moves on the agent's ask, not on the boot. The firmware
+    // device never parks at `SvnCommitPending` in this build, so the
+    // event stands in for the agent's request, the way `BootConfirmed`
+    // above stands in for the reboot.
+    core.dispatch(driver, Event::SvnCommitRequest(TARGET));
     pw_log::info!("ORCH: update committed");
     true
 }
