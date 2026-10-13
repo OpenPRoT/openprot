@@ -3,7 +3,21 @@
 
 load("@pigweed//pw_build:pw_py_importable_runfile.bzl", "pw_py_importable_runfile")
 load("@rules_python//python:defs.bzl", "py_binary", "py_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
 load(":caliptra_runner.bzl", "mcu_rom_wrapper")
+
+# Fills a system config template with caliptra-mcu-sw memory map values.
+rust_binary(
+    name = "render_system_config",
+    srcs = ["render_system_config.rs"],
+    edition = "2024",
+    visibility = ["//target/veer:__subpackages__"],
+    deps = [
+        "@rust_caliptra_crates_host//:mcu-config",
+        "@rust_caliptra_crates_host//:mcu-config-emulator",
+        "@rust_caliptra_crates_host//:mcu-config-fpga",
+    ],
+)
 
 mcu_rom_wrapper(
     name = "caliptra_rom_transitioned",

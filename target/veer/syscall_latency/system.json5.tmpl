@@ -5,9 +5,9 @@
     type: "riscv",
   },
   kernel: {
-    flash_start_address: 0x40000000,
+    flash_start_address: @KERNEL_FLASH_START@,
     flash_size_bytes: 65536,
-    ram_start_address: 0x40040000,
+    ram_start_address: @KERNEL_RAM_START@,
     ram_size_bytes: 32768,
     interrupt_table: {
       table: {}
@@ -25,7 +25,7 @@
             {
               name: "mci",
               type: "device",
-              start_address: 0x21000000,
+              start_address: @MCI_BASE@,
               size_bytes: 0x100,
             },
           ],

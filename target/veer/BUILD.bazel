@@ -138,6 +138,8 @@ rust_library(
     deps = [
         "@pigweed//pw_kernel/config:kernel_config_interface",
         "@pigweed//pw_kernel/lib/memory_config",
+        "@rust_caliptra_crates//:mcu-config-emulator",
+        "@rust_caliptra_crates//:mcu-config-fpga",
     ],
 )
 

@@ -5,6 +5,9 @@ user.bazelrc
 /bazel-*
 /out
 target/rust-analyzer/
+**/target/debug/
+**/target/release/
+**/target/CACHEDIR.TAG
 
 # Editors
 .pw_ide/

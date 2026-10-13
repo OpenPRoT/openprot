@@ -285,6 +285,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mcu-config-fpga"
+version = "0.1.0"
+source = "git+https://github.com/chipsalliance/caliptra-mcu-sw?rev=b7e45fc139620754e8d32e70d6cc90845d1756df#b7e45fc139620754e8d32e70d6cc90845d1756df"
+dependencies = [
+ "mcu-config",
+]
+
+[[package]]
 name = "mcu-error"
 version = "0.1.0"
 source = "git+https://github.com/chipsalliance/caliptra-mcu-sw?rev=b7e45fc139620754e8d32e70d6cc90845d1756df#b7e45fc139620754e8d32e70d6cc90845d1756df"
@@ -456,6 +464,7 @@ dependencies = [
  "log",
  "mcu-config",
  "mcu-config-emulator",
+ "mcu-config-fpga",
  "mcu-error",
  "mcu-image-header",
  "memoffset 0.9.1",

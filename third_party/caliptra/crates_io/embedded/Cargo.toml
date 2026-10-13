@@ -39,6 +39,7 @@ romtime = { git = "https://github.com/chipsalliance/caliptra-mcu-sw", rev = "b7e
 registers-generated = { git = "https://github.com/chipsalliance/caliptra-mcu-sw", rev = "b7e45fc139620754e8d32e70d6cc90845d1756df", default-features = false }
 mcu-config = { git = "https://github.com/chipsalliance/caliptra-mcu-sw", rev = "b7e45fc139620754e8d32e70d6cc90845d1756df", default-features = false }
 mcu-config-emulator = { git = "https://github.com/chipsalliance/caliptra-mcu-sw", rev = "b7e45fc139620754e8d32e70d6cc90845d1756df", default-features = false }
+mcu-config-fpga = { git = "https://github.com/chipsalliance/caliptra-mcu-sw", rev = "b7e45fc139620754e8d32e70d6cc90845d1756df", default-features = false }
 mcu-image-header = { git = "https://github.com/chipsalliance/caliptra-mcu-sw", rev = "b7e45fc139620754e8d32e70d6cc90845d1756df", default-features = false }
 flash-image = { git = "https://github.com/chipsalliance/caliptra-mcu-sw", rev = "b7e45fc139620754e8d32e70d6cc90845d1756df", default-features = false }
 
