@@ -72,10 +72,10 @@ type Fd = FdIpcClient<AsyncChannelTransport<IpcHandle>>;
 
 /// The component the firmware device updates. One device, so its id is
 /// fixed rather than carried in the messages.
-const TARGET: ComponentId = ComponentId::new(0);
+const TARGET: ComponentId = ComponentId::new(1);
 
 /// Chain capacity and the core's effect-sink cap (`E >= 2*N + 2`).
-const N: usize = 1;
+const N: usize = 2;
 const E: usize = 2 * N + 2;
 const MAX_RETRY: u8 = 3;
 
@@ -99,17 +99,23 @@ const MAX_DEVICE_STEPS: usize = 16;
 
 /// The device table. No device boots in this image, so the window is
 /// nominal: what is being proven is the update path, not a boot walk.
-static DEVICES: [DeviceConfig<u8, u8>; N] = [DeviceConfig::new(
-    "device",
-    0,
-    &[BootCheckpoint::new(
-        "ready",
-        1,
-        core::time::Duration::from_millis(1_000),
-    )],
-    None,
-    ComponentAttrs::passive_required(),
-)];
+/// Chain position 0 is the eRoT itself. It is addressable but never
+/// supervised. This image does not update the eRoT, so the entry carries no
+/// layout.
+static DEVICES: [DeviceConfig<u8, u8>; N] = [
+    DeviceConfig::erot("erot", None),
+    DeviceConfig::new(
+        "device",
+        0,
+        &[BootCheckpoint::new(
+            "ready",
+            1,
+            core::time::Duration::from_millis(1_000),
+        )],
+        None,
+        ComponentAttrs::passive_required(),
+    ),
+];
 
 static CHAIN: ChainEntries<N> = chain_of(&DEVICES);
 
@@ -375,14 +381,20 @@ impl BoardCapabilities for UpdateBoard {
 
 fn board() -> Board<UpdateBoard, N> {
     Board {
-        images: [StubImage],
+        // Index 0 is the eRoT. The walk passes over it, so nothing reads
+        // or actuates these entries. The arrays are indexed by ComponentId,
+        // so index 0 still needs a value.
+        images: [StubImage, StubImage],
         verifier: StubVerifier,
-        boot_controls: [NoReset],
-        boot_watches: [CheckpointWalk::new(AlwaysBooted, &DEVICES[0])],
-        svn_floors: [SvnFloorBinding::SelfManaged],
+        boot_controls: [NoReset, NoReset],
+        boot_watches: [
+            CheckpointWalk::new(AlwaysBooted, &DEVICES[0]),
+            CheckpointWalk::new(AlwaysBooted, &DEVICES[1]),
+        ],
+        svn_floors: [SvnFloorBinding::SelfManaged, SvnFloorBinding::SelfManaged],
         report_sink: LogSink,
-        updatables: [FdUpdatable],
-        recovery: [()],
+        updatables: [FdUpdatable, FdUpdatable],
+        recovery: [(), ()],
         update_staging: PatternStaging,
         update_verifier: Some(PatternVerifier),
         self_image: None,
