@@ -71,6 +71,13 @@ abort would do is untested.
 
 - `UpdateSecurityRevision` and the `SvnCommitPending` status, so
   `commit_self_svn_floor` has no path that reaches it.
+- A self-update that is actually performed. `self_trial` starts the
+  session where an activation would have left it and checks what the
+  next boot does about it. Nothing stages an image into the eRoT's own
+  slot, marks the trial pending or resets the eRoT, because no board
+  wires a flash-backed `Updatable` for that slot and QEMU models one
+  chip. The half the scenario covers is the boot after the reset, not
+  the update that caused it.
 - Recovery preempting an update: `Updating` to `Recovering`, with the
   staged image discarded.
 - The spare slot re-sync after a commit, and the floor advance held until
