@@ -3330,9 +3330,8 @@ fn self_floor(driver: &PlatformDriver<MockBoard, 1>) -> Svn {
 #[test]
 fn a_trial_that_reaches_ready_is_confirmed() {
     let mut orch = orchestrator();
-    let mut driver = self_trial_driver(trial_session(SelfUpdateState::TrialPending {
-        svn: Svn(7),
-    }));
+    let mut driver =
+        self_trial_driver(trial_session(SelfUpdateState::TrialPending { svn: Svn(7) }));
     let floor_before = self_floor(&driver);
 
     orch.dispatch(&mut driver, Event::SelfTrialBooted);
@@ -3355,7 +3354,7 @@ fn a_trial_that_reaches_ready_is_confirmed() {
 #[test]
 fn a_boot_with_no_trial_leaves_the_session_alone() {
     let mut orch = orchestrator();
-    let mut driver = self_trial_driver(trial_session(SelfUpdateState::Idle));
+    let mut driver = self_trial_driver(MockSelfUpdate::idle());
 
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
 
@@ -3392,4 +3391,68 @@ fn a_session_that_cannot_be_written_locks_down() {
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
 
     assert_eq!(orch.state(), State::Locked);
+}
+
+// The boot that runs a trial image. The driver reads the board's own
+// session and names the event the state machine needs in order to judge
+// the trial.
+#[test]
+fn settling_a_running_trial_names_the_event_to_dispatch() {
+    let mut driver =
+        self_trial_driver(trial_session(SelfUpdateState::TrialPending { svn: Svn(7) }));
+
+    let settlement = driver.settle_self_image().expect("the mock does not fault");
+
+    assert_eq!(
+        settlement,
+        SelfUpdateSettlement::TrialRunning { svn: Svn(7) }
+    );
+    assert_eq!(settlement.event(), Some(Event::SelfTrialBooted));
+    assert_eq!(
+        session_state(&driver),
+        SelfUpdateState::TrialPending { svn: Svn(7) },
+        "settling judges nothing"
+    );
+}
+
+// A board that never updates itself wires no self-image. There is no
+// session to settle and nothing to tell the machine.
+#[test]
+fn a_board_with_no_self_image_is_already_settled() {
+    let mut driver = driver([MemImage::holding(valid_image())]);
+
+    let settlement = driver.settle_self_image().expect("nothing to read");
+
+    assert_eq!(settlement, SelfUpdateSettlement::Settled);
+    assert_eq!(settlement.event(), None);
+}
+
+// A confirmed session the floor has not taken yet. The advance is the
+// update agent's to ask for, and no trial is running, so the settlement
+// names no event.
+#[test]
+fn settling_an_awaited_floor_advance_names_no_event() {
+    let mut driver = self_trial_driver(trial_session(SelfUpdateState::Committed { svn: Svn(7) }));
+
+    let settlement = driver.settle_self_image().expect("the mock does not fault");
+
+    assert_eq!(
+        settlement,
+        SelfUpdateSettlement::AwaitingFloorAdvance { svn: Svn(7) }
+    );
+    assert_eq!(settlement.event(), None);
+}
+
+// The session reads `Idle` while the trial image is still running. That is
+// what a revert leaves behind: it puts the slot metadata back but cannot
+// unrun the image, so the part keeps running what it booted until the next
+// reset. No trial is open, so the settlement names no event.
+#[test]
+fn settling_an_unclaimed_image_names_no_event() {
+    let mut driver = self_trial_driver(trial_session(SelfUpdateState::Idle));
+
+    let settlement = driver.settle_self_image().expect("the mock does not fault");
+
+    assert_eq!(settlement, SelfUpdateSettlement::UnclaimedImageRunning);
+    assert_eq!(settlement.event(), None);
 }
