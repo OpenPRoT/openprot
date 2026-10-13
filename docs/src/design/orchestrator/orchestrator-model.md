@@ -50,7 +50,13 @@ time; the core never derives it.
 ```
 Active  — has an integrated iRoT (e.g. Caliptra); both eRoT and iRoT checks apply
 Passive — no integrated iRoT; only the eRoT check applies
+Erot    — the eRoT itself, chain position 0; never released, walked or recovered
 ```
+
+`Erot` is in the chain because the eRoT is an update target like any other
+component, not because anything supervises it: it is already running when the
+walk starts, and nothing can reset the thing that drives the reset lines. The
+walk steps past it the way it steps past a gated component.
 
 In CSA terminology: `Active` corresponds to a *SoC with an integrated iRoT*
 (e.g. a BMC or CPU with Caliptra). `Passive` corresponds to a *symbiont device*
