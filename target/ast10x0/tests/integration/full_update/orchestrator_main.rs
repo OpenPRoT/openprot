@@ -537,6 +537,11 @@ fn run(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> Outcome {
 
     // Only now has the image proved it can run.
     core.dispatch(driver, Event::BootConfirmed(TARGET));
+    // And the floor moves only when the update agent asks with
+    // UpdateSecurityRevision. Dispatched here rather than read off the
+    // device's status: the firmware device never parks at
+    // `SvnCommitPending` in this build, which GAPS.md records.
+    core.dispatch(driver, Event::SvnCommitRequest(TARGET));
     if core.state() != State::Ready {
         pw_log::error!("ORCH: the machine did not settle after the second boot");
         return Outcome::SecondBootFailed;
