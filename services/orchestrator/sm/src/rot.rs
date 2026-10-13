@@ -59,6 +59,16 @@ pub struct Rot<const N: usize, const E: usize> {
     /// and [`State::Recovering`] (the running image is now suspect). Not cleared
     /// on `Ready` entry, because activation sets it on the way in.
     pending_commit: Option<ComponentId>,
+    /// Set when this boot started with [`Event::SelfTrialBooted`]: the eRoT
+    /// is running the trial image of its own update. Entry to
+    /// [`State::Ready`] emits [`Effect::ConfirmSelfTrial`] and clears it, so
+    /// the trial is confirmed once, however many times the machine returns to
+    /// `Ready` afterwards.
+    ///
+    /// Only ever set at the start of a boot, so it holds no state across the
+    /// reset that decides the trial. The session in durable storage does,
+    /// and it is what the next boot reads.
+    self_trial_booted: bool,
     /// Ties the effect-buffer size `E` to this type (zero-sized).
     _effect_cap: PhantomData<[u8; E]>,
 }
@@ -87,6 +97,7 @@ impl<const N: usize, const E: usize> Rot<N, E> {
             statuses,
             max_retry,
             pending_commit: None,
+            self_trial_booted: false,
             _effect_cap: PhantomData,
         }
     }
@@ -406,6 +417,13 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 }
                 Event::PowerGood(PowerOnResult::SelfVerificationFailed) => {
                     Outcome::Transition(State::Locked)
+                }
+                // The boot that decides a self-update trial. Recorded here
+                // and acted on at `Ready` entry, because what confirms the
+                // trial is the chain coming up, not power-on itself.
+                Event::SelfTrialBooted => {
+                    self.self_trial_booted = true;
+                    Outcome::Handled
                 }
                 Event::EffectFailed => Outcome::Transition(State::Locked),
                 _ => Outcome::Super,
@@ -881,6 +899,16 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 ctx.emit(Effect::LatchLockdown);
             }
             State::Ready => {
+                // The chain is up. If the eRoT booted the trial image of
+                // its own update, that is the trial proving itself: confirm
+                // the session, so the update agent's ask for the floor
+                // advance is answered rather than refused.
+                // Cleared here, so a later return to `Ready` in the same boot
+                // confirms nothing a second time.
+                if self.self_trial_booted {
+                    self.self_trial_booted = false;
+                    ctx.emit(Effect::ConfirmSelfTrial);
+                }
                 // NB: `gated` is intentionally NOT cleared here. It is a durable
                 // trust-boundary gate (each id has a live `AssertReset`);
                 // clearing it would let a later chain walk re-release a

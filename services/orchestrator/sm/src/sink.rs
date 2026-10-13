@@ -45,6 +45,9 @@ pub(crate) enum Outcome {
 /// live component) never pushes past this bound, because gating and quiescing
 /// are mutually exclusive per component: a component the cascade isolates is not
 /// also live, so the two counts never sum above the full-cascade worst case.
+/// A cascade can land in `Ready` instead, when nothing ungated is left to walk,
+/// and `Ready` entry emits one effect of its own (`ConfirmSelfTrial`). That
+/// comes to `2 * N + 1`, one under the same bound.
 /// `Rot::new` refuses to compile unless `E >= 2 * N + 2`, so a machine that
 /// builds can never overflow this buffer.
 pub struct Sink<const E: usize> {

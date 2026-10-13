@@ -60,6 +60,12 @@ pub enum DriverError {
     /// Activation was asked before the candidate passed verification.
     /// The job survives, so `DiscardStaged` can still end it.
     CandidateNotAuthenticated,
+    /// A self-update effect ran on a board that wired no self-image. The
+    /// event that opens the trial comes from reading that self-image, so
+    /// the board and the machine have drifted apart.
+    NoSelfImage,
+    /// The eRoT's own update session could not be written.
+    SelfUpdateFault,
     /// A staging step ran before anything commanded the work. Updates
     /// get the flag from `AuthenticateStageUpdate`, and a slot re-sync
     /// sets it when it queues the job. So the phase and the flag
@@ -84,6 +90,8 @@ impl core::fmt::Display for DriverError {
             DriverError::NoUpdateJob => "no update job for this effect",
             DriverError::CandidateOutOfRange => "candidate does not fit the staging region",
             DriverError::CandidateNotAuthenticated => "candidate has not passed verification yet",
+            DriverError::NoSelfImage => "board wired no self-image",
+            DriverError::SelfUpdateFault => "self-update session could not be written",
             DriverError::UpdateNotCommanded => "staging ran before the SM commanded it",
         })
     }
@@ -513,6 +521,34 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         }
     }
 
+    /// Confirms the eRoT's own update session: the trial image booted and
+    /// the chain came up behind it.
+    ///
+    /// Moves the session to `Committed`. The update agent sends
+    /// UpdateSecurityRevision when it sends it; what the confirm decides is
+    /// the answer, since `commit_self_svn_floor` refuses a session that does
+    /// not read `Committed`. The floor does not move here, and nothing reads
+    /// the SVN: the session recorded it at `prepare`, and that is the only
+    /// authenticated reading of it.
+    ///
+    /// `confirm` is idempotent, so a board whose session already reads
+    /// `Committed` answers `Ok`. A board with no self-image at all is a
+    /// different matter and fails secure: the effect only ever follows the
+    /// event the self-image produced, so reaching here without one means the
+    /// board and the machine disagree about whether this eRoT updates
+    /// itself.
+    fn confirm_self_trial(&mut self) -> Result<(), DriverError> {
+        let self_image = self
+            .board
+            .self_image
+            .as_mut()
+            .ok_or(DriverError::NoSelfImage)?;
+        self_image
+            .session
+            .confirm()
+            .map_err(|_| DriverError::SelfUpdateFault)
+    }
+
     /// Hands one report to the board's sink. Cannot fail, so reporting stays
     /// off the fail-secure path; reports arrive in the order the SM emitted
     /// them.
@@ -621,6 +657,7 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
             Effect::AuthenticateStageUpdate => self.prepare_update().map(|_| None),
             Effect::ActivateUpdate => self.activate_update().map(|_| None),
             Effect::DiscardStaged => self.discard_staged().map(|_| None),
+            Effect::ConfirmSelfTrial => self.confirm_self_trial().map(|_| None),
             // No board capability is composed for these seams yet, so they
             // fail secure here instead of behind stub methods.
             Effect::SignAttestation | Effect::LatchLockdown => return Err(EffectError),

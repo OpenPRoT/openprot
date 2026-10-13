@@ -320,6 +320,24 @@ pub enum Event {
     /// when it executes [`Effect::ActivateUpdate`] and cancels it on
     /// [`Effect::CommitSvnFloor`].
     CommitTimeout,
+    /// This boot is the trial run of the eRoT's own update: the durable
+    /// session says an image was activated and the eRoT came up on it.
+    /// Injected at bring-up by the driver's `settle_self_image_at_boot`,
+    /// before [`Event::PowerGood`] and so handled in
+    /// [`State::PowerOnReset`] alone. Later in the boot it is stale: the
+    /// trial is judged once per boot.
+    ///
+    /// The verdict is reaching [`State::Ready`], which says the trial image
+    /// booted and brought the chain up. Entry there emits
+    /// [`Effect::ConfirmSelfTrial`]. A boot that never reaches `Ready`
+    /// confirms nothing, and the next boot settles the session as a trial
+    /// that fell back.
+    ///
+    /// Carries nothing. There is one self-update session, the eRoT's own,
+    /// and [`Event::BootConfirmed`] could not stand in for it: that one is
+    /// handled in `Ready` against `pending_commit`, which the reset deciding
+    /// the trial has already wiped.
+    SelfTrialBooted,
     /// The platform driver could not carry out an emitted [`Effect`]; fail-secure, it
     /// latches to [`State::Locked`] from any state. Injected by the driver when
     /// a [`Platform::execute`](crate::Platform::execute) call fails; never
@@ -362,6 +380,7 @@ impl Event {
             | Event::UpdateCancelled
             | Event::RecoveryFailed
             | Event::CommitTimeout
+            | Event::SelfTrialBooted
             | Event::EffectFailed => None,
         }
     }
@@ -395,6 +414,18 @@ pub enum Effect {
     /// floor earlier would burn anti-rollback on an image that authenticated
     /// but has not yet demonstrated it can boot and run.
     CommitSvnFloor(ComponentId),
+    /// Confirm the eRoT's own update session: the trial image booted and
+    /// brought the chain up. Emitted on entry to [`State::Ready`] when this
+    /// boot started with [`Event::SelfTrialBooted`].
+    ///
+    /// Confirming is not committing. It moves the session to `Committed`,
+    /// which is what the update agent's UpdateSecurityRevision is answered
+    /// against: the agent asks when it asks, and a session that is not
+    /// `Committed` gets the ask refused. The floor itself does not move
+    /// here. [`Effect::CommitSvnFloor`] is the downstream counterpart and
+    /// names a component, which this one cannot: the eRoT's floor is held in
+    /// the board's self-image, not in the per-component array.
+    ConfirmSelfTrial,
     /// Recover `id` from its configured recovery source. The mechanism —
     /// golden image, A/B slot, streamed image, or vendor-specific scheme — is
     /// deferred to the [`Platform`](crate::Platform) driver, which resolves it
