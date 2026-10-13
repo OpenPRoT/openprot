@@ -521,6 +521,27 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         }
     }
 
+    /// Settles the eRoT's last self-update at the start of this boot, from
+    /// the session and floor the board wired, and says what it found.
+    ///
+    /// The same call as [`settle_self_update`], reaching the pair through
+    /// [`Board::self_image`] so an event loop that only holds the driver can
+    /// make it. A board that wired no self-image answers `Settled`: no
+    /// session is no session, whether it is missing or empty.
+    ///
+    /// Runs once, before [`Event::PowerGood`], and the caller dispatches
+    /// [`SelfUpdateSettlement::event`] before that. A later run names an
+    /// event the state machine drops: the trial is judged once per boot, by
+    /// the walk that has already run.
+    pub fn settle_self_image(
+        &mut self,
+    ) -> Result<SelfUpdateSettlement, SettleError<SelfUpdateError<B>, SvnFloorError<B>>> {
+        let Some(self_image) = self.board.self_image.as_mut() else {
+            return Ok(SelfUpdateSettlement::Settled);
+        };
+        settle_self_update(&mut self_image.session, &self_image.floor)
+    }
+
     /// Confirms the eRoT's own update session: the trial image booted and
     /// the chain came up behind it.
     ///
@@ -557,6 +578,13 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     }
 }
 
+/// The error type of the board's self-update session, spelled once so
+/// [`PlatformDriver::settle_self_image`] fits on a line.
+type SelfUpdateError<B> = <<B as BoardCapabilities>::SelfUpdate as SelfUpdate>::Error;
+
+/// The error type of the board's anti-rollback floor, for the same reason.
+type SvnFloorError<B> = <<B as BoardCapabilities>::SvnFloor as SvnFloor>::Error;
+
 /// What [`settle_self_update`] found in the eRoT's last self-update.
 ///
 /// What to do about it is the caller's, the same split the capability seams
@@ -592,6 +620,26 @@ pub enum SelfUpdateSettlement {
     /// whose `revert` leaves the mark in place would run the same image
     /// again.
     UnclaimedImageRunning,
+}
+
+impl SelfUpdateSettlement {
+    /// Which event the caller dispatches into the state machine for this
+    /// settlement, if any.
+    ///
+    /// Only a running trial needs one: the state machine judges that trial
+    /// by reaching [`State::Ready`](openprot_orchestrator_sm::State), so it
+    /// has to know the trial is running before the walk starts. The other
+    /// settlements are the caller's to act on and change nothing about the
+    /// walk, so they dispatch no event.
+    #[must_use]
+    pub const fn event(self) -> Option<Event> {
+        match self {
+            SelfUpdateSettlement::TrialRunning { .. } => Some(Event::SelfTrialBooted),
+            SelfUpdateSettlement::Settled
+            | SelfUpdateSettlement::AwaitingFloorAdvance { .. }
+            | SelfUpdateSettlement::UnclaimedImageRunning => None,
+        }
+    }
 }
 
 /// One [`PlatformDriver::poll_boot_walks`] round.
