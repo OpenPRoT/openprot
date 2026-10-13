@@ -954,6 +954,33 @@ impl<S: core::error::Error + 'static, F: core::error::Error + 'static> core::err
     }
 }
 
+/// Settles the eRoT's own self-update at the start of a boot and tells the
+/// machine what it found.
+///
+/// Belongs between [`bring_up`] and the first [`Event::PowerGood`]. The
+/// settlement decides whether a new self-update may start, and a trial that
+/// is running has to be declared before the walk begins, because what judges
+/// it is the walk reaching [`State::Ready`](openprot_orchestrator_sm::State).
+///
+/// Returns what [`PlatformDriver::settle_self_image`] found, so a caller that
+/// needs more than the event (refusing a new self-update, acting on an
+/// unclaimed image) reads it off the settlement. A board that wired no
+/// self-image answers `Settled` and nothing is dispatched.
+///
+/// A storage fault comes back unchanged. Nothing is dispatched then: the
+/// boot has no honest answer about what the last self-update was doing, and
+/// the caller decides what that costs.
+pub fn settle_self_image_at_boot<B: BoardCapabilities, const N: usize, const E: usize>(
+    orchestrator: &mut Orchestrator<N, E>,
+    driver: &mut PlatformDriver<B, N>,
+) -> Result<SelfUpdateSettlement, SettleError<SelfUpdateError<B>, SvnFloorError<B>>> {
+    let settlement = driver.settle_self_image()?;
+    if let Some(event) = settlement.event() {
+        orchestrator.dispatch(driver, event);
+    }
+    Ok(settlement)
+}
+
 /// The connection between an update frontend and the SM: called (by the
 /// event loop, on the frontend's behalf) once a complete candidate for
 /// `target` sits in the staging region. Records the job first, then injects

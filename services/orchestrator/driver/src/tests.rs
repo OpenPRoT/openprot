@@ -3456,3 +3456,72 @@ fn settling_an_unclaimed_image_names_no_event() {
     assert_eq!(settlement, SelfUpdateSettlement::UnclaimedImageRunning);
     assert_eq!(settlement.event(), None);
 }
+
+// The boot-time call: settling a running trial dispatches the event, so
+// the machine knows the trial is being judged before the walk starts.
+#[test]
+fn settling_at_boot_dispatches_the_trial_event() {
+    let mut orch = orchestrator();
+    let mut driver =
+        self_trial_driver(trial_session(SelfUpdateState::TrialPending { svn: Svn(7) }));
+
+    let settlement = settle_self_image_at_boot(&mut orch, &mut driver).expect("no fault");
+
+    assert_eq!(
+        settlement,
+        SelfUpdateSettlement::TrialRunning { svn: Svn(7) }
+    );
+    // The machine has not walked yet, so nothing is confirmed. The first
+    // `Ready` is what does that.
+    assert_eq!(
+        session_state(&driver),
+        SelfUpdateState::TrialPending { svn: Svn(7) }
+    );
+
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+
+    assert_eq!(orch.state(), State::Ready);
+    assert_eq!(
+        session_state(&driver),
+        SelfUpdateState::Committed { svn: Svn(7) }
+    );
+}
+
+// Nothing was in flight, so no event reaches the state machine and the
+// boot walks as any other.
+#[test]
+fn settling_at_boot_with_no_session_dispatches_nothing() {
+    let mut orch = orchestrator();
+    let mut driver = self_trial_driver(MockSelfUpdate::idle());
+
+    let settlement = settle_self_image_at_boot(&mut orch, &mut driver).expect("no fault");
+
+    assert_eq!(settlement, SelfUpdateSettlement::Settled);
+
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+
+    assert_eq!(orch.state(), State::Ready);
+    assert_eq!(session_state(&driver), SelfUpdateState::Idle);
+}
+
+// The session could not be read. The boot has no honest answer about the
+// last self-update, so nothing is dispatched and the fault is the
+// caller's to act on.
+#[test]
+fn settling_at_boot_passes_a_storage_fault_back() {
+    let mut orch = orchestrator();
+    let mut driver = self_trial_driver(MockSelfUpdate {
+        fail: true,
+        ..trial_session(SelfUpdateState::TrialPending { svn: Svn(7) })
+    });
+
+    assert!(settle_self_image_at_boot(&mut orch, &mut driver).is_err());
+
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+
+    assert_eq!(
+        orch.state(),
+        State::Ready,
+        "no trial was declared, so the walk is an ordinary boot"
+    );
+}
