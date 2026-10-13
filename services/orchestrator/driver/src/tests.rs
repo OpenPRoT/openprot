@@ -3279,3 +3279,117 @@ fn a_discarded_update_cancels_the_pending_resync() {
         "and no bytes went to the device"
     );
 }
+
+/// A one-component driver whose board keeps `session` as the eRoT's own
+/// update session.
+fn self_trial_driver(session: MockSelfUpdate) -> PlatformDriver<MockBoard, 1> {
+    PlatformDriver::new(
+        &passive_entries(),
+        Board {
+            self_image: Some(SelfImage {
+                session,
+                floor: MockFloor::new(),
+            }),
+            ..mock_board()
+        },
+    )
+}
+
+/// The eRoT's own session in the state the test needs, with the trial
+/// image running.
+fn trial_session(state: SelfUpdateState) -> MockSelfUpdate {
+    MockSelfUpdate::with_session(state, RunningImage::Trial)
+}
+
+/// What the board's self-update session reads.
+fn session_state(driver: &PlatformDriver<MockBoard, 1>) -> SelfUpdateState {
+    driver
+        .board()
+        .self_image
+        .as_ref()
+        .expect("the test wired a self-image")
+        .session
+        .state
+}
+
+/// What the floor next to that session reads.
+fn self_floor(driver: &PlatformDriver<MockBoard, 1>) -> Svn {
+    driver
+        .board()
+        .self_image
+        .as_ref()
+        .expect("the test wired a self-image")
+        .floor
+        .floor()
+        .expect("the mock does not fault")
+}
+
+// The trial image booted and the chain came up behind it, so the machine
+// confirms the session on its way into Ready. The floor stays where it is:
+// advancing it is the update agent's to ask for.
+#[test]
+fn a_trial_that_reaches_ready_is_confirmed() {
+    let mut orch = orchestrator();
+    let mut driver = self_trial_driver(trial_session(SelfUpdateState::TrialPending {
+        svn: Svn(7),
+    }));
+    let floor_before = self_floor(&driver);
+
+    orch.dispatch(&mut driver, Event::SelfTrialBooted);
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+
+    assert_eq!(orch.state(), State::Ready);
+    assert_eq!(
+        session_state(&driver),
+        SelfUpdateState::Committed { svn: Svn(7) }
+    );
+    assert_eq!(
+        self_floor(&driver),
+        floor_before,
+        "confirming is not committing"
+    );
+}
+
+// An ordinary boot on the same board. Nothing said a trial was running, so
+// the session is left where it is.
+#[test]
+fn a_boot_with_no_trial_leaves_the_session_alone() {
+    let mut orch = orchestrator();
+    let mut driver = self_trial_driver(trial_session(SelfUpdateState::Idle));
+
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+
+    assert_eq!(orch.state(), State::Ready);
+    assert_eq!(session_state(&driver), SelfUpdateState::Idle);
+}
+
+// The event says a self-image produced it and the board wired none, so the
+// two disagree about whether this eRoT updates itself. The effect fails and
+// the platform locks down rather than carrying on with a trial nothing can
+// confirm.
+#[test]
+fn confirming_a_trial_with_no_self_image_locks_down() {
+    let mut orch = orchestrator();
+    let mut driver = driver([MemImage::holding(valid_image())]);
+
+    orch.dispatch(&mut driver, Event::SelfTrialBooted);
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+
+    assert_eq!(orch.state(), State::Locked);
+}
+
+// The session write fails. Same fail-secure answer: the trial is not
+// confirmed and the platform locks down.
+#[test]
+fn a_session_that_cannot_be_written_locks_down() {
+    let mut orch = orchestrator();
+    let mut driver = self_trial_driver(MockSelfUpdate {
+        fail: true,
+        ..trial_session(SelfUpdateState::TrialPending { svn: Svn(7) })
+    });
+
+    orch.dispatch(&mut driver, Event::SelfTrialBooted);
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+
+    assert_eq!(orch.state(), State::Locked);
+}

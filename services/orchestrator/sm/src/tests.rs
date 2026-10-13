@@ -2885,7 +2885,7 @@ fn random_chain(rng: &mut SplitMix64) -> heapless::Vec<(ComponentId, ComponentAt
 /// Build one random event over the given id palette. Id-less events ignore it.
 fn random_event(rng: &mut SplitMix64, ids: &[ComponentId]) -> Event {
     let id = ids[rng.below(ids.len() as u32) as usize];
-    match rng.below(17) {
+    match rng.below(18) {
         0 => Event::VerificationPassed(id),
         1 => Event::VerificationFailed(id),
         2 => Event::ComponentReady(id),
@@ -2919,6 +2919,7 @@ fn random_event(rng: &mut SplitMix64, ids: &[ComponentId]) -> Event {
         13 => Event::CommitTimeout,
         14 => Event::RecoveryUnavailable(id),
         15 => Event::UpdateCancelled,
+        16 => Event::SelfTrialBooted,
         _ => Event::EffectFailed,
     }
 }
@@ -3292,4 +3293,120 @@ fn the_walk_passes_over_the_erot() {
         effects.contains(&Effect::VerifyFirmware(C1)),
         "the walk did not reach the component behind the eRoT: {effects:?}"
     );
+}
+
+/// The trial image booted and the chain came up behind it. That is the
+/// verdict on the trial, so `Ready` entry confirms the session and the
+/// update agent can ask for the floor advance.
+#[test]
+fn a_self_trial_is_confirmed_when_the_chain_reaches_ready() {
+    let (effects, state) = drive(
+        passive_required(&[C0]),
+        &[
+            Event::SelfTrialBooted,
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::Booted(C0),
+        ],
+    );
+
+    assert_eq!(state, State::Ready);
+    assert_eq!(
+        effects
+            .iter()
+            .filter(|e| **e == Effect::ConfirmSelfTrial)
+            .count(),
+        1
+    );
+}
+
+/// An ordinary boot confirms nothing. Without the event there is no
+/// session to confirm, and emitting the effect would have the driver write
+/// to a session that holds no trial.
+#[test]
+fn a_boot_without_a_self_trial_confirms_nothing() {
+    let (effects, _) = drive(
+        passive_required(&[C0]),
+        &[BOOT, Event::VerificationPassed(C0), Event::Booted(C0)],
+    );
+
+    assert!(!effects.contains(&Effect::ConfirmSelfTrial));
+}
+
+/// The machine returns to `Ready` whenever an update or a recovery ends.
+/// The trial is confirmed on the first of those only: the session is
+/// already `Committed` after that, and the second write would be answering
+/// for a trial this boot no longer runs.
+#[test]
+fn the_self_trial_is_confirmed_once_per_boot() {
+    let (effects, state) = drive(
+        passive_required(&[C0]),
+        &[
+            Event::SelfTrialBooted,
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::Booted(C0),
+            // An update that is staged and then rejected, which leaves the
+            // machine where it started: back in `Ready`.
+            Event::UpdateRequest(C0),
+            Event::UpdateRejected,
+        ],
+    );
+
+    assert_eq!(state, State::Ready);
+    assert!(
+        effects.contains(&Effect::DiscardStaged),
+        "the update has to run for `Ready` to be entered a second time"
+    );
+    assert_eq!(
+        effects
+            .iter()
+            .filter(|e| **e == Effect::ConfirmSelfTrial)
+            .count(),
+        1
+    );
+}
+
+/// A boot that locks down never reaches `Ready`, so the trial is never
+/// confirmed. The next boot settles the session as a trial that fell back
+/// and the update is done again.
+#[test]
+fn a_self_trial_on_a_boot_that_locks_is_not_confirmed() {
+    let (effects, state) = drive(
+        passive_required(&[C0]),
+        &[
+            Event::SelfTrialBooted,
+            Event::PowerGood(PowerOnResult::SelfVerificationFailed),
+        ],
+    );
+
+    assert_eq!(state, State::Locked);
+    assert!(!effects.contains(&Effect::ConfirmSelfTrial));
+}
+
+/// The event belongs to the start of a boot. One arriving later names a
+/// trial the machine has already judged, so it is dropped rather than
+/// re-opening the question from `Ready`.
+#[test]
+fn a_late_self_trial_event_is_dropped() {
+    let (effects, state) = drive(
+        passive_required(&[C0]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::Booted(C0),
+            Event::SelfTrialBooted,
+            // A second pass through `Ready`, which would confirm if the
+            // late event had been recorded.
+            Event::UpdateRequest(C0),
+            Event::UpdateRejected,
+        ],
+    );
+
+    assert_eq!(state, State::Ready);
+    assert!(
+        effects.contains(&Effect::DiscardStaged),
+        "the update has to run for `Ready` to be entered a second time"
+    );
+    assert!(!effects.contains(&Effect::ConfirmSelfTrial));
 }
