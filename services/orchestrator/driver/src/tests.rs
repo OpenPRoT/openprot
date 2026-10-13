@@ -2514,10 +2514,14 @@ fn bring_up_builds_both_halves_from_one_chain() {
     const fn dev(attrs: ComponentAttrs) -> DeviceConfig<u8, u8> {
         DeviceConfig::new("dev", 0, &[CP], None, attrs)
     }
-    const TABLE: [DeviceConfig<u8, u8>; 1] = [dev(ComponentAttrs::active_required())];
-    const CHAIN: ChainEntries<1> = chain_of(&TABLE);
+    // chain_of requires the eRoT at position 0, so the table carries one.
+    const TABLE: [DeviceConfig<u8, u8>; 2] = [
+        DeviceConfig::erot("erot", None),
+        dev(ComponentAttrs::active_required()),
+    ];
+    const CHAIN: ChainEntries<2> = chain_of(&TABLE);
 
-    let (orch, driver) = bring_up::<MockBoard, 1, 4>(&CHAIN, mock_board(), 3);
+    let (orch, driver) = bring_up::<MockBoard, 2, 6>(&CHAIN, mock_board(), 3);
 
     assert_eq!(orch.state(), State::PowerOnReset);
     assert!(driver.pending_update().is_none());

@@ -61,8 +61,14 @@ pub const BMC: DeviceConfig<BmcReset, BmcProbe> = DeviceConfig::new(
     ComponentAttrs::passive_required(),
 );
 
-/// Every device this board manages, in the order that assigns their ids.
-pub const DEVICES: [DeviceConfig<BmcReset, BmcProbe>; 1] = [BMC];
+/// The eRoT itself, at chain position 0. It is in the table so the
+/// orchestrator can address it. This board does not update the eRoT, so the
+/// entry carries no layout.
+pub const EROT: DeviceConfig<BmcReset, BmcProbe> = DeviceConfig::erot("erot", None);
+
+/// Every device this board manages, in the order that assigns their ids. The
+/// eRoT comes first, so the BMC is ComponentId(1).
+pub const DEVICES: [DeviceConfig<BmcReset, BmcProbe>; 2] = [EROT, BMC];
 
 /// The orchestrator's chain, derived from [`DEVICES`].
 pub const CHAIN: ChainEntries<{ DEVICES.len() }> = chain_of(&DEVICES);
