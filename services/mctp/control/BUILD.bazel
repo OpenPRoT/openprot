@@ -1,0 +1,38 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_doc_test", "rust_library", "rust_test")
+
+rust_library(
+    name = "mctp_control",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "openprot_mctp_control",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/mctp/api:mctp_api",
+        "@rust_crates//:mctp",
+        "@rust_crates//:mctp-lib",
+    ],
+)
+
+rust_doc_test(
+    name = "mctp_control_doc_test",
+    crate = ":mctp_control",
+    deps = [
+        "//services/mctp/api:mctp_api",
+        "@rust_crates//:mctp-lib",
+    ],
+)
+
+rust_test(
+    name = "mctp_control_responder_test",
+    srcs = ["tests/responder.rs"],
+    crate_root = "tests/responder.rs",
+    edition = "2024",
+    deps = [
+        ":mctp_control",
+        "//services/mctp/api:mctp_api",
+        "@rust_crates//:mctp-lib",
+    ],
+)
