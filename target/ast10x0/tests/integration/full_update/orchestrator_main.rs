@@ -49,10 +49,10 @@ use userspace::{entry, syscall};
 use app_orchestrator::handle;
 
 /// The component this RoT supervises and updates.
-const TARGET: ComponentId = ComponentId::new(0);
+const TARGET: ComponentId = ComponentId::new(1);
 
 /// Chain capacity and the core's effect-sink cap (`E >= 2*N + 2`).
-const N: usize = 1;
+const N: usize = 2;
 const E: usize = 2 * N + 2;
 const MAX_RETRY: u8 = 3;
 
@@ -88,17 +88,23 @@ type Driver = openprot_orchestrator_driver::PlatformDriver<UpdateBoard, N>;
 
 /// The device table. One checkpoint: the device reports ready inside the
 /// window or it does not.
-static DEVICES: [DeviceConfig<u8, u8>; N] = [DeviceConfig::new(
-    "downstream",
-    0,
-    &[BootCheckpoint::new(
-        "ready",
-        1,
-        core::time::Duration::from_millis(BOOT_WINDOW_MILLIS),
-    )],
-    None,
-    ComponentAttrs::passive_required(),
-)];
+/// Chain position 0 is the eRoT itself. It is addressable but never
+/// supervised. This scenario updates the downstream device and not the eRoT,
+/// so the eRoT entry carries no layout.
+static DEVICES: [DeviceConfig<u8, u8>; N] = [
+    DeviceConfig::erot("erot", None),
+    DeviceConfig::new(
+        "downstream",
+        0,
+        &[BootCheckpoint::new(
+            "ready",
+            1,
+            core::time::Duration::from_millis(BOOT_WINDOW_MILLIS),
+        )],
+        None,
+        ComponentAttrs::passive_required(),
+    ),
+];
 
 static CHAIN: ChainEntries<N> = chain_of(&DEVICES);
 
@@ -427,14 +433,20 @@ impl BoardCapabilities for UpdateBoard {
 
 fn board() -> Board<UpdateBoard, N> {
     Board {
-        images: [StubImage],
+        // Index 0 is the eRoT. The walk passes over it, so nothing reads
+        // or actuates these entries. The arrays are indexed by ComponentId,
+        // so index 0 still needs a value.
+        images: [StubImage, StubImage],
         verifier: StubVerifier,
-        boot_controls: [BmcReset],
-        boot_watches: [CheckpointWalk::new(BmcEvidence, &DEVICES[0])],
-        svn_floors: [SvnFloorBinding::SelfManaged],
+        boot_controls: [BmcReset, BmcReset],
+        boot_watches: [
+            CheckpointWalk::new(BmcEvidence, &DEVICES[0]),
+            CheckpointWalk::new(BmcEvidence, &DEVICES[1]),
+        ],
+        svn_floors: [SvnFloorBinding::SelfManaged, SvnFloorBinding::SelfManaged],
         report_sink: LogSink,
-        updatables: [FdUpdatable],
-        recovery: [()],
+        updatables: [FdUpdatable, FdUpdatable],
+        recovery: [(), ()],
         update_staging: PatternStaging,
         update_verifier: Some(PatternVerifier),
         self_image: None,

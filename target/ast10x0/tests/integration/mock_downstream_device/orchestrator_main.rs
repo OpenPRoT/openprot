@@ -50,7 +50,7 @@ use userspace::{entry, syscall};
 use app_orchestrator::handle;
 
 /// Chain capacity and the core's effect-sink cap (`E >= 2*N + 2`).
-const N: usize = 1;
+const N: usize = 2;
 const E: usize = 2 * N + 2;
 const MAX_RETRY: u8 = 3;
 
@@ -81,18 +81,25 @@ const RESET_RELEASE: u8 = 1;
 /// The device table. One checkpoint: the device either reports ready inside
 /// the window or it does not. Probe 1 is what the evidence reader answers
 /// `Booted` for once the latch is set.
-static DEVICES: [DeviceConfig<u8, u8>; N] = [DeviceConfig::new(
-    "downstream",
-    0,
-    &[BootCheckpoint::new(
-        "ready",
-        1,
-        core::time::Duration::from_millis(BOOT_WINDOW_MILLIS),
-    )],
-    // A boot walk never looks at images, so no layout is legal here.
-    None,
-    ComponentAttrs::passive_required(),
-)];
+/// Chain position 0 is the eRoT itself. It is never released, walked or
+/// recovered. It is in the table so the orchestrator can address it, not so
+/// it can supervise it. A boot scenario never updates the eRoT either, so
+/// the entry carries no layout.
+static DEVICES: [DeviceConfig<u8, u8>; N] = [
+    DeviceConfig::erot("erot", None),
+    DeviceConfig::new(
+        "downstream",
+        0,
+        &[BootCheckpoint::new(
+            "ready",
+            1,
+            core::time::Duration::from_millis(BOOT_WINDOW_MILLIS),
+        )],
+        // A boot walk never looks at images, so no layout is legal here.
+        None,
+        ComponentAttrs::passive_required(),
+    ),
+];
 
 static CHAIN: ChainEntries<N> = chain_of(&DEVICES);
 
@@ -336,14 +343,20 @@ impl BoardCapabilities for MockDownstreamDeviceBoard {
 
 fn board() -> Board<MockDownstreamDeviceBoard, N> {
     Board {
-        images: [StubImage],
+        // Index 0 is the eRoT. The walk passes over it, so nothing reads
+        // or actuates these entries. The arrays are indexed by ComponentId,
+        // so index 0 still needs a value.
+        images: [StubImage, StubImage],
         verifier: StubVerifier,
-        boot_controls: [BmcReset],
-        boot_watches: [CheckpointWalk::new(BmcEvidence, &DEVICES[0])],
-        svn_floors: [SvnFloorBinding::SelfManaged],
+        boot_controls: [BmcReset, BmcReset],
+        boot_watches: [
+            CheckpointWalk::new(BmcEvidence, &DEVICES[0]),
+            CheckpointWalk::new(BmcEvidence, &DEVICES[1]),
+        ],
+        svn_floors: [SvnFloorBinding::SelfManaged, SvnFloorBinding::SelfManaged],
         report_sink: LogSink,
-        updatables: [NoUpdate],
-        recovery: [()],
+        updatables: [NoUpdate, NoUpdate],
+        recovery: [(), ()],
         update_staging: NoStaging,
         update_verifier: Some(NeverVerifier),
         self_image: None,
