@@ -26,16 +26,17 @@
 #![no_std]
 
 use core::convert::Infallible;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 
 use openprot_orchestrator_driver::{
-    bring_up, Board, BoardCapabilities, ImageSource, Report, ReportSink, SvnFloorBinding, Verdict,
-    Verifier,
+    bring_up, settle_self_image_at_boot, Board, BoardCapabilities, ImageSource, Report, ReportSink,
+    SelfImage, SvnFloorBinding, Verdict, Verifier,
 };
 use openprot_orchestrator_sm::{ComponentAttrs, ComponentId, Event, PowerOnResult, State};
 use orchestrator_capabilities::{
-    BootControl, BootStatus, EvidenceReader, IncrementalVerifier, PollOutcome, StageProgress, Svn,
-    SvnFloor, Updatable, UpdateError, VerifySession,
+    BootControl, BootStatus, EvidenceReader, IncrementalVerifier, PollOutcome, RunningImage,
+    SelfUpdate, SelfUpdateState, StageProgress, Svn, SvnFloor, Updatable, UpdateError,
+    VerifySession,
 };
 use orchestrator_checkpoint_walk::CheckpointWalk;
 use orchestrator_config::{
@@ -228,19 +229,126 @@ impl ImageSource for StubImage {
     }
 }
 
-/// The device keeps its own floor, so the eRoT holds none. Present only
-/// because the board has to name a type for the binding.
-struct NoFloor;
+/// The managed device keeps its own floor, so the eRoT holds none for it.
+/// The eRoT's own floor is a different thing and is held here, in RAM: this
+/// scenario never resets the eRoT, so nothing has to survive a reset.
+struct ErotFloor;
 
-impl SvnFloor for NoFloor {
+/// The eRoT's own anti-rollback floor. Starts at zero: no scenario here
+/// advances it, and a session that recorded an SVN still has the advance
+/// ahead of it.
+static EROT_FLOOR: AtomicU32 = AtomicU32::new(0);
+
+impl SvnFloor for ErotFloor {
     type Error = BoardFault;
 
     fn floor(&self) -> Result<Svn, BoardFault> {
-        Err(BoardFault)
+        Ok(Svn(EROT_FLOOR.load(Ordering::Relaxed)))
     }
 
-    fn advance(&mut self, _to: Svn) -> Result<(), BoardFault> {
-        Err(BoardFault)
+    fn advance(&mut self, to: Svn) -> Result<(), BoardFault> {
+        EROT_FLOOR.fetch_max(to.0, Ordering::Relaxed);
+        Ok(())
+    }
+}
+
+/// The eRoT's own update session.
+///
+/// A real one lives in flash and survives the reset that decides the trial.
+/// This one is two atomics, because the scenario never resets the eRoT: the
+/// session is set up as the boot that follows an activation would find it,
+/// and the claim is what the boot does about it.
+///
+/// The state lives in statics rather than in the struct so the run can read
+/// it back. The driver takes the board at `bring_up` and hands out no
+/// reference to it.
+struct SelfSession;
+
+/// The session's state, as `STATE_*` below.
+static SESSION_STATE: AtomicU8 = AtomicU8::new(0);
+/// The SVN the session recorded, read only when the state carries one.
+static SESSION_SVN: AtomicU32 = AtomicU32::new(0);
+
+const STATE_IDLE: u8 = 0;
+const STATE_PREPARED: u8 = 1;
+const STATE_TRIAL_PENDING: u8 = 2;
+const STATE_COMMITTED: u8 = 3;
+
+impl SelfSession {
+    fn read() -> SelfUpdateState {
+        let svn = Svn(SESSION_SVN.load(Ordering::Relaxed));
+        match SESSION_STATE.load(Ordering::Relaxed) {
+            STATE_IDLE => SelfUpdateState::Idle,
+            STATE_PREPARED => SelfUpdateState::Prepared { svn },
+            STATE_TRIAL_PENDING => SelfUpdateState::TrialPending { svn },
+            STATE_COMMITTED => SelfUpdateState::Committed { svn },
+            // Nothing outside this file writes SESSION_STATE. Reading an
+            // unknown value back as `Idle` would make the write bug look
+            // like a boot with no self-update in flight.
+            _ => unreachable!("the session holds a state nothing wrote"),
+        }
+    }
+}
+
+impl SelfUpdate for SelfSession {
+    type Error = BoardFault;
+
+    fn state(&self) -> Result<SelfUpdateState, BoardFault> {
+        Ok(Self::read())
+    }
+
+    fn running(&self) -> Result<RunningImage, BoardFault> {
+        // Which image this boot runs is the boot selector's answer, not the
+        // session's. No scenario here activates an image for the eRoT, so
+        // this boot is always running the confirmed one.
+        Ok(RunningImage::Confirmed)
+    }
+
+    fn prepare(&mut self, svn: Svn) -> Result<(), BoardFault> {
+        SESSION_SVN.store(svn.0, Ordering::Relaxed);
+        SESSION_STATE.store(STATE_PREPARED, Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn set_trial_pending(&mut self) -> Result<(), BoardFault> {
+        match Self::read() {
+            // Marking a pending trial again is a retry, not a fault.
+            SelfUpdateState::Prepared { .. } | SelfUpdateState::TrialPending { .. } => {
+                SESSION_STATE.store(STATE_TRIAL_PENDING, Ordering::Relaxed);
+                Ok(())
+            }
+            _ => Err(BoardFault),
+        }
+    }
+
+    fn confirm(&mut self) -> Result<(), BoardFault> {
+        match Self::read() {
+            // Confirming a confirmed session is the same retry.
+            SelfUpdateState::TrialPending { .. } | SelfUpdateState::Committed { .. } => {
+                SESSION_STATE.store(STATE_COMMITTED, Ordering::Relaxed);
+                Ok(())
+            }
+            _ => Err(BoardFault),
+        }
+    }
+
+    fn complete(&mut self) -> Result<(), BoardFault> {
+        match Self::read() {
+            // Only a committed session closes, and closing a closed one is
+            // a retry. A session still being judged is dropped with
+            // `revert`, so completing it here would discard a pending
+            // trial.
+            SelfUpdateState::Committed { .. } | SelfUpdateState::Idle => {
+                SESSION_STATE.store(STATE_IDLE, Ordering::Relaxed);
+                Ok(())
+            }
+            _ => Err(BoardFault),
+        }
+    }
+
+    fn revert(&mut self) -> Result<(), BoardFault> {
+        SESSION_STATE.store(STATE_IDLE, Ordering::Relaxed);
+        Ok(())
     }
 }
 
@@ -333,13 +441,13 @@ impl BoardCapabilities for MockDownstreamDeviceBoard {
     type Verifier = StubVerifier;
     type BootControl = BmcReset;
     type BootWatch = CheckpointWalk<BmcEvidence, u8>;
-    type SvnFloor = NoFloor;
+    type SvnFloor = ErotFloor;
     type ReportSink = LogSink;
     type Updatable = NoUpdate;
     type Recovery = ();
     type Staging = NoStaging;
     type UpdateVerifier = NeverVerifier;
-    type SelfUpdate = ();
+    type SelfUpdate = SelfSession;
 }
 
 fn board() -> Board<MockDownstreamDeviceBoard, N> {
@@ -360,7 +468,10 @@ fn board() -> Board<MockDownstreamDeviceBoard, N> {
         recovery: [(), ()],
         update_staging: NoStaging,
         update_verifier: Some(NeverVerifier),
-        self_image: None,
+        self_image: Some(SelfImage {
+            session: SelfSession,
+            floor: ErotFloor,
+        }),
         update_stall_budget_millis: 1_000,
     }
 }
@@ -383,6 +494,14 @@ fn run() -> Result<(), ()> {
 
     let (mut core, mut driver) =
         bring_up::<MockDownstreamDeviceBoard, N, E>(&CHAIN, board(), MAX_RETRY);
+
+    // What the eRoT's last self-update was doing, read before anything
+    // walks. A trial running right now has to be declared here, because
+    // what judges it is this walk reaching `Ready`.
+    if settle_self_image_at_boot(&mut core, &mut driver).is_err() {
+        pw_log::error!("the eRoT's own session could not be settled");
+        return Err(());
+    }
 
     // Power on and pass verification. The driver's release of the reset
     // line is what arms the walk, so nothing here touches the device
