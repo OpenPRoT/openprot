@@ -3019,9 +3019,10 @@ fn a_commit_runs_a_second_staging_pass() {
     activated(&mut driver, &mut orch);
     let staged_before = driver.board().components[0].updatable.stagings;
 
-    // The boot is confirmed, which commits the floor and is where the
-    // re-sync comes from.
+    // The boot is confirmed and the agent asks for the SVN, which
+    // commits the floor and is where the re-sync comes from.
     orch.dispatch(&mut driver, Event::BootConfirmed(C0));
+    orch.dispatch(&mut driver, Event::SvnCommitRequest(C0));
 
     // Queued, not transferred: the executor returned without sending
     // anything, and the job is waiting for the pump.
@@ -3115,6 +3116,7 @@ fn the_floor_waits_for_the_spare_slot() {
     let before = floor_of(&driver);
 
     orch.dispatch(&mut driver, Event::BootConfirmed(C0));
+    orch.dispatch(&mut driver, Event::SvnCommitRequest(C0));
 
     assert_eq!(driver.pending_update(), Some(C0), "the re-sync is queued");
     assert_eq!(
@@ -3143,6 +3145,7 @@ fn a_commit_replayed_mid_pass_does_not_jump_the_floor() {
     activated(&mut driver, &mut orch);
 
     orch.dispatch(&mut driver, Event::BootConfirmed(C0));
+    orch.dispatch(&mut driver, Event::SvnCommitRequest(C0));
     driver.commit_svn_floor(C0).expect("replayed commit failed");
 
     assert_eq!(floor_of(&driver), Svn(0), "the floor jumped the pass");
@@ -3168,6 +3171,7 @@ fn a_failed_resync_leaves_the_floor_alone() {
     let before = floor_of(&driver);
 
     orch.dispatch(&mut driver, Event::BootConfirmed(C0));
+    orch.dispatch(&mut driver, Event::SvnCommitRequest(C0));
     driver.pump_update(0);
 
     assert_eq!(driver.pending_update(), None, "the re-sync ended");
@@ -3199,6 +3203,7 @@ fn a_floor_that_cannot_be_written_after_the_pass_is_reported() {
     activated(&mut driver, &mut orch);
 
     orch.dispatch(&mut driver, Event::BootConfirmed(C0));
+    orch.dispatch(&mut driver, Event::SvnCommitRequest(C0));
     for tick in 0..16 {
         if driver.pending_update().is_none() {
             break;
@@ -3230,6 +3235,32 @@ fn a_commit_without_an_activation_queues_nothing() {
     assert_eq!(driver.pending_update(), None);
 }
 
+// The boot proves the image runs; it does not move the floor. Nothing
+// reaches the board until the update agent asks with
+// UpdateSecurityRevision, because the eRoT's floor for a device may not
+// run ahead of the device's own.
+#[test]
+fn a_confirmed_boot_alone_leaves_the_floor_where_it_is() {
+    let mut orch = orchestrator();
+    let mut driver = update_driver(MockUpdatable::new());
+
+    activated(&mut driver, &mut orch);
+    let floor_before = floor_of(&driver);
+
+    orch.dispatch(&mut driver, Event::BootConfirmed(C0));
+
+    assert_eq!(floor_of(&driver), floor_before, "the agent has not asked");
+    assert_eq!(driver.pending_update(), None, "and no re-sync was queued");
+
+    // The ask runs the commit. This board's spare still holds the old
+    // image, so the advance waits for the re-sync pass that the commit
+    // queues, which `the_floor_waits_for_the_spare_slot` follows to the
+    // end. What is pinned here is that the commit ran at all.
+    orch.dispatch(&mut driver, Event::SvnCommitRequest(C0));
+
+    assert_eq!(driver.pending_update(), Some(C0));
+}
+
 // One re-sync per activation. The second confirmed boot sends nothing,
 // because the device already holds that image in both slots.
 #[test]
@@ -3241,6 +3272,7 @@ fn a_second_commit_does_not_restage_again() {
     // now hold the same image.
     activated(&mut driver, &mut orch);
     orch.dispatch(&mut driver, Event::BootConfirmed(C0));
+    orch.dispatch(&mut driver, Event::SvnCommitRequest(C0));
     for tick in 0..16 {
         if driver.pending_update().is_none() {
             break;
@@ -3251,6 +3283,7 @@ fn a_second_commit_does_not_restage_again() {
 
     // A second confirmed boot for the same component.
     orch.dispatch(&mut driver, Event::BootConfirmed(C0));
+    orch.dispatch(&mut driver, Event::SvnCommitRequest(C0));
 
     assert_eq!(driver.pending_update(), None);
     assert_eq!(
@@ -3283,6 +3316,7 @@ fn a_failed_resync_is_reported_and_ends() {
     activated(&mut driver, &mut orch);
 
     orch.dispatch(&mut driver, Event::BootConfirmed(C0));
+    orch.dispatch(&mut driver, Event::SvnCommitRequest(C0));
 
     // One pump is enough: the device errors on the first step.
     let poll = driver.pump_update(0);
@@ -3317,6 +3351,7 @@ fn a_resync_in_flight_refuses_the_next_update() {
     let mut driver = update_driver(MockUpdatable::stepping(4));
     activated(&mut driver, &mut orch);
     orch.dispatch(&mut driver, Event::BootConfirmed(C0));
+    orch.dispatch(&mut driver, Event::SvnCommitRequest(C0));
     assert_eq!(driver.pending_update(), Some(C0), "the re-sync is queued");
 
     // A device that needs 4 steps, so the pass is still running here.
@@ -3354,6 +3389,7 @@ fn a_stalled_resync_is_reported_not_rejected() {
     let mut driver = update_driver(MockUpdatable::stalling_on_the_second_pass());
     activated(&mut driver, &mut orch);
     orch.dispatch(&mut driver, Event::BootConfirmed(C0));
+    orch.dispatch(&mut driver, Event::SvnCommitRequest(C0));
 
     // First pump at t=0 starts the stall clock. The device looks busy,
     // so the pass stays open.
@@ -3405,9 +3441,10 @@ fn a_discarded_update_cancels_the_pending_resync() {
     // Staging passes so far: update one's. A re-sync would add another.
     let staged_before = driver.board().components[0].updatable.stagings;
 
-    // Update one's boot is confirmed. With no second update in between,
-    // this is the dispatch that would queue the re-sync.
+    // Update one's boot is confirmed and the agent asks. With no second
+    // update in between, this is what would queue the re-sync.
     orch.dispatch(&mut driver, Event::BootConfirmed(C0));
+    orch.dispatch(&mut driver, Event::SvnCommitRequest(C0));
 
     // Nothing was queued.
     assert_eq!(

@@ -2101,6 +2101,7 @@ fn a_sibling_boot_confirmed_does_not_consume_the_window() {
             Event::VerificationPassed(C1),
             Event::BootConfirmed(C1),
             Event::BootConfirmed(C0),
+            Event::SvnCommitRequest(C0),
         ],
     );
 
@@ -2243,13 +2244,13 @@ fn a_commit_timeout_during_a_plain_boot_walk_is_ignored() {
     assert!(!effects.contains(&Effect::LatchLockdown));
 }
 
-/// The anti-rollback floor is committed only on a proven-healthy boot, never
-/// at activation. `UpdateVerified` activates the image (authentication) but
-/// must NOT emit `CommitSvnFloor`; a later `BootConfirmed` (the runtime health
-/// proof) is what advances the floor. This pins the decoupling so activation
-/// can never silently commit the floor early.
+/// The anti-rollback floor moves on the update agent's ask, and on nothing
+/// earlier. `UpdateVerified` activates the image (authentication) and
+/// `BootConfirmed` proves it runs, but neither may emit `CommitSvnFloor`:
+/// only `SvnCommitRequest`, which says UpdateSecurityRevision ran and the device
+/// took the SVN, does. This pins both halves of the decoupling.
 #[test]
-fn svn_floor_commits_on_boot_confirmed_not_on_activation() {
+fn svn_floor_commits_when_the_agent_asks_not_before() {
     // Activation alone: no floor commit yet.
     let (activated, activated_state) = drive(
         passive_required(&[C0]),
@@ -2264,7 +2265,7 @@ fn svn_floor_commits_on_boot_confirmed_not_on_activation() {
     assert!(activated.contains(&Effect::ActivateUpdate));
     assert!(!activated.contains(&Effect::CommitSvnFloor(C0)));
 
-    // Proven-healthy boot: the floor advances now, without leaving Ready.
+    // Proven-healthy boot: still no floor advance, the agent has not asked.
     let (confirmed, confirmed_state) = drive(
         passive_required(&[C0]),
         &[
@@ -2279,7 +2280,24 @@ fn svn_floor_commits_on_boot_confirmed_not_on_activation() {
         ],
     );
     assert_eq!(confirmed_state, State::Ready);
-    assert!(confirmed.contains(&Effect::CommitSvnFloor(C0)));
+    assert!(!confirmed.contains(&Effect::CommitSvnFloor(C0)));
+
+    // UpdateSecurityRevision ran and the device took the SVN: the floor
+    // advances now, without leaving Ready.
+    let (committed, committed_state) = drive(
+        passive_required(&[C0]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::UpdateRequest(C0),
+            Event::UpdateVerified,
+            Event::VerificationPassed(C0),
+            Event::BootConfirmed(C0),
+            Event::SvnCommitRequest(C0),
+        ],
+    );
+    assert_eq!(committed_state, State::Ready);
+    assert!(committed.contains(&Effect::CommitSvnFloor(C0)));
 }
 
 /// Commit-or-lock watchdog: while the activated-but-not-committed window is
@@ -2308,9 +2326,10 @@ fn commit_timeout_while_pending_latches_locked() {
     assert!(!effects.contains(&Effect::CommitSvnFloor(C0)));
 }
 
-/// Once `BootConfirmed` has committed the floor the window is closed, so a
-/// later (stale) `CommitTimeout` is a no-op: the machine stays `Ready` and does
-/// not lock.
+/// `BootConfirmed` closes the commit-or-lock window on its own, so a later
+/// (stale) `CommitTimeout` is a no-op: the machine stays `Ready` and does not
+/// lock. The floor advance it hands on is not watchdogged, so an agent that
+/// has not asked yet costs nothing here.
 #[test]
 fn commit_timeout_after_confirm_is_stale_noop() {
     let (effects, state) = drive(
@@ -2322,13 +2341,16 @@ fn commit_timeout_after_confirm_is_stale_noop() {
             Event::UpdateVerified,
             Event::VerificationPassed(C0),
             Event::BootConfirmed(C0),
-            // Window already closed by the commit above.
+            // Window already closed by the confirm above.
             Event::CommitTimeout,
         ],
     );
     assert_eq!(state, State::Ready);
-    assert!(effects.contains(&Effect::CommitSvnFloor(C0)));
     assert!(!effects.contains(&Effect::LatchLockdown));
+    assert!(
+        !effects.contains(&Effect::CommitSvnFloor(C0)),
+        "the floor waits for the agent, watchdog or no watchdog"
+    );
 }
 
 /// A `CommitTimeout` in steady-state `Ready` with no update in flight (no
@@ -2885,7 +2907,7 @@ fn random_chain(rng: &mut SplitMix64) -> heapless::Vec<(ComponentId, ComponentAt
 /// Build one random event over the given id palette. Id-less events ignore it.
 fn random_event(rng: &mut SplitMix64, ids: &[ComponentId]) -> Event {
     let id = ids[rng.below(ids.len() as u32) as usize];
-    match rng.below(18) {
+    match rng.below(19) {
         0 => Event::VerificationPassed(id),
         1 => Event::VerificationFailed(id),
         2 => Event::ComponentReady(id),
@@ -2920,6 +2942,7 @@ fn random_event(rng: &mut SplitMix64, ids: &[ComponentId]) -> Event {
         14 => Event::RecoveryUnavailable(id),
         15 => Event::UpdateCancelled,
         16 => Event::SelfTrialBooted,
+        17 => Event::SvnCommitRequest(id),
         _ => Event::EffectFailed,
     }
 }
@@ -3409,4 +3432,156 @@ fn a_late_self_trial_event_is_dropped() {
         "the update has to run for `Ready` to be entered a second time"
     );
     assert!(!effects.contains(&Effect::ConfirmSelfTrial));
+}
+
+/// Nothing is outstanding, so the agent's ask names a floor advance the
+/// machine never opened. Dropped: an `SvnCommitRequest` that could move a floor
+/// on its own would let an agent advance anti-rollback for an image this
+/// machine did not activate.
+#[test]
+fn an_svn_commit_with_nothing_outstanding_is_dropped() {
+    let (effects, state) = drive(
+        passive_required(&[C0]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::SvnCommitRequest(C0),
+        ],
+    );
+
+    assert_eq!(state, State::Ready);
+    assert!(!effects.contains(&Effect::CommitSvnFloor(C0)));
+}
+
+/// The agent asks twice, because its first answer was lost on the way back.
+/// The floor takes the SVN once: the second ask finds the advance already
+/// spent.
+#[test]
+fn an_svn_commit_moves_the_floor_once() {
+    let (effects, state) = drive(
+        passive_required(&[C0]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::UpdateRequest(C0),
+            Event::UpdateVerified,
+            Event::VerificationPassed(C0),
+            Event::BootConfirmed(C0),
+            Event::SvnCommitRequest(C0),
+            Event::SvnCommitRequest(C0),
+        ],
+    );
+
+    assert_eq!(state, State::Ready);
+    assert_eq!(
+        effects
+            .iter()
+            .filter(|e| **e == Effect::CommitSvnFloor(C0))
+            .count(),
+        1
+    );
+}
+
+/// C0's advance is outstanding and the agent asks for C1, which has none.
+/// Neither floor moves: the ask is answered against the component it names.
+#[test]
+fn an_svn_commit_for_another_component_is_dropped() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_required()),
+            (C1, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::VerificationPassed(C1),
+            Event::UpdateRequest(C0),
+            Event::UpdateVerified,
+            Event::VerificationPassed(C0),
+            Event::VerificationPassed(C1),
+            Event::BootConfirmed(C0),
+            Event::SvnCommitRequest(C1),
+        ],
+    );
+
+    assert_eq!(state, State::Ready);
+    assert!(!effects.contains(&Effect::CommitSvnFloor(C0)));
+    assert!(!effects.contains(&Effect::CommitSvnFloor(C1)));
+}
+
+/// A second update supersedes the first before the agent asked. The floor
+/// advance goes with it: the SVN it would take belongs to the image the new
+/// update replaces, and the driver's reading of it is already overwritten.
+#[test]
+fn a_superseding_update_voids_the_outstanding_advance() {
+    let (effects, state) = drive(
+        passive_required(&[C0]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::UpdateRequest(C0),
+            Event::UpdateVerified,
+            Event::VerificationPassed(C0),
+            Event::BootConfirmed(C0),
+            // A second update, staged and then rejected, so the machine
+            // passes through `Updating` and comes back to `Ready`.
+            Event::UpdateRequest(C0),
+            Event::UpdateRejected,
+            Event::SvnCommitRequest(C0),
+        ],
+    );
+
+    assert_eq!(state, State::Ready);
+    assert!(effects.contains(&Effect::DiscardStaged));
+    assert!(!effects.contains(&Effect::CommitSvnFloor(C0)));
+}
+
+/// Recovery puts the running image under suspicion, so an advance the agent
+/// has not asked for yet is void. Asking after the re-walk finds nothing
+/// outstanding.
+#[test]
+fn recovery_voids_the_outstanding_advance() {
+    let (effects, state) = drive(
+        passive_required(&[C0]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::UpdateRequest(C0),
+            Event::UpdateVerified,
+            Event::VerificationPassed(C0),
+            Event::BootConfirmed(C0),
+            Event::CorruptionDetected(C0),
+            Event::Restored(C0),
+            Event::VerificationPassed(C0),
+            Event::SvnCommitRequest(C0),
+        ],
+    );
+
+    assert_eq!(state, State::Ready);
+    assert!(!effects.contains(&Effect::CommitSvnFloor(C0)));
+}
+
+/// An isolable component is gated out of service after its boot was
+/// confirmed. The machine stays in `Ready`, so the advance has to be voided
+/// where the gating happens: asking afterwards would move the floor for an
+/// image held in reset as corrupt.
+#[test]
+fn gating_a_component_voids_its_outstanding_advance() {
+    let (effects, state) = drive(
+        chain(&[(C0, ComponentAttrs::passive_isolable())]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::UpdateRequest(C0),
+            Event::UpdateVerified,
+            Event::VerificationPassed(C0),
+            Event::BootConfirmed(C0),
+            Event::CorruptionDetected(C0),
+            Event::SvnCommitRequest(C0),
+        ],
+    );
+
+    assert_eq!(state, State::Ready);
+    assert!(effects.contains(&Effect::ReportIsolated(C0)));
+    assert!(!effects.contains(&Effect::CommitSvnFloor(C0)));
 }
