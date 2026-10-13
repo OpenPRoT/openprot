@@ -48,11 +48,13 @@ use userspace::{entry, syscall};
 
 use app_orchestrator::handle;
 
-/// The component this RoT supervises and updates.
+/// The component this RoT supervises and updates. Position 1 because the
+/// eRoT holds position 0 in every device table.
 const TARGET: ComponentId = ComponentId::new(1);
 
-/// Chain capacity and the core's effect-sink cap (`E >= 2*N + 2`).
-const N: usize = 2;
+/// Chain capacity and the core's effect-sink cap (`E >= 2*N + 2`). `N`
+/// counts the device table below, so the two cannot disagree.
+const N: usize = DEVICES.len();
 const E: usize = 2 * N + 2;
 const MAX_RETRY: u8 = 3;
 
@@ -91,7 +93,7 @@ type Driver = openprot_orchestrator_driver::PlatformDriver<UpdateBoard, N>;
 /// Chain position 0 is the eRoT itself. It is addressable but never
 /// supervised. This scenario updates the downstream device and not the eRoT,
 /// so the eRoT entry carries no layout.
-static DEVICES: [DeviceConfig<u8, u8>; N] = [
+static DEVICES: [DeviceConfig<u8, u8>; 2] = [
     DeviceConfig::erot("erot", None),
     DeviceConfig::new(
         "downstream",
