@@ -23,7 +23,7 @@ use openprot_orchestrator_sm::{ComponentAttrs, ComponentKind};
 /// the build:
 ///
 /// ```ignore
-/// const _: () = assert_retry_reaches_every_image(MAX_RETRY, MANAGED_DEVICES);
+/// const _: () = assert_retry_reaches_every_image(MAX_RETRY, DEVICES);
 /// ```
 ///
 /// # Panics

@@ -46,7 +46,10 @@ const BMC_LAYOUT: ImageLayout = ImageLayout::new(
 ///
 /// The mock board's reset controller addresses reset lines by plain index,
 /// so the reset id type is `u8`.
-pub const MANAGED_DEVICES: [DeviceConfig<u8, MockProbe>; 2] = [
+pub const DEVICES: [DeviceConfig<u8, MockProbe>; 3] = [
+    // The eRoT itself, at chain position 0. Addressable, never supervised,
+    // and not updated here, so it carries no layout.
+    DeviceConfig::erot("erot", None),
     // Direct-flash SPI device (BMC archetype): the eRoT fronts its flash.
     // Single checkpoint: it raises a boot-complete GPIO.
     DeviceConfig::new(
@@ -87,7 +90,7 @@ pub const MANAGED_DEVICES: [DeviceConfig<u8, MockProbe>; 2] = [
 
 /// The orchestrator's chain for this board, derived from the table above so
 /// the two cannot name different components.
-pub const CHAIN: ChainEntries<{ MANAGED_DEVICES.len() }> = chain_of(&MANAGED_DEVICES);
+pub const CHAIN: ChainEntries<{ DEVICES.len() }> = chain_of(&DEVICES);
 
 /// Board-local checks the schema constructors cannot do — they know the
 /// schema's shape, not this board's meanings. Const-fence pattern: a bad
@@ -108,7 +111,7 @@ const fn validate_probes(devices: &[DeviceConfig<u8, MockProbe>]) {
     }
 }
 
-const _: () = validate_probes(&MANAGED_DEVICES);
+const _: () = validate_probes(&DEVICES);
 
 /// How many times the orchestrator restores a component before it gives up.
 /// Four, because the BMC has three images and the attempt that restores the
@@ -116,4 +119,4 @@ const _: () = validate_probes(&MANAGED_DEVICES);
 /// golden image.
 pub const MAX_RETRY: u8 = 4;
 
-const _: () = assert_retry_reaches_every_image(MAX_RETRY, &MANAGED_DEVICES);
+const _: () = assert_retry_reaches_every_image(MAX_RETRY, &DEVICES);

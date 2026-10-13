@@ -636,8 +636,11 @@ pub fn bring_up<B: BoardCapabilities, const N: usize, const E: usize>(
 ) -> (Orchestrator<N, E>, PlatformDriver<B, N>) {
     let entries = chain_entries.entries();
     // chain_of validated: nonempty, at most u8::MAX, ids are positions,
-    // deps strictly earlier. Chain::try_from rechecks the same invariants
-    // at runtime, so the expect cannot fire.
+    // deps strictly earlier, eRoT at position 0 and nowhere else.
+    // Chain::try_from rechecks all of that except the eRoT rule, so the
+    // expect cannot fire. Only chain_of knows that rule, which is what lets
+    // the unit tests and the QEMU runtime test build a bare chain through
+    // Chain::try_from that starts with any kind.
     let chain: Chain<N> = heapless::Vec::from_slice(entries)
         .expect("same length as the capacity")
         .try_into()
