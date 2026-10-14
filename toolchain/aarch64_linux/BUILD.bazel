@@ -1,0 +1,187 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# Cross toolchain for aarch64-unknown-linux-gnu, built on x86_64 Linux.
+#
+# Used for programs that run on the Linux side of the VCK190 FPGA boards
+# (e.g. FPGA test binaries that drive the hardware model). Pigweed's toolchains
+# only provide aarch64 Linux as a native host (aarch64 exec), so this package
+# adds the x86_64 -> aarch64 Linux cross path:
+#
+#   * C/C++ (used to link Rust code): Pigweed's LLVM toolchain with
+#     `--target=aarch64-unknown-linux-gnu` against Pigweed's multiarch
+#     linux_sysroot, which already ships aarch64 glibc (2.27) libraries and
+#     headers.
+#   * Rust: the x86_64 host rustc from Pigweed's CIPD toolchain, paired with the
+#     matching aarch64-unknown-linux-gnu standard library from the same CIPD tag.
+#
+# Build for it with `--platforms=//toolchain/aarch64_linux`.
+
+load("@rules_cc//cc/toolchains:args.bzl", "cc_args")
+load("@rules_cc//cc/toolchains:feature.bzl", "cc_feature")
+load("@rules_cc//cc/toolchains:toolchain.bzl", "cc_toolchain")
+load("@rules_rust//rust:toolchain.bzl", "rust_toolchain")
+
+package(default_visibility = ["//visibility:public"])
+
+platform(
+    name = "aarch64_linux",
+    constraint_values = [
+        "@platforms//cpu:aarch64",
+        "@platforms//os:linux",
+    ],
+)
+
+_EXEC_CONSTRAINTS = [
+    "@platforms//cpu:x86_64",
+    "@platforms//os:linux",
+]
+
+_TARGET_CONSTRAINTS = [
+    "@platforms//cpu:aarch64",
+    "@platforms//os:linux",
+]
+
+# ---------------------------------------------------------------------------
+# C/C++
+# ---------------------------------------------------------------------------
+
+cc_args(
+    name = "target_triple",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:assembly_actions",
+        "@rules_cc//cc/toolchains/actions:c_compile_actions",
+        "@rules_cc//cc/toolchains/actions:cpp_compile_actions",
+        "@rules_cc//cc/toolchains/actions:link_actions",
+    ],
+    args = ["--target=aarch64-unknown-linux-gnu"],
+)
+
+cc_args(
+    name = "link_with_lld",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    args = ["-fuse-ld=lld"],
+)
+
+# Same runtime selection as Pigweed's host_clang Linux toolchain: link the
+# LLVM toolchain's libc++/compiler-rt/libunwind instead of libstdc++/libgcc,
+# which the sysroot doesn't provide.
+cc_args(
+    name = "link_libs",
+    actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
+    args = [
+        "-pthread",
+        "-stdlib=libc++",
+        "--rtlib=compiler-rt",
+        "--unwindlib=libunwind",
+    ],
+)
+
+cc_feature(
+    name = "supports_pic",
+    feature_name = "supports_pic",
+)
+
+cc_toolchain(
+    name = "cc_toolchain",
+    args = [
+        ":target_triple",
+        "@linux_sysroot//:sysroot",
+        ":link_libs",
+        ":link_with_lld",
+        "@pigweed//pw_toolchain/cc/args:debugging",
+        "@pigweed//pw_toolchain/cc/args:reduced_size",
+        "@pigweed//pw_toolchain/cc/args:no_canonical_prefixes",
+    ],
+    enabled_features = [
+        ":supports_pic",
+        "@pigweed//pw_toolchain/cc/capability:compiler_is_clang",
+        "@pigweed//pw_toolchain/cc/capability:linker_is_clang",
+        "@rules_cc//cc/toolchains/args:experimental_replace_legacy_action_config_features",
+    ],
+    known_features = [
+        "@pigweed//pw_toolchain/cc/args:dbg_feature",
+        "@pigweed//pw_toolchain/cc/args:fastbuild_feature",
+        "@pigweed//pw_toolchain/cc/args:opt_feature",
+    ],
+    tool_map = "@llvm_toolchain//:all_tools",
+)
+
+toolchain(
+    name = "cc_toolchain_aarch64_linux",
+    exec_compatible_with = _EXEC_CONSTRAINTS,
+    target_compatible_with = _TARGET_CONSTRAINTS,
+    toolchain = ":cc_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+# ---------------------------------------------------------------------------
+# Rust
+# ---------------------------------------------------------------------------
+
+# Mirrors Pigweed's per-channel rustc flags (pw_toolchain/rust/toolchains.bzl)
+# so code builds the same way here as for the other targets.
+_CHANNELS = {
+    "nightly": [
+        "-Dwarnings",
+        "-Zemit-stack-sizes",
+        "-Zmacro-backtrace",
+    ],
+    "stable": [
+        "-Dwarnings",
+        "-Zallow-features=core_intrinsics,error_generic_member_access,proc_macro_span,rustc_attrs",
+        "-Zemit-stack-sizes",
+        "-Zmacro-backtrace",
+    ],
+}
+
+[
+    rust_toolchain(
+        name = "rust_toolchain_{}_impl".format(channel),
+        binary_ext = "",
+        cargo = "@rust_toolchain_host_linux_x86_64//:bin/cargo",
+        clippy_driver = "@rust_toolchain_host_linux_x86_64//:bin/clippy-driver",
+        debug_info = {
+            "dbg": "2",
+            "fastbuild": "2",
+            "opt": "2",
+        },
+        dylib_ext = ".so",
+        exec_triple = "x86_64-unknown-linux-gnu",
+        extra_exec_rustc_flags = flags,
+        extra_rustc_flags = flags,
+        opt_level = {
+            "dbg": "s",
+            "fastbuild": "s",
+            "opt": "s",
+        },
+        rust_doc = "@rust_toolchain_host_linux_x86_64//:bin/rustdoc",
+        rust_std = "@rust_toolchain_target_aarch64-unknown-linux-gnu_aarch64//:rust_std",
+        rustc = "@rust_toolchain_host_linux_x86_64//:bin/rustc",
+        rustc_lib = "@rust_toolchain_host_linux_x86_64//:rustc_lib",
+        staticlib_ext = ".a",
+        stdlib_linkflags = [],
+        strip_level = {
+            "dbg": "none",
+            "fastbuild": "none",
+            "opt": "none",
+        },
+        # rust_toolchain's own target_compatible_with is confusing (see
+        # https://pwbug.dev/342695883); constraints live on toolchain() below.
+        tags = ["manual"],
+        target_triple = "aarch64-unknown-linux-gnu",
+    )
+    for channel, flags in _CHANNELS.items()
+]
+
+[
+    toolchain(
+        name = "rust_toolchain_aarch64_linux_{}".format(channel),
+        exec_compatible_with = _EXEC_CONSTRAINTS,
+        target_compatible_with = _TARGET_CONSTRAINTS,
+        target_settings = ["@rules_rust//rust/toolchain/channel:{}".format(channel)],
+        toolchain = ":rust_toolchain_{}_impl".format(channel),
+        toolchain_type = "@rules_rust//rust:toolchain",
+    )
+    for channel in _CHANNELS.keys()
+]
