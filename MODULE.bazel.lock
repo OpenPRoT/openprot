@@ -1335,7 +1335,7 @@
     "@@pigweed+//pw_toolchain/cc:pw_cxx_toolchain.bzl%pw_cxx_toolchain": {
       "general": {
         "bzlTransitiveDigest": "8IpVszWptocnteXbMdzhsEBLTUDLy29Js900DGnv/58=",
-        "usagesDigest": "WXs9NNUE6j/rwQgRuduoROGS4zlVtgtsBGW7DJbiggU=",
+        "usagesDigest": "rCfTS5VNU7HRJcLhj80f4vFq8+9o7N/Vd2jYmRu8e5w=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
         "envVariables": {},
