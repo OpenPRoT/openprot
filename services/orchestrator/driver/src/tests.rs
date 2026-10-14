@@ -667,7 +667,10 @@ impl orchestrator_capabilities::VerifySession for StubSession {
             };
         }
         match self.verdict {
-            StubVerdict::Authenticate => PollOutcome::Authenticated(self.verifier),
+            StubVerdict::Authenticate => PollOutcome::Authenticated {
+                verifier: self.verifier,
+                svn: Svn(CANDIDATE_SVN),
+            },
             StubVerdict::Reject => PollOutcome::Rejected(self.verifier),
             StubVerdict::Fault | StubVerdict::Stall => {
                 PollOutcome::Fault(self.verifier, StubVerifierFault)
@@ -876,6 +879,11 @@ impl BoardCapabilities for MockBoard {
     type ResetSignal = u8;
     type Probe = u8;
 }
+
+/// The SVN the update verifier reads from a candidate's manifest.
+/// Distinct from [`MOCK_SVN`], so a test can tell the image a walk
+/// verified from the candidate an update authenticated.
+const CANDIDATE_SVN: u32 = 6;
 
 /// The SVN `mock_board`'s verifier vouches for. Tests that read the floor
 /// back assert against it.
