@@ -3,7 +3,7 @@
 
 //! The [`IncrementalVerifier`] update-verification capability contract.
 
-use crate::Progress;
+use crate::{Progress, Svn};
 use util_io::ByteSource;
 
 /// Factory for incremental verification sessions. Call [`start`] to
@@ -78,7 +78,15 @@ pub enum PollOutcome<S: VerifySession> {
     Processing { session: S, progress: Progress },
     /// The complete image authenticated (signature and policy checks
     /// passed).
-    Authenticated(S::Verifier),
+    Authenticated {
+        /// The verifier, back for a new session.
+        verifier: S::Verifier,
+        /// The candidate's anti-rollback SVN. The implementor reports
+        /// what the manifest the authenticated pass covered holds, so a
+        /// caller never has to read the candidate for it, and must not:
+        /// any other reading is of bytes no signature check vouched for.
+        svn: Svn,
+    },
     /// The complete image was checked and found invalid.
     Rejected(S::Verifier),
     /// The check could not run (unreadable payload, crypto engine
@@ -108,6 +116,11 @@ mod tests {
             Ok(())
         }
     }
+
+    // The SVN this fixture reports for an image it accepts. A real
+    // verifier reads it from the candidate's manifest; this one has no
+    // manifest, so the value only has to be recognisable.
+    const FIXTURE_SVN: Svn = Svn(9);
 
     // Hashes 4 bytes per poll, accepts images whose first byte is nonzero.
     struct ChunkedVerifier;
@@ -154,7 +167,10 @@ mod tests {
                     return PollOutcome::Fault(ChunkedVerifier, VerifierFault);
                 }
                 return if first[0] != 0 {
-                    PollOutcome::Authenticated(ChunkedVerifier)
+                    PollOutcome::Authenticated {
+                        verifier: ChunkedVerifier,
+                        svn: FIXTURE_SVN,
+                    }
                 } else {
                     PollOutcome::Rejected(ChunkedVerifier)
                 };
@@ -188,7 +204,7 @@ mod tests {
         loop {
             match session.poll(payload) {
                 PollOutcome::Processing { session: s, .. } => session = s,
-                PollOutcome::Authenticated(v) => return (v, Some(true)),
+                PollOutcome::Authenticated { verifier, .. } => return (verifier, Some(true)),
                 PollOutcome::Rejected(v) => return (v, Some(false)),
                 PollOutcome::Fault(v, _) => return (v, None),
             }
@@ -236,8 +252,28 @@ mod tests {
         };
         assert!(matches!(
             session.poll(&payload),
-            PollOutcome::Authenticated(_)
+            PollOutcome::Authenticated { .. }
         ));
+    }
+
+    // The authenticated pass is the only reading of the candidate's SVN
+    // anything may act on, so the outcome carries it rather than leaving
+    // the caller to go back to the image for it.
+    #[test]
+    fn an_authenticated_image_reports_the_svn_the_pass_read() {
+        let payload = SlicePayload(&[0xAA; 8]);
+        let mut session = ChunkedVerifier.start();
+        loop {
+            match session.poll(&payload) {
+                PollOutcome::Processing { session: s, .. } => session = s,
+                PollOutcome::Authenticated { svn, .. } => {
+                    assert_eq!(svn, FIXTURE_SVN);
+                    return;
+                }
+                PollOutcome::Rejected(_) => panic!("expected authenticated, got rejected"),
+                PollOutcome::Fault(_, e) => panic!("unexpected fault: {e}"),
+            }
+        }
     }
 
     #[test]
@@ -387,7 +423,7 @@ mod tests {
                         polls += 1;
                         State::Verifying(session)
                     }
-                    PollOutcome::Authenticated(_) => {
+                    PollOutcome::Authenticated { .. } => {
                         assert!(polls > 0);
                         return;
                     }

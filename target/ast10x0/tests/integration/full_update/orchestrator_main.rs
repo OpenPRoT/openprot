@@ -56,6 +56,11 @@ const TARGET: ComponentId = ComponentId::new(1);
 /// counts the device table below, so the two cannot disagree.
 const N: usize = DEVICES.len();
 const E: usize = 2 * N + 2;
+/// The SVN the pattern verifier reports for a candidate it accepts. This
+/// scenario has no manifest to read, so the value only has to be
+/// recognisable.
+const CANDIDATE_SVN: u32 = 6;
+
 const MAX_RETRY: u8 = 3;
 
 /// Bytes in the image the agent hands over, and where the device stages it.
@@ -385,7 +390,10 @@ impl VerifySession for PatternSession {
         }
 
         ROT_AUTHENTICATED.store(true, Ordering::Relaxed);
-        PollOutcome::Authenticated(PatternVerifier)
+        PollOutcome::Authenticated {
+            verifier: PatternVerifier,
+            svn: Svn(CANDIDATE_SVN),
+        }
     }
 
     fn abandon(self) -> PatternVerifier {
