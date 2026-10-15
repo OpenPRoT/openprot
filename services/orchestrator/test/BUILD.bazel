@@ -24,6 +24,18 @@ rust_library(
     deps = ["//services/orchestrator/capabilities:orchestrator_capabilities"],
 )
 
+rust_library(
+    name = "stubs",
+    srcs = ["stubs.rs"],
+    crate_name = "board_stubs",
+    edition = "2024",
+    deps = [
+        "//services/orchestrator/capabilities:orchestrator_capabilities",
+        "//services/orchestrator/driver:orchestrator_driver",
+        "//services/orchestrator/sm:orchestrator_sm",
+    ],
+)
+
 # Host tests: build on the host platform, no kernel/QEMU.
 rust_test(
     name = "otp_test",

@@ -23,9 +23,10 @@
 use core::convert::Infallible;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
+use board_stubs::{BoardFault, StubImage, StubVerifier};
 use openprot_orchestrator_driver::{
-    bring_up, request_update, Board, BoardCapabilities, ComponentWiring, ImageSource, Report,
-    ReportSink, SvnFloorBinding, Verdict, Verifier,
+    bring_up, request_update, Board, BoardCapabilities, ComponentWiring, Report, ReportSink,
+    SvnFloorBinding,
 };
 use openprot_orchestrator_sm::{ComponentAttrs, ComponentId, Event, PowerOnResult, State};
 use orchestrator_capabilities::{
@@ -177,18 +178,6 @@ fn verdict(outcome: Outcome) -> bool {
     }
 }
 
-/// One board fault, for every seam that has to name an error type.
-#[derive(Debug)]
-struct BoardFault;
-
-impl core::fmt::Display for BoardFault {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str("board fault")
-    }
-}
-
-impl core::error::Error for BoardFault {}
-
 fn now_millis() -> u64 {
     SystemClock::now().ticks() * 1000 / SystemClock::TICKS_PER_SEC
 }
@@ -245,45 +234,6 @@ impl EvidenceReader<u8> for BmcEvidence {
         } else {
             BootStatus::Booting
         })
-    }
-}
-
-/// Signature checking is stubbed until the crypto service exists.
-struct StubVerifier;
-
-impl Verifier for StubVerifier {
-    type Error = BoardFault;
-
-    fn verify(
-        &mut self,
-        _id: ComponentId,
-        _image: &mut impl ImageSource,
-    ) -> Result<Verdict, BoardFault> {
-        Ok(Verdict::Authenticated(AuthenticatedImage {
-            // The stub verifier reads nothing: no manifest to take an SVN
-            // from, and no hash engine to measure with.
-            svn: None,
-            measurement: None,
-        }))
-    }
-}
-
-/// The running image, which the stub verifier never reads.
-struct StubImage;
-
-impl ImageSource for StubImage {
-    type Error = BoardFault;
-
-    fn open(&mut self) -> Result<(), BoardFault> {
-        Ok(())
-    }
-
-    fn size(&self) -> Result<usize, BoardFault> {
-        Ok(0)
-    }
-
-    fn read_at(&mut self, _offset: usize, _buf: &mut [u8]) -> Result<(), BoardFault> {
-        Err(BoardFault)
     }
 }
 
