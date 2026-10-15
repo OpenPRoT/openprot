@@ -10,7 +10,7 @@ use orchestrator_config::DeviceConfig;
 use util_io::ByteSource;
 
 pub use orchestrator_capabilities::{AuthenticatedImage, BootControl, BootWatch, Measurement};
-use orchestrator_capabilities::{IncrementalVerifier, Recovery, SelfUpdate, SvnFloor};
+use orchestrator_capabilities::{IncrementalVerifier, Recovery, SelfReset, SelfUpdate, SvnFloor};
 
 /// Access to one component's active firmware image, however it is reached —
 /// interposed flash, a PLDM/MCTP transfer, a RAM copy in tests.
@@ -159,12 +159,22 @@ pub enum Report {
     /// and both slots hold it; the floor still names the old SVN, so the
     /// old image could be installed again.
     SvnFloorCommitFailed(ComponentId),
+    /// The eRoT's own update was rejected: its candidate authenticated
+    /// without a manifest SVN, so the session has nothing to record and
+    /// the floor would have nothing to advance to once the trial is
+    /// confirmed. The update ends and the machine goes back to `Ready`.
+    /// A managed component's versionless image is installed and holds
+    /// the floor instead ([`Report::SvnFloorHeld`]); the eRoT verifies
+    /// every other image, so it is the one that cannot lose
+    /// anti-rollback.
+    SelfImageVersionless,
     /// The component's anti-rollback floor stayed where it was, because
     /// the image that authenticated carried no SVN to move it to. The
     /// board binds an eRoT-held floor for this component, so it asked for
     /// anti-rollback its verifier cannot supply: nothing is wrong with
     /// the image, and nothing protects against installing an older one
-    /// either.
+    /// either. The eRoT's own update rejects such an image instead, and
+    /// says so with [`Report::SelfImageVersionless`].
     SvnFloorHeld(ComponentId),
 }
 
@@ -227,6 +237,10 @@ pub trait BoardCapabilities {
     /// Durable storage that records the eRoT's own update. It has to
     /// survive the reboot that decides whether the update worked.
     type SelfUpdate: SelfUpdate;
+    /// Resets the eRoT, which is how its own update is activated. A board
+    /// that never updates the eRoT still names a type; it is reached only
+    /// through [`Board::self_image`].
+    type SelfReset: SelfReset;
     /// The board's reset signal ids, as the device table spells them.
     type ResetSignal: 'static;
     /// The board's boot-probe vocabulary, as the device table spells it.
@@ -241,11 +255,14 @@ pub trait BoardCapabilities {
 ///
 /// This is not a [`SvnFloorBinding`]. That type exists to say who keeps a
 /// component's floor, and the eRoT always keeps its own.
-pub struct SelfImage<S: SelfUpdate, F: SvnFloor> {
+pub struct SelfImage<S: SelfUpdate, F: SvnFloor, R: SelfReset> {
     /// Storage the session lives in across the reboot.
     pub session: S,
     /// The eRoT's own anti-rollback floor.
     pub floor: F,
+    /// The reset that boots the trial image. Activating the eRoT's own
+    /// update ends here and does not come back.
+    pub reset: R,
 }
 
 /// Who keeps one component's anti-rollback floor. Spelled as its own type
@@ -313,6 +330,7 @@ pub struct ComponentWiring<B: BoardCapabilities> {
 ///     type Staging = StagingFlash;        // where the update source writes
 ///     type UpdateVerifier = CryptoVerifier; // incremental signature check
 ///     type SelfUpdate = SelfUpdateSession; // session record in the eRoT's own flash
+///     type SelfReset = WatchdogReset;     // the reset that boots the trial image
 ///     type ResetSignal = ExtrstLine;      // as DEVICES spells its reset ids
 ///     type Probe = BootProbe;             // as DEVICES spells its boot probes
 /// }
@@ -354,7 +372,11 @@ pub struct ComponentWiring<B: BoardCapabilities> {
 ///         update_staging,
 ///         update_stall_budget_millis: 30_000,
 ///         update_verifier: Some(crypto_verifier),
-///         self_image: Some(SelfImage { session: self_update, floor: self_floor }),
+///         self_image: Some(SelfImage {
+///             session: self_update,
+///             floor: self_floor,
+///             reset: self_reset,
+///         }),
 ///     },
 ///     MAX_RETRY,
 /// );
@@ -383,5 +405,5 @@ pub struct Board<B: BoardCapabilities, const N: usize> {
     /// The eRoT's own update session and floor. Set this to `None` on a
     /// board that never updates itself, meaning one that does nothing but
     /// supervise other components.
-    pub self_image: Option<SelfImage<B::SelfUpdate, B::SvnFloor>>,
+    pub self_image: Option<SelfImage<B::SelfUpdate, B::SvnFloor, B::SelfReset>>,
 }
