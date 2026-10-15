@@ -28,15 +28,16 @@
 use core::convert::Infallible;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 
+use board_stubs::{BoardFault, StubImage, StubVerifier};
 use openprot_orchestrator_driver::{
-    bring_up, settle_self_image_at_boot, Board, BoardCapabilities, ComponentWiring, ImageSource,
-    Report, ReportSink, SelfImage, SelfUpdateSettlement, SvnFloorBinding, Verdict, Verifier,
+    bring_up, settle_self_image_at_boot, Board, BoardCapabilities, ComponentWiring, Report,
+    ReportSink, SelfImage, SelfUpdateSettlement, SvnFloorBinding,
 };
-use openprot_orchestrator_sm::{ComponentAttrs, ComponentId, Event, PowerOnResult, State};
+use openprot_orchestrator_sm::{ComponentAttrs, Event, PowerOnResult, State};
 use orchestrator_capabilities::{
-    AuthenticatedImage, BootControl, BootStatus, EvidenceReader, IncrementalVerifier, PollOutcome,
-    RunningImage, SelfUpdate, SelfUpdateState, StageProgress, Svn, SvnFloor, Updatable,
-    UpdateError, VerifySession,
+    BootControl, BootStatus, EvidenceReader, IncrementalVerifier, PollOutcome, RunningImage,
+    SelfUpdate, SelfUpdateState, StageProgress, Svn, SvnFloor, Updatable, UpdateError,
+    VerifySession,
 };
 use orchestrator_checkpoint_walk::CheckpointWalk;
 use orchestrator_config::{
@@ -136,19 +137,6 @@ const _: () = assert_retry_reaches_every_image(MAX_RETRY, &DEVICES);
 /// driver, while the run loop that receives the report is outside all three.
 static DEVICE_READY: AtomicBool = AtomicBool::new(false);
 
-/// One board fault, for every seam that has to name an error type. The
-/// scenario cares whether an actuation failed, never which one.
-#[derive(Debug)]
-struct BoardFault;
-
-impl core::fmt::Display for BoardFault {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str("board fault")
-    }
-}
-
-impl core::error::Error for BoardFault {}
-
 fn millis_to_ticks(millis: u64) -> u64 {
     millis * SystemClock::TICKS_PER_SEC / 1000
 }
@@ -206,48 +194,6 @@ impl EvidenceReader<u8> for BmcEvidence {
         } else {
             BootStatus::Booting
         })
-    }
-}
-
-/// Signature checking is stubbed until the crypto service exists, so every
-/// image authenticates. The SVN is a fixed value: nothing in a boot
-/// scenario moves the floor.
-struct StubVerifier;
-
-impl Verifier for StubVerifier {
-    type Error = BoardFault;
-
-    fn verify(
-        &mut self,
-        _id: ComponentId,
-        _image: &mut impl ImageSource,
-    ) -> Result<Verdict, BoardFault> {
-        Ok(Verdict::Authenticated(AuthenticatedImage {
-            // The stub verifier reads nothing: no manifest to take an SVN
-            // from, and no hash engine to measure with.
-            svn: None,
-            measurement: None,
-        }))
-    }
-}
-
-/// A fixed-size image of zeros. The stub verifier never reads it; it exists
-/// because the board has to name an image for every component.
-struct StubImage;
-
-impl ImageSource for StubImage {
-    type Error = BoardFault;
-
-    fn open(&mut self) -> Result<(), BoardFault> {
-        Ok(())
-    }
-
-    fn size(&self) -> Result<usize, BoardFault> {
-        Ok(0)
-    }
-
-    fn read_at(&mut self, _offset: usize, _buf: &mut [u8]) -> Result<(), BoardFault> {
-        Err(BoardFault)
     }
 }
 

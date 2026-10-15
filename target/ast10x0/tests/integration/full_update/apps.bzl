@@ -22,6 +22,7 @@ ORCHESTRATOR_DEPS = [
     "//services/orchestrator/config:orchestrator_config",
     "//services/orchestrator/driver:orchestrator_driver",
     "//services/orchestrator/sm:orchestrator_sm",
+    "//services/orchestrator/test:stubs",
     "//services/pldm/api:pldm_api",
     "//services/pldm/client:pldm_client",
     "//util/io",

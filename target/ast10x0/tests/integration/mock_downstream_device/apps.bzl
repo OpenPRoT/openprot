@@ -24,6 +24,7 @@ ORCHESTRATOR_DEPS = [
     "//services/orchestrator/config:orchestrator_config",
     "//services/orchestrator/driver:orchestrator_driver",
     "//services/orchestrator/sm:orchestrator_sm",
+    "//services/orchestrator/test:stubs",
     "//util/io",
     "@pigweed//pw_kernel/userspace",
     "@pigweed//pw_log/rust:pw_log",

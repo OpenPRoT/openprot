@@ -31,8 +31,7 @@ use core::convert::Infallible;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use openprot_orchestrator_driver::{
-    bring_up, Board, BoardCapabilities, ComponentWiring, ImageSource, Report, ReportSink,
-    SvnFloorBinding, Verdict, Verifier,
+    bring_up, Board, BoardCapabilities, ComponentWiring, Report, ReportSink, SvnFloorBinding,
 };
 // Only the accepting path records a job or pumps it, so the scenario that
 // refuses every request needs neither.
@@ -40,6 +39,7 @@ use openprot_orchestrator_driver::{
 use openprot_orchestrator_driver::request_update;
 use openprot_orchestrator_sm::{ComponentAttrs, ComponentId, Event, PowerOnResult};
 // Only the accepting path checks the state it reached.
+use board_stubs::{BoardFault, StubImage, StubVerifier};
 #[cfg(not(refused_update))]
 use openprot_orchestrator_sm::State;
 use orchestrator_capabilities::{
@@ -133,18 +133,6 @@ static ROT_AUTHENTICATED: AtomicBool = AtomicBool::new(false);
 /// reached the device rather than only passing through the state machine.
 static ACTIVATED: AtomicBool = AtomicBool::new(false);
 
-/// One board fault, for every seam that has to name an error type.
-#[derive(Debug)]
-struct BoardFault;
-
-impl core::fmt::Display for BoardFault {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        f.write_str("board fault")
-    }
-}
-
-impl core::error::Error for BoardFault {}
-
 /// The byte the candidate carries at `offset`. Offset-dependent, matching
 /// the firmware device's own expectation, so a staging region that served
 /// the wrong bytes would be caught rather than accepted.
@@ -177,45 +165,6 @@ impl EvidenceReader<u8> for AlwaysBooted {
 
     fn read(&mut self, _probe: &u8) -> Result<BootStatus, Infallible> {
         Ok(BootStatus::Booted)
-    }
-}
-
-/// Signature checking is stubbed until the crypto service exists.
-struct StubVerifier;
-
-impl Verifier for StubVerifier {
-    type Error = BoardFault;
-
-    fn verify(
-        &mut self,
-        _id: ComponentId,
-        _image: &mut impl ImageSource,
-    ) -> Result<Verdict, BoardFault> {
-        Ok(Verdict::Authenticated(AuthenticatedImage {
-            // The stub verifier reads nothing: no manifest to take an SVN
-            // from, and no hash engine to measure with.
-            svn: None,
-            measurement: None,
-        }))
-    }
-}
-
-/// The running image, which the stub verifier never reads.
-struct StubImage;
-
-impl ImageSource for StubImage {
-    type Error = BoardFault;
-
-    fn open(&mut self) -> Result<(), BoardFault> {
-        Ok(())
-    }
-
-    fn size(&self) -> Result<usize, BoardFault> {
-        Ok(0)
-    }
-
-    fn read_at(&mut self, _offset: usize, _buf: &mut [u8]) -> Result<(), BoardFault> {
-        Err(BoardFault)
     }
 }
 
