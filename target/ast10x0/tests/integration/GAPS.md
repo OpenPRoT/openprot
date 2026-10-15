@@ -73,10 +73,12 @@ abort would do is untested.
   runs end to end in `pldm_update/svn_commit`: the agent sends 0x22 after
   the activation, the device parks at `SvnCommitPending`, and the loop
   dispatches `Event::SvnCommitRequest` and answers perform or reject by
-  what the machine emitted. The eRoT's own floor has no equivalent yet.
-  It takes the same path: the eRoT is a firmware device like any other,
-  so the agent offers it an update over PLDM and sends it 0x22
-  afterwards. Nothing serves that side on the eRoT yet, so
+  what the machine emitted, and `svn_commit_refused` runs the reject
+  side, a second ask with nothing outstanding turned down. The eRoT's own
+  floor has no equivalent yet. It takes the same path: the eRoT is a
+  firmware device like any other, so the agent offers it an update over
+  PLDM and sends it 0x22 afterwards. Nothing serves that side on the eRoT
+  yet, so
   `commit_self_svn_floor` still has no caller outside tests. The other
   update scenarios keep dispatching the event themselves, the way they
   already dispatch `BootConfirmed`: without the 0x22 exchange nothing
@@ -89,7 +91,18 @@ abort would do is untested.
   chip. The half the scenario covers is the boot after the reset, not
   the update that caused it.
 - Recovery preempting an update: `Updating` to `Recovering`, with the
-  staged image discarded.
+  staged image discarded. `mock_downstream_device/recovery` covers the
+  boot-time arc, where verification refuses the image and the restore is
+  what gets the device released, and `recovery_exhausted` covers the
+  second episode finding no source left. Neither starts from an update.
+- A recovery loop that never ends. `device_hangs` wires no recovery
+  source, so it locks on the first ask. With a source behind it, a device
+  that verifies but never boots recovers forever:
+  `Event::VerificationPassed` clears the component's retry count, so the
+  attempt handed to `restore` stays 0 and `MAX_RETRY` never bites. Found
+  while writing `recovery`, which is why the source is wired in the two
+  recovery builds alone. Whether the count should survive a passing
+  verification is a question for the machine, not for a scenario.
 - The spare slot re-sync after a commit, and the floor advance held until
   the spare has the image.
 
@@ -112,6 +125,12 @@ that check would hold even with no boot walk ever polled.
   because every step needs the device's acknowledgement and a missing one
   times out, and the host checks CS1 afterwards. It does not cover the
   device's consent flags.
+
+- The agent can send UpdateSecurityRevision into the gap between
+  `run_terminus` returning after the activation and the device going back
+  in to serve idle commands. The command then times out and the run
+  fails; seen once in about twenty-five runs. The agent does not retry,
+  so nothing covers it over.
 
 - The RoT's own verifier reads the staging region, which in this scenario
   is a synthetic pattern rather than the bytes the device actually staged.
