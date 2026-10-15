@@ -1,14 +1,14 @@
 # QEMU integration tests
 
-Fourteen scenarios, each its own system image, all running under QEMU with no
+Fifteen scenarios, each its own system image, all running under QEMU with no
 hardware. The AST1030 is the black box; everything it talks to is another
 app in the same image, reached through the same traits a real board wires.
 
 The runner greps one pass/fail sentinel per run, so one scenario per image
 is what lets a failure name itself.
 
-Six of the fourteen are the thing working. Seven are the thing failing,
-and they pass when the failure is caught. The fourteenth is the agent
+Seven of the fifteen are the thing working. Seven are the thing failing,
+and they pass when the failure is caught. The one left over is the agent
 withdrawing the update, which is neither: nothing failed and nothing was
 installed. A scenario that only ever passes proves nothing: the first
 version of the boot scenario passed with the device wedged, because it
@@ -21,6 +21,7 @@ like the proof.
 | `mock_downstream_device` | the device boots | the walk completes |
 | `mock_downstream_device/device_hangs` | the device never reports | the platform locks |
 | `mock_downstream_device/self_trial` | the eRoT boots the trial image of its own update | the chain coming up confirms the session |
+| `mock_downstream_device/self_update` | the eRoT is offered an update of its own image | the candidate is staged and the trial is marked pending |
 | `pldm_update` | a clean update | the update commits |
 | `pldm_update/retry_chunk` | the agent answers one data request with a retry | the device asks for that window again and the update completes |
 | `pldm_update/corrupt_image` | one byte of the image is flipped | the device catches it |
@@ -46,6 +47,9 @@ One scenario at a time, with the console:
 
     bazel test --config=virt_ast10x0 --test_output=all \
         //target/ast10x0/tests/integration/mock_downstream_device:mock_downstream_device_qemu_test
+
+    bazel test --config=virt_ast10x0 --test_output=all \
+        //target/ast10x0/tests/integration/mock_downstream_device/self_update:self_update_qemu_test
 
     bazel test --config=virt_ast10x0 --test_output=all \
         //target/ast10x0/tests/integration/pldm_update:pldm_update_qemu_test

@@ -81,13 +81,18 @@ abort would do is untested.
   update scenarios keep dispatching the event themselves, the way they
   already dispatch `BootConfirmed`: without the 0x22 exchange nothing
   parks their device at the status.
-- A self-update that is actually performed. `self_trial` starts the
-  session where an activation would have left it and checks what the
-  next boot does about it. Nothing stages an image into the eRoT's own
-  slot, marks the trial pending or resets the eRoT, because no board
-  wires a flash-backed `Updatable` for that slot and QEMU models one
-  chip. The half the scenario covers is the boot after the reset, not
-  the update that caused it.
+- A self-update in one run. Two scenarios cover the arc between them,
+  and the seam is the reset. `self_update` offers the eRoT a candidate,
+  stages it, authenticates it with the SVN it carries, and the activation
+  records the session and marks the trial pending; the run ends where the
+  eRoT would reboot. `self_trial` starts from that session and judges the
+  boot. Joining them needs a reset this target does not have (nothing
+  drives SYSRESETREQ, and QEMU models one chip) and a session in flash
+  rather than in RAM, so one run would survive it.
+- A candidate that came from somewhere. `self_update` is its own update
+  source: the bytes are a constant and the slot counts them rather than
+  writing them, because nothing serves the eRoT's own update over PLDM
+  and no board wires a flash-backed `Updatable` for that slot.
 - Recovery preempting an update: `Updating` to `Recovering`, with the
   staged image discarded.
 - The spare slot re-sync after a commit, and the floor advance held until
