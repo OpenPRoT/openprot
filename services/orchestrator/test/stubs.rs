@@ -14,7 +14,7 @@
 
 use openprot_orchestrator_driver::{ImageSource, Verdict, Verifier};
 use openprot_orchestrator_sm::ComponentId;
-use orchestrator_capabilities::AuthenticatedImage;
+use orchestrator_capabilities::{AuthenticatedImage, SelfReset};
 
 /// One board fault, for every seam that has to name an error type. A
 /// scenario cares whether an actuation failed, never which one.
@@ -66,6 +66,22 @@ impl ImageSource for StubImage {
     }
 
     fn read_at(&mut self, _offset: usize, _buf: &mut [u8]) -> Result<(), BoardFault> {
+        Err(BoardFault)
+    }
+}
+
+/// The eRoT's own reset, which a scenario cannot perform. QEMU models one
+/// chip and the orchestrator is an app inside it, so nothing here can
+/// reboot the eRoT; this reports the fault a real reset that did not
+/// happen reports. A scenario that wires a self-image still has to name a
+/// type, and `self_trial` starts its session where an activation would
+/// have left it rather than performing one.
+pub struct StubSelfReset;
+
+impl SelfReset for StubSelfReset {
+    type Error = BoardFault;
+
+    fn reset(&mut self) -> Result<core::convert::Infallible, BoardFault> {
         Err(BoardFault)
     }
 }

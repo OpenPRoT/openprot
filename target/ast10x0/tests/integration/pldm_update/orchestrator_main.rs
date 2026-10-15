@@ -41,7 +41,7 @@ use openprot_orchestrator_sm::{
     ComponentAttrs, ComponentId, Effect, Event, Platform, PowerOnResult,
 };
 // Only the accepting path checks the state it reached.
-use board_stubs::{BoardFault, StubImage, StubVerifier};
+use board_stubs::{BoardFault, StubImage, StubSelfReset, StubVerifier};
 #[cfg(not(refused_update))]
 use openprot_orchestrator_sm::State;
 use orchestrator_capabilities::{
@@ -338,6 +338,7 @@ impl BoardCapabilities for UpdateBoard {
     type Staging = PatternStaging;
     type UpdateVerifier = PatternVerifier;
     type SelfUpdate = ();
+    type SelfReset = StubSelfReset;
     type ResetSignal = u8;
     type Probe = u8;
 }

@@ -28,7 +28,7 @@
 use core::convert::Infallible;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 
-use board_stubs::{BoardFault, StubImage, StubVerifier};
+use board_stubs::{BoardFault, StubImage, StubSelfReset, StubVerifier};
 use openprot_orchestrator_driver::{
     bring_up, settle_self_image_at_boot, Board, BoardCapabilities, ComponentWiring, Report,
     ReportSink, SelfImage, SelfUpdateSettlement, SvnFloorBinding,
@@ -428,6 +428,7 @@ impl BoardCapabilities for MockDownstreamDeviceBoard {
     type Staging = NoStaging;
     type UpdateVerifier = NeverVerifier;
     type SelfUpdate = SelfSession;
+    type SelfReset = StubSelfReset;
     type ResetSignal = u8;
     type Probe = u8;
 }
@@ -456,6 +457,7 @@ fn board() -> Board<MockDownstreamDeviceBoard, N> {
         self_image: Some(SelfImage {
             session: SelfSession,
             floor: ErotFloor,
+            reset: StubSelfReset,
         }),
         update_stall_budget_millis: 1_000,
     }

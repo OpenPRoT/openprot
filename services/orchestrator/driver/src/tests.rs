@@ -10,7 +10,7 @@ use openprot_orchestrator_sm::{
 };
 use orchestrator_capabilities::{
     AuthenticatedImage, BootWatch, FailureCause, Progress, Recovery, RestoreOutcome, RunningImage,
-    SelfUpdate, SelfUpdateState, Svn, SvnFloor, WalkVerdict,
+    SelfReset, SelfUpdate, SelfUpdateState, Svn, SvnFloor, WalkVerdict,
 };
 use util_io::{ByteReadError, ByteSource};
 
@@ -541,6 +541,9 @@ struct StubVerifier {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum StubVerdict {
     Authenticate,
+    /// Authenticates and reports no SVN, as a verifier that checks a
+    /// signature without reading a manifest does.
+    AuthenticateVersionless,
     Reject,
     Fault,
     /// Never reaches a verdict and never moves `written`: the stalled
@@ -580,6 +583,11 @@ impl StubVerifier {
 
     fn accepting() -> Self {
         Self::new(&[StubVerdict::Authenticate])
+    }
+
+    /// Authenticates every candidate and reports no SVN for it.
+    fn unversioned() -> Self {
+        Self::new(&[StubVerdict::AuthenticateVersionless])
     }
 
     fn rejecting() -> Self {
@@ -687,6 +695,13 @@ impl orchestrator_capabilities::VerifySession for StubSession {
                     measurement: None,
                 },
             },
+            StubVerdict::AuthenticateVersionless => PollOutcome::Authenticated {
+                verifier: self.verifier,
+                image: AuthenticatedImage {
+                    svn: None,
+                    measurement: None,
+                },
+            },
             StubVerdict::Reject => PollOutcome::Rejected(self.verifier),
             StubVerdict::Fault | StubVerdict::Stall => {
                 PollOutcome::Fault(self.verifier, StubVerifierFault)
@@ -765,6 +780,40 @@ impl orchestrator_capabilities::Updatable for MockUpdatable {
         self.active = true;
         self.activations += 1;
         Ok(())
+    }
+}
+
+/// The eRoT's own reset. A test process cannot reset itself, so this
+/// records the attempt and reports a fault. That the driver reached the
+/// reset at all is what the tests check, and a real reset that did not
+/// happen returns the same way.
+struct MockSelfReset {
+    attempts: u32,
+}
+
+impl MockSelfReset {
+    const fn new() -> Self {
+        Self { attempts: 0 }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct MockResetFault;
+
+impl core::fmt::Display for MockResetFault {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("mock reset fault")
+    }
+}
+
+impl core::error::Error for MockResetFault {}
+
+impl SelfReset for MockSelfReset {
+    type Error = MockResetFault;
+
+    fn reset(&mut self) -> Result<core::convert::Infallible, MockResetFault> {
+        self.attempts += 1;
+        Err(MockResetFault)
     }
 }
 
@@ -892,6 +941,7 @@ impl BoardCapabilities for MockBoard {
     type Staging = MemStaging;
     type UpdateVerifier = StubVerifier;
     type SelfUpdate = MockSelfUpdate;
+    type SelfReset = MockSelfReset;
     type ResetSignal = u8;
     type Probe = u8;
 }
@@ -1265,6 +1315,7 @@ impl BoardCapabilities for WatchBoard {
     type Staging = MemStaging;
     type UpdateVerifier = StubVerifier;
     type SelfUpdate = MockSelfUpdate;
+    type SelfReset = MockSelfReset;
     type ResetSignal = u8;
     type Probe = u8;
 }
@@ -1679,6 +1730,7 @@ impl BoardCapabilities for RecoverableBoard {
     type Staging = MemStaging;
     type UpdateVerifier = StubVerifier;
     type SelfUpdate = MockSelfUpdate;
+    type SelfReset = MockSelfReset;
     type ResetSignal = u8;
     type Probe = u8;
 }
@@ -3499,6 +3551,7 @@ fn self_trial_driver(session: MockSelfUpdate) -> PlatformDriver<MockBoard, 1> {
             self_image: Some(SelfImage {
                 session,
                 floor: MockFloor::new(),
+                reset: MockSelfReset::new(),
             }),
             ..mock_board()
         },
@@ -3887,4 +3940,124 @@ fn a_versionless_image_still_resyncs_the_spare_slot() {
         driver.board().components[0].updatable.stagings > staged_before,
         "the spare was never sent the image"
     );
+}
+
+/// A one-component driver whose only component is the eRoT itself, with
+/// `session` as its update session. Every other test board declares a
+/// passive component; this one is the self path's.
+fn erot_driver(session: MockSelfUpdate) -> PlatformDriver<MockBoard, 1> {
+    PlatformDriver::new(
+        &entries_with_kinds([ComponentKind::Erot]),
+        Board {
+            self_image: Some(SelfImage {
+                session,
+                floor: MockFloor::new(),
+                reset: MockSelfReset::new(),
+            }),
+            components: [ComponentWiring {
+                updatable: MockUpdatable::new(),
+                ..mock_component(0)
+            }],
+            ..mock_board()
+        },
+    )
+}
+
+/// Submits an update aimed at the eRoT and pumps it until the verifier
+/// reaches a verdict. Returns what the pump reported, which is
+/// `UpdateVerified` for a candidate the eRoT may install and
+/// `UpdateRejected` for one it may not.
+fn pump_self_update_to_verdict(driver: &mut PlatformDriver<MockBoard, 1>) -> Event {
+    driver.submit_update(C0, CANDIDATE_LEN).unwrap();
+    driver.prepare_update().unwrap();
+    for tick in 0..16 {
+        if let Some(event) = driver.pump_update(tick).event {
+            return event;
+        }
+    }
+    panic!("the pump reached no verdict");
+}
+
+// Activating the eRoT's own update records the session before it marks
+// the trial pending, which is the order SelfUpdate states: a crash in
+// between leaves a pending trial the next boot reads as unconfirmed,
+// where marking first would boot a trial with no session to judge it.
+// The SVN recorded is the one the authenticated pass read, because the
+// eRoT does not walk itself and there is no later reading to take.
+#[test]
+fn activating_the_erots_own_update_records_the_session_then_resets() {
+    let mut driver = erot_driver(MockSelfUpdate::idle());
+    assert_eq!(
+        pump_self_update_to_verdict(&mut driver),
+        Event::UpdateVerified
+    );
+
+    assert_eq!(
+        driver.activate_update(),
+        Err(DriverError::SelfResetFault),
+        "the mock cannot reset the process it runs in"
+    );
+
+    let self_image = driver.board().self_image.as_ref().expect("wired above");
+    assert_eq!(
+        self_image.session.state(),
+        Ok(SelfUpdateState::TrialPending {
+            svn: Svn(CANDIDATE_SVN)
+        }),
+        "the session holds the candidate's own SVN, marked pending"
+    );
+    assert_eq!(self_image.reset.attempts, 1, "the reset was reached");
+    assert_ne!(
+        CANDIDATE_SVN, MOCK_SVN,
+        "the fixtures have to differ for this test to say anything"
+    );
+}
+
+// The eRoT's candidate authenticated without a manifest SVN, so the
+// session has nothing to record and the floor would have nothing to
+// advance to once the trial is confirmed. The pump rejects it, the update
+// ends and the machine goes back to Ready. Rejecting it at the activation
+// instead would fail that effect, and a failed effect latches the
+// platform: a missing version is not grounds for lockdown.
+#[test]
+fn a_versionless_self_candidate_ends_the_update_without_locking() {
+    let mut orch = orchestrator();
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(
+        &entries_with_kinds([ComponentKind::Erot]),
+        Board {
+            self_image: Some(SelfImage {
+                session: MockSelfUpdate::idle(),
+                floor: MockFloor::new(),
+                reset: MockSelfReset::new(),
+            }),
+            components: [ComponentWiring {
+                updatable: MockUpdatable::new(),
+                ..mock_component(0)
+            }],
+            update_verifier: Some(StubVerifier::unversioned()),
+            ..mock_board()
+        },
+    );
+
+    assert_eq!(
+        pump_self_update_to_verdict(&mut driver),
+        Event::UpdateRejected,
+        "the pump refused the candidate"
+    );
+    assert!(driver
+        .board()
+        .report_sink
+        .seen
+        .contains(&Report::SelfImageVersionless(C0)));
+
+    orch.dispatch(&mut driver, Event::UpdateRejected);
+    assert_ne!(orch.state(), State::Locked, "the platform is not locked");
+
+    let self_image = driver.board().self_image.as_ref().expect("wired above");
+    assert_eq!(
+        self_image.session.state(),
+        Ok(SelfUpdateState::Idle),
+        "nothing was recorded"
+    );
+    assert_eq!(self_image.reset.attempts, 0, "and nothing reset");
 }
