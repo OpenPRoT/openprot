@@ -77,6 +77,10 @@ type Fd = FdIpcClient<AsyncChannelTransport<IpcHandle>>;
 /// holds position 0 in every device table.
 const TARGET: ComponentId = ComponentId::new(1);
 
+/// Whether the update agent in this scenario sends UpdateSecurityRevision.
+/// Where it does not, `activate` stands in for the ask.
+const AGENT_COMMITS_SVN: bool = cfg!(svn_commit) || cfg!(svn_commit_refused);
+
 /// Chain capacity and the core's effect-sink cap (`E >= 2*N + 2`). `N`
 /// counts the device table below, so the two cannot disagree.
 const N: usize = DEVICES.len();
@@ -524,7 +528,7 @@ fn run(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
                 // The agent may still ask for the security revision to be
                 // committed, which DSP0267 only takes once the device is
                 // idle. Nothing else follows an activation.
-                if !cfg!(svn_commit) {
+                if !AGENT_COMMITS_SVN {
                     return true;
                 }
             }
@@ -536,7 +540,16 @@ fn run(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
                     "ORCH: the agent asked to commit component {}'s security revision",
                     component as u32
                 );
-                return grant_svn_commit(core, driver, fd);
+                match svn_commit(core, driver, fd) {
+                    Commit::Failed => return false,
+                    // The agent asks once, unless the scenario has it ask
+                    // again as it would after a lost answer.
+                    Commit::Granted if !cfg!(svn_commit_refused) => return true,
+                    Commit::Granted => {}
+                    // Only the scenario that arranges a second ask reaches
+                    // this, and the refusal is what it is checking.
+                    Commit::Refused => return cfg!(svn_commit_refused),
+                }
             }
             FdStatus::PhaseFailed { phase, result_code } => {
                 pw_log::error!(
@@ -618,12 +631,12 @@ fn activate(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
     // image reboots, so the acknowledged activation is what this scenario
     // treats as a healthy first boot.
     core.dispatch(driver, Event::BootConfirmed(TARGET));
-    // The floor moves on the agent's ask, not on the boot. Without the
-    // `svn_commit` scenario's 0x22 exchange nothing parks the device at
+    // The floor moves on the agent's ask, not on the boot. Where no agent
+    // sends UpdateSecurityRevision nothing parks the device at
     // `SvnCommitPending`, so the event stands in for the agent's request,
-    // the way `BootConfirmed` above stands in for the reboot. With it,
-    // `svn_commit` dispatches the real one.
-    if !cfg!(svn_commit) {
+    // the way `BootConfirmed` above stands in for the reboot. The builds
+    // that have one dispatch the real thing.
+    if !AGENT_COMMITS_SVN {
         core.dispatch(driver, Event::SvnCommitRequest(TARGET));
     }
     pw_log::info!("ORCH: update committed");
@@ -638,12 +651,10 @@ fn activate(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
 /// on `Effect::CommitSvnFloor` actually arriving: answering `perform`
 /// without it would tell the agent the RoT granted something it never saw.
 ///
-/// A refusal returns `false` and ends the scenario. This scenario commits
-/// after an activation it drove itself, so there is always something
-/// outstanding and a refusal here means the machine and the device
-/// disagree. A scenario written around a refused commit would want the
-/// two told apart.
-fn grant_svn_commit(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
+/// The three answers are told apart because one scenario is written around
+/// the refusal: `svn_commit_refused` asks a second time, with nothing
+/// outstanding, and the device has to be told so.
+fn svn_commit(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> Commit {
     let mut granted = false;
     core.dispatch_with(Event::SvnCommitRequest(TARGET), |effect| {
         if effect == Effect::CommitSvnFloor(TARGET) {
@@ -652,12 +663,27 @@ fn grant_svn_commit(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
         driver.execute(effect)
     });
     if !granted {
-        pw_log::error!("ORCH: nothing outstanding to commit a revision for");
+        // Logged plainly: one scenario arranges exactly this, so a
+        // refusal is not by itself a fault.
+        pw_log::info!("ORCH: nothing outstanding to commit a revision for");
         let _ = fd.reject_svn_commit(RejectReason::PolicyViolation);
         let _ = settle(fd);
-        return false;
+        return Commit::Refused;
     }
-    command(fd, "PerformSvnCommit", |fd| fd.perform_svn_commit())
+    if !command(fd, "PerformSvnCommit", |fd| fd.perform_svn_commit()) {
+        return Commit::Failed;
+    }
+    Commit::Granted
+}
+
+/// What came of one UpdateSecurityRevision.
+enum Commit {
+    /// The floor took the SVN and the device was told to go ahead.
+    Granted,
+    /// Nothing was waiting on the floor, and the device was told so.
+    Refused,
+    /// The exchange with the device did not complete.
+    Failed,
 }
 
 /// Asks the device what it is waiting for.

@@ -80,6 +80,17 @@ const IMAGE_SIZE: u32 = 1024;
 /// revision the agent asks to commit. Must match the firmware device's.
 const COMP_IDENTIFIER: u16 = 0x0001;
 
+/// How many UpdateSecurityRevision commands this agent sends once the
+/// update is done. The second is the retry after a lost answer, which the
+/// device refuses.
+const SVN_COMMIT_ASKS: usize = if cfg!(svn_commit_refused) {
+    2
+} else if cfg!(svn_commit) {
+    1
+} else {
+    0
+};
+
 /// The UUID this agent expects the firmware device to report. It only updates
 /// a device it recognises.
 const DEVICE_UUID: [u8; 16] = [
@@ -661,8 +672,12 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
     // DSP0267 takes UpdateSecurityRevision only in IDLE, which the device
     // is in now that it has activated. Committing the revision is a
     // separate decision from installing the image, and this is where the
-    // agent asks for it.
-    if cfg!(svn_commit) {
+    // agent asks for it. A second ask is the retry an agent makes when the
+    // answer to the first was lost: the floor already took the SVN, so the
+    // device turns it down.
+    for ask in 0..SVN_COMMIT_ASKS {
+        use pldm_common::protocol::firmware_update::FwUpdateCompletionCode;
+
         instance_id += 1;
         let commit = UpdateSecurityRevisionRequest::new(
             instance_id,
@@ -675,11 +690,24 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
             .encode(&mut buf[1..])
             .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
         let (cc, _) = transact(transport, len, &mut buf)?;
-        if cc != 0 {
-            pw_log::error!("UA: UpdateSecurityRevision refused, cc={:02x}", cc as u32);
+        let expected = if ask == 0 {
+            PldmBaseCompletionCode::Success as u8
+        } else {
+            FwUpdateCompletionCode::UpdateSecurityRevisionNotPermitted as u8
+        };
+        if cc != expected {
+            pw_log::error!(
+                "UA: UpdateSecurityRevision answered {:02x}, expected {:02x}",
+                cc as u32,
+                expected as u32
+            );
             return Ok(false);
         }
-        pw_log::info!("UA: the security revision was committed");
+        if ask == 0 {
+            pw_log::info!("UA: the security revision was committed");
+        } else {
+            pw_log::info!("UA: the second ask for the same revision was refused");
+        }
     }
 
     Ok(true)
