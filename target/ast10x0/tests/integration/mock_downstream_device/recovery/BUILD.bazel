@@ -1,0 +1,22 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# The boot scenario with an image the RoT refuses.
+#
+# Same sources, same system config, one flag. Verification rejects the
+# device's image, the machine enters Recovering, the board restores the
+# image from its one source, and the re-walk authenticates it and releases
+# the device. It passes when the device boots and the restore is what got
+# it there.
+
+load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
+load("//target/ast10x0/tests/integration/mock_downstream_device:apps.bzl", "APPS", "SYSTEM_CONFIG", "TARGET_SRC")
+
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/mock_downstream_device/recovery:recovery_qemu_test
+qemu_scenario(
+    name = "recovery_qemu",
+    apps = APPS,
+    cfgs = ["recovery"],
+    system_config = SYSTEM_CONFIG,
+    target_src = TARGET_SRC,
+)

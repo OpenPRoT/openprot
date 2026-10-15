@@ -41,6 +41,8 @@ SCENARIO_CFGS = [
     "self_trial",
     "svn_commit",
     "svn_commit_refused",
+    "recovery",
+    "recovery_exhausted",
 ]
 
 KERNEL_DEPS = [
