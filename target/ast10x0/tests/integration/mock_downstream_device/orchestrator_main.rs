@@ -39,10 +39,14 @@ use openprot_orchestrator_driver::{
 };
 #[cfg(any(measured, recovery, recovery_exhausted))]
 use openprot_orchestrator_driver::{ImageSource, Verdict, Verifier};
-#[cfg(any(measured, recovery, recovery_exhausted))]
+// Only the self-update build submits a job of its own; every other
+// scenario here is a boot.
+#[cfg(self_update)]
+use openprot_orchestrator_driver::request_update;
+#[cfg(any(measured, recovery, recovery_exhausted, self_update))]
 use openprot_orchestrator_sm::ComponentId;
 use openprot_orchestrator_sm::{ComponentAttrs, Event, PowerOnResult, State};
-#[cfg(any(measured, recovery, recovery_exhausted))]
+#[cfg(any(measured, recovery, recovery_exhausted, self_update))]
 use orchestrator_capabilities::AuthenticatedImage;
 #[cfg(measured)]
 use orchestrator_capabilities::Measurement;
@@ -51,6 +55,8 @@ use orchestrator_capabilities::{
     SelfUpdate, SelfUpdateState, StageProgress, Svn, SvnFloor, Updatable, UpdateError,
     VerifySession,
 };
+#[cfg(self_update)]
+use orchestrator_capabilities::{Progress, SelfReset};
 // Only the recovery cfgs wire a restore source.
 #[cfg(any(recovery, recovery_exhausted))]
 use orchestrator_capabilities::{Recovery, RestoreOutcome};
@@ -124,6 +130,23 @@ const EXPECT_SELF_TRIAL: bool = true;
 /// The SVN the trial image carries, as the session recorded it before the
 /// eRoT reset into it.
 const TRIAL_SVN: Svn = Svn(7);
+
+/// The SVN the candidate carries. Above the floor, which starts at zero,
+/// and apart from `TRIAL_SVN` so the two self scenarios cannot be confused
+/// for one another in a log.
+#[cfg(self_update)]
+const CANDIDATE_SVN: Svn = Svn(9);
+
+/// The candidate's bytes. A real one arrives over PLDM, but nothing serves
+/// the eRoT's own update yet, so this scenario is its own update source.
+#[cfg(self_update)]
+const CANDIDATE: [u8; 256] = [0xa5; 256];
+
+/// How much of the candidate one `poll_stage` takes. Several steps, so the
+/// pump is driven the way a real transfer drives it rather than completing
+/// in one call.
+#[cfg(self_update)]
+const STAGE_CHUNK: usize = 64;
 
 /// What settling the eRoT's own session has to answer in this build. A
 /// self-trial build is mid-trial; any other boot has nothing in flight.
@@ -443,8 +466,10 @@ impl SelfUpdate for SelfSession {
 
 /// No update path in a boot scenario. Every step errors, which is what the
 /// board contract asks of a device that cannot be updated.
+#[cfg(not(self_update))]
 struct NoUpdate;
 
+#[cfg(not(self_update))]
 impl Updatable for NoUpdate {
     fn poll_stage(&mut self, _payload: &dyn ByteSource) -> Result<StageProgress, UpdateError> {
         Err(UpdateError::Device)
@@ -460,10 +485,13 @@ impl Updatable for NoUpdate {
 /// No update is verified in a boot scenario, so being polled at all is a
 /// wiring mistake rather than a verdict. It reports a fault, which the pump
 /// turns into a rejection, instead of accepting an image nothing checked.
+#[cfg(not(self_update))]
 struct NeverVerifier;
 
+#[cfg(not(self_update))]
 struct NeverSession;
 
+#[cfg(not(self_update))]
 impl IncrementalVerifier for NeverVerifier {
     type Error = BoardFault;
     type Session = NeverSession;
@@ -473,6 +501,7 @@ impl IncrementalVerifier for NeverVerifier {
     }
 }
 
+#[cfg(not(self_update))]
 impl VerifySession for NeverSession {
     type Verifier = NeverVerifier;
     type Error = BoardFault;
@@ -486,9 +515,167 @@ impl VerifySession for NeverSession {
     }
 }
 
+/// The eRoT's own slot, as the pump writes into it.
+///
+/// The slot writes nothing to flash: QEMU models one chip, so the image the
+/// eRoT would boot is the one running. What the scenario needs from this
+/// seam is that the pump ran to the end, so it counts the bytes it was
+/// handed and reports `Ready` on the last one.
+#[cfg(self_update)]
+struct SelfSlot {
+    written: u64,
+}
+
+/// Bytes the slot was handed, read at the end of the run. The slot itself
+/// is inside the board, which the driver takes and hands no reference to.
+/// A `u32` because this target has no 64-bit atomics, and
+/// `CANDIDATE.len()` fits one.
+#[cfg(self_update)]
+static STAGED: AtomicU32 = AtomicU32::new(0);
+
+#[cfg(self_update)]
+impl Updatable for SelfSlot {
+    fn poll_stage(&mut self, payload: &dyn ByteSource) -> Result<StageProgress, UpdateError> {
+        let total = payload.len();
+        if total == 0 {
+            return Err(UpdateError::EmptyPayload);
+        }
+        let take = (total - self.written).min(STAGE_CHUNK as u64);
+        let mut window = [0u8; STAGE_CHUNK];
+        let window = &mut window[..take as usize];
+        payload
+            .read_at(self.written, window)
+            .map_err(|_| UpdateError::Device)?;
+        self.written += take;
+        STAGED.store(self.written as u32, Ordering::Relaxed);
+        if self.written == total {
+            return Ok(StageProgress::Ready);
+        }
+        Ok(StageProgress::Transferring {
+            progress: Progress {
+                written: self.written,
+                total,
+            },
+        })
+    }
+
+    fn abandon(&mut self) {
+        self.written = 0;
+        STAGED.store(0, Ordering::Relaxed);
+    }
+
+    /// Never called on this path: the eRoT's activation records a session
+    /// and resets rather than commanding a device to run what it staged.
+    fn activate(&mut self) -> Result<(), UpdateError> {
+        Err(UpdateError::Device)
+    }
+}
+
+/// Authenticates the staged candidate and reports the SVN it carries,
+/// which is what the activation records on the session.
+///
+/// One pass, no chunking: the signature check is stubbed everywhere in
+/// these scenarios, and what this seam has to supply here is a verdict
+/// with an SVN in it.
+#[cfg(self_update)]
+struct SvnVerifier;
+
+#[cfg(self_update)]
+struct SvnSession;
+
+#[cfg(self_update)]
+impl IncrementalVerifier for SvnVerifier {
+    type Error = BoardFault;
+    type Session = SvnSession;
+
+    fn start(self) -> SvnSession {
+        SvnSession
+    }
+}
+
+#[cfg(self_update)]
+impl VerifySession for SvnSession {
+    type Verifier = SvnVerifier;
+    type Error = BoardFault;
+
+    fn poll(self, _payload: &dyn ByteSource) -> PollOutcome<Self> {
+        PollOutcome::Authenticated {
+            verifier: SvnVerifier,
+            image: AuthenticatedImage {
+                svn: Some(CANDIDATE_SVN),
+                measurement: None,
+            },
+        }
+    }
+
+    fn abandon(self) -> SvnVerifier {
+        SvnVerifier
+    }
+}
+
+/// The eRoT's reset, which is where this scenario's run ends.
+///
+/// Nothing on this target reboots the eRoT, and the driver does not come
+/// back from here, so the claim is judged in place: the session has to
+/// read `TrialPending` at the candidate's SVN, which is what the boot
+/// after the reset would find. `self_trial` starts from exactly that
+/// session and carries on from there.
+#[cfg(self_update)]
+struct EndOfRun;
+
+#[cfg(self_update)]
+impl SelfReset for EndOfRun {
+    type Error = BoardFault;
+
+    fn reset(&mut self) -> Result<core::convert::Infallible, BoardFault> {
+        let staged = STAGED.load(Ordering::Relaxed);
+        if staged != CANDIDATE.len() as u32 {
+            // Checked first: a session marked pending for an image the
+            // pump never finished writing is worse than an incomplete
+            // staging alone.
+            pw_log::error!(
+                "the eRoT would reset into {} bytes of a {} byte candidate",
+                staged as u32,
+                CANDIDATE.len() as u32
+            );
+            let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal));
+        } else if SelfSession::read() == (SelfUpdateState::TrialPending { svn: CANDIDATE_SVN }) {
+            pw_log::info!("the candidate is staged and the eRoT would reset into it now");
+            let _ = syscall::debug_shutdown(Ok(()));
+        } else {
+            pw_log::error!("the activation requested a reset with no trial pending");
+            let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal));
+        }
+        #[expect(clippy::empty_loop)]
+        loop {}
+    }
+}
+
+/// The candidate the pump pulls from.
+#[cfg(self_update)]
+struct CandidateBytes;
+
+#[cfg(self_update)]
+impl ByteSource for CandidateBytes {
+    fn len(&self) -> u64 {
+        CANDIDATE.len() as u64
+    }
+
+    fn read_at(&self, offset: u64, buf: &mut [u8]) -> Result<(), ByteReadError> {
+        let start = usize::try_from(offset).map_err(|_| ByteReadError::OutOfRange)?;
+        let end = start
+            .checked_add(buf.len())
+            .ok_or(ByteReadError::OutOfRange)?;
+        buf.copy_from_slice(CANDIDATE.get(start..end).ok_or(ByteReadError::OutOfRange)?);
+        Ok(())
+    }
+}
+
 /// No staging region, because nothing stages here.
+#[cfg(not(self_update))]
 struct NoStaging;
 
+#[cfg(not(self_update))]
 impl ByteSource for NoStaging {
     fn len(&self) -> u64 {
         0
@@ -579,6 +766,53 @@ impl ReportSink for LogSink {
     }
 }
 
+// The update wiring, named once per build so the `Board` carries no cfg.
+// The self-update build wires the real pieces; every other build wires
+// the stubs a boot scenario needs, which fault when polled so a wiring
+// mistake cannot look like a verdict. `scenario_updatable` is a function
+// rather than a constant because the self-update build's slot counts
+// what it was handed. The reset differs the same way: an activation of
+// the eRoT's own image supplies a reset of its own, and the `()` impl
+// reports that it cannot drive one.
+
+#[cfg(self_update)]
+type ScenarioUpdatable = SelfSlot;
+#[cfg(self_update)]
+type ScenarioStaging = CandidateBytes;
+#[cfg(self_update)]
+type ScenarioUpdateVerifier = SvnVerifier;
+#[cfg(self_update)]
+type ScenarioSelfReset = EndOfRun;
+#[cfg(self_update)]
+fn scenario_updatable() -> ScenarioUpdatable {
+    SelfSlot { written: 0 }
+}
+#[cfg(self_update)]
+const SCENARIO_STAGING: ScenarioStaging = CandidateBytes;
+#[cfg(self_update)]
+const SCENARIO_UPDATE_VERIFIER: ScenarioUpdateVerifier = SvnVerifier;
+#[cfg(self_update)]
+const SCENARIO_SELF_RESET: ScenarioSelfReset = EndOfRun;
+
+#[cfg(not(self_update))]
+type ScenarioUpdatable = NoUpdate;
+#[cfg(not(self_update))]
+type ScenarioStaging = NoStaging;
+#[cfg(not(self_update))]
+type ScenarioUpdateVerifier = NeverVerifier;
+#[cfg(not(self_update))]
+type ScenarioSelfReset = ();
+#[cfg(not(self_update))]
+fn scenario_updatable() -> ScenarioUpdatable {
+    NoUpdate
+}
+#[cfg(not(self_update))]
+const SCENARIO_STAGING: ScenarioStaging = NoStaging;
+#[cfg(not(self_update))]
+const SCENARIO_UPDATE_VERIFIER: ScenarioUpdateVerifier = NeverVerifier;
+#[cfg(not(self_update))]
+const SCENARIO_SELF_RESET: ScenarioSelfReset = ();
+
 struct MockDownstreamDeviceBoard;
 
 impl BoardCapabilities for MockDownstreamDeviceBoard {
@@ -588,13 +822,13 @@ impl BoardCapabilities for MockDownstreamDeviceBoard {
     type BootWatch = CheckpointWalk<BmcEvidence, u8>;
     type SvnFloor = ErotFloor;
     type ReportSink = LogSink;
-    type Updatable = NoUpdate;
+    type Updatable = ScenarioUpdatable;
     type Recovery = DeviceRecovery;
     type DeviceTrial = ();
-    type Staging = NoStaging;
-    type UpdateVerifier = NeverVerifier;
+    type Staging = ScenarioStaging;
+    type UpdateVerifier = ScenarioUpdateVerifier;
     type SelfUpdate = SelfSession;
-    type SelfReset = ();
+    type SelfReset = ScenarioSelfReset;
     type ResetSignal = u8;
     type Probe = u8;
 }
@@ -613,21 +847,83 @@ fn board() -> Board<MockDownstreamDeviceBoard, N> {
             boot_control: BmcReset,
             boot_watch: CheckpointWalk::new(BmcEvidence, &DEVICES[i]),
             svn_floor: SvnFloorBinding::SelfManaged,
-            updatable: NoUpdate,
+            updatable: scenario_updatable(),
             recovery: DEVICE_RECOVERY,
             trial: (),
         }),
         verifier: SCENARIO_VERIFIER,
         report_sink: LogSink,
-        update_staging: NoStaging,
-        update_verifier: Some(NeverVerifier),
+        update_staging: SCENARIO_STAGING,
+        update_verifier: Some(SCENARIO_UPDATE_VERIFIER),
         self_update: Some(ErotUpdate {
             session: SelfSession,
             floor: ErotFloor,
-            reset: (),
+            reset: SCENARIO_SELF_RESET,
         }),
         update_stall_budget_millis: 1_000,
     }
+}
+
+/// The chain and the driver, as this scenario's update phase holds them.
+#[cfg(self_update)]
+type Core = openprot_orchestrator_sm::Orchestrator<N, E>;
+#[cfg(self_update)]
+type Driver = openprot_orchestrator_driver::PlatformDriver<MockDownstreamDeviceBoard, N>;
+
+/// The eRoT, which is chain position 0 in every device table.
+#[cfg(self_update)]
+const EROT: ComponentId = ComponentId::new(0);
+
+/// Stages a candidate into the eRoT's own slot and activates it.
+///
+/// This is the half `self_trial` does not cover. The two scenarios meet
+/// at the reset: `self_update` ends where the eRoT would reboot, and
+/// `self_trial` starts from the session that reset would have left
+/// behind. One run cannot do both, because nothing on this target resets
+/// the eRoT and the session lives in RAM.
+///
+/// Returns only when something went wrong. A successful activation records
+/// the session, marks the trial pending and resets, and the reset is
+/// [`EndOfRun`], which judges the run and shuts the target down.
+#[cfg(self_update)]
+fn self_update(core: &mut Core, driver: &mut Driver) -> Result<(), ()> {
+    let len = CANDIDATE.len() as u64;
+    if request_update(core, driver, EROT, len).is_err() {
+        pw_log::error!("the eRoT's own update was refused");
+        return Err(());
+    }
+    if core.state() != State::Updating(EROT) {
+        pw_log::error!("the request did not reach Updating");
+        return Err(());
+    }
+    pw_log::info!("staging {} bytes into the eRoT's own slot", len as u32);
+
+    // The transfer steps, the authentication step, and the same again in
+    // slack, so the bound can never cut a working transfer short. A run
+    // that uses it up stopped making progress: a stalled pump returns no
+    // event, so only this bound ends such a run.
+    const UPDATE_ROUNDS: usize = 2 * (CANDIDATE.len() / STAGE_CHUNK + 1);
+    for _ in 0..UPDATE_ROUNDS {
+        let poll = driver.pump_update(now_millis());
+        match poll.event {
+            // The activation runs inside this dispatch and does not come
+            // back from the reset.
+            Some(Event::UpdateVerified) => {
+                core.dispatch(driver, Event::UpdateVerified);
+                pw_log::error!("the activation returned instead of resetting the eRoT");
+                return Err(());
+            }
+            Some(event) => {
+                pw_log::error!("the update pump gave up on the eRoT's own job");
+                core.dispatch(driver, event);
+                return Err(());
+            }
+            None => {}
+        }
+    }
+
+    pw_log::error!("the pump never authenticated the eRoT's own candidate");
+    Err(())
 }
 
 /// Drains whatever the mock downstream device has reported and latches a ready report.
@@ -765,6 +1061,12 @@ fn run() -> Result<(), ()> {
                 return Err(());
             }
             pw_log::info!("device booted and the orchestrator is in Ready");
+            // Only `Ready` accepts an UpdateRequest; anywhere else the
+            // state machine answers `ReportUpdateDeferred`. So the run
+            // offers the eRoT its own update once the walk has finished.
+            #[cfg(self_update)]
+            return self_update(&mut core, &mut driver);
+            #[cfg(not(self_update))]
             return Ok(());
         }
 

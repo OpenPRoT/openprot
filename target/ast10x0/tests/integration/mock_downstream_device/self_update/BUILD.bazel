@@ -1,0 +1,27 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# The eRoT's own update, up to the reset.
+#
+# Same sources, same system config, one flag. The chain comes up, the
+# orchestrator offers itself a candidate, the pump stages it and the
+# verifier reports the SVN it carries, and the activation records the
+# session, marks the trial pending and requests the reset. It passes when
+# the session reads TrialPending at that SVN, which is what the boot after
+# the reset would find.
+#
+# `self_trial` is the other half: it starts from that session and checks
+# what the boot does with it. One run cannot do both, because nothing on
+# this target resets the eRoT and the session lives in RAM.
+
+load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
+load("//target/ast10x0/tests/integration/mock_downstream_device:apps.bzl", "APPS", "SYSTEM_CONFIG", "TARGET_SRC")
+
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/mock_downstream_device/self_update:self_update_qemu_test
+qemu_scenario(
+    name = "self_update_qemu",
+    apps = APPS,
+    cfgs = ["self_update"],
+    system_config = SYSTEM_CONFIG,
+    target_src = TARGET_SRC,
+)
