@@ -29,26 +29,31 @@ use core::convert::Infallible;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 
 use board_stubs::{BoardFault, StubImage};
-// The shared stub reads nothing and so measures nothing. Only the build
-// that arranges a measurement swaps it out.
-#[cfg(not(measured))]
+// The shared stub authenticates everything and measures nothing. The
+// `measured` and recovery cfgs wire a verifier of their own.
+#[cfg(not(any(measured, recovery, recovery_exhausted)))]
 use board_stubs::StubVerifier;
 use openprot_orchestrator_driver::{
     bring_up, settle_self_image_at_boot, Board, BoardCapabilities, ComponentWiring, Report,
     ReportSink, SelfImage, SelfUpdateSettlement, SvnFloorBinding,
 };
-#[cfg(measured)]
+#[cfg(any(measured, recovery, recovery_exhausted))]
 use openprot_orchestrator_driver::{ImageSource, Verdict, Verifier};
-#[cfg(measured)]
+#[cfg(any(measured, recovery, recovery_exhausted))]
 use openprot_orchestrator_sm::ComponentId;
 use openprot_orchestrator_sm::{ComponentAttrs, Event, PowerOnResult, State};
+#[cfg(any(measured, recovery, recovery_exhausted))]
+use orchestrator_capabilities::AuthenticatedImage;
 #[cfg(measured)]
-use orchestrator_capabilities::{AuthenticatedImage, Measurement};
+use orchestrator_capabilities::Measurement;
 use orchestrator_capabilities::{
     BootControl, BootStatus, EvidenceReader, IncrementalVerifier, PollOutcome, RunningImage,
     SelfUpdate, SelfUpdateState, StageProgress, Svn, SvnFloor, Updatable, UpdateError,
     VerifySession,
 };
+// Only the recovery cfgs wire a restore source.
+#[cfg(any(recovery, recovery_exhausted))]
+use orchestrator_capabilities::{Recovery, RestoreOutcome};
 use orchestrator_checkpoint_walk::CheckpointWalk;
 use orchestrator_config::{
     assert_retry_reaches_every_image, chain_of, BootCheckpoint, ChainEntries, DeviceConfig,
@@ -77,16 +82,34 @@ const BOOT_WINDOW_MILLIS: u64 = 2_000;
 /// cut short here.
 const RUN_BUDGET_MILLIS: u64 = 10_000;
 
-/// Whether this build expects the device to come up.
-///
-/// The negative scenario is the same image with a device that never
-/// reports, and it passes when the platform locks. Inverting the verdict
-/// here rather than letting the target fail keeps a build error and a
-/// caught failure from looking the same to the runner.
-#[cfg(not(device_hangs))]
-const EXPECT_LOCKDOWN: bool = false;
-#[cfg(device_hangs)]
-const EXPECT_LOCKDOWN: bool = true;
+/// Whether this build passes on a platform lock: the device never reports
+/// (`device_hangs`), or its image is refused with no source left
+/// (`recovery_exhausted`). Inverting the verdict here, rather than letting
+/// the target fail, keeps a build error and a caught failure from looking
+/// the same to the runner.
+const EXPECT_LOCKDOWN: bool = cfg!(device_hangs) || cfg!(recovery_exhausted);
+
+/// Whether this build starts with an image the RoT refuses. `recovery`
+/// restores a good image and boots. `recovery_exhausted` restores an image
+/// the verifier still refuses, then runs out of sources.
+const EXPECT_RECOVERY: bool = cfg!(recovery) || cfg!(recovery_exhausted);
+
+/// Whether the expected lockdown happens inside the `PowerGood` dispatch.
+/// The verification, both restore calls and the gating are follow-ups of
+/// `PowerGood`, so the state machine is already `Locked` when that
+/// dispatch returns.
+const LOCKS_AT_POWER_ON: bool = cfg!(recovery_exhausted);
+
+/// How many times the run expects `restore` to be called. `recovery`
+/// needs one. `recovery_exhausted` needs two: the first writes an image
+/// the verifier still refuses, the second answers `SourceExhausted`.
+const EXPECT_RESTORE_CALLS: u8 = if cfg!(recovery_exhausted) {
+    2
+} else if cfg!(recovery) {
+    1
+} else {
+    0
+};
 
 /// Whether this build boots the trial image of the eRoT's own update.
 ///
@@ -189,6 +212,97 @@ impl EvidenceReader<u8> for BmcEvidence {
         } else {
             BootStatus::Booting
         })
+    }
+}
+
+/// Whether the RoT accepts the device's image. Starts false; a restore
+/// that writes a good image flips it.
+#[cfg(any(recovery, recovery_exhausted))]
+static IMAGE_GOOD: AtomicBool = AtomicBool::new(false);
+
+/// Replaces the shared stub, which authenticates whatever it is given.
+/// Reads `IMAGE_GOOD`, so the restore is what makes the image pass. The
+/// walk skips the eRoT, so only the managed device is verified.
+#[cfg(any(recovery, recovery_exhausted))]
+struct LatchedVerifier;
+
+#[cfg(any(recovery, recovery_exhausted))]
+impl Verifier for LatchedVerifier {
+    type Error = BoardFault;
+
+    fn verify(
+        &mut self,
+        _id: ComponentId,
+        _image: &mut impl ImageSource,
+    ) -> Result<Verdict, BoardFault> {
+        if !IMAGE_GOOD.load(Ordering::Relaxed) {
+            return Ok(Verdict::Rejected);
+        }
+        Ok(Verdict::Authenticated(AuthenticatedImage {
+            // Like the shared stub: no manifest for an SVN, no engine to
+            // measure with.
+            svn: None,
+            measurement: None,
+        }))
+    }
+}
+
+/// The verifier this scenario wires: the shared stub, unless the build
+/// needs a verifier that refuses (the recovery cfgs) or one that measures
+/// (`measured`).
+#[cfg(not(any(measured, recovery, recovery_exhausted)))]
+type ScenarioVerifier = StubVerifier;
+#[cfg(any(recovery, recovery_exhausted))]
+type ScenarioVerifier = LatchedVerifier;
+#[cfg(measured)]
+type ScenarioVerifier = MeasuringVerifier;
+
+/// The `ScenarioVerifier` the board is built with.
+#[cfg(not(any(measured, recovery, recovery_exhausted)))]
+const SCENARIO_VERIFIER: ScenarioVerifier = StubVerifier;
+#[cfg(any(recovery, recovery_exhausted))]
+const SCENARIO_VERIFIER: ScenarioVerifier = LatchedVerifier;
+#[cfg(measured)]
+const SCENARIO_VERIFIER: ScenarioVerifier = MeasuringVerifier;
+
+/// How many times `restore` has been called. The call that answers
+/// `SourceExhausted` writes nothing and still counts.
+static RESTORE_CALLS: AtomicU8 = AtomicU8::new(0);
+
+/// Only the recovery cfgs wire a restore source. The rest keep `()`,
+/// which answers `SourceExhausted` at once, so `device_hangs` still locks
+/// instead of restoring.
+#[cfg(not(any(recovery, recovery_exhausted)))]
+type DeviceRecovery = ();
+#[cfg(any(recovery, recovery_exhausted))]
+type DeviceRecovery = RecoverySource;
+
+/// The `DeviceRecovery` each component is built with.
+#[cfg(not(any(recovery, recovery_exhausted)))]
+const DEVICE_RECOVERY: DeviceRecovery = ();
+#[cfg(any(recovery, recovery_exhausted))]
+const DEVICE_RECOVERY: DeviceRecovery = RecoverySource;
+
+/// The device's one recovery source: it writes an image over the active
+/// image, and a second attempt answers `SourceExhausted`. The re-walk judges
+/// the image this writes, so the `recovery_exhausted` cfg writes an image
+/// the verifier refuses.
+#[cfg(any(recovery, recovery_exhausted))]
+struct RecoverySource;
+
+#[cfg(any(recovery, recovery_exhausted))]
+impl Recovery for RecoverySource {
+    type Error = BoardFault;
+
+    fn restore(&mut self, attempt: u8) -> Result<RestoreOutcome, BoardFault> {
+        RESTORE_CALLS.fetch_add(1, Ordering::Relaxed);
+        if attempt > 0 {
+            pw_log::info!("no source left to restore the device from");
+            return Ok(RestoreOutcome::SourceExhausted);
+        }
+        pw_log::info!("restoring the device's image from its recovery source");
+        IMAGE_GOOD.store(cfg!(recovery), Ordering::Relaxed);
+        Ok(RestoreOutcome::Restored)
     }
 }
 
@@ -420,18 +534,6 @@ impl Verifier for MeasuringVerifier {
     }
 }
 
-/// The verifier this scenario wires.
-#[cfg(not(measured))]
-type ScenarioVerifier = StubVerifier;
-#[cfg(measured)]
-type ScenarioVerifier = MeasuringVerifier;
-
-/// The `ScenarioVerifier` the board is built with.
-#[cfg(not(measured))]
-const SCENARIO_VERIFIER: ScenarioVerifier = StubVerifier;
-#[cfg(measured)]
-const SCENARIO_VERIFIER: ScenarioVerifier = MeasuringVerifier;
-
 /// What the sink was handed about the managed device's image: how many
 /// measurements, and the last digest. A static because the sink lives
 /// inside the board, inside the driver, while the run that judges it is
@@ -487,7 +589,7 @@ impl BoardCapabilities for MockDownstreamDeviceBoard {
     type SvnFloor = ErotFloor;
     type ReportSink = LogSink;
     type Updatable = NoUpdate;
-    type Recovery = ();
+    type Recovery = DeviceRecovery;
     type Staging = NoStaging;
     type UpdateVerifier = NeverVerifier;
     type SelfUpdate = SelfSession;
@@ -510,7 +612,7 @@ fn board() -> Board<MockDownstreamDeviceBoard, N> {
             boot_watch: CheckpointWalk::new(BmcEvidence, &DEVICES[i]),
             svn_floor: SvnFloorBinding::SelfManaged,
             updatable: NoUpdate,
-            recovery: (),
+            recovery: DEVICE_RECOVERY,
         }),
         verifier: SCENARIO_VERIFIER,
         report_sink: LogSink,
@@ -561,6 +663,22 @@ fn measured_as_expected() -> bool {
     true
 }
 
+/// Whether `restore` was called exactly `EXPECT_RESTORE_CALLS` times.
+/// The count is zero outside the recovery cfgs, so every other scenario
+/// checks recovery never ran.
+fn restore_calls_as_expected() -> bool {
+    let calls = RESTORE_CALLS.load(Ordering::Relaxed);
+    if calls == EXPECT_RESTORE_CALLS {
+        return true;
+    }
+    pw_log::error!(
+        "restore was called {} times, expected {}",
+        calls as u32,
+        EXPECT_RESTORE_CALLS as u32
+    );
+    false
+}
+
 fn run() -> Result<(), ()> {
     syscall::wait_group_add(handle::WG, handle::BOOT_EVT, Signals::READABLE, 0usize)
         .map_err(|_| ())?;
@@ -589,8 +707,12 @@ fn run() -> Result<(), ()> {
     // line is what arms the walk, so nothing here touches the device
     // directly.
     core.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
-    if core.state() == State::Locked {
+    if core.state() == State::Locked && !LOCKS_AT_POWER_ON {
         pw_log::error!("locked before the device was released");
+        return Err(());
+    }
+    if LOCKS_AT_POWER_ON && core.state() != State::Locked {
+        pw_log::error!("recovery did not run out of sources in the power-on dispatch");
         return Err(());
     }
 
@@ -604,15 +726,19 @@ fn run() -> Result<(), ()> {
 
     loop {
         if core.state() == State::Locked {
-            if EXPECT_LOCKDOWN {
-                if !measured_as_expected() {
-                    return Err(());
-                }
-                pw_log::info!("the device never came up and the platform locked");
-                return Ok(());
+            if !EXPECT_LOCKDOWN {
+                pw_log::error!("orchestrator locked the platform");
+                return Err(());
             }
-            pw_log::error!("orchestrator locked the platform");
-            return Err(());
+            if !restore_calls_as_expected() || !measured_as_expected() {
+                return Err(());
+            }
+            if EXPECT_RECOVERY {
+                pw_log::info!("recovery ran out of sources and the platform locked");
+            } else {
+                pw_log::info!("the device never came up and the platform locked");
+            }
+            return Ok(());
         }
         if booted {
             if EXPECT_LOCKDOWN {
@@ -629,7 +755,9 @@ fn run() -> Result<(), ()> {
                 pw_log::error!("the chain came up and the self trial was not confirmed");
                 return Err(());
             }
-            if !measured_as_expected() {
+            // Without the call count, `recovery` would pass on a verifier
+            // that never refused the image.
+            if !restore_calls_as_expected() || !measured_as_expected() {
                 return Err(());
             }
             pw_log::info!("device booted and the orchestrator is in Ready");

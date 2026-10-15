@@ -91,7 +91,18 @@ abort would do is untested.
   chip. The half the scenario covers is the boot after the reset, not
   the update that caused it.
 - Recovery preempting an update: `Updating` to `Recovering`, with the
-  staged image discarded.
+  staged image discarded. `mock_downstream_device/recovery` covers the
+  boot-time arc, where verification refuses the image and the restore is
+  what gets the device released, and `recovery_exhausted` covers the
+  second episode finding no source left. Neither starts from an update.
+- A recovery loop that never ends. `device_hangs` wires no recovery
+  source, so it locks on the first attempt. With a source behind it, a
+  device that verifies but never boots recovers forever:
+  `Event::VerificationPassed` clears the component's retry count, so the
+  attempt handed to `restore` stays 0 and `MAX_RETRY` never bites. Found
+  while writing `recovery`, which is why the source is wired in the two
+  recovery cfgs alone. Whether the count should survive a passing
+  verification is a question for the machine.
 - The spare slot re-sync after a commit, and the floor advance held until
   the spare has the image.
 
