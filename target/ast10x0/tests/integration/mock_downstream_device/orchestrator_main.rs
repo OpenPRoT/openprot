@@ -34,9 +34,9 @@ use openprot_orchestrator_driver::{
 };
 use openprot_orchestrator_sm::{ComponentAttrs, ComponentId, Event, PowerOnResult, State};
 use orchestrator_capabilities::{
-    BootControl, BootStatus, EvidenceReader, IncrementalVerifier, PollOutcome, RunningImage,
-    SelfUpdate, SelfUpdateState, StageProgress, Svn, SvnFloor, Updatable, UpdateError,
-    VerifySession,
+    AuthenticatedImage, BootControl, BootStatus, EvidenceReader, IncrementalVerifier, PollOutcome,
+    RunningImage, SelfUpdate, SelfUpdateState, StageProgress, Svn, SvnFloor, Updatable,
+    UpdateError, VerifySession,
 };
 use orchestrator_checkpoint_walk::CheckpointWalk;
 use orchestrator_config::{
@@ -222,12 +222,12 @@ impl Verifier for StubVerifier {
         _id: ComponentId,
         _image: &mut impl ImageSource,
     ) -> Result<Verdict, BoardFault> {
-        Ok(Verdict::Authenticated {
+        Ok(Verdict::Authenticated(AuthenticatedImage {
             svn: Svn(1),
             // No hash engine on a test board: the stub verifier reads
             // nothing, so there is nothing to measure.
             measurement: None,
-        })
+        }))
     }
 }
 

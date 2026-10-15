@@ -323,13 +323,14 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
                 self.update_verifier = Some(VerifierState::Verifying(session));
                 Step::Working(progress)
             }
-            PollOutcome::Authenticated { verifier, svn: _ } => {
+            PollOutcome::Authenticated { verifier, image: _ } => {
                 self.update_verifier = Some(VerifierState::Idle(verifier));
-                // The candidate's own SVN is dropped here. A downstream
-                // device's floor takes the SVN the post-activation walk
-                // reads back from the image that is running, not this one.
-                // The eRoT's own session is what needs the authenticated
-                // reading, and nothing records a self-update session yet.
+                // What the pass learned about the candidate is dropped
+                // here. A downstream device's floor takes the SVN the
+                // post-activation walk reads back from the image that is
+                // running, not the candidate's. The eRoT's own session is
+                // what needs the authenticated reading, and nothing
+                // records a self-update session yet.
                 Step::Authenticated
             }
             PollOutcome::Rejected(v) => {

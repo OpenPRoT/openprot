@@ -3,7 +3,7 @@
 
 //! The [`IncrementalVerifier`] update-verification capability contract.
 
-use crate::{Progress, Svn};
+use crate::{AuthenticatedImage, Progress};
 use util_io::ByteSource;
 
 /// Factory for incremental verification sessions. Call [`start`] to
@@ -81,11 +81,10 @@ pub enum PollOutcome<S: VerifySession> {
     Authenticated {
         /// The verifier, back for a new session.
         verifier: S::Verifier,
-        /// The candidate's anti-rollback SVN. The implementor reports
-        /// what the manifest the authenticated pass covered holds, so a
-        /// caller never has to read the candidate for it, and must not:
-        /// any other reading is of bytes no signature check vouched for.
-        svn: Svn,
+        /// What the pass learned about the candidate. The same type the
+        /// boot walk's verdict carries, so a candidate and an image at
+        /// rest are described one way.
+        image: AuthenticatedImage,
     },
     /// The complete image was checked and found invalid.
     Rejected(S::Verifier),
@@ -97,6 +96,7 @@ pub enum PollOutcome<S: VerifySession> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Svn;
     use util_io::{ByteReadError, ByteSource};
 
     // A ByteSource over a plain byte slice.
@@ -169,7 +169,12 @@ mod tests {
                 return if first[0] != 0 {
                     PollOutcome::Authenticated {
                         verifier: ChunkedVerifier,
-                        svn: FIXTURE_SVN,
+                        image: AuthenticatedImage {
+                            svn: FIXTURE_SVN,
+                            // No hash engine in a fixture that only looks
+                            // at the first byte.
+                            measurement: None,
+                        },
                     }
                 } else {
                     PollOutcome::Rejected(ChunkedVerifier)
@@ -266,8 +271,8 @@ mod tests {
         loop {
             match session.poll(&payload) {
                 PollOutcome::Processing { session: s, .. } => session = s,
-                PollOutcome::Authenticated { svn, .. } => {
-                    assert_eq!(svn, FIXTURE_SVN);
+                PollOutcome::Authenticated { image, .. } => {
+                    assert_eq!(image.svn, FIXTURE_SVN);
                     return;
                 }
                 PollOutcome::Rejected(_) => panic!("expected authenticated, got rejected"),

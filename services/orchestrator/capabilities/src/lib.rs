@@ -72,6 +72,7 @@
 
 #![cfg_attr(not(test), no_std)]
 
+mod authenticated_image;
 mod boot_control;
 mod boot_watch;
 mod device_trial_boot;
@@ -85,6 +86,7 @@ mod self_update;
 mod svn_floor;
 mod updatable;
 
+pub use authenticated_image::AuthenticatedImage;
 pub use boot_control::BootControl;
 pub use boot_watch::{BootWatch, FailureCause, WalkVerdict};
 pub use device_trial_boot::DeviceTrialBoot;

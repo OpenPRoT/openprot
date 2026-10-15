@@ -43,8 +43,8 @@ use openprot_orchestrator_sm::{ComponentAttrs, ComponentId, Event, PowerOnResult
 #[cfg(not(refused_update))]
 use openprot_orchestrator_sm::State;
 use orchestrator_capabilities::{
-    BootControl, BootStatus, EvidenceReader, IncrementalVerifier, PollOutcome, StageProgress, Svn,
-    SvnFloor, Updatable, UpdateError, VerifySession,
+    AuthenticatedImage, BootControl, BootStatus, EvidenceReader, IncrementalVerifier, PollOutcome,
+    StageProgress, Svn, SvnFloor, Updatable, UpdateError, VerifySession,
 };
 use orchestrator_checkpoint_walk::CheckpointWalk;
 use orchestrator_config::{
@@ -196,12 +196,12 @@ impl Verifier for StubVerifier {
         _id: ComponentId,
         _image: &mut impl ImageSource,
     ) -> Result<Verdict, BoardFault> {
-        Ok(Verdict::Authenticated {
+        Ok(Verdict::Authenticated(AuthenticatedImage {
             svn: Svn(1),
             // No hash engine on a test board: the stub verifier reads
             // nothing, so there is nothing to measure.
             measurement: None,
-        })
+        }))
     }
 }
 
@@ -341,7 +341,11 @@ impl VerifySession for PatternSession {
         ROT_AUTHENTICATED.store(true, Ordering::Relaxed);
         PollOutcome::Authenticated {
             verifier: PatternVerifier,
-            svn: Svn(CANDIDATE_SVN),
+            image: AuthenticatedImage {
+                svn: Svn(CANDIDATE_SVN),
+                // The pattern check hashes nothing.
+                measurement: None,
+            },
         }
     }
 
