@@ -222,6 +222,19 @@ impl<const N: usize, const E: usize> Rot<N, E> {
         }
     }
 
+    /// The chain's eRoT, which `chain_of` has already put at position 0 and
+    /// refused to accept anywhere else. `chain_of` is a `const fn` and its
+    /// assert is a build error, so a board whose table names no eRoT does
+    /// not compile. `None` reaches here only from a chain built through
+    /// `Chain::try_from`, which checks ids and dependencies but not the
+    /// kind, and the unit tests are what build one.
+    fn erot_id(&self) -> Option<ComponentId> {
+        self.chain
+            .iter()
+            .find(|(_, attrs)| attrs.kind == ComponentKind::Erot)
+            .map(|&(id, _)| id)
+    }
+
     /// Whether `id` has been released and still owes a boot-progress signal.
     /// A [`Event::Timeout`] is a real boot failure only for such a component;
     /// otherwise it is stale/spurious.
@@ -975,6 +988,16 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 if self.self_trial_booted {
                     self.self_trial_booted = false;
                     ctx.emit(Effect::ConfirmSelfTrial);
+                    // The state machine answers `SvnCommitRequest` with
+                    // `CommitSvnFloor` only for the id in
+                    // `awaiting_floor_advance`, so without this
+                    // assignment it drops the request for the eRoT's
+                    // floor. `BootConfirmed` makes the same mark for a
+                    // downstream device. The SVN is written elsewhere:
+                    // `ConfirmSelfTrial` above has the driver confirm
+                    // the session, and `commit_self_svn_floor` moves the
+                    // floor to the SVN the session then holds.
+                    self.awaiting_floor_advance = self.erot_id();
                 }
                 // NB: `gated` is intentionally NOT cleared here. It is a durable
                 // trust-boundary gate (each id has a live `AssertReset`);
