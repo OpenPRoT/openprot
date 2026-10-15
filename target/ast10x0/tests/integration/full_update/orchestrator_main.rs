@@ -23,7 +23,7 @@
 use core::convert::Infallible;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use board_stubs::{BoardFault, StubImage, StubVerifier};
+use board_stubs::{BoardFault, StubImage, StubSelfReset, StubVerifier};
 use openprot_orchestrator_driver::{
     bring_up, request_update, Board, BoardCapabilities, ComponentWiring, Report, ReportSink,
     SvnFloorBinding,
@@ -389,6 +389,7 @@ impl BoardCapabilities for UpdateBoard {
     type Staging = PatternStaging;
     type UpdateVerifier = PatternVerifier;
     type SelfUpdate = ();
+    type SelfReset = StubSelfReset;
     type ResetSignal = u8;
     type Probe = u8;
 }

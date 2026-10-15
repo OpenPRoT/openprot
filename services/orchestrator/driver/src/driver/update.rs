@@ -10,9 +10,10 @@
 
 use super::{DriverError, PlatformDriver, UpdateJob, UpdatePhase, VerifierState};
 use crate::board::{BoardCapabilities, Report};
-use openprot_orchestrator_sm::{ComponentId, Event};
+use openprot_orchestrator_sm::{ComponentId, ComponentKind, Event};
 use orchestrator_capabilities::{
-    IncrementalVerifier, PollOutcome, Progress, StageProgress, Updatable, VerifySession,
+    IncrementalVerifier, PollOutcome, Progress, SelfReset, SelfUpdate, StageProgress, Updatable,
+    VerifySession,
 };
 use util_io::{ByteSource, ByteWindow};
 
@@ -94,6 +95,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             prepare_commanded: false,
             progress: Progress::start(len),
             progress_since_millis: None,
+            authenticated: None,
         });
         Ok(())
     }
@@ -141,6 +143,11 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     ///
     /// The commit is not here. Activation proposes; `BootConfirmed` and
     /// `CommitSvnFloor` decide.
+    ///
+    /// The eRoT's own candidate goes the other way, through
+    /// [`activate_self_update`](Self::activate_self_update): there is no
+    /// device to command and no walk to supervise, because the eRoT is
+    /// the thing being rebooted.
     pub fn activate_update(&mut self) -> Result<(), DriverError> {
         let job = self
             .pending_update
@@ -148,6 +155,9 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             .ok_or(DriverError::NoUpdateJob)?;
         if job.phase != UpdatePhase::Authenticated {
             return Err(DriverError::CandidateNotAuthenticated);
+        }
+        if self.kind_of(job.target) == Some(ComponentKind::Erot) {
+            return self.activate_self_update();
         }
         let (target, len) = (job.target, job.len);
         let updatable = self
@@ -160,6 +170,60 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         self.pending_update = None;
         self.last_activated = Some((target, len));
         Ok(())
+    }
+
+    /// Activates the eRoT's own candidate: record the session, mark the
+    /// trial pending, reset into it.
+    ///
+    /// The order is the one [`SelfUpdate`](orchestrator_capabilities::SelfUpdate)
+    /// states: record first, then mark. A crash between the two leaves a
+    /// pending trial with the confirmed image still running, which the
+    /// next boot reads as a trial nothing confirmed. Marking first would
+    /// boot a trial with no session to judge it.
+    ///
+    /// Returns only on failure. The reset does not come back, so the job
+    /// is cleared before it: nothing after this runs, and a reset that
+    /// fails must not leave a job the next boot would find.
+    ///
+    /// A failed reset therefore leaves the session `TrialPending` with no
+    /// job behind it. That is the honest state: the image is staged and
+    /// marked, so a reset from any other source boots the trial and the
+    /// next boot judges it. What is gone is the driver's ability to retry
+    /// the activation, which it could not do anyway without staging the
+    /// candidate again.
+    fn activate_self_update(&mut self) -> Result<(), DriverError> {
+        let svn = self
+            .pending_update
+            .as_ref()
+            .and_then(|job| job.authenticated)
+            .ok_or(DriverError::CandidateNotAuthenticated)?
+            .svn
+            .ok_or(DriverError::SelfImageVersionless)?;
+        let self_image = self
+            .board
+            .self_image
+            .as_mut()
+            .ok_or(DriverError::NoSelfImage)?;
+        self_image
+            .session
+            .prepare(svn)
+            .map_err(|_| DriverError::SelfUpdateFault)?;
+        self_image
+            .session
+            .set_trial_pending()
+            .map_err(|_| DriverError::SelfUpdateFault)?;
+        self.pending_update = None;
+        // In bounds: the self-image was read above.
+        let self_image = self
+            .board
+            .self_image
+            .as_mut()
+            .ok_or(DriverError::NoSelfImage)?;
+        match self_image.reset.reset() {
+            // Uninhabited: a reset that returns did not reset.
+            Ok(never) => match never {},
+            Err(_) => Err(DriverError::SelfResetFault),
+        }
     }
 
     /// One step of the in-flight update, called by the event loop between
@@ -323,14 +387,32 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
                 self.update_verifier = Some(VerifierState::Verifying(session));
                 Step::Working(progress)
             }
-            PollOutcome::Authenticated { verifier, image: _ } => {
+            PollOutcome::Authenticated { verifier, image } => {
                 self.update_verifier = Some(VerifierState::Idle(verifier));
-                // What the pass learned about the candidate is dropped
-                // here. A downstream device's floor takes the SVN the
-                // post-activation walk reads back from the image that is
-                // running, not the candidate's. The eRoT's own session is
-                // what needs the authenticated reading, and nothing
-                // records a self-update session yet.
+                let target = self.pending_update.as_ref().map(|job| job.target);
+                // The eRoT's own session records what the pass read,
+                // because the eRoT does not walk itself afterwards. With
+                // no SVN there is nothing to record and the floor would
+                // have nothing to advance to once the trial is confirmed,
+                // so the candidate is rejected here and the update ends.
+                // Rejecting it at the activation instead would fail that
+                // effect, and a failed effect latches the platform: a
+                // missing version is not grounds for lockdown.
+                if image.svn.is_none()
+                    && target.map(|id| self.kind_of(id)) == Some(Some(ComponentKind::Erot))
+                {
+                    // In bounds: `target` is `Some` to have got here.
+                    if let Some(id) = target {
+                        self.report(Report::SelfImageVersionless(id));
+                    }
+                    return Ok(Step::Rejected);
+                }
+                // Kept for the activation. A downstream device's floor
+                // takes the SVN the post-activation walk reads back from
+                // the image that is running, not this one.
+                if let Some(job) = self.pending_update.as_mut() {
+                    job.authenticated = Some(image);
+                }
                 Step::Authenticated
             }
             PollOutcome::Rejected(v) => {

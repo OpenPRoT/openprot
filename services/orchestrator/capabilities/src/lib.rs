@@ -82,6 +82,7 @@ mod lockdown_latch;
 mod measurer;
 mod progress;
 mod recovery;
+mod self_reset;
 mod self_update;
 mod svn_floor;
 mod updatable;
@@ -96,6 +97,7 @@ pub use lockdown_latch::LockdownLatch;
 pub use measurer::{MeasureOutcome, MeasureSession, Measurement, Measurer};
 pub use progress::Progress;
 pub use recovery::{Recovery, RestoreOutcome};
+pub use self_reset::SelfReset;
 pub use self_update::{
     trial_outcome, NoSession, RunningImage, SelfUpdate, SelfUpdateState, TrialOutcome,
 };
