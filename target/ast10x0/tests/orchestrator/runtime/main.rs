@@ -27,6 +27,7 @@
 #![no_std]
 
 use app_test_runtime::{constants, handle, signals};
+use board_clock::{millis_to_ticks, ticks_to_millis};
 use openprot_orchestrator_server::BootWatchdogs;
 use openprot_orchestrator_sm::{
     BootFailureKind, Chain, ComponentAttrs, ComponentId, Effect, EffectError, Event, Orchestrator,
@@ -124,14 +125,6 @@ enum DeviceBehavior {
     /// arms through the real interrupt/`object_wait` path, not just through
     /// `CheckpointWalk`'s own host unit tests.
     Faults(BootStatus),
-}
-
-fn ticks_to_millis(ticks: u64) -> u64 {
-    ticks * 1000 / SystemClock::TICKS_PER_SEC
-}
-
-fn millis_to_ticks(millis: u64) -> u64 {
-    millis * SystemClock::TICKS_PER_SEC / 1000
 }
 
 fn failure_kind(cause: FailureCause) -> BootFailureKind {

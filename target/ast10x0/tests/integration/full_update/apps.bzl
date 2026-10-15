@@ -27,6 +27,7 @@ ORCHESTRATOR_DEPS = [
     "//services/pldm/client:pldm_client",
     "//util/io",
     "//util/ipc:ipc",
+    "//target/ast10x0/tests/clock",
     "@pigweed//pw_kernel/userspace",
     "@pigweed//pw_log/rust:pw_log",
     "@pigweed//pw_status/rust:pw_status",

@@ -19,6 +19,7 @@
 
 use core::cell::{Cell, RefCell};
 
+use board_clock::now_millis;
 use flash_backend::{Backend, NoWaitBlocking};
 use hal_flash::{BlockingFlash, Flash, FlashAddress};
 use openprot_mctp_client_ipc::IpcMctpClient;
@@ -736,7 +737,7 @@ impl FdOps for QemuFdOps {
     /// trait's default returns a constant, so without this the FD_T1 and
     /// FD_T2 windows never elapse and a retry never comes.
     fn now(&self) -> PldmFdTime {
-        SystemClock::now().ticks() * 1000 / SystemClock::TICKS_PER_SEC
+        now_millis()
     }
 }
 

@@ -43,6 +43,7 @@ use pldm_client::{ClientError, FdIpcClient, Reply};
 use util_io::{ByteReadError, ByteSource};
 use util_ipc::{AsyncChannelTransport, IpcHandle};
 
+use board_clock::{deadline_in, now_millis};
 use userspace::syscall::Signals;
 use userspace::time::{Clock, Instant, SystemClock};
 use userspace::{entry, syscall};
@@ -176,14 +177,6 @@ fn verdict(outcome: Outcome) -> bool {
             false
         }
     }
-}
-
-fn now_millis() -> u64 {
-    SystemClock::now().ticks() * 1000 / SystemClock::TICKS_PER_SEC
-}
-
-fn deadline_in(millis: u64) -> Instant {
-    Instant::from_ticks(SystemClock::now().ticks() + millis * SystemClock::TICKS_PER_SEC / 1000)
 }
 
 /// The byte the agent sends at `offset`, which is also what the staging
