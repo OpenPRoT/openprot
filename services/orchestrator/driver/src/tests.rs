@@ -9,8 +9,8 @@ use openprot_orchestrator_sm::{
     Platform, PowerOnResult, State,
 };
 use orchestrator_capabilities::{
-    BootWatch, FailureCause, Progress, Recovery, RestoreOutcome, RunningImage, SelfUpdate,
-    SelfUpdateState, Svn, SvnFloor, WalkVerdict,
+    AuthenticatedImage, BootWatch, FailureCause, PollOutcome, Progress, Recovery, RestoreOutcome,
+    RunningImage, SelfUpdate, SelfUpdateState, Svn, SvnFloor, WalkVerdict,
 };
 use util_io::{ByteReadError, ByteSource};
 
@@ -183,10 +183,10 @@ impl Verifier for XorVerifier {
         }
         let ok = len > IMAGE_MAGIC.len() && magic == IMAGE_MAGIC && xor == 0;
         Ok(if ok {
-            Verdict::Authenticated {
+            Verdict::Authenticated(AuthenticatedImage {
                 svn: Svn(self.svn),
                 measurement: self.measurement,
-            }
+            })
         } else {
             Verdict::Rejected
         })
@@ -669,7 +669,11 @@ impl orchestrator_capabilities::VerifySession for StubSession {
         match self.verdict {
             StubVerdict::Authenticate => PollOutcome::Authenticated {
                 verifier: self.verifier,
-                svn: Svn(CANDIDATE_SVN),
+                image: AuthenticatedImage {
+                    svn: Svn(CANDIDATE_SVN),
+                    // The update path's stub hashes nothing.
+                    measurement: None,
+                },
             },
             StubVerdict::Reject => PollOutcome::Rejected(self.verifier),
             StubVerdict::Fault | StubVerdict::Stall => {
@@ -3718,4 +3722,68 @@ fn settling_at_boot_passes_a_storage_fault_back() {
         State::Ready,
         "no trial was declared, so the walk is an ordinary boot"
     );
+}
+
+// The authenticated pass reads the candidate's SVN, and the floor must
+// not take it. The floor takes what the post-activation walk read back
+// from the image the device is now running, which is the only evidence
+// that the new image is the one booting. The two values differ here, so
+// a change that wired the candidate's SVN through would fail this.
+#[test]
+fn the_floor_takes_the_walk_svn_and_not_the_candidate_svn() {
+    let mut orch = orchestrator();
+    let mut driver = update_driver(MockUpdatable::new());
+
+    // An update whose candidate authenticates at CANDIDATE_SVN.
+    activated(&mut driver, &mut orch);
+
+    // The walk that follows the activation reads the image back, and the
+    // commit takes what it read.
+    driver
+        .execute(Effect::ReadFirmware(C0))
+        .expect("stage failed");
+    driver
+        .execute(Effect::VerifyFirmware(C0))
+        .expect("verify failed");
+    assert_eq!(driver.execute(Effect::CommitSvnFloor(C0)), Ok(None));
+
+    // The commit queues the spare-slot re-sync and holds the floor until
+    // that pass finishes, so the floor only moves once the pump has run.
+    for tick in 0..16 {
+        if driver.pending_update().is_none() {
+            break;
+        }
+        driver.pump_update(tick);
+    }
+
+    assert_eq!(
+        floor_of(&driver),
+        Svn(MOCK_SVN),
+        "the floor took the SVN the walk verified"
+    );
+    assert_ne!(
+        MOCK_SVN, CANDIDATE_SVN,
+        "the fixtures have to differ for this test to say anything"
+    );
+}
+
+// One description of an authenticated image, used by both passes: the
+// boot walk's verdict and the update path's outcome take the same value.
+// Two spellings of it in two crates is what this type exists to stop, and
+// the compiler is what enforces it.
+#[test]
+fn both_passes_describe_an_authenticated_image_the_same_way() {
+    let image = AuthenticatedImage {
+        svn: Svn(MOCK_SVN),
+        measurement: None,
+    };
+
+    let at_rest = Verdict::Authenticated(image);
+    let staged: PollOutcome<StubSession> = PollOutcome::Authenticated {
+        verifier: StubVerifier::accepting(),
+        image,
+    };
+
+    assert!(matches!(at_rest, Verdict::Authenticated(got) if got == image));
+    assert!(matches!(staged, PollOutcome::Authenticated { image: got, .. } if got == image));
 }

@@ -6,6 +6,7 @@ load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 rust_library(
     name = "orchestrator_capabilities",
     srcs = [
+        "src/authenticated_image.rs",
         "src/boot_control.rs",
         "src/boot_watch.rs",
         "src/device_trial_boot.rs",

@@ -9,8 +9,8 @@ use orchestrator_capabilities::Updatable;
 use orchestrator_config::DeviceConfig;
 use util_io::ByteSource;
 
-pub use orchestrator_capabilities::{BootControl, BootWatch, Measurement};
-use orchestrator_capabilities::{IncrementalVerifier, Recovery, SelfUpdate, Svn, SvnFloor};
+pub use orchestrator_capabilities::{AuthenticatedImage, BootControl, BootWatch, Measurement};
+use orchestrator_capabilities::{IncrementalVerifier, Recovery, SelfUpdate, SvnFloor};
 
 /// Access to one component's active firmware image, however it is reached —
 /// interposed flash, a PLDM/MCTP transfer, a RAM copy in tests.
@@ -87,18 +87,15 @@ impl<V: Verifier> Verifier for &mut V {
 /// A [`Verifier`]'s judgment of one image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verdict {
-    /// Reported as `Event::VerificationPassed`. Carries the image's
-    /// manifest SVN: verification is the only authenticated reading of the
-    /// manifest, so this is the one value the anti-rollback commit
-    /// ([`Effect::CommitSvnFloor`](openprot_orchestrator_sm::Effect)) may
-    /// trust.
-    Authenticated {
-        /// The verified image's security version number.
-        svn: Svn,
-        /// SHA-256 digest of the image, or `None` if this board has
-        /// no hash engine wired up.
-        measurement: Option<Measurement>,
-    },
+    /// Reported as `Event::VerificationPassed`. Carries what the check
+    /// learned about the image, including the manifest SVN the
+    /// anti-rollback commit
+    /// ([`Effect::CommitSvnFloor`](openprot_orchestrator_sm::Effect))
+    /// takes. The same payload the update path's
+    /// [`PollOutcome::Authenticated`](orchestrator_capabilities::PollOutcome)
+    /// carries: one description of an authenticated image, whether it was
+    /// checked at rest or staged.
+    Authenticated(AuthenticatedImage),
     /// Reported as `Event::VerificationFailed`.
     Rejected,
 }
