@@ -80,6 +80,17 @@ const IMAGE_SIZE: u32 = 1024;
 /// revision the agent asks to commit. Must match the firmware device's.
 const COMP_IDENTIFIER: u16 = 0x0001;
 
+/// How many UpdateSecurityRevision requests this agent sends once the
+/// update is done. The second is the retry after a lost answer, which the
+/// device refuses.
+const SVN_COMMIT_REQUESTS: usize = if cfg!(svn_commit_refused) {
+    2
+} else if cfg!(svn_commit) {
+    1
+} else {
+    0
+};
+
 /// The UUID this agent expects the firmware device to report. It only updates
 /// a device it recognises.
 const DEVICE_UUID: [u8; 16] = [
@@ -696,8 +707,11 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
     // DSP0267 takes UpdateSecurityRevision only in IDLE, which the device
     // is in now that it has activated. Committing the revision is a
     // separate decision from installing the image, and this is where the
-    // agent asks for it.
-    if cfg!(svn_commit) {
+    // agent asks for it. The second request is the retry after a lost
+    // answer: the floor has the SVN already, so the device refuses.
+    use pldm_common::protocol::firmware_update::FwUpdateCompletionCode;
+
+    for request in 0..SVN_COMMIT_REQUESTS {
         instance_id += 1;
         let mut attempt = 0;
         let (completion_code, _) = loop {
@@ -723,14 +737,24 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
                 }
             }
         };
-        if completion_code != 0 {
+        let expected = if request == 0 {
+            PldmBaseCompletionCode::Success as u8
+        } else {
+            FwUpdateCompletionCode::UpdateSecurityRevisionNotPermitted as u8
+        };
+        if completion_code != expected {
             pw_log::error!(
-                "UA: UpdateSecurityRevision refused, completion code {:02x}",
-                completion_code as u32
+                "UA: UpdateSecurityRevision answered {:02x}, expected {:02x}",
+                completion_code as u32,
+                expected as u32
             );
             return Ok(false);
         }
-        pw_log::info!("UA: the security revision was committed");
+        if request == 0 {
+            pw_log::info!("UA: the security revision was committed");
+        } else {
+            pw_log::info!("UA: the second request for the same revision was refused");
+        }
     }
 
     Ok(true)

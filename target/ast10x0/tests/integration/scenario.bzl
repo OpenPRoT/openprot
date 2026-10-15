@@ -40,6 +40,7 @@ SCENARIO_CFGS = [
     "retry_chunk",
     "self_trial",
     "svn_commit",
+    "svn_commit_refused",
 ]
 
 KERNEL_DEPS = [

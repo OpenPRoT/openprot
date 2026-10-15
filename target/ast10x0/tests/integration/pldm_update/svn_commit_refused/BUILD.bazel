@@ -1,0 +1,24 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# The agent sends UpdateSecurityRevision twice, as it does when the answer
+# to the first request is lost on the way back.
+#
+# The floor took the SVN on the first request and the window closed with
+# it, so the second has nothing outstanding. The state machine drops the
+# event, the RoT answers RejectSvnCommit, and the device reports
+# UPDATE_SECURITY_REVISION_NOT_PERMITTED.
+
+load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
+load("//target/ast10x0/tests/integration/pldm_update:apps.bzl", "APPS", "FLASH", "SYSTEM_CONFIG", "TARGET_DEPS", "TARGET_SRC")
+
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/pldm_update/svn_commit_refused:svn_commit_refused_qemu_test
+qemu_scenario(
+    name = "svn_commit_refused_qemu",
+    apps = APPS,
+    cfgs = ["svn_commit_refused"],
+    flash = FLASH,
+    system_config = SYSTEM_CONFIG,
+    target_deps = TARGET_DEPS,
+    target_src = TARGET_SRC,
+)

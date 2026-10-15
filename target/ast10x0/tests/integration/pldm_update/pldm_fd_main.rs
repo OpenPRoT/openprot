@@ -84,6 +84,9 @@ const ACTIVE_IMAGE_SET_VERSION: &str = "openprot-qemu-v0.9";
 /// log, not here with a bare error.
 const IDLE_TIMEOUT_MILLIS: u32 = 30_000;
 
+/// Whether the agent commits the security revision after the update.
+const AGENT_COMMITS_SVN: bool = cfg!(svn_commit) || cfg!(svn_commit_refused);
+
 /// How long a request the device itself makes may take to be answered.
 const REQUESTER_TIMEOUT_MILLIS: u32 = 5_000;
 
@@ -197,6 +200,8 @@ struct QemuFdOps {
     reject_reason: Cell<Option<RejectReason>>,
     /// Set when the RoT lets the security revision commit go through.
     svn_committed: Cell<bool>,
+    /// Set when the RoT turns a security revision commit down.
+    svn_refused: Cell<bool>,
     /// Chunks requested vs. received. Off by one when a transfer aborts:
     /// the device asked for one more chunk than it got.
     chunks_requested: Cell<u32>,
@@ -232,6 +237,7 @@ impl QemuFdOps {
             cancel_acked: Cell::new(false),
             reject_reason: Cell::new(None),
             svn_committed: Cell::new(false),
+            svn_refused: Cell::new(false),
             chunks_requested: Cell::new(0),
             chunks_received: Cell::new(0),
             verified: Cell::new(false),
@@ -251,6 +257,17 @@ impl QemuFdOps {
     /// waits, so serving here costs nothing: the RoT's `QueryStatus` is
     /// answered from the same loop that is waiting for its command.
     fn await_decision(&self, step: Awaiting) -> Decision {
+        let decision = self.await_answer(step);
+        if decision == Decision::Reject {
+            self.refused.set(true);
+        }
+        decision
+    }
+
+    /// The decision alone, without setting `refused`: a refused security
+    /// revision commit is not a refused update, the image is installed
+    /// either way.
+    fn await_answer(&self, step: Awaiting) -> Decision {
         if !self.serve(step, |ops| ops.decision.get().is_some()) {
             // No answer. Treat it as a refusal so the update stops, but
             // record that the channel broke rather than that the RoT said
@@ -259,11 +276,7 @@ impl QemuFdOps {
             return Decision::Reject;
         }
 
-        let decision = self.decision.get().unwrap_or(Decision::Reject);
-        if decision == Decision::Reject {
-            self.refused.set(true);
-        }
-        decision
+        self.decision.get().unwrap_or(Decision::Reject)
     }
 
     /// Tells the RoT a phase failed, and waits only long enough for it to
@@ -433,7 +446,7 @@ impl FdIpcHandler for OrchGate<'_> {
     }
 
     fn reject_svn_commit(&mut self, _reason: RejectReason) -> Result<(), ResponseCode> {
-        self.not_reached()
+        self.answer(Awaiting::SvnCommit, Decision::Reject)
     }
 }
 
@@ -677,8 +690,11 @@ impl FdOps for QemuFdOps {
         _component: &SecurityRevisionComponent,
         _fw_params: &FirmwareParameters,
     ) -> Result<SecurityRevisionResult, FdOpsError> {
-        if self.await_decision(Awaiting::SvnCommit) == Decision::Reject {
-            pw_log::error!("FD: the RoT refused the security revision commit");
+        if self.await_answer(Awaiting::SvnCommit) == Decision::Reject {
+            // Info, not error: in `svn_commit_refused` this refusal is
+            // what the run passes on.
+            pw_log::info!("FD: the RoT refused the security revision commit");
+            self.svn_refused.set(true);
             return Ok(SecurityRevisionResult::NotPermitted);
         }
         self.svn_committed.set(true);
@@ -786,10 +802,10 @@ fn entry() {
 
     // `run_terminus` returns when the device leaves update mode, which the
     // activation does. UpdateSecurityRevision is an idle-mode command, so
-    // serving it means going back in and waiting there. The second call
-    // ends on the idle timeout, which is the only way out of a loop that
-    // no longer has an update to finish.
-    if cfg!(svn_commit) {
+    // the device calls `run_terminus` a second time to serve it. That call
+    // takes however many UpdateSecurityRevision requests the agent sends,
+    // and ends on the idle timeout.
+    if AGENT_COMMITS_SVN {
         pw_log::info!("FD: idle, waiting for the agent to commit the revision");
         let _ = fd.run_terminus(
             UA_EID,
@@ -834,7 +850,8 @@ fn entry() {
     cancel_mid_transfer,
     offer_before_supervising,
     retry_chunk,
-    svn_commit
+    svn_commit,
+    svn_commit_refused
 )))]
 fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
     if completed {
@@ -881,6 +898,26 @@ fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
         return false;
     }
     pw_log::info!("FD: the image was activated and its security revision committed");
+    true
+}
+
+/// The agent sent the request twice, as after a lost answer. The first
+/// must be granted and the second refused: the floor already took the SVN.
+#[cfg(svn_commit_refused)]
+fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
+    if !fd_ops.svn_committed.get() {
+        pw_log::error!("FD: the first security revision commit was not granted");
+        return false;
+    }
+    if !fd_ops.svn_refused.get() {
+        pw_log::error!("FD: the second security revision commit was not refused");
+        return false;
+    }
+    if !completed {
+        pw_log::error!("FD: the revision was committed and the update was not");
+        return false;
+    }
+    pw_log::info!("FD: the second commit of the same revision was refused");
     true
 }
 
