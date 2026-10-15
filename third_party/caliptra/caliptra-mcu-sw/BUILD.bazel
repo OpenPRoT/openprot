@@ -298,6 +298,8 @@ rust_binary(
         "@rust_caliptra_crates_host//:anyhow",
         "@rust_caliptra_crates_host//:caliptra-auth-man-types",
         "@rust_caliptra_crates_host//:caliptra-image-types",
+        "@rust_caliptra_crates_host//:caliptra-mcu-config-emulator",
+        "@rust_caliptra_crates_host//:caliptra-mcu-config-fpga",
         "@rust_caliptra_crates_host//:caliptra-mcu-firmware-bundler",
         "@rust_caliptra_crates_host//:clap",
     ],
@@ -342,6 +344,7 @@ rust_binary(
     edition = "2021",
     deps = [
         "@rust_caliptra_crates_host//:caliptra-mcu-config-emulator",
+        "@rust_caliptra_crates_host//:caliptra-mcu-config-fpga",
         "@rust_caliptra_crates_host//:subst",
     ],
 )
@@ -349,8 +352,46 @@ rust_binary(
 caliptra_linker_script(
     name = "emulator_rom_layout",
     out = "emulator-rom-layout.ld",
+    args = ["emulator"],
     generator = ":generate_rom_ld",
 )
+
+caliptra_linker_script(
+    name = "fpga_rom_layout",
+    out = "fpga-rom-layout.ld",
+    args = ["fpga"],
+    generator = ":generate_rom_ld",
+)
+
+_MCU_ROM_RUSTC_FLAGS = [
+    "-A",
+    "dead_code",
+    "--cap-lints=allow",
+    "--cfg",
+    'target_arch="riscv32"',
+    "-C",
+    "panic=abort",
+    "-C",
+    "opt-level=z",
+    "-C",
+    "codegen-units=1",
+    "-C",
+    "lto=fat",
+    "-C",
+    "embed-bitcode=yes",
+    "-C",
+    "target-feature=+relax,+zba,+zbb,+zbc,+zbs",
+    "-C",
+    "force-frame-pointers=no",
+    "-C",
+    "relocation-model=static",
+    "-C",
+    "symbol-mangling-version=v0",
+    "-C",
+    "link-arg=-Wl,-nmagic",
+    "-C",
+    "link-arg=-Wl,--icf=all",
+]
 
 # NOTE: This target requires the caliptra RISC-V platform transition to build.
 # Build via //target/veer/tooling:mcu_rom_bin_transitioned instead of directly.
@@ -360,36 +401,9 @@ rust_binary(
     compile_data = [":emulator-rom-layout.ld"],
     crate_root = "@caliptra_mcu_sw//:platforms/emulator/rom/src/main.rs",
     edition = "2021",
-    rustc_flags = [
-        "-A",
-        "dead_code",
+    rustc_flags = _MCU_ROM_RUSTC_FLAGS + [
         "-C",
         "link-arg=-T$(location :emulator-rom-layout.ld)",
-        "--cap-lints=allow",
-        "--cfg",
-        'target_arch="riscv32"',
-        "-C",
-        "panic=abort",
-        "-C",
-        "opt-level=z",
-        "-C",
-        "codegen-units=1",
-        "-C",
-        "lto=fat",
-        "-C",
-        "embed-bitcode=yes",
-        "-C",
-        "target-feature=+relax,+zba,+zbb,+zbc,+zbs",
-        "-C",
-        "force-frame-pointers=no",
-        "-C",
-        "relocation-model=static",
-        "-C",
-        "symbol-mangling-version=v0",
-        "-C",
-        "link-arg=-Wl,-nmagic",
-        "-C",
-        "link-arg=-Wl,--icf=all",
     ],
     tags = ["manual"],
     deps = [
@@ -414,12 +428,50 @@ rust_binary(
     ],
 )
 
+# FPGA MCU ROM (upstream platforms/fpga/rom), linked against FPGA_MEMORY_MAP.
+# Same transition requirement as :mcu_rom.
+rust_binary(
+    name = "mcu_rom_fpga",
+    srcs = ["@caliptra_mcu_sw//:all_files"],
+    compile_data = [":fpga-rom-layout.ld"],
+    crate_root = "@caliptra_mcu_sw//:platforms/fpga/rom/src/main.rs",
+    edition = "2021",
+    rustc_flags = _MCU_ROM_RUSTC_FLAGS + [
+        "-C",
+        "link-arg=-T$(location :fpga-rom-layout.ld)",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":mcu_rom_common",
+        ":romtime",
+        "//third_party/caliptra:crate_caliptra-mcu-registers-generated",
+        "//third_party/caliptra:crate_tock-registers",
+        "@rust_caliptra_crates//:caliptra-mcu-config",
+        "@rust_caliptra_crates//:caliptra-mcu-config-fpga",
+        "@rust_caliptra_crates//:riscv-csr",
+        "@rust_caliptra_crates//:rv32i",
+    ],
+)
+
+# Selects the MCU ROM for //third_party/caliptra:platform.
+alias(
+    name = "mcu_rom_for_platform",
+    actual = select({
+        "//third_party/caliptra:platform_fpga": ":mcu_rom_fpga",
+        "//conditions:default": ":mcu_rom",
+    }),
+    tags = ["manual"],
+)
+
 caliptra_objcopy(
     name = "mcu_rom_bin",
-    src = ":mcu_rom",
+    src = ":mcu_rom_for_platform",
     out = "mcu_rom.bin",
-    # Must match `EMULATOR_MEMORY_MAP.rom_size` in `caliptra_mcu_config_emulator`.
-    rom_size = 65536,
+    # Must match `FPGA_MEMORY_MAP.rom_size` / `EMULATOR_MEMORY_MAP.rom_size`.
+    rom_size = select({
+        "//third_party/caliptra:platform_fpga": "131072",
+        "//conditions:default": "65536",
+    }),
     tags = [
         "manual",
         "no-sandbox",

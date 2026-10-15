@@ -48,6 +48,7 @@ pw_py_importable_runfile(
 mcu_rom_wrapper(
     name = "mcu_rom_bin_transitioned",
     target = "//third_party/caliptra/caliptra-mcu-sw:mcu_rom_bin",
+    visibility = ["//target/veer:__subpackages__"],
 )
 
 pw_py_importable_runfile(
