@@ -8,7 +8,7 @@ The runner greps one pass/fail sentinel per run, so one scenario per image
 is what lets a failure name itself.
 
 Six of the fourteen are the thing working. Seven are the thing failing,
-and they pass when the failure is caught. The fourteenth is the agent
+and they pass when the failure is caught. The last is the agent
 withdrawing the update, which is neither: nothing failed and nothing was
 installed. A scenario that only ever passes proves nothing: the first
 version of the boot scenario passed with the device wedged, because it
@@ -53,7 +53,17 @@ One scenario at a time, with the console:
     bazel test --config=virt_ast10x0 --test_output=all \
         //target/ast10x0/tests/integration/pldm_update/retry_chunk:retry_chunk_qemu_test
 
-The negatives, same shape:
+    bazel test --config=virt_ast10x0 --test_output=all \
+        //target/ast10x0/tests/integration/mock_downstream_device/self_trial:self_trial_qemu_test
+
+    bazel test --config=virt_ast10x0 --test_output=all \
+        //target/ast10x0/tests/integration/full_update:full_update_qemu_test
+
+    bazel test --config=virt_ast10x0 --test_output=all \
+        //target/ast10x0/tests/integration/pldm_update/svn_commit:svn_commit_qemu_test
+
+The rest, same shape. The seven negatives, and `cancel_mid_transfer`,
+which is neither:
 
     //target/ast10x0/tests/integration/mock_downstream_device/device_hangs:device_hangs_qemu_test
     //target/ast10x0/tests/integration/pldm_update/corrupt_image:corrupt_image_qemu_test
@@ -61,7 +71,6 @@ The negatives, same shape:
     //target/ast10x0/tests/integration/pldm_update/transfer_error:transfer_error_qemu_test
     //target/ast10x0/tests/integration/pldm_update/cancel_mid_transfer:cancel_mid_transfer_qemu_test
     //target/ast10x0/tests/integration/pldm_update/offer_before_supervising:offer_before_supervising_qemu_test
-    //target/ast10x0/tests/integration/pldm_update/svn_commit:svn_commit_qemu_test
     //target/ast10x0/tests/integration/full_update/device_hangs:device_hangs_qemu_test
     //target/ast10x0/tests/integration/full_update/device_stays_down:device_stays_down_qemu_test
 
