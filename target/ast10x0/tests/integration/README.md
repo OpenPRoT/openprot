@@ -29,6 +29,7 @@ like the proof.
 | --- | --- | --- |
 | `mock_downstream_device` | the device boots | the walk completes |
 | `mock_downstream_device/device_hangs` | the device never reports | the platform locks |
+| `mock_downstream_device/self_update` | the eRoT is offered an update of its own image | the candidate is staged and the trial is marked pending |
 | `mock_downstream_device/self_trial` | the eRoT boots the trial image of its own update | the chain coming up confirms the session |
 | `mock_downstream_device/measured` | the verifier reports a digest for the device's image | the sink is handed exactly one measurement, for that device |
 | `mock_downstream_device/recovery` | the RoT refuses the device's image | the restore runs and the re-walk boots the device |
@@ -59,6 +60,9 @@ One scenario at a time, with the console:
 
     bazel test --config=virt_ast10x0 --test_output=all \
         //target/ast10x0/tests/integration/mock_downstream_device:mock_downstream_device_qemu_test
+
+    bazel test --config=virt_ast10x0 --test_output=all \
+        //target/ast10x0/tests/integration/mock_downstream_device/self_update:self_update_qemu_test
 
     bazel test --config=virt_ast10x0 --test_output=all \
         //target/ast10x0/tests/integration/pldm_update:pldm_update_qemu_test
