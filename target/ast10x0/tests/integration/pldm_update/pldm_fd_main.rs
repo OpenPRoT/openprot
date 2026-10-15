@@ -20,6 +20,7 @@
 use core::cell::{Cell, RefCell};
 
 use board_clock::now_millis;
+use board_fd_ops::{fd_ops_download_progress, fd_ops_identity, fd_ops_nothing_pending};
 use flash_backend::{Backend, NoWaitBlocking};
 use hal_flash::{BlockingFlash, Flash, FlashAddress};
 use openprot_mctp_client_ipc::IpcMctpClient;
@@ -442,55 +443,9 @@ impl FdIpcHandler for OrchGate<'_> {
 }
 
 impl FdOps for QemuFdOps {
-    fn get_device_identifiers(
-        &self,
-        device_identifiers: &mut [Descriptor],
-    ) -> Result<usize, FdOpsError> {
-        let uuid = Descriptor::new(DescriptorType::Uuid, &DEVICE_UUID)
-            .map_err(|_| FdOpsError::DeviceIdentifiersError)?;
-        *device_identifiers
-            .first_mut()
-            .ok_or(FdOpsError::DeviceIdentifiersError)? = uuid;
-        Ok(1)
-    }
+    fd_ops_identity!();
 
-    fn get_firmware_parms(
-        &self,
-        firmware_params: &mut FirmwareParameters,
-    ) -> Result<(), FdOpsError> {
-        let comp_version = PldmFirmwareString::new("ASCII", ACTIVE_COMP_VERSION)
-            .map_err(|_| FdOpsError::FirmwareParametersError)?;
-        let image_set_version = PldmFirmwareString::new("ASCII", ACTIVE_IMAGE_SET_VERSION)
-            .map_err(|_| FdOpsError::FirmwareParametersError)?;
-
-        // Self-contained: the device applies the image itself, so the
-        // agent's ActivateFirmware is all that is needed to finish.
-        let mut activation = ComponentActivationMethods(0);
-        activation.set_self_contained(true);
-
-        let component = ComponentParameterEntry::new(
-            ComponentClassification::Firmware,
-            COMP_IDENTIFIER,
-            0,
-            &PldmFirmwareVersion::new(0, &comp_version, None),
-            &PldmFirmwareVersion::default(),
-            activation,
-            FirmwareDeviceCapability(0),
-        );
-
-        *firmware_params = FirmwareParameters::new(
-            FirmwareDeviceCapability(0),
-            1,
-            &image_set_version,
-            &PldmFirmwareString::default(),
-            &[component],
-        );
-        Ok(())
-    }
-
-    fn get_xfer_size(&self, ua_transfer_size: usize) -> Result<usize, FdOpsError> {
-        Ok(ua_transfer_size.min(MAX_TRANSFER_SIZE))
-    }
+    fd_ops_download_progress!();
 
     fn handle_component(
         &self,
@@ -581,22 +536,6 @@ impl FdOps for QemuFdOps {
         Ok(TransferResult::TransferSuccess)
     }
 
-    fn is_download_complete(&self, _component: &FirmwareComponent) -> bool {
-        self.bytes_received.get() >= IMAGE_SIZE
-    }
-
-    fn query_download_progress(
-        &self,
-        _component: &FirmwareComponent,
-        progress_percent: &mut ProgressPercent,
-    ) -> Result<(), FdOpsError> {
-        let pct = (self.bytes_received.get() * 100 / IMAGE_SIZE) as u8;
-        progress_percent
-            .set_value(pct.min(100))
-            .map_err(|_| FdOpsError::FwDownloadError)?;
-        Ok(())
-    }
-
     fn verify(
         &self,
         _component: &FirmwareComponent,
@@ -678,31 +617,7 @@ impl FdOps for QemuFdOps {
         Ok(PldmBaseCompletionCode::Success as u8)
     }
 
-    /// Nothing in this scenario has a pending image to activate.
-    fn handle_pending_component(
-        &self,
-        _component: &PendingComponent,
-        _fw_params: &FirmwareParameters,
-    ) -> Result<PendingComponentResult, FdOpsError> {
-        Ok(PendingComponentResult::NotPermitted)
-    }
-
-    /// The new image goes to staging, not over the running one, so the
-    /// component keeps working whatever happens to the update.
-    fn get_non_functional_component_info(
-        &self,
-    ) -> Result<
-        (
-            NonFunctioningComponentIndication,
-            NonFunctioningComponentBitmap,
-        ),
-        FdOpsError,
-    > {
-        Ok((
-            NonFunctioningComponentIndication::ComponentsFunctioning,
-            NonFunctioningComponentBitmap::new(0),
-        ))
-    }
+    fd_ops_nothing_pending!();
 
     /// The agent asks the device to commit the security revision of what
     /// it is running. The RoT owns that decision, so this waits for it the
