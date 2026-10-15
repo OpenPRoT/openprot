@@ -5,9 +5,8 @@
 
 use crate::{Measurement, Svn};
 
-/// The facts an authenticated image carries, separate from the pass or
-/// fail itself: a verdict says whether to act, this says what a later
-/// decision acts on.
+/// What a verifier read out of an image it authenticated, apart from the
+/// pass or fail itself.
 ///
 /// One type for both passes. The boot walk checks an image at rest in one
 /// call and the update path checks a candidate in bounded steps, but what
@@ -17,12 +16,29 @@ use crate::{Measurement, Svn};
 /// `Copy` and lifetime-free, like every capability vocabulary type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AuthenticatedImage {
-    /// The image's manifest SVN. The implementor reports what the
-    /// manifest the authenticated pass covered holds, so a caller never
-    /// has to read the image for it, and must not: any other reading is
-    /// of bytes no signature check vouched for. It is the one value the
-    /// anti-rollback commit may trust.
-    pub svn: Svn,
+    /// The image's manifest SVN, or `None` from a verifier that
+    /// authenticates without reading a manifest.
+    ///
+    /// The authenticated pass is the only reading of the manifest a
+    /// caller may act on, so an implementor that reads one reports it
+    /// here and the caller never goes back to the image. The alternative
+    /// is `None` rather than a stand-in value, because the anti-rollback
+    /// commit takes this number and a stand-in would move the floor to
+    /// something no signature check covered.
+    ///
+    /// `None` is an ordinary answer, not a fault: DSP0267's component
+    /// comparison stamp is optional and a plain signed image has no
+    /// manifest at all. A commit behind one holds the floor where it is
+    /// and reports that, rather than failing.
+    ///
+    /// `None` and `Some(Svn(0))` are different answers. `None` means the
+    /// verifier read no manifest, so there is no version to speak of.
+    /// `Some(Svn(0))` is a version it read, including the zero DSP0267
+    /// uses for an unused comparison stamp, and the commit takes it; the
+    /// floor is monotonic, so advancing to zero is a no-op. An
+    /// implementor that would rather a zero stamp held the floor than
+    /// committed it reports `None` for that image.
+    pub svn: Option<Svn>,
     /// SHA-256 digest of the image, or `None` when no hash engine is
     /// wired up. Optional because measuring is a separate capability a
     /// board may not have, while an SVN comes from the manifest the

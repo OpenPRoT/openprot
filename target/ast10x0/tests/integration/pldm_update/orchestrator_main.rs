@@ -79,11 +79,6 @@ const TARGET: ComponentId = ComponentId::new(1);
 /// counts the device table below, so the two cannot disagree.
 const N: usize = DEVICES.len();
 const E: usize = 2 * N + 2;
-/// The SVN the pattern verifier reports for a candidate it accepts. This
-/// scenario has no manifest to read, so the value only has to be
-/// recognisable.
-const CANDIDATE_SVN: u32 = 6;
-
 const MAX_RETRY: u8 = 3;
 
 /// Size of the candidate the update agent hands over. Must match the
@@ -197,9 +192,9 @@ impl Verifier for StubVerifier {
         _image: &mut impl ImageSource,
     ) -> Result<Verdict, BoardFault> {
         Ok(Verdict::Authenticated(AuthenticatedImage {
-            svn: Svn(1),
-            // No hash engine on a test board: the stub verifier reads
-            // nothing, so there is nothing to measure.
+            // The stub verifier reads nothing: no manifest to take an SVN
+            // from, and no hash engine to measure with.
+            svn: None,
             measurement: None,
         }))
     }
@@ -342,8 +337,9 @@ impl VerifySession for PatternSession {
         PollOutcome::Authenticated {
             verifier: PatternVerifier,
             image: AuthenticatedImage {
-                svn: Svn(CANDIDATE_SVN),
-                // The pattern check hashes nothing.
+                // The pattern check reads a synthetic image: no manifest
+                // and no digest.
+                svn: None,
                 measurement: None,
             },
         }

@@ -170,7 +170,7 @@ mod tests {
                     PollOutcome::Authenticated {
                         verifier: ChunkedVerifier,
                         image: AuthenticatedImage {
-                            svn: FIXTURE_SVN,
+                            svn: Some(FIXTURE_SVN),
                             // No hash engine in a fixture that only looks
                             // at the first byte.
                             measurement: None,
@@ -272,7 +272,7 @@ mod tests {
             match session.poll(&payload) {
                 PollOutcome::Processing { session: s, .. } => session = s,
                 PollOutcome::Authenticated { image, .. } => {
-                    assert_eq!(image.svn, FIXTURE_SVN);
+                    assert_eq!(image.svn, Some(FIXTURE_SVN));
                     return;
                 }
                 PollOutcome::Rejected(_) => panic!("expected authenticated, got rejected"),
