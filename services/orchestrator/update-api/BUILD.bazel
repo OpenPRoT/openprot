@@ -22,3 +22,12 @@ rust_test(
     name = "orchestrator_update_api_test",
     crate = ":orchestrator_update_api",
 )
+
+# The seam driven from outside the crate, the way an update source sees it.
+rust_test(
+    name = "intake_host_test",
+    srcs = ["tests/intake_host.rs"],
+    crate_root = "tests/intake_host.rs",
+    edition = "2024",
+    deps = [":orchestrator_update_api"],
+)
