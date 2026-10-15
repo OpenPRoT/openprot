@@ -344,6 +344,9 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// error and the SM latches `Locked`. Past `BootConfirmed` the SM
     /// has no job to fail, so the two postures differ.
     pub fn commit_svn_floor(&mut self, id: ComponentId) -> Result<(), DriverError> {
+        if self.is_self(id) {
+            return self.commit_self_floor();
+        }
         let idx = id.get() as usize;
         let SvnFloorBinding::Erot(_) = self
             .board
@@ -450,6 +453,32 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             progress_since_millis: None,
         });
         true
+    }
+
+    /// Advances the eRoT's own floor to the SVN its confirmed trial
+    /// recorded, then closes the session.
+    ///
+    /// The eRoT's floor is not in `components[0].svn_floor`: it lives in
+    /// the self-image, next to the session that says which SVN proved
+    /// itself. Same effect, same event, different place to read.
+    ///
+    /// A request with no confirmed session behind it is refused rather
+    /// than silently ignored, the same posture the managed path takes
+    /// with no verdict recorded.
+    fn commit_self_floor(&mut self) -> Result<(), DriverError> {
+        let self_image = self
+            .board
+            .self_image
+            .as_mut()
+            .ok_or(DriverError::NoSelfImage)?;
+        commit_self_svn_floor(&mut self_image.session, &mut self_image.floor).map_err(|err| {
+            match err {
+                CommitFloorError::Floor(_) => DriverError::SvnFloorFault,
+                CommitFloorError::Session(_) => DriverError::SelfUpdateFault,
+                // Nothing proved itself, so there is no SVN to move to.
+                CommitFloorError::NotConfirmed(_) => DriverError::NoVerifiedImage,
+            }
+        })
     }
 
     /// Whether `id` is the eRoT, which is to say this platform updating

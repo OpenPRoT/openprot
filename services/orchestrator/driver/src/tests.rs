@@ -4145,3 +4145,87 @@ fn a_self_update_may_start_over_a_trial_that_fell_back() {
 
     assert_eq!(driver.submit_update(C0, CANDIDATE_LEN), Ok(()));
 }
+
+/// The eRoT's own floor, as [`self_floor`] reads it for the one-component
+/// boards.
+fn erot_floor(driver: &PlatformDriver<MockBoard, 2>) -> Svn {
+    driver
+        .board()
+        .self_image
+        .as_ref()
+        .expect("the test wired a self-image")
+        .floor
+        .floor()
+        .expect("floor unreadable")
+}
+
+/// The eRoT's own session state.
+fn erot_session(driver: &PlatformDriver<MockBoard, 2>) -> SelfUpdateState {
+    driver
+        .board()
+        .self_image
+        .as_ref()
+        .expect("the test wired a self-image")
+        .session
+        .state()
+        .expect("session unreadable")
+}
+
+// The agent asks for the eRoT's floor the way it asks for any other
+// component's: the same event, the same effect. The driver reads the
+// eRoT's floor out of the self-image rather than the component wiring,
+// because that is where it lives, next to the session that says which SVN
+// proved itself.
+#[test]
+fn the_agents_ask_advances_the_erots_own_floor() {
+    let mut orch = erot_orchestrator();
+    let mut driver = erot_driver(trial_session(SelfUpdateState::TrialPending {
+        svn: Svn(SELF_TRIAL_SVN),
+    }));
+
+    orch.dispatch(&mut driver, Event::SelfTrialBooted);
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    orch.dispatch(&mut driver, Event::Booted(ComponentId::new(1)));
+    assert_eq!(orch.state(), State::Ready);
+    assert_ne!(
+        erot_floor(&driver),
+        Svn(SELF_TRIAL_SVN),
+        "confirming the trial does not move the floor"
+    );
+
+    orch.dispatch(&mut driver, Event::SvnCommitRequest(C0));
+
+    assert_eq!(
+        erot_floor(&driver),
+        Svn(SELF_TRIAL_SVN),
+        "the floor took the SVN the confirmed trial recorded"
+    );
+    assert_eq!(
+        erot_session(&driver),
+        SelfUpdateState::Idle,
+        "and the session closed behind it"
+    );
+}
+
+// An ask with no confirmed self-update behind it. Nothing proved itself,
+// so there is no SVN to move to and the effect fails rather than quietly
+// succeeding.
+#[test]
+fn an_ask_with_no_confirmed_self_update_is_refused() {
+    use openprot_orchestrator_sm::EffectError;
+
+    let mut driver = erot_driver(MockSelfUpdate::idle());
+    let before = erot_floor(&driver);
+
+    assert_eq!(
+        driver.execute(Effect::CommitSvnFloor(C0)),
+        Err(EffectError),
+        "no trial has been confirmed"
+    );
+    assert_eq!(erot_floor(&driver), before, "and the floor did not move");
+}
+
+/// The SVN the self-trial fixtures record. Distinct from [`MOCK_SVN`] and
+/// [`CANDIDATE_SVN`], so a test reading the floor back can tell which
+/// reading moved it.
+const SELF_TRIAL_SVN: u32 = 7;

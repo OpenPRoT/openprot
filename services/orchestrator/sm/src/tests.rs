@@ -35,6 +35,23 @@ fn passive_required(ids: &[ComponentId]) -> heapless::Vec<(ComponentId, Componen
     )
 }
 
+/// A chain with the eRoT at position 0, where `chain_of` puts it, and the
+/// given ids passive behind it. The self-update paths key on the kind, so
+/// a chain of plain passive entries never reaches them.
+fn erot_then_passive(
+    ids: &[ComponentId],
+) -> heapless::Vec<(ComponentId, ComponentAttrs), CAPACITY> {
+    let mut entries = std::vec::Vec::new();
+    let mut erot = ComponentAttrs::passive_required();
+    erot.kind = ComponentKind::Erot;
+    entries.push((C0, erot));
+    entries.extend(
+        ids.iter()
+            .map(|&id| (id, ComponentAttrs::passive_required())),
+    );
+    chain(&entries)
+}
+
 struct Recorder {
     recorded: Vec<Effect>,
 }
@@ -3584,4 +3601,52 @@ fn gating_a_component_voids_its_outstanding_advance() {
     assert_eq!(state, State::Ready);
     assert!(effects.contains(&Effect::ReportIsolated(C0)));
     assert!(!effects.contains(&Effect::CommitSvnFloor(C0)));
+}
+
+/// The update agent asks for the eRoT's floor with UpdateSecurityRevision,
+/// the same ask it makes for any other component. Confirming the trial is
+/// what makes the advance legal, so the ask after it is answered.
+#[test]
+fn the_agents_ask_after_a_confirmed_self_trial_commits_the_erots_floor() {
+    let (effects, state) = drive(
+        erot_then_passive(&[C1]),
+        &[
+            Event::SelfTrialBooted,
+            BOOT,
+            Event::VerificationPassed(C1),
+            Event::Booted(C1),
+            Event::SvnCommitRequest(C0),
+        ],
+    );
+
+    assert_eq!(state, State::Ready);
+    assert!(
+        effects.contains(&Effect::ConfirmSelfTrial),
+        "the trial was confirmed first: {effects:?}"
+    );
+    assert!(
+        effects.contains(&Effect::CommitSvnFloor(C0)),
+        "the eRoT's floor was committed: {effects:?}"
+    );
+}
+
+/// The same ask with no trial behind it. Nothing confirmed anything, so
+/// there is no advance outstanding and the request is dropped: answering
+/// it would move the floor for an image that never proved itself.
+#[test]
+fn the_agents_ask_without_a_self_trial_is_dropped() {
+    let (effects, _) = drive(
+        erot_then_passive(&[C1]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C1),
+            Event::Booted(C1),
+            Event::SvnCommitRequest(C0),
+        ],
+    );
+
+    assert!(
+        !effects.contains(&Effect::CommitSvnFloor(C0)),
+        "nothing was outstanding: {effects:?}"
+    );
 }
