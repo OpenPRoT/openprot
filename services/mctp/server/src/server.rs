@@ -252,7 +252,14 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
     /// binding. The packet should be a raw MCTP packet without transport
     /// headers (the transport binding strips those).
     pub fn inbound(&mut self, pkt: &[u8]) -> Result<(), MctpError> {
-        self.stack.inbound(pkt).map_err(mctp_error_to_server_error)
+        // The router reports the cookie of the handle a matched message was
+        // queued for. This server polls every outstanding handle by cookie in
+        // `update`, so it reaches that message there and drops the cookie
+        // here.
+        self.stack
+            .inbound(pkt)
+            .map(|_matched_cookie| ())
+            .map_err(mctp_error_to_server_error)
     }
 }
 

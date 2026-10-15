@@ -44,8 +44,13 @@ impl<C: I2c<u8>> I2cSender<C> {
 }
 
 impl<C: I2c<u8>> mctp_lib::Sender for I2cSender<C> {
+    // This sender ignores the destination EID and writes every packet to
+    // `remote_addr`, the I2C address of the single peer, fixed at construction
+    // time. The body's TODO tracks the neighbor table that maps an EID to an
+    // I2C address.
     fn send_vectored(
         &mut self,
+        _eid: mctp::Eid,
         mut fragmenter: mctp_lib::fragment::Fragmenter,
         payload: &[&[u8]],
     ) -> Result<mctp::Tag> {
