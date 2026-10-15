@@ -93,6 +93,59 @@ abort would do is untested.
 - The spare slot re-sync after a commit, and the floor advance held until
   the spare has the image.
 
+## Events no scenario can reach
+
+Checked by grepping the scenario apps for each `Event`, then asking what
+the wired board can produce. An app naming no event is not enough: the
+driver makes `BootFailed` and `RecoveryUnavailable` on its own, and
+`device_hangs` reaches both. `Timeout` and `CommitTimeout` come from
+`server/src/runtime.rs`, which no scenario runs.
+
+- `VerificationFailed`. All three scenarios wire the chain walk to
+  `StubVerifier` in `services/orchestrator/test/stubs.rs`, which returns
+  `Authenticated` without opening the image, so no walk can fail. The
+  update candidate has a different verifier, `PatternVerifier`, which can
+  fault, but that ends as `UpdateRejected`.
+- `CorruptionDetected`. Nothing reports runtime corruption, so `Ready` to
+  `Recovering` is never taken and an `Isolable` component is never gated.
+- `Restored`. Every board wires `Recovery = ()`, which answers
+  `SourceExhausted` on the first attempt, so recovery always exhausts and
+  never succeeds. The retry cap and `max_retry` have no scenario.
+- `AttestationChallenge`. No scenario issues one.
+- `CommitTimeout`. The scenarios run their own event loop rather than
+  `server/src/runtime.rs`, and nothing else arms the watchdog, so
+  commit-or-lock cannot fire here.
+- `EffectFailed`. The effects a scenario runs either cannot fail or are
+  never made to fail: `StubVerifier` never opens an image, and
+  `Recovery = ()` returns a verdict rather than an error. No scenario
+  makes an actuation fault, so the lockdown that follows one is
+  untested.
+
+## Edge cases with no scenario
+
+- Two components in flight. Every scenario supervises one managed
+  device. A sibling's recovery during another component's commit window,
+  and the id scoping that decides what it voids, are covered only by
+  unit tests.
+- A device that reports ready twice with no reset in between, or reports
+  for a component that was never released.
+- An update aimed at the eRoT itself. No scenario sends one.
+
+## Resets in the middle of a flow
+
+Each scenario boots once, so anything that needs a reset mid-flow has no
+scenario at all. Three of them matter:
+
+- Between `BootConfirmed` and the agent's request. The outstanding
+  advance lives in RAM, so a reset drops it and the later
+  `SvnCommitRequest` finds nothing to move.
+- During a spare-slot re-sync. The claim that a pass is in flight is
+  RAM-only too, so a reset leaves a half-written spare with no durable
+  record that it is dirty. `driver/src/board.rs` records that open
+  question under `Report::SlotResyncFailed`.
+- Between the device taking its SVN and the eRoT writing its mirror. The
+  two floors disagree afterwards and nothing reconciles them.
+
 ## Assertions that are looser than they look
 
 `pldm_update` has no managed device, so its `BootConfirmed` is a
