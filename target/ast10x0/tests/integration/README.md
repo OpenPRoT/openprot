@@ -22,6 +22,8 @@ like the proof.
 | `mock_downstream_device/device_hangs` | the device never reports | the platform locks |
 | `mock_downstream_device/self_trial` | the eRoT boots the trial image of its own update | the chain coming up confirms the session |
 | `mock_downstream_device/measured` | the verifier reports a digest for the device's image | the sink is handed exactly one measurement, for that device |
+| `mock_downstream_device/recovery` | the RoT refuses the device's image | the restore runs and the re-walk boots the device |
+| `mock_downstream_device/recovery_exhausted` | the restored image is refused too | the platform reports the device and locks |
 | `pldm_update` | a clean update | the update commits |
 | `pldm_update/retry_chunk` | the agent answers one data request with a retry | the device asks for that window again and the update completes |
 | `pldm_update/corrupt_image` | one byte of the image is flipped | the device catches it |
@@ -64,9 +66,16 @@ One scenario at a time, with the console:
     bazel test --config=virt_ast10x0 --test_output=all \
         //target/ast10x0/tests/integration/pldm_update/svn_commit:svn_commit_qemu_test
 
+    bazel test --config=virt_ast10x0 --test_output=all \
+        //target/ast10x0/tests/integration/mock_downstream_device/measured:measured_qemu_test
+
+    bazel test --config=virt_ast10x0 --test_output=all \
+        //target/ast10x0/tests/integration/mock_downstream_device/recovery:recovery_qemu_test
+
 The rest, same shape. The negatives, and `cancel_mid_transfer`:
 
     //target/ast10x0/tests/integration/mock_downstream_device/device_hangs:device_hangs_qemu_test
+    //target/ast10x0/tests/integration/mock_downstream_device/recovery_exhausted:recovery_exhausted_qemu_test
     //target/ast10x0/tests/integration/pldm_update/corrupt_image:corrupt_image_qemu_test
     //target/ast10x0/tests/integration/pldm_update/refused_update:refused_update_qemu_test
     //target/ast10x0/tests/integration/pldm_update/transfer_error:transfer_error_qemu_test

@@ -1,0 +1,21 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# The recovery scenario's negative case: the restored image is refused too.
+#
+# Same sources, same system config, one flag. The re-walk rejects what the
+# first restore wrote, and the second finds no source left. The device is
+# required, so the platform reports the component and locks. The run passes
+# when both restore calls ran and the lockdown followed.
+
+load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
+load("//target/ast10x0/tests/integration/mock_downstream_device:apps.bzl", "APPS", "SYSTEM_CONFIG", "TARGET_SRC")
+
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/mock_downstream_device/recovery_exhausted:recovery_exhausted_qemu_test
+qemu_scenario(
+    name = "recovery_exhausted_qemu",
+    apps = APPS,
+    cfgs = ["recovery_exhausted"],
+    system_config = SYSTEM_CONFIG,
+    target_src = TARGET_SRC,
+)

@@ -42,6 +42,8 @@ SCENARIO_CFGS = [
     "measured",
     "svn_commit",
     "svn_commit_refused",
+    "recovery",
+    "recovery_exhausted",
 ]
 
 KERNEL_DEPS = [
