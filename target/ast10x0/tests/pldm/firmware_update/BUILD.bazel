@@ -125,6 +125,7 @@ rust_app(
         "//services/pldm:pldm_service",
         "//target/ast10x0/backend/flash:flash_backend_ast10x0",
         "//target/ast10x0/tests/clock",
+        "//target/ast10x0/tests/fd_ops",
         "//util/error",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
