@@ -1,0 +1,13 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fd_ops",
+    srcs = ["fd_ops.rs"],
+    crate_name = "board_fd_ops",
+    edition = "2024",
+)
