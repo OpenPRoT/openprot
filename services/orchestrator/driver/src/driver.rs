@@ -353,7 +353,12 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// current floor is the capability's documented no-op, so a replayed
     /// commit is harmless.
     ///
-    /// A self-managed component gets neither. It keeps its own floor, and
+    /// An `id` naming the eRoT returns through `commit_self_floor`,
+    /// which reads the floor from the `ErotUpdate` rather than from the
+    /// component wiring. Everything below describes a downstream device.
+    ///
+    /// A self-managed component gets neither the pass nor the advance.
+    /// It keeps its own floor, and
     /// a device that owns its anti-rollback owns its slot metadata too,
     /// the same split `DeviceTrialBoot` draws. Writing into a slot the
     /// eRoT does not control would reach past that seam. This reads slot
@@ -366,11 +371,19 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// fails leaves the floor alone: moving it would put the spare below
     /// the floor, where it will not boot.
     ///
-    /// A floor the pump cannot write is reported, not escalated. The
-    /// same failure on this path, with no re-sync queued, returns an
-    /// error and the SM latches `Locked`. Past `BootConfirmed` the SM
-    /// has no job to fail, so the two postures differ.
+    /// With no re-sync queued, `advance_floor` writes the floor inside
+    /// the `CommitSvnFloor` effect, so a failed write fails the effect
+    /// and the state machine latches `Locked`. With a re-sync queued the
+    /// effect already answered `Ok` and the pump writes the floor later,
+    /// where a failed write has no effect left to fail and
+    /// `Report::SlotResyncFailed` is the channel that remains. The
+    /// update agent is not told: its answer goes out when
+    /// `Effect::CommitSvnFloor` is dispatched, which is before the pump
+    /// runs, so it hears the commit succeeded either way.
     pub fn commit_svn_floor(&mut self, id: ComponentId) -> Result<(), DriverError> {
+        if self.is_self(id) {
+            return self.commit_self_floor();
+        }
         let idx = id.get() as usize;
         let SvnFloorBinding::Erot(_) = self
             .board
@@ -477,6 +490,35 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             progress_since_millis: None,
         });
         true
+    }
+
+    /// Advances the eRoT's own floor to the SVN its confirmed trial
+    /// recorded, then closes the session.
+    ///
+    /// The eRoT's floor is not in `components[0].svn_floor`: it lives in
+    /// the `ErotUpdate`, next to the session that says which SVN the
+    /// trial confirmed. The commit travels `Event::SvnCommitRequest` and
+    /// `Effect::CommitSvnFloor` the way it does for a downstream device;
+    /// only where the driver reads the floor differs.
+    ///
+    /// A request with no confirmed session behind it returns
+    /// `NoVerifiedImage`, the same error `commit_svn_floor` returns for
+    /// a downstream device with no verdict recorded, so the effect fails
+    /// instead of the floor moving for an image no boot confirmed.
+    fn commit_self_floor(&mut self) -> Result<(), DriverError> {
+        let self_update = self
+            .board
+            .self_update
+            .as_mut()
+            .ok_or(DriverError::NoErotUpdate)?;
+        commit_self_svn_floor(&mut self_update.session, &mut self_update.floor).map_err(|err| {
+            match err {
+                CommitFloorError::Floor(_) => DriverError::SvnFloorFault,
+                CommitFloorError::Session(_) => DriverError::SelfUpdateFault,
+                // Nothing confirmed a trial, so there is no SVN to move to.
+                CommitFloorError::NotConfirmed(_) => DriverError::NoVerifiedImage,
+            }
+        })
     }
 
     /// Whether `id` is the eRoT: the platform acting on itself rather

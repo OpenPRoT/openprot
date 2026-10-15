@@ -35,6 +35,30 @@ fn passive_required(ids: &[ComponentId]) -> heapless::Vec<(ComponentId, Componen
     )
 }
 
+/// A chain with the eRoT at position 0, where `chain_of` puts it, and the
+/// given ids passive behind it. `erot_id` finds the eRoT by its
+/// `ComponentKind::Erot`, and a chain of plain passive entries has none,
+/// so the SVN floor advance that `ConfirmSelfTrial` marks outstanding
+/// stays unset and `Effect::CommitSvnFloor` is never emitted.
+///
+/// This chain and `passive_required`'s reach the state machine through
+/// `Chain::try_from`, which checks ids and dependencies but not the kind.
+/// A board builds its table with `chain_of` in a static instead, and its
+/// const assert rejects a table that does not start with the eRoT, so
+/// such a table fails to compile. Every board does it that way, the QEMU
+/// scenarios included.
+fn erot_then_passive(
+    ids: &[ComponentId],
+) -> heapless::Vec<(ComponentId, ComponentAttrs), CAPACITY> {
+    let mut entries = std::vec::Vec::new();
+    entries.push((C0, ComponentAttrs::erot()));
+    entries.extend(
+        ids.iter()
+            .map(|&id| (id, ComponentAttrs::passive_required())),
+    );
+    chain(&entries)
+}
+
 struct Recorder {
     recorded: Vec<Effect>,
 }
@@ -3706,4 +3730,54 @@ fn gating_a_component_voids_its_outstanding_advance() {
     assert_eq!(state, State::Ready);
     assert!(effects.contains(&Effect::ReportIsolated(C0)));
     assert!(!effects.contains(&Effect::CommitSvnFloor(C0)));
+}
+
+/// The update agent requests the eRoT's floor with UpdateSecurityRevision,
+/// the same request it makes for any other component. Confirming the
+/// trial puts the eRoT's id in `awaiting_floor_advance`, and a request
+/// naming that id is answered with `Effect::CommitSvnFloor`.
+#[test]
+fn the_request_after_a_confirmed_self_trial_commits_the_erot_floor() {
+    let (effects, state) = drive(
+        erot_then_passive(&[C1]),
+        &[
+            Event::SelfTrialBooted,
+            BOOT,
+            Event::VerificationPassed(C1),
+            Event::Booted(C1),
+            Event::SvnCommitRequest(C0),
+        ],
+    );
+
+    assert_eq!(state, State::Ready);
+    assert!(
+        effects.contains(&Effect::ConfirmSelfTrial),
+        "the trial was confirmed first: {effects:?}"
+    );
+    assert!(
+        effects.contains(&Effect::CommitSvnFloor(C0)),
+        "the eRoT's floor was committed: {effects:?}"
+    );
+}
+
+/// The same request with no trial behind it. No trial confirmed an SVN,
+/// so there is no SVN floor advance outstanding and the request is
+/// dropped: answering it would move the floor for an image no boot
+/// confirmed.
+#[test]
+fn the_request_without_a_self_trial_is_dropped() {
+    let (effects, _) = drive(
+        erot_then_passive(&[C1]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C1),
+            Event::Booted(C1),
+            Event::SvnCommitRequest(C0),
+        ],
+    );
+
+    assert!(
+        !effects.contains(&Effect::CommitSvnFloor(C0)),
+        "nothing was outstanding: {effects:?}"
+    );
 }
