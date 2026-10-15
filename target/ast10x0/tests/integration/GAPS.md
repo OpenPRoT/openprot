@@ -72,11 +72,13 @@ abort would do is untested.
 - `UpdateSecurityRevision` on the eRoT's own floor. The downstream half
   runs end to end in `pldm_update/svn_commit`: the agent sends 0x22 after
   the activation, the device parks at `SvnCommitPending`, and the loop
-  dispatches `Event::SvnCommitRequest` and answers perform or reject by
-  what the machine emitted. The eRoT's own floor has no equivalent yet.
-  It takes the same path: the eRoT is a firmware device like any other,
-  so the agent offers it an update over PLDM and sends it 0x22
-  afterwards. Nothing serves that side on the eRoT yet, so
+  dispatches `Event::SvnCommitRequest`, then sends PerformSvnCommit if
+  the state machine emitted `Effect::CommitSvnFloor` and RejectSvnCommit
+  if it did not. `svn_commit_refused` runs the reject side, a second
+  request with nothing outstanding. The eRoT's own floor has no
+  equivalent yet. It takes the same path: the eRoT is a firmware device
+  like any other, so the agent offers it an update over PLDM and sends it
+  0x22 afterwards. Nothing serves that side on the eRoT yet, so
   `commit_self_svn_floor` still has no caller outside tests. The other
   update scenarios keep dispatching the event themselves, the way they
   already dispatch `BootConfirmed`: without the 0x22 exchange nothing
