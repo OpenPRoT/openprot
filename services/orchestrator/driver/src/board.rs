@@ -159,6 +159,13 @@ pub enum Report {
     /// and both slots hold it; the floor still names the old SVN, so the
     /// old image could be installed again.
     SvnFloorCommitFailed(ComponentId),
+    /// The component's anti-rollback floor stayed where it was, because
+    /// the image that authenticated carried no SVN to move it to. The
+    /// board binds an eRoT-held floor for this component, so it asked for
+    /// anti-rollback its verifier cannot supply: nothing is wrong with
+    /// the image, and nothing protects against installing an older one
+    /// either.
+    SvnFloorHeld(ComponentId),
 }
 
 /// Where the driver hands its [`Report`]s. What a report becomes, a log

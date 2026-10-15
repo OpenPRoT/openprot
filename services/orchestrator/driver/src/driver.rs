@@ -126,10 +126,10 @@ pub struct PlatformDriver<B: BoardCapabilities, const N: usize> {
     /// terminal verdict. Only watched walks are polled, so a finished or
     /// quiesced walk emits no stale event.
     watching: [bool; N],
-    /// `verified_svn[i]` is the manifest SVN of `ComponentId(i)`'s last
-    /// authenticated image, the only value a floor commit may trust.
-    /// `None` until a verification passes; cleared again on rejection.
-    verified_svn: [Option<Svn>; N],
+    /// `verified_svn[i]` is what the last verification of `ComponentId(i)`
+    /// recorded, the only reading a floor commit may trust. Reset to
+    /// [`VerifiedSvn::Unverified`] on rejection.
+    verified_svn: [VerifiedSvn; N],
     /// The update job submitted by the frontend. Held until the update is
     /// activated or discarded.
     pending_update: Option<UpdateJob>,
@@ -230,7 +230,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             kinds,
             staged: None,
             watching: [false; N],
-            verified_svn: [None; N],
+            verified_svn: [VerifiedSvn::Unverified; N],
             pending_update: None,
             last_activated: None,
             held_floor: None,
@@ -285,14 +285,17 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         let idx = id.get() as usize;
         Ok(match verdict {
             Verdict::Authenticated(image) => {
-                self.verified_svn[idx] = Some(image.svn);
+                self.verified_svn[idx] = match image.svn {
+                    Some(svn) => VerifiedSvn::Svn(svn),
+                    None => VerifiedSvn::Versionless,
+                };
                 if let Some(measurement) = image.measurement {
                     self.report(Report::Measured { id, measurement });
                 }
                 Event::VerificationPassed(id)
             }
             Verdict::Rejected => {
-                self.verified_svn[idx] = None;
+                self.verified_svn[idx] = VerifiedSvn::Unverified;
                 Event::VerificationFailed(id)
             }
         })
@@ -333,7 +336,26 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             // here to move and no slot of ours to bring up to date.
             return Ok(());
         };
-        let svn = self.verified_svn[idx].ok_or(DriverError::NoVerifiedImage)?;
+        let svn = match self.verified_svn[idx] {
+            VerifiedSvn::Svn(svn) => svn,
+            // The image authenticated and carried no version to move the
+            // floor to. Nothing is wrong with the image, so the commit
+            // succeeds and the floor stays where it is; the board asked
+            // for anti-rollback it cannot get, and the report is what
+            // says so. Refusing here would turn a legal image into a
+            // lockdown. The spare still gets the new image: the re-sync
+            // keeps the two slots holding the same firmware, which is
+            // wanted whether or not a floor moves behind it.
+            VerifiedSvn::Versionless => {
+                self.queue_slot_resync(id);
+                self.report(Report::SvnFloorHeld(id));
+                return Ok(());
+            }
+            // No verdict recorded at all. The commit follows a walk that
+            // verifies, so this means the driver and the machine have
+            // drifted apart, and it fails secure.
+            VerifiedSvn::Unverified => return Err(DriverError::NoVerifiedImage),
+        };
         if self.queue_slot_resync(id) {
             // The spare still holds the old image. Hold the advance
             // until the pass has put the new one there.
@@ -597,6 +619,23 @@ type SelfUpdateError<B> = <<B as BoardCapabilities>::SelfUpdate as SelfUpdate>::
 
 /// The error type of the board's anti-rollback floor, for the same reason.
 type SvnFloorError<B> = <<B as BoardCapabilities>::SvnFloor as SvnFloor>::Error;
+
+/// What the last verification of one component recorded about its image.
+///
+/// Three states, not an `Option<Svn>`, because "no verdict yet" and
+/// "authenticated with no version in its manifest" cost different things
+/// at commit time: the first is drift between the driver and the machine,
+/// the second is an ordinary image on a board that cannot do anti-rollback
+/// for it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum VerifiedSvn {
+    /// No verification has passed, or the last one failed.
+    Unverified,
+    /// The image authenticated and its manifest carried no SVN.
+    Versionless,
+    /// The SVN the authenticated manifest carried.
+    Svn(Svn),
+}
 
 /// What [`settle_self_update`] found in the eRoT's last self-update.
 ///

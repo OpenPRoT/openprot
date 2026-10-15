@@ -223,9 +223,9 @@ impl Verifier for StubVerifier {
         _image: &mut impl ImageSource,
     ) -> Result<Verdict, BoardFault> {
         Ok(Verdict::Authenticated(AuthenticatedImage {
-            svn: Svn(1),
-            // No hash engine on a test board: the stub verifier reads
-            // nothing, so there is nothing to measure.
+            // The stub verifier reads nothing: no manifest to take an SVN
+            // from, and no hash engine to measure with.
+            svn: None,
             measurement: None,
         }))
     }

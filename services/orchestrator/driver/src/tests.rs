@@ -9,8 +9,8 @@ use openprot_orchestrator_sm::{
     Platform, PowerOnResult, State,
 };
 use orchestrator_capabilities::{
-    AuthenticatedImage, BootWatch, FailureCause, PollOutcome, Progress, Recovery, RestoreOutcome,
-    RunningImage, SelfUpdate, SelfUpdateState, Svn, SvnFloor, WalkVerdict,
+    AuthenticatedImage, BootWatch, FailureCause, Progress, Recovery, RestoreOutcome, RunningImage,
+    SelfUpdate, SelfUpdateState, Svn, SvnFloor, WalkVerdict,
 };
 use util_io::{ByteReadError, ByteSource};
 
@@ -116,10 +116,11 @@ struct XorVerifier {
     /// What this verifier reports as the image's measurement. A real one
     /// hashes the image; this one is told what to say.
     measurement: Option<Measurement>,
-    /// The manifest SVN this verifier reports for an authenticated image.
+    /// The manifest SVN this verifier reports for an authenticated image,
+    /// or `None` for one that authenticates without reading a manifest.
     /// A real verifier reads it from the signed manifest of the image it
     /// just checked; the test image format has no manifest, so tests pin it.
-    svn: u32,
+    svn: Option<u32>,
 }
 
 /// The other constructors are [`accepting`](Self::accepting) with one field
@@ -130,7 +131,18 @@ impl XorVerifier {
     const fn accepting() -> Self {
         Self {
             fault: false,
-            svn: MOCK_SVN,
+            svn: Some(MOCK_SVN),
+            measurement: None,
+        }
+    }
+
+    /// Authenticates the same images as [`accepting`](Self::accepting) and
+    /// reports no SVN, as a verifier that checks a signature without
+    /// reading a manifest does. Nothing may commit a floor behind it.
+    const fn unversioned() -> Self {
+        Self {
+            fault: false,
+            svn: None,
             measurement: None,
         }
     }
@@ -139,7 +151,7 @@ impl XorVerifier {
     const fn faulting() -> Self {
         Self {
             fault: true,
-            svn: MOCK_SVN,
+            svn: Some(MOCK_SVN),
             measurement: None,
         }
     }
@@ -148,7 +160,7 @@ impl XorVerifier {
     const fn measuring(measurement: Measurement) -> Self {
         Self {
             fault: false,
-            svn: MOCK_SVN,
+            svn: Some(MOCK_SVN),
             measurement: Some(measurement),
         }
     }
@@ -184,7 +196,7 @@ impl Verifier for XorVerifier {
         let ok = len > IMAGE_MAGIC.len() && magic == IMAGE_MAGIC && xor == 0;
         Ok(if ok {
             Verdict::Authenticated(AuthenticatedImage {
-                svn: Svn(self.svn),
+                svn: self.svn.map(Svn),
                 measurement: self.measurement,
             })
         } else {
@@ -670,7 +682,7 @@ impl orchestrator_capabilities::VerifySession for StubSession {
             StubVerdict::Authenticate => PollOutcome::Authenticated {
                 verifier: self.verifier,
                 image: AuthenticatedImage {
-                    svn: Svn(CANDIDATE_SVN),
+                    svn: Some(Svn(CANDIDATE_SVN)),
                     // The update path's stub hashes nothing.
                     measurement: None,
                 },
@@ -3767,23 +3779,112 @@ fn the_floor_takes_the_walk_svn_and_not_the_candidate_svn() {
     );
 }
 
-// One description of an authenticated image, used by both passes: the
-// boot walk's verdict and the update path's outcome take the same value.
-// Two spellings of it in two crates is what this type exists to stop, and
-// the compiler is what enforces it.
+// A verifier that authenticates without reading a manifest. The image is
+// fine, so the commit succeeds; there is no version to move the floor to,
+// so the floor stays where it is and the report says so. Locking here
+// would turn a legal image into a halt, and DSP0267's own comparison
+// stamp is optional.
 #[test]
-fn both_passes_describe_an_authenticated_image_the_same_way() {
-    let image = AuthenticatedImage {
-        svn: Svn(MOCK_SVN),
-        measurement: None,
-    };
+fn a_versionless_image_holds_the_floor_and_reports_it() {
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(
+        &passive_entries(),
+        Board {
+            verifier: XorVerifier::unversioned(),
+            ..mock_board()
+        },
+    );
+    let before = floor_of(&driver);
 
-    let at_rest = Verdict::Authenticated(image);
-    let staged: PollOutcome<StubSession> = PollOutcome::Authenticated {
-        verifier: StubVerifier::accepting(),
-        image,
-    };
+    driver
+        .execute(Effect::ReadFirmware(C0))
+        .expect("stage failed");
+    assert_eq!(
+        driver.execute(Effect::VerifyFirmware(C0)),
+        Ok(Some(Event::VerificationPassed(C0))),
+        "the image authenticated; only its version is missing"
+    );
 
-    assert!(matches!(at_rest, Verdict::Authenticated(got) if got == image));
-    assert!(matches!(staged, PollOutcome::Authenticated { image: got, .. } if got == image));
+    assert_eq!(
+        driver.execute(Effect::CommitSvnFloor(C0)),
+        Ok(None),
+        "a versionless image is not a fault"
+    );
+    assert_eq!(
+        floor_of(&driver),
+        before,
+        "the floor had nothing to move to"
+    );
+    assert!(driver
+        .board()
+        .report_sink
+        .seen
+        .contains(&Report::SvnFloorHeld(C0)));
+}
+
+// The commit follows a walk that verifies, so reaching it with no verdict
+// recorded means the driver and the machine disagree about what happened.
+// That is drift, not a versionless image, and it fails secure.
+#[test]
+fn committing_with_no_verdict_recorded_fails_closed() {
+    use openprot_orchestrator_sm::EffectError;
+
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(&passive_entries(), mock_board());
+
+    assert_eq!(
+        driver.execute(Effect::CommitSvnFloor(C0)),
+        Err(EffectError),
+        "no verification has run"
+    );
+}
+
+// The spare slot holds the same firmware as the active one whether or
+// not a floor moves behind it, so a versionless image still queues the
+// re-sync the commit path queues for a versioned one.
+#[test]
+fn a_versionless_image_still_resyncs_the_spare_slot() {
+    let mut orch = orchestrator();
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(
+        &passive_entries(),
+        Board {
+            components: [ComponentWiring {
+                updatable: MockUpdatable::new(),
+                ..mock_component(0)
+            }],
+            verifier: XorVerifier::unversioned(),
+            ..mock_board()
+        },
+    );
+    activated(&mut driver, &mut orch);
+    let staged_before = driver.board().components[0].updatable.stagings;
+
+    driver
+        .execute(Effect::ReadFirmware(C0))
+        .expect("stage failed");
+    driver
+        .execute(Effect::VerifyFirmware(C0))
+        .expect("verify failed");
+    assert_eq!(driver.execute(Effect::CommitSvnFloor(C0)), Ok(None));
+    assert!(driver
+        .board()
+        .report_sink
+        .seen
+        .contains(&Report::SvnFloorHeld(C0)));
+
+    // Queued, not transferred: the executor returned without sending
+    // anything, and the job is waiting for the pump.
+    assert_eq!(driver.pending_update(), Some(C0), "the re-sync is queued");
+
+    // 16 ticks is slack; this device finishes in one.
+    for tick in 0..16 {
+        if driver.pending_update().is_none() {
+            break;
+        }
+        driver.pump_update(tick);
+    }
+
+    assert_eq!(driver.pending_update(), None, "the re-sync ended");
+    assert!(
+        driver.board().components[0].updatable.stagings > staged_before,
+        "the spare was never sent the image"
+    );
 }
