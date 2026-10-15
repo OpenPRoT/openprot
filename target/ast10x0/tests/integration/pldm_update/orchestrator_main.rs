@@ -37,7 +37,9 @@ use openprot_orchestrator_driver::{
 // refuses every request needs neither.
 #[cfg(not(refused_update))]
 use openprot_orchestrator_driver::request_update;
-use openprot_orchestrator_sm::{ComponentAttrs, ComponentId, Event, PowerOnResult};
+use openprot_orchestrator_sm::{
+    ComponentAttrs, ComponentId, Effect, Event, Platform, PowerOnResult,
+};
 // Only the accepting path checks the state it reached.
 use board_stubs::{BoardFault, StubImage, StubVerifier};
 #[cfg(not(refused_update))]
@@ -534,10 +536,7 @@ fn run(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
                     "ORCH: the agent asked to commit component {}'s security revision",
                     component as u32
                 );
-                if !command(fd, "PerformSvnCommit", |fd| fd.perform_svn_commit()) {
-                    return false;
-                }
-                return true;
+                return grant_svn_commit(core, driver, fd);
             }
             FdStatus::PhaseFailed { phase, result_code } => {
                 pw_log::error!(
@@ -619,13 +618,46 @@ fn activate(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
     // image reboots, so the acknowledged activation is what this scenario
     // treats as a healthy first boot.
     core.dispatch(driver, Event::BootConfirmed(TARGET));
-    // The floor moves on the agent's ask, not on the boot. The firmware
-    // device never parks at `SvnCommitPending` in this build, so the
-    // event stands in for the agent's request, the way `BootConfirmed`
-    // above stands in for the reboot.
-    core.dispatch(driver, Event::SvnCommitRequest(TARGET));
+    // The floor moves on the agent's ask, not on the boot. Without the
+    // `svn_commit` scenario's 0x22 exchange nothing parks the device at
+    // `SvnCommitPending`, so the event stands in for the agent's request,
+    // the way `BootConfirmed` above stands in for the reboot. With it,
+    // `svn_commit` dispatches the real one.
+    if !cfg!(svn_commit) {
+        core.dispatch(driver, Event::SvnCommitRequest(TARGET));
+    }
     pw_log::info!("ORCH: update committed");
     true
+}
+
+/// Grants or refuses the agent's request to commit the device's security
+/// revision.
+///
+/// The machine drops `SvnCommitRequest` for a component with nothing
+/// outstanding, and a dropped request emits no effect. So the grant waits
+/// on `Effect::CommitSvnFloor` actually arriving: answering `perform`
+/// without it would tell the agent the RoT granted something it never saw.
+///
+/// A refusal returns `false` and ends the scenario. This scenario commits
+/// after an activation it drove itself, so there is always something
+/// outstanding and a refusal here means the machine and the device
+/// disagree. A scenario written around a refused commit would want the
+/// two told apart.
+fn grant_svn_commit(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
+    let mut granted = false;
+    core.dispatch_with(Event::SvnCommitRequest(TARGET), |effect| {
+        if effect == Effect::CommitSvnFloor(TARGET) {
+            granted = true;
+        }
+        driver.execute(effect)
+    });
+    if !granted {
+        pw_log::error!("ORCH: nothing outstanding to commit a revision for");
+        let _ = fd.reject_svn_commit(RejectReason::PolicyViolation);
+        let _ = settle(fd);
+        return false;
+    }
+    command(fd, "PerformSvnCommit", |fd| fd.perform_svn_commit())
 }
 
 /// Asks the device what it is waiting for.

@@ -69,24 +69,18 @@ abort would do is untested.
 
 ## Arcs of the update state machine with no scenario
 
-- `UpdateSecurityRevision` end to end. The machine now waits for
-  `Event::SvnCommitRequest` before an eRoT-held floor moves, but no firmware
-  device parks at `SvnCommitPending`, so both update scenarios dispatch
-  that event themselves the way they already dispatch `BootConfirmed`.
-  Two pieces are missing under it: the pldm-lib FdOps callback that
-  turns a received 0x22 into the status, which is not in the pinned
-  revision, and the event-loop glue that reads the status and answers,
-  for a device with `commit_svn_floor` and for the eRoT's own floor with
-  `commit_self_svn_floor`.
-- Answering the agent when a floor advance is refused. The machine drops
-  `Event::SvnCommitRequest` for a component with nothing outstanding, so
-  a loop that calls `dispatch` cannot tell a refusal from an advance and
-  would answer the agent that a floor moved when it did not. The signal
-  exists: `dispatch_with` hands every effect to a closure, so the glue
-  can watch for `Effect::CommitSvnFloor(id)` and refuse when it does not
-  come. Nothing in the tree calls `dispatch_with` yet.
-  `commit_self_svn_floor` already answers this way on the eRoT's own
-  path, returning `Ok` or `Err` for the caller to pass on.
+- `UpdateSecurityRevision` on the eRoT's own floor. The downstream half
+  runs end to end in `pldm_update/svn_commit`: the agent sends 0x22 after
+  the activation, the device parks at `SvnCommitPending`, and the loop
+  dispatches `Event::SvnCommitRequest` and answers perform or reject by
+  what the machine emitted. The eRoT's own floor has no equivalent yet.
+  It takes the same path: the eRoT is a firmware device like any other,
+  so the agent offers it an update over PLDM and sends it 0x22
+  afterwards. Nothing serves that side on the eRoT yet, so
+  `commit_self_svn_floor` still has no caller outside tests. The other
+  update scenarios keep dispatching the event themselves, the way they
+  already dispatch `BootConfirmed`: without the 0x22 exchange nothing
+  parks their device at the status.
 - A self-update that is actually performed. `self_trial` starts the
   session where an activation would have left it and checks what the
   next boot does about it. Nothing stages an image into the eRoT's own
