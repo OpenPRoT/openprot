@@ -1,0 +1,27 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "fd_ops",
+    srcs = ["fd_ops.rs"],
+    crate_name = "board_fd_ops",
+    edition = "2024",
+    deps = [
+        "@rust_crates//:pldm-common",
+        "@rust_crates//:pldm-interface",
+    ],
+)
+
+# Host tests: build on the host platform, no kernel/QEMU.
+rust_test(
+    name = "fd_ops_test",
+    crate = ":fd_ops",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)

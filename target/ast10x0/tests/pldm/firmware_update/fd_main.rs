@@ -35,11 +35,7 @@ use pldm_common::message::firmware_update::update_security_revision::{
 };
 use pldm_common::message::firmware_update::verify_complete::VerifyResult;
 use pldm_common::protocol::base::PldmBaseCompletionCode;
-use pldm_common::protocol::firmware_update::{
-    ComponentActivationMethods, ComponentClassification, ComponentParameterEntry,
-    ComponentResponseCode, Descriptor, DescriptorType, FirmwareDeviceCapability, PldmFdTime,
-    PldmFirmwareString, PldmFirmwareVersion,
-};
+use pldm_common::protocol::firmware_update::{ComponentResponseCode, Descriptor, PldmFdTime};
 use pldm_common::util::fw_component::FirmwareComponent;
 use pldm_interface::firmware_device::fd_ops::{ComponentOperation, FdOps, FdOpsError};
 use pw_status::Error;
@@ -135,46 +131,19 @@ impl FdOps for DemoFdOps {
         &self,
         device_identifiers: &mut [Descriptor],
     ) -> Result<usize, FdOpsError> {
-        let uuid = Descriptor::new(DescriptorType::Uuid, &DEVICE_UUID)
-            .map_err(|_| FdOpsError::DeviceIdentifiersError)?;
-        *device_identifiers
-            .first_mut()
-            .ok_or(FdOpsError::DeviceIdentifiersError)? = uuid;
-        Ok(1)
+        board_fd_ops::device_identifiers(device_identifiers, &DEVICE_UUID)
     }
 
     fn get_firmware_parms(
         &self,
         firmware_params: &mut FirmwareParameters,
     ) -> Result<(), FdOpsError> {
-        let comp_version = PldmFirmwareString::new("ASCII", ACTIVE_COMP_VERSION)
-            .map_err(|_| FdOpsError::FirmwareParametersError)?;
-        let image_set_version = PldmFirmwareString::new("ASCII", ACTIVE_IMAGE_SET_VERSION)
-            .map_err(|_| FdOpsError::FirmwareParametersError)?;
-
-        // Self-contained: the device applies the image itself, so the update
-        // agent's ActivateFirmware is all that is needed to finish.
-        let mut activation = ComponentActivationMethods(0);
-        activation.set_self_contained(true);
-
-        let component = ComponentParameterEntry::new(
-            ComponentClassification::Firmware,
+        board_fd_ops::firmware_parameters(
+            firmware_params,
             COMP_IDENTIFIER,
-            0, // comp_classification_index
-            &PldmFirmwareVersion::new(0, &comp_version, None),
-            &PldmFirmwareVersion::default(),
-            activation,
-            FirmwareDeviceCapability(0),
-        );
-
-        *firmware_params = FirmwareParameters::new(
-            FirmwareDeviceCapability(0),
-            1, // comp_count
-            &image_set_version,
-            &PldmFirmwareString::default(),
-            &[component],
-        );
-        Ok(())
+            ACTIVE_COMP_VERSION,
+            ACTIVE_IMAGE_SET_VERSION,
+        )
     }
 
     fn get_xfer_size(&self, ua_transfer_size: usize) -> Result<usize, FdOpsError> {
@@ -252,11 +221,7 @@ impl FdOps for DemoFdOps {
         _component: &FirmwareComponent,
         progress_percent: &mut ProgressPercent,
     ) -> Result<(), FdOpsError> {
-        let pct = (self.bytes_received.get() * 100 / IMAGE_SIZE) as u8;
-        progress_percent
-            .set_value(pct.min(100))
-            .map_err(|_| FdOpsError::FwDownloadError)?;
-        Ok(())
+        board_fd_ops::download_progress(self.bytes_received.get(), IMAGE_SIZE, progress_percent)
     }
 
     fn verify(

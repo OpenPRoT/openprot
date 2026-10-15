@@ -58,6 +58,7 @@ APPS = [
             "//util/error",
             "//util/region",
             "//target/ast10x0/tests/clock",
+            "//target/ast10x0/tests/fd_ops",
             "@pigweed//pw_kernel/userspace",
             "@pigweed//pw_log/rust:pw_log",
             "@pigweed//pw_status/rust:pw_status",
