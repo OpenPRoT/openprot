@@ -57,8 +57,11 @@ use pldm_api::{FdStatus, RejectReason};
 use pldm_client::{ClientError, FdIpcClient, Reply};
 use util_io::{ByteReadError, ByteSource};
 
+use board_clock::deadline_in;
 use userspace::syscall::Signals;
-use userspace::time::{Clock, Instant, SystemClock};
+// Only the accepting path pumps the update, so only it reads the clock.
+#[cfg(not(refused_update))]
+use board_clock::now_millis;
 use userspace::{entry, syscall};
 
 use util_ipc::{AsyncChannelTransport, IpcHandle};
@@ -366,15 +369,6 @@ fn board() -> Board<UpdateBoard, N> {
         self_image: None,
         update_stall_budget_millis: 5_000,
     }
-}
-
-#[cfg(not(refused_update))]
-fn now_millis() -> u64 {
-    SystemClock::now().ticks() * 1000 / SystemClock::TICKS_PER_SEC
-}
-
-fn deadline_in(millis: u64) -> Instant {
-    Instant::from_ticks(SystemClock::now().ticks() + millis * SystemClock::TICKS_PER_SEC / 1000)
 }
 
 type Core = openprot_orchestrator_sm::Orchestrator<N, E>;

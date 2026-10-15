@@ -1,0 +1,14 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "clock",
+    srcs = ["clock.rs"],
+    crate_name = "board_clock",
+    edition = "2024",
+    deps = ["@pigweed//pw_kernel/userspace"],
+)

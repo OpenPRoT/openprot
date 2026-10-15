@@ -13,6 +13,7 @@
 
 use core::cell::{Cell, RefCell};
 
+use board_clock::now_millis;
 use flash_backend::NoWaitBlocking;
 use hal_flash::{BlockingFlash, Flash, FlashAddress};
 use openprot_mctp_client_ipc::IpcMctpClient;
@@ -42,7 +43,6 @@ use pldm_common::protocol::firmware_update::{
 use pldm_common::util::fw_component::FirmwareComponent;
 use pldm_interface::firmware_device::fd_ops::{ComponentOperation, FdOps, FdOpsError};
 use pw_status::Error;
-use userspace::time::{Clock, SystemClock};
 use userspace::{entry, syscall};
 use util_error::ErrorCode;
 
@@ -357,7 +357,7 @@ impl FdOps for DemoFdOps {
 
     /// The device's clock, which every FD timer is measured against.
     fn now(&self) -> PldmFdTime {
-        SystemClock::now().ticks() * 1000 / SystemClock::TICKS_PER_SEC
+        now_millis()
     }
 }
 

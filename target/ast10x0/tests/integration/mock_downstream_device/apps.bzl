@@ -12,6 +12,7 @@ HERE = "//target/ast10x0/tests/integration/mock_downstream_device:"
 MOCK_BMC_DEPS = [
     "//hal/blocking",
     "//services/test/mock-downstream-device:mock_downstream_device",
+    "//target/ast10x0/tests/clock",
     "@pigweed//pw_kernel/userspace",
     "@pigweed//pw_log/rust:pw_log",
     "@pigweed//pw_status/rust:pw_status",
@@ -26,6 +27,7 @@ ORCHESTRATOR_DEPS = [
     "//services/orchestrator/sm:orchestrator_sm",
     "//services/orchestrator/test:stubs",
     "//util/io",
+    "//target/ast10x0/tests/clock",
     "@pigweed//pw_kernel/userspace",
     "@pigweed//pw_log/rust:pw_log",
     "@pigweed//pw_status/rust:pw_status",

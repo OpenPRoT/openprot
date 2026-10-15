@@ -45,6 +45,7 @@ use orchestrator_config::{
 };
 use util_io::{ByteReadError, ByteSource};
 
+use board_clock::{deadline_in, millis_to_ticks, now_millis};
 use userspace::syscall::Signals;
 use userspace::time::{Clock, Instant, SystemClock};
 use userspace::{entry, syscall};
@@ -136,22 +137,6 @@ const _: () = assert_retry_reaches_every_image(MAX_RETRY, &DEVICES);
 /// because the reader lives inside the walk, inside the board, inside the
 /// driver, while the run loop that receives the report is outside all three.
 static DEVICE_READY: AtomicBool = AtomicBool::new(false);
-
-fn millis_to_ticks(millis: u64) -> u64 {
-    millis * SystemClock::TICKS_PER_SEC / 1000
-}
-
-fn ticks_to_millis(ticks: u64) -> u64 {
-    ticks * 1000 / SystemClock::TICKS_PER_SEC
-}
-
-fn now_millis() -> u64 {
-    ticks_to_millis(SystemClock::now().ticks())
-}
-
-fn deadline_in(millis: u64) -> Instant {
-    Instant::from_ticks(SystemClock::now().ticks() + millis_to_ticks(millis))
-}
 
 /// Drives the device's reset line. An undeliverable command is a wiring
 /// failure, not a boot failure, and surfaces as an effect error.

@@ -18,6 +18,7 @@
 
 use core::cell::Cell;
 
+use board_clock::{millis_to_ticks, now_millis};
 use embedded_hal::digital::{ErrorType, InputPin, OutputPin};
 use openprot_hal_blocking::gpio_port::ActivePolarity;
 use openprot_mock_downstream_device::{BootBehaviour, MockDownstreamDevice};
@@ -79,14 +80,6 @@ impl OutputPin for Line<'_> {
         self.0.set(false);
         Ok(())
     }
-}
-
-fn now_millis() -> u64 {
-    SystemClock::now().ticks() * 1000 / SystemClock::TICKS_PER_SEC
-}
-
-fn millis_to_ticks(millis: u64) -> u64 {
-    millis * SystemClock::TICKS_PER_SEC / 1000
 }
 
 #[entry]
