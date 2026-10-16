@@ -1,0 +1,22 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+//! Echo task standing in for an SPDM application: one MCTP client of the
+//! shared server on its own IPC channel, message type 0x05.
+
+#![no_std]
+#![no_main]
+
+use userspace::entry;
+
+use app_spdm_echo::handle;
+
+#[entry]
+fn entry() {
+    echo_task::serve(handle::MCTP, handle::CTL, echo_task::MSG_TYPE_SPDM)
+}
+
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
+}

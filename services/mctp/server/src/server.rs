@@ -3,21 +3,31 @@
 
 //! Core MCTP server logic.
 //!
-//! This is a direct port of the Hubris `mctp-server/src/server.rs`.
-//! The `Router` integration, handle management, timeout logic, and message
-//! routing are preserved as-is. Only Hubris IPC primitives (`sys_reply`,
-//! `Leased`, `RecvMessage`) have been replaced with platform-independent
-//! equivalents.
+//! [`Server`] is one MCTP endpoint as its clients see it: handles for
+//! listeners and requests, send, and receive. A receive that finds no
+//! message can be *registered* instead of failing; the server then reports
+//! it later, from [`Server::update`], as either a message or a timeout.
+//! Time is a caller-supplied `u64` of monotonic milliseconds, so nothing
+//! here depends on a kernel clock.
+//!
+//! The router keeps the last time it was told and stamps what it creates
+//! with it: a reassembly in progress, and the flow that matches a response
+//! to its request, both of which expire six seconds after their stamp. So
+//! the clock must be brought up to date *before* an event is handled, with
+//! [`Server::advance`], not only afterwards. Stamped with a time from
+//! before a quiet period, a new reassembly or flow looks old the moment
+//! the clock catches up, and is expired before it can complete.
+//!
+//! What the server does not do is hold the caller's reply path. Whoever
+//! drives it (see `openprot_mctp_server::dispatch` and the kernel runtime)
+//! keeps that, keyed by the receive's [`Handle`].
+//!
+//! Derived from the Hubris `mctp-server`, with its IPC primitives removed.
 
 use heapless::LinearMap;
 use mctp::{Eid, MsgIC, MsgType, Tag, TagValue};
-use mctp_lib::{AppCookie, Router, Sender};
+use mctp_lib::{config, AppCookie, MctpMessage, Router, Sender};
 use openprot_mctp_api::{Handle, MctpError, RecvMetadata, ResponseCode};
-
-/// Maximum payload size in bytes.
-// TODO: Use configuration from mctp-lib (mctp-estack)
-//       see https://github.com/OpenPRoT/mctp-lib/issues/4
-const MAX_PAYLOAD: usize = 1023;
 
 /// Configuration constants for the MCTP server.
 pub struct ServerConfig;
@@ -29,30 +39,30 @@ impl ServerConfig {
     pub const MAX_LISTENERS: usize = 8;
     /// Maximum number of concurrent outstanding receive calls.
     pub const MAX_OUTSTANDING: usize = 16;
-    /// Maximum payload size in bytes.
-    pub const MAX_PAYLOAD: usize = MAX_PAYLOAD;
+    /// Maximum payload size in bytes, defined by `mctp-estack` config.
+    pub const MAX_PAYLOAD: usize = config::MAX_PAYLOAD;
 }
 
 /// A pending receive call waiting for a message or timeout.
 #[derive(Debug, Clone, Copy)]
 struct PendingRecv {
-    /// Deadline in milliseconds (0 = no timeout).
-    deadline: u64,
+    /// Absolute deadline in milliseconds, or `None` to wait forever.
+    deadline: Option<u64>,
 }
 
 /// The platform-independent MCTP server.
 ///
 /// This struct wraps the `mctp-lib` [`Router`] and manages outstanding
-/// receive calls with timeout tracking. It is a direct port of the
-/// Hubris `Server` struct with OS-specific IPC removed.
+/// receive calls with timeout tracking.
 ///
 /// # Type Parameters
 ///
 /// * `S` - The [`Sender`] implementation for outbound transport.
 /// * `OUTSTANDING` - Maximum number of concurrent pending receive calls.
 pub struct Server<S: Sender, const OUTSTANDING: usize> {
-    /// The underlying MCTP router (from mctp-lib).
-    pub stack: Router<S, { ServerConfig::MAX_LISTENERS }, { ServerConfig::MAX_REQUESTS }>,
+    /// The underlying MCTP router (from mctp-lib). Private: going around
+    /// the server would bypass the outstanding-receive table.
+    stack: Router<S, { ServerConfig::MAX_LISTENERS }, { ServerConfig::MAX_REQUESTS }>,
     /// Currently outstanding recv calls, keyed by handle value.
     ///
     /// Maps the handle to a deadline. The platform layer is responsible
@@ -103,50 +113,77 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
     /// If a message is available, returns the metadata and copies the
     /// payload into `buf`. Otherwise returns `None` and the caller
     /// should register a pending recv via [`register_recv`](Self::register_recv).
+    ///
+    /// A payload larger than `buf` is consumed but not copied.
+    /// `payload_size` still reports its real length, so the caller detects
+    /// this as `payload_size > buf.len()`.
     pub fn try_recv(&mut self, handle: Handle, buf: &mut [u8]) -> Option<RecvMetadata> {
         let cookie = AppCookie(handle.0 as usize);
         let msg = self.stack.recv(cookie)?;
 
-        let payload_len = msg.payload.len();
-        if payload_len <= buf.len() {
-            buf[..payload_len].copy_from_slice(msg.payload);
-        }
-
-        Some(RecvMetadata {
-            msg_type: msg.typ.0,
-            msg_ic: msg.ic.0,
-            msg_tag: msg.tag.tag().0,
-            remote_eid: msg.source.0,
-            payload_size: payload_len,
-        })
+        Some(recv_metadata_from_msg(&msg, buf))
     }
 
     /// Register a pending receive call for the given handle.
     ///
     /// The platform layer should call this when `try_recv` returns `None`
-    /// and the client wants to block. Returns an error if the outstanding
-    /// table is full.
+    /// and the client wants to block. `timeout_millis` of 0 waits forever.
+    ///
+    /// A handle has at most one receive outstanding. Fails with `AddrInUse`
+    /// if one is already registered on it, and with `NoSpace` if the
+    /// outstanding table is full. On either error nothing is registered, so
+    /// the caller must answer the client now rather than wait.
     pub fn register_recv(
         &mut self,
         handle: Handle,
         timeout_millis: u32,
         now_millis: u64,
     ) -> Result<(), MctpError> {
-        let deadline = if timeout_millis != 0 {
-            now_millis + timeout_millis as u64
-        } else {
-            0
-        };
-
-        // Don't overwrite existing entries
         if self.outstanding.contains_key(&handle.0) {
-            return Ok(());
+            return Err(MctpError::from_code(ResponseCode::AddrInUse));
         }
-
+        let deadline = match timeout_millis {
+            0 => None,
+            t => Some(now_millis.saturating_add(u64::from(t))),
+        };
         self.outstanding
             .insert(handle.0, PendingRecv { deadline })
             .map_err(|_| MctpError::from_code(ResponseCode::NoSpace))?;
         Ok(())
+    }
+
+    /// Bring the router's clock up to `now_millis`.
+    ///
+    /// Call this with the current time before handling any event: before
+    /// feeding a packet to [`inbound`](Self::inbound) and before a `send`.
+    /// See the module documentation for why "before" matters.
+    /// [`update`](Self::update) and `dispatch::dispatch_mctp_op` advance the
+    /// clock themselves, so only a direct `inbound` or `send` needs this.
+    /// A time earlier than the last one given is ignored.
+    pub fn advance(&mut self, now_millis: u64) {
+        let _ = self.stack.update(now_millis);
+    }
+
+    /// Withdraw a receive registered with [`register_recv`](Self::register_recv).
+    ///
+    /// For a platform layer that registered a receive and then found it
+    /// cannot hold the caller's reply path after all. A no-op if nothing is
+    /// registered on `handle`.
+    pub fn cancel_recv(&mut self, handle: Handle) {
+        self.outstanding.remove(&handle.0);
+    }
+
+    /// The earliest deadline, in the caller's millisecond clock, among
+    /// registered receives, or `None` if none of them has a timeout.
+    ///
+    /// The platform layer must call [`update`](Self::update) no later than
+    /// this. It is the only timer the server asks for: the router's own
+    /// housekeeping (reassembly and flow expiry) is advanced on every
+    /// `update` and needs no wake-up of its own, since a stale entry only
+    /// matters when the next packet or request arrives, and that is itself
+    /// followed by an `update`.
+    pub fn next_recv_deadline(&self) -> Option<u64> {
+        self.outstanding.values().filter_map(|p| p.deadline).min()
     }
 
     /// Send a message.
@@ -163,7 +200,7 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
         ic: bool,
         buf: &[u8],
     ) -> Result<u8, MctpError> {
-        if buf.len() > MAX_PAYLOAD {
+        if buf.len() > ServerConfig::MAX_PAYLOAD {
             return Err(MctpError::from_code(ResponseCode::NoSpace));
         }
 
@@ -190,9 +227,14 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
 
     /// Update the stack and check for fulfilled receive calls.
     ///
-    /// Should be called on timer events. Returns the interval (ms) until
-    /// the next required update, and a list of handles that now have
-    /// messages available (the platform layer should deliver them).
+    /// Call this after every event the platform layer handles (an inbound
+    /// packet, a client request) and no later than
+    /// [`next_recv_deadline`](Self::next_recv_deadline). Returns the
+    /// router's suggested housekeeping interval (ms), which callers may
+    /// ignore for the reason given there, and the handles whose registered
+    /// receive is now resolved, each with a message or a timeout. A message
+    /// payload larger than `recv_buf` is consumed but not copied, as in
+    /// [`try_recv`](Self::try_recv).
     pub fn update(
         &mut self,
         now_millis: u64,
@@ -209,23 +251,13 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
 
             // Check if a message arrived for this handle
             if let Some(mctp_msg) = self.stack.recv(cookie) {
-                let payload_len = mctp_msg.payload.len();
-                if payload_len <= recv_buf.len() {
-                    recv_buf[..payload_len].copy_from_slice(mctp_msg.payload);
-                }
-                let metadata = RecvMetadata {
-                    msg_type: mctp_msg.typ.0,
-                    msg_ic: mctp_msg.ic.0,
-                    msg_tag: mctp_msg.tag.tag().0,
-                    remote_eid: mctp_msg.source.0,
-                    payload_size: payload_len,
-                };
+                let metadata = recv_metadata_from_msg(&mctp_msg, recv_buf);
                 let _ = ready.push((handle, RecvResult::Message(metadata)));
                 continue;
             }
 
             // Check for timeout
-            if pending.deadline != 0 && now_millis >= pending.deadline {
+            if pending.deadline.is_some_and(|d| now_millis >= d) {
                 let _ = ready.push((handle, RecvResult::TimedOut));
             }
         }
@@ -251,6 +283,10 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
     /// The platform layer calls this when data arrives from a transport
     /// binding. The packet should be a raw MCTP packet without transport
     /// headers (the transport binding strips those).
+    ///
+    /// The packet is timestamped with the router's clock as of the last
+    /// [`advance`](Self::advance) or [`update`](Self::update), so call
+    /// `advance` with the current time first.
     pub fn inbound(&mut self, pkt: &[u8]) -> Result<(), MctpError> {
         self.stack.inbound(pkt).map_err(mctp_error_to_server_error)
     }
@@ -263,6 +299,22 @@ pub enum RecvResult {
     Message(RecvMetadata),
     /// The receive call timed out.
     TimedOut,
+}
+
+/// Build receive metadata and copy payload into `buf` when it fits.
+fn recv_metadata_from_msg(msg: &MctpMessage<'_>, buf: &mut [u8]) -> RecvMetadata {
+    let payload_len = msg.payload.len();
+    if payload_len <= buf.len() {
+        buf[..payload_len].copy_from_slice(msg.payload);
+    }
+
+    RecvMetadata {
+        msg_type: msg.typ.0,
+        msg_ic: msg.ic.0,
+        msg_tag: msg.tag.tag().0,
+        remote_eid: msg.source.0,
+        payload_size: payload_len,
+    }
 }
 
 /// Map mctp::Error to our MctpError.

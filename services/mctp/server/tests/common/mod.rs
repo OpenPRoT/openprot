@@ -18,7 +18,7 @@
 
 use std::cell::RefCell;
 
-use mctp::{Eid, Tag};
+use mctp::Tag;
 use mctp_lib::fragment::{Fragmenter, SendOutput};
 use mctp_lib::Sender;
 use openprot_mctp_api::{
@@ -350,13 +350,4 @@ impl<S: Sender, const N: usize> MctpReqChannel for DirectReqChannel<'_, S, N> {
     fn remote_eid(&self) -> u8 {
         self.remote_eid
     }
-}
-
-// ---------------------------------------------------------------------------
-// make_server helper
-// ---------------------------------------------------------------------------
-
-/// Construct a `Server` + its outbound packet buffer, for two-endpoint tests.
-pub fn make_server(eid: u8, packets: &RefCell<Vec<Vec<u8>>>) -> Server<BufferSender<'_>, 16> {
-    Server::new(Eid(eid), 0, BufferSender { packets })
 }

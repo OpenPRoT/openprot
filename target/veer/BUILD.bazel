@@ -59,7 +59,10 @@ config_setting(
 constraint_value(
     name = "target_veer",
     constraint_setting = "@pigweed//pw_kernel/target:target",
-    visibility = [":__subpackages__"],
+    visibility = [
+        ":__subpackages__",
+        "//services:__subpackages__",
+    ],
 )
 
 rust_library(
