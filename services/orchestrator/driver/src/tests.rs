@@ -9,8 +9,8 @@ use openprot_orchestrator_sm::{
     Platform, PowerOnResult, State,
 };
 use orchestrator_capabilities::{
-    AuthenticatedImage, BootWatch, FailureCause, Progress, Recovery, RestoreOutcome, RunningImage,
-    SelfReset, SelfUpdate, SelfUpdateState, Svn, SvnFloor, WalkVerdict,
+    AuthenticatedImage, BootWatch, FailureCause, LockdownLatch, Progress, Recovery, RestoreOutcome,
+    RunningImage, SelfReset, SelfUpdate, SelfUpdateState, Svn, SvnFloor, WalkVerdict,
 };
 use util_io::{ByteReadError, ByteSource};
 
@@ -938,6 +938,7 @@ impl BoardCapabilities for MockBoard {
     type Updatable = MockUpdatable;
     type Recovery = ();
     type DeviceTrial = ();
+    type Lockdown = TestLatch;
     type Staging = MemStaging;
     type UpdateVerifier = StubVerifier;
     type SelfUpdate = MockSelfUpdate;
@@ -995,6 +996,7 @@ fn mock_board<const N: usize>() -> Board<MockBoard, N> {
         components: core::array::from_fn(mock_component),
         verifier: XorVerifier::accepting(),
         report_sink: RecordingSink::new(),
+        lockdown: TestLatch::new(),
         update_staging: MemStaging::new(),
         update_stall_budget_millis: STALL_BUDGET_MILLIS,
         update_verifier: Some(StubVerifier::accepting()),
@@ -1134,6 +1136,55 @@ fn verify_without_read_is_refused() {
     let mut driver = driver([MemImage::holding(valid_image())]);
 
     assert_eq!(driver.verify_firmware(C0), Err(DriverError::NotStaged));
+}
+
+// Lockdown is actuated, not just decided: entering Locked calls the latch
+// the board wires.
+#[test]
+fn entering_lockdown_latches_the_platform() {
+    let mut orch = orchestrator();
+    let mut image = MemImage::holding(valid_image());
+    image.fail_open = true;
+    let mut driver = driver([image]);
+
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+
+    assert_eq!(orch.state(), State::Locked);
+    assert_eq!(
+        driver.board().lockdown.latched,
+        1,
+        "the safe state must be engaged once, on entry"
+    );
+}
+
+// A board that cannot engage its safe state is still locked, and the
+// latch is not retried: the state machine is already where the failure
+// would send it.
+#[test]
+fn a_refused_latch_leaves_the_state_machine_locked() {
+    let mut orch = orchestrator();
+    let mut image = MemImage::holding(valid_image());
+    image.fail_open = true;
+    let mut driver = PlatformDriver::<MockBoard, 1>::new(
+        &passive_entries(),
+        Board {
+            components: [ComponentWiring {
+                image,
+                ..mock_component(0)
+            }],
+            lockdown: TestLatch::failing(),
+            ..mock_board()
+        },
+    );
+
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+
+    assert_eq!(orch.state(), State::Locked);
+    assert_eq!(
+        driver.board().lockdown.latched,
+        1,
+        "a refused latch must not be retried"
+    );
 }
 
 // An unopenable source is a failed actuation, not a verdict: the SM
@@ -1319,6 +1370,7 @@ impl BoardCapabilities for WatchBoard {
     type Updatable = MockUpdatable;
     type Recovery = ();
     type DeviceTrial = ();
+    type Lockdown = TestLatch;
     type Staging = MemStaging;
     type UpdateVerifier = StubVerifier;
     type SelfUpdate = MockSelfUpdate;
@@ -1353,6 +1405,7 @@ fn release_follows_verification() {
                 held_during_verify: held_during_verify.clone(),
             },
             report_sink: (),
+            lockdown: TestLatch::new(),
             update_staging: MemStaging::new(),
             update_stall_budget_millis: STALL_BUDGET_MILLIS,
             update_verifier: Some(StubVerifier::accepting()),
@@ -1736,6 +1789,7 @@ impl BoardCapabilities for RecoverableBoard {
     type Updatable = MockUpdatable;
     type Recovery = MockRecovery;
     type DeviceTrial = ();
+    type Lockdown = TestLatch;
     type Staging = MemStaging;
     type UpdateVerifier = StubVerifier;
     type SelfUpdate = MockSelfUpdate;
@@ -1766,6 +1820,7 @@ fn recoverable_board<const N: usize>(sources: u8) -> Board<RecoverableBoard, N> 
         components: core::array::from_fn(|i| recoverable_component(sources, i)),
         verifier: XorVerifier::accepting(),
         report_sink: RecordingSink::new(),
+        lockdown: TestLatch::new(),
         update_staging: MemStaging::new(),
         update_stall_budget_millis: STALL_BUDGET_MILLIS,
         update_verifier: Some(StubVerifier::accepting()),
@@ -1878,6 +1933,56 @@ fn execute_routes_recover_component() {
         Err(EffectError)
     );
 }
+
+// ---------------------------------------------------------------------------
+// Lockdown latch.
+// ---------------------------------------------------------------------------
+
+/// The terminal safe state, as a test can see it: how many times the state
+/// machine latched, and whether the board refuses to.
+#[derive(Default)]
+struct TestLatch {
+    latched: u32,
+    fails: bool,
+}
+
+impl TestLatch {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn failing() -> Self {
+        Self {
+            latched: 0,
+            fails: true,
+        }
+    }
+}
+
+impl LockdownLatch for TestLatch {
+    type Error = LatchFaultInjected;
+
+    fn latch(&mut self) -> Result<(), LatchFaultInjected> {
+        // Counted before the refusal: a board that tried and could not is
+        // what the failing case is about.
+        self.latched += 1;
+        if self.fails {
+            return Err(LatchFaultInjected);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+struct LatchFaultInjected;
+
+impl core::fmt::Display for LatchFaultInjected {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("latch fault")
+    }
+}
+
+impl core::error::Error for LatchFaultInjected {}
 
 // ---------------------------------------------------------------------------
 // Report sink.

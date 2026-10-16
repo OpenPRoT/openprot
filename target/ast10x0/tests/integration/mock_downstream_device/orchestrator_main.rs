@@ -28,7 +28,7 @@
 use core::convert::Infallible;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 
-use board_stubs::{BoardFault, StubImage};
+use board_stubs::{BoardFault, CountingLatch, StubImage};
 // The shared stub authenticates everything and measures nothing. The
 // `measured` and recovery cfgs wire a verifier of their own.
 #[cfg(not(any(measured, recovery, recovery_exhausted)))]
@@ -825,6 +825,7 @@ impl BoardCapabilities for MockDownstreamDeviceBoard {
     type Updatable = ScenarioUpdatable;
     type Recovery = DeviceRecovery;
     type DeviceTrial = ();
+    type Lockdown = CountingLatch;
     type Staging = ScenarioStaging;
     type UpdateVerifier = ScenarioUpdateVerifier;
     type SelfUpdate = SelfSession;
@@ -853,6 +854,7 @@ fn board() -> Board<MockDownstreamDeviceBoard, N> {
         }),
         verifier: SCENARIO_VERIFIER,
         report_sink: LogSink,
+        lockdown: CountingLatch,
         update_staging: SCENARIO_STAGING,
         update_verifier: Some(SCENARIO_UPDATE_VERIFIER),
         self_update: Some(ErotUpdate {
@@ -979,6 +981,24 @@ fn restore_calls_as_expected() -> bool {
     false
 }
 
+/// Whether the terminal safe state was engaged as often as this build
+/// arranges: once where the run ends in lockdown, never anywhere else. A
+/// latch in a run that was supposed to come up is a failure nothing else
+/// here would catch.
+fn latched_as_expected() -> bool {
+    let expected = u32::from(EXPECT_LOCKDOWN);
+    let latches = board_stubs::latches();
+    if latches == expected {
+        return true;
+    }
+    pw_log::error!(
+        "the platform latched {} times, expected {}",
+        latches as u32,
+        expected as u32
+    );
+    false
+}
+
 fn run() -> Result<(), ()> {
     syscall::wait_group_add(handle::WG, handle::BOOT_EVT, Signals::READABLE, 0usize)
         .map_err(|_| ())?;
@@ -1030,7 +1050,7 @@ fn run() -> Result<(), ()> {
                 pw_log::error!("orchestrator locked the platform");
                 return Err(());
             }
-            if !restore_calls_as_expected() || !measured_as_expected() {
+            if !restore_calls_as_expected() || !measured_as_expected() || !latched_as_expected() {
                 return Err(());
             }
             if EXPECT_RECOVERY {
@@ -1057,7 +1077,7 @@ fn run() -> Result<(), ()> {
             }
             // Without the call count, `recovery` would pass on a verifier
             // that never refused the image.
-            if !restore_calls_as_expected() || !measured_as_expected() {
+            if !restore_calls_as_expected() || !measured_as_expected() || !latched_as_expected() {
                 return Err(());
             }
             pw_log::info!("device booted and the orchestrator is in Ready");
