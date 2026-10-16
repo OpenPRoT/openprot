@@ -28,7 +28,7 @@
 use core::convert::Infallible;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 
-use board_stubs::{BoardFault, StubImage};
+use board_stubs::{BoardFault, CountingLatch, StubImage};
 // The shared stub authenticates everything and measures nothing. The
 // `measured` and recovery cfgs wire a verifier of their own.
 #[cfg(not(any(measured, recovery, recovery_exhausted)))]
@@ -96,6 +96,11 @@ const RUN_BUDGET_MILLIS: u64 = 10_000;
 /// the target fail, keeps a build error and a caught failure from looking
 /// the same to the runner.
 const EXPECT_LOCKDOWN: bool = cfg!(device_hangs) || cfg!(recovery_exhausted);
+
+/// How many times this build expects the platform to latch. The runs that
+/// end in lockdown latch once, the runs that come up never do, which is
+/// the same fact `EXPECT_LOCKDOWN` states as a verdict.
+const EXPECT_LATCHES: u32 = EXPECT_LOCKDOWN as u32;
 
 /// Whether this build starts with an image the RoT refuses. `recovery`
 /// restores a good image and boots. `recovery_exhausted` restores an image
@@ -827,6 +832,7 @@ impl BoardCapabilities for MockDownstreamDeviceBoard {
     type Updatable = ScenarioUpdatable;
     type Recovery = DeviceRecovery;
     type DeviceTrial = ();
+    type Lockdown = CountingLatch;
     type Staging = ScenarioStaging;
     type UpdateVerifier = ScenarioUpdateVerifier;
     type SelfUpdate = SelfSession;
@@ -855,6 +861,7 @@ fn board() -> Board<MockDownstreamDeviceBoard, N> {
         }),
         verifier: SCENARIO_VERIFIER,
         report_sink: LogSink,
+        lockdown: CountingLatch,
         update_staging: SCENARIO_STAGING,
         update_verifier: Some(SCENARIO_UPDATE_VERIFIER),
         self_update: Some(ErotUpdate {
@@ -1022,6 +1029,24 @@ fn commit_self_floor(core: &mut Core, driver: &mut Driver) -> Result<(), ()> {
     Ok(())
 }
 
+/// Whether the driver engaged the safe state `EXPECT_LATCHES` times:
+/// once in a run that ends in lockdown, never in a run that comes up. A
+/// latch in a run that was supposed to come up means the state machine
+/// reached `Locked`, through exhausted recovery or a failed effect, and
+/// no other check in this file looks for that.
+fn latched_as_expected() -> bool {
+    let latches = board_stubs::latches();
+    if latches == EXPECT_LATCHES {
+        return true;
+    }
+    pw_log::error!(
+        "the platform latched {} times, expected {}",
+        latches as u32,
+        EXPECT_LATCHES as u32
+    );
+    false
+}
+
 fn run() -> Result<(), ()> {
     syscall::wait_group_add(handle::WG, handle::BOOT_EVT, Signals::READABLE, 0usize)
         .map_err(|_| ())?;
@@ -1073,7 +1098,7 @@ fn run() -> Result<(), ()> {
                 pw_log::error!("orchestrator locked the platform");
                 return Err(());
             }
-            if !restore_calls_as_expected() || !measured_as_expected() {
+            if !restore_calls_as_expected() || !measured_as_expected() || !latched_as_expected() {
                 return Err(());
             }
             if EXPECT_RECOVERY {
@@ -1108,7 +1133,7 @@ fn run() -> Result<(), ()> {
             commit_self_floor(&mut core, &mut driver)?;
             // Without the call count, `recovery` would pass on a verifier
             // that never refused the image.
-            if !restore_calls_as_expected() || !measured_as_expected() {
+            if !restore_calls_as_expected() || !measured_as_expected() || !latched_as_expected() {
                 return Err(());
             }
             pw_log::info!("device booted and the orchestrator is in Ready");

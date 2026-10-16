@@ -12,9 +12,11 @@
 
 #![no_std]
 
+use core::sync::atomic::{AtomicU32, Ordering};
+
 use openprot_orchestrator_driver::{ImageSource, Verdict, Verifier};
 use openprot_orchestrator_sm::ComponentId;
-use orchestrator_capabilities::AuthenticatedImage;
+use orchestrator_capabilities::{AuthenticatedImage, LockdownLatch};
 
 /// One board fault, for every seam that has to name an error type. A
 /// scenario cares whether an actuation failed, never which one.
@@ -67,5 +69,40 @@ impl ImageSource for StubImage {
 
     fn read_at(&mut self, _offset: usize, _buf: &mut [u8]) -> Result<(), BoardFault> {
         Err(BoardFault)
+    }
+}
+
+/// How many times the platform latched into its safe state, which is what
+/// a scenario asserts.
+///
+/// A static because the driver keeps the board to itself: `Driver::board`
+/// is `#[cfg(test)]` and crate-private, so the unit tests read the count
+/// out of their own latch while an integration app cannot reach its board
+/// at all. The count lives here instead, where both sides see it.
+///
+/// No code resets the count. Each scenario is a one-shot image that
+/// latches at most once, so a run reads only what the run itself wrote.
+static LATCHES: AtomicU32 = AtomicU32::new(0);
+
+/// How many times the platform latched in this run.
+pub fn latches() -> u32 {
+    LATCHES.load(Ordering::Relaxed)
+}
+
+/// The terminal safe state, counted instead of actuated.
+///
+/// A real latch holds every managed device in reset and denies writes in
+/// the SPI monitor, and answers `Ok` only once both are in force. QEMU
+/// models one chip and the scenarios have no second device to hold, so
+/// the claim narrows to the call: the driver called `latch` once in a run
+/// that ends in lockdown, and never in a run that comes up.
+pub struct CountingLatch;
+
+impl LockdownLatch for CountingLatch {
+    type Error = BoardFault;
+
+    fn latch(&mut self) -> Result<(), BoardFault> {
+        LATCHES.fetch_add(1, Ordering::Relaxed);
+        Ok(())
     }
 }

@@ -24,7 +24,7 @@
 use core::convert::Infallible;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use board_stubs::{BoardFault, StubImage, StubVerifier};
+use board_stubs::{BoardFault, CountingLatch, StubImage, StubVerifier};
 use openprot_orchestrator_driver::{
     bring_up, request_update, Board, BoardCapabilities, ComponentWiring, Report, ReportSink,
     SvnFloorBinding,
@@ -228,6 +228,36 @@ const EXPECT_TRIAL: TrialCloses = if cfg!(device_hangs) {
     }
 };
 
+/// How many times this scenario expects the driver to engage the
+/// terminal safe state. The device is required and the board wires no recovery
+/// source, so a device that does not come up exhausts recovery at once
+/// and the platform locks. `recovery_preempts` reaches `Locked` the same
+/// way, by the recovery that took the update away finding no source. The
+/// happy path never reaches `Locked`.
+const EXPECT_LATCHES: u32 = if cfg!(any(device_hangs, device_stays_down, recovery_preempts)) {
+    1
+} else {
+    0
+};
+
+/// Whether the driver engaged the safe state `EXPECT_LATCHES` times. A
+/// latch in the run that is supposed to commit means
+/// the state machine reached `Locked`, through exhausted recovery, a
+/// failed effect, or a commit window that timed out, and no other check
+/// in this file looks for that.
+fn latched_as_expected() -> bool {
+    let latches = board_stubs::latches();
+    if latches == EXPECT_LATCHES {
+        return true;
+    }
+    pw_log::error!(
+        "ORCH: the platform latched {} times, expected {}",
+        latches as u32,
+        EXPECT_LATCHES as u32
+    );
+    false
+}
+
 /// Whether the trial ended the way this scenario says it must.
 ///
 /// Returns a `bool` instead of asserting, because a panic here would kill
@@ -260,12 +290,12 @@ fn verdict(outcome: Outcome) -> bool {
                 return false;
             }
             pw_log::info!("ORCH: the device booted the image it was given");
-            trial_closed_as_expected()
+            trial_closed_as_expected() && latched_as_expected()
         }
         Outcome::FirstBootFailed => {
             if cfg!(device_hangs) {
                 pw_log::info!("ORCH: the device never came up, so no update was offered");
-                return trial_closed_as_expected();
+                return trial_closed_as_expected() && latched_as_expected();
             }
             pw_log::error!("ORCH: the device never came up");
             false
@@ -273,7 +303,7 @@ fn verdict(outcome: Outcome) -> bool {
         Outcome::SecondBootFailed => {
             if cfg!(device_stays_down) {
                 pw_log::info!("ORCH: the device took the update and never came back");
-                return trial_closed_as_expected();
+                return trial_closed_as_expected() && latched_as_expected();
             }
             pw_log::error!("ORCH: the device never came back from the activation reset");
             false
@@ -292,7 +322,7 @@ fn verdict(outcome: Outcome) -> bool {
             pw_log::info!(
                 "ORCH: recovery preempted the update and the driver dropped the candidate"
             );
-            true
+            latched_as_expected()
         }
     }
 }
@@ -507,6 +537,7 @@ impl BoardCapabilities for UpdateBoard {
     type Updatable = FdUpdatable;
     type Recovery = ();
     type DeviceTrial = TrialRecord;
+    type Lockdown = CountingLatch;
     type Staging = PatternStaging;
     type UpdateVerifier = PatternVerifier;
     type SelfUpdate = ();
@@ -536,6 +567,7 @@ fn board() -> Board<UpdateBoard, N> {
         }),
         verifier: StubVerifier,
         report_sink: LogSink,
+        lockdown: CountingLatch,
         update_staging: PatternStaging,
         update_verifier: Some(PatternVerifier),
         self_update: None,

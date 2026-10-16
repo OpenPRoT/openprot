@@ -43,7 +43,7 @@ use openprot_orchestrator_sm::{
 // Only the accepting path checks the state it reached.
 #[cfg(not(slot_resync))]
 use board_stubs::StubVerifier;
-use board_stubs::{BoardFault, StubImage};
+use board_stubs::{BoardFault, CountingLatch, StubImage};
 #[cfg(not(refused_update))]
 use openprot_orchestrator_sm::State;
 use orchestrator_capabilities::{
@@ -470,6 +470,7 @@ impl BoardCapabilities for UpdateBoard {
     type Updatable = ScenarioUpdatable;
     type Recovery = ();
     type DeviceTrial = ();
+    type Lockdown = CountingLatch;
     type Staging = PatternStaging;
     type UpdateVerifier = PatternVerifier;
     type SelfUpdate = ();
@@ -498,6 +499,7 @@ fn board() -> Board<UpdateBoard, N> {
         }),
         verifier: scenario_verifier(),
         report_sink: LogSink,
+        lockdown: CountingLatch,
         update_staging: PatternStaging,
         update_verifier: Some(PatternVerifier),
         self_update: None,
@@ -605,10 +607,16 @@ fn entry() {
     // a failure is what the test passes on. So the orchestrator logs what
     // it reached and parks.
     let completed = run(&mut core, &mut driver, &mut fd);
-    if completed {
-        pw_log::info!("ORCH: the update completed");
-    } else {
+    // Checked whether the run completed or not: a latch in either case
+    // means the state machine reached `Locked`, and no other check in
+    // this file looks for that.
+    let no_stray_latch = latched_as_expected();
+    if !completed {
         pw_log::error!("ORCH: the update did not complete");
+    } else if !no_stray_latch {
+        pw_log::error!("ORCH: the update completed and the platform latched");
+    } else {
+        pw_log::info!("ORCH: the update completed");
     }
     // `rot_owns_verdict` means the claim is about state the Firmware
     // Device cannot see, such as the SVN floor the RoT keeps, so the RoT
@@ -1069,6 +1077,29 @@ enum Commit {
     Refused,
     /// The exchange with the device did not complete.
     Failed,
+}
+
+/// How many times these scenarios expect the driver to engage the
+/// terminal safe state. Every one of them ends with the state machine
+/// still supervising, whether the update went through, was refused,
+/// errored or was withdrawn, so the count is zero.
+const EXPECT_LATCHES: u32 = 0;
+
+/// Whether the safe state stayed untouched. Checked on both outcomes,
+/// because an unexpected lockdown is likeliest in the runs that end
+/// badly by design, and in those runs the Firmware Device owns the
+/// verdict.
+fn latched_as_expected() -> bool {
+    let latches = board_stubs::latches();
+    if latches == EXPECT_LATCHES {
+        return true;
+    }
+    pw_log::error!(
+        "ORCH: the platform latched {} times, expected {}",
+        latches as u32,
+        EXPECT_LATCHES as u32
+    );
+    false
 }
 
 /// Asks the device what it is waiting for.
