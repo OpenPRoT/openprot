@@ -2102,6 +2102,26 @@ fn an_unrelated_boot_confirmed_leaves_the_commit_window_open() {
     );
 }
 
+/// Entering lockdown asks the board for its safe state, once. The effect
+/// is the only thing `Locked` entry emits, and nothing re-enters.
+#[test]
+fn entering_lockdown_emits_one_latch() {
+    let (effects, state) = drive(
+        chain(&[(C0, ComponentAttrs::passive_required())]),
+        &[Event::PowerGood(PowerOnResult::Unprovisioned)],
+    );
+
+    assert_eq!(state, State::Locked);
+    assert_eq!(
+        effects
+            .iter()
+            .filter(|e| **e == Effect::LatchLockdown)
+            .count(),
+        1,
+        "the safe state is engaged once, on entry"
+    );
+}
+
 /// A successful boot closes the trial for the component that booted, and
 /// for no other.
 #[test]

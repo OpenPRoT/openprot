@@ -12,9 +12,11 @@
 
 #![no_std]
 
+use core::sync::atomic::{AtomicU32, Ordering};
+
 use openprot_orchestrator_driver::{ImageSource, Verdict, Verifier};
 use openprot_orchestrator_sm::ComponentId;
-use orchestrator_capabilities::AuthenticatedImage;
+use orchestrator_capabilities::{AuthenticatedImage, LockdownLatch};
 
 /// One board fault, for every seam that has to name an error type. A
 /// scenario cares whether an actuation failed, never which one.
@@ -67,5 +69,34 @@ impl ImageSource for StubImage {
 
     fn read_at(&mut self, _offset: usize, _buf: &mut [u8]) -> Result<(), BoardFault> {
         Err(BoardFault)
+    }
+}
+
+/// How many times the platform latched into its safe state, which is what
+/// a scenario asserts. A static because the latch moves into the board,
+/// into the driver, while the run loop that judges it is outside all three.
+static LATCHES: AtomicU32 = AtomicU32::new(0);
+
+/// Times the platform was latched in this run.
+pub fn latches() -> u32 {
+    LATCHES.load(Ordering::Relaxed)
+}
+
+/// The platform's safe state, counted instead of actuated.
+///
+/// A real one holds every managed device in reset and denies writes in the
+/// SPI monitor, and answers `Ok` only once both are in force. QEMU models
+/// one chip and the scenarios have no second device to hold, so what they
+/// claim is narrower and worth stating plainly: that the orchestrator
+/// engaged the safe state exactly when it said it would, and never in a
+/// run that was supposed to come up.
+pub struct CountingLatch;
+
+impl LockdownLatch for CountingLatch {
+    type Error = BoardFault;
+
+    fn latch(&mut self) -> Result<(), BoardFault> {
+        LATCHES.fetch_add(1, Ordering::Relaxed);
+        Ok(())
     }
 }

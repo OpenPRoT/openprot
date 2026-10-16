@@ -41,7 +41,7 @@ use openprot_orchestrator_sm::{
     ComponentAttrs, ComponentId, Effect, Event, Platform, PowerOnResult,
 };
 // Only the accepting path checks the state it reached.
-use board_stubs::{BoardFault, StubImage, StubVerifier};
+use board_stubs::{BoardFault, CountingLatch, StubImage, StubVerifier};
 #[cfg(not(refused_update))]
 use openprot_orchestrator_sm::State;
 use orchestrator_capabilities::{
@@ -343,6 +343,7 @@ impl BoardCapabilities for UpdateBoard {
     type Updatable = FdUpdatable;
     type Recovery = ();
     type DeviceTrial = ();
+    type Lockdown = CountingLatch;
     type Staging = PatternStaging;
     type UpdateVerifier = PatternVerifier;
     type SelfUpdate = ();
@@ -371,6 +372,7 @@ fn board() -> Board<UpdateBoard, N> {
         }),
         verifier: StubVerifier,
         report_sink: LogSink,
+        lockdown: CountingLatch,
         update_staging: PatternStaging,
         update_verifier: Some(PatternVerifier),
         self_update: None,
@@ -476,10 +478,16 @@ fn entry() {
     // runner greps one sentinel, and in a scenario where the RoT refuses,
     // the RoT reaching a failure is what the test passes on. So this logs
     // what it reached and parks.
-    if run(&mut core, &mut driver, &mut fd) {
-        pw_log::info!("ORCH: the update completed");
-    } else {
+    let completed = run(&mut core, &mut driver, &mut fd);
+    // Checked on both paths: the run that ends badly by design is where
+    // an unexpected lockdown would hide.
+    let quiet = latched_as_expected();
+    if !completed {
         pw_log::error!("ORCH: the update did not complete");
+    } else if !quiet {
+        pw_log::error!("ORCH: the update completed and the platform latched");
+    } else {
+        pw_log::info!("ORCH: the update completed");
     }
     #[expect(clippy::empty_loop)]
     loop {}
@@ -680,6 +688,29 @@ enum Commit {
     Refused,
     /// The exchange with the device did not complete.
     Failed,
+}
+
+/// How many times these scenarios expect the platform's safe state to be
+/// engaged: never. Every one of them ends with the state machine still
+/// supervising, whether the update went through, was refused, errored or
+/// was withdrawn. The device is the one that fails a negative run, not
+/// the platform.
+const EXPECT_LATCHES: u32 = 0;
+
+/// Whether the safe state stayed untouched. Checked on both outcomes,
+/// because an unexpected lockdown is likeliest in the runs that end
+/// badly by design, and there the firmware device owns the verdict.
+fn latched_as_expected() -> bool {
+    let latches = board_stubs::latches();
+    if latches == EXPECT_LATCHES {
+        return true;
+    }
+    pw_log::error!(
+        "ORCH: the platform latched {} times, expected {}",
+        latches as u32,
+        EXPECT_LATCHES as u32
+    );
+    false
 }
 
 /// Asks the device what it is waiting for.

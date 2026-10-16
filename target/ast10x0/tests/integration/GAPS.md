@@ -149,6 +149,29 @@ image settles through `settle_self_update_at_boot`, which dispatches the
 settlement event without calling a verifier. Measuring it needs a seam on
 that path, not another scenario.
 
+## What the lockdown latch does not prove
+
+`LockdownLatch` is wired and the scenarios count it: each run that ends
+in lockdown expects the count, and each run that comes up expects none.
+What they do not exercise is a safe state. The mock counts; a real one on
+this board holds every managed device in reset and denies writes in the
+SPI monitor, and answers `Ok` only when both are in force. QEMU models
+one chip and there is no second device to hold, so the claim here is
+about the orchestrator, not the platform.
+
+A failed latch is invisible, which is narrower than it sounds and worth
+stating exactly. The attempt happens: `Locked` entry emits the effect and
+the driver calls the board once. What is lost is the failure. The driver
+answers `EffectError`, and the orchestrator injects `Event::EffectFailed`
+at most once per dispatch, so a run that reached `Locked` through an
+earlier failure has already spent that injection; where it has not, the
+event arrives in `Locked`, which is unsupervised and drops it. Either way
+there is no second attempt and no report, and the driver crate has no
+logger. So a board that cannot engage its safe state leaves the state
+machine locked, the hardware unheld, and nothing saying so. Surfacing the
+failed latch needs a `Report` variant or a log dependency in the driver
+crate, and that is a decision rather than an oversight.
+
 ## Arcs the trial gate does not cover
 
 `DeviceTrialBoot` is wired and `full_update` closes the trial for a
