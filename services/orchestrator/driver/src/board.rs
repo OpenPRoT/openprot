@@ -11,7 +11,7 @@ use util_io::ByteSource;
 
 pub use orchestrator_capabilities::{AuthenticatedImage, BootControl, BootWatch, Measurement};
 use orchestrator_capabilities::{
-    DeviceTrialBoot, IncrementalVerifier, Recovery, SelfReset, SelfUpdate, SvnFloor,
+    DeviceTrialBoot, IncrementalVerifier, LockdownLatch, Recovery, SelfReset, SelfUpdate, SvnFloor,
 };
 
 /// Access to one component's active firmware image, however it is reached —
@@ -239,6 +239,25 @@ pub trait BoardCapabilities {
     /// the eRoT moves no slot metadata for that device, so confirm and
     /// revert write nothing.
     type DeviceTrial: DeviceTrialBoot;
+    /// Puts the platform into its terminal safe state when the state
+    /// machine enters `Locked`.
+    ///
+    /// The board wires one latch rather than one per component. Holding a
+    /// single device while another master still writes the flash is not a
+    /// safe state, so the actuation covers the whole platform in one call.
+    /// What the safe state is stays board wiring. On a board where the
+    /// eRoT sits in the flash path the latch holds every managed device in
+    /// reset and denies writes in the SPI monitor, so a device held in
+    /// reset is not written by another master on the bus. `latch` answers
+    /// `Ok` only once both are in force.
+    ///
+    /// No `()` default, unlike [`Recovery`] and
+    /// [`DeviceTrialBoot`](orchestrator_capabilities::DeviceTrialBoot).
+    /// Those two describe hardware a board may not have: no recovery
+    /// source to restore from, a device that keeps its own trial record.
+    /// A missing safe state is a decision rather than a missing part, so
+    /// every board writes the latch type out.
+    type Lockdown: LockdownLatch;
     /// The region an update source writes a candidate into. One region,
     /// because one update runs at a time.
     type Staging: ByteSource;
@@ -343,6 +362,7 @@ pub struct ComponentWiring<B: BoardCapabilities> {
 ///     type Updatable = PldmDevice;        // device pulls its own chunks
 ///     type Recovery = SlotRecovery;       // A/B + golden, attempt-indexed
 ///     type DeviceTrial = SlotTrial;       // confirm or revert the activated slot
+///     type Lockdown = HoldAndDeny;        // every device in reset, SPI monitor denying
 ///     type Staging = StagingFlash;        // where the update source writes
 ///     type UpdateVerifier = CryptoVerifier; // incremental signature check
 ///     type SelfUpdate = SelfUpdateSession; // session record in the eRoT's own flash
@@ -403,9 +423,12 @@ pub struct Board<B: BoardCapabilities, const N: usize> {
     pub components: [ComponentWiring<B>; N],
     /// Judges images for every component.
     pub verifier: B::Verifier,
-    /// Where the driver hands the SM's reports. One per platform, not one
-    /// per component: two of the four reports name no component.
+    /// Takes every report the driver forwards.
     pub report_sink: B::ReportSink,
+    /// Puts the platform into its terminal safe state. The driver calls
+    /// the latch once, on entry to lockdown, and never unwinds it: only a
+    /// platform reset clears the safe state.
+    pub lockdown: B::Lockdown,
     /// Where an update source leaves the candidate. Not per component:
     /// the SM allows one update at a time, so one region serves all of
     /// them.
