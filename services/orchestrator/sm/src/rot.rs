@@ -235,6 +235,16 @@ impl<const N: usize, const E: usize> Rot<N, E> {
     /// found. If the rest of the chain is exhausted or entirely gated, sets
     /// `cursor` to a past-the-end sentinel (`chain.len()`) and returns
     /// `false` — the caller should treat that as "chain done".
+    /// The chain's eRoT, which `chain_of` has already put at position 0 and
+    /// refused to accept anywhere else. `None` for a chain with no eRoT
+    /// entry, which only a test builds.
+    fn erot_id(&self) -> Option<ComponentId> {
+        self.chain
+            .iter()
+            .find(|(_, attrs)| attrs.kind == ComponentKind::Erot)
+            .map(|&(id, _)| id)
+    }
+
     fn advance_to_next_ungated(&mut self, ctx: &mut Sink<E>, start_idx: usize) -> bool {
         let mut idx = start_idx;
         while let Some(&(id, attrs)) = self.chain.get(idx) {
@@ -952,6 +962,12 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 if self.self_trial_booted {
                     self.self_trial_booted = false;
                     ctx.emit(Effect::ConfirmSelfTrial);
+                    // The agent asks for the eRoT's floor the way it asks
+                    // for any other component's, so the ask has to find
+                    // something outstanding or it is dropped. Confirming
+                    // the trial is what makes the advance legal, the same
+                    // point `BootConfirmed` marks for a managed device.
+                    self.awaiting_floor_advance = self.erot_id();
                 }
                 // NB: `gated` is intentionally NOT cleared here. It is a durable
                 // trust-boundary gate (each id has a live `AssertReset`);
