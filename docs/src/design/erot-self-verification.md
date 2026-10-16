@@ -78,10 +78,13 @@ component behind it.
 
 ## The eRoT's own reset
 
-A self-update activates a new image and resets the eRoT into it. Nothing in
-this repository does that yet: no board wires a flash-backed `Updatable` for
-the eRoT's slot, nothing marks the trial pending outside tests, and nothing
-drives the reset. GAPS.md lists all three.
+A self-update activates a new image and resets the eRoT into it. The driver
+does the sequence: it records the session with the SVN the authenticated pass
+read, marks the trial pending, then asks the board's `SelfReset` to reset. No
+board can do the two ends of that yet. None wires a flash-backed `Updatable`
+for the eRoT's slot, so there is nothing to stage the image into, and none
+implements `SelfReset`, so the reset reports the fault a reset that did not
+happen reports. GAPS.md lists both.
 
 The durable `SelfUpdate` session is the part that exists. The reset leaves it
 behind and the next boot reads it. NIST SP 800-193 §4.1.2(2) requires that
