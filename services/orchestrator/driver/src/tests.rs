@@ -541,6 +541,9 @@ struct StubVerifier {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum StubVerdict {
     Authenticate,
+    /// Authenticates but reports no SVN, like a verifier that checks a
+    /// signature without reading a manifest.
+    AuthenticateVersionless,
     Reject,
     Fault,
     /// Never reaches a verdict and never moves `written`: the stalled
@@ -580,6 +583,11 @@ impl StubVerifier {
 
     fn accepting() -> Self {
         Self::new(&[StubVerdict::Authenticate])
+    }
+
+    /// Authenticates every candidate and reports no SVN for it.
+    fn unversioned() -> Self {
+        Self::new(&[StubVerdict::AuthenticateVersionless])
     }
 
     fn rejecting() -> Self {
@@ -684,6 +692,13 @@ impl orchestrator_capabilities::VerifySession for StubSession {
                 image: AuthenticatedImage {
                     svn: Some(Svn(CANDIDATE_SVN)),
                     // The update path's stub hashes nothing.
+                    measurement: None,
+                },
+            },
+            StubVerdict::AuthenticateVersionless => PollOutcome::Authenticated {
+                verifier: self.verifier,
+                image: AuthenticatedImage {
+                    svn: None,
                     measurement: None,
                 },
             },
@@ -3940,19 +3955,29 @@ fn a_versionless_image_still_resyncs_the_spare_slot() {
 /// machine and in the driver alike. These tests build the two separately,
 /// so both take their chain from this helper and cannot disagree about
 /// which component is the eRoT.
-fn erot_chain() -> [(ComponentId, ComponentAttrs); 2] {
+fn erot_chain() -> [(ComponentId, ComponentAttrs); EROT_N] {
     entries_with_kinds([ComponentKind::Erot, ComponentKind::Passive])
 }
 
+/// Length of the eRoT chain: the eRoT and the one device behind it.
+const EROT_N: usize = 2;
+/// The effect buffer `Rot` requires for `EROT_N` components.
+const EROT_E: usize = 2 * EROT_N + 2;
+
+fn erot_orchestrator() -> Orchestrator<EROT_N, EROT_E> {
+    let chain = heapless::Vec::<_, EROT_N>::from_slice(&erot_chain()).expect("two fits");
+    Orchestrator::new(chain.try_into().unwrap(), MOCK_MAX_RETRY)
+}
+
 /// A driver over that chain with `session` as the eRoT's update session.
-fn erot_driver(session: MockSelfUpdate) -> PlatformDriver<MockBoard, 2> {
+fn erot_driver(session: MockSelfUpdate) -> PlatformDriver<MockBoard, EROT_N> {
     erot_driver_with(session, StubVerifier::accepting())
 }
 
 fn erot_driver_with(
     session: MockSelfUpdate,
     update_verifier: StubVerifier,
-) -> PlatformDriver<MockBoard, 2> {
+) -> PlatformDriver<MockBoard, EROT_N> {
     PlatformDriver::new(
         &erot_chain(),
         Board {
@@ -3965,6 +3990,17 @@ fn erot_driver_with(
             ..mock_board()
         },
     )
+}
+
+/// Brings the state machine to `Ready`: the walk steps past the eRoT and
+/// the device behind it boots.
+fn erot_chain_up(
+    orch: &mut Orchestrator<EROT_N, EROT_E>,
+    driver: &mut PlatformDriver<MockBoard, EROT_N>,
+) {
+    orch.dispatch(driver, Event::PowerGood(PowerOnResult::Provisioned));
+    orch.dispatch(driver, Event::Booted(ComponentId::new(1)));
+    assert_eq!(orch.state(), State::Ready, "the chain is up");
 }
 
 /// Pumps the update until the verifier reaches a verdict:
@@ -4013,4 +4049,136 @@ fn activating_the_erots_own_update_records_the_session_then_reaches_the_reset() 
         "the session holds the candidate's own SVN, marked pending"
     );
     assert_eq!(self_image.reset.attempts, 1, "the reset was reached");
+}
+
+// The candidate for the eRoT authenticated with no manifest SVN, so there
+// is no session to record. The pump rejects it, the update ends and the
+// state machine returns to Ready. Rejecting at the activation would fail
+// that effect and lock the platform, which a missing version does not
+// warrant.
+#[test]
+fn a_versionless_self_candidate_ends_the_update_without_locking() {
+    let mut orch = erot_orchestrator();
+    let mut driver = erot_driver_with(MockSelfUpdate::idle(), StubVerifier::unversioned());
+    erot_chain_up(&mut orch, &mut driver);
+
+    request_update(&mut orch, &mut driver, C0, CANDIDATE_LEN).expect("the request is accepted");
+    assert_eq!(orch.state(), State::Updating(C0));
+
+    let verdict = pump_to_verdict(&mut driver);
+    assert_eq!(verdict, Event::UpdateRejected, "the pump rejected it");
+    assert!(driver
+        .board()
+        .report_sink
+        .seen
+        .contains(&Report::SelfImageNoSvn));
+
+    orch.dispatch(&mut driver, verdict);
+    assert_eq!(
+        orch.state(),
+        State::Ready,
+        "the update ended and the platform is not locked"
+    );
+    assert_eq!(driver.pending_update(), None, "and the job is gone");
+
+    let self_image = driver.board().self_image.as_ref().expect("wired above");
+    assert_eq!(
+        self_image.session.state(),
+        Ok(SelfUpdateState::Idle),
+        "nothing was recorded"
+    );
+    assert_eq!(self_image.reset.attempts, 0, "and nothing reset");
+}
+
+// One update at a time, whatever it targets. A request aimed at the eRoT
+// while a device behind it is being updated is refused as `UpdateBusy`,
+// and the job already in flight is untouched.
+//
+// The board wires no self-image either, so the self-image check would
+// refuse the request too. The answer is `UpdateBusy` and not
+// `NoSelfImage` because the busy check in submit_update runs first.
+#[test]
+fn an_erot_update_is_refused_while_a_device_update_is_in_flight() {
+    let mut driver = PlatformDriver::<MockBoard, EROT_N>::new(&erot_chain(), mock_board());
+    driver
+        .submit_update(C1, CANDIDATE_LEN)
+        .expect("the device update starts");
+
+    assert_eq!(
+        driver.submit_update(C0, CANDIDATE_LEN),
+        Err(DriverError::UpdateBusy)
+    );
+    assert_eq!(
+        driver.pending_update(),
+        Some(C1),
+        "the device update is still the one in flight"
+    );
+}
+
+// A board with no self-image cannot record the session the update needs.
+// Accepting would run it to the activation, where the effect fails and
+// locks the platform. Refused at submit, the state machine never leaves
+// Ready.
+#[test]
+fn an_update_aimed_at_the_erot_is_refused_when_the_board_has_no_self_image() {
+    let mut orch = erot_orchestrator();
+    let mut driver = PlatformDriver::<MockBoard, EROT_N>::new(&erot_chain(), mock_board());
+    erot_chain_up(&mut orch, &mut driver);
+
+    assert_eq!(
+        request_update(&mut orch, &mut driver, C0, CANDIDATE_LEN),
+        Err(DriverError::NoSelfImage)
+    );
+    assert_eq!(orch.state(), State::Ready, "the request reached nothing");
+    assert_eq!(driver.pending_update(), None, "and stored nothing");
+}
+
+// A trial was confirmed but its SVN has not reached the floor. A second
+// update would overwrite the session holding it, and the floor would
+// never get it.
+#[test]
+fn a_second_self_update_is_refused_while_the_first_awaits_its_floor() {
+    let mut driver = erot_driver(MockSelfUpdate::with_session(
+        SelfUpdateState::Committed { svn: Svn(7) },
+        RunningImage::Confirmed,
+    ));
+
+    assert_eq!(
+        driver.submit_update(C0, CANDIDATE_LEN),
+        Err(DriverError::UpdateBusy)
+    );
+    assert_eq!(driver.pending_update(), None, "nothing was stored");
+    let self_image = driver.board().self_image.as_ref().expect("wired above");
+    assert_eq!(
+        self_image.session.state(),
+        Ok(SelfUpdateState::Committed { svn: Svn(7) }),
+        "and the session still holds the confirmed SVN"
+    );
+}
+
+// The same while the trial is being judged: this boot is the trial, and a
+// new record would overwrite the session that judges it.
+#[test]
+fn a_self_update_is_refused_while_the_trial_is_being_judged() {
+    let mut driver = erot_driver(trial_session(SelfUpdateState::TrialPending { svn: Svn(7) }));
+
+    assert_eq!(
+        driver.submit_update(C0, CANDIDATE_LEN),
+        Err(DriverError::UpdateBusy)
+    );
+}
+
+// A trial image that booted once and was not confirmed: the reset after
+// booted the old image again, so no boot that could confirm the trial
+// will come, and settlement drops the session either way. A new
+// self-update must not be refused for a session that can only be
+// discarded.
+#[test]
+fn a_self_update_may_start_over_a_trial_that_fell_back() {
+    let mut driver = erot_driver(MockSelfUpdate::with_session(
+        SelfUpdateState::TrialPending { svn: Svn(7) },
+        RunningImage::Confirmed,
+    ));
+
+    assert_eq!(driver.submit_update(C0, CANDIDATE_LEN), Ok(()));
 }

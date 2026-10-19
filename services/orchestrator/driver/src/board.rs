@@ -161,6 +161,15 @@ pub enum Report {
     /// and both slots hold it; the floor still names the old SVN, so the
     /// old image could be installed again.
     SvnFloorCommitFailed(ComponentId),
+    /// The candidate for the eRoT authenticated with no manifest SVN and
+    /// was rejected. The update ends and the state machine returns to
+    /// `Ready`.
+    ///
+    /// A managed component is different: the image installs even with no
+    /// SVN and the floor for that component stays where it was
+    /// ([`Report::SvnFloorHeld`]). Only an image for the eRoT must carry
+    /// an SVN, because the ROM checks the SVN before boot.
+    SelfImageNoSvn,
     /// The component's anti-rollback floor stayed where it was, because
     /// the image that authenticated carried no SVN to move it to. The
     /// board binds an eRoT-held floor for this component, so it asked for

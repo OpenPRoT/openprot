@@ -85,11 +85,13 @@ abort would do is untested.
   parks their device at the status.
 - A self-update that is actually performed. `self_trial` starts the
   session where an activation would have left it and checks what the
-  next boot does about it. Nothing stages an image into the eRoT's own
-  slot, marks the trial pending or resets the eRoT, because no board
-  wires a flash-backed `Updatable` for that slot and QEMU models one
-  chip. The half the scenario covers is the boot after the reset, not
-  the update that caused it.
+  next boot does about it. The driver records the session, marks the
+  trial pending and calls `SelfReset`, and its unit tests cover that.
+  No scenario runs it: no board wires a flash-backed `Updatable` for
+  the eRoT's slot to stage into, no board implements a real
+  `SelfReset` (the scenarios use the `()` impl, whose reset only
+  reports a fault), and QEMU models one chip. The half the scenario
+  covers is the boot after the reset, not the update that caused it.
 - Recovery preempting an update: `Updating` to `Recovering`, with the
   staged image discarded. `mock_downstream_device/recovery` covers the
   boot-time arc, where verification refuses the image and the restore is
@@ -105,6 +107,24 @@ abort would do is untested.
   verification is a question for the machine.
 - The spare slot re-sync after a commit, and the floor advance held until
   the spare has the image.
+- The same two for the slots the eRoT boots from, which nothing
+  implements, not just nothing covers. `commit_self_svn_floor` advances
+  the floor as soon as the trial is confirmed, and no pass re-stages the
+  slot the eRoT stopped booting from. `queue_slot_resync` cannot serve
+  the eRoT: the claim it reads, `last_activated`, is RAM, and the
+  self-reset wipes it. The ROM rejects an image below the counter, so after
+  the advance the other slot is unbootable, and a corruption of the running
+  slot leaves the eRoT with nothing to fall back to.
+- A board that wires no self-update at all. `Board.self_image` is an
+  `Option` and `()` satisfies `SelfUpdate` and `SelfReset`, so such a
+  board builds and refuses an update aimed at the eRoT at submit, with
+  `NoSelfImage`. Self-resiliency is required of every eRoT, so the
+  `Option` is a bring-up seam for QEMU and the mock boards rather than a
+  configuration a platform may ship; nothing in the types says so. Two
+  stages close it: a wiring type with a named cannot-self-update variant,
+  so each board states the choice the way `SvnFloorBinding` makes it
+  state who keeps a floor, and then a plain field once a board wires a
+  real self-update.
 
 ## What the measurement scenario does not say
 

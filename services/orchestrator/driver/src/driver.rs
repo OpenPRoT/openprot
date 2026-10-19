@@ -53,8 +53,10 @@ pub enum DriverError {
     NoVerifiedImage,
     /// The component's SVN floor could not be advanced.
     SvnFloorFault,
-    /// An update is already in flight; the frontend answers the requester
-    /// over its own protocol, the SM never sees the refused request.
+    /// An update is already in flight, or a self-update has not settled:
+    /// a trial still being judged, or one confirmed whose SVN the floor
+    /// has not taken. The frontend answers the requester over its own
+    /// protocol, the SM never sees the refused request.
     UpdateBusy,
     /// The device refused to activate what it staged.
     UpdateFault,
@@ -84,8 +86,11 @@ pub enum DriverError {
     /// The eRoT's own candidate reached the activation with no manifest
     /// SVN, so the session has no SVN to record.
     ///
-    /// The name says `SelfActivate`: what failed is the activation, while
-    /// the image is versionless rather than faulty.
+    /// A guard, not the usual refusal: the pump rejects such a candidate
+    /// during verification
+    /// ([`Report::SelfImageNoSvn`](crate::Report)). Reaching the
+    /// activation anyway means the two checks disagree, which is worth
+    /// locking for where a missing version alone is not.
     SelfActivateNoSvn,
     /// The reset that boots the eRoT's trial image did not happen. The
     /// session is already marked pending, so the next reset from any
@@ -114,7 +119,7 @@ impl core::fmt::Display for DriverError {
             DriverError::BootControlFault => "boot control could not actuate the reset",
             DriverError::NoVerifiedImage => "no verified image to commit the floor to",
             DriverError::SvnFloorFault => "svn floor could not be advanced",
-            DriverError::UpdateBusy => "an update is already in flight",
+            DriverError::UpdateBusy => "an update is in flight or a self-update has not settled",
             DriverError::UpdateFault => "device refused to activate the staged image",
             DriverError::Unsupervised => "the platform is pre-service or locked down",
             DriverError::RecoveryFault => "recovery mechanism faulted",
