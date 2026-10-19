@@ -195,3 +195,8 @@ that check would hold even with no boot walk ever polled.
 - Whichever app owns the sentinel decides the run. `full_update` passed
   while the device never rebooted, because the firmware device was still
   declaring the verdict and its own flow had finished.
+- `svn_commit` failed about one run in ten, and once on CI. Nothing is
+  registered between the device's two `run_terminus` calls, so the
+  Update Agent's UpdateSecurityRevision was dropped. It retries now. A
+  future scenario whose agent app sends a command just after update mode
+  ends needs the same retry.
