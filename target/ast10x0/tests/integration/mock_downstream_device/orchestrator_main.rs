@@ -491,6 +491,7 @@ impl BoardCapabilities for MockDownstreamDeviceBoard {
     type Staging = NoStaging;
     type UpdateVerifier = NeverVerifier;
     type SelfUpdate = SelfSession;
+    type SelfReset = ();
     type ResetSignal = u8;
     type Probe = u8;
 }
@@ -519,6 +520,7 @@ fn board() -> Board<MockDownstreamDeviceBoard, N> {
         self_image: Some(SelfImage {
             session: SelfSession,
             floor: ErotFloor,
+            reset: (),
         }),
         update_stall_budget_millis: 1_000,
     }

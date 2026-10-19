@@ -10,7 +10,7 @@ use openprot_orchestrator_sm::{
 };
 use orchestrator_capabilities::{
     AuthenticatedImage, BootWatch, FailureCause, Progress, Recovery, RestoreOutcome, RunningImage,
-    SelfUpdate, SelfUpdateState, Svn, SvnFloor, WalkVerdict,
+    SelfReset, SelfUpdate, SelfUpdateState, Svn, SvnFloor, WalkVerdict,
 };
 use util_io::{ByteReadError, ByteSource};
 
@@ -768,6 +768,39 @@ impl orchestrator_capabilities::Updatable for MockUpdatable {
     }
 }
 
+/// The eRoT's own reset. A test process cannot reset itself, so this
+/// counts the attempt and fails, like a reset that did not happen. The
+/// count is what a driver test reads once activation calls `reset`.
+struct MockSelfReset {
+    attempts: u32,
+}
+
+impl MockSelfReset {
+    const fn new() -> Self {
+        Self { attempts: 0 }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct MockResetFault;
+
+impl core::fmt::Display for MockResetFault {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("mock reset fault")
+    }
+}
+
+impl core::error::Error for MockResetFault {}
+
+impl SelfReset for MockSelfReset {
+    type Error = MockResetFault;
+
+    fn reset(&mut self) -> Result<core::convert::Infallible, MockResetFault> {
+        self.attempts += 1;
+        Err(MockResetFault)
+    }
+}
+
 /// The eRoT's own update session, in RAM. `running` says which image this
 /// boot runs, the trial one or the confirmed one, as a test sets it.
 struct MockSelfUpdate {
@@ -892,6 +925,7 @@ impl BoardCapabilities for MockBoard {
     type Staging = MemStaging;
     type UpdateVerifier = StubVerifier;
     type SelfUpdate = MockSelfUpdate;
+    type SelfReset = MockSelfReset;
     type ResetSignal = u8;
     type Probe = u8;
 }
@@ -1265,6 +1299,7 @@ impl BoardCapabilities for WatchBoard {
     type Staging = MemStaging;
     type UpdateVerifier = StubVerifier;
     type SelfUpdate = MockSelfUpdate;
+    type SelfReset = MockSelfReset;
     type ResetSignal = u8;
     type Probe = u8;
 }
@@ -1679,6 +1714,7 @@ impl BoardCapabilities for RecoverableBoard {
     type Staging = MemStaging;
     type UpdateVerifier = StubVerifier;
     type SelfUpdate = MockSelfUpdate;
+    type SelfReset = MockSelfReset;
     type ResetSignal = u8;
     type Probe = u8;
 }
@@ -3499,6 +3535,7 @@ fn self_trial_driver(session: MockSelfUpdate) -> PlatformDriver<MockBoard, 1> {
             self_image: Some(SelfImage {
                 session,
                 floor: MockFloor::new(),
+                reset: MockSelfReset::new(),
             }),
             ..mock_board()
         },
