@@ -129,6 +129,13 @@ static ROT_AUTHENTICATED: AtomicBool = AtomicBool::new(false);
 /// Set when the driver calls `Updatable::activate`.
 static ACTIVATED: AtomicBool = AtomicBool::new(false);
 
+/// Times the staged candidate was thrown away, and times the update
+/// requester was told its update had been superseded. Statics because the
+/// updatable lives inside the board and the sink beside it, while the run
+/// that judges them is outside both.
+static ABANDONED: AtomicU32 = AtomicU32::new(0);
+static ABORTED: AtomicU32 = AtomicU32::new(0);
+
 /// How far the run got. A negative scenario arranges one of these and
 /// passes on that one, so a run that died somewhere else fails rather
 /// than looking like the proof.
@@ -144,6 +151,9 @@ enum Outcome {
     /// The device took the update but never came back from the reset that
     /// was supposed to boot it.
     SecondBootFailed,
+    /// Recovery took the platform away from the update while the device
+    /// was still transferring.
+    Preempted,
 }
 
 /// Counts what the orchestrator did with the trial record for the managed
@@ -263,6 +273,16 @@ fn verdict(outcome: Outcome) -> bool {
             pw_log::error!("ORCH: the update did not go through");
             false
         }
+        Outcome::Preempted => {
+            if !cfg!(recovery_preempts) {
+                pw_log::error!(
+                    "ORCH: recovery took the update away, which this scenario rules out"
+                );
+                return false;
+            }
+            pw_log::info!("ORCH: recovery preempted the update and the candidate was dropped");
+            true
+        }
     }
 }
 
@@ -343,7 +363,10 @@ impl Updatable for FdUpdatable {
         Ok(StageProgress::Ready)
     }
 
-    fn abandon(&mut self) {}
+    fn abandon(&mut self) {
+        ABANDONED.fetch_add(1, Ordering::Relaxed);
+        pw_log::info!("ORCH: the staged candidate was discarded");
+    }
 
     fn activate(&mut self) -> Result<(), UpdateError> {
         ACTIVATED.store(true, Ordering::Relaxed);
@@ -445,6 +468,10 @@ impl ReportSink for LogSink {
                 "ORCH: report, component {} out of recovery sources",
                 id.get() as u32
             ),
+            Report::UpdateAborted => {
+                ABORTED.fetch_add(1, Ordering::Relaxed);
+                pw_log::info!("ORCH: report, the update was superseded")
+            }
             Report::BootFailed { id, checkpoint, .. } => pw_log::info!(
                 "ORCH: report, component {} failed at {}",
                 id.get() as u32,
@@ -561,6 +588,9 @@ fn run(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> Outcome {
     let resets_before = RESETS.load(Ordering::Relaxed);
 
     if !drive_update(core, driver, fd) {
+        if cfg!(recovery_preempts) {
+            return preemption_outcome(core);
+        }
         return Outcome::UpdateFailed;
     }
 
@@ -589,6 +619,40 @@ fn run(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> Outcome {
     }
     pw_log::info!("ORCH: update committed after the device booted it");
     Outcome::Committed
+}
+
+/// Checks what the state machine did with the update that recovery
+/// preempted.
+///
+/// The checks only mean something together. `abandon` ran once: a run that
+/// staged nothing never calls it, and a retry loop calls it repeatedly.
+/// `ReportUpdateAborted` reached the sink, which says the update was
+/// superseded, where `ReportUpdateDeferred` would say it was refused for
+/// later. And `activate` never ran, which is also true of a run that
+/// offered no update at all.
+///
+/// The board wires no recovery source, so the episode runs out at the
+/// first attempt and the platform locks, which is where the run ends.
+fn preemption_outcome(core: &Core) -> Outcome {
+    let abandoned = ABANDONED.load(Ordering::Relaxed);
+    let aborted = ABORTED.load(Ordering::Relaxed);
+    if abandoned != 1 || aborted != 1 {
+        pw_log::error!(
+            "ORCH: the preemption discarded {} candidates and reported {} aborts, expected one each",
+            abandoned as u32,
+            aborted as u32
+        );
+        return Outcome::UpdateFailed;
+    }
+    if ACTIVATED.load(Ordering::Relaxed) {
+        pw_log::error!("ORCH: the preempted update was activated anyway");
+        return Outcome::UpdateFailed;
+    }
+    if core.state() != State::Locked {
+        pw_log::error!("ORCH: recovery had no source and the platform did not lock");
+        return Outcome::UpdateFailed;
+    }
+    Outcome::Preempted
 }
 
 /// Waits for the managed device's walk to complete.
@@ -655,6 +719,14 @@ fn drive_update(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
         match status {
             FdStatus::OfferPending { total, .. } => {
                 if !offer(core, driver, fd, total) {
+                    return false;
+                }
+                // The device is transferring now. This is where the
+                // corruption lands in the scenario that arranges one: the
+                // machine is in `Updating` and the candidate is mid-flight.
+                if cfg!(recovery_preempts) {
+                    pw_log::info!("ORCH: the image the device is running is corrupt, mid-update");
+                    core.dispatch(driver, Event::CorruptionDetected(TARGET));
                     return false;
                 }
             }

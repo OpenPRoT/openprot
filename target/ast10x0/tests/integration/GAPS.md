@@ -95,11 +95,10 @@ abort would do is untested.
   source: the bytes are a constant and the slot counts them rather than
   writing them, because nothing serves the eRoT's own update over PLDM
   and no board wires a flash-backed `Updatable` for that slot.
-- Recovery preempting an update: `Updating` to `Recovering`, with the
-  staged image discarded. `mock_downstream_device/recovery` covers the
-  boot-time arc, where verification refuses the image and the restore is
-  what gets the device released, and `recovery_exhausted` covers the
-  second episode finding no source left. Neither starts from an update.
+- `Ready` to `Recovering`. `full_update/recovery_preempts` reports
+  corruption while the component is `Updating`; nothing reports it on a
+  component sitting `Ready`, so that arc is untaken and an `Isolable`
+  component is never gated.
 - A recovery loop that never ends. `device_hangs` wires no recovery
   source, so it locks on the first attempt. With a source behind it, a
   device that verifies but never boots recovers forever:
@@ -173,6 +172,25 @@ that falls back slot to slot, or a settle path for a trial left open.
 Either the reader treats the contents as untrusted, or the revert
 overwrites them.
 
+## What the preemption scenario does not say
+
+`full_update/recovery_preempts` takes the machine from `Updating` to
+`Recovering`: the corruption lands while the device is transferring, the
+candidate is dropped, and the requester is told it was superseded. What
+the run cannot show is recovery succeeding afterwards, because the board
+wires no recovery source and the episode ends in lockdown. A scenario with
+both a source and an update in flight would say more.
+
+The event is the scenario app's own. `orchestrator_main.rs` dispatches
+`CorruptionDetected` where the device is transferring; no platform code
+raises it. The driver's verdicts come from the chain walk, and the walk
+does not run while the machine is in `Updating`, so what the transition
+waits on is a runtime monitor, not another scenario.
+
+The corruption lands on the component under update. `Updating` preempts on
+a `Required` corruption of any component, including one the update is not
+touching, and that arc is untaken.
+
 ## Events no scenario can reach
 
 Checked by grepping the scenario apps for each `Event`, then asking what
@@ -186,8 +204,6 @@ driver makes `BootFailed` and `RecoveryUnavailable` on its own, and
   `Authenticated` without opening the image, so no walk can fail. The
   update candidate has a different verifier, `PatternVerifier`, which can
   fault, but that ends as `UpdateRejected`.
-- `CorruptionDetected`. Nothing reports runtime corruption, so `Ready` to
-  `Recovering` is never taken and an `Isolable` component is never gated.
 - `Restored`. Every board wires `Recovery = ()`, which answers
   `SourceExhausted` on the first attempt, so recovery always exhausts and
   never succeeds. The retry cap and `max_retry` have no scenario.

@@ -34,6 +34,7 @@ SCENARIO_CFGS = [
     "refused_update",
     "rot_owns_verdict",
     "device_stays_down",
+    "recovery_preempts",
     "transfer_error",
     "cancel_mid_transfer",
     "offer_before_supervising",
