@@ -1,0 +1,28 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# Recovery preempting an update.
+#
+# Same sources, same system config, one flag. The RoT learns the running
+# image is corrupt while the device is still transferring, so the machine
+# leaves Updating for Recovering. It passes when the staged candidate is
+# dropped, the update requester is told it was superseded rather than
+# delayed, nothing is activated, and the platform locks because this board
+# wires no recovery source.
+
+load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
+load("//target/ast10x0/tests/integration/full_update:apps.bzl", "APPS", "FLASH", "SYSTEM_CONFIG", "TARGET_DEPS", "TARGET_SRC")
+
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/full_update/recovery_preempts:recovery_preempts_qemu_test
+qemu_scenario(
+    name = "recovery_preempts_qemu",
+    apps = APPS,
+    cfgs = [
+        "recovery_preempts",
+        "rot_owns_verdict",
+    ],
+    flash = FLASH,
+    system_config = SYSTEM_CONFIG,
+    target_deps = TARGET_DEPS,
+    target_src = TARGET_SRC,
+)

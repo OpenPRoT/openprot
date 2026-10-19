@@ -46,6 +46,7 @@ like the proof.
 | `full_update` | boot, update, reboot in one image | the device boots the image it was given |
 | `full_update/device_hangs` | the device never comes up | no update is ever offered |
 | `full_update/device_stays_down` | the device takes the update, then stays down | the RoT notices it never came back |
+| `full_update/recovery_preempts` | the running image turns out corrupt mid-update | the candidate is dropped, the update reported superseded, and the platform locks |
 
 A negative scenario is a package of its own, built from the same sources
 and the same system config with one `--cfg` added. `scenario.bzl` holds
