@@ -23,9 +23,9 @@ pub use kernel_config::{
 
 // MCU memory map for the selected target type, taken from upstream caliptra-mcu-sw
 #[cfg(not(feature = "fpga"))]
-use mcu_config_emulator::EMULATOR_MEMORY_MAP as MCU_MEMORY_MAP;
+use caliptra_mcu_config_emulator::EMULATOR_MEMORY_MAP as MCU_MEMORY_MAP;
 #[cfg(feature = "fpga")]
-use mcu_config_fpga::FPGA_MEMORY_MAP as MCU_MEMORY_MAP;
+use caliptra_mcu_config_fpga::FPGA_MEMORY_MAP as MCU_MEMORY_MAP;
 
 /// Base of the MCI register block (MCU timer, device mappings).
 pub const MCI_BASE: usize = MCU_MEMORY_MAP.mci_offset as usize;

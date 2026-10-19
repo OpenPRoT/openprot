@@ -5,14 +5,14 @@
 import argparse
 import logging
 import os
+import pathlib
 import subprocess
 import sys
 import tempfile
 import threading
 import time
-import pathlib
-
 from pathlib import Path
+
 from pw_tokenizer import detokenize
 
 _LOG = logging.getLogger(__name__)
@@ -44,11 +44,10 @@ def scan_output_for_result(lines):
 
 
 try:
-
-    import caliptra.emulator_cptra_rom  # type: ignore
     import caliptra.emulator_cptra_firmware  # type: ignore
-    import caliptra.emulator_mcu_rom  # type: ignore
+    import caliptra.emulator_cptra_rom  # type: ignore
     import caliptra.emulator_exe  # type: ignore
+    import caliptra.emulator_mcu_rom  # type: ignore
     from python.runfiles import runfiles  # type: ignore
 
     r = runfiles.Create()
@@ -154,11 +153,11 @@ def load_and_run(
             f"--caliptra-firmware={_CPTRA_FIRMWARE}",
             "--i3c-port=65534",
             "--rom-offset=0x80000000",
-            "--rom-size=0x8000",
+            "--rom-size=0x10000",
             "--dccm-offset=0x50000000",
             "--dccm-size=0x4000",
             "--sram-offset=0x40000000",
-            "--sram-size=0x80000",
+            "--sram-size=0x100000",
             "--pic-offset=0x60000000",
             "--i3c-offset=0x20004000",
             "--i3c-size=0x1000",

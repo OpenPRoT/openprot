@@ -6,9 +6,9 @@
 //!
 //! Usage: render_system_config <emulator|fpga> <template> <output>
 
-use mcu_config::McuMemoryMap;
-use mcu_config_emulator::EMULATOR_MEMORY_MAP;
-use mcu_config_fpga::FPGA_MEMORY_MAP;
+use caliptra_mcu_config::McuMemoryMap;
+use caliptra_mcu_config_emulator::EMULATOR_MEMORY_MAP;
+use caliptra_mcu_config_fpga::FPGA_MEMORY_MAP;
 
 /// Offset of the kernel's RAM within MCU SRAM. This is OpenPRoT's own layout
 /// choice (code first, data after), not part of the upstream memory map.

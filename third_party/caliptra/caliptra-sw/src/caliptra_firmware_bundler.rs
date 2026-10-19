@@ -22,14 +22,9 @@
 //! Mirrors `pub fn build_and_sign_image(...)` in
 //! `caliptra-sw/builder/src/lib.rs` (around line 489) and the supporting
 //! `ElfExecutable` in `caliptra-sw/image/elf/src/lib.rs`. The full upstream
-//! pipeline lives in the `caliptra-builder` crate, which we cannot depend on
-//! from Bazel because of unresolved upstream deps (`fslock`, `Crypto` trait
-//! wiring, `CARGO` env var). Our
-//! `//third_party/caliptra/caliptra-sw:caliptra_builder` target is tagged
-//! `manual` for that reason. If/when those upstream deps are fixed and
-//! `caliptra_builder` becomes buildable, this file should be replaced by a
-//! thin wrapper that calls `caliptra_builder::build_and_sign_image()`
-//! directly.
+//! pipeline lives in the `caliptra-builder` crate, which we do not pull into
+//! Bazel because it shells out to `cargo` and pulls in host-only build
+//! orchestration deps (`fslock`, `CARGO` env var).
 
 use std::fs;
 use std::path::PathBuf;

@@ -92,10 +92,10 @@ class TestReplaceRevInCargoToml(unittest.TestCase):
     def test_replace_rev_in_cargo_toml_preserves_everything_else(self):
         old = "c" * 40
         new = "1" * 40
-        result = replace_rev_in_cargo_toml(self.toml, "caliptra-cfi-lib-git", old, new)
+        result = replace_rev_in_cargo_toml(self.toml, "caliptra-cfi-lib", old, new)
         # New SHA is present for the target dep
         self.assertIn(f'rev = "{new}"', result)
-        # Old SHA still present for other deps (caliptra-cfi-derive-git not changed)
+        # Old SHA still present for other deps (caliptra-cfi-derive not changed)
         self.assertIn(f'rev = "{old}"', result)
         # caliptra-api line is unchanged
         self.assertIn(f'"a" * 40' if False else f'rev = "{"a" * 40}"', result)
@@ -108,9 +108,7 @@ class TestReplaceRevInCargoToml(unittest.TestCase):
 
     def test_replace_rev_in_cargo_toml_raises_on_wrong_old_sha(self):
         with self.assertRaises(ValueError):
-            replace_rev_in_cargo_toml(
-                self.toml, "caliptra-cfi-lib-git", "9" * 40, "1" * 40
-            )
+            replace_rev_in_cargo_toml(self.toml, "caliptra-cfi-lib", "9" * 40, "1" * 40)
 
 
 class TestExtractShaFromVersionsBzl(unittest.TestCase):

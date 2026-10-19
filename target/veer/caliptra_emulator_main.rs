@@ -14,16 +14,15 @@
 //! loop only ends on fatal errors or breakpoints.
 
 use caliptra_emu_cpu::StepAction;
+use caliptra_mcu_emulator::{Emulator, EmulatorArgs};
 use clap::Parser;
-use emulator::{Emulator, EmulatorArgs};
-use mcu_testing_common::MCU_RUNNING;
 use std::io;
 
 fn main() -> io::Result<()> {
     let cli = EmulatorArgs::parse();
     let mut emulator = Emulator::from_args(cli, false)?;
     emulator.start_i3c_controller();
-    while MCU_RUNNING.load(std::sync::atomic::Ordering::Relaxed) {
+    while caliptra_mcu_testing_common::is_emulator_running() {
         match emulator.step() {
             StepAction::Break | StepAction::Fatal => break,
             _ => {}

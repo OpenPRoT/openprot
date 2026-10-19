@@ -36,10 +36,11 @@ config_setting(
     for crate_name in [
         "bitfield",
         "bitflags",
+        "caliptra-mcu-otp-lifecycle",
+        "caliptra-mcu-registers-generated",
         "cfg-if",
         "log",
         "memoffset",
-        "registers-generated",
         "serde",
         "serde_derive",
         "smlang",

@@ -13,9 +13,9 @@ rust_binary(
     edition = "2024",
     visibility = ["//target/veer:__subpackages__"],
     deps = [
-        "@rust_caliptra_crates_host//:mcu-config",
-        "@rust_caliptra_crates_host//:mcu-config-emulator",
-        "@rust_caliptra_crates_host//:mcu-config-fpga",
+        "@rust_caliptra_crates_host//:caliptra-mcu-config",
+        "@rust_caliptra_crates_host//:caliptra-mcu-config-emulator",
+        "@rust_caliptra_crates_host//:caliptra-mcu-config-fpga",
     ],
 )
 

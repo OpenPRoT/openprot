@@ -30,6 +30,8 @@ CALIPTRA_FIRMWARE_RUSTC_FLAGS = [
     "-C",
     "embed-bitcode=yes",
     "-C",
+    "target-feature=+relax,+unaligned-scalar-mem,+zba,+zbb,+zbc,+zbs",
+    "-C",
     "link-arg=-Wl,--relax",
 ]
 
@@ -37,10 +39,13 @@ CALIPTRA_FIRMWARE_RUSTC_FLAGS = [
 # caliptra_objcopy
 # ---------------------------------------------------------------------------
 
-def caliptra_objcopy(name, src, out = None, format = "binary", **kwargs):
+def caliptra_objcopy(name, src, out = None, format = "binary", rom_size = None, **kwargs):
     """Convert an ELF target to a raw binary via llvm-objcopy.
 
-    Wraps the llvm-objcopy invocation.
+    Wraps the llvm-objcopy invocation. When rom_size is specified, pads the
+    resulting binary to rom_size bytes and writes the 48-byte SHA-384 digest
+    of the preceding bytes into the trailing 48 bytes (matching upstream
+    caliptra-mcu-sw append_rom_digest).
 
     Note: requires tags = ["no-sandbox"] since the LLVM toolchain binary
     is not exposed as a proper Bazel tool target.
@@ -50,6 +55,7 @@ def caliptra_objcopy(name, src, out = None, format = "binary", **kwargs):
         src: Label of the ELF binary to convert.
         out: Output filename (defaults to <name>.bin).
         format: objcopy output format (default: "binary").
+        rom_size: Optional full ROM size in bytes for padding + SHA-384 digest.
         **kwargs: Extra arguments forwarded to genrule (e.g. tags, visibility).
     """
     if out == None:
@@ -60,15 +66,38 @@ def caliptra_objcopy(name, src, out = None, format = "binary", **kwargs):
     # the correct Bazel-portable approach (no hardcoded paths).
     _LLVM_OBJCOPY = "@@pigweed++pw_cxx_toolchain+llvm_toolchain//:llvm-objcopy"
 
-    native.genrule(
-        name = name,
-        srcs = [src],
-        outs = [out],
+    if rom_size != None:
+        cmd = (
+            "$(execpath {objcopy}) -O {fmt} $(location {src}) $@.tmp && " +
+            "python3 -c '" +
+            "import hashlib, os, sys; " +
+            "src_p, dst_p, sz = sys.argv[1], sys.argv[2], int(sys.argv[3]); " +
+            "d = bytearray(open(src_p, \"rb\").read()); " +
+            "os.remove(src_p); " +
+            "doff = sz - 48; " +
+            "assert len(d) <= doff, \"ROM binary too large\"; " +
+            "d.extend(b\"\\x00\" * (sz - len(d))); " +
+            "d[doff:] = hashlib.sha384(d[:doff]).digest(); " +
+            "open(dst_p, \"wb\").write(d)" +
+            "' $@.tmp $@ {rom_size}"
+        ).format(
+            objcopy = _LLVM_OBJCOPY,
+            fmt = format,
+            src = src,
+            rom_size = rom_size,
+        )
+    else:
         cmd = "$(execpath {objcopy}) -O {fmt} $(location {src}) $@".format(
             objcopy = _LLVM_OBJCOPY,
             fmt = format,
             src = src,
-        ),
+        )
+
+    native.genrule(
+        name = name,
+        srcs = [src],
+        outs = [out],
+        cmd = cmd,
         tools = [_LLVM_OBJCOPY],
         **kwargs
     )

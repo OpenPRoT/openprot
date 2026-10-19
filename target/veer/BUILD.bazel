@@ -89,9 +89,6 @@ rust_library(
 rust_binary(
     name = "caliptra_emulator",
     srcs = ["caliptra_emulator_main.rs"],
-    aliases = {
-        "//third_party/caliptra/caliptra-mcu-sw:emulator_lib": "emulator",
-    },
     edition = "2021",
     visibility = [":__subpackages__"],
     deps = [
@@ -138,8 +135,8 @@ rust_library(
     deps = [
         "@pigweed//pw_kernel/config:kernel_config_interface",
         "@pigweed//pw_kernel/lib/memory_config",
-        "@rust_caliptra_crates//:mcu-config-emulator",
-        "@rust_caliptra_crates//:mcu-config-fpga",
+        "@rust_caliptra_crates//:caliptra-mcu-config-emulator",
+        "@rust_caliptra_crates//:caliptra-mcu-config-fpga",
     ],
 )
 

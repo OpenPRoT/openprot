@@ -13,8 +13,8 @@ path = "fake.rs"
 caliptra-api = { git = "https://github.com/chipsalliance/caliptra-sw", rev = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", default-features = false }
 
 # Inline table with features list
-caliptra-cfi-lib-git = { git = "https://github.com/chipsalliance/caliptra-cfi", rev = "cccccccccccccccccccccccccccccccccccccccc", default-features = false, features = ["cfi"] }
-caliptra-cfi-derive-git = { git = "https://github.com/chipsalliance/caliptra-cfi", rev = "cccccccccccccccccccccccccccccccccccccccc" }
+caliptra-cfi-lib = { git = "https://github.com/chipsalliance/caliptra-cfi", rev = "cccccccccccccccccccccccccccccccccccccccc", default-features = false, features = ["cfi"] }
+caliptra-cfi-derive = { git = "https://github.com/chipsalliance/caliptra-cfi", rev = "cccccccccccccccccccccccccccccccccccccccc" }
 
 # DPE platform — uses package rename
 caliptra-dpe-platform = { package = "platform", git = "https://github.com/chipsalliance/caliptra-dpe", rev = "dddddddddddddddddddddddddddddddddddddddd", default-features = false }
