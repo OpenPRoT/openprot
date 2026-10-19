@@ -3925,3 +3925,86 @@ fn a_versionless_image_still_resyncs_the_spare_slot() {
         "the spare was never sent the image"
     );
 }
+
+/// The eRoT at position 0, where `chain_of` puts it, and a passive device
+/// behind it. The eRoT alone never leaves `PreSupervision`, so driving the
+/// machine needs the device too.
+///
+/// The component kind decides which update path runs, in the state
+/// machine and in the driver alike. These tests build the two separately,
+/// so both take their chain from this helper and cannot disagree about
+/// which component is the eRoT.
+fn erot_chain() -> [(ComponentId, ComponentAttrs); 2] {
+    entries_with_kinds([ComponentKind::Erot, ComponentKind::Passive])
+}
+
+/// A driver over that chain with `session` as the eRoT's update session.
+fn erot_driver(session: MockSelfUpdate) -> PlatformDriver<MockBoard, 2> {
+    erot_driver_with(session, StubVerifier::accepting())
+}
+
+fn erot_driver_with(
+    session: MockSelfUpdate,
+    update_verifier: StubVerifier,
+) -> PlatformDriver<MockBoard, 2> {
+    PlatformDriver::new(
+        &erot_chain(),
+        Board {
+            self_image: Some(SelfImage {
+                session,
+                floor: MockFloor::new(),
+                reset: MockSelfReset::new(),
+            }),
+            update_verifier: Some(update_verifier),
+            ..mock_board()
+        },
+    )
+}
+
+/// Pumps the update until the verifier reaches a verdict:
+/// `UpdateVerified` for a candidate the eRoT may install,
+/// `UpdateRejected` for one it may not.
+fn pump_to_verdict<const N: usize>(driver: &mut PlatformDriver<MockBoard, N>) -> Event {
+    for tick in 0..16 {
+        if let Some(event) = driver.pump_update(tick).event {
+            return event;
+        }
+    }
+    panic!("the pump reached no verdict");
+}
+
+// `prepare` records the SVN before `set_trial_pending` marks the trial,
+// the order SelfUpdate states. A crash between the two leaves a pending
+// trial the next boot reads as unconfirmed; the other order would boot a
+// trial with no session to judge it.
+//
+// The SVN recorded is the candidate image's, the only one the eRoT ever
+// reads of itself. See "Where the SVN comes from" in
+// docs/src/design/erot-self-verification.md.
+#[test]
+fn activating_the_erots_own_update_records_the_session_then_reaches_the_reset() {
+    assert_ne!(
+        CANDIDATE_SVN, MOCK_SVN,
+        "the two SVN fixtures have to differ or this test proves nothing"
+    );
+    let mut driver = erot_driver(MockSelfUpdate::idle());
+    driver.submit_update(C0, CANDIDATE_LEN).unwrap();
+    driver.prepare_update().unwrap();
+    assert_eq!(pump_to_verdict(&mut driver), Event::UpdateVerified);
+
+    assert_eq!(
+        driver.activate_update(),
+        Err(DriverError::SelfResetFault),
+        "the mock cannot reset the process it runs in"
+    );
+
+    let self_image = driver.board().self_image.as_ref().expect("wired above");
+    assert_eq!(
+        self_image.session.state(),
+        Ok(SelfUpdateState::TrialPending {
+            svn: Svn(CANDIDATE_SVN)
+        }),
+        "the session holds the candidate's own SVN, marked pending"
+    );
+    assert_eq!(self_image.reset.attempts, 1, "the reset was reached");
+}
