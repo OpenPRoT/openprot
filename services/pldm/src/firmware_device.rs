@@ -179,6 +179,11 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
     /// listener is bound, silently dropping any Update Agent command that
     /// arrives in that window.
     ///
+    /// Between two calls nothing is registered either: the listener is a
+    /// local variable, and dropping it unregisters it. A command sent
+    /// then is lost; an Update Agent resends a request that gets no
+    /// answer.
+    ///
     /// This method loops until the FD leaves update mode — the `Idle` the
     /// Update Agent's `ActivateFirmware` or cancel returns it to — or an
     /// error stops it.
