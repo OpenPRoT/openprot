@@ -204,9 +204,12 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
     let len = query_devid
         .encode(&mut buf[1..])
         .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-    let (cc, resp_len) = transact(len, &mut buf)?;
-    if cc != 0 {
-        pw_log::error!("UA: QueryDeviceIdentifiers rejected, cc={}", cc as u32);
+    let (completion_code, resp_len) = transact(len, &mut buf)?;
+    if completion_code != 0 {
+        pw_log::error!(
+            "UA: QueryDeviceIdentifiers rejected, completion code {}",
+            completion_code as u32
+        );
         return Ok(false);
     }
     let Ok(devid) = QueryDeviceIdentifiersResponse::decode(&buf[1..1 + resp_len]) else {
@@ -228,9 +231,12 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
     let len = get_params
         .encode(&mut buf[1..])
         .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-    let (cc, resp_len) = transact(len, &mut buf)?;
-    if cc != 0 {
-        pw_log::error!("UA: GetFirmwareParameters rejected, cc={}", cc as u32);
+    let (completion_code, resp_len) = transact(len, &mut buf)?;
+    if completion_code != 0 {
+        pw_log::error!(
+            "UA: GetFirmwareParameters rejected, completion code {}",
+            completion_code as u32
+        );
         return Ok(false);
     }
     let Ok(params) = GetFirmwareParametersResponse::decode(&buf[1..1 + resp_len]) else {
@@ -276,9 +282,12 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
     let len = req_update
         .encode(&mut buf[1..])
         .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-    let (cc, _) = transact(len, &mut buf)?;
-    if cc != 0 {
-        pw_log::error!("UA: RequestUpdate rejected, cc={}", cc as u32);
+    let (completion_code, _) = transact(len, &mut buf)?;
+    if completion_code != 0 {
+        pw_log::error!(
+            "UA: RequestUpdate rejected, completion code {}",
+            completion_code as u32
+        );
         return Ok(false);
     }
 
@@ -297,9 +306,12 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
     let len = pass_comp
         .encode(&mut buf[1..])
         .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-    let (cc, _) = transact(len, &mut buf)?;
-    if cc != 0 {
-        pw_log::error!("UA: PassComponentTable rejected, cc={}", cc as u32);
+    let (completion_code, _) = transact(len, &mut buf)?;
+    if completion_code != 0 {
+        pw_log::error!(
+            "UA: PassComponentTable rejected, completion code {}",
+            completion_code as u32
+        );
         return Ok(false);
     }
 
@@ -319,9 +331,12 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
     let len = update_comp
         .encode(&mut buf[1..])
         .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-    let (cc, _) = transact(len, &mut buf)?;
-    if cc != 0 {
-        pw_log::error!("UA: UpdateComponent rejected, cc={}", cc as u32);
+    let (completion_code, _) = transact(len, &mut buf)?;
+    if completion_code != 0 {
+        pw_log::error!(
+            "UA: UpdateComponent rejected, completion code {}",
+            completion_code as u32
+        );
         return Ok(false);
     }
 
@@ -357,9 +372,12 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
     let len = activate
         .encode(&mut buf[1..])
         .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-    let (cc, _) = transact(len, &mut buf)?;
-    if cc != 0 {
-        pw_log::error!("UA: ActivateFirmware rejected, cc={}", cc as u32);
+    let (completion_code, _) = transact(len, &mut buf)?;
+    if completion_code != 0 {
+        pw_log::error!(
+            "UA: ActivateFirmware rejected, completion code {}",
+            completion_code as u32
+        );
         return Ok(false);
     }
 
