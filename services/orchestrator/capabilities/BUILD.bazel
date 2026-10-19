@@ -17,6 +17,7 @@ rust_library(
         "src/measurer.rs",
         "src/progress.rs",
         "src/recovery.rs",
+        "src/self_reset.rs",
         "src/self_update.rs",
         "src/svn_floor.rs",
         "src/updatable.rs",

@@ -382,6 +382,7 @@ impl BoardCapabilities for UpdateBoard {
     type Staging = PatternStaging;
     type UpdateVerifier = PatternVerifier;
     type SelfUpdate = ();
+    type SelfReset = ();
     type ResetSignal = u8;
     type Probe = u8;
 }

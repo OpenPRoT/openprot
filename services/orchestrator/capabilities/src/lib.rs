@@ -38,6 +38,11 @@
 //! need no session: a reset loses the observation that would judge them, so
 //! abandoning at boot gets the same result with no storage.
 //!
+//! `SelfReset` is the reset that boots the eRoT's trial image. The eRoT
+//! resets itself, so the call does not come back and has nothing to
+//! return. Separate from `BootControl`, whose hold-then-release pair
+//! needs a caller still running for the second call.
+//!
 //! `Progress` is the byte count every polled seam reports: staging and
 //! verification both answer with `written` out of `total`, so one stall
 //! rule covers both, and it matches the intake seam's wire form field
@@ -82,6 +87,7 @@ mod lockdown_latch;
 mod measurer;
 mod progress;
 mod recovery;
+mod self_reset;
 mod self_update;
 mod svn_floor;
 mod updatable;
@@ -96,6 +102,7 @@ pub use lockdown_latch::LockdownLatch;
 pub use measurer::{MeasureOutcome, MeasureSession, Measurement, Measurer};
 pub use progress::Progress;
 pub use recovery::{Recovery, RestoreOutcome};
+pub use self_reset::{NoReset, SelfReset};
 pub use self_update::{
     trial_outcome, NoSession, RunningImage, SelfUpdate, SelfUpdateState, TrialOutcome,
 };
