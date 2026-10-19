@@ -1,13 +1,13 @@
 # QEMU integration tests
 
-Fifteen scenarios, each its own system image, all running under QEMU with no
+Sixteen scenarios, each its own system image, all running under QEMU with no
 hardware. The AST1030 is the black box; everything it talks to is another
 app in the same image, reached through the same traits a real board wires.
 
 The runner greps one pass/fail sentinel per run, so one scenario per image
 is what lets a failure name itself.
 
-Six of the fifteen are the thing working. Eight are the thing failing,
+Seven of the sixteen are the thing working. Eight are the thing failing,
 and they pass when the failure is caught. The last is the agent
 withdrawing the update, which is neither: nothing failed and nothing was
 installed. A scenario that only ever passes proves nothing: the first
@@ -21,6 +21,7 @@ like the proof.
 | `mock_downstream_device` | the device boots | the walk completes |
 | `mock_downstream_device/device_hangs` | the device never reports | the platform locks |
 | `mock_downstream_device/self_trial` | the eRoT boots the trial image of its own update | the chain coming up confirms the session |
+| `mock_downstream_device/measured` | the verifier reports a digest for the device's image | the sink is handed exactly one measurement, for that device |
 | `pldm_update` | a clean update | the update commits |
 | `pldm_update/retry_chunk` | the agent answers one data request with a retry | the device asks for that window again and the update completes |
 | `pldm_update/corrupt_image` | one byte of the image is flipped | the device catches it |

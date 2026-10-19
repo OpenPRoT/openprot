@@ -1,0 +1,22 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# The boot scenario with a verifier that measures.
+#
+# Same sources, same system config, one flag. The verdict carries a digest,
+# which the driver reports as Report::Measured, and the run passes when the
+# sink was handed exactly one, for the managed device. Every other scenario
+# wires a verifier that measures nothing, so this is the only place that
+# path runs.
+
+load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
+load("//target/ast10x0/tests/integration/mock_downstream_device:apps.bzl", "APPS", "SYSTEM_CONFIG", "TARGET_SRC")
+
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/mock_downstream_device/measured:measured_qemu_test
+qemu_scenario(
+    name = "measured_qemu",
+    apps = APPS,
+    cfgs = ["measured"],
+    system_config = SYSTEM_CONFIG,
+    target_src = TARGET_SRC,
+)
