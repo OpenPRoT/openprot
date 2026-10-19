@@ -39,6 +39,7 @@ SCENARIO_CFGS = [
     "offer_before_supervising",
     "retry_chunk",
     "self_trial",
+    "measured",
     "svn_commit",
     "svn_commit_refused",
 ]

@@ -95,6 +95,23 @@ abort would do is untested.
 - The spare slot re-sync after a commit, and the floor advance held until
   the spare has the image.
 
+## What the measurement scenario does not say
+
+`mock_downstream_device/measured` runs the path #546 merged: a verdict
+carrying `Some(measurement)` reaches the sink as `Report::Measured`, once,
+for the component the walk measured. The digest is a constant, so what it
+proves is the wiring, not any hashing. Nothing computes a measurement
+anywhere in the tree: the `Measurer` capability has no implementor and is
+not a `BoardCapabilities` type, and the real one belongs to the crypto
+lane. The staged candidate is not measured either, because the update path
+verifies through `IncrementalVerifier`, which has no measurement seam.
+
+The eRoT's own image is not measured at all. `Report::Measured` comes from
+a verdict, and the walk passes over the eRoT, so it is never verified: its
+image settles through `settle_self_image_at_boot`, which dispatches the
+settlement event without calling a verifier. Measuring it needs a seam on
+that path, not another scenario.
+
 ## Events no scenario can reach
 
 Checked by grepping the scenario apps for each `Event`, then asking what

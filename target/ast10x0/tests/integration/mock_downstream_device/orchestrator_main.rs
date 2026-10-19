@@ -28,12 +28,22 @@
 use core::convert::Infallible;
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 
-use board_stubs::{BoardFault, StubImage, StubVerifier};
+use board_stubs::{BoardFault, StubImage};
+// The shared stub reads nothing and so measures nothing. Only the build
+// that arranges a measurement swaps it out.
+#[cfg(not(measured))]
+use board_stubs::StubVerifier;
 use openprot_orchestrator_driver::{
     bring_up, settle_self_image_at_boot, Board, BoardCapabilities, ComponentWiring, Report,
     ReportSink, SelfImage, SelfUpdateSettlement, SvnFloorBinding,
 };
+#[cfg(measured)]
+use openprot_orchestrator_driver::{ImageSource, Verdict, Verifier};
+#[cfg(measured)]
+use openprot_orchestrator_sm::ComponentId;
 use openprot_orchestrator_sm::{ComponentAttrs, Event, PowerOnResult, State};
+#[cfg(measured)]
+use orchestrator_capabilities::{AuthenticatedImage, Measurement};
 use orchestrator_capabilities::{
     BootControl, BootStatus, EvidenceReader, IncrementalVerifier, PollOutcome, RunningImage,
     SelfUpdate, SelfUpdateState, StageProgress, Svn, SvnFloor, Updatable, UpdateError,
@@ -375,6 +385,69 @@ impl ByteSource for NoStaging {
     }
 }
 
+/// The digest the measuring build reports. A real one is a hash of the
+/// image; this is a constant, because what the scenario claims is that a
+/// measurement the verifier reported reaches the report sink, not that
+/// anything hashed correctly.
+#[cfg(measured)]
+const DIGEST: Measurement = Measurement([0x5a; Measurement::LEN]);
+
+/// Reports a constant digest in its verdict.
+///
+/// The shared stub authenticates and reports no digest, which is every
+/// other scenario here, so the measurement path has never run:
+/// `Report::Measured` is emitted only for a verdict carrying
+/// `Some(measurement)`. The walk passes over the eRoT, so the only
+/// component this is asked about is the managed device.
+#[cfg(measured)]
+struct MeasuringVerifier;
+
+#[cfg(measured)]
+impl Verifier for MeasuringVerifier {
+    type Error = BoardFault;
+
+    fn verify(
+        &mut self,
+        _id: ComponentId,
+        _image: &mut impl ImageSource,
+    ) -> Result<Verdict, BoardFault> {
+        Ok(Verdict::Authenticated(AuthenticatedImage {
+            // Still nothing read: this build changes what the verifier
+            // measures, not what it parses.
+            svn: None,
+            measurement: Some(DIGEST),
+        }))
+    }
+}
+
+/// The verifier this scenario wires.
+#[cfg(not(measured))]
+type ScenarioVerifier = StubVerifier;
+#[cfg(measured)]
+type ScenarioVerifier = MeasuringVerifier;
+
+/// The `ScenarioVerifier` the board is built with.
+#[cfg(not(measured))]
+const SCENARIO_VERIFIER: ScenarioVerifier = StubVerifier;
+#[cfg(measured)]
+const SCENARIO_VERIFIER: ScenarioVerifier = MeasuringVerifier;
+
+/// What the sink was handed about the managed device's image: how many
+/// measurements, and the last digest. A static because the sink lives
+/// inside the board, inside the driver, while the run that judges it is
+/// outside all three.
+///
+/// `Relaxed` on every access: the app is one thread, and the sink writes
+/// these from the same run loop that reads them back, so there is no
+/// second thread to order against.
+static MEASUREMENTS: AtomicU32 = AtomicU32::new(0);
+static MEASURED_ID: AtomicU8 = AtomicU8::new(u8::MAX);
+
+/// The managed device's chain position. `chain_of` rejects a table that
+/// does not start with the eRoT, and `CHAIN` runs it at compile time, so
+/// position 1 is the first walked device whatever `DEVICES` holds.
+const MANAGED_DEVICE: u8 = 1;
+
 /// Reports go to the console. The test reads them the way an operator
 /// would, and a scenario that ends badly says why in its own output.
 struct LogSink;
@@ -388,6 +461,11 @@ impl ReportSink for LogSink {
                     "report: component {} out of recovery sources",
                     id.get() as u32
                 )
+            }
+            Report::Measured { id, .. } => {
+                MEASUREMENTS.fetch_add(1, Ordering::Relaxed);
+                MEASURED_ID.store(id.get(), Ordering::Relaxed);
+                pw_log::info!("report: component {} measured", id.get() as u32)
             }
             Report::BootFailed { id, checkpoint, .. } => pw_log::info!(
                 "report: component {} failed at {}",
@@ -403,7 +481,7 @@ struct MockDownstreamDeviceBoard;
 
 impl BoardCapabilities for MockDownstreamDeviceBoard {
     type Image = StubImage;
-    type Verifier = StubVerifier;
+    type Verifier = ScenarioVerifier;
     type BootControl = BmcReset;
     type BootWatch = CheckpointWalk<BmcEvidence, u8>;
     type SvnFloor = ErotFloor;
@@ -434,7 +512,7 @@ fn board() -> Board<MockDownstreamDeviceBoard, N> {
             updatable: NoUpdate,
             recovery: (),
         }),
-        verifier: StubVerifier,
+        verifier: SCENARIO_VERIFIER,
         report_sink: LogSink,
         update_staging: NoStaging,
         update_verifier: Some(NeverVerifier),
@@ -456,6 +534,31 @@ fn drain_reports() {
             DEVICE_READY.store(true, Ordering::Relaxed);
         }
     }
+}
+
+/// Whether the image measurement reached the report sink as this build
+/// arranges: once, for the managed device, where the verifier reports a
+/// digest, and never where it does not.
+///
+/// The second half is the half that bites. Every other scenario wires a
+/// verifier that measures nothing, so a `Report::Measured` there would
+/// mean a digest nobody computed.
+fn measured_as_expected() -> bool {
+    let expected = u32::from(cfg!(measured));
+    let measurements = MEASUREMENTS.load(Ordering::Relaxed);
+    if measurements != expected {
+        pw_log::error!(
+            "the sink was handed {} measurements, expected {}",
+            measurements as u32,
+            expected as u32
+        );
+        return false;
+    }
+    if cfg!(measured) && MEASURED_ID.load(Ordering::Relaxed) != MANAGED_DEVICE {
+        pw_log::error!("the measurement named a component that is not the managed device");
+        return false;
+    }
+    true
 }
 
 fn run() -> Result<(), ()> {
@@ -502,6 +605,9 @@ fn run() -> Result<(), ()> {
     loop {
         if core.state() == State::Locked {
             if EXPECT_LOCKDOWN {
+                if !measured_as_expected() {
+                    return Err(());
+                }
                 pw_log::info!("the device never came up and the platform locked");
                 return Ok(());
             }
@@ -521,6 +627,9 @@ fn run() -> Result<(), ()> {
                 && SelfSession::read() != (SelfUpdateState::Committed { svn: TRIAL_SVN })
             {
                 pw_log::error!("the chain came up and the self trial was not confirmed");
+                return Err(());
+            }
+            if !measured_as_expected() {
                 return Err(());
             }
             pw_log::info!("device booted and the orchestrator is in Ready");
