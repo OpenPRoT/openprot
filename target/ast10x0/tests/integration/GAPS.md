@@ -106,7 +106,11 @@ abort would do is untested.
   recovery cfgs alone. Whether the count should survive a passing
   verification is a question for the machine.
 - The spare slot re-sync after a commit, and the floor advance held until
-  the spare has the image.
+  the spare has the image. It cannot run on any board here: the re-sync
+  sits below the binding test in `commit_svn_floor`, so a component that
+  keeps its own SVN never reaches it, and all three boards bind
+  `SvnFloorBinding::SelfManaged`. A scenario needs a device whose floor
+  the eRoT holds, which is a board shape no itest has yet.
 - The same two for the slots the eRoT boots from, which nothing
   implements, not just nothing covers. `commit_self_svn_floor` advances
   the floor as soon as the trial is confirmed, and no pass re-stages the
@@ -220,6 +224,15 @@ scenario at all. The ones that matter:
   two floors disagree afterwards and nothing reconciles them.
 
 ## Assertions that are looser than they look
+
+`pldm_update/svn_commit` asserts the effect, not the outcome. The machine
+emits `Effect::CommitSvnFloor` whatever the component's floor binding is,
+and the orchestrator answers the agent on seeing it, but the driver's
+`commit_svn_floor` returns at once for a component that keeps its own SVN
+(`driver.rs`, the `SvnFloorBinding::Erot` test). Every board here binds
+`SelfManaged`, so no floor moves in that run or in its refusal variant.
+What those scenarios prove is the 0x22 exchange and the machine's
+decision, which is their claim; the floor itself has no run.
 
 `pldm_update` has no managed device, so its `BootConfirmed` is a
 stand-in: it is dispatched once the activation is acknowledged, not once
