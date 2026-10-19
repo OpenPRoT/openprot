@@ -60,6 +60,13 @@ event the machine ever sees. There are three answers:
 `PreSupervision`. That is invariant INV11, pinned by
 `self_verification_failure_latches_immediately`.
 
+Producing the value is platform code's job. Nothing in this repository
+constructs a `PowerOnResult` outside tests: the board's bring-up reads what
+the ROM and the bootloader recorded (a status register, say, or the fact that
+a fallback image is running) and names one of the three. Where the ROM
+refuses to start an image that failed verification, `SelfVerificationFailed`
+never arrives, because nothing is running to send it.
+
 Refusing to run is the only move available. The orchestrator cannot re-verify
 itself, so it cannot recover from a bad verdict, and a platform whose own RoT
 is suspect has nothing left to supervise with.
@@ -78,19 +85,36 @@ component behind it.
 
 ## The eRoT's own reset
 
-A self-update activates a new image and resets the eRoT into it. Nothing in
-this repository does that yet: no board wires a flash-backed `Updatable` for
-the eRoT's slot, nothing marks the trial pending outside tests, and nothing
-drives the reset. GAPS.md lists all three.
+A self-update activates a new image and resets the eRoT into it. The driver
+does the sequence: it records the session with the SVN the verifier read off
+the candidate, marks the trial pending, then asks the board's `SelfReset` to
+reset.
 
-The durable `SelfUpdate` session is the part that exists. The reset leaves it
-behind and the next boot reads it. NIST SP 800-193 §4.1.2(2) requires that
-much: a mutable Root of Trust for Update has to stay operational or
-recoverable across the reboot its own update causes, including after a power
-loss in the middle of a flash write.
+The `SelfUpdate` session is durable: it survives the reset, and the next boot
+reads it. NIST SP 800-193 §4.1.2(2) requires a mutable Root of Trust for
+Update to stay operational or recoverable across the reboot its own update
+causes, including after a power loss in the middle of a flash write, and the
+session is what the eRoT recovers from.
 
 The reset belongs to the platform. The eRoT's device table entry carries no
 reset signal, because nothing outside the eRoT can reset it.
+
+## Where the SVN comes from
+
+A managed component's floor takes the SVN read back after the component
+reboots, not the SVN read off the candidate. The two can differ: the
+candidate is what the agent offered, the read-back is what runs. The
+floor takes the read-back because the orchestrator verified it.
+
+The eRoT has only the candidate's SVN. It could read its own flash, but
+then the running image would vouch for itself, so the orchestrator never
+verifies itself. The ROM and the bootloader verify it. They report a
+verdict with no version: `PowerOnResult` is `Provisioned`, `Unprovisioned`
+or `SelfVerificationFailed`.
+
+`PollOutcome::Authenticated` carries the candidate's SVN. The activation
+records it in the session. Confirming the trial does not move the floor.
+The commit is a separate step, and it takes the SVN from the session.
 
 ## Not covered here
 
@@ -100,5 +124,4 @@ that platform's business. This page only says what the orchestrator may assume
 about the result and what it does when the result is bad.
 
 Device identity and attestation key derivation are specified in
-[Attestation](../specification/services/attestation.md). That specification is
-not implemented yet, so nothing here describes it as if it were.
+[Attestation](../specification/services/attestation.md).

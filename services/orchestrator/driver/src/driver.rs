@@ -16,11 +16,18 @@ use crate::board::{
     Verdict, Verifier,
 };
 use orchestrator_capabilities::{
-    BootControl, BootWatch, FailureCause, IncrementalVerifier, Progress, Recovery, RestoreOutcome,
-    RunningImage, SelfUpdate, SelfUpdateState, Svn, SvnFloor, TrialOutcome, WalkVerdict,
+    AuthenticatedImage, BootControl, BootWatch, FailureCause, IncrementalVerifier, Progress,
+    Recovery, RestoreOutcome, RunningImage, SelfUpdate, SelfUpdateState, Svn, SvnFloor,
+    TrialOutcome, WalkVerdict,
 };
 
 /// Why the driver could not carry out an effect.
+///
+/// Effects are what the state machine tells the driver to do. The event
+/// loop turns these errors into `Event::EffectFailed`, which sends the
+/// machine to `Locked`, so any error here locks the platform. A refusal
+/// that should not lock belongs earlier, where the request arrives, before
+/// the state machine emits an effect at all.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DriverError {
     /// The effect names a component the driver has no device for.
@@ -61,12 +68,24 @@ pub enum DriverError {
     /// Activation was asked before the candidate passed verification.
     /// The job survives, so `DiscardStaged` can still end it.
     CandidateNotAuthenticated,
-    /// A self-update effect ran on a board that wired no self-image. The
-    /// event that opens the trial comes from reading that self-image, so
+    /// A self-update effect ran on a board that left `Board::self_image`
+    /// `None`. The event that opens the trial is read from that field, so
     /// the board and the machine have drifted apart.
     NoSelfImage,
     /// The eRoT's own update session could not be written.
     SelfUpdateFault,
+    /// The eRoT's own candidate reached the activation with no manifest
+    /// SVN, so the session has no SVN to record.
+    ///
+    /// The name says `SelfActivate`: what failed is the activation, while
+    /// the image is versionless rather than faulty.
+    SelfActivateNoSvn,
+    /// The reset that boots the eRoT's trial image did not happen. The
+    /// session is already marked pending, so the next reset from any
+    /// source still boots the trial. The board's `SelfReset::Error` says
+    /// why the reset failed; the conversion to this variant discards that
+    /// error, so no caller and no report ever sees it.
+    SelfResetFault,
     /// A staging step ran before anything commanded the work. Updates
     /// get the flag from `AuthenticateStageUpdate`, and a slot re-sync
     /// sets it when it queues the job. So the phase and the flag
@@ -93,6 +112,10 @@ impl core::fmt::Display for DriverError {
             DriverError::CandidateNotAuthenticated => "candidate has not passed verification yet",
             DriverError::NoSelfImage => "board wired no self-image",
             DriverError::SelfUpdateFault => "self-update session could not be written",
+            DriverError::SelfActivateNoSvn => {
+                "the eRoT's own candidate reached the activation with no manifest SVN"
+            }
+            DriverError::SelfResetFault => "the reset into the trial image did not happen",
             DriverError::UpdateNotCommanded => "staging ran before the SM commanded it",
         })
     }
@@ -188,8 +211,10 @@ enum UpdatePhase {
     /// slot the device just stopped booting from. The SM does not know
     /// about this job. It ends in the driver.
     Resyncing,
-    /// The verifier accepted the candidate; activation is next.
-    Authenticated,
+    /// The verifier accepted the candidate; activation is next. Carries
+    /// the `AuthenticatedImage`, so the candidate's SVN cannot go missing
+    /// between the verdict and the activation that records it.
+    Authenticated(AuthenticatedImage),
 }
 
 impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
@@ -430,6 +455,14 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             progress_since_millis: None,
         });
         true
+    }
+
+    /// Whether `id` is the eRoT: the platform acting on itself rather
+    /// than on a device it manages. The chain gives every component a
+    /// kind, `Erot`, `Active` or `Passive`, and `chain_of` admits exactly
+    /// one `Erot`, so exactly one id answers true.
+    fn is_self(&self, id: ComponentId) -> bool {
+        self.kinds.get(id.get() as usize) == Some(&ComponentKind::Erot)
     }
 
     /// `id`'s reset actuator.
