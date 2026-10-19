@@ -116,6 +116,17 @@ or `SelfVerificationFailed`.
 records it in the session. Confirming the trial does not move the floor.
 The commit is a separate step, and it takes the SVN from the session.
 
+An eRoT image carries its SVN in the signed header, and the ROM compares
+that SVN against the anti-rollback counter before booting. An eRoT image
+without an SVN cannot be compared, so the eRoT cannot install it. That is
+why `SelfUpdate::prepare` takes an `Svn` and not an `Option<Svn>`: with no
+SVN there is no session and no trial to mark, so the update is rejected.
+
+A managed component needs no session, because the walk judges it after it
+reboots. The image installs even with no SVN, and the anti-rollback floor
+for that component stays where it was, which `Report::SvnFloorHeld`
+records.
+
 ## Not covered here
 
 The ROM and bootloader are platform firmware, outside this repository. How a

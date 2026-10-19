@@ -13,8 +13,8 @@ use crate::board::{BoardCapabilities, Report};
 use core::convert::Infallible;
 use openprot_orchestrator_sm::{ComponentId, Event};
 use orchestrator_capabilities::{
-    AuthenticatedImage, IncrementalVerifier, PollOutcome, Progress, SelfReset, SelfUpdate,
-    StageProgress, Updatable, VerifySession,
+    trial_outcome, AuthenticatedImage, IncrementalVerifier, PollOutcome, Progress, SelfReset,
+    SelfUpdate, StageProgress, TrialOutcome, Updatable, VerifySession,
 };
 use util_io::{ByteSource, ByteWindow};
 
@@ -81,11 +81,17 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             .components
             .get(target.get() as usize)
             .ok_or(DriverError::UnknownComponent)?;
-        if len > self.board.update_staging.len() {
-            return Err(DriverError::CandidateOutOfRange);
-        }
+        // Busy first: one update at a time, whatever it targets. An
+        // update of the eRoT arriving mid-update is refused as
+        // `UpdateBusy`, not `NoSelfImage`.
         if self.pending_update.is_some() {
             return Err(DriverError::UpdateBusy);
+        }
+        if self.is_self(target) {
+            self.check_self_update_may_start()?;
+        }
+        if len > self.board.update_staging.len() {
+            return Err(DriverError::CandidateOutOfRange);
         }
         // The region is about to hold a different candidate. The last
         // activation cannot re-stage from it any more.
@@ -126,6 +132,47 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         self.last_activated = None;
         self.abandon_verification();
         Ok(())
+    }
+
+    /// Whether the eRoT may start an update of itself.
+    ///
+    /// Checked at submit, where a refusal only declines the request:
+    /// the driver stores nothing and the state machine never sees
+    /// `UpdateRequest`, so no state changes and no effect runs. Refusing
+    /// after the state machine has commanded the activation would fail
+    /// that effect and lock the platform.
+    ///
+    /// A confirmed trial stops blocking once the session closes, by
+    /// [`commit_self_svn_floor`](crate::commit_self_svn_floor) or at the
+    /// next boot by [`settle_self_update`](crate::settle_self_update).
+    fn check_self_update_may_start(&self) -> Result<(), DriverError> {
+        let self_image = self
+            .board
+            .self_image
+            .as_ref()
+            .ok_or(DriverError::NoSelfImage)?;
+        let state = self_image
+            .session
+            .state()
+            .map_err(|_| DriverError::SelfUpdateFault)?;
+        let running = self_image
+            .session
+            .running()
+            .map_err(|_| DriverError::SelfUpdateFault)?;
+        match trial_outcome(state, running) {
+            // `InProgress`: this boot is the trial being judged.
+            // `ConfirmedUncommitted`: the floor has not taken the SVN
+            // the session holds. The session is still in use in each
+            // case, and `prepare` would write over it, so refuse.
+            TrialOutcome::InProgress | TrialOutcome::ConfirmedUncommitted { .. } => {
+                Err(DriverError::UpdateBusy)
+            }
+            // `NoSession`: no session to protect. `Unconfirmed`: the
+            // boot that would confirm the session will not come, so
+            // settlement reverts the session and `prepare` may write a
+            // new one.
+            TrialOutcome::NoSession | TrialOutcome::Unconfirmed => Ok(()),
+        }
     }
 
     /// Records the SM's `AuthenticateStageUpdate` command. Setting it
@@ -387,6 +434,15 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             }
             PollOutcome::Authenticated { verifier, image } => {
                 self.update_verifier = Some(VerifierState::Idle(verifier));
+                let target = self.pending_update.as_ref().map(|job| job.target);
+                // `prepare` takes an `Svn`, so no SVN means no session
+                // and no trial to mark: the candidate could never run.
+                // Rejected here, not at the activation, where refusing
+                // fails the effect and locks the platform.
+                if image.svn.is_none() && target.is_some_and(|id| self.is_self(id)) {
+                    self.report(Report::SelfImageNoSvn);
+                    return Ok(Step::Rejected);
+                }
                 // The phase carries the image from here. Only the eRoT's
                 // session records the candidate's SVN; see "Where the SVN
                 // comes from" in
