@@ -257,26 +257,33 @@ impl QemuFdOps {
     /// waits, so serving here costs nothing: the RoT's `QueryStatus` is
     /// answered from the same loop that is waiting for its command.
     fn await_decision(&self, step: Awaiting) -> Decision {
-        let decision = self.await_answer(step);
-        if decision == Decision::Reject {
-            self.refused.set(true);
+        match self.await_answer(step) {
+            Some(decision) => {
+                if decision == Decision::Reject {
+                    self.refused.set(true);
+                }
+                decision
+            }
+            // The channel broke. Stop the update as a refusal would,
+            // but leave `refused` clear: the RoT never said no, so a
+            // scenario asserting a refusal cannot pass on this.
+            None => Decision::Reject,
         }
-        decision
     }
 
-    /// The decision alone, without setting `refused`: a refused security
-    /// revision commit is not a refused update, the image is installed
-    /// either way.
-    fn await_answer(&self, step: Awaiting) -> Decision {
+    /// Waits for the RoT's decision. `None` means the channel broke:
+    /// nothing arrived before the deadline, which `ipc_failed` records.
+    ///
+    /// Leaves `refused` alone: the verdicts read `refused` as "the RoT
+    /// rejected the update", and the security revision commit is a
+    /// separate decision, taken after the image is installed.
+    fn await_answer(&self, step: Awaiting) -> Option<Decision> {
         if !self.serve(step, |ops| ops.decision.get().is_some()) {
-            // No answer. Treat it as a refusal so the update stops, but
-            // record that the channel broke rather than that the RoT said
-            // no, so a scenario asserting a refusal cannot pass on this.
             self.ipc_failed.set(true);
-            return Decision::Reject;
+            return None;
         }
 
-        self.decision.get().unwrap_or(Decision::Reject)
+        Some(self.decision.get().unwrap_or(Decision::Reject))
     }
 
     /// Tells the RoT a phase failed, and waits only long enough for it to
@@ -690,7 +697,7 @@ impl FdOps for QemuFdOps {
         _component: &SecurityRevisionComponent,
         _fw_params: &FirmwareParameters,
     ) -> Result<SecurityRevisionResult, FdOpsError> {
-        if self.await_answer(Awaiting::SvnCommit) == Decision::Reject {
+        if self.await_answer(Awaiting::SvnCommit) != Some(Decision::Perform) {
             // Info, not error: in `svn_commit_refused` this refusal is
             // what the run passes on.
             pw_log::info!("FD: the RoT refused the security revision commit");
