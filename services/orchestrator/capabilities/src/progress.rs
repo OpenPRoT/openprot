@@ -15,13 +15,6 @@
 /// `written` is monotonic within one job and may hold still across calls: a
 /// busy device or a retransmit makes no progress and is not an error. It
 /// never exceeds `total`.
-///
-/// The update intake seam has its own `Progress` in
-/// `orchestrator-update-api`, with the same two fields. That one is a
-/// wire form the PLDM service decodes, and this crate stays out of that
-/// process, so the two types are counterparts rather than one shared
-/// definition. The names match so the driver's conversion is field for
-/// field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Progress {
     /// Bytes the step has got through so far, at or below `total`. A
