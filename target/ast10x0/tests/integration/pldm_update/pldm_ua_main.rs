@@ -155,6 +155,11 @@ fn cancel_after(chunk: u32) -> bool {
 /// may still be claiming its endpoint id on the first try.
 const DISCOVERY_ATTEMPTS: u32 = 5;
 
+/// Number of sends of UpdateSecurityRevision messages before giving up.
+/// The device is not listening right after update mode, so the first
+/// send can be dropped.
+const SECURITY_REVISION_ATTEMPTS: u32 = 3;
+
 /// Lowest firmware-update version the agent accepts: 1.3.0, BCD-encoded.
 /// The sequence below uses this version's command set.
 const MIN_FWUPDATE_VERSION: Ver32 = 0xF1F3F000;
@@ -664,17 +669,30 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
     // agent asks for it.
     if cfg!(svn_commit) {
         instance_id += 1;
-        let commit = UpdateSecurityRevisionRequest::new(
-            instance_id,
-            PldmMsgType::Request,
-            ComponentClassification::Firmware,
-            COMP_IDENTIFIER,
-            0,
-        );
-        let len = commit
-            .encode(&mut buf[1..])
-            .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-        let (cc, _) = transact(transport, len, &mut buf)?;
+        let mut attempt = 0;
+        let (cc, _) = loop {
+            let commit = UpdateSecurityRevisionRequest::new(
+                instance_id,
+                PldmMsgType::Request,
+                ComponentClassification::Firmware,
+                COMP_IDENTIFIER,
+                0,
+            );
+            let len = commit
+                .encode(&mut buf[1..])
+                .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
+            match transact(transport, len, &mut buf) {
+                Ok(answer) => break answer,
+                Err(e) => {
+                    attempt += 1;
+                    if attempt >= SECURITY_REVISION_ATTEMPTS {
+                        pw_log::error!("UA: the device never answered UpdateSecurityRevision");
+                        return Err(e);
+                    }
+                    pw_log::info!("UA: UpdateSecurityRevision timed out, asking again");
+                }
+            }
+        };
         if cc != 0 {
             pw_log::error!("UA: UpdateSecurityRevision refused, cc={:02x}", cc as u32);
             return Ok(false);
