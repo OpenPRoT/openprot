@@ -81,7 +81,7 @@ the CSA architecture document:
 | Isolable component: failure skips, not blocks | `FailurePolicy::Isolable` → skip (held in reset); advance without `Recovering`; no cascade |
 | Cascading skip: failure also holds dependents | `FailurePolicy::Cascading` + `ComponentAttrs::depends_on` → cascade-skip via `statuses` (`Isolated`) |
 | Boot-progress watchdog: component must signal readiness in time | `Timeout(ComponentId)` event → `AwaitingReady` → `Recovering` |
-| Recovery scope groups components that restore together | `ComponentAttrs::recovery_region` (`RegionId`) → platform restores full region on `RestoreGoldenImage` |
+| Recovery scope groups components that restore together | `ComponentAttrs::recovery_region` (`RegionId`) → platform restores full region on `RecoverComponent` |
 
 ## Applicability Across Admissible Architectures
 

@@ -15,21 +15,21 @@ stateDiagram-v2
     PreSupervision --> PreSupervision : VerificationPassed [more, Passive]<br/>/ ReleaseReset · ReadFirmware · VerifyFirmware
     PreSupervision --> AwaitingReady     : VerificationPassed [more, Active]<br/>/ ReleaseReset · ReadFirmware · VerifyFirmware
     PreSupervision --> Ready             : VerificationPassed [chain done]<br/>/ ReleaseReset
-    PreSupervision --> Recovering        : VerificationFailed (any policy)<br/>/ RestoreGoldenImage
+    PreSupervision --> Recovering        : VerificationFailed (any policy)<br/>/ RecoverComponent
 
     AwaitingReady --> AwaitingReady : VerificationPassed [more]<br/>/ ReleaseReset · ReadFirmware · VerifyFirmware
     AwaitingReady --> Ready         : ComponentReady [chain done or cursor past end]
     AwaitingReady --> AwaitingReady : ComponentReady [more]
-    AwaitingReady --> Recovering    : VerificationFailed (any policy)<br/>/ RestoreGoldenImage
-    AwaitingReady --> Recovering    : Timeout(id) [id == awaiting]<br/>/ RestoreGoldenImage
+    AwaitingReady --> Recovering    : VerificationFailed (any policy)<br/>/ RecoverComponent
+    AwaitingReady --> Recovering    : Timeout(id) [id == awaiting]<br/>/ RecoverComponent
 
     state SupervisingPlatform {
         Ready         --> Updating      : UpdateRequest(id)<br/>/ AuthenticateStageUpdate
         Updating      --> PreSupervision : UpdateVerified / ActivateUpdate
         Updating      --> Ready         : UpdateRejected / DiscardStaged
-        Ready         --> Recovering    : CorruptionDetected<br/>/ RestoreGoldenImage
-        Updating      --> Recovering    : CorruptionDetected<br/>/ RestoreGoldenImage
-        AwaitingReady --> Recovering    : CorruptionDetected<br/>/ RestoreGoldenImage
+        Ready         --> Recovering    : CorruptionDetected<br/>/ RecoverComponent
+        Updating      --> Recovering    : CorruptionDetected<br/>/ RecoverComponent
+        AwaitingReady --> Recovering    : CorruptionDetected<br/>/ RecoverComponent
     }
 
     Recovering --> PreSupervision : Restored [retry < max_retry]<br/>(re-verify)
@@ -120,7 +120,7 @@ here — they persist across re-walks so exhausted components are not re-verifie
 | `VerificationPassed(id)` | more, current `Active` | `ReleaseReset` · `ReadFirmware(next)` · `VerifyFirmware(next)` | `AwaitingReady(Some(id))` |
 | `VerificationPassed(id)` | chain done | `ReleaseReset(id)` | `Ready` |
 | `VerificationFailed(id)` | — | — | `Recovering(id)` — recovery is attempted first, regardless of the component's recovery-failure policy |
-| `CorruptionDetected(id)` | `Required`/unknown | `RestoreGoldenImage` | `Recovering(id)` |
+| `CorruptionDetected(id)` | `Required`/unknown | `RecoverComponent` | `Recovering(id)` |
 | `CorruptionDetected(id)` | `Isolable`/`Cascading` | `AssertReset` · `ReportIsolated` | `Handled` (component gated; walk continues) |
 | `CommitTimeout` | `pending_commit` set | — | `Locked` (commit window spans the post-activation walk; `LatchLockdown` on entry) |
 | `CommitTimeout` | `pending_commit` clear | — | `Handled` (no window open, nothing to enforce) |
@@ -227,7 +227,7 @@ it.
 |---|---|---|---|
 | `UpdateVerified` | — | `ActivateUpdate` | `PreSupervision` (re-walk; commit window spans the walk) |
 | `UpdateRejected` | — | `DiscardStaged` | `Ready` (INV4) |
-| `CorruptionDetected(id)` | `Required`/unknown | `DiscardStaged` (then `RestoreGoldenImage` on entry) | `Recovering(id)` (update preempted; staged image discarded) |
+| `CorruptionDetected(id)` | `Required`/unknown | `DiscardStaged` (then `RecoverComponent` on entry) | `Recovering(id)` (update preempted; staged image discarded) |
 | `CorruptionDetected(id)` | `Isolable`/`Cascading` | `AssertReset(id)` · `ReportIsolated(id)` | `Handled` (component gated; update continues, staged image kept) |
 | anything else | — | — | `Outcome::Super` → `SupervisingPlatform` |
 
@@ -245,9 +245,10 @@ The machine is attempting to restore a corrupted or rejected component.
 
 **Entry action**: emit `RevertDeviceTrial(id)` for a component left on trial
 by an earlier activation (recovery puts the running image under suspicion),
-then `RestoreGoldenImage(failed)`, where `failed` is the
-`Recovering(ComponentId)` payload — targets the failed component's *recovery
-region*: all components sharing the same `RegionId` are restored together. The
+then `RecoverComponent { id: failed, attempt }`, where `failed` is the
+`Recovering(ComponentId)` payload and `attempt` is the consecutive-recovery
+count for it. The effect targets the failed component's *recovery region*:
+all components sharing the same `RegionId` are restored together. The
 core supplies the failed component ID; the platform driver resolves region
 membership from the chain at startup. Only the named component triggers the
 restore, but the
