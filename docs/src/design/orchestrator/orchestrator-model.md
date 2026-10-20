@@ -364,7 +364,7 @@ This inversion is what keeps the core testable without hardware: a test drives
 `Event`s in and asserts on the `Effect`s that come out, with no flash, no
 transports, and no clocks. It also fixes *where mechanism lives*. The core
 names **what** must happen to **which** component; the platform decides **how**.
-For example, `Effect::RecoverComponent(id)` says only "recover this component" —
+For example, `Effect::RecoverComponent` says only "recover this component";
 whether that resolves to a golden-image restore, an A/B slot swap, a streamed
 image, or a vendor-specific scheme is a platform/configuration decision, never
 encoded in the core.
