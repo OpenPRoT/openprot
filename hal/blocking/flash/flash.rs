@@ -8,8 +8,9 @@
 use core::{cmp::min, num::NonZero};
 pub use hal_flash_driver::FlashAddress;
 use hal_flash_driver::FlashDriver;
+use util_blocking::Blocking;
 use util_io::RandomRead;
-use util_types::{Blocking, PowerOf2Usize};
+use util_types::PowerOf2Usize;
 
 /// High-level flash interface.
 ///
@@ -157,7 +158,7 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
     /// until the operation completes.
     fn erase(&mut self, start_addr: FlashAddress, size: PowerOf2Usize) -> Result<(), Self::Error> {
         self.driver.start_erase(start_addr, size)?;
-        self.blocking.wait_for_notification();
+        let _token = self.blocking.wait_for_notification();
         self.driver.complete_op()
     }
     /// Programs data into flash.
@@ -179,7 +180,7 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
                 TDriver::PROGRAM_WINDOW_SIZE - ((addr.offset() & window_mask as u32) as usize),
             )];
             self.driver.start_program(addr, chunk)?;
-            self.blocking.wait_for_notification();
+            let _token = self.blocking.wait_for_notification();
             self.driver.complete_op()?;
             data = &data[chunk.len()..];
             addr += chunk.len();
