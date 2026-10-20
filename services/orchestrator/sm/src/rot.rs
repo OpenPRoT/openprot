@@ -657,7 +657,19 @@ impl<const N: usize, const E: usize> Rot<N, E> {
             },
 
             State::Ready => match event {
-                Event::UpdateRequest(id) => Outcome::Transition(State::Updating(*id)),
+                // An open trial means a downstream device booted a test
+                // image and the confirmation is still on its way. Entry to
+                // `Updating` reverts whatever trial is open, so an update
+                // for a different component would throw that image away
+                // mid-flight. `Super` sends the request to
+                // `handle_supervising`, which reports it deferred and
+                // leaves the trial open. A request naming the component on
+                // trial is taken: that update replaces the image under
+                // trial anyway.
+                Event::UpdateRequest(id) => match self.pending_commit {
+                    Some(open) if open != *id => Outcome::Super,
+                    _ => Outcome::Transition(State::Updating(*id)),
+                },
                 // Boot-confirmation checkpoint: the image authenticated at
                 // `ActivateUpdate` and has now run. Handled in place —
                 // confirming a running image is not a state change. Closing
@@ -869,11 +881,11 @@ impl<const N: usize, const E: usize> Rot<N, E> {
             }
             // A new update cannot start from any supervised state except
             // `Ready` (the machine is mid-walk, mid-update, or mid-recovery).
-            // `Ready` accepts `UpdateRequest` upstream in `handle` (→ `Updating`)
-            // and so never reaches here; this arm therefore fires only for
-            // `AwaitingReady`, `Updating`, and `Recovering`. Report the refusal
-            // rather than dropping it silently, and leave the in-flight
-            // walk/update/recovery untouched (`Handled`, no transition).
+            // The platform cannot take an update right now: a walk, an
+            // update or a recovery is running, or a trial is open for
+            // another component. Report the refusal rather than dropping
+            // the request, and leave the work in flight alone
+            // (`Handled`, no transition).
             Event::UpdateRequest(_) => {
                 ctx.emit(Effect::ReportUpdateDeferred);
                 Outcome::Handled

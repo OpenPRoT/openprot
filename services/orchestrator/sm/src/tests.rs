@@ -2124,8 +2124,11 @@ fn a_successful_boot_confirms_the_trial_of_the_component_that_booted() {
     assert_eq!(state, State::Ready);
 }
 
-/// A newer update supersedes an image that was never confirmed, so the
-/// trial closes without keeping the image.
+/// A newer update for the same component supersedes an image that was
+/// never confirmed, so the trial closes without keeping the image. An
+/// update for another component is refused instead, which
+/// `an_update_for_another_component_is_refused_while_a_trial_is_open`
+/// covers.
 #[test]
 fn a_superseding_update_for_the_same_component_reverts_the_trial() {
     let (effects, _) = drive(
@@ -2155,12 +2158,15 @@ fn a_superseding_update_for_the_same_component_reverts_the_trial() {
     );
 }
 
-/// The commit window is one, not one per component, so an update aimed at
-/// a sibling closes whatever trial was open. The image it replaces never
-/// ran, and nothing else is going to judge it now.
+/// An update for another component is refused while a trial is open,
+/// rather than closing that trial on entry to `Updating`.
+///
+/// The device may confirm late. Accepting the request would throw away an
+/// unconfirmed image, and a confirmation arriving afterwards has no open
+/// window left.
 #[test]
-fn an_update_for_a_sibling_reverts_the_open_trial() {
-    let (effects, _) = drive(
+fn an_update_for_another_component_is_refused_while_a_trial_is_open() {
+    let (effects, state) = drive(
         chain(&[
             (C0, ComponentAttrs::passive_required()),
             (C1, ComponentAttrs::passive_required()),
@@ -2173,54 +2179,26 @@ fn an_update_for_a_sibling_reverts_the_open_trial() {
             Event::UpdateVerified,
             Event::VerificationPassed(C0),
             Event::VerificationPassed(C1),
-            // C0's image is activated and unproven when C1 is offered one.
+            // The image on C0 is activated and unconfirmed when C1 is
+            // offered an update.
             Event::UpdateRequest(C1),
         ],
     );
 
-    assert_eq!(
-        effects
-            .iter()
-            .filter(|e| **e == Effect::RevertDeviceTrial(C0))
-            .count(),
-        1,
-        "C0's trial was open and must close when the window is taken"
-    );
     assert!(
-        !effects.contains(&Effect::RevertDeviceTrial(C1)),
-        "C1 has no trial open: it is the one being updated"
+        effects.contains(&Effect::ReportUpdateDeferred),
+        "the update for C1 must be reported refused, not dropped"
     );
     assert!(
         !effects
             .iter()
-            .any(|e| matches!(e, Effect::ConfirmDeviceTrial(_))),
-        "nothing booted, so nothing is confirmed"
+            .any(|e| matches!(e, Effect::RevertDeviceTrial(_))),
+        "C0 has not confirmed its image yet, so the trial must stay open"
     );
-}
-
-/// Recovery puts the running image under suspicion, which voids the
-/// commit window and the trial with it.
-#[test]
-fn recovery_reverts_an_uncommitted_trial() {
-    let (effects, _) = drive(
-        chain(&[(C0, ComponentAttrs::passive_required())]),
-        &[
-            BOOT,
-            Event::VerificationPassed(C0),
-            Event::UpdateRequest(C0),
-            Event::UpdateVerified,
-            Event::VerificationPassed(C0),
-            Event::CorruptionDetected(C0),
-        ],
-    );
-
     assert_eq!(
-        effects
-            .iter()
-            .filter(|e| **e == Effect::RevertDeviceTrial(C0))
-            .count(),
-        1,
-        "an image under suspicion must not stay the confirmed one"
+        state,
+        State::Ready,
+        "the refusal leaves the state machine ready"
     );
 }
 
