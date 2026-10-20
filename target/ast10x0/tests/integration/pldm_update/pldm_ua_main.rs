@@ -346,6 +346,36 @@ fn transact(
     Ok((if resp_len > 3 { buf[4] } else { 0xff }, resp_len))
 }
 
+/// Encodes `request` into `buf` after the 1-byte MCTP type, which is
+/// where every request in this app goes.
+fn encode_request<R: PldmCodec>(request: &R, buf: &mut [u8]) -> Result<usize, PldmServiceError> {
+    request
+        .encode(&mut buf[1..])
+        .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))
+}
+
+/// Encodes `request`, sends it, and checks the completion code. Answers
+/// the response length, or `None` when the device rejected the command,
+/// which is logged here under `name` so no caller repeats it.
+fn send_command<R: PldmCodec>(
+    transport: &MctpPldmTransport<IpcMctpClient>,
+    name: &str,
+    request: &R,
+    buf: &mut [u8],
+) -> Result<Option<usize>, PldmServiceError> {
+    let len = encode_request(request, buf)?;
+    let (completion_code, resp_len) = transact(transport, len, buf)?;
+    if completion_code != 0 {
+        pw_log::error!(
+            "UA: {} rejected, completion code {}",
+            name as &str,
+            completion_code as u32
+        );
+        return Ok(None);
+    }
+    Ok(Some(resp_len))
+}
+
 /// Type 0 discovery: PLDM types, firmware-update version, supported
 /// commands. Returns `Ok(false)` if the device answered but lacks the
 /// right protocol.
@@ -363,9 +393,7 @@ fn discover_terminus(
     let mut attempt = 0;
     let (completion_code, resp_len) = loop {
         let get_types = GetPldmTypeRequest::new(*instance_id, PldmMsgType::Request);
-        let len = get_types
-            .encode(&mut buf[1..])
-            .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
+        let len = encode_request(&get_types, buf)?;
         match transact(transport, len, buf) {
             Ok(answer) => break answer,
             Err(e) => {
@@ -409,17 +437,9 @@ fn discover_terminus(
         TransferOperationFlag::GetFirstPart,
         PldmSupportedType::FwUpdate,
     );
-    let len = get_version
-        .encode(&mut buf[1..])
-        .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-    let (completion_code, resp_len) = transact(transport, len, buf)?;
-    if completion_code != 0 {
-        pw_log::error!(
-            "UA: GetPLDMVersion rejected, completion code {}",
-            completion_code as u32
-        );
+    let Some(resp_len) = send_command(transport, "GetPLDMVersion", &get_version, buf)? else {
         return Ok(false);
-    }
+    };
     let Ok(version) = GetPldmVersionResponse::decode(&buf[1..1 + resp_len]) else {
         pw_log::error!("UA: could not decode GetPLDMVersion response");
         return Ok(false);
@@ -449,17 +469,9 @@ fn discover_terminus(
         pldm_type: PldmSupportedType::FwUpdate as u8,
         protocol_version: reported_version,
     };
-    let len = get_cmds
-        .encode(&mut buf[1..])
-        .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-    let (completion_code, resp_len) = transact(transport, len, buf)?;
-    if completion_code != 0 {
-        pw_log::error!(
-            "UA: GetPLDMCommands rejected, completion code {}",
-            completion_code as u32
-        );
+    let Some(resp_len) = send_command(transport, "GetPLDMCommands", &get_cmds, buf)? else {
         return Ok(false);
-    }
+    };
     let Ok(cmds) = GetPldmCommandsResponse::decode(&buf[1..1 + resp_len]) else {
         pw_log::error!("UA: could not decode GetPLDMCommands response");
         return Ok(false);
@@ -499,17 +511,10 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
 
     // ---- QueryDeviceIdentifiers: confirm which device answered ----
     let query_devid = QueryDeviceIdentifiersRequest::new(instance_id, PldmMsgType::Request);
-    let len = query_devid
-        .encode(&mut buf[1..])
-        .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-    let (completion_code, resp_len) = transact(transport, len, &mut buf)?;
-    if completion_code != 0 {
-        pw_log::error!(
-            "UA: QueryDeviceIdentifiers rejected, completion code {}",
-            completion_code as u32
-        );
+    let Some(resp_len) = send_command(transport, "QueryDeviceIdentifiers", &query_devid, &mut buf)?
+    else {
         return Ok(false);
-    }
+    };
     let Ok(devid) = QueryDeviceIdentifiersResponse::decode(&buf[1..1 + resp_len]) else {
         pw_log::error!("UA: could not decode QueryDeviceIdentifiers response");
         return Ok(false);
@@ -526,17 +531,10 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
     // ---- GetFirmwareParameters: learn which component to offer ----
     instance_id += 1;
     let get_params = GetFirmwareParametersRequest::new(instance_id, PldmMsgType::Request);
-    let len = get_params
-        .encode(&mut buf[1..])
-        .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-    let (completion_code, resp_len) = transact(transport, len, &mut buf)?;
-    if completion_code != 0 {
-        pw_log::error!(
-            "UA: GetFirmwareParameters rejected, completion code {}",
-            completion_code as u32
-        );
+    let Some(resp_len) = send_command(transport, "GetFirmwareParameters", &get_params, &mut buf)?
+    else {
         return Ok(false);
-    }
+    };
     let Ok(params) = GetFirmwareParametersResponse::decode(&buf[1..1 + resp_len]) else {
         pw_log::error!("UA: could not decode GetFirmwareParameters response");
         return Ok(false);
@@ -577,15 +575,7 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
         0,          // pkg_data_len
         &comp_ver,
     );
-    let len = req_update
-        .encode(&mut buf[1..])
-        .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-    let (completion_code, _) = transact(transport, len, &mut buf)?;
-    if completion_code != 0 {
-        pw_log::error!(
-            "UA: RequestUpdate rejected, completion code {}",
-            completion_code as u32
-        );
+    if send_command(transport, "RequestUpdate", &req_update, &mut buf)?.is_none() {
         return Ok(false);
     }
 
@@ -601,15 +591,7 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
         COMP_COMPARISON_STAMP,
         &comp_ver,
     );
-    let len = pass_comp
-        .encode(&mut buf[1..])
-        .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-    let (completion_code, _) = transact(transport, len, &mut buf)?;
-    if completion_code != 0 {
-        pw_log::error!(
-            "UA: PassComponentTable rejected, completion code {}",
-            completion_code as u32
-        );
+    if send_command(transport, "PassComponentTable", &pass_comp, &mut buf)?.is_none() {
         return Ok(false);
     }
 
@@ -626,15 +608,7 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
         UpdateOptionFlags(0),
         &comp_ver,
     );
-    let len = update_comp
-        .encode(&mut buf[1..])
-        .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-    let (completion_code, _) = transact(transport, len, &mut buf)?;
-    if completion_code != 0 {
-        pw_log::error!(
-            "UA: UpdateComponent rejected, completion code {}",
-            completion_code as u32
-        );
+    if send_command(transport, "UpdateComponent", &update_comp, &mut buf)?.is_none() {
         return Ok(false);
     }
 
@@ -662,16 +636,7 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
             }
             instance_id += 1;
             let cancel = CancelUpdateRequest::new(instance_id, PldmMsgType::Request);
-            let len = cancel
-                .encode(&mut buf[1..])
-                .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-            let (completion_code, _) = transact(transport, len, &mut buf)?;
-            if completion_code != 0 {
-                pw_log::error!(
-                    "UA: CancelUpdate rejected, completion code {}",
-                    completion_code as u32
-                );
-            } else {
+            if send_command(transport, "CancelUpdate", &cancel, &mut buf)?.is_some() {
                 pw_log::info!("UA: the device took the cancel");
             }
             return Ok(false);
@@ -690,15 +655,7 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
         PldmMsgType::Request,
         SelfContainedActivationRequest::ActivateSelfContainedComponents,
     );
-    let len = activate
-        .encode(&mut buf[1..])
-        .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-    let (completion_code, _) = transact(transport, len, &mut buf)?;
-    if completion_code != 0 {
-        pw_log::error!(
-            "UA: ActivateFirmware rejected, completion code {}",
-            completion_code as u32
-        );
+    if send_command(transport, "ActivateFirmware", &activate, &mut buf)?.is_none() {
         return Ok(false);
     }
 
@@ -722,9 +679,7 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
                 COMP_IDENTIFIER,
                 0,
             );
-            let len = commit
-                .encode(&mut buf[1..])
-                .map_err(|_| PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
+            let len = encode_request(&commit, &mut buf)?;
             match transact(transport, len, &mut buf) {
                 Ok(answer) => break answer,
                 Err(e) => {
