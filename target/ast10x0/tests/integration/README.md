@@ -1,18 +1,18 @@
 # QEMU integration tests
 
-Sixteen scenarios, each its own system image, all running under QEMU with no
+Each scenario is its own system image, running under QEMU with no
 hardware. The AST1030 is the black box; everything it talks to is another
 app in the same image, reached through the same traits a real board wires.
 
 The runner greps one pass/fail sentinel per run, so one scenario per image
 is what lets a failure name itself.
 
-Seven of the sixteen are the thing working. Eight are the thing failing,
-and they pass when the failure is caught. The last is the agent
-withdrawing the update, which is neither: nothing failed and nothing was
-installed. A scenario that only ever passes proves nothing: the first
-version of the boot scenario passed with the device wedged, because it
-asserted the wrong thing. Each negative also names the failure it
+A few are the thing working. Most are the thing failing, and they pass
+when the failure is caught. One, `cancel_mid_transfer`, is neither: the
+agent withdraws the update, so nothing failed and nothing was installed.
+A scenario that only ever passes proves nothing: the first version of the
+boot scenario passed with the device wedged, because it asserted the
+wrong thing. Each negative also names the failure it
 arranged, so a run that died of something else fails rather than looking
 like the proof.
 
@@ -64,8 +64,7 @@ One scenario at a time, with the console:
     bazel test --config=virt_ast10x0 --test_output=all \
         //target/ast10x0/tests/integration/pldm_update/svn_commit:svn_commit_qemu_test
 
-The rest, same shape. The eight negatives, and `cancel_mid_transfer`,
-which is neither:
+The rest, same shape. The negatives, and `cancel_mid_transfer`:
 
     //target/ast10x0/tests/integration/mock_downstream_device/device_hangs:device_hangs_qemu_test
     //target/ast10x0/tests/integration/pldm_update/corrupt_image:corrupt_image_qemu_test

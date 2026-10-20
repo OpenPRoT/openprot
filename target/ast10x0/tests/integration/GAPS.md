@@ -153,7 +153,7 @@ driver makes `BootFailed` and `RecoveryUnavailable` on its own, and
 ## Resets in the middle of a flow
 
 Each scenario boots once, so anything that needs a reset mid-flow has no
-scenario at all. Three of them matter:
+scenario at all. The ones that matter:
 
 - Between `BootConfirmed` and the agent's request. The outstanding
   advance lives in RAM, so a reset drops it and the later
