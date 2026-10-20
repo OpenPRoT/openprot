@@ -2081,6 +2081,149 @@ fn an_unrelated_boot_confirmed_leaves_the_commit_window_open() {
     );
 }
 
+/// A successful boot closes the trial for the component that booted, and
+/// for no other.
+#[test]
+fn a_successful_boot_confirms_the_trial_of_the_component_that_booted() {
+    let (effects, state) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_required()),
+            (C1, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::VerificationPassed(C1),
+            Event::UpdateRequest(C0),
+            Event::UpdateVerified,
+            Event::VerificationPassed(C0),
+            Event::VerificationPassed(C1),
+            Event::BootConfirmed(C1),
+            Event::BootConfirmed(C0),
+        ],
+    );
+
+    assert_eq!(
+        effects
+            .iter()
+            .filter(|e| **e == Effect::ConfirmDeviceTrial(C0))
+            .count(),
+        1,
+        "the trial for C0 must close once, on the BootConfirmed naming C0"
+    );
+    assert!(
+        !effects.contains(&Effect::ConfirmDeviceTrial(C1)),
+        "C1 activated nothing, so it has no trial to confirm"
+    );
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::RevertDeviceTrial(_))),
+        "a successful boot must not revert anything"
+    );
+    assert_eq!(state, State::Ready);
+}
+
+/// A newer update supersedes an image that was never confirmed, so the
+/// trial closes without keeping the image.
+#[test]
+fn a_superseding_update_for_the_same_component_reverts_the_trial() {
+    let (effects, _) = drive(
+        chain(&[(C0, ComponentAttrs::passive_required())]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::UpdateRequest(C0),
+            Event::UpdateVerified,
+            Event::VerificationPassed(C0),
+            // No BootConfirmed: the first image never ran.
+            Event::UpdateRequest(C0),
+        ],
+    );
+
+    assert_eq!(
+        effects
+            .iter()
+            .filter(|e| **e == Effect::RevertDeviceTrial(C0))
+            .count(),
+        1,
+        "the trial for the superseded image must close without being kept"
+    );
+    assert!(
+        !effects.contains(&Effect::ConfirmDeviceTrial(C0)),
+        "nothing confirmed the superseded image"
+    );
+}
+
+/// The commit window is one, not one per component, so an update aimed at
+/// a sibling closes whatever trial was open. The image it replaces never
+/// ran, and nothing else is going to judge it now.
+#[test]
+fn an_update_for_a_sibling_reverts_the_open_trial() {
+    let (effects, _) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_required()),
+            (C1, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::VerificationPassed(C1),
+            Event::UpdateRequest(C0),
+            Event::UpdateVerified,
+            Event::VerificationPassed(C0),
+            Event::VerificationPassed(C1),
+            // C0's image is activated and unproven when C1 is offered one.
+            Event::UpdateRequest(C1),
+        ],
+    );
+
+    assert_eq!(
+        effects
+            .iter()
+            .filter(|e| **e == Effect::RevertDeviceTrial(C0))
+            .count(),
+        1,
+        "C0's trial was open and must close when the window is taken"
+    );
+    assert!(
+        !effects.contains(&Effect::RevertDeviceTrial(C1)),
+        "C1 has no trial open: it is the one being updated"
+    );
+    assert!(
+        !effects
+            .iter()
+            .any(|e| matches!(e, Effect::ConfirmDeviceTrial(_))),
+        "nothing booted, so nothing is confirmed"
+    );
+}
+
+/// Recovery puts the running image under suspicion, which voids the
+/// commit window and the trial with it.
+#[test]
+fn recovery_reverts_an_uncommitted_trial() {
+    let (effects, _) = drive(
+        chain(&[(C0, ComponentAttrs::passive_required())]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::UpdateRequest(C0),
+            Event::UpdateVerified,
+            Event::VerificationPassed(C0),
+            Event::CorruptionDetected(C0),
+        ],
+    );
+
+    assert_eq!(
+        effects
+            .iter()
+            .filter(|e| **e == Effect::RevertDeviceTrial(C0))
+            .count(),
+        1,
+        "an image under suspicion must not stay the confirmed one"
+    );
+}
+
 /// The other component's report must also leave the window usable: the
 /// updated component's own BootConfirmed still commits its floor, once.
 #[test]

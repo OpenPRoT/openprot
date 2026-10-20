@@ -590,6 +590,7 @@ impl BoardCapabilities for MockDownstreamDeviceBoard {
     type ReportSink = LogSink;
     type Updatable = NoUpdate;
     type Recovery = DeviceRecovery;
+    type DeviceTrial = ();
     type Staging = NoStaging;
     type UpdateVerifier = NeverVerifier;
     type SelfUpdate = SelfSession;
@@ -614,6 +615,7 @@ fn board() -> Board<MockDownstreamDeviceBoard, N> {
             svn_floor: SvnFloorBinding::SelfManaged,
             updatable: NoUpdate,
             recovery: DEVICE_RECOVERY,
+            trial: (),
         }),
         verifier: SCENARIO_VERIFIER,
         report_sink: LogSink,

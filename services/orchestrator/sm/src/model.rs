@@ -458,6 +458,24 @@ pub enum Effect {
     /// names a component, which this one cannot: the eRoT's floor is held in
     /// the board's self-image, not in the per-component array.
     ConfirmSelfTrial,
+    /// Keep the test image a managed device booted: close the trial and
+    /// make the activated slot the confirmed one.
+    ///
+    /// Emitted on [`Event::BootConfirmed`]: the device came up on the
+    /// image it was given and reported ready at its checkpoints. The
+    /// effect moves slot metadata; the anti-rollback floor follows later
+    /// on [`CommitSvnFloor`](Self::CommitSvnFloor), so a revert always has
+    /// an image to go back to.
+    ConfirmDeviceTrial(ComponentId),
+    /// Throw away the test image a managed device was given: close the
+    /// trial without keeping the image, leaving the confirmed slot as it
+    /// was.
+    ///
+    /// Emitted on entry to `Updating`, where a newer update supersedes the
+    /// image, and on entry to `Recovering`, where the re-walk re-verifies
+    /// the chain. The revert clears the pending marker, so the next reset
+    /// boots the confirmed image.
+    RevertDeviceTrial(ComponentId),
     /// Recover `id` from its configured recovery source. The mechanism —
     /// golden image, A/B slot, streamed image, or vendor-specific scheme — is
     /// deferred to the [`Platform`](crate::Platform) driver, which resolves it

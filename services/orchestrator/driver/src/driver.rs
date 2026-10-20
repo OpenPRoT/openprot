@@ -16,9 +16,17 @@ use crate::board::{
     Verdict, Verifier,
 };
 use orchestrator_capabilities::{
-    AuthenticatedImage, BootControl, BootWatch, FailureCause, IncrementalVerifier, Progress,
-    Recovery, RestoreOutcome, Svn, SvnFloor, WalkVerdict,
+    AuthenticatedImage, BootControl, BootWatch, DeviceTrialBoot, FailureCause, IncrementalVerifier,
+    Progress, Recovery, RestoreOutcome, Svn, SvnFloor, WalkVerdict,
 };
+
+/// Which way a trial closes: keep the test image the downstream device
+/// booted, or
+/// discard it and leave the confirmed slot as it was.
+enum TrialClose {
+    Keep,
+    Discard,
+}
 
 /// Why the driver could not carry out an effect.
 ///
@@ -85,6 +93,10 @@ pub enum DriverError {
     /// why the reset failed; the conversion to this variant discards that
     /// error, so no caller and no report ever sees it.
     SelfResetFault,
+    /// The trial record of a managed device could not be closed, so the
+    /// slot the device boots at the next reset is not the one the state
+    /// machine decided on.
+    TrialFault,
     /// A staging step ran before anything commanded the work. Updates
     /// get the flag from `AuthenticateStageUpdate`, and a slot re-sync
     /// sets it when it queues the job. So the phase and the flag
@@ -115,6 +127,7 @@ impl core::fmt::Display for DriverError {
                 "the eRoT's own candidate reached the activation with no manifest SVN"
             }
             DriverError::SelfResetFault => "the reset into the trial image did not happen",
+            DriverError::TrialFault => "device trial record could not be closed",
             DriverError::UpdateNotCommanded => "staging ran before the SM commanded it",
         })
     }
@@ -593,6 +606,35 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         }
     }
 
+    /// Closes the trial open for `id`, keeping the test image the
+    /// downstream device booted or discarding it.
+    ///
+    /// Confirming and reverting differ only in which call the trial record
+    /// gets, `confirm` or `revert`, so one method carries both. The state
+    /// machine decides, and [`TrialClose`] carries the decision, so the
+    /// driver cannot confirm a trial the state machine reverted.
+    ///
+    /// A failed close is an actuation fault and latches the state machine,
+    /// because a trial that will not close leaves the device booting an
+    /// unconfirmed image at the next reset.
+    fn close_device_trial(
+        &mut self,
+        id: ComponentId,
+        close: TrialClose,
+    ) -> Result<(), DriverError> {
+        let trial = self
+            .board
+            .components
+            .get_mut(id.get() as usize)
+            .map(|component| &mut component.trial)
+            .ok_or(DriverError::UnknownComponent)?;
+        let outcome = match close {
+            TrialClose::Keep => trial.confirm(),
+            TrialClose::Discard => trial.revert(),
+        };
+        outcome.map_err(|_| DriverError::TrialFault)
+    }
+
     /// Hands one report to the board's sink. Cannot fail, so reporting stays
     /// off the fail-secure path; reports arrive in the order the SM emitted
     /// them.
@@ -682,6 +724,12 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
             Effect::ActivateUpdate => self.activate_update().map(|_| None),
             Effect::DiscardStaged => self.discard_staged().map(|_| None),
             Effect::ConfirmSelfTrial => self.confirm_self_trial().map(|_| None),
+            Effect::ConfirmDeviceTrial(id) => {
+                self.close_device_trial(id, TrialClose::Keep).map(|_| None)
+            }
+            Effect::RevertDeviceTrial(id) => self
+                .close_device_trial(id, TrialClose::Discard)
+                .map(|_| None),
             // No board capability is composed for these seams yet, so they
             // fail secure here instead of behind stub methods.
             Effect::SignAttestation | Effect::LatchLockdown => return Err(EffectError),

@@ -123,6 +123,29 @@ image settles through `settle_self_image_at_boot`, which dispatches the
 settlement event without calling a verifier. Measuring it needs a seam on
 that path, not another scenario.
 
+## Arcs the trial gate does not cover
+
+`DeviceTrialBoot` is wired and `full_update` closes the trial for a
+downstream device both ways: confirmed when the device boots what it was given, reverted when
+the device takes the update and never comes back. What no scenario reaches
+is `is_pending`, which exists for an orchestrator that rebooted mid-update
+and has to read an open trial for a device from stored state. Nothing calls
+`is_pending`, so a trial left open by a crashed orchestrator is not
+settled at the next boot. Whether a boot should settle a trial nobody claimed is also
+undecided for the eRoT itself.
+
+A revert leaves the rejected image in the slot the update wrote it to. Only
+the slot metadata moves, and the one re-sync in the tree,
+`queue_slot_resync` in the driver, runs on the commit path to bring the
+spare slot up to the image that was just confirmed. Nothing brings the
+spare back to the confirmed image after a revert, so the slot keeps an
+image no verdict accepted, and nothing records the slot as stale. The
+floor never advances on a revert, so the slots agree about SVN. What is
+undecided is how a later reader should treat that slot: a recovery scheme
+that falls back slot to slot, or a settle path for a trial left open.
+Either the reader treats the contents as untrusted, or the revert
+overwrites them.
+
 ## Events no scenario can reach
 
 Checked by grepping the scenario apps for each `Event`, then asking what

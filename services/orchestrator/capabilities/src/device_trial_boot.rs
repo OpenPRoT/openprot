@@ -48,6 +48,15 @@
 /// image has [`SelfUpdate`](crate::SelfUpdate), which holds the same gate
 /// plus the state a verdict reached after a reset needs.
 ///
+/// The boards in this tree bind `()` here, apart from the `full_update`
+/// integration scenario, whose record counts confirm and revert calls.
+/// They leave each device its own slot metadata, which the driver binds as
+/// `SvnFloorBinding::SelfManaged`.
+/// The architecture expects devices whose slots the eRoT does hold: the
+/// eRoT is meant to poll the integrity of firmware in the non-volatile
+/// memory of a managed device, across active and inactive slots alike, and
+/// can only do so for slots it reaches.
+///
 /// `confirm` and `revert` take no arguments. A device has at most one trial
 /// open at a time, the one the last activation set pending, so there is nothing to
 /// name. Which slot is which stays behind the seam, as it does in
@@ -110,6 +119,29 @@ pub trait DeviceTrialBoot {
     /// even if the trial image never booted at all. An orchestrator that
     /// drops an activation before resetting the device relies on that.
     fn revert(&mut self) -> Result<(), Self::Error>;
+}
+
+/// The device tracks its own slots, so confirm and revert write nothing.
+///
+/// The usual case when a downstream device keeps its own slot metadata.
+/// When the eRoT keeps the slots of a device, wiring `()` loses the
+/// update: confirm
+/// moves no slot metadata, so the device boots the old image at the next
+/// reset.
+impl DeviceTrialBoot for () {
+    type Error = core::convert::Infallible;
+
+    fn is_pending(&self) -> Result<bool, Self::Error> {
+        Ok(false)
+    }
+
+    fn confirm(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn revert(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
