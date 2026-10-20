@@ -224,10 +224,10 @@ fn trial_closed_as_expected() -> bool {
     }
     pw_log::error!(
         "ORCH: the trial closed {} confirms and {} reverts, expected {} and {}",
-        closed.confirms,
-        closed.reverts,
-        EXPECT_TRIAL.confirms,
-        EXPECT_TRIAL.reverts
+        closed.confirms as u32,
+        closed.reverts as u32,
+        EXPECT_TRIAL.confirms as u32,
+        EXPECT_TRIAL.reverts as u32
     );
     false
 }
