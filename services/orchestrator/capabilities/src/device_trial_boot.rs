@@ -115,9 +115,10 @@ pub trait DeviceTrialBoot {
     /// Closes the trial without keeping the image; the confirmed slot stays
     /// as it was.
     ///
-    /// Also disarms: once this returns, the next boot runs the confirmed slot
-    /// even if the trial image never booted at all. An orchestrator that
-    /// drops an activation before resetting the device relies on that.
+    /// Also clears the pending marker: once `revert` returns, the next
+    /// boot runs the confirmed slot, whether or not the test image ever
+    /// booted. An orchestrator that drops an activation before resetting
+    /// the device relies on the marker being clear.
     fn revert(&mut self) -> Result<(), Self::Error>;
 }
 
@@ -352,7 +353,7 @@ mod tests {
     }
 
     #[test]
-    fn revert_before_the_trial_boots_disarms_the_next_boot() {
+    fn revert_before_the_trial_boots_clears_the_pending_marker() {
         let mut record = SlotRecord::new(0);
         let mut device = TrialRecord::from(&mut record);
         device.record.activate(1);
@@ -364,7 +365,7 @@ mod tests {
         assert_eq!(
             device.record.boot(),
             0,
-            "revert disarms, so the dropped image never gets a boot"
+            "revert clears the marker, so the dropped image never gets a boot"
         );
     }
 
