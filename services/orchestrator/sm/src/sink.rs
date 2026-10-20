@@ -48,6 +48,14 @@ pub(crate) enum Outcome {
 /// A cascade can land in `Ready` instead, when nothing ungated is left to walk,
 /// and `Ready` entry emits one effect of its own (`ConfirmSelfTrial`). That
 /// comes to `2 * N + 1`, one under the same bound.
+///
+/// `ConfirmDeviceTrial` fills a `Sink` alone: `Ready` handles
+/// `BootConfirmed` in place and emits nothing else. `RevertDeviceTrial`
+/// joins the one effect entry to `Updating` or `Recovering` emits,
+/// `AuthenticateStageUpdate` or `RecoverComponent`: two effects in the
+/// `Sink`. Stacked on a full cascade, a `Recovering` entry comes to
+/// `2 * N + 2` effects, which `E` holds.
+///
 /// `Rot::new` refuses to compile unless `E >= 2 * N + 2`, so a machine that
 /// builds can never overflow this buffer.
 pub struct Sink<const E: usize> {

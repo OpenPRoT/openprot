@@ -658,7 +658,7 @@ impl<const N: usize, const E: usize> Rot<N, E> {
 
             State::Ready => match event {
                 Event::UpdateRequest(id) => Outcome::Transition(State::Updating(*id)),
-                // Proven-boot checkpoint: the image authenticated at
+                // Boot-confirmation checkpoint: the image authenticated at
                 // `ActivateUpdate` and has now run. Handled in place —
                 // confirming a running image is not a state change. Closing
                 // the window clears `pending_commit` so a later
@@ -669,6 +669,11 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                     if self.pending_commit == Some(*id) {
                         self.pending_commit = None;
                         self.awaiting_floor_advance = Some(*id);
+                        // The device booted the test image and reported
+                        // ready, so the trial closes with the image kept.
+                        // Every other place that clears `pending_commit`
+                        // reverts the trial instead.
+                        ctx.emit(Effect::ConfirmDeviceTrial(*id));
                     }
                     Outcome::Handled
                 }
@@ -908,7 +913,11 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 // the prior commit window is void, and so is any floor advance
                 // the agent has not asked for yet: the SVN it would take
                 // belongs to the image this update replaces.
-                self.pending_commit = None;
+                // The superseded image was never confirmed, so the trial
+                // closes without keeping the image.
+                if let Some(superseded) = self.pending_commit.take() {
+                    ctx.emit(Effect::RevertDeviceTrial(superseded));
+                }
                 self.awaiting_floor_advance = None;
                 ctx.emit(Effect::AuthenticateStageUpdate);
             }
@@ -916,7 +925,9 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 // Recovery voids any activated-but-not-committed image: the
                 // running image is now under suspicion, so its commit window
                 // ends here, and an outstanding floor advance goes with it.
-                self.pending_commit = None;
+                if let Some(suspect) = self.pending_commit.take() {
+                    ctx.emit(Effect::RevertDeviceTrial(suspect));
+                }
                 self.awaiting_floor_advance = None;
                 // The component under recovery is being restored, not booting;
                 // drop any pending boot-progress watchdog so a late `Timeout`

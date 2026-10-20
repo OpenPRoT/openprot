@@ -7,6 +7,15 @@ app in the same image, reached through the same traits a real board wires.
 The runner greps one pass/fail sentinel per run, so one scenario per image
 is what lets a failure name itself.
 
+That sentinel is why a scenario checks its claim by returning `false` and
+logging what went wrong, rather than by calling `assert!`. A panic in a
+`no_std` app on the target kills the process before the sentinel is
+printed, so the run fails as a timeout with nothing saying why. The
+verdict helpers follow that shape: `trial_closed_as_expected` in
+`full_update` compares the confirm and revert counts, logs both numbers
+when they differ, and hands a `bool` up to the one place that prints the
+sentinel.
+
 A few are the thing working. Most are the thing failing, and they pass
 when the failure is caught. One, `cancel_mid_transfer`, is neither: the
 agent withdraws the update, so nothing failed and nothing was installed.
