@@ -270,13 +270,13 @@ fn runtime_corruption_targets_component_and_rewalks() {
     assert_eq!(state, State::PreSupervision);
 }
 
-/// Recovery is a full platform re-boot: a live sibling is held in reset before
-/// the re-walk re-verifies, so `VerifyFirmware` never runs against executing
-/// code. Here C0 and C1 both boot and go live; C0 is then corrupted and
-/// restored. The re-walk must `AssertReset(C1)` (quiesce the live sibling)
-/// before it re-reads and re-verifies C0 from a fully-held state.
+/// Recovery is a full platform re-boot: every other live component is held
+/// in reset before the re-walk re-verifies, so `VerifyFirmware` never runs
+/// against executing code. Here C0 and C1 both boot and go live; C0 is then
+/// corrupted and restored. The re-walk must `AssertReset(C1)` (quiesce the
+/// live C1) before it re-reads and re-verifies C0 from a fully-held state.
 #[test]
-fn recovery_rewalk_quiesces_live_siblings_first() {
+fn recovery_rewalk_quiesces_live_components_first() {
     let (effects, state) = drive(
         passive_required(&[C0, C1]),
         &[
@@ -287,7 +287,7 @@ fn recovery_rewalk_quiesces_live_siblings_first() {
             Event::Restored(C0),           // re-walk: quiesce C1, then re-verify C0
         ],
     );
-    // The re-walk holds the live sibling before any re-verification.
+    // The re-walk holds live C1 before any re-verification.
     let tail = &effects[effects.len() - 3..];
     assert_eq!(
         tail,
@@ -301,10 +301,10 @@ fn recovery_rewalk_quiesces_live_siblings_first() {
 }
 
 /// `quiesce_all` holds *every* live component, not just the immediate
-/// neighbor: with three live parts, recovering one asserts reset on both
-/// siblings before the re-walk re-verifies anything.
+/// neighbor: with three live parts, recovering one asserts reset on the
+/// other two before the re-walk re-verifies anything.
 #[test]
-fn recovery_rewalk_quiesces_all_live_siblings() {
+fn recovery_rewalk_quiesces_all_live_components() {
     let (effects, state) = drive(
         passive_required(&[C0, C1, C2]),
         &[
@@ -316,7 +316,8 @@ fn recovery_rewalk_quiesces_all_live_siblings() {
             Event::Restored(C0),           // re-walk: quiesce C1 and C2 first
         ],
     );
-    // Both live siblings are held before the re-walk re-reads the chain.
+    // Both other live components are held before the re-walk re-reads the
+    // chain.
     let rewalk_read = effects
         .iter()
         .rposition(|e| *e == Effect::ReadFirmware(C0))
@@ -334,13 +335,13 @@ fn recovery_rewalk_quiesces_all_live_siblings() {
     assert_eq!(state, State::PreSupervision);
 }
 
-/// The TOCTOU closure: a live sibling is not trusted across a recovery on
+/// The TOCTOU closure: a live component is not trusted across a recovery on
 /// its old pass. The re-walk holds it (`AssertReset`), re-verifies it from
 /// that held state (`ReadFirmware`/`VerifyFirmware`), and only then releases
-/// it again — so the sibling is verified twice and released twice, with the
+/// it again: the component is verified twice and released twice, with the
 /// hold in between.
 #[test]
-fn recovery_rewalk_reverifies_live_sibling_at_rest() {
+fn recovery_rewalk_reverifies_live_component_at_rest() {
     let (effects, state) = drive(
         passive_required(&[C0, C1]),
         &[
@@ -2205,7 +2206,7 @@ fn an_update_for_another_component_is_refused_while_a_trial_is_open() {
 /// The other component's report must also leave the window usable: the
 /// updated component's own BootConfirmed still commits its floor, once.
 #[test]
-fn a_sibling_boot_confirmed_does_not_consume_the_window() {
+fn a_boot_confirmed_for_another_component_does_not_consume_the_window() {
     let (effects, state) = drive(
         chain(&[
             (C0, ComponentAttrs::passive_required()),

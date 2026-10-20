@@ -177,9 +177,9 @@ driver makes `BootFailed` and `RecoveryUnavailable` on its own, and
 ## Edge cases with no scenario
 
 - Two components in flight. Every scenario supervises one managed
-  device. A sibling's recovery during another component's commit window,
-  and the id scoping that decides what it voids, are covered only by
-  unit tests.
+  device. Recovery of one component during the commit window of another,
+  and the id scoping that decides what the recovery voids, are covered
+  only by unit tests.
 - A device that reports ready twice with no reset in between, or reports
   for a component that was never released.
 - An update aimed at the eRoT itself. No scenario sends one.
