@@ -311,7 +311,7 @@ invariant:
 > it was released, since the most recent full walk. No live component is ever
 > re-verified.
 
-Re-verifying a still-live sibling from a previous walk would be meaningless: its
+Re-verifying a still-live component from a previous walk would be meaningless: its
 earlier pass belongs to a walk that is over, and nothing has held it at rest
 since. Recovery returns the platform to a known-held state and rebuilds trust
 from there, exactly as power-on does.
