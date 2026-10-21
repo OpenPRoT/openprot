@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 exports_files(
-    glob(["**/Cargo.toml"]),
+    glob(["**/Cargo.toml"]) + ["hw/fuses.hjson"],
     visibility = ["//visibility:public"],
 )
 

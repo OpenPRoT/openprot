@@ -1,0 +1,12 @@
+--- hw/model/src/lib.rs
++++ hw/model/src/lib.rs
+@@ -36,6 +36,9 @@
+ use zerocopy::FromBytes;
+ 
+ // Re-export flash image builder for creating flash images from firmware bytes
++// Only used by tests; gated so the library builds without caliptra-mcu-builder
++// (and its signing/OpenSSL dependencies).
++#[cfg(test)]
+ pub use caliptra_mcu_builder::flash_image::build_flash_image_bytes;
+ 
+ mod bus_logger;
