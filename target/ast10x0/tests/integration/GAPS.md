@@ -223,6 +223,23 @@ scenario at all. The ones that matter:
 - Between the device taking its SVN and the eRoT writing its mirror. The
   two floors disagree afterwards and nothing reconciles them.
 
+## A failed spare-slot re-sync leaves the floor behind
+
+`commit_svn_floor` holds the advance when it queues a re-sync, so the
+floor takes the new SVN only once the spare holds the image. A pass that
+fails clears the held advance and reports `Report::SlotResyncFailed`
+(`driver/src/driver/update.rs`). The floor keeps the old SVN, so the
+image the update replaced installs again, and no pass re-stages the
+spare or records the slot as stale anywhere a reset would preserve.
+
+The update agent hears that the commit succeeded either way. The
+scenario loop sends PerformSvnCommit when the state machine emits
+`Effect::CommitSvnFloor`, which happens before the pump runs, so the
+answer says granted while the floor still holds the old SVN. Two changes
+close this: re-attempt the pass or mark the slot stale somewhere
+durable, and answer the agent once the floor takes the SVN rather than
+when the effect arrives.
+
 ## Assertions that are looser than they look
 
 `pldm_update/svn_commit` asserts the effect, not the outcome. The machine
