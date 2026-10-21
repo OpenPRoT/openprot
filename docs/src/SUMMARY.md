@@ -39,3 +39,4 @@
     * [Verification Model](./design/orchestrator/orchestrator-model.md)
     * [State Machine](./design/orchestrator/orchestrator-machine.md)
     * [Platform Architecture](./design/orchestrator/orchestrator-platform.md)
+    * [Slot Condition](./design/orchestrator/orchestrator-slot-condition.md)
