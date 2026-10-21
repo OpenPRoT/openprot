@@ -525,6 +525,11 @@ pub enum Effect {
     /// "retry later" completion code). Advisory only: it changes no state and
     /// does not perturb the in-flight update or recovery. `Ready` never produces
     /// this — it accepts the request and transitions to `Updating`.
+    ///
+    /// The effect trace holds the refusals the state machine makes, not every
+    /// refusal the platform makes: the driver refuses some requests at submit,
+    /// before `UpdateRequest` is dispatched, and the frontend answers the
+    /// requester from the returned `DriverError`.
     ReportUpdateDeferred,
     /// Report that an update *already in flight* ([`Updating`](crate::State::Updating))
     /// was aborted because a `Required` component was found corrupt and recovery
