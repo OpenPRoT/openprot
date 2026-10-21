@@ -22,6 +22,7 @@ exports_files(
         "platforms/emulator/rom/src/main.rs",
         "platforms/fpga/rom/src/main.rs",
         "romtime/src/lib.rs",
+        "hw/model/src/lib.rs",
     ],
     visibility = ["//visibility:public"],
 )
@@ -65,5 +66,11 @@ filegroup(
 filegroup(
     name = "all_files",
     srcs = glob(["**"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "hw_model_srcs",
+    srcs = glob(["hw/model/src/**/*.rs"]),
     visibility = ["//visibility:public"],
 )
