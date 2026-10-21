@@ -3191,9 +3191,11 @@ fn floor_of(driver: &PlatformDriver<MockBoard, 1>) -> Svn {
     floor.floor().expect("floor unreadable")
 }
 
-// CSA 5.3.2: both slots carry the same SVN before the floor moves. The
-// commit queues the pass and the floor waits for it, because a floor
-// above the spare's SVN leaves the spare unbootable.
+// The commit queues the re-sync and holds the SVN floor advance until
+// the re-sync has written the confirmed image into the spare slot. If the
+// floor moved first, the spare slot would still hold the old image, whose
+// SVN is below the new floor, and the ROM refuses an image below the
+// floor, so a fallback to the spare slot would not boot.
 #[test]
 fn the_floor_waits_for_the_spare_slot() {
     let mut orch = orchestrator();

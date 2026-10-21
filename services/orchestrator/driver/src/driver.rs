@@ -182,10 +182,10 @@ pub struct PlatformDriver<B: BoardCapabilities, const N: usize> {
     /// re-stages that payload into the spare slot. Cleared once the
     /// re-sync is queued.
     last_activated: Option<(ComponentId, u64)>,
-    /// A floor advance waiting for the spare slot to catch up. CSA 5.3.2
-    /// wants both slots at the same SVN before the floor moves, so the
-    /// commit holds the advance here and the pump applies it when the
-    /// re-sync finishes.
+    /// An SVN floor advance waiting for the spare slot to catch up. A
+    /// floor above the SVN the spare slot holds leaves that slot
+    /// unbootable, so the commit holds the SVN floor advance here and the
+    /// pump applies it once the re-sync has written the confirmed image.
     held_floor: Option<(ComponentId, Svn)>,
     /// The incremental verifier, idle or mid-session. Moved out of the
     /// board at construction so the pump can drive it without borrowing
@@ -357,19 +357,21 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// which reads the floor from the `ErotUpdate` rather than from the
     /// component wiring. Everything below describes a downstream device.
     ///
-    /// A self-managed component gets neither the pass nor the advance.
-    /// It keeps its own floor, and
-    /// a device that owns its anti-rollback owns its slot metadata too,
-    /// the same split `DeviceTrialBoot` draws. Writing into a slot the
-    /// eRoT does not control would reach past that seam. This reads slot
-    /// ownership off the floor binding, which is strictly a floor fact;
-    /// a board that needs the two apart wants its own attribute.
+    /// A self-managed component gets neither the re-sync nor the SVN
+    /// floor advance. It keeps its own floor, and a device that owns its
+    /// anti-rollback owns its slot metadata too, the same split
+    /// `DeviceTrialBoot` draws. Writing into a slot the eRoT does not
+    /// control would reach past that seam. `commit_svn_floor` decides
+    /// whether the eRoT may write a component's slots by reading the
+    /// floor binding, which only says who keeps the floor; a board where
+    /// the floor keeper and the slot keeper differ cannot be wired today.
     ///
-    /// CSA 5.3.2 wants both slots at the same SVN before the floor moves,
-    /// so when a re-sync is queued the advance waits for it. The pump
-    /// writes the floor once the spare holds the image. A pass that
-    /// fails leaves the floor alone: moving it would put the spare below
-    /// the floor, where it will not boot.
+    /// Both slots carry the same SVN before the floor moves, so when a
+    /// re-sync is queued the SVN floor advance waits until the re-sync has
+    /// written the confirmed image into the spare slot. A re-sync transfer
+    /// that fails partway leaves the floor unchanged: moving it would put
+    /// the floor above the SVN the spare slot holds, where that slot will
+    /// not boot.
     ///
     /// With no re-sync queued, `advance_floor` writes the floor inside
     /// the `CommitSvnFloor` effect, so a failed write fails the effect
@@ -456,10 +458,11 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// transfer. Nothing activates afterwards, so the payload stays in
     /// the inactive slot.
     ///
-    /// CSA 5.3.2 puts slot parity on the eRoT and its tooling. For a
-    /// component whose floor the eRoT holds, that is this pass. A
-    /// component that keeps its own SVN keeps its own slots as well, so
-    /// the commit never gets this far.
+    /// For a component whose floor the eRoT holds, the eRoT re-stages the
+    /// spare slot so both slots hold the firmware that was just confirmed,
+    /// and this transfer is that re-staging. For a self-managed component
+    /// [`commit_svn_floor`](Self::commit_svn_floor) returns before the
+    /// re-sync; the ownership split is documented there.
     ///
     /// It re-stages instead of copying slot to slot, because `Updatable`
     /// keeps slot identity on the device's side. The candidate is still

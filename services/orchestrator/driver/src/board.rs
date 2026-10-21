@@ -153,8 +153,8 @@ pub enum Report {
     /// firmware from before the update, so a fallback boots the old
     /// version.
     ///
-    /// CSA 5.1.3 wants more than a report. A slot left unbootable has to
-    /// be repaired from a known-good image. Nothing does that yet.
+    /// A report is not enough: a slot left unbootable has to be repaired
+    /// from a known-good image. Nothing does that yet.
     SlotResyncFailed(ComponentId),
     /// The spare slot was brought up to date but the anti-rollback floor
     /// could not be written afterwards. The component runs the new image

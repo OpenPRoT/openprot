@@ -403,13 +403,9 @@ fn recovery_rewalk_reverifies_live_component_at_rest() {
 
 /// `PreSupervision` reacts to `CorruptionDetected` directly (via
 /// [`Rot::handle_corruption`]), even though it isn't linked to
-/// `SupervisingPlatform` (so `AttestationChallenge` is still discarded
-/// there — a separate question). CSA defines no mechanism guaranteeing a
-/// corruption report exists for an already-released component's *live,
-/// executing* state (at-rest/NVM-polling is scoped to "at
-/// rest"/"between boots", not an in-progress boot's chain walk) — but
-/// that only means such a report isn't guaranteed to arrive, not that one
-/// should be ignored if it does.
+/// `SupervisingPlatform`, so `AttestationChallenge` is still discarded
+/// there, a separate question. Why such a report may never arrive at all
+/// is on [`Rot::handle_supervising`]; this test drives one that does.
 #[test]
 fn corruption_during_presupervision_selfloop_triggers_recovery() {
     let (effects, state) = drive(
@@ -875,8 +871,8 @@ fn corruption_out_of_chain_id_is_dropped() {
 /// Device-agnostic boot-progress: a *passive* component that is released but
 /// never reports [`Event::Booted`] before its watchdog fires is recovered like
 /// any other boot failure — even while the walk is still in `PreSupervision`.
-/// This closes the release-and-forget gap (CSA boot-progress checkpointing is
-/// device-agnostic; the orchestrator arms a `boot_timeout` for every device).
+/// This closes the release-and-forget gap: the orchestrator arms a
+/// `boot_timeout` for every released device, iRoT or not.
 #[test]
 fn passive_boot_timeout_enters_recovering() {
     let (effects, state) = drive(
@@ -1160,10 +1156,10 @@ fn cascading_runtime_corruption_cascades() {
     assert!(!effects.contains(&Effect::LatchLockdown));
 }
 
-/// Degraded mode (CSA): isolating a component is only half the requirement —
-/// the failure must also be *reported* through the platform management
-/// interface. An `Isolable` component that exhausts recovery emits
-/// `ReportIsolated` alongside its `AssertReset`, and the platform keeps running.
+/// Degraded mode: isolating a component is only half of it, management
+/// software also has to hear that the component is down. An `Isolable`
+/// component that exhausts recovery emits `ReportIsolated` alongside its
+/// `AssertReset`, and the platform keeps running.
 #[test]
 fn isolable_exhaustion_reports_isolation() {
     let mut script = std::vec![BOOT, Event::VerificationPassed(C0)];

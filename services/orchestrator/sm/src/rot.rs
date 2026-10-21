@@ -520,17 +520,17 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                     if self.is_gated(*id) {
                         return Outcome::Handled;
                     }
-                    // Recovery is attempted first for every failure, regardless
-                    // of the component's recovery-failure policy (CSA: recover
-                    // first, classify only once retries are exhausted).
+                    // Recovery is attempted first for every failure,
+                    // regardless of the component's recovery-failure policy:
+                    // the policy is consulted once retries are exhausted.
                     Outcome::Transition(State::Recovering(*id))
                 }
                 // Minimal fix: react to a corruption report if one arrives,
                 // even though `PreSupervision` isn't linked to
                 // `SupervisingPlatform`. Not acting on data we already have
-                // would be strictly worse than acting on it, regardless of
-                // whether CSA defines a mechanism that guarantees this event
-                // exists in the first place. `AttestationChallenge` is left
+                // would be strictly worse than acting on it, whether or not
+                // any mechanism guarantees the event arrives in the first
+                // place. `AttestationChallenge` is left
                 // unhandled here (falls through to `Outcome::Super` and is
                 // discarded) — that's a separate question.
                 Event::CorruptionDetected(id) => self.handle_corruption_advancing(*id, ctx),
@@ -785,9 +785,11 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                         return Outcome::Handled;
                     }
                     // Count this attempt against the specific component in
-                    // recovery, not a global budget (CSA: exhaustion is
-                    // per-device). The recovery target is the state's payload,
-                    // so it is always present — no defensive fallback needed.
+                    // recovery, not a global budget: a component exhausts
+                    // its own attempts, not a platform-wide budget. The
+                    // recovery target is the payload `State::Recovering`
+                    // carries, so it is always present and needs no
+                    // defensive fallback.
                     let attempts = self.bump_retry(failed);
                     if attempts < self.max_retry {
                         Outcome::Transition(State::PreSupervision)
@@ -826,8 +828,8 @@ impl<const N: usize, const E: usize> Rot<N, E> {
     ///
     /// Note: [`State::PreSupervision`] is deliberately *not* supervised, so the
     /// attestation guarantee does not hold while a component is still being
-    /// walked there — CSA defines no requirement to answer challenges before the
-    /// chain walk completes, so `AttestationChallenge` is left unhandled in
+    /// walked there. Nothing requires an answer before the chain walk
+    /// completes, so `AttestationChallenge` is left unhandled in
     /// `PreSupervision` (falls through to [`Outcome::Super`] and, with no
     /// supervisor, is discarded).
     ///
@@ -836,12 +838,10 @@ impl<const N: usize, const E: usize> Rot<N, E> {
     /// [`handle_corruption_advancing`](Self::handle_corruption_advancing), since
     /// routing it here would also pull in the attestation behavior above.
     /// `AwaitingReady` does the same; the cursor rationale is on the helper.
-    /// CSA defines no mechanism guaranteeing a corruption report
-    /// arrives for an already-released component's *live, executing* state (its
-    /// only at-rest mechanism — background NVM integrity polling — is explicitly
-    /// scoped to "at rest"/"between boots", not an in-progress boot's chain
-    /// walk), but that only means such a report isn't guaranteed to exist — it's
-    /// not a reason to discard one if it does arrive. See
+    /// No mechanism guarantees a corruption report for an already-released
+    /// component's *live, executing* state: background NVM integrity polling
+    /// runs at rest, between boots, not during a chain walk. So the report
+    /// may never come; the state machine still acts on one that does. See
     /// `corruption_during_presupervision_selfloop_triggers_recovery` in
     /// `tests.rs`.
     pub(crate) fn handle_supervising(&mut self, event: &Event, ctx: &mut Sink<E>) -> Outcome {
