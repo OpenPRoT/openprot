@@ -56,7 +56,7 @@ across events and is visible to every handler. States are a plain `State` enum
 | `statuses` | `Vec<ComponentStatus, N>` | One record per chain component, parallel by index. Each `ComponentStatus` is `{ lifecycle: ComponentLifecycle, retry: u8 }`. `lifecycle` (`Nominal` / `Isolated`) marks whether the component has been gated out of service — an `Isolated` component is held in reset and skipped on every walk. `retry` is its consecutive failed-restore count, kept per component so interleaved recoveries never share a budget. Durable across a return to `Ready` (only `retry` is cleared there; `Isolated` persists); reset only by a fresh `Rot` on `PowerOnReset`. |
 | `max_retry` | `u8` | Ceiling for a component's `retry`, chosen by the platform driver. When `statuses[i].retry >= max_retry` recovery is **exhausted** and the failed component's recovery-failure policy (`Isolable`/`Cascading`/`Required`) is applied. |
 | `pending_commit` | `Option<ComponentId>` | The component whose update was activated and whose test image is not confirmed yet. Set on `UpdateVerified`. The matching `BootConfirmed` clears it, emits `ConfirmDeviceTrial`, and records the component in `awaiting_floor_advance`. Entry to `Updating` or `Recovering` also clears it and emits `RevertDeviceTrial`, for an image an update supersedes or a recovery puts under suspicion. A `CommitTimeout` while it is set goes to `Locked`. |
-| `awaiting_floor_advance` | `Option<ComponentId>` | The component whose image has booted and whose anti-rollback floor is still waiting for the update agent to ask. Set by `BootConfirmed`, cleared by the matching `SvnCommitRequest`, which emits `CommitSvnFloor`, on entry to `Updating` or `Recovering` (the SVN the floor would take belongs to the image those two supersede), and when the component is gated out of service, which puts its image under the same suspicion. No watchdog bounds it: an agent that never sends UpdateSecurityRevision leaves the floor where it is. |
+| `awaiting_floor_advance` | `Option<ComponentId>` | The component whose image has booted and whose SVN floor is still waiting for the Update Agent to request it. Set by `BootConfirmed`, cleared by the matching `SvnCommitRequest`, which emits `CommitSvnFloor`, on entry to `Updating` or `Recovering` (the SVN the floor would take belongs to the image those two supersede), and when the component is gated out of service, which puts its image under the same suspicion. No watchdog bounds it: with an Update Agent that never sends UpdateSecurityRevision the SVN floor keeps the SVN it has. |
 | `self_trial_booted` | `bool` | Set by `SelfTrialBooted`: this boot is the trial run of the eRoT's own update. `Ready` entry emits `ConfirmSelfTrial` and clears it, so the trial is confirmed once, however many times the machine returns to `Ready`. Only ever set at the start of a boot; what survives the reset that decides the trial is the durable session, not this. |
 | `_effect_cap` | `PhantomData<[u8; E]>` | Zero-sized; ties the effect-buffer size `E` to the type so the `E >= 2 * N + 2` bound is enforced at construction. |
 
@@ -187,9 +187,9 @@ and corruption events.
 component isolated by exhausted recovery stays held across a return to `Ready`;
 only a fresh `Rot` on `PowerOnReset` releases it. If `self_trial_booted` is
 set, emit `ConfirmSelfTrial` and clear it: the chain coming up is the verdict
-on the eRoT's own trial image, and the confirmed session is what the update
-agent's UpdateSecurityRevision is answered against. The agent asks whenever it
-likes; before the confirm the ask is refused.
+on the trial image the eRoT booted, and the answer to UpdateSecurityRevision
+checks the confirmed session. The Update Agent requests whenever it likes, and
+the eRoT refuses the request before the confirm.
 
 | Event | Guard | Effects | Next state |
 |---|---|---|---|
@@ -198,7 +198,7 @@ likes; before the confirm the ask is refused.
 | `BootConfirmed(id)` | `pending_commit == Some(id)` | `ConfirmDeviceTrial(id)` | `Handled` (window closed; `id` moves to `awaiting_floor_advance`) |
 | `BootConfirmed(id)` | otherwise | — | `Handled` (no window open for `id`) |
 | `SvnCommitRequest(id)` | `awaiting_floor_advance == Some(id)` | `CommitSvnFloor(id)` | `Handled` |
-| `SvnCommitRequest(id)` | otherwise | — | `Handled` (no advance outstanding for `id`; the floor takes the SVN once) |
+| `SvnCommitRequest(id)` | otherwise | — | `Handled` (no SVN floor advance outstanding for `id`; the floor takes the SVN once) |
 | `CommitTimeout` | `pending_commit` set | — | `Locked` (`LatchLockdown` on entry) |
 | `CommitTimeout` | `pending_commit` clear | — | `Handled` |
 | anything else | — | — | `Outcome::Super` → `SupervisingPlatform` |
@@ -400,6 +400,7 @@ the named test(s).
 | INV10 | An `Active` component **gates** the chain walk — the cursor does not advance past it until its `ComponentReady` arrives. | `active_component_gates_on_component_ready` |
 | INV11 | `SelfVerificationFailed` at power-on latches `Locked` immediately, without entering `PreSupervision`. | `self_verification_failure_latches_immediately` |
 | INV12 | `AttestationChallenge` is also handled in `AwaitingReady`. | `attestation_in_awaiting_ready` |
+| INV13 | The state machine emits `CommitSvnFloor(id)` at most once per activation of `id`, and only on a `SvnCommitRequest(id)` that follows a `BootConfirmed(id)` which found the commit window open. | `property_floor_commits_once_per_activation_after_a_confirm` |
 
 ---
 

@@ -37,11 +37,11 @@ pub struct Rot<const N: usize, const E: usize> {
     /// resets it.
     statuses: heapless::Vec<ComponentStatus, N>,
     max_retry: u8,
-    /// The component whose update was activated and whose anti-rollback floor
-    /// has not been committed yet. `None` when nothing is waiting to commit.
-    /// Its own [`Event::BootConfirmed`] closes the window and clears this; a
+    /// The component whose update was activated and whose SVN floor has not
+    /// been committed yet. `None` when nothing is waiting to commit. Its own
+    /// [`Event::BootConfirmed`] closes the window and clears this; a
     /// [`Event::CommitTimeout`] while it is still set goes to
-    /// [`State::Locked`]. The floor does not move there: `BootConfirmed`
+    /// [`State::Locked`]. The SVN floor does not move there: `BootConfirmed`
     /// records the component in `awaiting_floor_advance` instead.
     ///
     /// The window spans the walk that follows an activation: the device only
@@ -60,19 +60,19 @@ pub struct Rot<const N: usize, const E: usize> {
     /// and [`State::Recovering`] (the running image is now suspect). Not cleared
     /// on `Ready` entry, because activation sets it on the way in.
     pending_commit: Option<ComponentId>,
-    /// The component whose image has booted and whose anti-rollback floor is
-    /// still waiting for the update agent to ask. Set by
+    /// The component whose image has booted and whose SVN floor is still
+    /// waiting for the Update Agent to request it. Set by
     /// [`Event::BootConfirmed`], cleared by the matching
     /// [`Event::SvnCommitRequest`], which emits [`Effect::CommitSvnFloor`].
     ///
-    /// No watchdog bounds this one. An agent that never sends
-    /// UpdateSecurityRevision leaves the floor where it is, which costs
+    /// No watchdog bounds this one. With an Update Agent that never sends
+    /// UpdateSecurityRevision the SVN floor keeps the SVN it has, which costs
     /// anti-rollback coverage for that image and nothing else; locking the
     /// platform because a remote agent stayed silent would be worse. That is
     /// the posture the eRoT's own session takes with `AwaitingFloorAdvance`.
     ///
     /// Cleared on entry to [`State::Updating`] and [`State::Recovering`], as
-    /// `pending_commit` is. The SVN the floor would take is the driver's
+    /// `pending_commit` is. What the SVN floor would take is the driver's
     /// reading of the image the update verified, and a superseding update
     /// overwrites it, so a late `SvnCommitRequest` would otherwise advance the
     /// floor past an image that has never booted.
@@ -169,11 +169,11 @@ impl<const N: usize, const E: usize> Rot<N, E> {
             self.statuses[i].released = false;
         }
         if self.awaiting_floor_advance == Some(id) {
-            // Gating holds the component in reset as corrupt, which puts
-            // the image it booted under the same suspicion recovery does.
-            // The floor advance the agent has not asked for yet goes with
-            // it, or a later `SvnCommitRequest` would advance the floor for an
-            // image this machine has just taken out of service.
+            // Gating holds the component in reset as corrupt, which puts the
+            // image it booted under the same suspicion recovery does. The SVN
+            // floor advance the Update Agent has not requested yet is void too:
+            // a later `SvnCommitRequest` would advance the floor for an image
+            // the state machine has just taken out of service.
             self.awaiting_floor_advance = None;
         }
         true
@@ -685,11 +685,11 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 },
                 // Boot-confirmation checkpoint: the image authenticated at
                 // `ActivateUpdate` and has now run. Handled in place —
-                // confirming a running image is not a state change. Closing
-                // the window clears `pending_commit` so a later
-                // `CommitTimeout` cannot lock a device that has already
-                // booted, and records `id` in `awaiting_floor_advance`,
-                // where the floor advance waits for the agent's ask.
+                // confirming a running image is not a state change. Closing the
+                // window clears `pending_commit` so a later `CommitTimeout`
+                // cannot lock a device that has already booted, and records
+                // `id` in `awaiting_floor_advance`, where the SVN floor advance
+                // waits for the request.
                 Event::BootConfirmed(id) => {
                     if self.pending_commit == Some(*id) {
                         self.pending_commit = None;
@@ -702,11 +702,11 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                     }
                     Outcome::Handled
                 }
-                // The update agent asked for the floor with
+                // The Update Agent requested the SVN floor with
                 // UpdateSecurityRevision and the device took the SVN. This is
-                // the only thing that moves an eRoT-held floor. One for a
-                // component with no advance outstanding is dropped: the floor
-                // takes the SVN once.
+                // the only thing that moves an eRoT-held SVN floor. A request
+                // for a component with no SVN floor advance outstanding is
+                // dropped: the SVN floor takes the SVN once.
                 Event::SvnCommitRequest(id) => {
                     if self.awaiting_floor_advance == Some(*id) {
                         ctx.emit(Effect::CommitSvnFloor(*id));
@@ -715,9 +715,10 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                     Outcome::Handled
                 }
                 // Commit watchdog. If the activated-but-not-committed window is
-                // still open, fail secure: never commit an unproven image, and
-                // never leave the downgrade window open indefinitely. Outside
-                // the window this is a stale watchdog fire and is dropped.
+                // still open, fail secure: never commit an image no boot has
+                // confirmed, and never leave the downgrade window open
+                // indefinitely. Outside the window this is a stale watchdog
+                // fire and is dropped.
                 Event::CommitTimeout => {
                     if self.pending_commit.is_some() {
                         Outcome::Transition(State::Locked)
@@ -731,19 +732,19 @@ impl<const N: usize, const E: usize> Rot<N, E> {
             State::Updating(target) => match event {
                 Event::UpdateVerified => {
                     ctx.emit(Effect::ActivateUpdate);
-                    // Open the activated-but-not-committed window: the floor is
-                    // NOT advanced here; it waits for `BootConfirmed`. The
-                    // driver arms its commit watchdog on `ActivateUpdate`, and
-                    // `CommitTimeout` bounds this window (commit-or-lock).
+                    // Open the activated-but-not-committed window: the SVN
+                    // floor does not move here; it waits for `BootConfirmed`.
+                    // The driver arms its commit watchdog on `ActivateUpdate`,
+                    // and `CommitTimeout` bounds this window (commit-or-lock).
                     self.pending_commit = Some(target);
                     // Re-walk rather than returning to `Ready`. Activation only
                     // proposes the image; the device runs the old one until it
                     // is reset, and `PreSupervision` entry quiesces every live
                     // component before verifying at rest. That reset is what
                     // boots the candidate, and the walk's `VerifyFirmware` is
-                    // what records its SVN, which the floor commit then takes.
-                    // Without it a `BootConfirmed` would commit the previous
-                    // image's SVN and leave the downgrade window open.
+                    // what records its SVN, which the SVN floor commit then
+                    // takes. Without it a `BootConfirmed` would commit the
+                    // previous image's SVN and leave the downgrade window open.
                     Outcome::Transition(State::PreSupervision)
                 }
                 Event::UpdateRejected => {
@@ -893,12 +894,11 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 }
             }
             // A new update cannot start from any supervised state except
-            // `Ready` (the machine is mid-walk, mid-update, or mid-recovery).
-            // The platform cannot take an update right now: a walk, an
-            // update or a recovery is running, or a trial is open for
-            // another component. Report the refusal rather than dropping
-            // the request, and leave the work in flight alone
-            // (`Handled`, no transition).
+            // `Ready` (the state machine is mid-walk, mid-update, or
+            // mid-recovery). The platform cannot take an update right now: a
+            // walk, an update or a recovery is running, or a trial is open for
+            // another component. Report the refusal rather than dropping the
+            // request; the work in flight continues (`Handled`, no transition).
             Event::UpdateRequest(_) => {
                 ctx.emit(Effect::ReportUpdateDeferred);
                 Outcome::Handled
@@ -934,20 +934,20 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 let _ = self.advance_to_next_ungated(ctx, 0);
             }
             State::Updating(target) => {
-                // A new update supersedes any activated-but-not-committed image;
-                // the prior commit window is void.
-                // The superseded image was never confirmed, so the trial
-                // closes without keeping the image.
+                // A new update supersedes any activated-but-not-committed
+                // image; the prior commit window is void. The superseded image
+                // was never confirmed, so the trial closes without keeping the
+                // image.
                 if let Some(superseded) = self.pending_commit.take() {
                     ctx.emit(Effect::RevertDeviceTrial(superseded));
                 }
                 if self.awaiting_floor_advance == Some(target) {
                     // This update replaces the image whose SVN floor advance
-                    // the agent has not requested yet, so the SVN that floor
-                    // advance would take belongs to the image being replaced.
-                    // An SVN floor advance outstanding for another component
-                    // names an image this update does not replace, so the
-                    // clear does not run for that one.
+                    // the Update Agent has not requested yet, so the SVN that
+                    // floor advance would take belongs to the image being
+                    // replaced. An SVN floor advance outstanding for another
+                    // component names an image this update does not replace, so
+                    // the clear does not run for that one.
                     self.awaiting_floor_advance = None;
                 }
                 ctx.emit(Effect::AuthenticateStageUpdate);
@@ -961,8 +961,8 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 }
                 if self.awaiting_floor_advance == Some(failed) {
                     // Recovery puts the image this component booted under
-                    // suspicion, so the SVN floor advance the agent has not
-                    // requested yet is void too. An SVN floor advance
+                    // suspicion, so the SVN floor advance the Update Agent has
+                    // not requested yet is void too. An SVN floor advance
                     // outstanding for another component names an image this
                     // recovery does not touch, so the clear does not run for
                     // that one.
@@ -993,24 +993,24 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 ctx.emit(Effect::LatchLockdown);
             }
             State::Ready => {
-                // The chain is up. If the eRoT booted the trial image of
-                // its own update, that is the trial proving itself: confirm
-                // the session, so the update agent's ask for the floor
-                // advance is answered rather than refused.
-                // Cleared here, so a later return to `Ready` in the same boot
-                // confirms nothing a second time.
+                // The chain is up. If the eRoT booted the trial image of its
+                // own update, that boot confirms the trial: confirm the
+                // session, so the request the Update Agent sends for the SVN
+                // floor advance is answered rather than refused. Cleared here,
+                // so a later return to `Ready` in the same boot confirms
+                // nothing a second time.
                 if self.self_trial_booted {
                     self.self_trial_booted = false;
                     ctx.emit(Effect::ConfirmSelfTrial);
                     // The state machine answers `SvnCommitRequest` with
                     // `CommitSvnFloor` only for the id in
-                    // `awaiting_floor_advance`, so without this
-                    // assignment it drops the request for the eRoT's
-                    // floor. `BootConfirmed` makes the same mark for a
-                    // downstream device. The SVN is written elsewhere:
-                    // `ConfirmSelfTrial` above has the driver confirm
-                    // the session, and `commit_self_svn_floor` moves the
-                    // floor to the SVN the session then holds.
+                    // `awaiting_floor_advance`, so without this assignment it
+                    // drops the request for the eRoT's SVN floor.
+                    // `BootConfirmed` makes the same mark for a downstream
+                    // device. The SVN is written elsewhere: `ConfirmSelfTrial`
+                    // above has the driver confirm the session, and
+                    // `commit_self_svn_floor` moves the SVN floor to the SVN
+                    // the session then holds.
                     self.awaiting_floor_advance = self.erot_id();
                 }
                 // NB: `gated` is intentionally NOT cleared here. It is a durable
