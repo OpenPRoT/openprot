@@ -16,6 +16,8 @@ exports_files(
         "sw-emulator/lib/derive/src/lib.rs",
         "sw-emulator/lib/periph/src/lib.rs",
         "hw-model/types/src/lib.rs",
+        "hw-model/build.rs",
+        "hw-model/src/lib.rs",
         "image/gen/src/lib.rs",
         "image/crypto/src/lib.rs",
         "image/fake-keys/src/lib.rs",
@@ -107,5 +109,18 @@ filegroup(
 filegroup(
     name = "hw_model_types_srcs",
     srcs = glob(["hw-model/types/src/**/*.rs"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "hw_model_srcs",
+    srcs = glob(["hw-model/src/**/*.rs"]),
+    visibility = ["//visibility:public"],
+)
+
+# Files caliptra-hw-model include_str!s from hw/fpga (OpenOCD configs).
+filegroup(
+    name = "hw_fpga_files",
+    srcs = glob(["hw/fpga/*.cfg", "hw/fpga/*.txt"]),
     visibility = ["//visibility:public"],
 )

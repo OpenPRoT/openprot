@@ -62,6 +62,72 @@ rust_library(
     ],
 )
 
+# caliptra-hw-model with the subsystem FPGA backend, for host-side FPGA test
+# binaries (aarch64 on the VCK190). Used by
+# //third_party/caliptra/caliptra-mcu-sw:mcu_hw_model.
+#
+# Its build script reads caliptra-ss's OTP memory map from
+# $CARGO_MANIFEST_DIR/../hw/latest/caliptra-ss/... (a submodule @caliptra_sw
+# doesn't fetch). rules_rust sets CARGO_MANIFEST_DIR to the build script
+# target's package, so the script lives in ./hw-model and the map is staged
+# below at the matching hw/latest/caliptra-ss/... path, mirroring upstream's
+# layout.
+genrule(
+    name = "caliptra_ss_otp_ctrl_mmap",
+    srcs = ["@caliptra_ss_otp_ctrl_mmap//file"],
+    outs = ["hw/latest/caliptra-ss/src/fuse_ctrl/data/otp_ctrl_mmap.hjson"],
+    cmd = "cp $< $@",
+    visibility = [":__subpackages__"],
+)
+
+rust_library(
+    name = "caliptra_hw_model",
+    srcs = ["@caliptra_sw//:hw_model_srcs"],
+    compile_data = ["@caliptra_sw//:hw_fpga_files"],
+    crate_features = ["fpga_subsystem"],
+    crate_name = "caliptra_hw_model",
+    crate_root = "@caliptra_sw//:hw-model/src/lib.rs",
+    edition = "2021",
+    proc_macro_deps = [
+        "//third_party/caliptra:crate_serde_derive",
+    ],
+    rustc_flags = ["--cap-lints=allow"],
+    deps = [
+        ":caliptra_emu_bus",
+        ":caliptra_emu_cpu",
+        ":caliptra_emu_periph",
+        "//third_party/caliptra/caliptra-sw/hw-model:caliptra_hw_model_build_script",
+        ":caliptra_hw_model_types",
+        ":caliptra_image_fake_keys",
+        "//third_party/caliptra:crate_bitfield",
+        "//third_party/caliptra:crate_bitflags",
+        "//third_party/caliptra:crate_serde",
+        "//third_party/caliptra:crate_smlang",
+        "//third_party/caliptra:crate_tock-registers",
+        "@rust_caliptra_crates//:caliptra-api",
+        "@rust_caliptra_crates//:caliptra-api-types",
+        "@rust_caliptra_crates//:caliptra-registers",
+        "@rust_caliptra_crates//:caliptra-ureg",
+        # Same zerocopy as caliptra-api (embedded repo), whose types derive it.
+        "@rust_caliptra_crates//:zerocopy",
+        "@rust_caliptra_crates_host//:anyhow",
+        "@rust_caliptra_crates_host//:bit-vec",
+        "@rust_caliptra_crates_host//:caliptra-emu-types",
+        "@rust_caliptra_crates_host//:caliptra-image-types",
+        "@rust_caliptra_crates_host//:libc",
+        "@rust_caliptra_crates_host//:nix",
+        "@rust_caliptra_crates_host//:once_cell",
+        "@rust_caliptra_crates_host//:rand",
+        "@rust_caliptra_crates_host//:regex",
+        "@rust_caliptra_crates_host//:rustix",
+        "@rust_caliptra_crates_host//:scopeguard",
+        "@rust_caliptra_crates_host//:sha2",
+        "@rust_caliptra_crates_host//:sha3",
+        "@rust_caliptra_crates_host//:thiserror",
+        "@rust_caliptra_crates_host//:uio",
+    ],
+)
+
 rust_library(
     name = "caliptra_emu_cpu",
     srcs = ["@caliptra_sw//:emu_cpu_srcs"],

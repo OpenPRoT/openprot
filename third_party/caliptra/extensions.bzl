@@ -23,13 +23,20 @@ def _caliptra_repos_impl(module_ctx):
         build_file = "//third_party/caliptra/caliptra-mcu-sw:overlay.BUILD",
         commit = CALIPTRA_VERSIONS["caliptra_mcu_sw"],
         remote = "https://github.com/chipsalliance/caliptra-mcu-sw",
+        patches = [
+            # Lets mcu-hw-model build without caliptra-mcu-builder.
+            "//third_party/caliptra/caliptra-mcu-sw:hw_model_no_builder.patch",
+        ],
+        patch_args = ["-p0"],
     )
     git_repository(
         name = "caliptra_sw",
         build_file = "//third_party/caliptra/caliptra-sw:overlay.BUILD",
         commit = CALIPTRA_VERSIONS["caliptra_sw"],
         remote = "https://github.com/chipsalliance/caliptra-sw",
-        patches = ["//third_party/caliptra/caliptra-sw:caliptra_sw_rustcrypto.patch"],
+        patches = [
+            "//third_party/caliptra/caliptra-sw:caliptra_sw_rustcrypto.patch",
+        ],
         patch_args = ["-p0"],
     )
 
