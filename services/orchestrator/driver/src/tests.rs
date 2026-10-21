@@ -993,7 +993,7 @@ fn mock_board<const N: usize>() -> Board<MockBoard, N> {
         update_staging: MemStaging::new(),
         update_stall_budget_millis: STALL_BUDGET_MILLIS,
         update_verifier: Some(StubVerifier::accepting()),
-        self_image: None,
+        self_update: None,
     }
 }
 
@@ -1351,7 +1351,7 @@ fn release_follows_verification() {
             update_staging: MemStaging::new(),
             update_stall_budget_millis: STALL_BUDGET_MILLIS,
             update_verifier: Some(StubVerifier::accepting()),
-            self_image: None,
+            self_update: None,
         },
     );
     let mut orch = orchestrator();
@@ -1764,7 +1764,7 @@ fn recoverable_board<const N: usize>(sources: u8) -> Board<RecoverableBoard, N> 
         update_staging: MemStaging::new(),
         update_stall_budget_millis: STALL_BUDGET_MILLIS,
         update_verifier: Some(StubVerifier::accepting()),
-        self_image: None,
+        self_update: None,
     }
 }
 
@@ -3553,7 +3553,7 @@ fn self_trial_driver(session: MockSelfUpdate) -> PlatformDriver<MockBoard, 1> {
     PlatformDriver::new(
         &passive_entries(),
         Board {
-            self_image: Some(SelfImage {
+            self_update: Some(ErotUpdate {
                 session,
                 floor: MockFloor::new(),
                 reset: MockSelfReset::new(),
@@ -3573,9 +3573,9 @@ fn trial_session(state: SelfUpdateState) -> MockSelfUpdate {
 fn session_state(driver: &PlatformDriver<MockBoard, 1>) -> SelfUpdateState {
     driver
         .board()
-        .self_image
+        .self_update
         .as_ref()
-        .expect("the test wired a self-image")
+        .expect("the test wired a self-update")
         .session
         .state
 }
@@ -3584,9 +3584,9 @@ fn session_state(driver: &PlatformDriver<MockBoard, 1>) -> SelfUpdateState {
 fn self_floor(driver: &PlatformDriver<MockBoard, 1>) -> Svn {
     driver
         .board()
-        .self_image
+        .self_update
         .as_ref()
-        .expect("the test wired a self-image")
+        .expect("the test wired a self-update")
         .floor
         .floor()
         .expect("the mock does not fault")
@@ -3630,12 +3630,13 @@ fn a_boot_with_no_trial_leaves_the_session_alone() {
     assert_eq!(session_state(&driver), SelfUpdateState::Idle);
 }
 
-// The event says a self-image produced it and the board wired none, so the
+// The event says the settle call produced it and the board has
+// none, so the
 // two disagree about whether this eRoT updates itself. The effect fails and
 // the platform locks down rather than carrying on with a trial nothing can
 // confirm.
 #[test]
-fn confirming_a_trial_with_no_self_image_locks_down() {
+fn confirming_a_trial_with_no_self_update_locks_down() {
     let mut orch = orchestrator();
     let mut driver = driver([MemImage::holding(valid_image())]);
 
@@ -3669,7 +3670,9 @@ fn settling_a_running_trial_names_the_event_to_dispatch() {
     let mut driver =
         self_trial_driver(trial_session(SelfUpdateState::TrialPending { svn: Svn(7) }));
 
-    let settlement = driver.settle_self_image().expect("the mock does not fault");
+    let settlement = driver
+        .settle_self_update_session()
+        .expect("the mock does not fault");
 
     assert_eq!(
         settlement,
@@ -3683,13 +3686,15 @@ fn settling_a_running_trial_names_the_event_to_dispatch() {
     );
 }
 
-// A board that never updates itself wires no self-image. There is no
+// A board that never updates itself wires no self-update. There is no
 // session to settle and nothing to tell the machine.
 #[test]
-fn a_board_with_no_self_image_is_already_settled() {
+fn a_board_with_no_self_update_is_already_settled() {
     let mut driver = driver([MemImage::holding(valid_image())]);
 
-    let settlement = driver.settle_self_image().expect("nothing to read");
+    let settlement = driver
+        .settle_self_update_session()
+        .expect("nothing to read");
 
     assert_eq!(settlement, SelfUpdateSettlement::Settled);
     assert_eq!(settlement.event(), None);
@@ -3702,7 +3707,9 @@ fn a_board_with_no_self_image_is_already_settled() {
 fn settling_an_awaited_floor_advance_names_no_event() {
     let mut driver = self_trial_driver(trial_session(SelfUpdateState::Committed { svn: Svn(7) }));
 
-    let settlement = driver.settle_self_image().expect("the mock does not fault");
+    let settlement = driver
+        .settle_self_update_session()
+        .expect("the mock does not fault");
 
     assert_eq!(
         settlement,
@@ -3719,7 +3726,9 @@ fn settling_an_awaited_floor_advance_names_no_event() {
 fn settling_an_unclaimed_image_names_no_event() {
     let mut driver = self_trial_driver(trial_session(SelfUpdateState::Idle));
 
-    let settlement = driver.settle_self_image().expect("the mock does not fault");
+    let settlement = driver
+        .settle_self_update_session()
+        .expect("the mock does not fault");
 
     assert_eq!(settlement, SelfUpdateSettlement::UnclaimedImageRunning);
     assert_eq!(settlement.event(), None);
@@ -3733,7 +3742,7 @@ fn settling_at_boot_dispatches_the_trial_event() {
     let mut driver =
         self_trial_driver(trial_session(SelfUpdateState::TrialPending { svn: Svn(7) }));
 
-    let settlement = settle_self_image_at_boot(&mut orch, &mut driver).expect("no fault");
+    let settlement = settle_self_update_at_boot(&mut orch, &mut driver).expect("no fault");
 
     assert_eq!(
         settlement,
@@ -3762,7 +3771,7 @@ fn settling_at_boot_with_no_session_dispatches_nothing() {
     let mut orch = orchestrator();
     let mut driver = self_trial_driver(MockSelfUpdate::idle());
 
-    let settlement = settle_self_image_at_boot(&mut orch, &mut driver).expect("no fault");
+    let settlement = settle_self_update_at_boot(&mut orch, &mut driver).expect("no fault");
 
     assert_eq!(settlement, SelfUpdateSettlement::Settled);
 
@@ -3783,7 +3792,7 @@ fn settling_at_boot_passes_a_storage_fault_back() {
         ..trial_session(SelfUpdateState::TrialPending { svn: Svn(7) })
     });
 
-    assert!(settle_self_image_at_boot(&mut orch, &mut driver).is_err());
+    assert!(settle_self_update_at_boot(&mut orch, &mut driver).is_err());
 
     orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
 
@@ -3981,7 +3990,7 @@ fn erot_driver_with(
     PlatformDriver::new(
         &erot_chain(),
         Board {
-            self_image: Some(SelfImage {
+            self_update: Some(ErotUpdate {
                 session,
                 floor: MockFloor::new(),
                 reset: MockSelfReset::new(),
@@ -4040,15 +4049,15 @@ fn activating_the_erots_own_update_records_the_session_then_reaches_the_reset() 
         "the mock cannot reset the process it runs in"
     );
 
-    let self_image = driver.board().self_image.as_ref().expect("wired above");
+    let self_update = driver.board().self_update.as_ref().expect("wired above");
     assert_eq!(
-        self_image.session.state(),
+        self_update.session.state(),
         Ok(SelfUpdateState::TrialPending {
             svn: Svn(CANDIDATE_SVN)
         }),
         "the session holds the candidate's own SVN, marked pending"
     );
-    assert_eq!(self_image.reset.attempts, 1, "the reset was reached");
+    assert_eq!(self_update.reset.attempts, 1, "the reset was reached");
 }
 
 // The candidate for the eRoT authenticated with no manifest SVN, so there
@@ -4081,22 +4090,23 @@ fn a_versionless_self_candidate_ends_the_update_without_locking() {
     );
     assert_eq!(driver.pending_update(), None, "and the job is gone");
 
-    let self_image = driver.board().self_image.as_ref().expect("wired above");
+    let self_update = driver.board().self_update.as_ref().expect("wired above");
     assert_eq!(
-        self_image.session.state(),
+        self_update.session.state(),
         Ok(SelfUpdateState::Idle),
         "nothing was recorded"
     );
-    assert_eq!(self_image.reset.attempts, 0, "and nothing reset");
+    assert_eq!(self_update.reset.attempts, 0, "and nothing reset");
 }
 
 // One update at a time, whatever it targets. A request aimed at the eRoT
 // while a device behind it is being updated is refused as `UpdateBusy`,
 // and the job already in flight is untouched.
 //
-// The board wires no self-image either, so the self-image check would
+// The board wires no self-update either, so the self-update check would
 // refuse the request too. The answer is `UpdateBusy` and not
-// `NoSelfImage` because the busy check in submit_update runs first.
+// `NoErotUpdate` because the busy check in submit_update runs
+// first.
 #[test]
 fn an_erot_update_is_refused_while_a_device_update_is_in_flight() {
     let mut driver = PlatformDriver::<MockBoard, EROT_N>::new(&erot_chain(), mock_board());
@@ -4115,19 +4125,20 @@ fn an_erot_update_is_refused_while_a_device_update_is_in_flight() {
     );
 }
 
-// A board with no self-image cannot record the session the update needs.
+// A board with no `ErotUpdate` cannot record the session the
+// update needs.
 // Accepting would run it to the activation, where the effect fails and
 // locks the platform. Refused at submit, the state machine never leaves
 // Ready.
 #[test]
-fn an_update_aimed_at_the_erot_is_refused_when_the_board_has_no_self_image() {
+fn an_update_aimed_at_the_erot_is_refused_when_the_board_wires_no_self_update() {
     let mut orch = erot_orchestrator();
     let mut driver = PlatformDriver::<MockBoard, EROT_N>::new(&erot_chain(), mock_board());
     erot_chain_up(&mut orch, &mut driver);
 
     assert_eq!(
         request_update(&mut orch, &mut driver, C0, CANDIDATE_LEN),
-        Err(DriverError::NoSelfImage)
+        Err(DriverError::NoErotUpdate)
     );
     assert_eq!(orch.state(), State::Ready, "the request reached nothing");
     assert_eq!(driver.pending_update(), None, "and stored nothing");
@@ -4148,9 +4159,9 @@ fn a_second_self_update_is_refused_while_the_first_awaits_its_floor() {
         Err(DriverError::UpdateBusy)
     );
     assert_eq!(driver.pending_update(), None, "nothing was stored");
-    let self_image = driver.board().self_image.as_ref().expect("wired above");
+    let self_update = driver.board().self_update.as_ref().expect("wired above");
     assert_eq!(
-        self_image.session.state(),
+        self_update.session.state(),
         Ok(SelfUpdateState::Committed { svn: Svn(7) }),
         "and the session still holds the confirmed SVN"
     );

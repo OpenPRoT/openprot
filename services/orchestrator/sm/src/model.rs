@@ -58,11 +58,11 @@ pub enum ComponentKind {
     /// It is still part of the chain, because it is an update target like
     /// any other component: `components[0].updatable` stages the eRoT's own
     /// image. Its anti-rollback floor is the one exception, held in the
-    /// board's self-image next to the update session rather than in
-    /// `components[0].svn_floor`, because the floor and the session are
-    /// advanced together and neither is reached through a chain walk. What
-    /// a self-update needs on top is that durable session, because the
-    /// reboot that decides it wipes RAM.
+    /// `ErotUpdate` the board holds, next to the update session
+    /// rather than in `components[0].svn_floor`, because the floor and the
+    /// session are advanced together and neither is reached through a chain
+    /// walk. What a self-update needs on top is that durable session,
+    /// because the reboot that decides it wipes RAM.
     Erot,
 }
 
@@ -351,7 +351,7 @@ pub enum Event {
     CommitTimeout,
     /// This boot is the trial run of the eRoT's own update: the durable
     /// session says an image was activated and the eRoT came up on it.
-    /// Injected at bring-up by the driver's `settle_self_image_at_boot`,
+    /// Injected at bring-up by `settle_self_update_at_boot` in the driver,
     /// before [`Event::PowerGood`] and so handled in
     /// [`State::PowerOnReset`] alone. Later in the boot it is stale: the
     /// trial is judged once per boot.
@@ -456,7 +456,7 @@ pub enum Effect {
     /// `Committed` gets the ask refused. The floor itself does not move
     /// here. [`Effect::CommitSvnFloor`] is the downstream counterpart and
     /// names a component, which this one cannot: the eRoT's floor is held in
-    /// the board's self-image, not in the per-component array.
+    /// the `ErotUpdate` the board holds, not in the per-component array.
     ConfirmSelfTrial,
     /// Keep the test image a managed device booted: close the trial and
     /// make the activated slot the confirmed one.

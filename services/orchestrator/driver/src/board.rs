@@ -248,7 +248,7 @@ pub trait BoardCapabilities {
     /// survive the reboot that decides whether the update worked.
     type SelfUpdate: SelfUpdate;
     /// Resets the eRoT, which is how its own update is activated. Every
-    /// board names a type; only [`Board::self_image`] reaches one.
+    /// board names a type; only [`Board::self_update`] reaches one.
     type SelfReset: SelfReset;
     /// The board's reset signal ids, as the device table spells them.
     type ResetSignal: 'static;
@@ -264,7 +264,7 @@ pub trait BoardCapabilities {
 ///
 /// This is not a [`SvnFloorBinding`]. That type exists to say who keeps a
 /// component's floor, and the eRoT always keeps its own.
-pub struct SelfImage<S: SelfUpdate, F: SvnFloor, R: SelfReset> {
+pub struct ErotUpdate<S: SelfUpdate, F: SvnFloor, R: SelfReset> {
     /// Storage the session lives in across the reboot.
     pub session: S,
     /// The eRoT's own anti-rollback floor.
@@ -388,7 +388,7 @@ pub struct ComponentWiring<B: BoardCapabilities> {
 ///         update_staging,
 ///         update_stall_budget_millis: 30_000,
 ///         update_verifier: Some(crypto_verifier),
-///         self_image: Some(SelfImage {
+///         self_update: Some(ErotUpdate {
 ///             session: self_update,
 ///             floor: self_floor,
 ///             reset: self_reset,
@@ -421,5 +421,5 @@ pub struct Board<B: BoardCapabilities, const N: usize> {
     /// The eRoT's own update session and floor. Set this to `None` on a
     /// board that never updates itself, meaning one that does nothing but
     /// supervise other components.
-    pub self_image: Option<SelfImage<B::SelfUpdate, B::SvnFloor, B::SelfReset>>,
+    pub self_update: Option<ErotUpdate<B::SelfUpdate, B::SvnFloor, B::SelfReset>>,
 }

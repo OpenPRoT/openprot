@@ -77,10 +77,10 @@ pub enum DriverError {
     /// Activation was asked before the candidate passed verification.
     /// The job survives, so `DiscardStaged` can still end it.
     CandidateNotAuthenticated,
-    /// A self-update effect ran on a board that left `Board::self_image`
+    /// A self-update effect ran on a board that left `Board::self_update`
     /// `None`. The event that opens the trial is read from that field, so
     /// the board and the machine have drifted apart.
-    NoSelfImage,
+    NoErotUpdate,
     /// The eRoT's own update session could not be written.
     SelfUpdateFault,
     /// The eRoT's own candidate reached the activation with no manifest
@@ -126,7 +126,7 @@ impl core::fmt::Display for DriverError {
             DriverError::NoUpdateJob => "no update job for this effect",
             DriverError::CandidateOutOfRange => "candidate does not fit the staging region",
             DriverError::CandidateNotAuthenticated => "candidate has not passed verification yet",
-            DriverError::NoSelfImage => "board wired no self-image",
+            DriverError::NoErotUpdate => "board wired no self-update",
             DriverError::SelfUpdateFault => "self-update session could not be written",
             DriverError::SelfActivateNoSvn => {
                 "the eRoT's own candidate reached the activation with no manifest SVN"
@@ -144,7 +144,7 @@ mod self_update;
 mod update;
 
 pub use self_update::{
-    commit_self_svn_floor, settle_self_image_at_boot, settle_self_update, CommitFloorError,
+    commit_self_svn_floor, settle_self_update, settle_self_update_at_boot, CommitFloorError,
     SelfUpdateSettlement, SettleError,
 };
 pub use update::UpdatePoll;

@@ -115,10 +115,10 @@ abort would do is untested.
   self-reset wipes it. The ROM rejects an image below the counter, so after
   the advance the other slot is unbootable, and a corruption of the running
   slot leaves the eRoT with nothing to fall back to.
-- A board that wires no self-update at all. `Board.self_image` is an
+- A board that wires no self-update at all. `Board.self_update` is an
   `Option` and `()` satisfies `SelfUpdate` and `SelfReset`, so such a
   board builds and refuses an update aimed at the eRoT at submit, with
-  `NoSelfImage`. Self-resiliency is required of every eRoT, so the
+  `NoErotUpdate`. Self-resiliency is required of every eRoT, so the
   `Option` is a bring-up seam for QEMU and the mock boards rather than a
   configuration a platform may ship; nothing in the types says so. Two
   stages close it: a wiring type with a named cannot-self-update variant,
@@ -139,7 +139,7 @@ verifies through `IncrementalVerifier`, which has no measurement seam.
 
 The eRoT's own image is not measured at all. `Report::Measured` comes from
 a verdict, and the walk passes over the eRoT, so it is never verified: its
-image settles through `settle_self_image_at_boot`, which dispatches the
+image settles through `settle_self_update_at_boot`, which dispatches the
 settlement event without calling a verifier. Measuring it needs a seam on
 that path, not another scenario.
 

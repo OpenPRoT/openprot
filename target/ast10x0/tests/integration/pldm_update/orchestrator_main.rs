@@ -373,7 +373,7 @@ fn board() -> Board<UpdateBoard, N> {
         report_sink: LogSink,
         update_staging: PatternStaging,
         update_verifier: Some(PatternVerifier),
-        self_image: None,
+        self_update: None,
         update_stall_budget_millis: 5_000,
     }
 }

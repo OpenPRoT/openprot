@@ -34,8 +34,8 @@ use board_stubs::{BoardFault, StubImage};
 #[cfg(not(any(measured, recovery, recovery_exhausted)))]
 use board_stubs::StubVerifier;
 use openprot_orchestrator_driver::{
-    bring_up, settle_self_image_at_boot, Board, BoardCapabilities, ComponentWiring, Report,
-    ReportSink, SelfImage, SelfUpdateSettlement, SvnFloorBinding,
+    bring_up, settle_self_update_at_boot, Board, BoardCapabilities, ComponentWiring, ErotUpdate,
+    Report, ReportSink, SelfUpdateSettlement, SvnFloorBinding,
 };
 #[cfg(any(measured, recovery, recovery_exhausted))]
 use openprot_orchestrator_driver::{ImageSource, Verdict, Verifier};
@@ -621,7 +621,7 @@ fn board() -> Board<MockDownstreamDeviceBoard, N> {
         report_sink: LogSink,
         update_staging: NoStaging,
         update_verifier: Some(NeverVerifier),
-        self_image: Some(SelfImage {
+        self_update: Some(ErotUpdate {
             session: SelfSession,
             floor: ErotFloor,
             reset: (),
@@ -695,7 +695,7 @@ fn run() -> Result<(), ()> {
     // What the eRoT's last self-update was doing, read before anything
     // walks. A trial running right now has to be declared here, because
     // what judges it is this walk reaching `Ready`.
-    let settlement = match settle_self_image_at_boot(&mut core, &mut driver) {
+    let settlement = match settle_self_update_at_boot(&mut core, &mut driver) {
         Ok(settlement) => settlement,
         Err(_) => {
             pw_log::error!("the eRoT's own session could not be settled");

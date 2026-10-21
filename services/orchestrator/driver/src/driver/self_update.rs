@@ -21,21 +21,21 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// the session and floor the board wired, and says what it found.
     ///
     /// The same call as [`settle_self_update`], reaching the pair through
-    /// [`Board::self_image`] so an event loop that only holds the driver can
-    /// make it. A board that wired no self-image answers `Settled`: no
+    /// [`Board::self_update`] so an event loop that only holds the driver can
+    /// make it. A board that wired no self-update answers `Settled`: no
     /// session is no session, whether it is missing or empty.
     ///
     /// Runs once, before [`Event::PowerGood`], and the caller dispatches
     /// [`SelfUpdateSettlement::event`] before that. A later run names an
     /// event the state machine drops: the trial is judged once per boot, by
     /// the walk that has already run.
-    pub fn settle_self_image(
+    pub fn settle_self_update_session(
         &mut self,
     ) -> Result<SelfUpdateSettlement, SettleError<SelfUpdateError<B>, SvnFloorError<B>>> {
-        let Some(self_image) = self.board.self_image.as_mut() else {
+        let Some(self_update) = self.board.self_update.as_mut() else {
             return Ok(SelfUpdateSettlement::Settled);
         };
-        settle_self_update(&mut self_image.session, &self_image.floor)
+        settle_self_update(&mut self_update.session, &self_update.floor)
     }
 
     /// Confirms the eRoT's own update session: the trial image booted and
@@ -49,18 +49,18 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// authenticated reading of it.
     ///
     /// `confirm` is idempotent, so a board whose session already reads
-    /// `Committed` answers `Ok`. A board with no self-image at all is a
+    /// `Committed` answers `Ok`. A board with no [`ErotUpdate`](crate::ErotUpdate) at all is a
     /// different matter and fails secure: the effect only ever follows the
-    /// event the self-image produced, so reaching here without one means the
+    /// event the settle call produced, so reaching here without one means the
     /// board and the machine disagree about whether this eRoT updates
     /// itself.
     pub(super) fn confirm_self_trial(&mut self) -> Result<(), DriverError> {
-        let self_image = self
+        let self_update = self
             .board
-            .self_image
+            .self_update
             .as_mut()
-            .ok_or(DriverError::NoSelfImage)?;
-        self_image
+            .ok_or(DriverError::NoErotUpdate)?;
+        self_update
             .session
             .confirm()
             .map_err(|_| DriverError::SelfUpdateFault)
@@ -68,7 +68,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
 }
 
 /// The error type of the board's self-update session, spelled once so
-/// [`PlatformDriver::settle_self_image`] fits on a line.
+/// [`PlatformDriver::settle_self_update_session`] fits on a line.
 type SelfUpdateError<B> = <<B as BoardCapabilities>::SelfUpdate as SelfUpdate>::Error;
 
 /// The error type of the board's anti-rollback floor, for the same reason.
@@ -347,19 +347,19 @@ impl<S: core::error::Error + 'static, F: core::error::Error + 'static> core::err
 /// is running has to be declared before the walk begins, because what judges
 /// it is the walk reaching [`State::Ready`](openprot_orchestrator_sm::State).
 ///
-/// Returns what [`PlatformDriver::settle_self_image`] found, so a caller that
-/// needs more than the event (refusing a new self-update, acting on an
-/// unclaimed image) reads it off the settlement. A board that wired no
-/// self-image answers `Settled` and nothing is dispatched.
+/// Returns what [`PlatformDriver::settle_self_update_session`] found, so a
+/// caller that needs more than the event (refusing a new self-update,
+/// acting on an unclaimed image) reads it off the settlement. A board that
+/// wired no self-update answers `Settled` and nothing is dispatched.
 ///
 /// A storage fault comes back unchanged. Nothing is dispatched then: the
 /// boot has no honest answer about what the last self-update was doing, and
 /// the caller decides what that costs.
-pub fn settle_self_image_at_boot<B: BoardCapabilities, const N: usize, const E: usize>(
+pub fn settle_self_update_at_boot<B: BoardCapabilities, const N: usize, const E: usize>(
     orchestrator: &mut Orchestrator<N, E>,
     driver: &mut PlatformDriver<B, N>,
 ) -> Result<SelfUpdateSettlement, SettleError<SelfUpdateError<B>, SvnFloorError<B>>> {
-    let settlement = driver.settle_self_image()?;
+    let settlement = driver.settle_self_update_session()?;
     if let Some(event) = settlement.event() {
         orchestrator.dispatch(driver, event);
     }
