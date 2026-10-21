@@ -29,8 +29,8 @@ impl From<u8> for ComponentId {
 /// How a component in the trust chain is classified. The board supplies one
 /// [`ComponentKind`] per [`ComponentId`] when building the chain.
 ///
-/// Corresponds directly to the two-tier model in the CSA architecture document:
-/// `Active` = eRoT gate + iRoT gate; `Passive` = eRoT gate only.
+/// Two tiers, by how many gates an image passes: `Active` passes the eRoT
+/// gate and the iRoT gate, `Passive` the eRoT gate alone.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ComponentKind {
     /// Has an integrated iRoT (e.g. Caliptra). Both eRoT-side (signature + SVN)
@@ -43,9 +43,8 @@ pub enum ComponentKind {
     /// still watched for boot-progress liveness ([`Event::Booted`]) under the
     /// same per-component watchdog as an `Active` component's
     /// [`Event::ComponentReady`]: a passive device that never reports in before
-    /// its [`Event::Timeout`] is recovered like any other boot failure. CSA
-    /// boot-progress checkpointing is device-agnostic — every released device
-    /// owes a boot-progress signal, iRoT or not.
+    /// its [`Event::Timeout`] is recovered like any other boot failure.
+    /// Every released device owes a boot-progress signal, iRoT or not.
     Passive,
     /// The eRoT itself. It sits at chain position 0 and is already running
     /// when the walk starts, so the walk steps past it the same way it
@@ -70,7 +69,7 @@ pub enum ComponentKind {
 /// component's restore attempts are **exhausted** (its per-component retry
 /// count reaches `max_retry`). Every verification or corruption failure enters
 /// [`State::Recovering`] and is retried first, regardless of this
-/// classification — CSA's "recover first" principle. This value is consulted
+/// classification: recovery comes before the policy. This value is consulted
 /// only after retries are exhausted.
 ///
 /// (The narrative design docs sometimes call the `Required` outcome "platform
@@ -332,7 +331,7 @@ pub enum Event {
     /// awaiting boot-progress enters recovery. A timeout for a component that is
     /// not awaiting boot (never released, already reported in, or already gated)
     /// is stale/spurious and dropped. The watchdog is per component and
-    /// device-agnostic, matching CSA boot-progress checkpointing.
+    /// device-agnostic: every released device owes a boot-progress signal.
     Timeout(ComponentId),
     /// The driver's *commit* watchdog fired: an update was activated
     /// ([`Effect::ActivateUpdate`]) but did not report [`Event::BootConfirmed`]
@@ -500,8 +499,8 @@ pub enum Effect {
     /// Report that a component has been isolated (held in reset and removed
     /// from the trust chain) so management software is aware the platform is
     /// running degraded. Emitted once per component, at the moment it is
-    /// gated — CSA's degraded-mode clause requires the failure to be reported
-    /// through the platform management interface, not just contained.
+    /// gated. Containing the failure is not enough: management software
+    /// has to hear that the platform runs degraded.
     ReportIsolated(ComponentId),
     /// Report that a `Required` component exhausted its recovery attempts,
     /// immediately before the machine latches to [`Locked`](crate::State::Locked).
