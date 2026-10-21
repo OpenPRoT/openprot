@@ -79,13 +79,12 @@ def caliptra_objcopy(name, src, out = None, format = "binary", rom_size = None, 
             "d.extend(b\"\\x00\" * (sz - len(d))); " +
             "d[doff:] = hashlib.sha384(d[:doff]).digest(); " +
             "open(dst_p, \"wb\").write(d)" +
-            "' $@.tmp $@ {rom_size}"
+            "' $@.tmp $@ "
         ).format(
             objcopy = _LLVM_OBJCOPY,
             fmt = format,
             src = src,
-            rom_size = rom_size,
-        )
+        ) + (str(rom_size) if type(rom_size) == "int" else rom_size)
     else:
         cmd = "$(execpath {objcopy}) -O {fmt} $(location {src}) $@".format(
             objcopy = _LLVM_OBJCOPY,
@@ -181,7 +180,7 @@ def caliptra_firmware_bundle(name, fmc, runtime, out = None, bundler = None, **k
 # caliptra_linker_script
 # ---------------------------------------------------------------------------
 
-def caliptra_linker_script(name, generator, out, **kwargs):
+def caliptra_linker_script(name, generator, out, args = [], **kwargs):
     """Generate a linker script using a Rust host binary.
 
     Runs a host tool that writes a linker script to stdout, capturing the
@@ -191,12 +190,13 @@ def caliptra_linker_script(name, generator, out, **kwargs):
         name: Target name.
         generator: Label of the host binary that produces the linker script.
         out: Output filename for the linker script.
+        args: Command-line arguments passed to the generator.
         **kwargs: Extra arguments forwarded to genrule.
     """
     native.genrule(
         name = name,
         outs = [out],
-        cmd = "$(location {gen}) > $@".format(gen = generator),
+        cmd = " ".join(["$(location {gen})".format(gen = generator)] + args + ["> $@"]),
         tools = [generator],
         **kwargs
     )

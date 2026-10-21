@@ -20,6 +20,7 @@ exports_files(
         "emulator/consts/src/lib.rs",
         "caliptra-util-host/apps/mailbox/server/src/lib.rs",
         "platforms/emulator/rom/src/main.rs",
+        "platforms/fpga/rom/src/main.rs",
         "romtime/src/lib.rs",
     ],
     visibility = ["//visibility:public"],

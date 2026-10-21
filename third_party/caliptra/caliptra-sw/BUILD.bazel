@@ -215,10 +215,15 @@ _FIRMWARE_LIB_RUSTC_FLAGS = [
 rust_library(
     name = "caliptra_drivers",
     srcs = ["@caliptra_sw//:all_files"],
+    # Upstream's FPGA Caliptra ROM/FW builds enable `fpga_realtime`, which only
+    # switches the DMA path in drivers/src/dma.rs.
     crate_features = [
         "cfi",
         "rom",
-    ],
+    ] + select({
+        "//third_party/caliptra:platform_fpga": ["fpga_realtime"],
+        "//conditions:default": [],
+    }),
     crate_root = "@caliptra_sw//:drivers/src/lib.rs",
     edition = "2021",
     proc_macro_deps = [
@@ -252,7 +257,10 @@ rust_library(
     crate_features = [
         "cfi",
         "fmc",
-    ],
+    ] + select({
+        "//third_party/caliptra:platform_fpga": ["fpga_realtime"],
+        "//conditions:default": [],
+    }),
     crate_name = "caliptra_drivers",
     crate_root = "@caliptra_sw//:drivers/src/lib.rs",
     edition = "2021",
@@ -290,7 +298,10 @@ rust_library(
     crate_features = [
         "cfi",
         "runtime",
-    ],
+    ] + select({
+        "//third_party/caliptra:platform_fpga": ["fpga_realtime"],
+        "//conditions:default": [],
+    }),
     crate_name = "caliptra_drivers",
     crate_root = "@caliptra_sw//:drivers/src/lib.rs",
     edition = "2021",
