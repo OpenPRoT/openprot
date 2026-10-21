@@ -2262,6 +2262,87 @@ fn a_boot_confirmed_for_another_component_does_not_consume_the_window() {
     assert_eq!(state, State::Ready);
 }
 
+/// Recovering another component keeps an outstanding SVN floor advance. The
+/// image C0 runs is not under suspicion, so the request that follows still
+/// moves the SVN floor for C0. Clearing unconditionally parked C0 with the new
+/// image running, the old image in the spare slot and the SVN floor low.
+#[test]
+fn recovering_another_component_keeps_the_outstanding_floor_advance() {
+    let (effects, _) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_required()),
+            (C1, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::VerificationPassed(C1),
+            Event::UpdateRequest(C0),
+            Event::UpdateVerified,
+            // The re-walk after the activation.
+            Event::VerificationPassed(C0),
+            Event::VerificationPassed(C1),
+            Event::BootConfirmed(C0),
+            // C1 is found corrupt and recovers, which says nothing about
+            // the image C0 is running.
+            Event::CorruptionDetected(C1),
+            Event::Restored(C1),
+            Event::VerificationPassed(C0),
+            Event::VerificationPassed(C1),
+            Event::SvnCommitRequest(C0),
+        ],
+    );
+
+    assert!(
+        effects.contains(&Effect::RecoverComponent { id: C1, attempt: 0 }),
+        "C1 has to actually recover for the assertion to say anything"
+    );
+    assert!(
+        effects.contains(&Effect::CommitSvnFloor(C0)),
+        "the SVN floor advance for C0 was dropped by a recovery that did not touch its image"
+    );
+}
+
+/// The same for an update aimed elsewhere: C1 being updated says nothing about
+/// the image C0 runs, so the SVN floor advance outstanding for C0 survives the
+/// second update.
+#[test]
+fn updating_another_component_keeps_the_outstanding_floor_advance() {
+    let (effects, _) = drive(
+        chain(&[
+            (C0, ComponentAttrs::passive_required()),
+            (C1, ComponentAttrs::passive_required()),
+        ]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::VerificationPassed(C1),
+            Event::UpdateRequest(C0),
+            Event::UpdateVerified,
+            Event::VerificationPassed(C0),
+            Event::VerificationPassed(C1),
+            Event::BootConfirmed(C0),
+            // A second update, this one aimed at C1.
+            Event::UpdateRequest(C1),
+            Event::UpdateRejected,
+            Event::SvnCommitRequest(C0),
+        ],
+    );
+
+    assert_eq!(
+        effects
+            .iter()
+            .filter(|e| **e == Effect::AuthenticateStageUpdate)
+            .count(),
+        2,
+        "the update for C1 has to be accepted for the assertion to say anything"
+    );
+    assert!(
+        effects.contains(&Effect::CommitSvnFloor(C0)),
+        "the SVN floor advance for C0 was dropped by an update that did not touch its image"
+    );
+}
+
 /// With nothing waiting to commit, a BootConfirmed moves no floor.
 #[test]
 fn a_boot_confirmed_with_no_window_open_is_ignored() {

@@ -933,27 +933,41 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 self.quiesce_all(ctx);
                 let _ = self.advance_to_next_ungated(ctx, 0);
             }
-            State::Updating(_) => {
+            State::Updating(target) => {
                 // A new update supersedes any activated-but-not-committed image;
-                // the prior commit window is void, and so is any floor advance
-                // the agent has not asked for yet: the SVN it would take
-                // belongs to the image this update replaces.
+                // the prior commit window is void.
                 // The superseded image was never confirmed, so the trial
                 // closes without keeping the image.
                 if let Some(superseded) = self.pending_commit.take() {
                     ctx.emit(Effect::RevertDeviceTrial(superseded));
                 }
-                self.awaiting_floor_advance = None;
+                if self.awaiting_floor_advance == Some(target) {
+                    // This update replaces the image whose SVN floor advance
+                    // the agent has not requested yet, so the SVN that floor
+                    // advance would take belongs to the image being replaced.
+                    // An SVN floor advance outstanding for another component
+                    // names an image this update does not replace, so the
+                    // clear does not run for that one.
+                    self.awaiting_floor_advance = None;
+                }
                 ctx.emit(Effect::AuthenticateStageUpdate);
             }
             State::Recovering(failed) => {
                 // Recovery voids any activated-but-not-committed image: the
                 // running image is now under suspicion, so its commit window
-                // ends here, and an outstanding floor advance goes with it.
+                // ends here.
                 if let Some(suspect) = self.pending_commit.take() {
                     ctx.emit(Effect::RevertDeviceTrial(suspect));
                 }
-                self.awaiting_floor_advance = None;
+                if self.awaiting_floor_advance == Some(failed) {
+                    // Recovery puts the image this component booted under
+                    // suspicion, so the SVN floor advance the agent has not
+                    // requested yet is void too. An SVN floor advance
+                    // outstanding for another component names an image this
+                    // recovery does not touch, so the clear does not run for
+                    // that one.
+                    self.awaiting_floor_advance = None;
+                }
                 // The component under recovery is being restored, not booting;
                 // drop any pending boot-progress watchdog so a late `Timeout`
                 // can't re-enter recovery for it. It is also held (not live)
