@@ -565,7 +565,7 @@
   "moduleExtensions": {
     "//third_party/caliptra:extensions.bzl%caliptra_repos": {
       "general": {
-        "bzlTransitiveDigest": "0cTLbSbH9pNmtHNPwXyUeAV5UpvycFto5LiVEOJ4PAs=",
+        "bzlTransitiveDigest": "mxzJAYrA28IBG8Gs66BoafGAL744bqNC1o3NlszvJ9g=",
         "usagesDigest": "ODX7jX2XQ5ywJ6htOZNVOezD0lY5SqvrMRMaa38fSMQ=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -576,7 +576,13 @@
             "attributes": {
               "build_file": "@@//third_party/caliptra/caliptra-mcu-sw:overlay.BUILD",
               "commit": "8c9c8ff27de1babf63c0be74e973185837439040",
-              "remote": "https://github.com/chipsalliance/caliptra-mcu-sw"
+              "remote": "https://github.com/chipsalliance/caliptra-mcu-sw",
+              "patches": [
+                "@@//third_party/caliptra/caliptra-mcu-sw:hw_model_no_builder.patch"
+              ],
+              "patch_args": [
+                "-p0"
+              ]
             }
           },
           "caliptra_sw": {

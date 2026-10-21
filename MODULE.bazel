@@ -142,6 +142,15 @@ http_file(
     urls = ["https://storage.googleapis.com/caliptra-github-ci-bitstreams/v1/a2cd177353b7f06170766f367743b98c900b1d7b/runtime_a2cd177.pdi"],
 )
 
+# caliptra-ss OTP controller memory map, needed by caliptra-hw-model's build
+# script (fpga_subsystem).
+http_file(
+    name = "caliptra_ss_otp_ctrl_mmap",
+    downloaded_file_path = "otp_ctrl_mmap.hjson",
+    sha256 = "7aa3729ad3b8dacd80134773fcbfa1476a8b8b05d4c340d7ff0190adbedb934b",
+    urls = ["https://raw.githubusercontent.com/chipsalliance/caliptra-ss/01b0a3528e196f4219d20dd9cbfec3727869d5d9/src/fuse_ctrl/data/otp_ctrl_mmap.hjson"],
+)
+
 nonhermetic_repo = use_repo_rule("//target/earlgrey/tooling/signing:nonhermetic.bzl", "nonhermetic_repo")
 
 nonhermetic_repo(name = "nonhermetic")
