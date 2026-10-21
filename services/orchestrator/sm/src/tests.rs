@@ -210,9 +210,10 @@ fn a_cancelled_update_discards_the_staged_image() {
     assert_eq!(state, State::Ready);
 }
 
-/// A withdrawal is not a verdict on the image, so nothing is reported.
-/// The requester asked for this, and the only other way out of `Updating`
-/// that discards a staged image, a recovery preempting it, does report.
+/// A withdrawal is not a verdict on the image and the requester ended the
+/// update, so the state machine reports nothing. A recovery that preempts the
+/// update also discards the staged image, but there the requester did not end
+/// it, so the preemption emits `ReportUpdateAborted`.
 #[test]
 fn a_cancelled_update_is_not_reported() {
     let (effects, _) = drive(
@@ -1428,10 +1429,10 @@ fn gating_the_rest_of_the_chain_in_awaiting_ready_ends_the_walk() {
 }
 
 /// The other half of the cursor rule: gating a component the cursor has not
-/// reached leaves the cursor alone, so C1's verdict still releases it. An
-/// unconditional advance would make that verdict a mismatch and leave a
-/// verified component in reset. C3 depends on C2 so the cascade has a
-/// dependent to gate.
+/// reached does not move the cursor, so C1's verdict still releases it. An
+/// unconditional cursor advance would make that verdict a mismatch and leave a
+/// verified component in reset. C3 depends on C2 so the cascade has a dependent
+/// to gate.
 #[test]
 fn cascade_in_awaiting_ready_below_the_cursor_leaves_it_alone() {
     let (effects, state) = drive(
@@ -2067,8 +2068,8 @@ fn an_update_request_for_an_unknown_component_is_not_dropped() {
     assert_eq!(state, State::Updating(ComponentId::new(99)));
 }
 
-/// A different component reporting healthy must not advance its own floor or
-/// close the updated component's window, which would leave that component
+/// A different component reporting healthy must not advance its own SVN floor
+/// or close the updated component's window, which would leave that component
 /// with neither a commit nor a lock.
 #[test]
 fn an_unrelated_boot_confirmed_leaves_the_commit_window_open() {
@@ -2093,7 +2094,7 @@ fn an_unrelated_boot_confirmed_leaves_the_commit_window_open() {
 
     assert!(
         !effects.contains(&Effect::CommitSvnFloor(C1)),
-        "floor advanced for C1, which activated nothing"
+        "SVN floor advanced for C1, which activated nothing"
     );
     assert_eq!(
         state,
@@ -2224,7 +2225,8 @@ fn an_update_for_another_component_is_refused_while_a_trial_is_open() {
 }
 
 /// The other component's report must also leave the window usable: the
-/// updated component's own BootConfirmed still commits its floor, once.
+/// BootConfirmed naming the updated component still records the SVN floor
+/// advance, so the request that follows commits the floor, once.
 #[test]
 fn a_boot_confirmed_for_another_component_does_not_consume_the_window() {
     let (effects, state) = drive(
@@ -2253,11 +2255,11 @@ fn a_boot_confirmed_for_another_component_does_not_consume_the_window() {
             .filter(|e| **e == Effect::CommitSvnFloor(C0))
             .count(),
         1,
-        "C0's floor must commit once on its own BootConfirmed"
+        "the SVN floor for C0 must commit once on the request that follows its BootConfirmed"
     );
     assert!(
         !effects.contains(&Effect::CommitSvnFloor(C1)),
-        "floor advanced for C1, which activated nothing"
+        "SVN floor advanced for C1, which activated nothing"
     );
     assert_eq!(state, State::Ready);
 }
@@ -2283,8 +2285,8 @@ fn recovering_another_component_keeps_the_outstanding_floor_advance() {
             Event::VerificationPassed(C0),
             Event::VerificationPassed(C1),
             Event::BootConfirmed(C0),
-            // C1 is found corrupt and recovers, which says nothing about
-            // the image C0 is running.
+            // C1 is found corrupt and recovers, which says nothing about the
+            // image C0 is running.
             Event::CorruptionDetected(C1),
             Event::Restored(C1),
             Event::VerificationPassed(C0),
@@ -2343,21 +2345,25 @@ fn updating_another_component_keeps_the_outstanding_floor_advance() {
     );
 }
 
-/// With nothing waiting to commit, a BootConfirmed moves no floor.
+/// With nothing waiting to commit, a BootConfirmed records no SVN floor advance
+/// and the request that follows finds nothing to move. Without the request the
+/// assertion held whatever the state machine did, since only a request emits
+/// the effect.
 #[test]
-fn a_boot_confirmed_with_no_window_open_is_ignored() {
+fn a_request_with_nothing_recorded_moves_no_floor() {
     let (effects, state) = drive(
         passive_required(&[C0]),
         &[
             BOOT,
             Event::VerificationPassed(C0),
             Event::BootConfirmed(C0),
+            Event::SvnCommitRequest(C0),
         ],
     );
 
     assert!(
         !effects.contains(&Effect::CommitSvnFloor(C0)),
-        "floor advanced with no update activated"
+        "SVN floor advanced with no update activated"
     );
     assert_eq!(state, State::Ready);
 }
@@ -2385,8 +2391,8 @@ fn update_verified_activates_update() {
 }
 
 /// The re-walk is what boots the candidate: the activated component is
-/// quiesced, verified at rest, and released again. Its `VerifyFirmware`
-/// is also what records the new image's SVN for a later floor commit.
+/// quiesced, verified at rest, and released again. Its `VerifyFirmware` is also
+/// what records the new image's SVN for a later SVN floor commit.
 #[test]
 fn an_activation_resets_and_re_verifies_the_component() {
     let (effects, state) = drive(
@@ -2467,14 +2473,14 @@ fn a_commit_timeout_during_a_plain_boot_walk_is_ignored() {
     assert!(!effects.contains(&Effect::LatchLockdown));
 }
 
-/// The anti-rollback floor moves on the update agent's ask, and on nothing
+/// The SVN floor moves on the request the Update Agent sends, and on nothing
 /// earlier. `UpdateVerified` activates the image (authentication) and
-/// `BootConfirmed` proves it runs, but neither may emit `CommitSvnFloor`:
-/// only `SvnCommitRequest`, which says UpdateSecurityRevision ran and the device
-/// took the SVN, does. This pins both halves of the decoupling.
+/// `BootConfirmed` confirms it runs, but neither may emit `CommitSvnFloor`:
+/// only `SvnCommitRequest`, which says UpdateSecurityRevision ran and the
+/// device took the SVN, does. This pins both halves of the decoupling.
 #[test]
 fn svn_floor_commits_when_the_agent_asks_not_before() {
-    // Activation alone: no floor commit yet.
+    // Activation alone: no SVN floor commit yet.
     let (activated, activated_state) = drive(
         passive_required(&[C0]),
         &[
@@ -2488,7 +2494,8 @@ fn svn_floor_commits_when_the_agent_asks_not_before() {
     assert!(activated.contains(&Effect::ActivateUpdate));
     assert!(!activated.contains(&Effect::CommitSvnFloor(C0)));
 
-    // Proven-healthy boot: still no floor advance, the agent has not asked.
+    // Confirmed boot: still no SVN floor advance, the Update Agent has not
+    // requested it.
     let (confirmed, confirmed_state) = drive(
         passive_required(&[C0]),
         &[
@@ -2496,7 +2503,7 @@ fn svn_floor_commits_when_the_agent_asks_not_before() {
             Event::VerificationPassed(C0),
             Event::UpdateRequest(C0),
             Event::UpdateVerified,
-            // The walk the activation started has to finish: the floor
+            // The walk the activation started has to finish: the SVN floor
             // commit takes the SVN that walk verified.
             Event::VerificationPassed(C0),
             Event::BootConfirmed(C0),
@@ -2505,7 +2512,7 @@ fn svn_floor_commits_when_the_agent_asks_not_before() {
     assert_eq!(confirmed_state, State::Ready);
     assert!(!confirmed.contains(&Effect::CommitSvnFloor(C0)));
 
-    // UpdateSecurityRevision ran and the device took the SVN: the floor
+    // UpdateSecurityRevision ran and the device took the SVN: the SVN floor
     // advances now, without leaving Ready.
     let (committed, committed_state) = drive(
         passive_required(&[C0]),
@@ -2525,8 +2532,9 @@ fn svn_floor_commits_when_the_agent_asks_not_before() {
 
 /// Commit-or-lock watchdog: while the activated-but-not-committed window is
 /// open (update activated, `BootConfirmed` not yet seen), a `CommitTimeout`
-/// fails secure — the machine latches `Locked` rather than leaving the
-/// downgrade window open indefinitely, and never commits the unproven image.
+/// fails secure: the state machine latches `Locked` rather than leaving the
+/// downgrade window open indefinitely, and commits no image a boot has not
+/// confirmed.
 #[test]
 fn commit_timeout_while_pending_latches_locked() {
     let (effects, state) = drive(
@@ -2545,14 +2553,14 @@ fn commit_timeout_while_pending_latches_locked() {
     assert_eq!(state, State::Locked);
     assert!(effects.contains(&Effect::ActivateUpdate));
     assert!(effects.contains(&Effect::LatchLockdown));
-    // The floor was never advanced for the unproven image.
+    // The SVN floor did not move for an image no boot confirmed.
     assert!(!effects.contains(&Effect::CommitSvnFloor(C0)));
 }
 
 /// `BootConfirmed` closes the commit-or-lock window on its own, so a later
-/// (stale) `CommitTimeout` is a no-op: the machine stays `Ready` and does not
-/// lock. The floor advance it hands on is not watchdogged, so an agent that
-/// has not asked yet costs nothing here.
+/// (stale) `CommitTimeout` is a no-op: the state machine stays `Ready` and does
+/// not lock. No watchdog bounds the SVN floor advance it hands on, so an Update
+/// Agent that has not requested yet costs nothing here.
 #[test]
 fn commit_timeout_after_confirm_is_stale_noop() {
     let (effects, state) = drive(
@@ -2572,7 +2580,7 @@ fn commit_timeout_after_confirm_is_stale_noop() {
     assert!(!effects.contains(&Effect::LatchLockdown));
     assert!(
         !effects.contains(&Effect::CommitSvnFloor(C0)),
-        "the floor waits for the agent, watchdog or no watchdog"
+        "the SVN floor waits for the Update Agent, watchdog or no watchdog"
     );
 }
 
@@ -3350,6 +3358,111 @@ fn property_verify_before_release_holds_under_random_sequences() {
     }
 }
 
+/// INV13: the SVN floor commits once per activation, and only on the request
+/// that follows a confirm. The rule breaks in ways random input reaches: a
+/// request with no activation behind it, a second request for the same
+/// activation, and a request for a component whose confirm never arrived.
+#[test]
+fn property_floor_commits_once_per_activation_after_a_confirm() {
+    const RUNS: u64 = 20_000;
+    const MAX_LEN: u32 = 24;
+
+    let palette = [C0, C1, C2, C3];
+    // The property says nothing unless the run reaches an activation, its
+    // confirm and the request that follows. Counted and asserted below, so a
+    // generator that stops producing that sequence fails here instead of
+    // passing on an empty set.
+    let mut commits_seen = 0u32;
+
+    for seed in 0..RUNS {
+        let mut rng = SplitMix64(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15).wrapping_add(7));
+
+        // A fixed passive pair, so the walk is deterministic and the run
+        // reaches an activation. Random chains almost never produce the
+        // request, verdict, re-walk and confirm in order, and a property over a
+        // sequence nothing reaches says nothing.
+        let mut orch = Orchestrator::<CAPACITY, ECAP>::new(
+            passive_required(&[C0, C1]).try_into().expect("valid chain"),
+            MAX_RETRY,
+        );
+        let mut platform = Recorder::new();
+        orch.dispatch(&mut platform, BOOT);
+        orch.dispatch(&mut platform, Event::VerificationPassed(C0));
+        orch.dispatch(&mut platform, Event::VerificationPassed(C1));
+
+        // One update, carried to the point where the Update Agent could request
+        // the SVN floor advance. What the random tail then does with that
+        // window is the property.
+        let target = if rng.below(2) == 0 { C0 } else { C1 };
+        orch.dispatch(&mut platform, Event::UpdateRequest(target));
+        orch.dispatch(&mut platform, Event::UpdateVerified);
+        orch.dispatch(&mut platform, Event::VerificationPassed(C0));
+        orch.dispatch(&mut platform, Event::VerificationPassed(C1));
+
+        // Per component, since its last activation: whether one happened,
+        // whether its confirm landed, and whether its SVN floor already took
+        // that SVN.
+        let mut activated = [false; CAPACITY];
+        let mut confirmed = [false; CAPACITY];
+        let mut committed = [false; CAPACITY];
+        activated[target.get() as usize] = true;
+
+        let len = 1 + rng.below(MAX_LEN);
+        for _ in 0..len {
+            let event = random_event(&mut rng, &palette);
+            let before = orch.state();
+            let seen = platform.recorded.len();
+            orch.dispatch(&mut platform, event);
+            let emitted = &platform.recorded[seen..];
+
+            // An activation starts a fresh window for the component the state
+            // machine was updating.
+            if emitted.contains(&Effect::ActivateUpdate)
+                && let State::Updating(target) = before
+            {
+                let i = target.get() as usize;
+                activated[i] = true;
+                confirmed[i] = false;
+                committed[i] = false;
+            }
+            if let Event::BootConfirmed(id) = event {
+                confirmed[id.get() as usize] = true;
+            }
+
+            for effect in emitted {
+                let Effect::CommitSvnFloor(id) = effect else {
+                    continue;
+                };
+                let i = id.get() as usize;
+                assert_eq!(
+                    event,
+                    Event::SvnCommitRequest(*id),
+                    "seed {seed}: SVN floor moved for {id:?} on something other than the request",
+                );
+                assert!(
+                    activated[i],
+                    "seed {seed}: SVN floor moved for {id:?} with no activation behind it",
+                );
+                assert!(
+                    confirmed[i],
+                    "seed {seed}: SVN floor moved for {id:?} without a confirm since its activation",
+                );
+                assert!(
+                    !committed[i],
+                    "seed {seed}: SVN floor moved twice for {id:?} on one activation",
+                );
+                committed[i] = true;
+                commits_seen += 1;
+            }
+        }
+    }
+
+    assert!(
+        commits_seen > 0,
+        "no run reached an SVN floor commit, so the property checked nothing",
+    );
+}
+
 /// A returned event settles in the same run: a platform that answers every
 /// `VerifyFirmware` in place walks a provisioned chain to `Ready` from one
 /// dispatch.
@@ -3541,9 +3654,9 @@ fn the_walk_passes_over_the_erot() {
     );
 }
 
-/// The trial image booted and the chain came up behind it. That is the
-/// verdict on the trial, so `Ready` entry confirms the session and the
-/// update agent can ask for the floor advance.
+/// The trial image booted and the chain came up behind it. That is the verdict
+/// on the trial, so `Ready` entry confirms the session and the Update Agent can
+/// request the SVN floor advance.
 #[test]
 fn a_self_trial_is_confirmed_when_the_chain_reaches_ready() {
     let (effects, state) = drive(
@@ -3657,10 +3770,10 @@ fn a_late_self_trial_event_is_dropped() {
     assert!(!effects.contains(&Effect::ConfirmSelfTrial));
 }
 
-/// Nothing is outstanding, so the agent's ask names a floor advance the
-/// machine never opened. Dropped: an `SvnCommitRequest` that could move a floor
-/// on its own would let an agent advance anti-rollback for an image this
-/// machine did not activate.
+/// Nothing is outstanding, so the request names an SVN floor advance the state
+/// machine never opened. Dropped: an `SvnCommitRequest` that could move an SVN
+/// floor on its own would let an Update Agent advance anti-rollback for an
+/// image the state machine did not activate.
 #[test]
 fn an_svn_commit_with_nothing_outstanding_is_dropped() {
     let (effects, state) = drive(
@@ -3676,9 +3789,9 @@ fn an_svn_commit_with_nothing_outstanding_is_dropped() {
     assert!(!effects.contains(&Effect::CommitSvnFloor(C0)));
 }
 
-/// The agent asks twice, because its first answer was lost on the way back.
-/// The floor takes the SVN once: the second ask finds the advance already
-/// spent.
+/// The agent requests twice, because the first answer was lost on the way back.
+/// The SVN floor takes the SVN once: the second request finds the floor advance
+/// already spent.
 #[test]
 fn an_svn_commit_moves_the_floor_once() {
     let (effects, state) = drive(
@@ -3705,8 +3818,9 @@ fn an_svn_commit_moves_the_floor_once() {
     );
 }
 
-/// C0's advance is outstanding and the agent asks for C1, which has none.
-/// Neither floor moves: the ask is answered against the component it names.
+/// The SVN floor advance for C0 is outstanding and the Update Agent requests
+/// C1, which has none. Neither SVN floor moves: the request is answered against
+/// the component it names.
 #[test]
 fn an_svn_commit_for_another_component_is_dropped() {
     let (effects, state) = drive(
@@ -3732,9 +3846,10 @@ fn an_svn_commit_for_another_component_is_dropped() {
     assert!(!effects.contains(&Effect::CommitSvnFloor(C1)));
 }
 
-/// A second update supersedes the first before the agent asked. The floor
-/// advance goes with it: the SVN it would take belongs to the image the new
-/// update replaces, and the driver's reading of it is already overwritten.
+/// A second update supersedes the first before the Update Agent requested it.
+/// The SVN floor advance goes with it: the SVN it would take belongs to the
+/// image the new update replaces, and the driver's reading of it is already
+/// overwritten.
 #[test]
 fn a_superseding_update_voids_the_outstanding_advance() {
     let (effects, state) = drive(
@@ -3759,9 +3874,9 @@ fn a_superseding_update_voids_the_outstanding_advance() {
     assert!(!effects.contains(&Effect::CommitSvnFloor(C0)));
 }
 
-/// Recovery puts the running image under suspicion, so an advance the agent
-/// has not asked for yet is void. Asking after the re-walk finds nothing
-/// outstanding.
+/// Recovery puts the running image under suspicion, so an SVN floor advance the
+/// agent has not requested yet is void. Requesting after the re-walk finds
+/// nothing outstanding.
 #[test]
 fn recovery_voids_the_outstanding_advance() {
     let (effects, state) = drive(
@@ -3784,10 +3899,10 @@ fn recovery_voids_the_outstanding_advance() {
     assert!(!effects.contains(&Effect::CommitSvnFloor(C0)));
 }
 
-/// An isolable component is gated out of service after its boot was
-/// confirmed. The machine stays in `Ready`, so the advance has to be voided
-/// where the gating happens: asking afterwards would move the floor for an
-/// image held in reset as corrupt.
+/// An isolable component is gated out of service after its boot was confirmed.
+/// The state machine stays in `Ready`, so the SVN floor advance has to be
+/// voided where the gating happens: requesting afterwards would move the floor
+/// for an image held in reset as corrupt.
 #[test]
 fn gating_a_component_voids_its_outstanding_advance() {
     let (effects, state) = drive(
@@ -3809,10 +3924,10 @@ fn gating_a_component_voids_its_outstanding_advance() {
     assert!(!effects.contains(&Effect::CommitSvnFloor(C0)));
 }
 
-/// The update agent requests the eRoT's floor with UpdateSecurityRevision,
-/// the same request it makes for any other component. Confirming the
-/// trial puts the eRoT's id in `awaiting_floor_advance`, and a request
-/// naming that id is answered with `Effect::CommitSvnFloor`.
+/// The Update Agent requests the eRoT's SVN floor with UpdateSecurityRevision,
+/// the same request it makes for any other component. Confirming the trial puts
+/// the eRoT's id in `awaiting_floor_advance`, and a request naming that id is
+/// answered with `Effect::CommitSvnFloor`.
 #[test]
 fn the_request_after_a_confirmed_self_trial_commits_the_erot_floor() {
     let (effects, state) = drive(
@@ -3833,14 +3948,13 @@ fn the_request_after_a_confirmed_self_trial_commits_the_erot_floor() {
     );
     assert!(
         effects.contains(&Effect::CommitSvnFloor(C0)),
-        "the eRoT's floor was committed: {effects:?}"
+        "the eRoT's SVN floor was committed: {effects:?}"
     );
 }
 
-/// The same request with no trial behind it. No trial confirmed an SVN,
-/// so there is no SVN floor advance outstanding and the request is
-/// dropped: answering it would move the floor for an image no boot
-/// confirmed.
+/// The same request with no trial behind it. No trial confirmed an SVN, so
+/// there is no SVN floor advance outstanding and the request is dropped:
+/// answering it would move the SVN floor for an image no boot confirmed.
 #[test]
 fn the_request_without_a_self_trial_is_dropped() {
     let (effects, _) = drive(

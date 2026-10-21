@@ -212,7 +212,10 @@ driver makes `BootFailed` and `RecoveryUnavailable` on its own, and
 - `AttestationChallenge`. No scenario issues one.
 - `CommitTimeout`. The scenarios run their own event loop rather than
   `server/src/runtime.rs`, and nothing else arms the watchdog, so
-  commit-or-lock cannot fire here.
+  commit-or-lock cannot fire here. The same holds outside the tests:
+  `BootWatchdogs::arm_commit` has no caller but the ast10x0 runtime test,
+  so the activated-but-not-committed window is unbounded on a real
+  platform.
 - `EffectFailed`. The effects a scenario runs either cannot fail or are
   never made to fail: `StubVerifier` never opens an image, and
   `Recovery = ()` returns a verdict rather than an error. No scenario

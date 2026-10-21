@@ -54,14 +54,14 @@ pub enum ComponentKind {
     /// Nothing can reset it, since the eRoT is what drives the reset lines,
     /// and if it had failed to boot this code would not be running.
     ///
-    /// It is still part of the chain, because it is an update target like
-    /// any other component: `components[0].updatable` stages the eRoT's own
-    /// image. Its anti-rollback floor is the one exception, held in the
-    /// `ErotUpdate` the board holds, next to the update session
-    /// rather than in `components[0].svn_floor`, because the floor and the
-    /// session are advanced together and neither is reached through a chain
-    /// walk. What a self-update needs on top is that durable session,
-    /// because the reboot that decides it wipes RAM.
+    /// It is still part of the chain, because it is an update target like any
+    /// other component: `components[0].updatable` stages the eRoT's own image.
+    /// Its SVN floor is the one exception, held in the `ErotUpdate` the board
+    /// holds, next to the update session rather than in
+    /// `components[0].svn_floor`, because the floor and the session are
+    /// advanced together and neither is reached through a chain walk. What a
+    /// self-update needs on top is that durable session, because the reboot
+    /// that decides it wipes RAM.
     Erot,
 }
 
@@ -252,38 +252,39 @@ pub enum Event {
     UpdateVerified,
     /// The staged update failed authentication.
     UpdateRejected,
-    /// The requester withdrew the update it had asked for.
+    /// The requester withdrew the update it had requested.
     ///
-    /// Distinct from [`UpdateRejected`](Event::UpdateRejected), which says
-    /// the candidate was judged and found wanting. A withdrawal judges
-    /// nothing: the image may have been perfectly good and the requester
-    /// simply stopped wanting it. Both end the update and dispose of what
-    /// was staged, but only a rejection is a verdict on the image, and
-    /// only a rejection is worth reporting to the requester, who in this
-    /// case is the one who asked.
+    /// Distinct from [`UpdateRejected`](Event::UpdateRejected), which says the
+    /// candidate was judged and found wanting. A withdrawal judges nothing: the
+    /// image may have been perfectly good and the requester simply stopped
+    /// wanting it. Both end the update and dispose of what was staged, but only
+    /// a rejection is a verdict on the image, and only a rejection is worth
+    /// reporting to the requester, who in this case is the component that sent
+    /// the request.
     ///
     /// Carries no component, for the same reason the other two do not:
     /// [`State::Updating`] already names the one being updated.
     UpdateCancelled,
-    /// The activated image proved itself healthy at runtime (supervised
-    /// health / attestation pass — not mere boot). Gates the anti-rollback
-    /// commit: only now is it safe to advance the SVN floor past this image,
-    /// because it has demonstrated it runs, not merely that it authenticated.
+    /// The activated image came up healthy at runtime (supervised health /
+    /// attestation pass, not mere boot). Gates the anti-rollback commit: only
+    /// after the confirm is it safe to advance the SVN floor past this image,
+    /// because the image has run, not merely authenticated.
     ///
-    /// Closes the commit-or-lock window and leaves the floor advance
+    /// Closes the commit-or-lock window and keeps the SVN floor advance
     /// outstanding until [`Event::SvnCommitRequest`] arrives.
     BootConfirmed(ComponentId),
-    /// The update agent asked for `id`'s anti-rollback floor to move, with
-    /// UpdateSecurityRevision (PLDM 0x22). Injected by the event loop when
-    /// that request arrives. The floor it names is one the eRoT holds (the
-    /// driver's `SvnFloorBinding::Erot`); a component that tracks its own
-    /// SVN gets a no-op from the effect, so there is no device-side commit
-    /// to wait for.
+    /// The Update Agent requested that the SVN floor for `id` move, with
+    /// UpdateSecurityRevision (PLDM 0x22). Injected by the event loop when that
+    /// request arrives. The SVN floor it names is one the eRoT holds (the
+    /// driver's `SvnFloorBinding::Erot`); a component that tracks its own SVN
+    /// gets a no-op from the effect, so there is no device-side commit to wait
+    /// for.
     ///
-    /// Honoured only while `id`'s advance is outstanding, which
-    /// [`Event::BootConfirmed`] opens: an image that has not proved it boots
-    /// has no floor advance coming. One arriving for any other component, or
-    /// for the same one twice, is dropped, so the floor takes the SVN once.
+    /// Honoured only while the SVN floor advance for `id` is outstanding, which
+    /// [`Event::BootConfirmed`] opens: an image no boot has confirmed has no
+    /// SVN floor advance coming. A request arriving for any other component, or
+    /// for the same component twice, is dropped, so the SVN floor takes the SVN
+    /// once.
     ///
     /// The event carries no SVN. The driver holds the one the manifest was
     /// verified against, which is the only authenticated reading of it.
@@ -337,16 +338,19 @@ pub enum Event {
     /// ([`Effect::ActivateUpdate`]) but did not report [`Event::BootConfirmed`]
     /// within the policy window. Distinct from [`Event::Timeout`], which is the
     /// per-component boot-progress watchdog; this one bounds the single
-    /// activated-but-not-committed window in [`State::Ready`]. Handled only while
-    /// that window is open: it latches [`State::Locked`] (commit-or-lock — the
-    /// anti-rollback floor is never advanced for an unproven image, and the
-    /// downgrade window may not stay open indefinitely). Outside the window
-    /// (nothing pending) it is stale and dropped. The driver arms this watchdog
-    /// when it executes [`Effect::ActivateUpdate`] and the event loop cancels
-    /// it when it reports [`Event::BootConfirmed`], which is what closes the
-    /// window. [`Effect::CommitSvnFloor`] cannot stand in for that: the floor
-    /// moves later, when the update agent asks, and for an agent that never
-    /// asks it does not move at all.
+    /// activated-but-not-committed window in [`State::Ready`]. Handled only
+    /// while that window is open: it latches [`State::Locked`] (commit-or-lock:
+    /// the SVN floor keeps the SVN it has while no boot has confirmed the
+    /// image, and the downgrade window may not stay open indefinitely). Outside
+    /// the window (nothing pending) the event is stale and dropped.
+    ///
+    /// A platform that bounds the activated-but-not-committed window arms the
+    /// watchdog when it executes [`Effect::ActivateUpdate`] and cancels it when
+    /// it reports [`Event::BootConfirmed`], which is what closes the window.
+    /// The cancel point is [`Event::BootConfirmed`], not
+    /// [`Effect::CommitSvnFloor`]: the SVN floor moves only when the Update
+    /// Agent requests it, and an Update Agent that never requests would
+    /// otherwise lock a platform whose image booted.
     CommitTimeout,
     /// This boot is the trial run of the eRoT's own update: the durable
     /// session says an image was activated and the eRoT came up on it.
@@ -415,7 +419,7 @@ impl Event {
     }
 }
 
-/// Everything the state machine can ask the outside world to do.
+/// Everything the state machine can command the outside world to do.
 ///
 /// [`Effect::Emit`] is the sole internal effect: the orchestrator catches it and
 /// queues the carried event for immediate handling, making follow-up events
@@ -436,35 +440,36 @@ pub enum Effect {
     AuthenticateStageUpdate,
     ActivateUpdate,
     DiscardStaged,
-    /// Advance the anti-rollback (SVN) floor past `id`'s now-confirmed image.
-    /// Decoupled from [`ActivateUpdate`] and from the proven boot alike:
-    /// activation happens on authentication (`UpdateVerified`), the image
-    /// proves itself healthy at [`Event::BootConfirmed`], and the floor moves
-    /// later still, when [`Event::SvnCommitRequest`] says the update agent asked
-    /// for it with UpdateSecurityRevision. Committing earlier would burn
-    /// anti-rollback on an image that authenticated but has not run, or move
-    /// the eRoT's mirror of a device's floor ahead of the device's own.
+    /// Advance the SVN floor (the anti-rollback floor) past the image `id` has
+    /// now confirmed. Decoupled from [`ActivateUpdate`] and from the confirmed
+    /// boot alike: activation happens on authentication (`UpdateVerified`), the
+    /// image runs unconfirmed until [`Event::BootConfirmed`] confirms it, and
+    /// the SVN floor moves later still, when [`Event::SvnCommitRequest`] says
+    /// the Update Agent requested it with UpdateSecurityRevision. Committing
+    /// earlier would burn anti-rollback on an image that authenticated but has
+    /// not run, or move the eRoT's mirror of a device's SVN floor ahead of the
+    /// device's own.
     CommitSvnFloor(ComponentId),
     /// Confirm the eRoT's own update session: the trial image booted and
     /// brought the chain up. Emitted on entry to [`State::Ready`] when this
     /// boot started with [`Event::SelfTrialBooted`].
     ///
-    /// Confirming is not committing. It moves the session to `Committed`,
-    /// which is what the update agent's UpdateSecurityRevision is answered
-    /// against: the agent asks when it asks, and a session that is not
-    /// `Committed` gets the ask refused. The floor itself does not move
-    /// here. [`Effect::CommitSvnFloor`] is the downstream counterpart and
-    /// names a component, which this one cannot: the eRoT's floor is held in
-    /// the `ErotUpdate` the board holds, not in the per-component array.
+    /// Confirming moves the session to `Committed`; the SVN floor does not move
+    /// here. `Committed` is the state the answer to UpdateSecurityRevision
+    /// checks: the Update Agent requests whenever it likes, and the eRoT
+    /// refuses the request while the session is not `Committed`.
+    /// [`Effect::CommitSvnFloor`] is the downstream counterpart and names a
+    /// component, which this one cannot: the eRoT's SVN floor is held in the
+    /// `ErotUpdate` the board holds, not in the per-component array.
     ConfirmSelfTrial,
     /// Keep the test image a managed device booted: close the trial and
     /// make the activated slot the confirmed one.
     ///
-    /// Emitted on [`Event::BootConfirmed`]: the device came up on the
-    /// image it was given and reported ready at its checkpoints. The
-    /// effect moves slot metadata; the anti-rollback floor follows later
-    /// on [`CommitSvnFloor`](Self::CommitSvnFloor), so a revert always has
-    /// an image to go back to.
+    /// Emitted on [`Event::BootConfirmed`]: the device came up on the image it
+    /// was given and reported ready at its checkpoints. The effect moves slot
+    /// metadata; the SVN floor follows later on
+    /// [`CommitSvnFloor`](Self::CommitSvnFloor), so a revert always has an
+    /// image to go back to.
     ConfirmDeviceTrial(ComponentId),
     /// Throw away the test image a managed device was given: close the
     /// trial without keeping the image, leaving the confirmed slot as it
