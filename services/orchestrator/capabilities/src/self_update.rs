@@ -261,7 +261,7 @@ pub const fn trial_outcome(state: SelfUpdateState, running: RunningImage) -> Tri
 /// It reports `Idle` and `Confirmed`, which is what having no session looks
 /// like, and returns `NoSession` from every write instead of pretending to
 /// store one. A board that does update itself provides a real implementation
-/// and a `Board::self_image`. This impl is here so the other boards do not
+/// and a `Board::self_update`. This impl is here so the other boards do not
 /// have to name a session type they never use.
 impl SelfUpdate for () {
     type Error = NoSession;

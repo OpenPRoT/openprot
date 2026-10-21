@@ -83,7 +83,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             .ok_or(DriverError::UnknownComponent)?;
         // Busy first: one update at a time, whatever it targets. An
         // update of the eRoT arriving mid-update is refused as
-        // `UpdateBusy`, not `NoSelfImage`.
+        // `UpdateBusy`, not `NoErotUpdate`.
         if self.pending_update.is_some() {
             return Err(DriverError::UpdateBusy);
         }
@@ -146,16 +146,16 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// [`commit_self_svn_floor`](crate::commit_self_svn_floor) or at the
     /// next boot by [`settle_self_update`](crate::settle_self_update).
     fn check_self_update_may_start(&self) -> Result<(), DriverError> {
-        let self_image = self
+        let self_update = self
             .board
-            .self_image
+            .self_update
             .as_ref()
-            .ok_or(DriverError::NoSelfImage)?;
-        let state = self_image
+            .ok_or(DriverError::NoErotUpdate)?;
+        let state = self_update
             .session
             .state()
             .map_err(|_| DriverError::SelfUpdateFault)?;
-        let running = self_image
+        let running = self_update
             .session
             .running()
             .map_err(|_| DriverError::SelfUpdateFault)?;
@@ -252,12 +252,12 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         // `board` and `pending_update` are separate fields, so holding
         // this borrow of `board` does not block the assignment to
         // `pending_update` below.
-        let self_image = self
+        let self_update = self
             .board
-            .self_image
+            .self_update
             .as_mut()
-            .ok_or(DriverError::NoSelfImage)?;
-        let session = &mut self_image.session;
+            .ok_or(DriverError::NoErotUpdate)?;
+        let session = &mut self_update.session;
         session
             .prepare(svn)
             .map_err(|_| DriverError::SelfUpdateFault)?;
@@ -265,7 +265,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             .set_trial_pending()
             .map_err(|_| DriverError::SelfUpdateFault)?;
         self.pending_update = None;
-        self_image
+        self_update
             .reset
             .reset()
             .map_err(|_| DriverError::SelfResetFault)
