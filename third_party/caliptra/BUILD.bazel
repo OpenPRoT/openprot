@@ -1,6 +1,7 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//third_party/caliptra:versions.bzl", "CALIPTRA_VERSIONS")
 
@@ -12,6 +13,28 @@ load("//third_party/caliptra:versions.bzl", "CALIPTRA_VERSIONS")
 #   bazel run //third_party/caliptra:uprev -- verify
 
 package(default_visibility = ["//visibility:public"])
+
+# Which Caliptra subsystem platform the boot components (Caliptra ROM/FW, MCU
+# ROM) are built for. Rules that run an image on a given platform (e.g.
+# //target/veer/tooling:caliptra_runner.bzl) set this with a transition.
+string_flag(
+    name = "platform",
+    build_setting_default = "emulator",
+    values = [
+        "emulator",
+        "fpga",
+    ],
+)
+
+config_setting(
+    name = "platform_emulator",
+    flag_values = {":platform": "emulator"},
+)
+
+config_setting(
+    name = "platform_fpga",
+    flag_values = {":platform": "fpga"},
+)
 
 config_setting(
     name = "is_riscv32imc",

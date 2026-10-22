@@ -111,6 +111,18 @@ caliptra_repos_ext = use_extension(
 )
 use_repo(caliptra_repos_ext, "caliptra_mcu_sw", "caliptra_sw")
 
+# VCK190 subsystem bitstream matching the caliptra_mcu_sw pin above. URL and
+# sha256 are copied from hw/fpga/bitstream_manifests/subsystem.toml at that
+# commit; bump them together with the pin.
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+http_file(
+    name = "caliptra_fpga_bitstream",
+    downloaded_file_path = "caliptra-bitstream.pdi",
+    sha256 = "bb4892661af8769104694e5bd307a993264460a286437e0d8bc3b2f1de60173d",
+    urls = ["https://storage.googleapis.com/caliptra-github-ci-bitstreams/v1/a2cd177353b7f06170766f367743b98c900b1d7b/runtime_a2cd177.pdi"],
+)
+
 nonhermetic_repo = use_repo_rule("//target/earlgrey/tooling/signing:nonhermetic.bzl", "nonhermetic_repo")
 
 nonhermetic_repo(name = "nonhermetic")

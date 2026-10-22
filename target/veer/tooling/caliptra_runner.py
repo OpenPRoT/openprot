@@ -87,6 +87,24 @@ def _parse_args():
         help="authorization manifest",
     )
     parser.add_argument(
+        "--caliptra-rom",
+        type=pathlib.Path,
+        default=pathlib.Path(_CPTRA_ROM),
+        help="caliptra ROM binary",
+    )
+    parser.add_argument(
+        "--caliptra-firmware",
+        type=pathlib.Path,
+        default=pathlib.Path(_CPTRA_FIRMWARE),
+        help="caliptra firmware bundle binary",
+    )
+    parser.add_argument(
+        "--mcu-rom",
+        type=pathlib.Path,
+        default=pathlib.Path(_MCU_ROM),
+        help="MCU ROM binary",
+    )
+    parser.add_argument(
         "--vendor-pk-hash",
         type=str,
         help="SHA384 of public keys",
@@ -142,15 +160,18 @@ def load_and_run(
     manifest: str,
     vendor_pk_hash: str,
     elf: Path | None = None,
+    caliptra_rom: Path | str = _CPTRA_ROM,
+    caliptra_firmware: Path | str = _CPTRA_FIRMWARE,
+    mcu_rom: Path | str = _MCU_ROM,
 ) -> list[str]:
     """Prepare arguments to load an image into a board and spawn a console."""
     if interface == "emulator":
         cmd = [
             _EMULATOR,
-            f"--rom={_MCU_ROM}",
+            f"--rom={mcu_rom}",
             f"--firmware={image}",
-            f"--caliptra-rom={_CPTRA_ROM}",
-            f"--caliptra-firmware={_CPTRA_FIRMWARE}",
+            f"--caliptra-rom={caliptra_rom}",
+            f"--caliptra-firmware={caliptra_firmware}",
             "--i3c-port=65534",
             "--rom-offset=0x80000000",
             "--rom-size=0x10000",
@@ -296,6 +317,9 @@ def _main(args) -> int:
         args.manifest,
         args.vendor_pk_hash,
         elf=args.elf,
+        caliptra_rom=args.caliptra_rom,
+        caliptra_firmware=args.caliptra_firmware,
+        mcu_rom=args.mcu_rom,
     )
     # TODO(cfrantz): add support for the tokenized console.
     return_code = simple_console(cmd)
