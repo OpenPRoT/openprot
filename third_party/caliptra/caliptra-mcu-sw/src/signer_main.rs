@@ -13,6 +13,8 @@ use caliptra_image_crypto::RustCrypto as Crypto;
 use caliptra_image_fake_keys::*;
 use caliptra_image_gen::{from_hw_format, ImageGeneratorCrypto};
 use caliptra_image_types::FwVerificationPqcKeyType;
+use caliptra_mcu_config_emulator::EMULATOR_MEMORY_MAP;
+use caliptra_mcu_config_fpga::FPGA_MEMORY_MAP;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use zerocopy::IntoBytes;
@@ -41,9 +43,15 @@ enum Commands {
 enum AuthManifestCommands {
     /// Create an Authentication Manifest (SoC manifest)
     Create {
-        /// MCU Image: <path>,<load_addr>,<staging_addr>,<image_id>,<exec_bit>
+        /// MCU Image: either <path> (requires --platform) or
+        /// <path>,<load_addr>,<staging_addr>,<image_id>,<exec_bit>[,<component_id>]
         #[arg(long = "mcu_image")]
         mcu_image: String,
+
+        /// Platform ("emulator" or "fpga") used to derive default MCU image
+        /// load/staging addresses when --mcu_image only specifies a path.
+        #[arg(long = "platform")]
+        platform: Option<String>,
 
         /// Path to caliptra ROM binary (accepted for compatibility, not used in manifest)
         #[arg(long = "caliptra_rom")]
@@ -63,12 +71,51 @@ enum AuthManifestCommands {
     },
 }
 
-/// Parse an image config string: "path,load_addr,staging_addr,image_id,exec_bit[,component_id]"
-fn parse_image_cfg(s: &str) -> Result<(PathBuf, u64, u64, u32, u32, u32)> {
+/// Default `(load_addr, staging_addr)` for a platform, mirroring upstream
+/// `CaliptraBuilder::get_mcu_manifest_metadata` (`builder/src/caliptra.rs`).
+fn default_mcu_image_addrs(platform: &str) -> Result<(u64, u64)> {
+    match platform {
+        "emulator" => Ok((EMULATOR_MEMORY_MAP.sram_offset as u64, 0)),
+        "fpga" => {
+            // FPGA uses external staging SRAM; mirrors upstream
+            // `CaliptraBuilder::get_mcu_manifest_metadata`.
+            const STAGING_MEMORY_MAP: u64 = 0xB00C_0000;
+            const STAGING_MEMORY_SIZE: u64 = 0x0004_0000; // 256 KB
+            const MAX_MCU_FW_SIZE: u64 = 0x3EC00;
+            let staging_addr = STAGING_MEMORY_MAP + STAGING_MEMORY_SIZE - MAX_MCU_FW_SIZE;
+            let load_addr = FPGA_MEMORY_MAP.sram_offset as u64;
+            Ok((load_addr, staging_addr))
+        }
+        other => bail!("unknown platform {other:?}; expected emulator or fpga"),
+    }
+}
+
+/// Parse an image config string: either "<path>" (using `platform` defaults) or
+/// "<path>,<load_addr>,<staging_addr>,<image_id>,<exec_bit>[,<component_id>]".
+fn parse_image_cfg(s: &str, platform: Option<&str>) -> Result<(PathBuf, u64, u64, u32, u32, u32)> {
+    const MCU_RT_IDENTIFIER: u32 = 2;
+    const DEFAULT_EXEC_BIT: u32 = 2;
+
     let parts: Vec<&str> = s.split(',').collect();
+    if parts.len() == 1 {
+        let platform = platform.ok_or_else(|| {
+            anyhow::anyhow!(
+                "--platform (<emulator|fpga>) is required when --mcu_image only specifies a path"
+            )
+        })?;
+        let (load_addr, staging_addr) = default_mcu_image_addrs(platform)?;
+        return Ok((
+            PathBuf::from(parts[0]),
+            load_addr,
+            staging_addr,
+            MCU_RT_IDENTIFIER,
+            DEFAULT_EXEC_BIT,
+            MCU_RT_IDENTIFIER,
+        ));
+    }
     if parts.len() < 5 {
         bail!(
-            "Expected at least 5 comma-separated fields (path,load_addr,staging_addr,image_id,exec_bit), got {}",
+            "Expected either <path> (with --platform) or at least 5 comma-separated fields (path,load_addr,staging_addr,image_id,exec_bit), got {}",
             parts.len()
         );
     }
@@ -212,10 +259,13 @@ fn main() -> Result<()> {
         Commands::Experimental(cmd) => firmware_bundler::execute(cmd),
         Commands::AuthManifest { subcommand } => match subcommand {
             AuthManifestCommands::Create {
-                mcu_image, output, ..
+                mcu_image,
+                platform,
+                output,
+                ..
             } => {
                 let (path, load_addr, staging_addr, image_id, exec_bit, component_id) =
-                    parse_image_cfg(&mcu_image)?;
+                    parse_image_cfg(&mcu_image, platform.as_deref())?;
 
                 let metadata = create_image_metadata(
                     &path,

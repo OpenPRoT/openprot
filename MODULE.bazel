@@ -9,6 +9,7 @@ module(
 bazel_dep(name = "bazel_skylib", version = "1.8.2")
 bazel_dep(name = "pigweed")
 bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_cc", version = "0.2.22")
 bazel_dep(name = "rules_rust", version = "0.70.0")
 bazel_dep(name = "rules_rust_mdbook", version = "0.70.0")
 bazel_dep(name = "rules_platform", version = "0.1.0")
@@ -36,9 +37,27 @@ git_override(
 
 pw_rust = use_extension("@pigweed//pw_toolchain/rust:extensions.bzl", "pw_rust")
 pw_rust.toolchain(cipd_tag = "git_revisions:fe5c95d4ae33ec9d7831921e448e2daf8264ea42,7b074fc9362a4a6a5f172dd8936a22fb25eff96b")
-use_repo(pw_rust, "pw_rust_toolchains")
+use_repo(
+    pw_rust,
+    "pw_rust_toolchains",
+    # Used by //toolcain/aarch64_linux
+    "rust_toolchain_host_linux_x86_64",
+    "rust_toolchain_target_aarch64-unknown-linux-gnu_aarch64",
+)
+
+# Used by //toolcain/aarch64_linux
+pw_cxx_toolchain = use_extension("@pigweed//pw_toolchain/cc:pw_cxx_toolchain.bzl", "pw_cxx_toolchain")
+use_repo(pw_cxx_toolchain, "llvm_toolchain")
+
+pw_cipd = use_extension("@pigweed//pw_env_setup/bazel/cipd:defs.bzl", "cipd")
+use_repo(pw_cipd, linux_sysroot = "pigweed.linux_sysroot")
 
 register_toolchains(
+    # Must precede host_cc_toolchain_linux and @pw_rust_toolchains//:all, which
+    # matches any Linux target CPU or any aarch64 platform respectively
+    "//toolchain/aarch64_linux:cc_toolchain_aarch64_linux",
+    "//toolchain/aarch64_linux:rust_toolchain_aarch64_linux_nightly",
+    "//toolchain/aarch64_linux:rust_toolchain_aarch64_linux_stable",
     "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_linux",
     "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_macos",
     "@pigweed//pw_toolchain/arm_clang:arm_clang_cc_toolchain_cortex-m4",
@@ -110,6 +129,29 @@ caliptra_repos_ext = use_extension(
     "caliptra_repos",
 )
 use_repo(caliptra_repos_ext, "caliptra_mcu_sw", "caliptra_sw")
+
+# VCK190 subsystem bitstream matching the caliptra_mcu_sw pin above. URL and
+# sha256 are copied from hw/fpga/bitstream_manifests/subsystem.toml at that
+# commit; bump them together with the pin.
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+http_file(
+    name = "caliptra_fpga_bitstream",
+    downloaded_file_path = "caliptra-bitstream.pdi",
+    sha256 = "bb4892661af8769104694e5bd307a993264460a286437e0d8bc3b2f1de60173d",
+    urls = ["https://storage.googleapis.com/caliptra-github-ci-bitstreams/v1/a2cd177353b7f06170766f367743b98c900b1d7b/runtime_a2cd177.pdi"],
+)
+
+# caliptra-ss OTP controller memory map, needed by caliptra-hw-model's build
+# script (fpga_subsystem). Upstream reads it from caliptra-sw's
+# hw/latest/caliptra-ss submodule, which @caliptra_sw doesn't fetch. Pinned to
+# that submodule's commit at our caliptra_sw pin; bump them together.
+http_file(
+    name = "caliptra_ss_otp_ctrl_mmap",
+    downloaded_file_path = "otp_ctrl_mmap.hjson",
+    sha256 = "7aa3729ad3b8dacd80134773fcbfa1476a8b8b05d4c340d7ff0190adbedb934b",
+    urls = ["https://raw.githubusercontent.com/chipsalliance/caliptra-ss/01b0a3528e196f4219d20dd9cbfec3727869d5d9/src/fuse_ctrl/data/otp_ctrl_mmap.hjson"],
+)
 
 nonhermetic_repo = use_repo_rule("//target/earlgrey/tooling/signing:nonhermetic.bzl", "nonhermetic_repo")
 

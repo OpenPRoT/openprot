@@ -1,0 +1,19 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_platform//platform_data:defs.bzl", "platform_data")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+rust_binary(
+    name = "hello",
+    srcs = ["main.rs"],
+    edition = "2024",
+)
+
+# `bazel build //target/veer/tooling/fpga/hello:hello_aarch64` produces the
+# binary for the FPGA board's ARM cores without any extra flags.
+platform_data(
+    name = "hello_aarch64",
+    platform = "//toolchain/aarch64_linux",
+    target = ":hello",
+)

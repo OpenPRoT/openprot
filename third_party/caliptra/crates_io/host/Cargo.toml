@@ -52,6 +52,18 @@ rustc-demangle = "0.1.25"
 strum = "0.24"
 strum_macros = "0.24"
 
+# --- FPGA hardware model (caliptra-hw-model / caliptra-mcu-hw-model) ---
+# Versions follow the caliptra-sw / caliptra-mcu-sw workspaces.
+deser-hjson = "2.2.6"
+int-enum = "1.2.0"
+nix = "0.26.2"
+once_cell = "1.13"
+regex = "1.10.2"
+rustix = { version = "1", features = ["event", "fs", "net", "process", "stdio", "termios"] }
+scopeguard = "1.2"
+thiserror = "2"
+uio = "0.4.0"
+
 # --- Crypto crates (with host-only features) ---
 aes = "0.8.4"
 aes-gcm = "0.10.3"
@@ -128,6 +140,7 @@ caliptra-mcu-firmware-bundler = { git = "https://github.com/chipsalliance/calipt
 caliptra-mcu-core-util-host-mailbox-test-config = { git = "https://github.com/chipsalliance/caliptra-mcu-sw", rev = "8c9c8ff27de1babf63c0be74e973185837439040", default-features = false }
 caliptra-mcu-emulator-state = { git = "https://github.com/chipsalliance/caliptra-mcu-sw", rev = "8c9c8ff27de1babf63c0be74e973185837439040", default-features = false }
 caliptra-mcu-network-config = { git = "https://github.com/chipsalliance/caliptra-mcu-sw", rev = "8c9c8ff27de1babf63c0be74e973185837439040", default-features = false }
+caliptra-mcu-poll-common = { git = "https://github.com/chipsalliance/caliptra-mcu-sw", rev = "8c9c8ff27de1babf63c0be74e973185837439040", default-features = false }
 caliptra-mcu-otp-lifecycle = { git = "https://github.com/chipsalliance/caliptra-mcu-sw", rev = "8c9c8ff27de1babf63c0be74e973185837439040", default-features = false, features = ["sha3", "std"] }
 
 # No [patch] section needed for caliptra-sw — deps already point to the upstream

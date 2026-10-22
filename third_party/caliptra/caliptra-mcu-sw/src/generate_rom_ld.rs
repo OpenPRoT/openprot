@@ -1,8 +1,10 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 //
-// Host tool that emits the MCU ROM linker script for the emulator platform
-// by substituting the `EMULATOR_MEMORY_MAP` values into a template.
+// Host tool that emits the MCU ROM linker script for a platform by
+// substituting that platform's memory map into a template.
+//
+// Usage: generate_rom_ld <emulator|fpga>
 //
 // # Upstream cross-reference
 //
@@ -11,6 +13,7 @@
 // `firmware-bundler/data/default-rom-layout.ld`.
 
 use caliptra_mcu_config_emulator::EMULATOR_MEMORY_MAP;
+use caliptra_mcu_config_fpga::FPGA_MEMORY_MAP;
 
 const ROM_LD_TEMPLATE: &str = r#"
 /* Licensed under the Apache-2.0 license. */
@@ -28,7 +31,7 @@ ROM_DIGEST_SIZE = 48;
 MEMORY
 {
   ROM   (rx) : ORIGIN = $ROM_OFFSET, LENGTH = $ROM_SIZE - ROM_DIGEST_SIZE
-  RAM  (rwx) : ORIGIN = $DCCM_OFFSET, LENGTH = $DCCM_SIZE /* dedicated SRAM for the ROM stack */
+  RAM  (rwx) : ORIGIN = $DCCM_OFFSET, LENGTH = $DCCM_SIZE - $HANDOFF_SIZE /* dedicated SRAM for the ROM stack */
   HANDOFF (rw) : ORIGIN = $HANDOFF_OFFSET, LENGTH = $HANDOFF_SIZE
 }
 
@@ -107,6 +110,14 @@ ESTACK_SIZE = $ROM_ESTACK_SIZE;
 "#;
 
 fn main() {
-    let ld_script = subst::substitute(ROM_LD_TEMPLATE, &EMULATOR_MEMORY_MAP.hash_map()).unwrap();
+    let platform = std::env::args()
+        .nth(1)
+        .expect("usage: generate_rom_ld <emulator|fpga>");
+    let memory_map = match platform.as_str() {
+        "emulator" => &EMULATOR_MEMORY_MAP,
+        "fpga" => &FPGA_MEMORY_MAP,
+        other => panic!("unknown platform {other:?}; expected emulator or fpga"),
+    };
+    let ld_script = subst::substitute(ROM_LD_TEMPLATE, &memory_map.hash_map()).unwrap();
     println!("{ld_script}");
 }
