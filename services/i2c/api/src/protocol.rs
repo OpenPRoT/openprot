@@ -57,12 +57,10 @@ pub enum I2cOp {
     ///
     /// **Response payload layout** (on success):
     /// ```text
-    /// [ kind (1) | source_addr (1) | data (0..max_len) ]
+    /// [ kind (1) | data (0..max_len) ]
     /// ```
     /// - `kind`: [`SlaveEvent`] discriminant — what triggered the latch
     ///   (DataReceived, ReadRequest, Stop).
-    /// - `source_addr`: 7-bit address of the sending master (`0x00..=0x7F`),
-    ///   or `0xFF` if unavailable (message too short to extract it).
     /// - `data`: the received bytes, up to `op_count` (caller's max).
     SlaveReceive = 0x07,
     /// Pre-load the slave TX buffer for the next master read.
