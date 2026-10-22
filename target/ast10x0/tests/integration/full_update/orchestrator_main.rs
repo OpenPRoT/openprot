@@ -11,7 +11,7 @@
 //! proposes the image, so the state machine re-walks: the device is reset,
 //! boots the image it was just given, and reports ready a second time.
 //! Only then does the successful boot confirm the image, and only then
-//! does the floor commit.
+//! does the SVN floor commit.
 //!
 //! Each of those steps has its own scenario elsewhere. What cannot be
 //! tested apart is that they happen in that order, with the second ready
@@ -143,8 +143,8 @@ static ABORTED: AtomicU32 = AtomicU32::new(0);
 /// than looking like the proof.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Outcome {
-    /// The device booted, took an update, rebooted into it, and the floor
-    /// committed.
+    /// The device booted, took an update, rebooted into it, and the SVN
+    /// floor committed.
     Committed,
     /// The device never came up at all, so no update was ever offered.
     FirstBootFailed,
@@ -344,7 +344,7 @@ impl EvidenceReader<u8> for BmcEvidence {
     }
 }
 
-/// The device keeps its own floor: a PLDM firmware device commits
+/// The device keeps its own SVN floor: a PLDM firmware device commits
 /// internally, so the eRoT holds no second floor.
 struct NoFloor;
 
@@ -619,7 +619,7 @@ fn run(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> Outcome {
 
     // Only now has the boot confirmed the image.
     core.dispatch(driver, Event::BootConfirmed(TARGET));
-    // And the floor moves only when the update agent sends
+    // And the SVN floor moves only when the update agent sends
     // UpdateSecurityRevision. Dispatched here rather than read off the
     // device status: the firmware device never parks at
     // `SvnCommitPending` in this build, which GAPS.md records.
