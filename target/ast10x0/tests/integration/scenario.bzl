@@ -5,13 +5,13 @@
 
 Every scenario needs the same seven rules in the same order, and each
 negative case needs them again with one `--cfg` added. Spelling that out
-per package is where a copy drifts from its original, so it lives here
-once.
+per package is where a copy drifts from its original, so the rules live
+here once.
 
-A negative scenario is a package of its own because an app's target name
-is its name in the system config, and two targets in one package cannot
-share a name. It reuses the positive scenario's sources and config
-through labels, so the only thing a negative package states is what
+A negative scenario is a package of its own because the system config
+names an app by its target name, and two targets in one package cannot
+share a name. The negative package reuses the sources and config of the
+positive scenario through labels, so the only thing it states is what
 differs: the flag.
 """
 
@@ -69,13 +69,13 @@ def qemu_scenario(
         test_tags = None):
     """Builds one scenario image and the QEMU test that runs it.
 
-    One scenario per package: the kernel's `target.rs` names the codegen
-    crate `codegen`, so that target's name is fixed rather than derived.
+    One scenario per package: `target.rs` in the kernel names the codegen
+    crate `codegen`, so the target name is fixed rather than derived.
 
     Args:
         name: Image name. The test is `<name>_test`.
         system_config: Label of the system.json5 filegroup.
-        target_src: Label of the kernel's `target.rs`.
+        target_src: Label of the kernel `target.rs`.
         apps: One dict per app, with `name` (which must match the app in
             the system config), `src`, and `deps`.
         cfgs: `--cfg` names set on every app, from `SCENARIO_CFGS`. A
@@ -131,7 +131,7 @@ def qemu_scenario(
 
         # An app that maps MMIO gets the generated regions crate its
         # take_mmaps comes from. Generated per scenario, because it is
-        # built from that scenario's system config.
+        # built from the system config of that scenario.
         if app.get("regions"):
             regions = "app_" + app["name"] + "_regions"
             app_regions(

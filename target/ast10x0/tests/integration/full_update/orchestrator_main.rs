@@ -10,7 +10,8 @@
 //! device stages and verifies it, the RoT activates it. Activation only
 //! proposes the image, so the state machine re-walks: the device is reset,
 //! boots the image it was just given, and reports ready a second time.
-//! Only then is the image proven, and only then does the floor commit.
+//! Only then does the successful boot confirm the image, and only then
+//! does the floor commit.
 //!
 //! Each of those steps has its own scenario elsewhere. What cannot be
 //! tested apart is that they happen in that order, with the second ready
@@ -55,8 +56,8 @@ use app_orchestrator::handle;
 /// eRoT holds position 0 in every device table.
 const TARGET: ComponentId = ComponentId::new(1);
 
-/// Chain capacity and the core's effect-sink cap (`E >= 2*N + 2`). `N`
-/// counts the device table below, so the two cannot disagree.
+/// Chain capacity and the effect-sink cap on the core (`E >= 2*N + 2`).
+/// `N` counts the device table below, so the two cannot disagree.
 const N: usize = DEVICES.len();
 const E: usize = 2 * N + 2;
 const MAX_RETRY: u8 = 3;
@@ -65,12 +66,12 @@ const MAX_RETRY: u8 = 3;
 const IMAGE_SIZE: usize = 1024;
 const STAGING_BASE: u32 = 0x10_0000;
 
-/// How long the managed device has to report ready after a reset. It boots
-/// in 50 ms, so this is slack rather than a race.
+/// How long the managed device has to report ready after a reset. The
+/// device boots in 50 ms, so the window is slack rather than a race.
 const BOOT_WINDOW_MILLIS: u64 = 2_000;
 
 /// How long one supervised boot may take before the run gives up. Larger
-/// than the window so a late device is judged by the walk, not by this.
+/// than the window so the walk, not this budget, judges a late device.
 const BOOT_BUDGET_MILLIS: u64 = 10_000;
 
 /// How long the firmware device may take to answer a command.
@@ -115,15 +116,16 @@ static CHAIN: ChainEntries<N> = chain_of(&DEVICES);
 
 const _: () = assert_retry_reaches_every_image(MAX_RETRY, &DEVICES);
 
-/// The managed device's ready line, as the RoT sees it. Cleared by the
-/// reset path so a report from one boot cannot satisfy the next walk.
+/// The ready line of the managed device, as the RoT sees it. The reset
+/// path clears the latch, so a report from one boot cannot satisfy the
+/// next walk.
 static DEVICE_READY: AtomicBool = AtomicBool::new(false);
 
-/// How many times the device has been let out of reset. The scenario's
-/// ordering claim rests on this going up across the activation.
+/// How many times `release` let the device out of reset. The ordering
+/// claim rests on the count going up across the activation.
 static RESETS: AtomicU32 = AtomicU32::new(0);
 
-/// Set when the RoT's own verifier authenticates the candidate.
+/// Set when the verifier the RoT runs itself authenticates the candidate.
 static ROT_AUTHENTICATED: AtomicBool = AtomicBool::new(false);
 
 /// Set when the driver calls `Updatable::activate`.
@@ -171,22 +173,22 @@ struct TrialRecord;
 impl DeviceTrialBoot for TrialRecord {
     type Error = BoardFault;
 
-    /// The scenario starts with no trial open, so this answers false. The
-    /// settle path for a trial left open at boot is an open question in
-    /// GAPS.md.
+    /// The scenario starts with no trial open, so `is_pending` answers
+    /// false. The settle path for a trial left open at boot is an open
+    /// question in GAPS.md.
     fn is_pending(&self) -> Result<bool, BoardFault> {
         Ok(false)
     }
 
     fn confirm(&mut self) -> Result<(), BoardFault> {
         CONFIRMS.fetch_add(1, Ordering::Relaxed);
-        pw_log::info!("ORCH: the trial for the device was confirmed");
+        pw_log::info!("ORCH: the orchestrator confirmed the trial for the device");
         Ok(())
     }
 
     fn revert(&mut self) -> Result<(), BoardFault> {
         REVERTS.fetch_add(1, Ordering::Relaxed);
-        pw_log::info!("ORCH: the trial for the device was reverted");
+        pw_log::info!("ORCH: the orchestrator reverted the trial for the device");
         Ok(())
     }
 }
@@ -206,13 +208,15 @@ const EXPECT_TRIAL: TrialCloses = if cfg!(device_hangs) {
         reverts: 0,
     }
 } else if cfg!(device_stays_down) {
-    // The image was activated and never ran, so the image is thrown away.
+    // The driver activated the image and the image never ran, so the
+    // orchestrator reverts the trial.
     TrialCloses {
         confirms: 0,
         reverts: 1,
     }
 } else {
-    // The device booted what it was given, so the trial is confirmed.
+    // The device booted what it was given, so the orchestrator confirms
+    // the trial.
     TrialCloses {
         confirms: 1,
         reverts: 0,
@@ -242,7 +246,7 @@ fn trial_closed_as_expected() -> bool {
     false
 }
 
-/// Whether the run did what this scenario asked of it.
+/// Whether the run did what this scenario expects of it.
 fn verdict(outcome: Outcome) -> bool {
     match outcome {
         Outcome::Committed => {
@@ -294,8 +298,8 @@ fn expected_byte(offset: usize) -> u8 {
     (offset % 251) as u8
 }
 
-/// Drives the managed device's reset line. An undeliverable command is a
-/// wiring failure, not a boot failure.
+/// Drives the reset line of the managed device. An undeliverable command
+/// is a wiring failure, not a boot failure.
 fn drive_reset(level: u8) -> Result<(), BoardFault> {
     let mut ack = [0u8; 1];
     syscall::channel_transact(handle::RESET_CMD, &[level], &mut ack, deadline_in(1_000))
@@ -303,7 +307,8 @@ fn drive_reset(level: u8) -> Result<(), BoardFault> {
         .map_err(|_| BoardFault)
 }
 
-/// The managed device's reset line. Both directions clear the ready latch:
+/// The reset line of the managed device. Both directions clear the ready
+/// latch:
 /// the device is restarting either way, so anything it reported before
 /// belongs to an earlier attempt.
 struct BmcReset;
@@ -340,7 +345,7 @@ impl EvidenceReader<u8> for BmcEvidence {
 }
 
 /// The device keeps its own floor: a PLDM firmware device commits
-/// internally, so the eRoT holds no second one.
+/// internally, so the eRoT holds no second floor.
 struct NoFloor;
 
 impl SvnFloor for NoFloor {
@@ -355,9 +360,10 @@ impl SvnFloor for NoFloor {
     }
 }
 
-/// The firmware device as the driver sees it. Staging is already done by
-/// the time the RoT hears about it, because the device pulls its own
-/// chunks from the agent, so `activate` is the one call that reaches it.
+/// The firmware device as the driver sees it. The device has already
+/// staged the candidate by the time the RoT hears about it, because the
+/// device pulls its own chunks from the agent, so `activate` is the one
+/// call that reaches the device.
 struct FdUpdatable;
 
 impl Updatable for FdUpdatable {
@@ -399,8 +405,9 @@ impl ByteSource for PatternStaging {
     }
 }
 
-/// The RoT's own check of the staged candidate. A content check, because
-/// signature checking belongs to the crypto service and is stubbed.
+/// The check the RoT runs itself on the staged candidate. A content
+/// check, because signature checking belongs to the crypto service and is
+/// stubbed.
 struct PatternVerifier;
 
 struct PatternSession;
@@ -506,11 +513,12 @@ impl BoardCapabilities for UpdateBoard {
 
 fn board() -> Board<UpdateBoard, N> {
     Board {
-        // Built from the table index, so a component's parts cannot end
-        // up wired to a different slot than the one they sit in.
+        // Built from the table index, so the parts of one component
+        // cannot end up wired to a different slot than the one they sit
+        // in.
         //
-        // Index 0 is the eRoT. The walk passes over it, so nothing reads
-        // or actuates that entry. Components are indexed by ComponentId,
+        // Index 0 is the eRoT. The walk passes over the eRoT entry, so
+        // nothing reads or actuates it. Components are indexed by ComponentId,
         // so index 0 still needs a value.
         components: core::array::from_fn(|i| ComponentWiring {
             device: &DEVICES[i],
@@ -552,7 +560,7 @@ fn entry() {
         loop {}
     }
 
-    // SAFETY: taken once, at this process's entry point, and handed
+    // SAFETY: taken once, at the entry point of this process, and handed
     // straight to the transport that owns them from here on.
     let send = unsafe { &mut *core::ptr::addr_of_mut!(SEND_BUF) };
     let recv = unsafe { &mut *core::ptr::addr_of_mut!(RECV_BUF) };
@@ -562,9 +570,9 @@ fn entry() {
     let (mut core, mut driver) =
         bring_up::<UpdateBoard, N, E>(&CHAIN, &DEVICES, board(), MAX_RETRY);
 
-    // The RoT declares this run. Its claim is the ordering, and only it
-    // sees the whole of it: the firmware device's flow ends at activation
-    // and tells it nothing about the reset that has to follow.
+    // The RoT declares this run. The claim is the ordering, and only the
+    // RoT sees the whole of it: the flow at the firmware device ends at
+    // activation and says nothing about the reset that has to follow.
     let outcome = run(&mut core, &mut driver, &mut fd);
     if verdict(outcome) {
         let _ = syscall::debug_shutdown(Ok(()));
@@ -597,10 +605,11 @@ fn run(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> Outcome {
     }
 
     // Activation only proposed the image. The state machine re-walks, and
-    // that walk is what resets the device into what it just activated.
+    // that walk is what resets the device into the image the driver just
+    // activated.
     let resets_after = RESETS.load(Ordering::Relaxed);
     if resets_after <= resets_before {
-        pw_log::error!("ORCH: the device was never reset after the activation");
+        pw_log::error!("ORCH: no reset followed the activation");
         return Outcome::UpdateFailed;
     }
 
@@ -608,15 +617,15 @@ fn run(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> Outcome {
         return Outcome::SecondBootFailed;
     }
 
-    // Only now has the image proved it can run.
+    // Only now has the boot confirmed the image.
     core.dispatch(driver, Event::BootConfirmed(TARGET));
-    // And the floor moves only when the update agent asks with
+    // And the floor moves only when the update agent sends
     // UpdateSecurityRevision. Dispatched here rather than read off the
-    // device's status: the firmware device never parks at
+    // device status: the firmware device never parks at
     // `SvnCommitPending` in this build, which GAPS.md records.
     core.dispatch(driver, Event::SvnCommitRequest(TARGET));
     if core.state() != State::Ready {
-        pw_log::error!("ORCH: the machine did not settle after the second boot");
+        pw_log::error!("ORCH: the state machine did not settle after the second boot");
         return Outcome::SecondBootFailed;
     }
     pw_log::info!("ORCH: update committed after the device booted it");
@@ -657,11 +666,12 @@ fn preemption_outcome(core: &Core) -> Outcome {
     Outcome::Preempted
 }
 
-/// Waits for the managed device's walk to complete.
+/// Waits for the walk on the managed device to complete.
 ///
-/// The walk's verdict is the pass condition, not the machine's state: a
-/// passive component is released speculatively, so `Ready` is reached
-/// whether or not the device ever came up.
+/// The verdict of the walk is the pass condition, not the state of the
+/// state machine: the driver releases a passive component speculatively,
+/// so the state machine reaches `Ready` whether or not the device ever
+/// came up.
 fn supervise_boot(core: &mut Core, driver: &mut Driver, which: &str) -> bool {
     let give_up = deadline_in(BOOT_BUDGET_MILLIS);
 
@@ -784,9 +794,9 @@ fn offer(core: &mut Core, driver: &mut Driver, fd: &mut Fd, total: u32) -> bool 
     }
 
     // Walk the job to authenticated. The device already holds the
-    // candidate, so staging is a bookkeeping move, but the RoT's own
-    // verifier still reads the staging region and activation refuses a
-    // candidate that did not reach it.
+    // candidate, so staging is a bookkeeping move, but the verifier the
+    // RoT runs itself still reads the staging region and activation
+    // refuses a candidate that did not reach it.
     for _ in 0..8 {
         let poll = driver.pump_update(now_millis());
         match poll.event {
@@ -809,8 +819,8 @@ fn offer(core: &mut Core, driver: &mut Driver, fd: &mut Fd, total: u32) -> bool 
     command(fd, |fd| fd.accept_offer(STAGING_BASE))
 }
 
-/// The device says it verified. The update goes on only if the RoT's own
-/// verifier agreed too.
+/// The device says it verified. The update goes on only if the verifier
+/// the RoT runs itself agreed too.
 fn verified(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
     if !ROT_AUTHENTICATED.load(Ordering::Relaxed) {
         pw_log::error!("ORCH: the device accepted a candidate the RoT did not");
@@ -829,16 +839,16 @@ fn verified(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
     command(fd, |fd| fd.perform_apply())
 }
 
-/// Asks the device what it is waiting for.
+/// Queries the device for what it is waiting for.
 fn query(fd: &mut Fd) -> Option<FdStatus> {
     if fd.query_status().is_err() {
-        pw_log::error!("ORCH: could not ask the device for its status");
+        pw_log::error!("ORCH: the status request to the device failed");
         return None;
     }
     match settle(fd) {
         Some(Reply::Status(status)) => Some(status),
         Some(Reply::Acked) => {
-            pw_log::error!("ORCH: QueryStatus was acknowledged instead of answered");
+            pw_log::error!("ORCH: the device acknowledged QueryStatus instead of answering");
             None
         }
         None => None,
@@ -854,7 +864,7 @@ fn command(fd: &mut Fd, start: impl FnOnce(&mut Fd) -> Result<(), ClientError>) 
     match settle(fd) {
         Some(Reply::Acked) => true,
         Some(Reply::Status(_)) => {
-            pw_log::error!("ORCH: a command was answered with a status");
+            pw_log::error!("ORCH: the device answered a command with a status");
             false
         }
         None => false,
@@ -870,7 +880,7 @@ fn settle(fd: &mut Fd) -> Option<Reply> {
             Ok(Some(reply)) => return Some(reply),
             Ok(None) => {}
             Err(_) => {
-                pw_log::error!("ORCH: the device's answer did not decode");
+                pw_log::error!("ORCH: the answer from the device did not decode");
                 return None;
             }
         }
