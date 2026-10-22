@@ -175,6 +175,10 @@ pub const AST_I2CS_PKT_ERROR: u32 = 1 << 17;
 pub const AST_I2CS_WAIT_TX_DMA: u32 = 1 << 25;
 /// Waiting for RX DMA
 pub const AST_I2CS_WAIT_RX_DMA: u32 = 1 << 24;
+/// Slave address received pending
+pub const AST_I2CS_SLAVE_PENDING: u32 = 1 << 29;
+/// Slave address1 NACed indicator
+pub const AST_I2CS_SLAVE_ADDR1_NAK: u32 = 1 << 20;
 
 /// Helper to build packet mode address field
 #[inline]
