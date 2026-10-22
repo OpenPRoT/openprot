@@ -3,7 +3,7 @@
 
 //! The orchestrator's side of the PLDM update gate.
 //!
-//! The firmware device parks at each phase and raises a nudge; the
+//! The Firmware Device parks at each phase and raises a nudge; the
 //! orchestrator reads `FdStatus` and answers with one operation. This crate
 //! turns a status into that answer.
 //!

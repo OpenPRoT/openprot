@@ -37,8 +37,8 @@ activate, reset, and the device booting what it was given. The following
 parts of the specification are not exercised:
 
 - Automatic activation without ActivateFirmware. The device advertises
-  self-contained activation and the agent sends ActivateFirmware. A flow
-  where the RoT writing the image and resetting the device is the
+  self-contained activation and the Update Agent sends ActivateFirmware. A
+  flow where the RoT writing the image and resetting the device is the
   activation, with `activate()` never called and `PerformActivate` never
   produced, has no scenario.
 - The pending-reset handshake: a pending reset signal to the device, the
@@ -47,38 +47,39 @@ parts of the specification are not exercised:
 - Authenticating the running image before the first release. The verifier
   reads nothing and the device table carries no layout, so the first boot
   is unverified. Doing it for real means two processes mapping the FMC,
-  with the firmware device writing CS1 while the RoT reads it.
+  with the Firmware Device writing CS1 while the RoT reads it.
 - Updating the backup partition after the commit. #512 merged, but the
   component here binds `SvnFloorBinding::SelfManaged`, and since 993219b8
   a self-managed component's slots are left to the device. The re-sync
   cannot trigger until a scenario variant binds an eRoT floor.
 - Boot progress over MCTP. The managed device in the spec is one device
-  that is the update agent, the reset target and the progress reporter at
+  that is the Update Agent, the reset target and the progress reporter at
   once. Here those are two apps, and progress arrives on an IPC channel.
 
 ## What the transfer-error scenario does not say
 
-`pldm_update/transfer_error` has the agent answer one RequestFirmwareData
-with an error completion code. The device aborts the transfer, which is the
-claim. Two things it does not cover: a dropped response rather than an
-errored one, which would be a T2 retry and then a T1 timeout, and
-`RetryRequestFwData`, which the device is supposed to answer by asking
-again. The run also ends with `run_terminus` returning an error rather than
-the device going back to idle, so what a second update attempt after an
+`pldm_update/transfer_error` has the Update Agent answer one
+RequestFirmwareData with an error completion code. The device aborts the
+transfer, which is the claim. Two things it does not cover: a dropped response
+rather than an errored one, which would be a T2 retry and then a T1 timeout,
+and `RetryRequestFwData`, which the device is supposed to answer by sending the
+request again. The run also ends with `run_terminus` returning an error rather
+than the device going back to idle, so what a second update attempt after an
 abort would do is untested.
 
 ## Arcs of the update state machine with no scenario
 
 - `UpdateSecurityRevision` on the eRoT's own floor. The downstream half
-  runs end to end in `pldm_update/svn_commit`: the agent sends 0x22 after
-  the activation, the device parks at `SvnCommitPending`, and the loop
-  dispatches `Event::SvnCommitRequest`, then sends PerformSvnCommit if
-  the state machine emitted `Effect::CommitSvnFloor` and RejectSvnCommit
-  if it did not. `svn_commit_refused` runs the reject side, a second
-  request with nothing outstanding. The eRoT's own floor has no
-  equivalent yet. It takes the same path: the eRoT is a firmware device
-  like any other, so the agent offers it an update over PLDM and sends it
-  0x22 afterwards. Nothing serves that side on the eRoT yet, so
+  runs end to end in `pldm_update/svn_commit`: the Update Agent sends
+  0x22 after the activation, the device parks at `SvnCommitPending`, and
+  the loop dispatches `Event::SvnCommitRequest`, then sends
+  PerformSvnCommit if the state machine emitted `Effect::CommitSvnFloor`
+  and RejectSvnCommit if it did not. `svn_commit_refused` runs the reject
+  side, a second request with nothing outstanding. The eRoT's own SVN
+  floor has no equivalent yet. It takes the same path: the eRoT is a Firmware
+  Device like any other, so the Update Agent offers it an update over
+  PLDM and sends it 0x22 afterwards. Nothing serves that side on the
+  eRoT yet, so
   `commit_self_svn_floor` still has no caller outside tests. The other
   update scenarios keep dispatching the event themselves, the way they
   already dispatch `BootConfirmed`: without the 0x22 exchange nothing
@@ -237,8 +238,8 @@ driver makes `BootFailed` and `RecoveryUnavailable` on its own, and
 Each scenario boots once, so anything that needs a reset mid-flow has no
 scenario at all. The ones that matter:
 
-- Between `BootConfirmed` and the agent's request. The outstanding
-  advance lives in RAM, so a reset drops it and the later
+- Between `BootConfirmed` and the request the Update Agent sends. The
+  outstanding advance lives in RAM, so a reset drops it and the later
   `SvnCommitRequest` finds nothing to move.
 - During a spare-slot re-sync. The claim that a pass is in flight is
   RAM-only too, so a reset leaves a half-written spare with no durable
@@ -256,24 +257,24 @@ fails clears the held advance and reports `Report::SlotResyncFailed`
 image the update replaced installs again, and no pass re-stages the
 spare or records the slot as stale anywhere a reset would preserve.
 
-The update agent hears that the commit succeeded either way. The
+The Update Agent hears that the commit succeeded either way. The
 scenario loop sends PerformSvnCommit when the state machine emits
 `Effect::CommitSvnFloor`, which happens before the pump runs, so the
 answer says granted while the floor still holds the old SVN. Two changes
 close this: re-attempt the pass or mark the slot stale somewhere
-durable, and answer the agent once the floor takes the SVN rather than
-when the effect arrives.
+durable, and answer the Update Agent once the SVN floor advances
+rather than when the effect arrives.
 
 ## Assertions that are looser than they look
 
-`pldm_update/svn_commit` asserts the effect, not the outcome. The machine
-emits `Effect::CommitSvnFloor` whatever the component's floor binding is,
-and the orchestrator answers the agent on seeing it, but the driver's
-`commit_svn_floor` returns at once for a component that keeps its own SVN
-(`driver.rs`, the `SvnFloorBinding::Erot` test). Every board here binds
-`SelfManaged`, so no floor moves in that run or in its refusal variant.
-What those scenarios prove is the 0x22 exchange and the machine's
-decision, which is their claim; the floor itself has no run.
+`pldm_update/svn_commit` asserts the effect, not the outcome. The state
+machine emits `Effect::CommitSvnFloor` whatever SVN floor binding the
+component carries, and the orchestrator answers the Update Agent on seeing
+it, but `commit_svn_floor` in the driver returns at once for a component that
+keeps its own SVN (`driver.rs`, the `SvnFloorBinding::Erot` test). Every board
+here binds `SelfManaged`, so no SVN floor moves in that run or in its refusal
+variant. What those scenarios prove is the 0x22 exchange and the decision the
+state machine takes, which is their claim; the SVN floor itself has no run.
 
 `pldm_update` has no managed device, so its `BootConfirmed` is a
 stand-in: it is dispatched once the activation is acknowledged, not once
@@ -297,14 +298,14 @@ that check would hold even with no boot walk ever polled.
   is a synthetic pattern rather than the bytes the device actually staged.
   The device checks the real bytes; the RoT checks a stand-in.
 - A refusal is recorded rather than enforced. The device stops its own
-  flow, but the orchestrator has no way to make the agent's request fail
-  with a PLDM completion code.
+  flow, but the orchestrator has no way to make the request the Update
+  Agent sends fail with a PLDM completion code.
 - `query_status` reports `PhaseFailed` with a fixed phase and result code
-  rather than the values the device sent the agent.
-- The RoT does not wait on the device's `USER` signal. It works because a
-  `QueryStatus` sits in the channel until the device serves it and this
-  RoT has nothing else to do, but a real event loop would wait on the
-  signal.
+  rather than the values the device sent the Update Agent.
+- The RoT does not wait on the `USER` signal the Firmware Device raises. It
+  works because a `QueryStatus` sits in the channel until the device serves
+  it and this RoT has nothing else to do, but a real event loop would wait
+  on the signal.
 
 ## Things that bit us, kept here so they are not rediscovered
 
@@ -320,7 +321,7 @@ that check would hold even with no boot walk ever polled.
 - An app that is misaligned or oversized still builds; the only sign is a
   PMSAv7 subregion overlap warning on the console.
 - Whichever app owns the sentinel decides the run. `full_update` passed
-  while the device never rebooted, because the firmware device was still
+  while the device never rebooted, because the Firmware Device was still
   declaring the verdict and its own flow had finished.
 - `svn_commit` failed about one run in ten, and once on CI. Nothing is
   registered between the device's two `run_terminus` calls, so the

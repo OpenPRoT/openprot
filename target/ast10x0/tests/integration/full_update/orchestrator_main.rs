@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! The RoT in the full update scenario: it supervises the managed device
-//! and commands the firmware device, and the point of the scenario is that
+//! and commands the Firmware Device, and the point of the scenario is that
 //! it does both in one run.
 //!
 //! The claim is an ordering. The device boots under supervision and the
@@ -61,7 +61,8 @@ const N: usize = DEVICES.len();
 const E: usize = 2 * N + 2;
 const MAX_RETRY: u8 = 3;
 
-/// Bytes in the image the agent hands over, and where the device stages it.
+/// Bytes in the image the Update Agent hands over, and where the device
+/// stages it.
 const IMAGE_SIZE: usize = 1024;
 const STAGING_BASE: u32 = 0x10_0000;
 
@@ -74,7 +75,7 @@ const BOOT_WINDOW_MILLIS: u64 = 2_000;
 /// than the window so the walk, not this budget, judges a late device.
 const BOOT_BUDGET_MILLIS: u64 = 10_000;
 
-/// How long the firmware device may take to answer a command.
+/// How long the Firmware Device may take to answer a command.
 const DEVICE_TIMEOUT_MILLIS: u64 = 10_000;
 
 /// How many device steps one update may take. A full run is four.
@@ -296,8 +297,8 @@ fn verdict(outcome: Outcome) -> bool {
     }
 }
 
-/// The byte the agent sends at `offset`, which is also what the staging
-/// region serves and what the device checks.
+/// The byte the Update Agent sends at `offset`, which is also what the
+/// staging region serves and what the device checks.
 fn expected_byte(offset: usize) -> u8 {
     (offset % 251) as u8
 }
@@ -347,7 +348,7 @@ impl EvidenceReader<u8> for BmcEvidence {
     }
 }
 
-/// The device keeps its own SVN floor: a PLDM firmware device commits
+/// The device keeps its own SVN floor: a PLDM Firmware Device commits
 /// internally, so the eRoT holds no second floor.
 struct NoFloor;
 
@@ -363,10 +364,10 @@ impl SvnFloor for NoFloor {
     }
 }
 
-/// The firmware device as the driver sees it. The device has already
+/// The Firmware Device as the driver sees it. The device has already
 /// staged the candidate by the time the RoT hears about it, because the
-/// device pulls its own chunks from the agent, so `activate` is the one
-/// call that reaches the device.
+/// device pulls its own chunks from the Update Agent, so `activate` is
+/// the one call that reaches the device.
 struct FdUpdatable;
 
 impl Updatable for FdUpdatable {
@@ -574,7 +575,7 @@ fn entry() {
         bring_up::<UpdateBoard, N, E>(&CHAIN, &DEVICES, board(), MAX_RETRY);
 
     // The RoT declares this run. The claim is the ordering, and only the
-    // RoT sees the whole of it: the flow at the firmware device ends at
+    // RoT sees the whole of it: the flow at the Firmware Device ends at
     // activation and says nothing about the reset that has to follow.
     let outcome = run(&mut core, &mut driver, &mut fd);
     if verdict(outcome) {
@@ -622,9 +623,9 @@ fn run(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> Outcome {
 
     // Only now has the boot confirmed the image.
     core.dispatch(driver, Event::BootConfirmed(TARGET));
-    // And the SVN floor moves only when the update agent sends
+    // And the SVN floor moves only when the Update Agent sends
     // UpdateSecurityRevision. Dispatched here rather than read off the
-    // device status: the firmware device never parks at
+    // device status: the Firmware Device never parks at
     // `SvnCommitPending` in this build, which GAPS.md records.
     core.dispatch(driver, Event::SvnCommitRequest(TARGET));
     if core.state() != State::Ready {
@@ -842,7 +843,7 @@ fn verified(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
     command(fd, |fd| fd.perform_apply())
 }
 
-/// Queries the firmware device for what it is waiting for.
+/// Queries the Firmware Device for what it is waiting for.
 fn query(fd: &mut Fd) -> Option<FdStatus> {
     if fd.query_status().is_err() {
         pw_log::error!("ORCH: the status request to the device failed");
@@ -858,7 +859,7 @@ fn query(fd: &mut Fd) -> Option<FdStatus> {
     }
 }
 
-/// Sends one command and waits for the firmware device to take it.
+/// Sends one command and waits for the Firmware Device to take it.
 fn command(fd: &mut Fd, start: impl FnOnce(&mut Fd) -> Result<(), ClientError>) -> bool {
     if start(fd).is_err() {
         pw_log::error!("ORCH: could not send a command");
@@ -875,7 +876,7 @@ fn command(fd: &mut Fd, start: impl FnOnce(&mut Fd) -> Result<(), ClientError>) 
 }
 
 /// Waits for the answer to whatever is in flight. The deadline is what
-/// turns a firmware device that stopped serving into a log line rather
+/// turns a Firmware Device that stopped serving into a log line rather
 /// than a stall.
 fn settle(fd: &mut Fd) -> Option<Reply> {
     let deadline = deadline_in(DEVICE_TIMEOUT_MILLIS);

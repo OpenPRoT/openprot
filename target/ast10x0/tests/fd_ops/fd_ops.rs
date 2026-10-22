@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! What both QEMU firmware devices answer the same way.
+//! What both QEMU Firmware Devices answer the same way.
 //!
 //! The two devices differ in what they do with an update. One gates every
 //! step on an IPC decision from the RoT, the other decides locally. What a
@@ -65,11 +65,12 @@ pub fn device_identifiers(
 /// `GetFirmwareParameters`: one firmware component, with self-contained
 /// activation.
 ///
-/// The activation method tells the agent what has to happen after an
-/// update for the new image to run: DSP0267's options range from nothing
-/// up to a host reboot or a power cycle. Self-contained says the
+/// The activation method tells the Update Agent what has to happen after
+/// an update for the new image to run: DSP0267's options range from
+/// nothing up to a host reboot or a power cycle. Self-contained says the
 /// ActivateFirmware command is the whole of it: the device switches to
-/// the new image on its own, and the agent has nothing further to do.
+/// the new image on its own, and the Update Agent has nothing further to
+/// do.
 ///
 /// `comp_version` is the component's own version and `image_set_version`
 /// is the set it belongs to. Both are `&str`, so passing them the other

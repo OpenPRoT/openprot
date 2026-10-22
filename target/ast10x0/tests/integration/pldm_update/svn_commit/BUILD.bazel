@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # The update scenario followed by its anti-rollback commit: once the
-# device is idle again, the agent sends UpdateSecurityRevision.
+# device is idle again, the Update Agent sends UpdateSecurityRevision.
 #
 # Installing an image and committing its security revision are two
 # decisions. DSP0267 takes the second only in IDLE, so it lands after the

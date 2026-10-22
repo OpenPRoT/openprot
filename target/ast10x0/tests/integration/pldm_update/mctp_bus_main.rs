@@ -9,7 +9,7 @@
 //! them with `services/mctp/transport-loopback`: what one server's router
 //! fragments is fed to the other's `inbound`.
 //!
-//! Only the bottom of the stack changes. The firmware device and the update
+//! Only the bottom of the stack changes. The Firmware Device and the update
 //! agent still reach their server as `IpcMctpClient` over a channel, which
 //! is the same call path they use on hardware, and EID routing,
 //! fragmentation and reassembly are the shipped code.
@@ -40,10 +40,10 @@ use userspace::{entry, syscall};
 
 use app_mctp_bus::handle;
 
-/// The firmware device's endpoint id.
+/// The endpoint id the Firmware Device answers on.
 const EID_FD: u8 = 8;
 
-/// The update agent's endpoint id.
+/// The endpoint id the Update Agent uses.
 const EID_UA: u8 = 42;
 
 /// Outstanding requests each server tracks.

@@ -121,7 +121,7 @@ const EXPECT_RESTORE_CALLS: u8 = if cfg!(recovery_exhausted) {
 ///
 /// The variant scenario starts the session at `TrialPending` and runs the
 /// same boot. What it adds is the claim that bringing the chain up confirms
-/// the session, so the update agent can advance the floor afterwards.
+/// the session, so the Update Agent can advance the SVN floor afterwards.
 #[cfg(not(self_trial))]
 const EXPECT_SELF_TRIAL: bool = false;
 #[cfg(self_trial)]
@@ -1047,7 +1047,7 @@ fn run() -> Result<(), ()> {
             }
             // The chain is up. In a self-trial build that is the verdict on
             // the trial, and the session has to read `Committed`: without it
-            // the update agent's UpdateSecurityRevision has nothing to
+            // the UpdateSecurityRevision the Update Agent sends has nothing to
             // advance the floor for.
             if EXPECT_SELF_TRIAL
                 && SelfSession::read() != (SelfUpdateState::Committed { svn: TRIAL_SVN })

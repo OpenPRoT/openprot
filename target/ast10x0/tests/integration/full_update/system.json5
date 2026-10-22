@@ -5,8 +5,8 @@
 //
 // Five processes:
 //
-//   pldm_ua:       the update agent, the BMC's half of the update
-//   pldm_fd:       the DSP0267 firmware device, staging into CS1 flash,
+//   pldm_ua:       the Update Agent, the BMC's half of the update
+//   pldm_fd:       the DSP0267 Firmware Device, staging into CS1 flash,
 //                  and the IPC server the RoT commands it through
 //   mctp_bus:      an MCTP server per endpoint, joined by the loopback
 //   orchestrator:  the RoT, which supervises the device and decides
@@ -57,12 +57,12 @@
                             type: "wait_group",
                         },
                         {
-                            // The firmware device's side of the wire.
+                            // The side of the wire the Firmware Device holds.
                             name: "fd",
                             type: "channel_handler",
                         },
                         {
-                            // The update agent's side.
+                            // The side the Update Agent uses.
                             name: "ua",
                             type: "channel_handler",
                         },
@@ -153,7 +153,7 @@
                             type: "wait_group",
                         },
                         {
-                            // Into the firmware device: QueryStatus and the
+                            // Into the Firmware Device: QueryStatus and the
                             // Perform and Reject commands.
                             name: "fd",
                             type: "channel_initiator",

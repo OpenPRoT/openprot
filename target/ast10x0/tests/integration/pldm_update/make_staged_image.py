@@ -1,7 +1,7 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
-"""Writes the image the update agent hands over, for the host to compare
+"""Writes the image the Update Agent hands over, for the host to compare
 the device's flash against after a run.
 
 This repeats `expected_byte` in the three Rust apps, and the repetition is

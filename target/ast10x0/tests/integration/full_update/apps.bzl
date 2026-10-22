@@ -4,9 +4,9 @@
 """The apps in the full update scenario.
 
 Four of the five are the other scenarios' sources, built from here by
-label: the agent, the firmware device and the bus from pldm_update, the
-managed device from mock_downstream_device. Only the RoT is new, because it is the only
-one that has to do both jobs at once.
+label: the Update Agent, the Firmware Device and the bus from
+pldm_update, the managed device from mock_downstream_device. Only the
+RoT is new, because it is the only one that has to do both jobs at once.
 """
 
 load("//target/ast10x0/tests/integration/mock_downstream_device:apps.bzl", mock_downstream_device_apps = "APPS")

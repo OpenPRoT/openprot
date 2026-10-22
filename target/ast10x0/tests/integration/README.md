@@ -35,14 +35,14 @@ like the proof.
 | `mock_downstream_device/recovery` | the RoT refuses the device's image | the restore runs and the re-walk boots the device |
 | `mock_downstream_device/recovery_exhausted` | the restored image is refused too | the platform reports the device and locks |
 | `pldm_update` | a clean update | the update commits |
-| `pldm_update/retry_chunk` | the agent answers one data request with a retry | the device asks for that window again and the update completes |
-| `pldm_update/corrupt_image` | one byte of the image is flipped | the device catches it |
+| `pldm_update/retry_chunk` | the Update Agent answers one data request with a retry | the Firmware Device requests that window again and the update completes |
+| `pldm_update/corrupt_image` | one byte of the image is flipped | the Firmware Device catches it |
 | `pldm_update/refused_update` | the RoT refuses the request | nothing is activated |
-| `pldm_update/transfer_error` | the agent errors on one data request | the device aborts the transfer |
-| `pldm_update/cancel_mid_transfer` | the agent withdraws two chunks in | the machine drops the update and the device is acknowledged |
+| `pldm_update/transfer_error` | the Update Agent errors on one data request | the Firmware Device aborts the transfer |
+| `pldm_update/cancel_mid_transfer` | the Update Agent withdraws two chunks in | the state machine drops the update and acknowledges the Firmware Device |
 | `pldm_update/offer_before_supervising` | the offer arrives before the RoT supervises anything | the RoT refuses it as busy |
-| `pldm_update/svn_commit` | the agent commits the security revision afterwards | the RoT grants it and the device commits |
-| `pldm_update/svn_commit_refused` | the agent asks to commit the same revision twice | the RoT refuses the second request and the device reports it not permitted |
+| `pldm_update/svn_commit` | the Update Agent commits the security revision afterwards | the RoT grants it and the Firmware Device commits |
+| `pldm_update/svn_commit_refused` | the Update Agent requests to commit the same revision twice | the RoT refuses the second request and the Firmware Device reports it not permitted |
 | `full_update` | boot, update, reboot in one image | the device boots the image it was given |
 | `full_update/device_hangs` | the device never comes up | no update is ever offered |
 | `full_update/device_stays_down` | the device takes the update, then stays down | the RoT notices it never came back |
@@ -159,8 +159,9 @@ trial image running. Nothing judges that session before the walk; what
 judges it is the walk reaching `Ready`, which is where the state machine
 confirms it. The run passes when the session reads `Committed` by the
 time the device has booted, because a session that is still
-`TrialPending` gives the update agent's UpdateSecurityRevision nothing to
-advance the anti-rollback floor for.
+`TrialPending` means that when the Update Agent sends
+UpdateSecurityRevision, there is nothing to advance the anti-rollback
+floor for.
 
 The session is two atomics rather than storage. This scenario never
 resets the eRoT, so nothing has to survive a reset; what it exercises is
@@ -169,9 +170,9 @@ the path from the session, through `Event::SelfTrialBooted` and
 
 ## The full update scenario
 
-`full_update/` is the other two joined: five apps, one image, the agent and
-the firmware device and the bus from `pldm_update`, the managed device from
-`mock_downstream_device`, and a RoT that does both jobs.
+`full_update/` is the other two joined: five apps, one image, the Update
+Agent and the Firmware Device and the bus from `pldm_update`, the managed
+device from `mock_downstream_device`, and a RoT that does both jobs.
 
 ```mermaid
 flowchart LR
@@ -201,7 +202,7 @@ then does the floor commit.
     [INF] ORCH: the device reported ready, second boot
     [INF] ORCH: update committed after the device booted it
 
-The RoT declares this run rather than the firmware device, because the
+The RoT declares this run rather than the Firmware Device, because the
 device's own flow ends at activation and tells it nothing about the reset
 that has to follow. The first version had the device declaring it, and the
 run passed while the device never rebooted.
@@ -228,13 +229,13 @@ like the proof.
 
 ## The update scenario
 
-`pldm_update/` runs a full DSP0267 update, update agent to firmware
-device, with the RoT deciding whether it may go on.
+`pldm_update/` runs a full DSP0267 update, Update Agent to Firmware
+Device, with the RoT deciding whether it may go on.
 
 ```mermaid
 flowchart LR
     subgraph image["system image"]
-        ua["pldm_ua<br/>update agent"]
+        ua["pldm_ua<br/>Update Agent"]
         bus["mctp_bus<br/>one MCTP server per endpoint<br/>joined by transport-loopback"]
         fd["pldm_fd<br/>FirmwareDevice"]
         orch["orchestrator<br/>Orchestrator + PlatformDriver"]
@@ -250,7 +251,7 @@ PLDM reaches the wire the way it does on hardware: each endpoint is an
 `transport-loopback` instead of `transport-i2c`, so EID routing,
 fragmentation and reassembly are the shipped code.
 
-The firmware device decides nothing. It reports what the update agent
+The Firmware Device decides nothing. It reports what the Update Agent
 asked for and what came of it, and the orchestrator says whether the
 update may proceed:
 
@@ -280,14 +281,14 @@ what lets the orchestrator be in `Updating` before the verdict arrives.
 Verify and activation are reported from the `FdOps` calls that settle
 them, because only those know the outcome.
 
-The orchestrator is its own process rather than a core inside the firmware
-device. The design has the RoT grant or refuse and the device obey, and
+The orchestrator is its own process rather than a core inside the Firmware
+Device. The design has the RoT grant or refuse and the device obey, and
 that means nothing when both are the same thread with the same state.
 
 Two verdicts land on the same candidate. The device reads its staged image
-back out of flash and checks it against the pattern the agent sent; the
-RoT's own verifier reads the staging region and does the same. The update
-goes through only when both say yes.
+back out of flash and checks it against the pattern the Update Agent sent;
+the RoT's own verifier reads the staging region and does the same. The
+update goes through only when both say yes.
 
 The device stages into real SPI NOR on chip select 1, at `0x10_0000`, not
 into a RAM buffer. Both chip selects are attached, because with both
@@ -307,9 +308,9 @@ talk its way past. Flipping a byte of the expected file gives:
 
 with the test failing anyway, which is the point.
 
-`corrupt_image` flips one byte of what the agent sends. The device catches
-it at download, and the scenario passes on that rather than on the run
-merely failing:
+`corrupt_image` flips one byte of what the Update Agent sends. The device
+catches it at download, and the scenario passes on that rather than on
+the run merely failing:
 
     [ERR] FD: byte 700 is wrong
     [INF] FD: the corrupt image was caught and the update refused
@@ -337,10 +338,10 @@ The short version:
 Signature checking is stubbed until the crypto service exists, so all the
 verifiers are content checks rather than signature checks. The driver's
 `Updatable` stages nothing, because in DSP0267 the device pulls its own
-chunks from the agent, so `activate` is the only side of that seam with a
-real caller. And a refusal is recorded rather than enforced: the device
-finishes the PLDM flow and fails the run at the end instead of answering
-the agent with an error.
+chunks from the Update Agent, so `activate` is the only side of that seam
+with a real caller. And a refusal is recorded rather than enforced: the
+device finishes the PLDM flow and fails the run at the end instead of
+answering the Update Agent with an error.
 
 ## Memory layout
 

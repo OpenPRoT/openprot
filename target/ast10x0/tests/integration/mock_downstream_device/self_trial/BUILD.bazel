@@ -7,8 +7,8 @@
 # Same sources, same system config, one flag. The session starts at
 # TrialPending, as the boot after an activation would find it, and the run
 # passes when the chain coming up has moved it to Committed. Without that
-# the update agent's UpdateSecurityRevision has no confirmed session to
-# advance the anti-rollback floor for.
+# the UpdateSecurityRevision the Update Agent sends has no confirmed
+# session to advance the anti-rollback floor for.
 
 load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
 load("//target/ast10x0/tests/integration/mock_downstream_device:apps.bzl", "APPS", "SYSTEM_CONFIG", "TARGET_SRC")
