@@ -97,8 +97,8 @@ abort would do is untested.
   and no board wires a flash-backed `Updatable` for that slot.
 - `Ready` to `Recovering`. `full_update/recovery_preempts` reports
   corruption while the component is `Updating`; nothing reports it on a
-  component sitting `Ready`, so that arc is untaken and an `Isolable`
-  component is never gated.
+  component sitting `Ready`, so `Ready` to `Recovering` is never taken
+  and an `Isolable` component is never gated.
 - A recovery loop that never ends. `device_hangs` wires no recovery
   source, so it locks on the first attempt. With a source behind it, a
   device that verifies but never boots recovers forever:
@@ -174,22 +174,24 @@ overwrites them.
 
 ## What the preemption scenario does not say
 
-`full_update/recovery_preempts` takes the machine from `Updating` to
-`Recovering`: the corruption lands while the device is transferring, the
-candidate is dropped, and the requester is told it was superseded. What
+`full_update/recovery_preempts` takes the state machine from `Updating`
+to `Recovering`: the corruption lands while the device is transferring,
+and the driver drops the candidate and reports the update superseded to
+the requester. What
 the run cannot show is recovery succeeding afterwards, because the board
 wires no recovery source and the episode ends in lockdown. A scenario with
 both a source and an update in flight would say more.
 
-The event is the scenario app's own. `orchestrator_main.rs` dispatches
-`CorruptionDetected` where the device is transferring; no platform code
-raises it. The driver's verdicts come from the chain walk, and the walk
-does not run while the machine is in `Updating`, so what the transition
-waits on is a runtime monitor, not another scenario.
+The scenario app raises the event itself. `orchestrator_main.rs`
+dispatches `CorruptionDetected` where the device is transferring; no
+platform code raises it. The driver makes its verdicts from the chain
+walk, and the walk does not run while the state machine is in
+`Updating`, so what the transition waits on is a runtime monitor, not
+another scenario.
 
 The corruption lands on the component under update. `Updating` preempts on
 a `Required` corruption of any component, including one the update is not
-touching, and that arc is untaken.
+touching, and that transition is untaken.
 
 ## Events no scenario can reach
 
