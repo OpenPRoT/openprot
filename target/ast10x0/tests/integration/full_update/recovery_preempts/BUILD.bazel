@@ -4,11 +4,11 @@
 # Recovery preempting an update.
 #
 # Same sources, same system config, one flag. The RoT learns the running
-# image is corrupt while the device is still transferring, so the machine
-# leaves Updating for Recovering. It passes when the staged candidate is
-# dropped, the update requester is told it was superseded rather than
-# delayed, nothing is activated, and the platform locks because this board
-# wires no recovery source.
+# image is corrupt while the device is still transferring, so the state
+# machine leaves Updating for Recovering. The scenario passes when the
+# driver drops the staged candidate and reports the update superseded
+# rather than delayed, activates nothing, and the platform locks because
+# this board wires no recovery source.
 
 load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
 load("//target/ast10x0/tests/integration/full_update:apps.bzl", "APPS", "FLASH", "SYSTEM_CONFIG", "TARGET_DEPS", "TARGET_SRC")

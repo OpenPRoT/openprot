@@ -129,10 +129,10 @@ static ROT_AUTHENTICATED: AtomicBool = AtomicBool::new(false);
 /// Set when the driver calls `Updatable::activate`.
 static ACTIVATED: AtomicBool = AtomicBool::new(false);
 
-/// Times the staged candidate was thrown away, and times the update
-/// requester was told its update had been superseded. Statics because the
-/// updatable lives inside the board and the sink beside it, while the run
-/// that judges them is outside both.
+/// Times `abandon` ran on the staged candidate, and times
+/// `ReportUpdateAborted` reached the sink. Statics because the updatable
+/// lives inside the board and the sink beside it, while the run that
+/// judges them is outside both.
 static ABANDONED: AtomicU32 = AtomicU32::new(0);
 static ABORTED: AtomicU32 = AtomicU32::new(0);
 
@@ -280,7 +280,9 @@ fn verdict(outcome: Outcome) -> bool {
                 );
                 return false;
             }
-            pw_log::info!("ORCH: recovery preempted the update and the candidate was dropped");
+            pw_log::info!(
+                "ORCH: recovery preempted the update and the driver dropped the candidate"
+            );
             true
         }
     }
@@ -365,7 +367,7 @@ impl Updatable for FdUpdatable {
 
     fn abandon(&mut self) {
         ABANDONED.fetch_add(1, Ordering::Relaxed);
-        pw_log::info!("ORCH: the staged candidate was discarded");
+        pw_log::info!("ORCH: the driver dropped the staged candidate");
     }
 
     fn activate(&mut self) -> Result<(), UpdateError> {
@@ -624,15 +626,15 @@ fn run(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> Outcome {
 /// Checks what the state machine did with the update that recovery
 /// preempted.
 ///
-/// The checks only mean something together. `abandon` ran once: a run that
-/// staged nothing never calls it, and a retry loop calls it repeatedly.
-/// `ReportUpdateAborted` reached the sink, which says the update was
-/// superseded, where `ReportUpdateDeferred` would say it was refused for
-/// later. And `activate` never ran, which is also true of a run that
-/// offered no update at all.
+/// `abandon` ran once: a run that staged nothing never calls it, and a
+/// retry loop calls it repeatedly. `ReportUpdateAborted` reached the sink,
+/// which says the update was superseded, where `ReportUpdateDeferred`
+/// would say it was refused for later. And `activate` never ran, which is
+/// also true of a run that offered no update at all.
 ///
-/// The board wires no recovery source, so the episode runs out at the
-/// first attempt and the platform locks, which is where the run ends.
+/// The board wires no recovery source, so the episode exhausts its sources
+/// on the first attempt and the platform locks, which is where the run
+/// ends.
 fn preemption_outcome(core: &Core) -> Outcome {
     let abandoned = ABANDONED.load(Ordering::Relaxed);
     let aborted = ABORTED.load(Ordering::Relaxed);
@@ -645,7 +647,7 @@ fn preemption_outcome(core: &Core) -> Outcome {
         return Outcome::UpdateFailed;
     }
     if ACTIVATED.load(Ordering::Relaxed) {
-        pw_log::error!("ORCH: the preempted update was activated anyway");
+        pw_log::error!("ORCH: the driver activated the preempted update anyway");
         return Outcome::UpdateFailed;
     }
     if core.state() != State::Locked {
@@ -721,9 +723,10 @@ fn drive_update(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
                 if !offer(core, driver, fd, total) {
                     return false;
                 }
-                // The device is transferring now. This is where the
-                // corruption lands in the scenario that arranges one: the
-                // machine is in `Updating` and the candidate is mid-flight.
+                // The device is transferring now. The corruption lands
+                // here in the scenario that arranges one: the state
+                // machine is in `Updating` and the candidate is
+                // mid-transfer.
                 if cfg!(recovery_preempts) {
                     pw_log::info!("ORCH: the image the device is running is corrupt, mid-update");
                     core.dispatch(driver, Event::CorruptionDetected(TARGET));
