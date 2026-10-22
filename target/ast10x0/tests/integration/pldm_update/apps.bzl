@@ -25,7 +25,7 @@ APPS = [
         "name": "mctp_bus",
         "src": HERE + "mctp_bus_main.rs",
     },
-    # The RoT the firmware device answers to.
+    # The RoT the Firmware Device answers to.
     {
         "deps": [
             "//services/orchestrator/adapters/walk:orchestrator_checkpoint_walk",
@@ -46,7 +46,7 @@ APPS = [
         "name": "orchestrator",
         "src": HERE + "orchestrator_main.rs",
     },
-    # The DSP0267 firmware device, staging into flash on CS1.
+    # The DSP0267 Firmware Device, staging into flash on CS1.
     {
         "deps": [
             "//hal/blocking/flash",
@@ -69,7 +69,7 @@ APPS = [
         "regions": True,
         "src": HERE + "pldm_fd_main.rs",
     },
-    # The update agent, the BMC's half of the update.
+    # The Update Agent, the BMC's half of the update.
     {
         "deps": [
             "//services/mctp/client-ipc:mctp_client_ipc",
@@ -90,7 +90,7 @@ APPS = [
 TARGET_DEPS = ["//target/ast10x0/peripherals"]
 
 # Two chip selects, because with both present the FMC aperture splits and
-# CS1 lands at 0x88000000, which is the address the firmware device maps.
+# CS1 lands at 0x88000000, which is the address the Firmware Device maps.
 # w25q512jv is the 64 MiB part; the default 1 MiB model refuses a backing
 # file this size.
 FLASH = {

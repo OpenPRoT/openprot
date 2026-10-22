@@ -3,7 +3,7 @@
 
 //! The eRoT's own update: settling the last one at boot, confirming a
 //! trial the chain walk judged, and advancing the eRoT's own floor once
-//! the update agent asks.
+//! the Update Agent requests it.
 //!
 //! The activation that starts a trial is in
 //! [`update`](super::update), with the rest of the update pump.
@@ -41,7 +41,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// Confirms the eRoT's own update session: the trial image booted and
     /// the chain came up behind it.
     ///
-    /// Moves the session to `Committed`. The update agent sends
+    /// Moves the session to `Committed`. The Update Agent sends
     /// UpdateSecurityRevision when it sends it; what the confirm decides is
     /// the answer, since `commit_self_svn_floor` refuses a session that does
     /// not read `Committed`. The floor does not move here, and nothing reads
@@ -96,8 +96,8 @@ pub enum SelfUpdateSettlement {
         svn: Svn,
     },
     /// The trial was confirmed and the floor is still below `svn`. The
-    /// advance is the update agent's to ask for with UpdateSecurityRevision,
-    /// so this boot leaves it alone. No new self-update may start: recording
+    /// Update Agent requests the advance with UpdateSecurityRevision, so
+    /// this boot leaves it alone. No new self-update may start: recording
     /// one would overwrite the session.
     AwaitingFloorAdvance {
         /// The SVN the session recorded, and the floor's target.
@@ -151,8 +151,8 @@ impl SelfUpdateSettlement {
 ///   which also clears the pending mark, so the confirmed image runs after a
 ///   reset. The eRoT must not keep running an image nothing vouched for.
 /// - The session is confirmed and the floor is still below its SVN: the floor
-///   advance is what is left, and the update agent asks for it, so this boot
-///   must not do it.
+///   advance is what is left, and the Update Agent requests it, so this
+///   boot must not do it.
 /// - The session is confirmed and the floor already reads that SVN or higher:
 ///   the advance landed before a crash, so the session is closed here.
 ///
@@ -256,11 +256,11 @@ impl<S: core::error::Error + 'static, F: core::error::Error + 'static> core::err
 /// Advances the eRoT's own anti-rollback floor to the SVN of its confirmed
 /// self-update, then closes the session.
 ///
-/// Call this when the update agent sends UpdateSecurityRevision, which the FD
+/// Call this when the Update Agent sends UpdateSecurityRevision, which the FD
 /// reports as `SvnCommitPending`. The caller answers the agent with what comes
 /// back: done on `Ok`, refused on `Err`. Activating an image never moves the
-/// floor. It moves only here, when the update agent asks after a trial boot
-/// was confirmed.
+/// SVN floor. It moves only here, when the Update Agent sends
+/// UpdateSecurityRevision after a trial boot was confirmed.
 ///
 /// Refuses unless the session says confirmed and is still open. With no
 /// confirmed session, nothing has run the image this SVN belongs to, so the
@@ -271,12 +271,12 @@ impl<S: core::error::Error + 'static, F: core::error::Error + 'static> core::err
 /// the same value again, which changes nothing, and closes the session. Once
 /// the session is closed, any further one gets
 /// [`CommitFloorError::NotConfirmed`]: an answer lost on the way back means
-/// the agent's retry is refused even though the floor is already at the SVN
-/// it asked for.
+/// a retry from the Update Agent fails even though the SVN floor
+/// already holds the SVN it requested.
 ///
 /// If the floor cannot be written, the session stays open, so the next
 /// UpdateSecurityRevision runs the whole thing again and the advance is not
-/// lost. The update agent is the only thing that retries; nothing here does.
+/// lost. The Update Agent is the only thing that retries; nothing here does.
 ///
 /// Takes the session and the floor as arguments, as [`settle_self_update`]
 /// does. Neither is wired into the board yet.

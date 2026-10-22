@@ -7,9 +7,9 @@
 # is what says the supervision half is live before the update half, rather
 # than the RoT accepting an update for a device that is not there.
 #
-# The RoT ends this run, on the failed first walk, before the agent gets
-# as far as offering anything. So the firmware device never waits on a RoT
-# that is not listening, and the run does not sit out its decision
+# The RoT ends this run, on the failed first walk, before the Update Agent
+# gets as far as offering anything. So the Firmware Device never waits on
+# a RoT that is not listening, and the run does not sit out its decision
 # timeout: it finishes in about a second.
 
 load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")

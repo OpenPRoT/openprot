@@ -3,7 +3,7 @@
 
 //! Kernel target for the PLDM update QEMU test.
 //!
-//! The firmware device reports the result with
+//! The Firmware Device reports the result with
 //! `syscall::debug_shutdown(Ok(()) | Err(..))`, which lands here and writes
 //! the UART sentinel qemu_runner.py greps for.
 
@@ -22,7 +22,7 @@ impl TargetInterface for Target {
     const NAME: &'static str = "AST10x0 PLDM update test";
 
     fn main() -> ! {
-        // The firmware device stages into SPI NOR on CS1, so the pins have
+        // The Firmware Device stages into SPI NOR on CS1, so the pins have
         // to be muxed before any process runs. Doing it here keeps SCU
         // access out of userspace, where two tasks could race the shared
         // pinctrl registers.

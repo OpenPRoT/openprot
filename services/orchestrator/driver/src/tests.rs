@@ -2852,8 +2852,8 @@ fn settle_reverts_a_trial_that_fell_back() {
 }
 
 // Confirmed, floor still below the session's SVN. The advance is the
-// update agent's to ask for, so this boot keeps the session and moves
-// nothing.
+// one the Update Agent requests, so this boot keeps the session and
+// moves nothing.
 #[test]
 fn settle_keeps_a_confirmed_session_the_floor_has_not_taken() {
     let committed = SelfUpdateState::Committed { svn: Svn(7) };
@@ -2965,7 +2965,7 @@ fn commit_advances_the_floor_and_closes_the_session() {
 }
 
 // There is no session, so no image has run at any SVN. The floor stays where
-// it was and the caller tells the update agent no.
+// it was and the caller tells the Update Agent no.
 #[test]
 fn commit_without_a_session_is_refused() {
     let mut session = MockSelfUpdate::idle();
@@ -2996,9 +2996,9 @@ fn commit_during_a_trial_is_refused() {
 }
 
 // The eRoT crashed after the floor moved to 7 but before the session closed.
-// The update agent asks again: advancing to 7 a second time changes nothing,
-// and this run closes the session. A third request has no session left to
-// commit, so it is refused.
+// The Update Agent requests again: advancing to 7 a second time changes
+// nothing, and this run closes the session. A third request has no
+// session left to commit, so it is refused.
 #[test]
 fn commit_repeated_after_a_crash_finishes_the_close() {
     let mut session = MockSelfUpdate::with_session(
@@ -3105,7 +3105,7 @@ fn a_commit_runs_a_second_staging_pass() {
     activated(&mut driver, &mut orch);
     let staged_before = driver.board().components[0].updatable.stagings;
 
-    // The boot is confirmed and the agent asks for the SVN, which
+    // The boot is confirmed and the Update Agent requests the SVN, which
     // commits the floor and is where the re-sync comes from.
     orch.dispatch(&mut driver, Event::BootConfirmed(C0));
     orch.dispatch(&mut driver, Event::SvnCommitRequest(C0));
@@ -3323,10 +3323,10 @@ fn a_commit_without_an_activation_queues_nothing() {
     assert_eq!(driver.pending_update(), None);
 }
 
-// The boot proves the image runs; it does not move the floor. Nothing
-// reaches the board until the update agent asks with
-// UpdateSecurityRevision, because the eRoT's floor for a device may not
-// run ahead of the device's own.
+// The boot proves the image runs; it does not move the SVN floor.
+// Nothing reaches the board until the Update Agent sends
+// UpdateSecurityRevision, because the eRoT's SVN floor for a device may
+// not run ahead of the device's own.
 #[test]
 fn a_confirmed_boot_alone_leaves_the_floor_where_it_is() {
     let mut orch = orchestrator();
@@ -3529,8 +3529,9 @@ fn a_discarded_update_cancels_the_pending_resync() {
     // Staging passes so far: update one's. A re-sync would add another.
     let staged_before = driver.board().components[0].updatable.stagings;
 
-    // Update one's boot is confirmed and the agent asks. With no second
-    // update in between, this is what would queue the re-sync.
+    // Update one's boot is confirmed and the Update Agent requests the
+    // SVN. With no second update in between, this is what would queue
+    // the re-sync.
     orch.dispatch(&mut driver, Event::BootConfirmed(C0));
     orch.dispatch(&mut driver, Event::SvnCommitRequest(C0));
 
@@ -3600,8 +3601,8 @@ fn self_floor(driver: &PlatformDriver<MockBoard, 1>) -> Svn {
 }
 
 // The trial image booted and the chain came up behind it, so the machine
-// confirms the session on its way into Ready. The floor stays where it is:
-// advancing it is the update agent's to ask for.
+// confirms the session on its way into Ready. The SVN floor stays where
+// it is: the Update Agent requests the advance.
 #[test]
 fn a_trial_that_reaches_ready_is_confirmed() {
     let mut orch = orchestrator();
@@ -3708,8 +3709,8 @@ fn a_board_with_no_self_update_is_already_settled() {
 }
 
 // A confirmed session the floor has not taken yet. The advance is the
-// update agent's to ask for, and no trial is running, so the settlement
-// names no event.
+// one the Update Agent requests, and no trial is running, so the
+// settlement names no event.
 #[test]
 fn settling_an_awaited_floor_advance_names_no_event() {
     let mut driver = self_trial_driver(trial_session(SelfUpdateState::Committed { svn: Svn(7) }));

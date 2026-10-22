@@ -3,7 +3,7 @@
 The orchestrator's side of the PLDM update gate. `#![no_std]`,
 host-buildable, depends on `pldm_api` and the orchestrator's config schema.
 
-The firmware device parks at each phase and raises a nudge. The orchestrator
+The Firmware Device parks at each phase and raises a nudge. The orchestrator
 reads `FdStatus` and answers with one operation. This crate turns a status
 into that answer.
 

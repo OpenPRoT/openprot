@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! The PLDM firmware device, running the real DSP0267 state machine.
+//! The PLDM Firmware Device, running the real DSP0267 state machine.
 //!
 //! The same `FirmwareDevice` the production image ships, reached over the
 //! same `IpcMctpClient` call path. What differs from the hardware card is one
@@ -60,14 +60,14 @@ use app_pldm_fd_regions::{take_mmaps, FmcCs0Window, FmcCs1Window, FmcRegs};
 /// This device's endpoint id, matching the bus's firmware-device side.
 const FD_EID: u8 = 8;
 
-/// The update agent's endpoint id, matching the bus's other side.
+/// The endpoint id the Update Agent uses, matching the bus's other side.
 const UA_EID: u8 = 42;
 
-/// Bytes in the image the update agent offers. Small enough to stage in
+/// Bytes in the image the Update Agent offers. Small enough to stage in
 /// this app's RAM and still take several transfers.
 const IMAGE_SIZE: usize = 1024;
 
-/// Identifies this device to the update agent. Arbitrary, but it has to
+/// Identifies this device to the Update Agent. Arbitrary, but it has to
 /// match what the agent looks for.
 const DEVICE_UUID: [u8; 16] = [
     0x4f, 0x50, 0x52, 0x4f, 0x54, 0x2d, 0x51, 0x45, 0x4d, 0x55, 0x2d, 0x4d, 0x4f, 0x43, 0x4b, 0x01,
@@ -79,12 +79,13 @@ const COMP_IDENTIFIER: u16 = 0x0001;
 const ACTIVE_COMP_VERSION: &str = "v0.9";
 const ACTIVE_IMAGE_SET_VERSION: &str = "openprot-qemu-v0.9";
 
-/// How long the device waits for the agent to say anything before giving
-/// up. Generous: a stuck test should fail on the harness timeout with a
-/// log, not here with a bare error.
+/// How long the device waits for the Update Agent to say anything before
+/// giving up. Generous: a stuck test should fail on the harness timeout
+/// with a log, not here with a bare error.
 const IDLE_TIMEOUT_MILLIS: u32 = 30_000;
 
-/// Whether the agent commits the security revision after the update.
+/// Whether the Update Agent commits the security revision after the
+/// update.
 const AGENT_COMMITS_SVN: bool = cfg!(svn_commit) || cfg!(svn_commit_refused);
 
 /// How long a request the device itself makes may take to be answered.
@@ -126,11 +127,11 @@ enum Decision {
 
 /// Where the device is in the update, as `QueryStatus` reports it.
 ///
-/// The first four are points DSP0267 already lets the firmware device take
+/// The first four are points DSP0267 already lets the Firmware Device take
 /// time at, which is why the device can sit at one serving its channel
 /// instead of running the update. `Failed` is not a wait: the device has
-/// already told the agent the phase failed, and raises the signal once so
-/// the RoT hears the same thing.
+/// already told the Update Agent the phase failed, and raises the signal
+/// once so the RoT hears the same thing.
 ///
 /// There is no step for "verify succeeded". Asking for apply is that: the
 /// device only reaches `Apply` after reading the image back and finding it
@@ -144,10 +145,10 @@ enum Awaiting {
     Apply,
     Activation,
     Failed,
-    /// The agent withdrew. Waiting for the RoT to acknowledge.
+    /// The Update Agent withdrew. Waiting for the RoT to acknowledge.
     Cancelled,
-    /// The agent asked for the running image's security revision to be
-    /// committed, and the RoT has not answered yet.
+    /// The Update Agent requested that the running image's security
+    /// revision be committed, and the RoT has not answered yet.
     SvnCommit,
 }
 
@@ -159,8 +160,8 @@ impl Awaiting {
             Awaiting::Offer => FdStatus::OfferPending {
                 target: ORCH_TARGET,
                 total,
-                // The device pulls its own chunks from the agent, which
-                // is what DSP0267 has a firmware device do.
+                // The device pulls its own chunks from the Update Agent,
+                // which is what DSP0267 has a Firmware Device do.
                 mode: TransferMode::InTransport,
                 svn_delayed: false,
             },
@@ -182,9 +183,9 @@ impl Awaiting {
     }
 }
 
-/// The byte the agent is expected to send at `offset`. Checking the
-/// content, not just the length, is what makes a silent truncation or a
-/// misordered window fail rather than pass.
+/// The byte the Update Agent is expected to send at `offset`. Checking
+/// the content, not just the length, is what makes a silent truncation
+/// or a misordered window fail rather than pass.
 fn expected_byte(offset: usize) -> u8 {
     (offset % 251) as u8
 }
@@ -652,7 +653,8 @@ impl FdOps for QemuFdOps {
         _self_contained_activation: u8,
         estimated_time: &mut u16,
     ) -> Result<u8, FdOpsError> {
-        // Nothing is deferred, so the agent is told to expect no wait.
+        // Nothing is deferred, so the Update Agent is told to expect no
+        // wait.
         *estimated_time = 0;
         if self.await_decision(Awaiting::Activation) == Decision::Reject {
             pw_log::error!("FD: the RoT refused the activation");
@@ -810,8 +812,8 @@ fn entry() {
     // `run_terminus` returns when the device leaves update mode, which the
     // activation does. UpdateSecurityRevision is an idle-mode command, so
     // the device calls `run_terminus` a second time to serve it. That call
-    // takes however many UpdateSecurityRevision requests the agent sends,
-    // and ends on the idle timeout.
+    // takes however many UpdateSecurityRevision requests the Update Agent
+    // sends, and ends on the idle timeout.
     if AGENT_COMMITS_SVN {
         pw_log::info!("FD: idle, waiting for the agent to commit the revision");
         let _ = fd.run_terminus(
@@ -872,8 +874,8 @@ fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
     false
 }
 
-/// One byte of the agent's image was flipped, so the device must have
-/// caught it and the update must not have gone through.
+/// One byte of the image the Update Agent sent was flipped, so the
+/// device must have caught it and the update must not have gone through.
 #[cfg(corrupt_image)]
 fn verdict(fd_ops: &QemuFdOps, completed: bool) -> bool {
     if completed {

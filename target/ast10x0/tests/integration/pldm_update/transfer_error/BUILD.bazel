@@ -1,7 +1,7 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
-# The update scenario's third negative: the agent answers one
+# The update scenario's third negative: the Update Agent answers one
 # RequestFirmwareData with an error completion code instead of data.
 #
 # This is a communication failure rather than a bad image: the bytes the

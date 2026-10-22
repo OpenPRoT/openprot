@@ -1,7 +1,8 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
-# The update scenario's negative case: the agent sends one wrong byte.
+# The update scenario's negative case: the Update Agent sends one wrong
+# byte.
 #
 # It passes when the device catches that byte and the update does not go
 # through. Failing for any other reason fails the test, so a green here

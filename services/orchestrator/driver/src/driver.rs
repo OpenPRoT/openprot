@@ -379,7 +379,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     /// effect already answered `Ok` and the pump writes the floor later,
     /// where a failed write has no effect left to fail and
     /// `Report::SlotResyncFailed` is the channel that remains. The
-    /// update agent is not told: its answer goes out when
+    /// Update Agent is not told: its answer goes out when
     /// `Effect::CommitSvnFloor` is dispatched, which is before the pump
     /// runs, so it hears the commit succeeded either way.
     pub fn commit_svn_floor(&mut self, id: ComponentId) -> Result<(), DriverError> {

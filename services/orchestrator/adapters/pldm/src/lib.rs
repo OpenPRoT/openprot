@@ -30,7 +30,7 @@ use openprot_pldm_service::firmware_device::{FdEvent, FdEventSink};
 /// what the state machine would do anyway (an update already being handled
 /// defers further requests).
 pub struct UpdateRequestLatch {
-    /// The component this firmware device updates. Board wiring: `FdEvent`
+    /// The component this Firmware Device updates. Board wiring: `FdEvent`
     /// does not say which component was requested, and this FD serves one.
     target: ComponentId,
     pending: bool,

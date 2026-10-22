@@ -3,11 +3,11 @@
 
 //! PLDM IPC client: the orchestrator's side of the IPC channel.
 //!
-//! One typed method per operation the firmware device answers, each
+//! One typed method per operation the Firmware Device answers, each
 //! encoding a request and starting a round-trip. The reply is collected
 //! by [`FdIpcClient::poll`], so the orchestrator's event loop never waits
 //! on the device: the FD shares its loop with MCTP traffic from the
-//! update agent and can take as long as that traffic makes it take.
+//! Update Agent and can take as long as that traffic makes it take.
 //!
 //! One round-trip at a time, which the transport enforces and this crate
 //! relies on: the response frame carries a code and a payload but not

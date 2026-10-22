@@ -1,17 +1,17 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! The PLDM update agent: the BMC's half of the update.
+//! The PLDM Update Agent: the BMC's half of the update.
 //!
-//! Stimulus for the firmware device, not a second root of trust. It walks
+//! Stimulus for the Firmware Device, not a second root of trust. It walks
 //! the whole DSP0267 sequence: it discovers the terminus with `GetPLDMTypes`,
 //! `GetPLDMVersion` and `GetPLDMCommands`, identifies the device with
 //! `QueryDeviceIdentifiers` and `GetFirmwareParameters`, hands over an image
 //! with `RequestUpdate`, `PassComponentTable` and `UpdateComponent`, answers
-//! the requests the firmware device raises on its own while it pulls the image
+//! the requests the Firmware Device raises on its own while it pulls the image
 //! down, and finishes with `ActivateFirmware`.
 //!
-//! There is no Update Agent in the PLDM service (it is a firmware device only),
+//! There is no Update Agent in the PLDM service (it is a Firmware Device only),
 //! so the sequence below is written out by hand.
 //!
 //! Lifted from `target/ast10x0/tests/pldm/firmware_update/ua_main.rs`, which
@@ -70,14 +70,17 @@ use app_pldm_ua::handle;
 
 /// This card's EID, matching the MCTP server app underneath it.
 const UA_EID: u8 = 42;
-/// The firmware device's EID, matching the bus's other side.
+/// The EID the Firmware Device answers on, matching the other side of the
+/// bus.
 const FD_EID: u8 = 8;
 
-/// Size of the test image, in bytes. Must match the firmware device's.
+/// Size of the test image, in bytes. Must match the size the Firmware
+/// Device expects.
 const IMAGE_SIZE: u32 = 1024;
 
 /// The component the device offers, which is also the one whose security
-/// revision the agent asks to commit. Must match the firmware device's.
+/// revision the Update Agent requests to commit. Must match the identifier
+/// the Firmware Device reports.
 const COMP_IDENTIFIER: u16 = 0x0001;
 
 /// How many UpdateSecurityRevision requests this agent sends once the
@@ -91,7 +94,7 @@ const SVN_COMMIT_REQUESTS: usize = if cfg!(svn_commit_refused) {
     0
 };
 
-/// The UUID this agent expects the firmware device to report. It only updates
+/// The UUID this agent expects the Firmware Device to report. It only updates
 /// a device it recognises.
 const DEVICE_UUID: [u8; 16] = [
     0x4f, 0x50, 0x52, 0x4f, 0x54, 0x2d, 0x51, 0x45, 0x4d, 0x55, 0x2d, 0x4d, 0x4f, 0x43, 0x4b, 0x01,
@@ -107,9 +110,9 @@ const COMP_COMPARISON_STAMP: u32 = 1;
 #[cfg(corrupt_image)]
 const CORRUPT_OFFSET: usize = 700;
 
-/// The byte the agent actually sends at `offset`. The same everywhere
-/// except in the negative scenario, which flips one, so the device has
-/// something to catch.
+/// The byte the Update Agent actually sends at `offset`. The same
+/// everywhere except in the negative scenario, which flips one, so the
+/// device has something to catch.
 #[cfg(not(corrupt_image))]
 fn corrupted(_offset: usize, byte: u8) -> u8 {
     byte
@@ -149,7 +152,8 @@ fn chunk_error(chunk: u32) -> Option<u8> {
     (chunk == 2).then_some(PldmBaseCompletionCode::Error as u8)
 }
 
-/// Returns true when the agent should withdraw after this many chunks.
+/// Returns true when the Update Agent should withdraw after this many
+/// chunks.
 #[cfg(not(cancel_mid_transfer))]
 fn cancel_after(_chunk: u32) -> bool {
     false
@@ -162,8 +166,9 @@ fn cancel_after(chunk: u32) -> bool {
     chunk == 2
 }
 
-/// How many times the agent asks who is there before giving up. The device
-/// may still be claiming its endpoint id on the first try.
+/// How many times the Update Agent sends a discovery request before
+/// giving up. The device may still be claiming its endpoint id on the
+/// first try.
 const DISCOVERY_ATTEMPTS: u32 = 5;
 
 /// Number of sends of UpdateSecurityRevision messages before giving up.
@@ -171,12 +176,13 @@ const DISCOVERY_ATTEMPTS: u32 = 5;
 /// send can be dropped.
 const SECURITY_REVISION_ATTEMPTS: u32 = 3;
 
-/// Lowest firmware-update version the agent accepts: 1.3.0, BCD-encoded.
-/// The sequence below uses this version's command set.
+/// Lowest firmware-update version the Update Agent accepts: 1.3.0,
+/// BCD-encoded. The sequence below uses this version's command set.
 const MIN_FWUPDATE_VERSION: Ver32 = 0xF1F3F000;
 
 /// Firmware-update commands the sequence uses: six agent-initiated, four
-/// device-initiated. All ten must be present before the agent starts.
+/// device-initiated. All ten must be present before the Update Agent
+/// starts.
 const REQUIRED_FWUPDATE_CMDS: [u8; 10] = [
     FwUpdateCmd::QueryDeviceIdentifiers as u8,
     FwUpdateCmd::GetFirmwareParameters as u8,
@@ -190,7 +196,8 @@ const REQUIRED_FWUPDATE_CMDS: [u8; 10] = [
     FwUpdateCmd::ActivateFirmware as u8,
 ];
 
-/// How long each UA-initiated request waits for the firmware device's reply.
+/// How long each UA-initiated request waits for the Firmware Device to
+/// reply.
 const REQUEST_TIMEOUT_MILLIS: u32 = 5_000;
 /// How long the UA waits for each firmware-device-initiated request.
 const SERVE_TIMEOUT_MILLIS: u32 = 30_000;
@@ -202,7 +209,7 @@ const MAX_SERVED_REQUESTS: u32 = 64;
 
 const UA_BUF_SIZE: usize = 1024;
 
-/// The byte the test image carries at `offset`. The firmware device generates
+/// The byte the test image carries at `offset`. The Firmware Device generates
 /// the same sequence and rejects anything that does not match.
 fn expected_byte(offset: usize) -> u8 {
     (offset % 251) as u8
@@ -492,10 +499,10 @@ fn discover_terminus(
     Ok(true)
 }
 
-/// Drives the update; `Ok(true)` means the firmware device reported apply
+/// Drives the update; `Ok(true)` means the Firmware Device reported apply
 /// complete and then accepted activation, which is this card's pass condition.
 fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, PldmServiceError> {
-    // Registered before UpdateComponent is sent: the firmware device starts
+    // Registered before UpdateComponent is sent: the Firmware Device starts
     // issuing RequestFirmwareData the moment it answers that command, and the
     // MCTP stack drops inbound requests with no listener bound.
     let mut listener = transport.responder_listener(SERVE_TIMEOUT_MILLIS)?;
@@ -564,7 +571,7 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
         comp_identifier as u32
     );
 
-    // ---- RequestUpdate: move the firmware device out of Idle ----
+    // ---- RequestUpdate: move the Firmware Device out of Idle ----
     instance_id += 1;
     let req_update = RequestUpdateRequest::new(
         instance_id,
@@ -595,7 +602,7 @@ fn run_update(transport: &MctpPldmTransport<IpcMctpClient>) -> Result<bool, Pldm
         return Ok(false);
     }
 
-    // ---- UpdateComponent: the firmware device starts pulling the image ----
+    // ---- UpdateComponent: the Firmware Device starts pulling the image ----
     instance_id += 1;
     let update_comp = UpdateComponentRequest::new(
         instance_id,
@@ -727,12 +734,13 @@ fn entry() {
     }
 
     pw_log::info!("UA: driving an update against EID {}", FD_EID as u32);
-    // The agent never ends the run. pldm_fd owns the verdict, because the
-    // agent finishing its sequence is the weaker claim: it says the
-    // messages were exchanged, not that the device holds a verified image.
-    // A scenario where the RoT refuses is one where the agent's update
-    // fails and the test still passes, so an agent that could shut the
-    // system down would race the device to the sentinel and sometimes win.
+    // The Update Agent never ends the run. pldm_fd owns the verdict,
+    // because the Update Agent finishing its sequence is the weaker
+    // claim: it says the messages were exchanged, not that the device
+    // holds a verified image. A scenario where the RoT refuses is one
+    // where the update the Update Agent offered fails and the test still
+    // passes, so an Update Agent that could shut the system down would
+    // race the device to the sentinel and sometimes win.
     match run_update(&transport) {
         Ok(true) => {
             pw_log::info!("UA: sequence complete, leaving the verdict to the device");

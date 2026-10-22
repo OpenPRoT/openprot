@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! What the orchestrator answers a parked firmware device with.
+//! What the orchestrator answers a parked Firmware Device with.
 
 use orchestrator_config::Region;
 use pldm_api::PldmOp;
@@ -24,7 +24,7 @@ pub enum Decision {
     /// lands in transport, where it already sits out of transport.
     ///
     /// The region is store-relative, like every [`Region`]. Which store,
-    /// and so which address the firmware device sees, is board wiring.
+    /// and so which address the Firmware Device sees, is board wiring.
     AcceptOffer { staging: Region },
     /// Tell the FD to verify the staged image.
     PerformVerify,

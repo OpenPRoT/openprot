@@ -63,7 +63,7 @@ use util_io::{ByteReadError, ByteSource};
 ///   verified to its archetype's discipline: a direct-flash adapter
 ///   reads written data back and re-verifies before reporting `Ready`,
 ///   a PLDM device runs its own verify step after the transfer:
-///   `FdOps::verify` in pldm-lib, reported to the update agent as
+///   `FdOps::verify` in pldm-lib, reported to the Update Agent as
 ///   `VerifyComplete`. A mismatch fails the step as
 ///   [`ReadbackMismatch`](UpdateError::ReadbackMismatch), kept apart
 ///   from [`Device`](UpdateError::Device) so a caller can retire a slot
@@ -464,7 +464,7 @@ mod tests {
     // picks, including a retransmit. Out-of-range reads are a fault, so
     // the adapter clamps the device's last request to the payload end.
     // A finished transfer does not mean `Ready`: the device runs its own
-    // verify first, one further step, the way a PLDM firmware device
+    // verify first, one further step, the way a PLDM Firmware Device
     // enters VERIFY and reports the outcome in `VerifyComplete`.
     const PLDM_CHUNK: usize = 3;
 

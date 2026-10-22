@@ -42,7 +42,7 @@
 ///
 /// Implemented for the downstream devices whose slot choice the eRoT drives,
 /// behind interposed flash or over PLDM. A device that commits on its own,
-/// a PLDM firmware device picking its own slot, has no
+/// a PLDM Firmware Device picking its own slot, has no
 /// `DeviceTrialBoot` on the eRoT side, the same split as
 /// [`SvnFloor`](crate::SvnFloor). The eRoT's own
 /// image has [`SelfUpdate`](crate::SelfUpdate), which holds the same gate

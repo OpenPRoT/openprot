@@ -14,7 +14,7 @@ pub struct Svn(pub u32);
 /// fuse counters, a monotonic counter in protected flash, a mock in tests —
 /// is the implementor's concern; its encoding (e.g. unary fuse bits) never
 /// leaks through this seam. Devices that keep their own floor (a PLDM
-/// firmware device commits internally) have no `SvnFloor` on the eRoT side.
+/// Firmware Device commits internally) have no `SvnFloor` on the eRoT side.
 ///
 /// The orchestrator advances the floor only after an activated image proved
 /// itself at runtime (`BootConfirmed`), never on activation alone, so a bad

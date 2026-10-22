@@ -1,7 +1,7 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
-# The update scenario with the agent changing its mind: it sends
+# The update scenario with the Update Agent changing its mind: it sends
 # CancelUpdate two chunks into the transfer.
 #
 # Not a failure. The update is withdrawn by the side that asked for it,

@@ -32,7 +32,7 @@ impl AlwaysPerform {
     /// Answer one status.
     ///
     /// `PhaseFailed` is `Idle`: verify or apply already failed and the FD
-    /// has told the update agent, so there is nothing left to answer.
+    /// has told the Update Agent, so there is nothing left to answer.
     ///
     /// A policy that refuses a phase sends the matching `Reject` op. This
     /// one never refuses, so those ops never appear here.

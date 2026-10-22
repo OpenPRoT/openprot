@@ -9,7 +9,7 @@ use util_service::AsyncTransport;
 
 use crate::ClientError;
 
-/// What the firmware device answered.
+/// What the Firmware Device answered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reply {
     /// The FD took the request. Every operation but `QueryStatus`
@@ -21,7 +21,7 @@ pub enum Reply {
     Status(FdStatus),
 }
 
-/// The orchestrator's handle on one firmware device.
+/// The orchestrator's handle on one Firmware Device.
 pub struct FdIpcClient<T> {
     transport: T,
     /// What was asked, while the answer is outstanding. The response

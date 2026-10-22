@@ -23,7 +23,7 @@
 //! behind the adapter.
 //!
 //! `DeviceTrialBoot` is the commit gate activation leaves open, whether
-//! `Updatable` did the activating or a PLDM firmware device did it for the
+//! `Updatable` did the activating or a PLDM Firmware Device did it for the
 //! eRoT: keep the
 //! activated image once its boot was judged, or drop it. It sits on the
 //! downstream devices whose slots the eRoT drives, where the eRoT watches the

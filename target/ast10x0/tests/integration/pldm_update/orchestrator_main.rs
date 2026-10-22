@@ -3,12 +3,12 @@
 
 //! The RoT in the PLDM update scenario.
 //!
-//! Runs the shipped state machine and platform driver, and answers the
-//! firmware device over IPC. The firmware device never decides anything: it
-//! reports what the update agent asked for and what came of it, and this app
-//! says whether the update may go on. That is the gatekeeper shape the design
-//! calls for, and it only means anything across a process boundary, which is
-//! why the orchestrator is its own app rather than a core inside the FD.
+//! Runs the shipped state machine and platform driver, and answers the Firmware
+//! Device over IPC. The Firmware Device never decides anything: it reports what
+//! the Update Agent requested and what came of it, and this app says whether
+//! the update may go on. That is the gatekeeper shape the design calls for, and
+//! it only means anything across a process boundary, which is why the
+//! orchestrator is its own app rather than a core inside the FD.
 //!
 //! The exchange is three messages, each answered with one byte, 1 for
 //! accepted and 0 for refused:
@@ -19,8 +19,8 @@
 //! 3. `Activated`, which stands in for the updated device coming back up.
 //!
 //! What this does not yet prove: the driver's `Updatable` stages nothing,
-//! because in this flow the firmware device pulls its own bytes from the
-//! update agent, out of the orchestrator's sight. Closing that is the next
+//! because in this flow the Firmware Device pulls its own bytes from the
+//! Update Agent, out of the orchestrator's sight. Closing that is the next
 //! step, and until then `activate` is the only side of the seam with a real
 //! caller.
 
@@ -75,13 +75,13 @@ static mut RECV_BUF: [u8; MAX_RESPONSE_SIZE] = [0; MAX_RESPONSE_SIZE];
 
 type Fd = FdIpcClient<AsyncChannelTransport<IpcHandle>>;
 
-/// The component the firmware device updates. One device, so its id is
+/// The component the Firmware Device updates. One device, so its id is
 /// fixed rather than carried in the messages. Position 1 because the eRoT
 /// holds position 0 in every device table.
 const TARGET: ComponentId = ComponentId::new(1);
 
-/// Whether the agent sends UpdateSecurityRevision. Where it does not,
-/// `activate` dispatches the event itself.
+/// Whether the Update Agent sends UpdateSecurityRevision. Where it does
+/// not, `activate` dispatches the event itself.
 const AGENT_COMMITS_SVN: bool = cfg!(svn_commit) || cfg!(svn_commit_refused);
 
 /// Chain capacity and the core's effect-sink cap (`E >= 2*N + 2`). `N`
@@ -90,8 +90,8 @@ const N: usize = DEVICES.len();
 const E: usize = 2 * N + 2;
 const MAX_RETRY: u8 = 3;
 
-/// Size of the candidate the update agent hands over. Must match the
-/// firmware device's image, because the staging region is sized from it.
+/// Size of the candidate the Update Agent hands over. Must match the image
+/// the Firmware Device holds, because the staging region is sized from it.
 const IMAGE_SIZE: usize = 1024;
 
 /// Where the device is told to stage. It stages into its own flash and
@@ -143,14 +143,14 @@ static ROT_AUTHENTICATED: AtomicBool = AtomicBool::new(false);
 static ACTIVATED: AtomicBool = AtomicBool::new(false);
 
 /// The byte the candidate carries at `offset`. Offset-dependent, matching
-/// the firmware device's own expectation, so a staging region that served
-/// the wrong bytes would be caught rather than accepted.
+/// what the Firmware Device expects, so a staging region that served the
+/// wrong bytes would be caught rather than accepted.
 fn expected_byte(offset: usize) -> u8 {
     (offset % 251) as u8
 }
 
-/// No reset line in this image: the device the update targets is the
-/// firmware device's own, and nothing here holds it.
+/// No reset line in this image: the update targets the device the Firmware
+/// Device runs on, and nothing here holds it.
 struct NoReset;
 
 impl BootControl for NoReset {
@@ -177,7 +177,7 @@ impl EvidenceReader<u8> for AlwaysBooted {
     }
 }
 
-/// The device keeps its own floor: a PLDM firmware device commits
+/// The device keeps its own SVN floor: a PLDM Firmware Device commits
 /// internally, so the eRoT holds no second one.
 struct NoFloor;
 
@@ -193,13 +193,13 @@ impl SvnFloor for NoFloor {
     }
 }
 
-/// The firmware device as the driver sees it.
+/// The Firmware Device as the driver sees it.
 ///
 /// Staging is already done by the time the orchestrator hears about it: the
-/// device pulled its own chunks from the update agent, which is what DSP0267
+/// device pulled its own chunks from the Update Agent, which is what DSP0267
 /// has it do. So `poll_stage` reports the payload is already in place rather
 /// than pushing it, and `activate` is the one call that reaches the device
-/// for real. Replacing this stub with an IPC call to the firmware device is
+/// for real. Replacing this stub with an IPC call to the Firmware Device is
 /// the next step; what it would prove is the push direction, which this
 /// flow does not use.
 struct FdUpdatable;
@@ -218,7 +218,7 @@ impl Updatable for FdUpdatable {
 }
 
 /// The staging region, as big as the candidate and carrying the same bytes
-/// the firmware device expects. Nothing reads it while the device stages
+/// the Firmware Device expects. Nothing reads it while the device stages
 /// itself, but its length is what bounds the candidate at submit time, so a
 /// candidate too large for the board is refused before an update starts.
 struct PatternStaging;
@@ -246,7 +246,7 @@ impl ByteSource for PatternStaging {
 ///
 /// Signature checking belongs to the crypto service and is stubbed until
 /// the service exists, so this reads the staging region and compares it with the
-/// pattern the update agent is expected to have sent. That makes the RoT's
+/// pattern the Update Agent is expected to have sent. That makes the RoT's
 /// verdict depend on the bytes rather than on nothing, which is what keeps
 /// the authenticated path from passing vacuously.
 ///
@@ -472,7 +472,7 @@ fn entry() {
         pw_log::info!("ORCH: supervising, waiting for the firmware device");
     }
 
-    // The firmware device declares the run's verdict, as it did before: the
+    // The Firmware Device declares the run's verdict, as it did before: the
     // runner greps one sentinel, and in a scenario where the RoT refuses,
     // the RoT reaching a failure is what the test passes on. So this logs
     // what it reached and parks.
@@ -630,9 +630,10 @@ fn activate(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
     // image reboots, so the acknowledged activation is what this scenario
     // treats as a healthy first boot.
     core.dispatch(driver, Event::BootConfirmed(TARGET));
-    // The floor moves on the agent's request, not on the boot. Where no
-    // agent sends UpdateSecurityRevision, `Event::SvnCommitRequest` stands
-    // in for it, as `BootConfirmed` above stands in for the reboot.
+    // The SVN floor moves on the request the Update Agent sends, not on the
+    // boot. Where the Update Agent sends no UpdateSecurityRevision,
+    // `Event::SvnCommitRequest` stands in for it, as `BootConfirmed` above
+    // stands in for the reboot.
     if !AGENT_COMMITS_SVN {
         core.dispatch(driver, Event::SvnCommitRequest(TARGET));
     }
@@ -640,13 +641,14 @@ fn activate(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
     true
 }
 
-/// Grants or refuses the agent's request to commit the device's security
-/// revision.
+/// Grants or refuses the request the Update Agent sends to commit the
+/// device's security revision.
 ///
 /// The machine drops `SvnCommitRequest` for a component with nothing
 /// outstanding, and a dropped request emits no effect. So the grant waits
 /// on `Effect::CommitSvnFloor` actually arriving: answering `perform`
-/// without it would tell the agent the RoT granted something it never saw.
+/// without it would tell the Update Agent the RoT granted something it
+/// never saw.
 ///
 /// `svn_commit_refused` sends a second request with nothing outstanding,
 /// so the three answers have to be told apart.
