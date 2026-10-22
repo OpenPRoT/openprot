@@ -29,6 +29,7 @@ pub struct BufferSender<'a> {
 impl Sender for BufferSender<'_> {
     fn send_vectored(
         &mut self,
+        _eid: mctp::Eid,
         mut fragmenter: Fragmenter,
         payload: &[&[u8]],
     ) -> mctp::Result<Tag> {
