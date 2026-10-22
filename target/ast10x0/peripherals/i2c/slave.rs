@@ -484,6 +484,27 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
             return None;
         }
 
+        // A slave inactive timeout drops the RX arming, so restart slave mode
+        // and re-arm receive. A timeout also sets PKT_ERROR, so this check
+        // comes first.
+        if (status & constants::AST_I2CS_INACTIVE_TO) != 0 {
+            self.regs()
+                .i2cc00()
+                .modify(|_, w| w.enbl_slave_fn().clear_bit());
+            let mut cmd: u32 = constants::AST_I2CS_ACTIVE_ALL | constants::AST_I2CS_PKT_MODE_EN;
+            self.arm_slave_receive(&mut cmd);
+            self.regs()
+                .i2cc00()
+                .modify(|_, w| w.enbl_slave_fn().set_bit());
+            // SAFETY: `cmd` (built above) sets only writable I2CS28 bits.
+            unsafe {
+                self.regs().i2cs28().write(|w| w.bits(cmd));
+            }
+            // Slave mode requires the command before the status clear.
+            self.clear_slave_interrupts();
+            return None;
+        }
+
         // Check for errors first
         if (status & constants::AST_I2CS_PKT_ERROR) != 0 {
             self.clear_slave_interrupts();
