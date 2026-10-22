@@ -4,9 +4,9 @@
 """One QEMU scenario: a kernel, its apps, the image and the test.
 
 Every scenario needs the same seven rules in the same order, and each
-negative case needs them again with one `--cfg` added. Spelling that out
-per package is where a copy drifts from its original, so the rules live
-here once.
+negative case needs them again with one `--cfg` added. Copied into each
+package, the rules take an edit in one copy and miss the rest, so the
+rules live here once.
 
 A negative scenario is a package of its own because the system config
 names an app by its target name, and two targets in one package cannot

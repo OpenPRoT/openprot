@@ -57,7 +57,6 @@ use app_orchestrator::handle;
 const TARGET: ComponentId = ComponentId::new(1);
 
 /// Chain capacity and the effect-sink cap on the core (`E >= 2*N + 2`).
-/// `N` counts the device table below, so the two cannot disagree.
 const N: usize = DEVICES.len();
 const E: usize = 2 * N + 2;
 const MAX_RETRY: u8 = 3;
@@ -67,7 +66,8 @@ const IMAGE_SIZE: usize = 1024;
 const STAGING_BASE: u32 = 0x10_0000;
 
 /// How long the managed device has to report ready after a reset. The
-/// device boots in 50 ms, so the window is slack rather than a race.
+/// device boots in 50 ms, so the window fails only when the device hung,
+/// not when QEMU ran slow.
 const BOOT_WINDOW_MILLIS: u64 = 2_000;
 
 /// How long one supervised boot may take before the run gives up. Larger
@@ -116,13 +116,17 @@ static CHAIN: ChainEntries<N> = chain_of(&DEVICES);
 
 const _: () = assert_retry_reaches_every_image(MAX_RETRY, &DEVICES);
 
-/// The ready line of the managed device, as the RoT sees it. The reset
-/// path clears the latch, so a report from one boot cannot satisfy the
-/// next walk.
+/// Latches the ready report from the managed device. `drain_reports`
+/// sets the latch when the report arrives, and `BmcReset` clears it on
+/// every reset, so the walk after the activation reset sees only a
+/// report from the boot it supervises, not the report the first boot
+/// left behind.
 static DEVICE_READY: AtomicBool = AtomicBool::new(false);
 
-/// How many times `release` let the device out of reset. The ordering
-/// claim rests on the count going up across the activation.
+/// How many times `release` let the device out of reset. `run` reads
+/// the count before and after the update and fails unless it went up:
+/// without a reset the latch still holds the ready report from the
+/// first boot, and the second walk would pass on it.
 static RESETS: AtomicU32 = AtomicU32::new(0);
 
 /// Set when the verifier the RoT runs itself authenticates the candidate.
@@ -307,10 +311,9 @@ fn drive_reset(level: u8) -> Result<(), BoardFault> {
         .map_err(|_| BoardFault)
 }
 
-/// The reset line of the managed device. Both directions clear the ready
-/// latch:
-/// the device is restarting either way, so anything it reported before
-/// belongs to an earlier attempt.
+/// The reset line of the managed device. `hold_in_reset` and `release`
+/// both clear the ready latch: the device is restarting either way, so
+/// anything it reported before belongs to an earlier attempt.
 struct BmcReset;
 
 impl BootControl for BmcReset {
@@ -839,7 +842,7 @@ fn verified(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
     command(fd, |fd| fd.perform_apply())
 }
 
-/// Queries the device for what it is waiting for.
+/// Queries the firmware device for what it is waiting for.
 fn query(fd: &mut Fd) -> Option<FdStatus> {
     if fd.query_status().is_err() {
         pw_log::error!("ORCH: the status request to the device failed");
@@ -855,7 +858,7 @@ fn query(fd: &mut Fd) -> Option<FdStatus> {
     }
 }
 
-/// Sends one command and waits for the device to take it.
+/// Sends one command and waits for the firmware device to take it.
 fn command(fd: &mut Fd, start: impl FnOnce(&mut Fd) -> Result<(), ClientError>) -> bool {
     if start(fd).is_err() {
         pw_log::error!("ORCH: could not send a command");
@@ -872,7 +875,8 @@ fn command(fd: &mut Fd, start: impl FnOnce(&mut Fd) -> Result<(), ClientError>) 
 }
 
 /// Waits for the answer to whatever is in flight. The deadline is what
-/// turns a device that stopped serving into a log line rather than a stall.
+/// turns a firmware device that stopped serving into a log line rather
+/// than a stall.
 fn settle(fd: &mut Fd) -> Option<Reply> {
     let deadline = deadline_in(DEVICE_TIMEOUT_MILLIS);
     loop {
