@@ -7,8 +7,10 @@ rust_library(
     name = "service",
     srcs = [
         "delayed.rs",
+        "dispatch.rs",
         "lib.rs",
         "loopback.rs",
+        "transport.rs",
     ],
     crate_name = "util_service",
     edition = "2024",
