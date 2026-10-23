@@ -11,6 +11,11 @@ use hal_flash_driver::FlashDriver;
 use util_io::RandomRead;
 use util_types::{Blocking, PowerOf2Usize};
 
+/// Length of the scratch buffer that holds the unaligned prefix of a
+/// read. A driver whose `READ_ALIGNMENT` exceeds `PREFIX_BUF_LEN`
+/// cannot use `BlockingFlash`.
+const PREFIX_BUF_LEN: usize = 16;
+
 /// High-level flash interface.
 ///
 /// This trait provides a simplified, synchronous, blocking interface for flash operations.
@@ -122,7 +127,8 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
     type Error = TDriver::Error;
     fn geometry(&mut self) -> Result<(NonZero<usize>, PowerOf2Usize, u32), Self::Error> {
         let bitmap = self.driver.erasable_sizes_bitmap()?;
-        let page_size = PowerOf2Usize::new(1 << (bitmap.trailing_zeros())).unwrap();
+        let page_size =
+            PowerOf2Usize::new(1 << (bitmap.trailing_zeros())).expect("1 << n is a power of 2");
         Ok((self.driver.size(), page_size, bitmap))
     }
     /// Reads data from flash.
@@ -135,8 +141,8 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
         let align_skip_len = (addr.offset() & (TDriver::READ_ALIGNMENT as u32 - 1)) as usize;
         if (align_skip_len) != 0 {
             // Read prefix up to alignment boundary
-            assert!(TDriver::READ_ALIGNMENT <= 16);
-            let mut tmp = [0_u8; 16];
+            const { assert!(TDriver::READ_ALIGNMENT <= PREFIX_BUF_LEN) };
+            let mut tmp = [0_u8; PREFIX_BUF_LEN];
             let prefix_count = min(TDriver::READ_ALIGNMENT - align_skip_len, buf.len());
             self.driver
                 .read(addr & !(TDriver::READ_ALIGNMENT - 1), &mut tmp)?;
@@ -166,10 +172,12 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
     /// and do not cross window boundaries. Each chunk is programmed asynchronously,
     /// and the thread blocks until it completes before starting the next chunk.
     fn program(&mut self, start_addr: FlashAddress, mut data: &[u8]) -> Result<(), Self::Error> {
-        assert!(
-            TDriver::PROGRAM_WINDOW_SIZE.count_ones() == 1,
-            "TDriver::PROGRAM_WINDOW_SIZE must be a power of 2"
-        );
+        const {
+            assert!(
+                TDriver::PROGRAM_WINDOW_SIZE.count_ones() == 1,
+                "TDriver::PROGRAM_WINDOW_SIZE must be a power of 2"
+            )
+        };
         let window_mask = TDriver::PROGRAM_WINDOW_SIZE - 1;
         let mut addr = start_addr;
         while !data.is_empty() {
