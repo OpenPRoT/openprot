@@ -127,6 +127,9 @@ pub struct FirmwareDevice<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> {
     cmd_interface: CmdInterface<'a, O>,
     responder_transport: MctpPldmTransport<Cr>,
     requester_transport: MctpPldmTransport<Cq>,
+    /// Poll the responder once every this many steps while an initiator
+    /// request is active. 1 polls every step.
+    responder_poll_every_steps: u32,
 }
 
 impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq> {
@@ -153,7 +156,22 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
             ),
             responder_transport,
             requester_transport,
+            responder_poll_every_steps: 1,
         }
+    }
+
+    /// Poll for an inbound Update Agent command only once every `steps` steps
+    /// while an FD-initiated request is active (default 1: every step).
+    ///
+    /// Each poll is an IPC round trip to the MCTP server plus a wait for the
+    /// poll timeout, which costs real time on a slow core when the transfer
+    /// sends one request per chunk. The trade-off is that an Update Agent
+    /// command such as `CancelUpdate` that arrives between polls is answered
+    /// up to `steps` requests late. Outside an active transfer the responder
+    /// still blocks on every step, so this only affects the transfer. A value
+    /// of 0 is treated as 1.
+    pub fn set_responder_poll_interval(&mut self, steps: u32) {
+        self.responder_poll_every_steps = steps.max(1);
     }
 
     /// The step body, taking each field it needs directly rather than
@@ -179,6 +197,7 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
         remote_eid: u8,
         timeout_millis: u32,
         requester_timeout_millis: u32,
+        poll_responder: bool,
         sink: &mut impl FdEventSink,
     ) -> Result<(), PldmServiceError> {
         // Phase 1: while in initiator mode, issue at most ONE outbound
@@ -206,6 +225,12 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
             cmd_interface
                 .process_initiator_response(resp)
                 .map_err(PldmServiceError::MsgHandler)?;
+        }
+
+        // While a transfer is running the poll can be rate-limited (see
+        // `set_responder_poll_interval`); when idle it always blocks as before.
+        if initiator_active && !poll_responder {
+            return Ok(());
         }
 
         // Phase 2: poll for an inbound command so the responder path stays
@@ -329,7 +354,13 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
         // Scratch buffer for FD-initiated (outbound) requests, reused across
         // steps rather than re-zeroed on every one.
         let mut fw_buf = [0u8; FD_MAX_MSG];
+        let mut steps_since_poll = 0u32;
         while should_continue() {
+            steps_since_poll += 1;
+            let poll_responder = steps_since_poll >= self.responder_poll_every_steps;
+            if poll_responder {
+                steps_since_poll = 0;
+            }
             // Field-by-field, not `&mut self` — see `run_once_inner`'s doc.
             if let Err(e) = Self::run_once_inner(
                 &mut self.cmd_interface,
@@ -341,6 +372,7 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
                 remote_eid,
                 timeout_millis,
                 requester_timeout_millis,
+                poll_responder,
                 sink,
             ) {
                 return RunTerminusResult::StoppedByError(e);
