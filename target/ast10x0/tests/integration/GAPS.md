@@ -122,6 +122,8 @@ abort would do is untested.
   self-reset wipes it. The ROM rejects an image below the counter, so after
   the advance the other slot is unbootable, and a corruption of the running
   slot leaves the eRoT with nothing to fall back to.
+  `docs/src/design/orchestrator/orchestrator-slot-condition.md` designs the
+  record for that condition.
 - A board that wires no self-update at all. `Board.self_update` is an
   `Option` and `()` satisfies `SelfUpdate` and `SelfReset`, so such a
   board builds and refuses an update aimed at the eRoT at submit, with
@@ -171,7 +173,8 @@ floor never advances on a revert, so the slots agree about SVN. What is
 undecided is how a later reader should treat that slot: a recovery scheme
 that falls back slot to slot, or a settle path for a trial left open.
 Either the reader treats the contents as untrusted, or the revert
-overwrites them.
+overwrites them. `docs/src/design/orchestrator/orchestrator-slot-condition.md`
+designs the record that would hold the answer.
 
 ## What the preemption scenario does not say
 
@@ -244,7 +247,9 @@ scenario at all. The ones that matter:
 - During a spare-slot re-sync. The claim that a pass is in flight is
   RAM-only too, so a reset leaves a half-written spare with no durable
   record that it is dirty. `driver/src/board.rs` records that open
-  question under `Report::SlotResyncFailed`.
+  question under `Report::SlotResyncFailed`, and
+  `docs/src/design/orchestrator/orchestrator-slot-condition.md` designs the
+  durable record.
 - Between the device taking its SVN and the eRoT writing its mirror. The
   two floors disagree afterwards and nothing reconciles them.
 
@@ -264,6 +269,8 @@ answer says granted while the floor still holds the old SVN. Two changes
 close this: re-attempt the pass or mark the slot stale somewhere
 durable, and answer the Update Agent once the SVN floor advances
 rather than when the effect arrives.
+`docs/src/design/orchestrator/orchestrator-slot-condition.md` designs the
+stale-slot record.
 
 ## Assertions that are looser than they look
 
