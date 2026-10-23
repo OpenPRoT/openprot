@@ -44,6 +44,7 @@ SCENARIO_CFGS = [
     "measured",
     "svn_commit",
     "svn_commit_refused",
+    "slot_resync",
     "recovery",
     "recovery_exhausted",
 ]
