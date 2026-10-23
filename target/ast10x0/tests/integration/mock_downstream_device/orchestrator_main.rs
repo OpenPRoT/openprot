@@ -43,9 +43,11 @@ use openprot_orchestrator_driver::{ImageSource, Verdict, Verifier};
 // scenario here is a boot.
 #[cfg(self_update)]
 use openprot_orchestrator_driver::request_update;
-#[cfg(any(measured, recovery, recovery_exhausted, self_update))]
+#[cfg(any(measured, recovery, recovery_exhausted, self_update, self_trial))]
 use openprot_orchestrator_sm::ComponentId;
 use openprot_orchestrator_sm::{ComponentAttrs, Event, PowerOnResult, State};
+#[cfg(self_trial)]
+use openprot_orchestrator_sm::{Effect, Platform};
 #[cfg(any(measured, recovery, recovery_exhausted, self_update))]
 use orchestrator_capabilities::AuthenticatedImage;
 #[cfg(measured)]
@@ -864,14 +866,15 @@ fn board() -> Board<MockDownstreamDeviceBoard, N> {
     }
 }
 
-/// The chain and the driver, as this scenario's update phase holds them.
-#[cfg(self_update)]
+/// The chain and the driver, as the scenarios that update the eRoT hold
+/// them.
+#[cfg(any(self_update, self_trial))]
 type Core = openprot_orchestrator_sm::Orchestrator<N, E>;
-#[cfg(self_update)]
+#[cfg(any(self_update, self_trial))]
 type Driver = openprot_orchestrator_driver::PlatformDriver<MockDownstreamDeviceBoard, N>;
 
 /// The eRoT, which is chain position 0 in every device table.
-#[cfg(self_update)]
+#[cfg(any(self_update, self_trial))]
 const EROT: ComponentId = ComponentId::new(0);
 
 /// Stages a candidate into the eRoT's own slot and activates it.
@@ -979,6 +982,43 @@ fn restore_calls_as_expected() -> bool {
     false
 }
 
+/// Advances the eRoT SVN floor to the SVN the confirmed trial recorded,
+/// and closes the session.
+///
+/// `Ready` entry confirms the trial and names the eRoT in
+/// `awaiting_floor_advance`, so the request the Update Agent would send
+/// finds something outstanding. A request the state machine drops emits no
+/// effect, which is why the grant waits on `Effect::CommitSvnFloor`
+/// arriving rather than on the dispatch returning.
+#[cfg(self_trial)]
+fn commit_self_floor(core: &mut Core, driver: &mut Driver) -> Result<(), ()> {
+    let mut granted = false;
+    core.dispatch_with(Event::SvnCommitRequest(EROT), |effect| {
+        if effect == Effect::CommitSvnFloor(EROT) {
+            granted = true;
+        }
+        driver.execute(effect)
+    });
+    if !granted {
+        pw_log::error!("the request for the SVN floor advance was dropped");
+        return Err(());
+    }
+    let floor = EROT_FLOOR.load(Ordering::Relaxed);
+    if floor != TRIAL_SVN.0 {
+        pw_log::error!("the eRoT SVN floor reads {} after the commit", floor as u32);
+        return Err(());
+    }
+    if SelfSession::read() != SelfUpdateState::Idle {
+        pw_log::error!("the floor took the SVN and the session stayed open");
+        return Err(());
+    }
+    pw_log::info!(
+        "the self trial was confirmed and the eRoT SVN floor reads {}",
+        floor as u32
+    );
+    Ok(())
+}
+
 fn run() -> Result<(), ()> {
     syscall::wait_group_add(handle::WG, handle::BOOT_EVT, Signals::READABLE, 0usize)
         .map_err(|_| ())?;
@@ -1055,6 +1095,12 @@ fn run() -> Result<(), ()> {
                 pw_log::error!("the chain came up and the self trial was not confirmed");
                 return Err(());
             }
+            // Confirming the trial is not the commit. The SVN floor moves
+            // on the request the Update Agent sends afterwards, which
+            // nothing serves for the eRoT yet, so the run dispatches the
+            // event the way it dispatches the ones a device would cause.
+            #[cfg(self_trial)]
+            commit_self_floor(&mut core, &mut driver)?;
             // Without the call count, `recovery` would pass on a verifier
             // that never refused the image.
             if !restore_calls_as_expected() || !measured_as_expected() {

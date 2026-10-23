@@ -30,7 +30,7 @@ like the proof.
 | `mock_downstream_device` | the device boots | the walk completes |
 | `mock_downstream_device/device_hangs` | the device never reports | the platform locks |
 | `mock_downstream_device/self_update` | the eRoT is offered an update of its own image | the candidate is staged and the trial is marked pending |
-| `mock_downstream_device/self_trial` | the eRoT boots the trial image of its own update | the chain coming up confirms the session |
+| `mock_downstream_device/self_trial` | the eRoT boots the trial image of its own update | the chain coming up confirms the session, and the request that follows advances the SVN floor |
 | `mock_downstream_device/measured` | the verifier reports a digest for the device's image | the sink is handed exactly one measurement, for that device |
 | `mock_downstream_device/recovery` | the RoT refuses the device's image | the restore runs and the re-walk boots the device |
 | `mock_downstream_device/recovery_exhausted` | the restored image is refused too | the platform reports the device and locks |
@@ -43,6 +43,7 @@ like the proof.
 | `pldm_update/offer_before_supervising` | the offer arrives before the RoT supervises anything | the RoT refuses it as busy |
 | `pldm_update/svn_commit` | the Update Agent commits the security revision afterwards | the RoT grants it and the Firmware Device commits |
 | `pldm_update/svn_commit_refused` | the Update Agent requests to commit the same revision twice | the RoT refuses the second request and the Firmware Device reports it not permitted |
+| `pldm_update/slot_resync` | the same commit, for a component whose SVN floor the eRoT keeps | the spare slot is re-staged with the committed image and the SVN floor advances once it holds it |
 | `full_update` | boot, update, reboot in one image | the device boots the image it was given |
 | `full_update/device_hangs` | the device never comes up | no update is ever offered |
 | `full_update/device_stays_down` | the device takes the update, then stays down | the RoT notices it never came back |
@@ -96,6 +97,7 @@ The rest, same shape. The negatives, and `cancel_mid_transfer`:
     //target/ast10x0/tests/integration/pldm_update/cancel_mid_transfer:cancel_mid_transfer_qemu_test
     //target/ast10x0/tests/integration/pldm_update/offer_before_supervising:offer_before_supervising_qemu_test
     //target/ast10x0/tests/integration/pldm_update/svn_commit_refused:svn_commit_refused_qemu_test
+    //target/ast10x0/tests/integration/pldm_update/slot_resync:slot_resync_qemu_test
     //target/ast10x0/tests/integration/full_update/device_hangs:device_hangs_qemu_test
     //target/ast10x0/tests/integration/full_update/device_stays_down:device_stays_down_qemu_test
 
@@ -163,10 +165,23 @@ time the device has booted, because a session that is still
 UpdateSecurityRevision, there is nothing to advance the anti-rollback
 floor for.
 
+Confirming the trial is not the commit. The SVN floor moves on the
+request the Update Agent sends afterwards, so the run dispatches
+`Event::SvnCommitRequest` for the eRoT the way the update scenarios
+dispatch it for their device, and then checks the floor reads the SVN the
+trial recorded and the session has closed:
+
+    [INF] the self trial was confirmed and the eRoT SVN floor reads 7
+    TEST_RESULT:PASS
+
+Nothing serves UpdateSecurityRevision for the eRoT over PLDM: that needs
+the eRoT to be a Firmware Device to the Update Agent, which no image here
+makes it. GAPS.md keeps that.
+
 The session is two atomics rather than storage. This scenario never
 resets the eRoT, so nothing has to survive a reset; what it exercises is
 the path from the session, through `Event::SelfTrialBooted` and
-`Effect::ConfirmSelfTrial`, back to the session.
+`Effect::ConfirmSelfTrial`, to the SVN floor advance the request names.
 
 ## The full update scenario
 
@@ -328,6 +343,27 @@ afterwards agrees to nothing else either:
 That second one also shows a gap rather than hiding it. The device
 finishes the PLDM flow and activates, because a refusal is recorded and
 not enforced yet.
+
+`slot_resync` runs the same commit for a component whose SVN floor the
+eRoT keeps, which every other scenario here leaves to the device. That
+binding is what makes `commit_svn_floor` queue a second staging pass into
+the slot the device stopped booting from, and hold the SVN floor advance
+until the pass has written it. The run checks the order: the floor still
+reads 0 when the commit is granted, nothing advances it while the pass is
+running, and it reads the SVN the chain walk recorded once the spare slot
+holds the image byte for byte.
+
+    [INF] ORCH: the agent asked to commit component 1's security revision
+    [INF] ORCH: the spare slot holds the committed image and the SVN floor reads 9
+    TEST_RESULT:PASS
+
+The spare slot is memory the RoT owns here, not a second region of the
+flash the device holds. No PLDM operation pushes bytes to a Firmware Device, and
+only the `pldm_fd` process maps the FMC, so what the re-staging writes
+through is an `Updatable` that keeps the slot inside the orchestrator app.
+The Update Agent is also still told the commit succeeded before the pass
+runs, because the answer goes out on `Effect::CommitSvnFloor`. GAPS.md
+keeps both.
 
 ## What is not proven yet
 
