@@ -17,7 +17,7 @@ use crate::board::{
 };
 use orchestrator_capabilities::{
     AuthenticatedImage, BootControl, BootWatch, DeviceTrialBoot, FailureCause, IncrementalVerifier,
-    Progress, Recovery, RestoreOutcome, Svn, SvnFloor, WalkVerdict,
+    LockdownLatch, Progress, Recovery, RestoreOutcome, Svn, SvnFloor, WalkVerdict,
 };
 
 /// Which way a trial closes: keep the test image the downstream device
@@ -102,6 +102,9 @@ pub enum DriverError {
     /// slot the device boots at the next reset is not the one the state
     /// machine decided on.
     TrialFault,
+    /// The platform's terminal safe state could not be engaged, so the
+    /// machine is locked and the hardware is not.
+    LatchFault,
     /// A staging step ran before anything commanded the work. Updates
     /// get the flag from `AuthenticateStageUpdate`, and a slot re-sync
     /// sets it when it queues the job. So the phase and the flag
@@ -133,6 +136,7 @@ impl core::fmt::Display for DriverError {
             }
             DriverError::SelfResetFault => "the reset into the trial image did not happen",
             DriverError::TrialFault => "device trial record could not be closed",
+            DriverError::LatchFault => "platform safe state could not be engaged",
             DriverError::UpdateNotCommanded => "staging ran before the SM commanded it",
         })
     }
@@ -656,6 +660,31 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         }
     }
 
+    /// Puts the platform into its terminal safe state.
+    ///
+    /// The state machine has already decided, so the call is the
+    /// actuation.
+    /// `Ok` from the board means the safe state is in force, which leaves
+    /// the driver nothing to check.
+    ///
+    /// A failure reads as circular and is not. The call answers
+    /// `EffectError`, which makes the orchestrator inject
+    /// `Event::EffectFailed` at the front of the queue, and that event
+    /// arrives in `Locked`, which is unsupervised and drops it: no
+    /// transition, no entry action, no second latch attempt. The
+    /// orchestrator also injects `EffectFailed` at most once per dispatch.
+    /// So a failed latch leaves the state machine locked and the
+    /// platform unheld, with no report of the failure. Making the failure visible
+    /// wants either a `Report` variant or a log dependency the driver
+    /// crate does not have, and is recorded as a gap rather than decided
+    /// here.
+    fn latch_lockdown(&mut self) -> Result<(), DriverError> {
+        self.board
+            .lockdown
+            .latch()
+            .map_err(|_| DriverError::LatchFault)
+    }
+
     /// Closes the trial open for `id`, keeping the test image the
     /// downstream device booted or discarding it.
     ///
@@ -780,9 +809,10 @@ impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
             Effect::RevertDeviceTrial(id) => self
                 .close_device_trial(id, TrialClose::Discard)
                 .map(|_| None),
-            // No board capability is composed for these seams yet, so they
-            // fail secure here instead of behind stub methods.
-            Effect::SignAttestation | Effect::LatchLockdown => return Err(EffectError),
+            Effect::LatchLockdown => self.latch_lockdown().map(|_| None),
+            // No board capability is composed for this seam yet, so it
+            // fails secure here instead of behind a stub method.
+            Effect::SignAttestation => return Err(EffectError),
             // Emit is consumed by the orchestrator; receiving one is a
             // driver bug.
             Effect::Emit(_) => return Err(EffectError),

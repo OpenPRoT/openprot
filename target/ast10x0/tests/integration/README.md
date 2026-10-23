@@ -44,8 +44,8 @@ like the proof.
 | `pldm_update/svn_commit` | the Update Agent commits the security revision afterwards | the RoT grants it and the Firmware Device commits |
 | `pldm_update/svn_commit_refused` | the Update Agent requests to commit the same revision twice | the RoT refuses the second request and the Firmware Device reports it not permitted |
 | `full_update` | boot, update, reboot in one image | the device boots the image it was given |
-| `full_update/device_hangs` | the device never comes up | no update is ever offered |
-| `full_update/device_stays_down` | the device takes the update, then stays down | the RoT notices it never came back |
+| `full_update/device_hangs` | the device never comes up | no update is ever offered and the platform locks |
+| `full_update/device_stays_down` | the device takes the update, then stays down | the RoT notices it never came back and the platform locks |
 | `full_update/recovery_preempts` | the running image turns out corrupt mid-update | the candidate is dropped, the update reported superseded, and the platform locks |
 
 A negative scenario is a package of its own, built from the same sources
