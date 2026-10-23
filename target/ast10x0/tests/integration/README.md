@@ -30,7 +30,7 @@ like the proof.
 | `mock_downstream_device` | the device boots | the walk completes |
 | `mock_downstream_device/device_hangs` | the device never reports | the platform locks |
 | `mock_downstream_device/self_update` | the eRoT is offered an update of its own image | the candidate is staged and the trial is marked pending |
-| `mock_downstream_device/self_trial` | the eRoT boots the trial image of its own update | the chain coming up confirms the session |
+| `mock_downstream_device/self_trial` | the eRoT boots the trial image of its own update | the chain coming up confirms the session, and the request that follows advances the SVN floor |
 | `mock_downstream_device/measured` | the verifier reports a digest for the device's image | the sink is handed exactly one measurement, for that device |
 | `mock_downstream_device/recovery` | the RoT refuses the device's image | the restore runs and the re-walk boots the device |
 | `mock_downstream_device/recovery_exhausted` | the restored image is refused too | the platform reports the device and locks |
@@ -165,10 +165,23 @@ time the device has booted, because a session that is still
 UpdateSecurityRevision, there is nothing to advance the anti-rollback
 floor for.
 
+Confirming the trial is not the commit. The SVN floor moves on the
+request the Update Agent sends afterwards, so the run dispatches
+`Event::SvnCommitRequest` for the eRoT the way the update scenarios
+dispatch it for their device, and then checks the floor reads the SVN the
+trial recorded and the session has closed:
+
+    [INF] the self trial was confirmed and the eRoT SVN floor reads 7
+    TEST_RESULT:PASS
+
+Nothing serves UpdateSecurityRevision for the eRoT over PLDM: that needs
+the eRoT to be a Firmware Device to the Update Agent, which no image here
+makes it. GAPS.md keeps that.
+
 The session is two atomics rather than storage. This scenario never
 resets the eRoT, so nothing has to survive a reset; what it exercises is
 the path from the session, through `Event::SelfTrialBooted` and
-`Effect::ConfirmSelfTrial`, back to the session.
+`Effect::ConfirmSelfTrial`, to the SVN floor advance the request names.
 
 ## The full update scenario
 

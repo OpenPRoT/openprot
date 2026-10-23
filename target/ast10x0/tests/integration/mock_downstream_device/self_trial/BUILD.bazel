@@ -5,10 +5,11 @@
 # update.
 #
 # Same sources, same system config, one flag. The session starts at
-# TrialPending, as the boot after an activation would find it, and the run
-# passes when the chain coming up has moved it to Committed. Without that
-# the UpdateSecurityRevision the Update Agent sends has no confirmed
-# session to advance the anti-rollback floor for.
+# TrialPending, as the boot after an activation would find it, and the
+# chain coming up moves it to Committed. The run then dispatches the
+# request for the SVN floor advance the Update Agent would send as
+# UpdateSecurityRevision, and passes when the anti-rollback floor reads the
+# SVN the trial recorded and the session has closed.
 
 load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
 load("//target/ast10x0/tests/integration/mock_downstream_device:apps.bzl", "APPS", "SYSTEM_CONFIG", "TARGET_SRC")
