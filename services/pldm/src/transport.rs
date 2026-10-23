@@ -107,10 +107,12 @@ impl<C: MctpClient> MctpPldmTransport<C> {
             None => return Err(PldmServiceError::PldmMem(PldmMemError::MalformedBuffer)),
         }
 
-        // Open an outbound request channel.
+        // Open an outbound request channel. The request handle is kept between
+        // calls (a download sends one request per chunk to the same EID), which
+        // saves a handle allocation and an unbind round trip per request.
         let mut req_channel = self
             .stack
-            .req(remote_eid, timeout_millis)
+            .req_reusable(remote_eid, timeout_millis)
             .map_err(PldmServiceError::Mctp)?;
 
         // Send the PLDM payload (buf[1..1+pldm_len]).  The MCTP layer adds
