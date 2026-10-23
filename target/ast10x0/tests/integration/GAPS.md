@@ -48,10 +48,13 @@ parts of the specification are not exercised:
   reads nothing and the device table carries no layout, so the first boot
   is unverified. Doing it for real means two processes mapping the FMC,
   with the Firmware Device writing CS1 while the RoT reads it.
-- Updating the backup partition after the commit. #512 merged, but the
-  component here binds `SvnFloorBinding::SelfManaged`, and since 993219b8
-  a self-managed component's slots are left to the device. The re-sync
-  cannot trigger until a scenario variant binds an eRoT floor.
+- Updating the backup partition after the commit, in the flash the
+  device holds. `pldm_update/slot_resync` binds `SvnFloorBinding::Erot` for the
+  managed component and runs the pass, but the slot it fills is a buffer
+  in the orchestrator app: no PLDM operation pushes bytes to a Firmware
+  Device, and only `pldm_fd` maps the FMC. The other scenarios bind
+  `SvnFloorBinding::SelfManaged`, where the slots of a self-managed
+  component are left to the device.
 - Boot progress over MCTP. The managed device in the spec is one device
   that is the Update Agent, the reset target and the progress reporter at
   once. Here those are two apps, and progress arrives on an IPC channel.
@@ -108,12 +111,11 @@ abort would do is untested.
   while writing `recovery`, which is why the source is wired in the two
   recovery cfgs alone. Whether the count should survive a passing
   verification is a question for the machine.
-- The spare slot re-sync after a commit, and the floor advance held until
-  the spare has the image. It cannot run on any board here: the re-sync
-  sits below the binding test in `commit_svn_floor`, so a component that
-  keeps its own SVN never reaches it, and all three boards bind
-  `SvnFloorBinding::SelfManaged`. A scenario needs a device whose floor
-  the eRoT holds, which is a board shape no itest has yet.
+- A failed spare-slot re-sync. `pldm_update/slot_resync` runs the pass
+  and checks the SVN floor waits for it, but only where the pass
+  succeeds: `Report::SlotResyncFailed` and the floor write that fails
+  after the pass have no run. A scenario reaching them needs an
+  `Updatable` that faults partway, which this one has no cfg for.
 - The same two for the slots the eRoT boots from, which nothing
   implements, not just nothing covers. `commit_self_svn_floor` advances
   the floor as soon as the trial is confirmed, and no pass re-stages the
@@ -271,10 +273,12 @@ rather than when the effect arrives.
 machine emits `Effect::CommitSvnFloor` whatever SVN floor binding the
 component carries, and the orchestrator answers the Update Agent on seeing
 it, but `commit_svn_floor` in the driver returns at once for a component that
-keeps its own SVN (`driver.rs`, the `SvnFloorBinding::Erot` test). Every board
-here binds `SelfManaged`, so no SVN floor moves in that run or in its refusal
-variant. What those scenarios prove is the 0x22 exchange and the decision the
-state machine takes, which is their claim; the SVN floor itself has no run.
+keeps its own SVN (`driver.rs`, the `SvnFloorBinding::Erot` test). That
+scenario and its refusal variant bind `SelfManaged`, so no SVN floor moves in
+either run. What they prove is the 0x22 exchange and the decision the state
+machine takes, which is their claim. `pldm_update/slot_resync` is the run
+where an SVN floor moves: same exchange, with the eRoT keeping the floor,
+and it reads the floor back rather than watching the effect go by.
 
 `pldm_update` has no managed device, so its `BootConfirmed` is a
 stand-in: it is dispatched once the activation is acknowledged, not once
