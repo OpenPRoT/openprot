@@ -423,7 +423,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             Some(job) => job.len,
             None => return Err(self.drop_session(session, DriverError::NoUpdateJob)),
         };
-        let window = match ByteWindow::new(&self.board.update_staging, 0, len) {
+        let window = match ByteWindow::try_new(&self.board.update_staging, 0, len) {
             Ok(window) => window,
             Err(_) => return Err(self.drop_session(session, DriverError::CandidateOutOfRange)),
         };
@@ -474,7 +474,7 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
             return Err(DriverError::UpdateNotCommanded);
         }
         let (target, len) = (job.target, job.len);
-        let window = ByteWindow::new(&self.board.update_staging, 0, len)
+        let window = ByteWindow::try_new(&self.board.update_staging, 0, len)
             .map_err(|_| DriverError::CandidateOutOfRange)?;
         let updatable = self
             .board

@@ -31,7 +31,7 @@ impl<'a, S: ByteSource + ?Sized> ByteWindow<'a, S> {
     ///
     /// Returns [`OutOfRange`](ByteReadError::OutOfRange) if the window
     /// runs past the end of `source`.
-    pub fn new(source: &'a S, offset: u64, len: u64) -> Result<Self, ByteReadError> {
+    pub fn try_new(source: &'a S, offset: u64, len: u64) -> Result<Self, ByteReadError> {
         let end = offset.checked_add(len).ok_or(ByteReadError::OutOfRange)?;
         if end > source.len() {
             return Err(ByteReadError::OutOfRange);
@@ -92,14 +92,14 @@ mod tests {
 
     #[test]
     fn the_window_reports_its_own_length_not_the_sources() {
-        let w = ByteWindow::new(&REGION, 2, 3).unwrap();
+        let w = ByteWindow::try_new(&REGION, 2, 3).unwrap();
         assert_eq!(w.len(), 3);
         assert!(!w.is_empty());
     }
 
     #[test]
     fn a_read_at_zero_starts_at_the_window_offset() {
-        let w = ByteWindow::new(&REGION, 2, 3).unwrap();
+        let w = ByteWindow::try_new(&REGION, 2, 3).unwrap();
         let mut buf = [0u8; 3];
         w.read_at(0, &mut buf).unwrap();
         assert_eq!(buf, [2, 3, 4]);
@@ -107,7 +107,7 @@ mod tests {
 
     #[test]
     fn a_read_past_the_window_end_is_out_of_range() {
-        let w = ByteWindow::new(&REGION, 2, 3).unwrap();
+        let w = ByteWindow::try_new(&REGION, 2, 3).unwrap();
         let mut buf = [0u8; 2];
         assert_eq!(w.read_at(2, &mut buf), Err(ByteReadError::OutOfRange));
     }
@@ -115,7 +115,7 @@ mod tests {
     #[test]
     fn a_window_past_the_end_of_the_source_is_refused() {
         assert_eq!(
-            ByteWindow::new(&REGION, 6, 4).err(),
+            ByteWindow::try_new(&REGION, 6, 4).err(),
             Some(ByteReadError::OutOfRange)
         );
     }
@@ -123,14 +123,14 @@ mod tests {
     #[test]
     fn a_window_offset_that_overflows_is_refused() {
         assert_eq!(
-            ByteWindow::new(&REGION, u64::MAX, 1).err(),
+            ByteWindow::try_new(&REGION, u64::MAX, 1).err(),
             Some(ByteReadError::OutOfRange)
         );
     }
 
     #[test]
     fn an_empty_window_is_empty() {
-        let w = ByteWindow::new(&REGION, 8, 0).unwrap();
+        let w = ByteWindow::try_new(&REGION, 8, 0).unwrap();
         assert!(w.is_empty());
     }
 }
