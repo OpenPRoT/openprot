@@ -93,17 +93,17 @@ impl IpcMctpClient {
         if req_len > MAX_REQUEST_SIZE {
             return Err(MctpError::from_code(ResponseCode::InternalError));
         }
-        let req_copy = {
-            let inner = self.inner.borrow();
-            let mut buf = [0u8; MAX_REQUEST_SIZE];
-            buf[..req_len].copy_from_slice(&inner.request_buf[..req_len]);
-            buf
-        };
-        let mut inner = self.inner.borrow_mut();
+        // Borrow the two buffers as disjoint fields: the request is sent straight
+        // from `request_buf`, with no per-call copy into a fresh zeroed array.
+        let mut guard = self.inner.borrow_mut();
+        let ClientBuffers {
+            request_buf,
+            response_buf,
+        } = &mut *guard;
         userspace::syscall::channel_transact(
             self.handle,
-            &req_copy[..req_len],
-            &mut inner.response_buf,
+            &request_buf[..req_len],
+            response_buf,
             userspace::time::Instant::MAX,
         )
         .map_err(|_| MctpError::from_code(ResponseCode::InternalError))
