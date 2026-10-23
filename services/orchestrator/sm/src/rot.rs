@@ -3,7 +3,10 @@
 
 use core::marker::PhantomData;
 
-use crate::model::*;
+use crate::model::{
+    BootFailureKind, Chain, ComponentAttrs, ComponentId, ComponentKind, Effect, Event,
+    FailurePolicy, PowerOnResult, State,
+};
 use crate::sink::{Outcome, Sink};
 use crate::status::{ComponentLifecycle, ComponentStatus, Gating};
 
