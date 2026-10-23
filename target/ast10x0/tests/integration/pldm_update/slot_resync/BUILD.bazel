@@ -1,0 +1,34 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# The anti-rollback commit for a component whose SVN floor the eRoT holds,
+# which is what makes the commit re-stage the spare slot.
+#
+# Same run as `svn_commit`, which this stacks on, with one thing changed:
+# the managed component binds `SvnFloorBinding::Erot` instead of keeping
+# its own SVN. The commit then queues a second staging pass into the slot
+# the device stopped booting from and holds the SVN floor advance until
+# that pass has written the image, so a slot that is still behind cannot
+# be left below the floor.
+#
+# `rot_owns_verdict` because the claim is about the floor the RoT holds,
+# which the Firmware Device cannot see. The RoT prints the sentinel and
+# the Firmware Device keeps quiet, so there is one per run.
+
+load("//target/ast10x0/tests/integration:scenario.bzl", "qemu_scenario")
+load("//target/ast10x0/tests/integration/pldm_update:apps.bzl", "APPS", "FLASH", "SYSTEM_CONFIG", "TARGET_DEPS", "TARGET_SRC")
+
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/integration/pldm_update/slot_resync:slot_resync_qemu_test
+qemu_scenario(
+    name = "slot_resync_qemu",
+    apps = APPS,
+    cfgs = [
+        "svn_commit",
+        "slot_resync",
+        "rot_owns_verdict",
+    ],
+    flash = FLASH,
+    system_config = SYSTEM_CONFIG,
+    target_deps = TARGET_DEPS,
+    target_src = TARGET_SRC,
+)
