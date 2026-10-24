@@ -13,6 +13,7 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         "//services/mctp/api:mctp_api",
+        "@rust_crates//:mctp-lib",
         "@pigweed//pw_kernel/userspace",
     ],
 )

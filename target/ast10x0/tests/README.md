@@ -53,6 +53,7 @@ connection, but currently logs an unimplemented error.
 | Test | Description |
 |------|-------------|
 | [`mctp/server`](mctp/server/README.md) | MCTP echo stress test between two AST1060 EVBs over I2C |
+| `mctp/multi_protocol` | QEMU: one MCTP server as the messaging layer for two protocol tasks (SPDM/PLDM echo stand-ins), each on its own IPC channel |
 
 ## Test Results (2026-05-12)
 

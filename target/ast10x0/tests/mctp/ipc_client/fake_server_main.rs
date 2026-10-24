@@ -26,8 +26,9 @@
 #![no_main]
 #![no_std]
 
+use mctp_lib::config;
 use openprot_mctp_api::wire::{
-    self, MctpOp, MctpRequestHeader, MAX_REQUEST_SIZE, MAX_RESPONSE_SIZE,
+    self, MctpOp, MctpRequestHeader, MctpResponseHeader,
 };
 use openprot_mctp_api::ResponseCode;
 use userspace::syscall::Signals;
@@ -40,6 +41,8 @@ use app_fake_server::handle;
 const TC10_HANDLE: u32 = 0xFEFE;
 // Handle value used by the client to trigger a TimedOut error response.
 const TC09_HANDLE: u32 = 0;
+const MAX_REQUEST_SIZE: usize = MctpRequestHeader::SIZE + config::MAX_PAYLOAD;
+const MAX_RESPONSE_SIZE: usize = MctpResponseHeader::SIZE + config::MAX_PAYLOAD;
 
 #[entry]
 fn entry() {
