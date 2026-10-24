@@ -1,0 +1,23 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "openprot-attest-verifier"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "OCP-EAT attestation verifier for OpenPRoT"
+
+[dependencies]
+openprot-attest-api = { path = "../api" }
+ciborium            = { version = "0.2", default-features = false }
+heapless            = { version = "0.9", default-features = false }
+thiserror           = "1"
+
+[lib]
+name = "openprot_attest_verifier"
+path = "src/lib.rs"
+
+[[bin]]
+name = "openprot-verify"
+path = "tools/openprot-verify/src/main.rs"
