@@ -116,9 +116,27 @@ class UartTestExecutor:
         except Exception as e:
             raise RuntimeError(f"Failed to set GPIO {pin} to {state}: {e}")
 
+    def gpio_set_input(self, pin: int, pull: str):
+        """Set GPIO pin to input with the given pull using pinctrl."""
+        cmd = ["pinctrl", "set", str(pin), "ip", pull]
+        self.log(f"GPIO {pin}: input ({pull})")
+
+        if self.args.dry_run:
+            self.log(f"DRY RUN: {' '.join(cmd)}")
+            return
+
+        try:
+            self.run_command(cmd)
+        except Exception as e:
+            raise RuntimeError(f"Failed to set GPIO {pin} to input ({pull}): {e}")
+
     def toggle_srst(self, state: str):
-        """Toggle SRST pin (dl=low, dh=high)."""
+        """Drive SRST pin low (state='dl')."""
         self.gpio_set(self.args.srst_pin, state)
+
+    def release_srst(self):
+        """Release SRST pin to input, floating (no pull)."""
+        self.gpio_set_input(self.args.srst_pin, "pn")
 
     def toggle_fwspick(self, state: str):
         """Toggle FWSPICK pin (dh=high, dl=low)."""
@@ -148,7 +166,7 @@ class UartTestExecutor:
         time.sleep(0.1)
         self.toggle_fwspick("dh")  # FWSPICK high
         time.sleep(1)
-        self.toggle_srst("dh")  # SRST high
+        self.release_srst()
         time.sleep(1)
         self.log("FWSPICK mode sequence complete")
 
@@ -159,7 +177,7 @@ class UartTestExecutor:
         time.sleep(0.1)
         self.toggle_srst("dl")  # SRST low
         time.sleep(0.5)
-        self.toggle_srst("dh")  # SRST high
+        self.release_srst()
         time.sleep(2)
         self.log("Normal boot mode sequence complete")
 
@@ -439,7 +457,7 @@ Examples:
 
     # GPIO control
     parser.add_argument(
-        "--srst-pin", type=int, default=23, help="SRST GPIO pin number (default: 23)"
+        "--srst-pin", type=int, default=27, help="SRST GPIO pin number (default: 27)"
     )
     parser.add_argument(
         "--fwspick-pin",
@@ -551,8 +569,10 @@ Examples:
     try:
         # Handle manual GPIO operations
         if args.manual_srst:
-            state = "dl" if args.manual_srst in ["low", "dl"] else "dh"
-            executor.toggle_srst(state)
+            if args.manual_srst in ["low", "dl"]:
+                executor.toggle_srst("dl")
+            else:
+                executor.release_srst()
             return 0
 
         if args.manual_fwspick:
