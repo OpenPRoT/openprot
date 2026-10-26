@@ -10,8 +10,14 @@ use kernel::{self as _};
 #[unsafe(no_mangle)]
 #[allow(non_snake_case)]
 pub unsafe extern "C" fn pw_assert_HandleFailure() -> ! {
-    use kernel::Arch as _;
-    Arch::panic()
+    #[cfg(any(feature = "emulator", feature = "fpga"))]
+    exit(1);
+
+    #[cfg(not(any(feature = "emulator", feature = "fpga")))]
+    {
+        use kernel::Arch as _;
+        Arch::panic()
+    }
 }
 
 #[riscv_rt::entry]
@@ -30,9 +36,12 @@ pub fn exit(code: u32) -> ! {
 
     #[cfg(feature = "emulator")]
     unsafe {
-        // SAFETY: writing to this address will cause the emulator to exit.
-        let exitcode = core::ptr::with_exposed_provenance_mut::<u32>(0x1000_2000);
-        exitcode.write_volatile(code);
+        // SAFETY: 0x1000_1041 is the emulator UART TX register. Writing 0xff
+        // (pass) or 0x01 (fail) signals ExitStatus to ModelEmulated
+        // (matching caliptra-mcu-sw/platforms/emulator/rom/src/io.rs::exit_emulator).
+        let tx = core::ptr::with_exposed_provenance_mut::<u8>(0x1000_1041);
+        let byte: u8 = if code == 0 { 0xff } else { 0x01 };
+        tx.write_volatile(byte);
     }
 
     #[cfg(feature = "fpga")]
