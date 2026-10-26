@@ -112,7 +112,7 @@ def _sequence_to_fwspick_mode(
     port.read(4096)
     _gpio_set(fwspick_pin, "pn dh")
     time.sleep(1)
-    _gpio_set(srst_pin, "dh")
+    _gpio_set_input(srst_pin, "pn")
     time.sleep(1)
 
 

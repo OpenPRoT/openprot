@@ -34,9 +34,9 @@ GPIO connections should be as follows:
 
 | Raspberry Pi Pin | Target Device | Target Pin     |
 |------------------|---------------|----------------|
-| 23               | A             | SRST (PIN1)    |
+| 27               | A             | SRST (PIN1)    |
 | 18               | A             | FWSPICK (PIN2) |
-| 25               | B             | SRST (PIN1)    |
+| 17               | B             | SRST (PIN1)    |
 | 24               | B             | FWSPICK (PIN2) |
 | 8                | A             | GPIOJ0 (J15 pin 15) |
 
