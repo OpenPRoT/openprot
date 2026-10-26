@@ -59,14 +59,14 @@ pldm-common = { git = "https://github.com/OpenPRoT/pldm-lib.git" }
 pldm-interface = { git = "https://github.com/OpenPRoT/pldm-lib.git" }
 # Pin to match Hubris ecosystem
 rand_core = { version = "0.9", default-features = false }
-sec1 = { version = "0.7.3" }
+sec1 = { version = "0.8" }
 subtle = { version = "2", default-features = false }
 
 # RustCrypto ECDSA crates
-ecdsa = { version = "0.16.9" }
-p256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
-p384 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
-k256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
+ecdsa = { version = "0.17" }
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "arithmetic"] }
+p384 = { version = "0.14", default-features = false, features = ["ecdsa", "arithmetic"] }
+k256 = { version = "0.14", default-features = false, features = ["ecdsa", "arithmetic"] }
 
 # RustCrypto digest crates
 sha2 = { version = "0.10", default-features = false }
