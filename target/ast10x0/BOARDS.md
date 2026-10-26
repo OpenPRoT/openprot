@@ -34,9 +34,9 @@ GPIO connections should be as follows:
 
 | Raspberry Pi Pin | Target Device | Target Pin     |
 |------------------|---------------|----------------|
-| 23               | A             | SRST (PIN1)    |
+| 27               | A             | SRST (PIN1)    |
 | 18               | A             | FWSPICK (PIN2) |
-| 25               | B             | SRST (PIN1)    |
+| 17               | B             | SRST (PIN1)    |
 | 24               | B             | FWSPICK (PIN2) |
 
 For I2C communication, connect pins 1 and 2 of J15. This links I2C2 between the devices.
