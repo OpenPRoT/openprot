@@ -672,6 +672,10 @@ def _do_bump_transaction(
     print("")
     print(f"  caliptra_dpe : {dpe_sha}  (Cargo.toml, unchanged)")
     print("  ureg         : check git_override in MODULE.bazel  (unchanged)")
+    print(
+        "  bitstream    : check @caliptra_fpga_bitstream in MODULE.bazel"
+        " against hw/fpga/bitstream_manifests/subsystem.toml"
+    )
     print("")
     print("------------------------------------------------------------")
     print("  Next steps:")
