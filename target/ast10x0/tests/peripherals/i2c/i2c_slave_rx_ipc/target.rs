@@ -37,8 +37,9 @@ impl TargetInterface for Target {
         }
 
         codegen::start();
-        #[expect(clippy::empty_loop)]
-        loop {}
+        loop {
+            let _ = kernel::sleep_until(Arch, kernel::Instant::MAX);
+        }
     }
 
     fn shutdown(code: u32) -> ! {

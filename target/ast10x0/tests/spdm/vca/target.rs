@@ -46,7 +46,9 @@ impl TargetInterface for Target {
         }
 
         codegen::start();
-        loop {}
+        loop {
+            let _ = kernel::sleep_until(Arch, kernel::Instant::MAX);
+        }
     }
 
     fn shutdown(code: u32) -> ! {
