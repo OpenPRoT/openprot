@@ -8,7 +8,6 @@ exports_files(
 
 exports_files(
     [
-        "emulator/app/src/main.rs",
         "emulator/app/src/lib.rs",
         "emulator/app/mcu-mbox/src/lib.rs",
         "emulator/bmc/src/lib.rs",
@@ -17,9 +16,9 @@ exports_files(
         "rom/src/lib.rs",
         "common/testing/src/lib.rs",
         "registers/generated-emulator/src/lib.rs",
+        "registers/generated-firmware/src/lib.rs",
         "emulator/consts/src/lib.rs",
         "caliptra-util-host/apps/mailbox/server/src/lib.rs",
-        "builder/src/lib.rs",
         "platforms/emulator/rom/src/main.rs",
         "romtime/src/lib.rs",
     ],
@@ -59,12 +58,6 @@ filegroup(
 filegroup(
     name = "emulator_registers_generated_srcs",
     srcs = glob(["registers/generated-emulator/src/**/*.rs"]),
-    visibility = ["//visibility:public"],
-)
-
-filegroup(
-    name = "builder_srcs",
-    srcs = glob(["builder/src/**/*.rs"]),
     visibility = ["//visibility:public"],
 )
 

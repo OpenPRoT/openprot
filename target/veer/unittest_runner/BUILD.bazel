@@ -5,7 +5,7 @@ load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
 load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
-load("//target/veer:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//target/veer:defs.bzl", "TARGET_COMPATIBLE_WITH", "veer_system_config")
 load("//target/veer/tooling:caliptra_runner.bzl", "caliptra_test")
 
 system_image(
@@ -24,13 +24,29 @@ target_linker_script(
 caliptra_test(
     name = "emulator_test",
     interface = "emulator",
-    tags = ["emulator"],
+    # caliptra_runner.py hardcodes --i3c-port=65534, so caliptra emulator
+    # tests cannot run in parallel without an EADDRINUSE collision.
+    tags = [
+        "emulator",
+        "exclusive",
+    ],
     target = ":unittest_runner",
 )
 
-filegroup(
+caliptra_test(
+    name = "fpga_test",
+    interface = "fpga",
+    tags = [
+        "fpga",
+        "manual",
+        "requires-fpga",
+    ],
+    target = ":unittest_runner",
+)
+
+veer_system_config(
     name = "system_config",
-    srcs = ["system.json5"],
+    src = "system.json5.tmpl",
 )
 
 target_codegen(

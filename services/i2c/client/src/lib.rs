@@ -44,9 +44,6 @@ pub enum ClientError {
 pub struct SlaveReceiveEvent {
     /// Kind of event that triggered this receive (DataReceived, ReadRequest, Stop).
     pub kind: SlaveEvent,
-    /// Source I2C address (7-bit) of the master that wrote to us.
-    /// `None` if the hardware did not capture it.
-    pub source_address: Option<SevenBitAddress>,
     /// Number of data bytes in the buffer.
     pub data_len: usize,
     /// True if the latched buffer exceeded `buf` and was truncated.
@@ -210,17 +207,17 @@ impl<T: Transport> I2cClient<T> {
     }
 
     /// Fetch the latched slave-RX bytes and metadata into `buf` (non-blocking).
-    /// Returns event kind, source address, and data length.
+    /// Returns event kind and data length.
     /// Call this after a `Signals::USER` wake on the channel.
     ///
-    /// Response payload format: [kind (1), source_addr (1), data (0..)]
+    /// Response payload format: [kind (1), data (0..)]
     ///
     /// # Errors
     /// - [`ClientError::Transport`] — the IPC round-trip failed.
     /// - [`ClientError::ServerError`]`(`[`I2cError::NoData`]`)` — nothing is latched yet.
     /// - [`ClientError::InvalidResponse`] — the response was malformed.
     pub fn slave_receive(&mut self, buf: &mut [u8]) -> Result<SlaveReceiveEvent, ClientError> {
-        let max = (buf.len().saturating_sub(2)).min(MAX_PAYLOAD_SIZE) as u16;
+        let max = (buf.len().saturating_sub(1)).min(MAX_PAYLOAD_SIZE) as u16;
         let mut resp = [0u8; I2cResponseHeader::SIZE + MAX_PAYLOAD_SIZE];
         let hdr = I2cRequestHeader::new(I2cOp::SlaveReceive, 0, max, 0);
         let mut req = [0u8; I2cRequestHeader::SIZE];
@@ -248,31 +245,25 @@ impl<T: Transport> I2cClient<T> {
             return Err(ClientError::InvalidResponse);
         }
 
-        // Payload format: [kind (1), source (1), data (0..)]
-        if payload_len < 2 {
+        // Payload format: [kind (1), data (0..)]
+        if payload_len < 1 {
             return Err(ClientError::InvalidResponse);
         }
 
         let payload_offset = I2cResponseHeader::SIZE;
         let kind_byte = resp[payload_offset];
-        let source_addr = resp[payload_offset + 1];
-        let data_len = payload_len - 2;
+        let data_len = payload_len - 1;
 
         let kind = SlaveEvent::try_from(kind_byte).map_err(|_| ClientError::InvalidResponse)?;
 
         // Copy data into the caller's buffer.
         let copy = data_len.min(buf.len());
         if copy > 0 {
-            buf[..copy].copy_from_slice(&resp[payload_offset + 2..payload_offset + 2 + copy]);
+            buf[..copy].copy_from_slice(&resp[payload_offset + 1..payload_offset + 1 + copy]);
         }
 
         Ok(SlaveReceiveEvent {
             kind,
-            source_address: if source_addr <= 0x7F {
-                Some(source_addr)
-            } else {
-                None
-            },
             data_len: copy,
             truncated: data_len > copy,
         })

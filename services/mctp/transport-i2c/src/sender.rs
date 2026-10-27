@@ -46,11 +46,12 @@ impl<C: I2c<u8>> I2cSender<C> {
 impl<C: I2c<u8>> mctp_lib::Sender for I2cSender<C> {
     fn send_vectored(
         &mut self,
+        _eid: mctp::Eid,
         mut fragmenter: mctp_lib::fragment::Fragmenter,
         payload: &[&[u8]],
     ) -> Result<mctp::Tag> {
-        // Use the configured remote address. In a full implementation, this would
-        // look up the destination EID in a neighbor table to find the corresponding
+        // Use the configured remote address. In a full implementation, `_eid`
+        // would be looked up in a neighbor table to find the corresponding
         // I2C address. For now, we support single-peer communication with a static
         // remote address configured at construction time.
         // TODO: Implement full EID → I2C address neighbor table

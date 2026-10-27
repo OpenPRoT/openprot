@@ -45,9 +45,6 @@ pub struct Bus<B> {
     notif_enabled: bool,
     rx: [u8; MAX_PAYLOAD_SIZE],
     rx_len: usize,
-    /// Source address (7-bit) of the master that wrote to us; only valid
-    /// when rx_len > 0. Captured on IRQ drain; ignored if not available.
-    rx_source: u8,
     /// Event kind that triggered the latch (DataReceived, ReadRequest, Stop).
     /// Only meaningful when rx_len > 0 or notification was armed.
     rx_event_kind: SlaveEvent,
@@ -62,7 +59,6 @@ impl<B> Bus<B> {
             notif_enabled: false,
             rx: [0u8; MAX_PAYLOAD_SIZE],
             rx_len: 0,
-            rx_source: 0,
             rx_event_kind: SlaveEvent::DataReceived,
         }
     }
@@ -135,16 +131,6 @@ where
                                     Ok(n) => {
                                         if n > 0 {
                                             bus.rx_len = n;
-                                            // Source address extraction from MCTP-I2C header.
-                                            // With AST_I2CC_SLAVE_PKT_SAVE_ADDR set, the hardware
-                                            // prepends dest address at byte[0]; the MCTP-I2C header
-                                            // carries source at byte[3]: src_addr << 1 | 1.
-                                            // Extract it (bits 7:1 = 7-bit address).
-                                            if n > 3 {
-                                                bus.rx_source = (bus.rx[3] >> 1) & 0x7F;
-                                            } else {
-                                                bus.rx_source = 0xFF; // Invalid: message too short
-                                            }
                                         }
                                     }
                                     Err(_) => {
@@ -244,7 +230,6 @@ where
             Some((I2cOp::DisableSlaveNotification, _)) => {
                 bus.notif_enabled = false;
                 bus.rx_len = 0;
-                bus.rx_source = 0;
                 bus.rx_event_kind = SlaveEvent::DataReceived;
                 encode_ok(&mut response_buf, 0)
             }
@@ -253,9 +238,9 @@ where
                 if bus.rx_len == 0 {
                     encode_error(&mut response_buf, I2cError::NoData)
                 } else {
-                    // Response payload: [kind (1), source_addr (1), data (0..max_len)]
+                    // Response payload: [kind (1), data (0..max_len)]
                     let cap = response_buf.len() - I2cResponseHeader::SIZE;
-                    let metadata_size = 2; // kind + source
+                    let metadata_size = 1; // kind
                     if cap < metadata_size {
                         encode_error(&mut response_buf, I2cError::BufferTooSmall)
                     } else {
@@ -263,8 +248,7 @@ where
                         let n = bus.rx_len.min(max_len).min(data_cap);
                         let payload_offset = I2cResponseHeader::SIZE;
                         response_buf[payload_offset] = bus.rx_event_kind as u8;
-                        response_buf[payload_offset + 1] = bus.rx_source;
-                        response_buf[payload_offset + 2..payload_offset + 2 + n]
+                        response_buf[payload_offset + 1..payload_offset + 1 + n]
                             .copy_from_slice(&bus.rx[..n]);
                         bus.rx_len = 0;
                         encode_ok(&mut response_buf, metadata_size + n)

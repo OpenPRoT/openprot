@@ -4,7 +4,7 @@
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@pigweed//pw_build:merge_flags.bzl", "flags_from_dict")
 load("@pigweed//pw_kernel:flags.bzl", "KERNEL_DEVICE_COMMON_FLAGS")
-load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
 load("//target/veer:defs.bzl", "TARGET_COMPATIBLE_WITH")
 
 platform(
@@ -86,9 +86,28 @@ rust_library(
     ],
 )
 
+rust_binary(
+    name = "caliptra_emulator",
+    srcs = ["caliptra_emulator_main.rs"],
+    edition = "2021",
+    visibility = [":__subpackages__"],
+    deps = [
+        "//third_party/caliptra/caliptra-mcu-sw:emulator_lib",
+        "//third_party/caliptra/caliptra-mcu-sw:mcu_testing_common",
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_cpu",
+        "@rust_caliptra_crates_host//:clap",
+    ],
+)
+
 rust_library(
     name = "console",
     srcs = ["console.rs"],
+    crate_features = select({
+        ":emulator": ["emulator"],
+        ":fpga": ["fpga"],
+        ":silicon": ["silicon"],
+        "//conditions:default": [],
+    }),
     crate_name = "console_backend",
     edition = "2024",
     target_compatible_with = TARGET_COMPATIBLE_WITH,
@@ -116,6 +135,8 @@ rust_library(
     deps = [
         "@pigweed//pw_kernel/config:kernel_config_interface",
         "@pigweed//pw_kernel/lib/memory_config",
+        "@rust_caliptra_crates//:caliptra-mcu-config-emulator",
+        "@rust_caliptra_crates//:caliptra-mcu-config-fpga",
     ],
 )
 

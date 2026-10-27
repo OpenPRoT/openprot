@@ -1,0 +1,63 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 GPIO interrupt configuration image.
+//
+// The userspace app owns the GPIO controller register block, configures GPIOA0
+// for both-edge interrupts, registers IRQ 11 with a wait group, and verifies
+// the interrupt enable and sensitivity registers.
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 2048,
+    },
+    kernel: {
+        flash_start_address: 0x00000800,
+        flash_size_bytes: 63488,
+        ram_start_address: 0x00060000,
+        ram_size_bytes: 131072,
+    },
+    apps: [
+        {
+            name: "gpio_irq_server",
+            flash_size_bytes: 32768,
+            processes: [
+                {
+                    name: "gpio_irq_process",
+                    ram_size_bytes: 65536,
+                    objects: [
+                        {
+                            name: "wg",
+                            type: "wait_group",
+                        },
+                        {
+                            // ast1060_pac::Interrupt::gpio = 11.
+                            name: "gpio_irq",
+                            type: "interrupt",
+                            irqs: [
+                                {
+                                    name: "gpio",
+                                    number: 11,
+                                },
+                            ],
+                        },
+                        {
+                            type: "thread",
+                            name: "gpio_irq_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },
+                    ],
+                    memory_mappings: [
+                        {
+                            name: "gpio_regs",
+                            type: "device",
+                            start_address: 0x7e780000,
+                            size_bytes: 0x1000,
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}

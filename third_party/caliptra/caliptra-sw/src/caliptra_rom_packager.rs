@@ -13,12 +13,9 @@
 //!
 //! Mirrors `pub fn elf2rom(elf_bytes: &[u8]) -> io::Result<Vec<u8>>` in
 //! `caliptra-sw/builder/src/lib.rs` (around line 396). That function lives in
-//! the `caliptra-builder` crate, which we cannot depend on from Bazel because
-//! of unresolved upstream deps (`fslock`, `Crypto` trait wiring, `CARGO` env
-//! var). Our `//third_party/caliptra/caliptra-sw:caliptra_builder` target is
-//! tagged `manual` for that reason. If/when those upstream deps are fixed and
-//! `caliptra_builder` becomes buildable, this file should be replaced by a
-//! thin wrapper that calls `caliptra_builder::elf2rom()` directly.
+//! the `caliptra-builder` crate, which we do not pull into Bazel because it
+//! shells out to `cargo` and pulls in host-only build orchestration deps
+//! (`fslock`, `CARGO` env var).
 
 use std::env;
 use std::fs;

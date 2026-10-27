@@ -3,8 +3,11 @@
 
 #![no_std]
 
+pub mod gpio;
 pub mod hace;
 pub mod i2c;
+pub mod i3c;
+pub mod otp;
 pub mod scu;
 pub mod sgpiom;
 pub mod smc;

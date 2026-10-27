@@ -1,0 +1,826 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+//! I3C configuration types
+//!
+//! Configuration structures for I3C controller and devices.
+
+use core::marker::PhantomData;
+use heapless::Vec;
+
+use super::constants::NSEC_PER_SEC;
+use super::error::I3cError;
+use super::types::DevKind;
+
+// =============================================================================
+// Target Configuration
+// =============================================================================
+
+/// Configuration for I3C target mode
+pub struct I3cTargetConfig {
+    /// Target flags
+    pub flags: u8,
+    /// Dynamic address assigned by DAA.
+    pub addr: Option<u8>,
+    /// Static address advertised before DAA.
+    pub static_addr: Option<u8>,
+    /// Mandatory Data Byte for IBI
+    pub mdb: u8,
+}
+
+impl I3cTargetConfig {
+    /// Create a target configuration with no assigned dynamic address.
+    #[must_use]
+    pub const fn new(flags: u8, static_addr: Option<u8>, mdb: u8) -> Self {
+        Self {
+            flags,
+            addr: None,
+            static_addr,
+            mdb,
+        }
+    }
+}
+
+// =============================================================================
+// Address Book
+// =============================================================================
+
+/// Address allocation and tracking for I3C bus
+pub struct AddrBook {
+    /// Bitmap (128 bits) of addresses currently in use.
+    in_use: [u32; 4],
+    /// Bitmap (128 bits) of reserved addresses (not available for allocation).
+    reserved: [u32; 4],
+}
+
+impl AddrBook {
+    /// Read bit `addr` (0..=127) of a 128-bit map. The `& 3` index keeps this
+    /// panic-free (provably in `0..4`) for the `no_panics` analysis.
+    #[inline]
+    fn bit_get(bits: &[u32; 4], addr: u8) -> bool {
+        let i = addr as usize;
+        (bits[(i >> 5) & 3] >> (i & 31)) & 1 != 0
+    }
+
+    /// Set/clear bit `addr` (0..=127) of a 128-bit map (panic-free).
+    #[inline]
+    fn bit_set(bits: &mut [u32; 4], addr: u8, val: bool) {
+        let i = addr as usize;
+        let mask = 1u32 << (i & 31);
+        if val {
+            bits[(i >> 5) & 3] |= mask;
+        } else {
+            bits[(i >> 5) & 3] &= !mask;
+        }
+    }
+}
+
+impl Default for AddrBook {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AddrBook {
+    /// Create a new empty address book
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            in_use: [0; 4],
+            reserved: [0; 4],
+        }
+    }
+
+    /// Check whether a 7-bit address is free.
+    #[inline]
+    #[must_use]
+    pub fn is_free(&self, addr: u8) -> bool {
+        addr < 128 && !Self::bit_get(&self.in_use, addr) && !Self::bit_get(&self.reserved, addr)
+    }
+
+    /// Check whether an address is reserved or outside the 7-bit range.
+    #[inline]
+    #[must_use]
+    pub fn is_reserved(&self, addr: u8) -> bool {
+        addr >= 128 || Self::bit_get(&self.reserved, addr)
+    }
+
+    /// Reserve default I3C addresses per specification
+    ///
+    /// Reserves addresses 0-7, 0x7E (broadcast), and addresses that
+    /// differ from 0x7E by a single bit.
+    pub fn reserve_defaults(&mut self) {
+        // Reserve addresses 0-7
+        for a in 0u8..=7 {
+            Self::bit_set(&mut self.reserved, a, true);
+        }
+        // Reserve broadcast address
+        Self::bit_set(&mut self.reserved, 0x7E, true);
+        // Reserve addresses differing from 0x7E by single bit
+        for i in 0..=7 {
+            let alt = 0x7E ^ (1u8 << i);
+            if alt <= 0x7E {
+                Self::bit_set(&mut self.reserved, alt, true);
+            }
+        }
+    }
+
+    /// Allocate an address starting from the given value
+    ///
+    /// Returns `Some(addr)` if an address was found, `None` if exhausted.
+    pub fn alloc_from(&mut self, start: u8) -> Option<u8> {
+        let mut addr = start.max(8);
+        while addr < 0x7F {
+            if self.is_free(addr) {
+                return Some(addr);
+            }
+            addr += 1;
+        }
+        None
+    }
+
+    /// Mark an address as used or free
+    #[inline]
+    pub fn mark_use(&mut self, addr: u8, used: bool) {
+        // Avoid bitmap aliasing above the 7-bit range.
+        if addr != 0 && addr < 128 {
+            Self::bit_set(&mut self.in_use, addr, used);
+        }
+    }
+
+    /// Clear all in-use addresses.
+    pub fn reset_in_use(&mut self) {
+        self.in_use = [0; 4];
+    }
+}
+
+// =============================================================================
+// Device Entry
+// =============================================================================
+
+/// Cached controller/target IBI state.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IbiState {
+    Disabled,
+    Enabled,
+    /// An ENEC/DISEC or DAT reprogramming operation had an ambiguous outcome.
+    Unknown,
+}
+
+/// Confidence in a device entry's dynamic-address assignment.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DaState {
+    /// No device has claimed this address.
+    Unassigned,
+    /// GETPID confirmed the address owner.
+    Verified,
+    /// The address may be claimed, but its owner is unverified.
+    Unknown,
+}
+
+/// Entry for a device attached to the I3C bus
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DeviceEntry {
+    /// Device type (I3C or I2C)
+    pub kind: DevKind,
+    /// Provisional ID (for I3C devices)
+    pub pid: Option<u64>,
+    /// Static address (for I2C or SETDASA)
+    pub static_addr: u8,
+    /// Current dynamic address
+    pub dyn_addr: u8,
+    /// Desired dynamic address
+    pub desired_da: u8,
+    /// Bus Characteristics Register
+    pub bcr: u8,
+    /// Device Characteristics Register
+    pub dcr: u8,
+    /// Maximum read speed
+    pub maxrd: u8,
+    /// Maximum write speed
+    pub maxwr: u8,
+    /// Maximum read length
+    pub mrl: u16,
+    /// Maximum write length
+    pub mwl: u16,
+    /// Maximum IBI payload size
+    pub max_ibi: u8,
+    /// Cached IBI state.
+    pub ibi_state: IbiState,
+    /// Position in DAT (Device Address Table)
+    pub pos: Option<u8>,
+    /// Dynamic-address confidence.
+    pub da_state: DaState,
+}
+
+impl DeviceEntry {
+    /// Create a new I3C device entry
+    #[must_use]
+    pub const fn new_i3c(pid: u64, desired_da: u8) -> Self {
+        Self {
+            kind: DevKind::I3c,
+            pid: Some(pid),
+            static_addr: 0,
+            dyn_addr: desired_da,
+            desired_da,
+            bcr: 0,
+            dcr: 0,
+            maxrd: 0,
+            maxwr: 0,
+            mrl: 0,
+            mwl: 0,
+            max_ibi: 0,
+            ibi_state: IbiState::Disabled,
+            pos: None,
+            da_state: DaState::Unassigned,
+        }
+    }
+
+    /// Create a new I2C device entry
+    #[must_use]
+    pub const fn new_i2c(static_addr: u8) -> Self {
+        Self {
+            kind: DevKind::I2c,
+            pid: None,
+            static_addr,
+            dyn_addr: static_addr,
+            desired_da: static_addr,
+            bcr: 0,
+            dcr: 0,
+            maxrd: 0,
+            maxwr: 0,
+            mrl: 0,
+            mwl: 0,
+            max_ibi: 0,
+            ibi_state: IbiState::Disabled,
+            pos: None,
+            da_state: DaState::Unassigned,
+        }
+    }
+}
+
+// =============================================================================
+// Attached Devices
+// =============================================================================
+
+/// Collection of devices attached to the I3C bus
+pub struct Attached {
+    /// Device entries (max 8 devices)
+    pub devices: Vec<DeviceEntry, 8>,
+    /// Position-to-index mapping
+    pub by_pos: [Option<u8>; 8],
+}
+
+impl Default for Attached {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Attached {
+    /// Create a new empty attached devices collection
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            devices: Vec::new(),
+            by_pos: [None; 8],
+        }
+    }
+
+    /// Attach a device to the bus
+    ///
+    /// Returns the device index on success.
+    pub fn attach(&mut self, dev: DeviceEntry) -> Result<usize, I3cError> {
+        let idx = self.devices.len();
+        self.devices.push(dev).map_err(|_| I3cError::NoFreeSlot)?;
+        Ok(idx)
+    }
+
+    /// Detach a device by its index
+    pub fn detach(&mut self, dev_idx: usize) {
+        if dev_idx >= self.devices.len() {
+            return;
+        }
+
+        // Clear position mapping if device had one
+        if let Some(pos) = self.devices[dev_idx].pos
+            && let Some(p) = self.by_pos.get_mut(pos as usize)
+        {
+            *p = None;
+        }
+
+        // Remove device and update position mappings
+        self.devices.remove(dev_idx);
+        for bp in &mut self.by_pos {
+            if let Some(idx) = bp {
+                let idx_usize = *idx as usize;
+                if idx_usize > dev_idx && idx_usize > 0 {
+                    // SAFETY: Saturating subtract to prevent panic on underflow
+                    *bp = Some(idx.saturating_sub(1));
+                }
+            }
+        }
+    }
+
+    /// Detach a device by its DAT position
+    pub fn detach_by_pos(&mut self, pos: usize) {
+        if let Some(Some(dev_idx)) = self.by_pos.get(pos) {
+            self.detach(*dev_idx as usize);
+        }
+    }
+
+    /// Get the DAT position of a device by its index
+    #[must_use]
+    pub fn pos_of(&self, dev_idx: usize) -> Option<u8> {
+        let dev_idx_u8 = u8::try_from(dev_idx).ok()?;
+        self.by_pos
+            .iter()
+            .enumerate()
+            .find_map(|(pos, &v)| (v == Some(dev_idx_u8)).then_some(pos))
+            .and_then(|p| u8::try_from(p).ok())
+    }
+
+    /// Find device index by dynamic address
+    #[must_use]
+    pub fn find_dev_idx_by_addr(&self, da: u8) -> Option<usize> {
+        self.devices.iter().position(|d| d.dyn_addr == da)
+    }
+
+    /// Get DAT position by dynamic address
+    #[must_use]
+    pub fn pos_of_addr(&self, da: u8) -> Option<u8> {
+        let dev_idx = self.devices.iter().position(|d| d.dyn_addr == da)?;
+        self.pos_of(dev_idx)
+    }
+
+    /// Get DAT position by PID
+    #[must_use]
+    pub fn pos_of_pid(&self, pid: u64) -> Option<u8> {
+        let dev_idx = self.devices.iter().position(|d| d.pid == Some(pid))?;
+        self.pos_of(dev_idx)
+    }
+
+    /// Find device index by static address (legacy I2C devices)
+    #[must_use]
+    pub fn find_dev_idx_by_static_addr(&self, addr: u8) -> Option<usize> {
+        self.devices
+            .iter()
+            .position(|d| d.kind == DevKind::I2c && d.static_addr == addr)
+    }
+
+    /// Get DAT position by static address (legacy I2C devices)
+    #[must_use]
+    pub fn pos_of_static_addr(&self, addr: u8) -> Option<u8> {
+        let dev_idx = self.find_dev_idx_by_static_addr(addr)?;
+        self.pos_of(dev_idx)
+            .or_else(|| self.devices.get(dev_idx).and_then(|d| d.pos))
+    }
+
+    /// Map a DAT position to a device index
+    #[inline]
+    pub fn map_pos(&mut self, pos: u8, idx: u8) -> bool {
+        if let Some(slot) = self.by_pos.get_mut(pos as usize) {
+            *slot = Some(idx);
+            return true;
+        }
+        false
+    }
+
+    /// Unmap a DAT position
+    #[inline]
+    pub fn unmap_pos(&mut self, pos: u8) {
+        if let Some(slot) = self.by_pos.get_mut(pos as usize) {
+            *slot = None;
+        }
+    }
+}
+
+// =============================================================================
+// Common State
+// =============================================================================
+
+/// Common state shared across configurations (placeholder)
+#[derive(Default)]
+pub struct CommonState {
+    _phantom: PhantomData<()>,
+}
+
+/// Common configuration (placeholder)
+#[derive(Default)]
+pub struct CommonCfg {
+    _phantom: PhantomData<()>,
+}
+
+// =============================================================================
+// Reset Specification
+// =============================================================================
+
+/// Reset line specification
+#[derive(Clone, Copy)]
+pub struct ResetSpec {
+    /// Reset line ID
+    pub id: u32,
+    /// Whether reset is active high
+    pub active_high: bool,
+}
+
+// =============================================================================
+// Main Configuration
+// =============================================================================
+
+/// Main I3C bus configuration
+pub struct I3cConfig {
+    /// Common higher-level state
+    pub common: CommonState,
+    /// Target mode configuration (if operating as target)
+    pub target_config: Option<I3cTargetConfig>,
+    /// Address book for dynamic address management
+    pub addrbook: AddrBook,
+    /// Collection of attached devices
+    pub attached: Attached,
+
+    // Clock configuration
+    /// Core clock frequency in Hz (injected by platform)
+    ///
+    /// If `None`, hardware implementation may auto-detect or use a default.
+    /// Providing this value decouples I3C from SCU/clock tree access.
+    pub core_clk_hz: Option<u32>,
+
+    // Timing/PHY parameters (nanoseconds, computed from core_clk_hz)
+    /// Core clock period in ns (computed during init)
+    pub core_period: u32,
+    /// I2C SCL frequency in Hz
+    pub i2c_scl_hz: u32,
+    /// I3C SCL frequency in Hz
+    pub i3c_scl_hz: u32,
+    /// I3C push-pull SCL high period in ns
+    pub i3c_pp_scl_hi_period_ns: u32,
+    /// I3C push-pull SCL low period in ns
+    pub i3c_pp_scl_lo_period_ns: u32,
+    /// I3C open-drain SCL high period in ns
+    pub i3c_od_scl_hi_period_ns: u32,
+    /// I3C open-drain SCL low period in ns
+    pub i3c_od_scl_lo_period_ns: u32,
+    /// SDA TX hold time in ns
+    pub sda_tx_hold_ns: u32,
+    /// Whether this controller is secondary
+    pub is_secondary: bool,
+
+    // Tables/indices
+    /// Maximum number of devices
+    pub maxdevs: u16,
+    /// Bitmap of free DAT positions
+    pub free_pos: u32,
+    /// Bitmap of devices needing dynamic address
+    pub need_da: u32,
+    /// DCR value
+    pub dcr: u32,
+
+    // Target-mode data
+    /// Whether SIR (Slave Interrupt Request) is allowed by software
+    pub sir_allowed_by_sw: bool,
+}
+
+impl Default for I3cConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl I3cConfig {
+    /// Create a new configuration with default values
+    #[must_use]
+    pub fn new() -> Self {
+        // Constructors must reserve spec-defined addresses.
+        let mut addrbook = AddrBook::new();
+        addrbook.reserve_defaults();
+
+        Self {
+            common: CommonState::default(),
+            target_config: None,
+            addrbook,
+            attached: Attached::new(),
+            core_clk_hz: None,
+            core_period: 0,
+            i2c_scl_hz: 0,
+            i3c_scl_hz: 0,
+            i3c_pp_scl_hi_period_ns: 0,
+            i3c_pp_scl_lo_period_ns: 0,
+            i3c_od_scl_hi_period_ns: 0,
+            i3c_od_scl_lo_period_ns: 0,
+            sda_tx_hold_ns: 0,
+            is_secondary: false,
+            maxdevs: 8,
+            free_pos: 0,
+            need_da: 0,
+            dcr: 0,
+            sir_allowed_by_sw: false,
+        }
+    }
+
+    /// Initialize runtime fields (address book and attached devices)
+    pub fn init_runtime_fields(&mut self) {
+        self.addrbook = AddrBook::new();
+        self.addrbook.reserve_defaults();
+        self.attached = Attached::new();
+    }
+
+    /// Pick and reserve an initial dynamic address for a device.
+    pub fn pick_initial_da(&mut self, static_addr: u8, desired: u8) -> Option<u8> {
+        let addr = if desired != 0 && self.addrbook.is_free(desired) {
+            desired
+        } else if static_addr != 0 && self.addrbook.is_free(static_addr) {
+            static_addr
+        } else {
+            self.addrbook.alloc_from(8)?
+        };
+        self.addrbook.mark_use(addr, true);
+        Some(addr)
+    }
+
+    /// Reassign a device's dynamic address
+    pub fn reassign_da(&mut self, from: u8, to: u8) -> Result<(), I3cError> {
+        // Resolve the device before mutating the address book.
+        let idx = self
+            .attached
+            .devices
+            .iter()
+            .position(|d| d.dyn_addr == from)
+            .ok_or(I3cError::DevNotFound)?;
+
+        if from == to {
+            return Ok(());
+        }
+        if !self.addrbook.is_free(to) {
+            return Err(I3cError::AddrInUse);
+        }
+
+        self.addrbook.mark_use(from, false);
+        self.addrbook.mark_use(to, true);
+        if let Some(dev) = self.attached.devices.get_mut(idx) {
+            dev.dyn_addr = to;
+            // Keep the next DAA cycle on the new address.
+            dev.desired_da = to;
+        }
+        Ok(())
+    }
+
+    /// Record an address-changing operation whose bus-side outcome is
+    /// ambiguous. The old and candidate addresses stay reserved so neither
+    /// can be handed to another target before the owner is verified.
+    pub(crate) fn mark_da_unknown(&mut self, dev_idx: usize, candidate: Option<u8>) {
+        let Some(dev) = self.attached.devices.get_mut(dev_idx) else {
+            return;
+        };
+        if dev.kind != DevKind::I3c {
+            return;
+        }
+
+        dev.da_state = DaState::Unknown;
+        self.addrbook.mark_use(dev.dyn_addr, true);
+        self.addrbook.mark_use(dev.desired_da, true);
+        if let Some(addr) = candidate {
+            self.addrbook.mark_use(addr, true);
+        }
+    }
+
+    /// Preserve all possible address owners after an ambiguous broadcast
+    /// RSTDAA. Existing reservations, including parking addresses, remain
+    /// intact because the command may not have reached every target.
+    pub(crate) fn mark_rstdaa_unknown(&mut self) {
+        for dev in &mut self.attached.devices {
+            if dev.kind != DevKind::I3c {
+                continue;
+            }
+            dev.da_state = DaState::Unknown;
+            dev.ibi_state = IbiState::Unknown;
+            self.addrbook.mark_use(dev.dyn_addr, true);
+            self.addrbook.mark_use(dev.desired_da, true);
+        }
+    }
+
+    /// Commit a confirmed broadcast RSTDAA and rebuild reservations from the
+    /// addresses that will be offered by the next DAA walk.
+    pub(crate) fn commit_rstdaa(&mut self) {
+        self.addrbook.reset_in_use();
+        for dev in &mut self.attached.devices {
+            match dev.kind {
+                DevKind::I2c => self.addrbook.mark_use(dev.static_addr, true),
+                DevKind::I3c => {
+                    dev.da_state = DaState::Unassigned;
+                    dev.ibi_state = IbiState::Disabled;
+                    self.addrbook.mark_use(dev.desired_da, true);
+                }
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Builder Pattern for I3cConfig
+// =============================================================================
+
+impl I3cConfig {
+    /// Set core clock frequency in Hz
+    ///
+    /// This decouples the I3C driver from SCU/clock tree access.
+    /// The platform layer should provide the actual clock rate.
+    ///
+    /// # I3C Timing Requirements (MIPI I3C Spec v1.1)
+    ///
+    /// | Mode | Min Clock | Typical | Notes |
+    /// |------|-----------|---------|-------|
+    /// | SDR | 12.5 `MHz` | 100-200 `MHz` | For 12.5 `MHz` SCL |
+    /// | HDR | 25 `MHz` | 100-200 `MHz` | For 25 `MHz` SCL |
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let config = I3cConfig::new()
+    ///     .core_clk_hz(200_000_000)  // 200 MHz from platform
+    ///     .i3c_scl_hz(12_500_000);   // 12.5 MHz SCL
+    /// ```
+    #[must_use]
+    pub fn core_clk_hz(mut self, hz: u32) -> Self {
+        self.core_clk_hz = Some(hz);
+        self
+    }
+
+    /// Set I2C SCL frequency
+    #[must_use]
+    pub fn i2c_scl_hz(mut self, hz: u32) -> Self {
+        self.i2c_scl_hz = hz;
+        self
+    }
+
+    /// Set I3C SCL frequency
+    #[must_use]
+    pub fn i3c_scl_hz(mut self, hz: u32) -> Self {
+        self.i3c_scl_hz = hz;
+        self
+    }
+
+    /// Set as secondary controller
+    #[must_use]
+    pub fn secondary(mut self, is_secondary: bool) -> Self {
+        self.is_secondary = is_secondary;
+        self
+    }
+
+    /// Set DCR (Device Characteristics Register)
+    #[must_use]
+    pub fn dcr(mut self, dcr: u8) -> Self {
+        self.dcr = u32::from(dcr);
+        self
+    }
+
+    /// Set target configuration
+    #[must_use]
+    pub fn target_config(mut self, config: I3cTargetConfig) -> Self {
+        self.target_config = Some(config);
+        self
+    }
+
+    /// Set I3C Push-Pull SCL high period in ns
+    #[must_use]
+    pub fn i3c_pp_scl_hi_period_ns(mut self, ns: u32) -> Self {
+        self.i3c_pp_scl_hi_period_ns = ns;
+        self
+    }
+
+    /// Set I3C Push-Pull SCL low period in ns
+    #[must_use]
+    pub fn i3c_pp_scl_lo_period_ns(mut self, ns: u32) -> Self {
+        self.i3c_pp_scl_lo_period_ns = ns;
+        self
+    }
+
+    /// Set I3C Open-Drain SCL high period in ns
+    #[must_use]
+    pub fn i3c_od_scl_hi_period_ns(mut self, ns: u32) -> Self {
+        self.i3c_od_scl_hi_period_ns = ns;
+        self
+    }
+
+    /// Set I3C Open-Drain SCL low period in ns
+    #[must_use]
+    pub fn i3c_od_scl_lo_period_ns(mut self, ns: u32) -> Self {
+        self.i3c_od_scl_lo_period_ns = ns;
+        self
+    }
+
+    /// Set SDA TX hold time in ns
+    #[must_use]
+    pub fn sda_tx_hold_ns(mut self, ns: u32) -> Self {
+        self.sda_tx_hold_ns = ns;
+        self
+    }
+}
+
+// =============================================================================
+// Clock Validation
+// =============================================================================
+
+/// Minimum core clock for I3C SDR mode (Hz)
+/// Required to achieve 12.5 `MHz` SCL with proper timing margins
+pub const I3C_MIN_CORE_CLK_SDR: u32 = 12_500_000;
+
+/// Minimum core clock for I3C HDR mode (Hz)
+/// Required to achieve 25 `MHz` SCL with proper timing margins
+pub const I3C_MIN_CORE_CLK_HDR: u32 = 25_000_000;
+
+/// Maximum supported core clock (Hz)
+pub const I3C_MAX_CORE_CLK: u32 = 400_000_000;
+
+/// Maximum I3C SDR SCL frequency.
+pub const I3C_MAX_SCL_HZ: u32 = 12_500_000;
+
+/// Maximum legacy-I2C Fast-mode Plus frequency.
+pub const I3C_MAX_I2C_SCL_HZ: u32 = 1_000_000;
+
+impl I3cConfig {
+    /// Validate clock configuration
+    ///
+    /// Checks that the configured clock frequencies are achievable per
+    /// MIPI I3C specification timing requirements.
+    ///
+    /// # Timing Requirements (MIPI I3C Basic Spec v1.1.1)
+    ///
+    /// | Parameter | SDR Mode | HDR-DDR Mode | Unit |
+    /// |-----------|----------|--------------|------|
+    /// | fSCL max  | 12.5     | 12.5         | `MHz`  |
+    /// | tLOW min  | 32       | 32           | ns   |
+    /// | tHIGH min | 32       | 32           | ns   |
+    ///
+    /// For reliable operation, core clock should be at least 4x the SCL frequency
+    /// to allow proper timing register resolution.
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(())` if configuration is valid
+    /// - `Err(I3cError::InvalidParam)` if configuration is invalid
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let config = I3cConfig::new()
+    ///     .core_clk_hz(200_000_000)
+    ///     .i3c_scl_hz(12_500_000);
+    ///
+    /// config.validate_clock()?;
+    /// ```
+    pub fn validate_clock(&self) -> Result<(), I3cError> {
+        // Enforce protocol frequency limits.
+        if self.i3c_scl_hz > I3C_MAX_SCL_HZ {
+            return Err(I3cError::InvalidParam);
+        }
+        if self.i2c_scl_hz > I3C_MAX_I2C_SCL_HZ {
+            return Err(I3cError::InvalidParam);
+        }
+        // Primary mode requires I3C timing; legacy-I2C timing is optional.
+        if !self.is_secondary && self.i3c_scl_hz == 0 {
+            return Err(I3cError::InvalidParam);
+        }
+
+        if let Some(core_hz) = self.core_clk_hz
+            && (core_hz < I3C_MIN_CORE_CLK_SDR || core_hz > I3C_MAX_CORE_CLK)
+        {
+            return Err(I3cError::InvalidParam);
+        }
+
+        // Validate against the same fallback used by `init_clock`.
+        let effective_core_hz = self.core_clk_hz.unwrap_or(I3C_MIN_CORE_CLK_SDR);
+        if self.i3c_scl_hz > 0 && effective_core_hz < self.i3c_scl_hz.saturating_mul(4) {
+            return Err(I3cError::InvalidParam);
+        }
+        if self.i2c_scl_hz > 0 && effective_core_hz < self.i2c_scl_hz.saturating_mul(4) {
+            return Err(I3cError::InvalidParam);
+        }
+
+        // Custom timing requires complete high/low pairs.
+        if (self.i3c_od_scl_hi_period_ns == 0) != (self.i3c_od_scl_lo_period_ns == 0)
+            || (self.i3c_pp_scl_hi_period_ns == 0) != (self.i3c_pp_scl_lo_period_ns == 0)
+        {
+            return Err(I3cError::InvalidParam);
+        }
+
+        // Custom periods must fit the 8-bit timing registers.
+        let period_ns = NSEC_PER_SEC.div_ceil(effective_core_hz.max(1)).max(1);
+        for ns in [
+            self.i3c_od_scl_hi_period_ns,
+            self.i3c_od_scl_lo_period_ns,
+            self.i3c_pp_scl_hi_period_ns,
+            self.i3c_pp_scl_lo_period_ns,
+        ] {
+            if ns == 0 {
+                continue;
+            }
+            let cnt = ns.div_ceil(period_ns);
+            if cnt == 0 || cnt > u32::from(u8::MAX) {
+                return Err(I3cError::InvalidParam);
+            }
+        }
+
+        Ok(())
+    }
+}

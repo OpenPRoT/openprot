@@ -1,6 +1,7 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
+load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library", "rust_proc_macro")
 load(
     "//third_party/caliptra:caliptra_build.bzl",
@@ -30,7 +31,7 @@ rust_library(
     edition = "2021",
     deps = [
         "//third_party/caliptra:crate_tock-registers",
-        "@rust_caliptra_crates//:ureg",
+        "@rust_caliptra_crates//:caliptra-ureg",
         "@rust_caliptra_crates_host//:caliptra-emu-types",
     ],
 )
@@ -87,6 +88,9 @@ rust_library(
 rust_library(
     name = "caliptra_emu_periph",
     srcs = ["@caliptra_sw//:emu_periph_srcs"],
+    aliases = {
+        "@rust_caliptra_crates_host//:ml_dsa_01": "ml_dsa_01",
+    },
     crate_name = "caliptra_emu_periph",
     crate_root = "@caliptra_sw//:sw-emulator/lib/periph/src/lib.rs",
     edition = "2021",
@@ -111,6 +115,8 @@ rust_library(
         "@rust_caliptra_crates_host//:const-random",
         "@rust_caliptra_crates_host//:fips204",
         "@rust_caliptra_crates_host//:lazy_static",
+        "@rust_caliptra_crates_host//:ml-kem",
+        "@rust_caliptra_crates_host//:ml_dsa_01",
         "@rust_caliptra_crates_host//:rand",
         "@rust_caliptra_crates_host//:sha2",
         "@rust_caliptra_crates_host//:sha3",
@@ -139,6 +145,7 @@ rust_library(
         "@rust_caliptra_crates_host//:caliptra-image-types",
         "@rust_caliptra_crates_host//:caliptra-lms-types",
         "@rust_caliptra_crates_host//:fips204",
+        "@rust_caliptra_crates_host//:p384",
         "@rust_caliptra_crates_host//:rand",
     ],
 )
@@ -172,101 +179,52 @@ rust_library(
     edition = "2021",
     deps = [
         ":caliptra_image_gen",
+        "//third_party/caliptra:crate_zerocopy",
         "@rust_caliptra_crates_host//:caliptra-api-types",
         "@rust_caliptra_crates_host//:caliptra-image-types",
         "@rust_caliptra_crates_host//:caliptra-lms-types",
     ],
 )
 
-# NOTE: This target has unresolved upstream deps (caliptra_image_fake_keys, fslock, etc.)
-# and is only used by the equally-broken mcu_builder target.
-rust_library(
-    name = "caliptra_builder",
-    srcs = ["@caliptra_sw//:all_files"],
-    crate_root = "@caliptra_sw//:builder/src/lib.rs",
-    edition = "2021",
-    tags = ["manual"],
-    deps = [
-        ":caliptra_image_gen",
-        "@rust_caliptra_crates_host//:anyhow",
-        "@rust_caliptra_crates_host//:caliptra-api-types",
-        "@rust_caliptra_crates_host//:caliptra-error",
-        "@rust_caliptra_crates_host//:caliptra-image-types",
-        "@rust_caliptra_crates_host//:elf",
-        "@rust_caliptra_crates_host//:hex",
-        "@rust_caliptra_crates_host//:serde_json",
-    ],
+# Alias to crate_universe-managed caliptra-cfi-lib (with "cfi" and
+# "cfi-counter" features enabled). With _FIRMWARE_LIB_RUSTC_FLAGS enabling
+# fat LTO and RISC-V bitmanip instructions across rlib boundaries, caliptra_rom
+# fits within the 96 KB emulator limit with runtime CFI checks active.
+alias(
+    name = "caliptra_cfi_lib",
+    actual = "@rust_caliptra_crates//:caliptra-cfi-lib",
 )
 
-# Local rust_library wrappers for caliptra-cfi-lib and caliptra-drivers. These
-# are kept out of crate_universe on purpose: upstream caliptra-sw/Cargo.toml
-# pins `caliptra-cfi-lib = { features = ["cfi", "cfi-counter"] }` on
-# caliptra-drivers unconditionally, so a crate_universe-managed build would
-# compile cfi-lib with runtime CFI checks active, pushing the ROM binary past
-# the 96 KB emulator limit (measured: 102268 vs 98304). Hand-written
-# rust_library rules do not pass crate_features, so cfi-lib's
-# `cfg!(feature = "cfi")` branches fold to no-ops and the ROM fits.
-rust_library(
-    name = "caliptra_cfi_lib",
-    srcs = ["@caliptra_sw//:all_files"],
-    crate_root = "@caliptra_sw//:cfi/lib/src/lib.rs",
-    edition = "2021",
-    deps = [
-        "@rust_caliptra_crates//:caliptra-error",
-        "@rust_caliptra_crates//:caliptra-registers",
-    ],
-)
+# Shared size-optimization / LTO / RISC-V target-feature flags for firmware
+# libraries so fat LTO across the rlib/binary boundary applies across ROM,
+# FMC, and Runtime.
+_FIRMWARE_LIB_RUSTC_FLAGS = [
+    "--cap-lints=allow",
+    "-C",
+    "panic=abort",
+    "-C",
+    "opt-level=s",
+    "-C",
+    "codegen-units=1",
+    "-C",
+    "embed-bitcode=yes",
+    "-C",
+    "target-feature=+relax,+unaligned-scalar-mem,+zba,+zbb,+zbc,+zbs",
+]
 
 rust_library(
     name = "caliptra_drivers",
     srcs = ["@caliptra_sw//:all_files"],
+    crate_features = [
+        "cfi",
+        "rom",
+    ],
     crate_root = "@caliptra_sw//:drivers/src/lib.rs",
     edition = "2021",
     proc_macro_deps = [
         "@rust_caliptra_crates//:caliptra-cfi-derive",
     ],
-    rustc_flags = ["--cap-lints=allow"],
-    target_compatible_with = ["//third_party/caliptra/platforms:target_caliptra"],
-    deps = [
-        ":caliptra_cfi_lib",
-        "//third_party/caliptra:crate_bitfield",
-        "//third_party/caliptra:crate_bitflags",
-        "//third_party/caliptra:crate_cfg-if",
-        "//third_party/caliptra:crate_zerocopy",
-        "//third_party/caliptra:crate_zeroize",
-        "@rust_caliptra_crates//:arrayvec",
-        "@rust_caliptra_crates//:caliptra-api",
-        "@rust_caliptra_crates//:caliptra-error",
-        "@rust_caliptra_crates//:caliptra-image-types",
-        "@rust_caliptra_crates//:caliptra-lms-types",
-        "@rust_caliptra_crates//:caliptra-okref",
-        "@rust_caliptra_crates//:caliptra-registers",
-        "@rust_caliptra_crates//:ufmt",
-        "@rust_caliptra_crates//:ureg",
-    ],
-)
-
-# caliptra_drivers variant with "runtime" feature for the Caliptra Runtime
-# binary. The "runtime" feature enables typed access to DPE, PCR-reset, and
-# auth-manifest fields in PersistentData (otherwise they're opaque [u8; N]).
-rust_library(
-    name = "caliptra_drivers_runtime",
-    srcs = ["@caliptra_sw//:all_files"],
-    crate_features = ["runtime"],
-    crate_name = "caliptra_drivers",
-    crate_root = "@caliptra_sw//:drivers/src/lib.rs",
-    edition = "2021",
-    proc_macro_deps = [
-        "@rust_caliptra_crates//:caliptra-cfi-derive",
-        "@rust_caliptra_crates//:caliptra-cfi-derive-git",
-    ],
-    rustc_flags = ["--cap-lints=allow"],
-    # Pinned to the caliptra target platform because its transitive dep on
-    # @rust_caliptra_crates//:caliptra_dpe (and that repo's zerocopy / zeroize)
-    # only aligns cleanly with the rest of caliptra-sw under riscv32imc.  On
-    # host triples the //third_party/caliptra:crate_zerocopy select routes to
-    # @rust_caliptra_crates_host, which does not match the embedded-repo
-    # zerocopy pulled in through caliptra_dpe (duplicate-crate trait errors).
+    rustc_flags = _FIRMWARE_LIB_RUSTC_FLAGS,
     target_compatible_with = ["//third_party/caliptra/platforms:target_caliptra"],
     deps = [
         ":caliptra_cfi_lib",
@@ -278,25 +236,122 @@ rust_library(
         "@rust_caliptra_crates//:arrayvec",
         "@rust_caliptra_crates//:caliptra-api",
         "@rust_caliptra_crates//:caliptra-auth-man-types",
-        "@rust_caliptra_crates//:caliptra-cfi-lib-git",
         "@rust_caliptra_crates//:caliptra-error",
         "@rust_caliptra_crates//:caliptra-image-types",
         "@rust_caliptra_crates//:caliptra-lms-types",
         "@rust_caliptra_crates//:caliptra-okref",
         "@rust_caliptra_crates//:caliptra-registers",
-        "@rust_caliptra_crates//:caliptra_dpe",
+        "@rust_caliptra_crates//:caliptra-ureg",
         "@rust_caliptra_crates//:ufmt",
-        "@rust_caliptra_crates//:ureg",
+    ],
+)
+
+rust_library(
+    name = "caliptra_drivers_fmc",
+    srcs = ["@caliptra_sw//:all_files"],
+    crate_features = [
+        "cfi",
+        "fmc",
+    ],
+    crate_name = "caliptra_drivers",
+    crate_root = "@caliptra_sw//:drivers/src/lib.rs",
+    edition = "2021",
+    proc_macro_deps = [
+        "@rust_caliptra_crates//:caliptra-cfi-derive",
+    ],
+    rustc_flags = _FIRMWARE_LIB_RUSTC_FLAGS,
+    target_compatible_with = ["//third_party/caliptra/platforms:target_caliptra"],
+    deps = [
+        ":caliptra_cfi_lib",
+        "//third_party/caliptra:crate_bitfield",
+        "//third_party/caliptra:crate_bitflags",
+        "//third_party/caliptra:crate_cfg-if",
+        "//third_party/caliptra:crate_zerocopy",
+        "//third_party/caliptra:crate_zeroize",
+        "@rust_caliptra_crates//:arrayvec",
+        "@rust_caliptra_crates//:caliptra-api",
+        "@rust_caliptra_crates//:caliptra-auth-man-types",
+        "@rust_caliptra_crates//:caliptra-error",
+        "@rust_caliptra_crates//:caliptra-image-types",
+        "@rust_caliptra_crates//:caliptra-lms-types",
+        "@rust_caliptra_crates//:caliptra-okref",
+        "@rust_caliptra_crates//:caliptra-registers",
+        "@rust_caliptra_crates//:caliptra-ureg",
+        "@rust_caliptra_crates//:ufmt",
+    ],
+)
+
+# caliptra_drivers variant with "runtime" feature for the Caliptra Runtime
+# binary. The "runtime" feature enables typed access to DPE, PCR-reset, and
+# auth-manifest fields in PersistentData (otherwise they're opaque [u8; N]).
+rust_library(
+    name = "caliptra_drivers_runtime",
+    srcs = ["@caliptra_sw//:all_files"],
+    crate_features = [
+        "cfi",
+        "runtime",
+    ],
+    crate_name = "caliptra_drivers",
+    crate_root = "@caliptra_sw//:drivers/src/lib.rs",
+    edition = "2021",
+    proc_macro_deps = [
+        "@rust_caliptra_crates//:caliptra-cfi-derive",
+    ],
+    rustc_flags = _FIRMWARE_LIB_RUSTC_FLAGS,
+    # Pinned to the caliptra target platform because its transitive dep on
+    # @rust_caliptra_crates//:caliptra-dpe (and that repo's zerocopy / zeroize)
+    # only aligns cleanly with the rest of caliptra-sw under riscv32imc.  On
+    # host triples the //third_party/caliptra:crate_zerocopy select routes to
+    # @rust_caliptra_crates_host, which does not match the embedded-repo
+    # zerocopy pulled in through caliptra-dpe (duplicate-crate trait errors).
+    target_compatible_with = ["//third_party/caliptra/platforms:target_caliptra"],
+    deps = [
+        ":caliptra_cfi_lib",
+        "//third_party/caliptra:crate_bitfield",
+        "//third_party/caliptra:crate_bitflags",
+        "//third_party/caliptra:crate_cfg-if",
+        "//third_party/caliptra:crate_zerocopy",
+        "//third_party/caliptra:crate_zeroize",
+        "@rust_caliptra_crates//:arrayvec",
+        "@rust_caliptra_crates//:caliptra-api",
+        "@rust_caliptra_crates//:caliptra-auth-man-types",
+        "@rust_caliptra_crates//:caliptra-dpe",
+        "@rust_caliptra_crates//:caliptra-dpe-crypto",
+        "@rust_caliptra_crates//:caliptra-error",
+        "@rust_caliptra_crates//:caliptra-image-types",
+        "@rust_caliptra_crates//:caliptra-lms-types",
+        "@rust_caliptra_crates//:caliptra-okref",
+        "@rust_caliptra_crates//:caliptra-registers",
+        "@rust_caliptra_crates//:caliptra-ureg",
+        "@rust_caliptra_crates//:ufmt",
     ],
 )
 
 rust_library(
     name = "caliptra_kat",
     srcs = ["@caliptra_sw//:kat_srcs"],
+    crate_features = ["rom"],
     crate_root = "@caliptra_sw//:kat/src/lib.rs",
     edition = "2021",
+    rustc_flags = _FIRMWARE_LIB_RUSTC_FLAGS,
     deps = [
         ":caliptra_drivers",
+        "//third_party/caliptra:crate_zerocopy",
+        "@rust_caliptra_crates//:caliptra-lms-types",
+        "@rust_caliptra_crates//:caliptra-registers",
+        "@rust_caliptra_crates//:ufmt",
+    ],
+)
+
+rust_library(
+    name = "caliptra_kat_fmc",
+    srcs = ["@caliptra_sw//:kat_srcs"],
+    crate_name = "caliptra_kat",
+    crate_root = "@caliptra_sw//:kat/src/lib.rs",
+    edition = "2021",
+    rustc_flags = _FIRMWARE_LIB_RUSTC_FLAGS,
+    deps = [
+        ":caliptra_drivers_fmc",
         "//third_party/caliptra:crate_zerocopy",
         "@rust_caliptra_crates//:caliptra-lms-types",
         "@rust_caliptra_crates//:caliptra-registers",
@@ -312,6 +367,7 @@ rust_library(
     crate_name = "caliptra_kat",
     crate_root = "@caliptra_sw//:kat/src/lib.rs",
     edition = "2021",
+    rustc_flags = _FIRMWARE_LIB_RUSTC_FLAGS,
     deps = [
         ":caliptra_drivers_runtime",
         "//third_party/caliptra:crate_zerocopy",
@@ -324,14 +380,38 @@ rust_library(
 rust_library(
     name = "caliptra_image_verify",
     srcs = ["@caliptra_sw//:image_verify_srcs"],
+    crate_features = ["cfi"],
     crate_root = "@caliptra_sw//:image/verify/src/lib.rs",
     edition = "2021",
     proc_macro_deps = [
         "@rust_caliptra_crates//:caliptra-cfi-derive",
     ],
+    rustc_flags = _FIRMWARE_LIB_RUSTC_FLAGS,
     deps = [
         ":caliptra_cfi_lib",
         ":caliptra_drivers",
+        "//third_party/caliptra:crate_bitflags",
+        "//third_party/caliptra:crate_memoffset",
+        "//third_party/caliptra:crate_zerocopy",
+        "@rust_caliptra_crates//:caliptra-image-types",
+        "@rust_caliptra_crates//:caliptra-registers",
+    ],
+)
+
+rust_library(
+    name = "caliptra_image_verify_fmc",
+    srcs = ["@caliptra_sw//:image_verify_srcs"],
+    crate_features = ["cfi"],
+    crate_name = "caliptra_image_verify",
+    crate_root = "@caliptra_sw//:image/verify/src/lib.rs",
+    edition = "2021",
+    proc_macro_deps = [
+        "@rust_caliptra_crates//:caliptra-cfi-derive",
+    ],
+    rustc_flags = _FIRMWARE_LIB_RUSTC_FLAGS,
+    deps = [
+        ":caliptra_cfi_lib",
+        ":caliptra_drivers_fmc",
         "//third_party/caliptra:crate_bitflags",
         "//third_party/caliptra:crate_memoffset",
         "//third_party/caliptra:crate_zerocopy",
@@ -346,12 +426,14 @@ rust_library(
 rust_library(
     name = "caliptra_image_verify_runtime",
     srcs = ["@caliptra_sw//:image_verify_srcs"],
+    crate_features = ["cfi"],
     crate_name = "caliptra_image_verify",
     crate_root = "@caliptra_sw//:image/verify/src/lib.rs",
     edition = "2021",
     proc_macro_deps = [
         "@rust_caliptra_crates//:caliptra-cfi-derive",
     ],
+    rustc_flags = _FIRMWARE_LIB_RUSTC_FLAGS,
     deps = [
         ":caliptra_cfi_lib",
         ":caliptra_drivers_runtime",
@@ -366,12 +448,16 @@ rust_library(
 rust_library(
     name = "caliptra_common",
     srcs = ["@caliptra_sw//:common_srcs"],
-    crate_features = ["rom"],
+    crate_features = [
+        "cfi",
+        "rom",
+    ],
     crate_root = "@caliptra_sw//:common/src/lib.rs",
     edition = "2021",
     proc_macro_deps = [
-        "@rust_caliptra_crates//:caliptra-cfi-derive-git",
+        "@rust_caliptra_crates//:caliptra-cfi-derive",
     ],
+    rustc_flags = _FIRMWARE_LIB_RUSTC_FLAGS,
     deps = [
         ":caliptra_cfi_lib",
         ":caliptra_drivers",
@@ -382,7 +468,6 @@ rust_library(
         "//third_party/caliptra:crate_zerocopy",
         "//third_party/caliptra:crate_zeroize",
         "@rust_caliptra_crates//:caliptra-api",
-        "@rust_caliptra_crates//:caliptra-cfi-lib-git",
         "@rust_caliptra_crates//:caliptra-error",
         "@rust_caliptra_crates//:caliptra-image-types",
         "@rust_caliptra_crates//:caliptra-registers",
@@ -395,23 +480,29 @@ rust_library(
 rust_library(
     name = "caliptra_common_fmc",
     srcs = ["@caliptra_sw//:common_srcs"],
-    crate_features = ["fmc"],
+    aliases = {
+        ":caliptra_image_verify_fmc": "caliptra_image_verify",
+    },
+    crate_features = [
+        "cfi",
+        "fmc",
+    ],
     crate_root = "@caliptra_sw//:common/src/lib.rs",
     edition = "2021",
     proc_macro_deps = [
-        "@rust_caliptra_crates//:caliptra-cfi-derive-git",
+        "@rust_caliptra_crates//:caliptra-cfi-derive",
     ],
+    rustc_flags = _FIRMWARE_LIB_RUSTC_FLAGS,
     deps = [
         ":caliptra_cfi_lib",
-        ":caliptra_drivers",
-        ":caliptra_image_verify",
+        ":caliptra_drivers_fmc",
+        ":caliptra_image_verify_fmc",
         "//third_party/caliptra:crate_bitfield",
         "//third_party/caliptra:crate_bitflags",
         "//third_party/caliptra:crate_memoffset",
         "//third_party/caliptra:crate_zerocopy",
         "//third_party/caliptra:crate_zeroize",
         "@rust_caliptra_crates//:caliptra-api",
-        "@rust_caliptra_crates//:caliptra-cfi-lib-git",
         "@rust_caliptra_crates//:caliptra-error",
         "@rust_caliptra_crates//:caliptra-image-types",
         "@rust_caliptra_crates//:caliptra-registers",
@@ -429,12 +520,16 @@ rust_library(
     aliases = {
         ":caliptra_image_verify_runtime": "caliptra_image_verify",
     },
-    crate_features = ["runtime"],
+    crate_features = [
+        "cfi",
+        "runtime",
+    ],
     crate_root = "@caliptra_sw//:common/src/lib.rs",
     edition = "2021",
     proc_macro_deps = [
-        "@rust_caliptra_crates//:caliptra-cfi-derive-git",
+        "@rust_caliptra_crates//:caliptra-cfi-derive",
     ],
+    rustc_flags = _FIRMWARE_LIB_RUSTC_FLAGS,
     deps = [
         ":caliptra_cfi_lib",
         ":caliptra_drivers_runtime",
@@ -445,7 +540,6 @@ rust_library(
         "//third_party/caliptra:crate_zerocopy",
         "//third_party/caliptra:crate_zeroize",
         "@rust_caliptra_crates//:caliptra-api",
-        "@rust_caliptra_crates//:caliptra-cfi-lib-git",
         "@rust_caliptra_crates//:caliptra-error",
         "@rust_caliptra_crates//:caliptra-image-types",
         "@rust_caliptra_crates//:caliptra-registers",
@@ -461,6 +555,7 @@ rust_library(
     crate_root = "@caliptra_sw//:auth-manifest/gen/src/lib.rs",
     edition = "2021",
     deps = [
+        ":caliptra_image_fake_keys",
         ":caliptra_image_gen",
         "//third_party/caliptra:crate_bitflags",
         "//third_party/caliptra:crate_memoffset",
@@ -478,7 +573,7 @@ rust_library(
     crate_features = ["riscv"],
     crate_root = "@caliptra_sw//:cpu/src/lib.rs",
     edition = "2021",
-    rustc_flags = ["--cap-lints=allow"],
+    rustc_flags = _FIRMWARE_LIB_RUSTC_FLAGS,
     target_compatible_with = ["//third_party/caliptra/platforms:target_caliptra"],
     deps = [
         ":caliptra_drivers",
@@ -537,6 +632,7 @@ rust_binary(
         ":rom_gen.ld",
         ":rom_start_preprocessed",
     ],
+    crate_features = ["cfi"],
     crate_root = "@caliptra_sw//:rom/dev/src/main.rs",
     edition = "2021",
     proc_macro_deps = [
@@ -575,6 +671,8 @@ rust_binary(
         "lto=fat",
         "-C",
         "embed-bitcode=yes",
+        "-C",
+        "target-feature=+relax,+unaligned-scalar-mem,+zba,+zbb,+zbc,+zbs",
         "-C",
         "link-arg=-Wl,--relax",
         "-C",
@@ -626,8 +724,10 @@ caliptra_firmware_binary(
     srcs = ["@caliptra_sw//:caliptra_sw_fmc_srcs"],
     aliases = {
         ":caliptra_common_fmc": "caliptra_common",
+        ":caliptra_kat_fmc": "caliptra_kat",
     },
     crate_features = [
+        "cfi",
         "emu",
         "riscv",
     ],
@@ -644,7 +744,8 @@ caliptra_firmware_binary(
         ":caliptra_cfi_lib",
         ":caliptra_common_fmc",
         ":caliptra_cpu",
-        ":caliptra_drivers",
+        ":caliptra_drivers_fmc",
+        ":caliptra_kat_fmc",
         "//third_party/caliptra:crate_zerocopy",
         "//third_party/caliptra:crate_zeroize",
         "@rust_caliptra_crates//:caliptra-error",
@@ -652,6 +753,18 @@ caliptra_firmware_binary(
         "@rust_caliptra_crates//:caliptra-registers",
         "@rust_caliptra_crates//:caliptra-x509",
         "@rust_caliptra_crates//:ufmt",
+    ],
+)
+
+cargo_build_script(
+    name = "caliptra_runtime_build_script",
+    srcs = ["@caliptra_sw//:runtime/build.rs"],
+    crate_features = ["std"],
+    crate_root = "@caliptra_sw//:runtime/build.rs",
+    edition = "2021",
+    deps = [
+        "//third_party/caliptra:crate_cfg-if",
+        "@rust_caliptra_crates//:caliptra-ocp-eat",
     ],
 )
 
@@ -676,20 +789,8 @@ rust_library(
     edition = "2021",
     proc_macro_deps = [
         "@rust_caliptra_crates//:caliptra-cfi-derive",
-        "@rust_caliptra_crates//:caliptra-cfi-derive-git",
     ],
-    rustc_flags = [
-        "-A",
-        "mismatched_lifetime_syntaxes",
-        "-C",
-        "panic=abort",
-        "-C",
-        "opt-level=s",
-        "-C",
-        "codegen-units=1",
-        "-C",
-        "embed-bitcode=yes",
-    ],
+    rustc_flags = _FIRMWARE_LIB_RUSTC_FLAGS,
     target_compatible_with = ["//third_party/caliptra/platforms:target_caliptra"],
     deps = [
         ":caliptra_cfi_lib",
@@ -698,6 +799,7 @@ rust_library(
         ":caliptra_drivers_runtime",
         ":caliptra_image_verify_runtime",
         ":caliptra_kat_runtime",
+        ":caliptra_runtime_build_script",
         "//third_party/caliptra:crate_bitfield",
         "//third_party/caliptra:crate_bitflags",
         "//third_party/caliptra:crate_memoffset",
@@ -706,18 +808,18 @@ rust_library(
         "@rust_caliptra_crates//:arrayvec",
         "@rust_caliptra_crates//:caliptra-api",
         "@rust_caliptra_crates//:caliptra-auth-man-types",
-        "@rust_caliptra_crates//:caliptra-cfi-lib-git",
+        "@rust_caliptra_crates//:caliptra-dpe",
+        "@rust_caliptra_crates//:caliptra-dpe-crypto",
+        "@rust_caliptra_crates//:caliptra-dpe-platform",
+        "@rust_caliptra_crates//:caliptra-dpe-response-buffer",
         "@rust_caliptra_crates//:caliptra-error",
         "@rust_caliptra_crates//:caliptra-image-types",
         "@rust_caliptra_crates//:caliptra-lms-types",
         "@rust_caliptra_crates//:caliptra-registers",
+        "@rust_caliptra_crates//:caliptra-ureg",
         "@rust_caliptra_crates//:caliptra-x509",
-        "@rust_caliptra_crates//:caliptra_dpe",
-        "@rust_caliptra_crates//:caliptra_dpe_crypto",
-        "@rust_caliptra_crates//:caliptra_dpe_platform",
         "@rust_caliptra_crates//:constant_time_eq",
         "@rust_caliptra_crates//:ufmt",
-        "@rust_caliptra_crates//:ureg",
     ],
 )
 
@@ -737,11 +839,11 @@ caliptra_firmware_binary(
     ],
     map_file = "caliptra_runtime.map",
     deps = [
+        ":caliptra_cfi_lib",
         ":caliptra_common_runtime",
         ":caliptra_cpu",
         ":caliptra_drivers_runtime",
         ":caliptra_runtime_lib",
-        "@rust_caliptra_crates//:caliptra-cfi-lib-git",
         "@rust_caliptra_crates//:caliptra-error",
         "@rust_caliptra_crates//:caliptra-registers",
         "@rust_caliptra_crates//:ufmt",

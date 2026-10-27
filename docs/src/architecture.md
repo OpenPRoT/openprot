@@ -12,6 +12,8 @@ openprot/
 ├── workflows.json            # Pigweed workflow groups (./pw …)
 ├── BUILD.bazel               # Top-level Bazel package
 ├── openprot/                 # Main application crate (lib.rs + main.rs)
+├── drivers/
+│   └── usart/                # Target-agnostic USART API, client, and server
 ├── hal/
 │   ├── async/                # Async HAL trait crates
 │   ├── blocking/             # Blocking HAL trait crates
@@ -20,11 +22,17 @@ openprot/
 │   ├── traits/               # OS-abstraction traits
 │   └── impls/                # Concrete impls per host environment
 ├── services/
-│   ├── storage/              # OS-agnostic services on top of HAL + platform
-│   └── telemetry/
+│   ├── i2c/                  # I2C API, IPC transports, and server runtime
+│   ├── mctp/                 # MCTP API, transports, client, and server
+│   ├── orchestrator/         # Boot orchestration, capabilities, and HAL adapters
+│   ├── spdm/                 # SPDM requester, responder, and support crates
+│   ├── storage/              # Storage service
+│   └── telemetry/            # Telemetry service
 ├── target/
+│   ├── ast10x0/              # ASPEED AST10x0 target, backends, and tests
 │   ├── earlgrey/             # OpenTitan Earl Grey target
-│   └── veer/                 # Caliptra VeeR-EL2 target (pw_kernel-based)
+│   ├── mock/                 # Host/QEMU board data used by tests
+│   └── veer/                 # Caliptra VeeR-EL2 target
 ├── third_party/
 │   ├── pigweed/              # Pigweed integration
 │   └── caliptra/             # caliptra-sw / caliptra-mcu-sw integration
@@ -32,12 +40,35 @@ openprot/
 └── docs/                     # mdbook sources (this site)
 ```
 
-The intent of the split is that anything touching hardware registers goes
-through a `hal/` trait, anything touching the host OS goes through a
-`platform/traits/` trait, and reusable logic lives in `services/`. Targets
-under `target/` provide the silicon-specific glue (linker scripts, ePMP
-setup, console wiring, register definitions) without leaking those details
-into the rest of the tree.
+The intent of the split is that hardware-facing contracts live under `hal/`
+or a driver's public API, host-OS contracts live under `platform/traits/`, and
+reusable protocol and service logic lives under `services/`. Concrete host
+implementations belong in `platform/impls/`; silicon-specific backends,
+peripherals, linker scripts, system images, and test runners belong under
+`target/`. For example, `drivers/usart/` defines a target-agnostic interface
+while `target/ast10x0/backend/usart/` implements it for AST10x0.
+
+## Interfaces, implementations, and protocols
+
+The repository separates contracts from implementations so that protocol
+logic can be tested on a host without importing a device PAC or kernel:
+
+- `hal/{async,blocking,nb}/` contains hardware abstraction traits grouped by
+  execution model. The blocking HAL includes interfaces for flash, GPIO, I2C,
+  cryptography, key vaults, and system control.
+- `platform/traits/` contains operating-system abstraction traits;
+  `platform/impls/` contains concrete implementations for supported host
+  environments.
+- `drivers/usart/{api,client,server}/` separates the USART wire contract,
+  client facade, and server dispatcher from its target backend.
+- `services/i2c/` and `services/mctp/` follow the same pattern: public API,
+  platform-independent client/server logic, IPC adapters, and target-specific
+  backends where required.
+- `services/spdm/` builds requester and responder behavior on top of the MCTP
+  transport and shared cryptographic support crates.
+
+The `README.md` files in each driver or service directory document their
+public seams, invariants, and host-test targets.
 
 ## Build system
 
@@ -91,15 +122,34 @@ Each silicon/SoC target lives under `target/<name>/` and provides its own
 linker script, entry point, `defs.bzl` helpers, register definitions, and
 test/runner tooling.
 
-- `target/earlgrey/` — OpenTitan Earl Grey. Verilator-driven tests are
-  gated behind the `verilator` tag and only run via the
-  `earlgrey_verilator_tests` build (see `workflows.json`).
+- `target/ast10x0/` — ASPEED AST10x0. It contains board configuration,
+  peripheral drivers, I2C and USART backends, PFR building blocks, and QEMU or
+  hardware test harnesses. Run its executable QEMU tests with
+  `bazel test --config=virt_ast10x0 //target/ast10x0/...`.
+- `target/earlgrey/` — OpenTitan Earl Grey. QEMU tests run on every PR;
+  Verilator-driven tests are gated behind the `verilator` tag and the
+  corresponding workflow group (see `workflows.json`).
 - `target/veer/` — Caliptra VeeR-EL2. Built on `pw_kernel` and exercised
   on the Caliptra emulator via `target/veer/tooling/caliptra_runner.bzl`.
 
 When adding a new target, prefer the `target/<name>/defs.bzl` helpers over
 hand-rolled `rust_binary` rules, and always set `target_compatible_with =
 TARGET_COMPATIBLE_WITH` so wildcard host builds skip target-only crates.
+
+## Firmware images and tests
+
+Reference firmware is assembled close to the target that supplies its
+platform bindings. A target's `system.json5` declares the process topology,
+and Bazel `system_image()` rules combine that configuration with the kernel
+and application crates. Examples include the AST10x0 USART client/server image
+under `target/ast10x0/tests/usart/` and the Earl Grey and VeeR syscall-latency
+images under their respective target directories.
+
+Host tests normally live next to the platform-independent API or service.
+Emulator, simulator, and hardware-backed tests live under `target/<name>/`
+alongside the runner and build configuration they require. This keeps host
+wildcard tests from accidentally depending on target-only toolchains while
+still exercising the same protocol codecs and dispatch logic used by firmware.
 
 ## Third-party integration
 

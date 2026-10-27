@@ -157,6 +157,18 @@ pub struct StackListener<'s, C: MctpClient> {
     timeout: u32,
 }
 
+impl<C: MctpClient> StackListener<'_, C> {
+    /// Update the timeout used by subsequent [`recv`](MctpListener::recv) calls.
+    ///
+    /// Useful for a listener kept alive across many `recv` calls (e.g. to
+    /// avoid dropping and re-registering the underlying listener handle
+    /// between calls) whose desired wait time varies per call. `timeout_millis`
+    /// of `0` blocks indefinitely.
+    pub fn set_timeout(&mut self, timeout_millis: u32) {
+        self.timeout = timeout_millis;
+    }
+}
+
 impl<'s, C: MctpClient> MctpListener for StackListener<'s, C> {
     type RespChannel<'a>
         = StackRespChannel<'s, C>

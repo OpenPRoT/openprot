@@ -1,0 +1,66 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 runtime integration QEMU test: the orchestrator server runtime
+// (BootWatchdogs) driving the pure core through an object_wait loop.
+//
+// Single app, single process. The interrupt object (IRQ 44, self-fired via
+// debug_trigger_interrupt) stands in for a component's boot-progress signal;
+// deadlines come from BootWatchdogs::wait_deadline and expiries from
+// BootWatchdogs::poll_expired.
+//
+// Memory map (AST10x0: 768 KB SRAM, no XIP), same shape as tests/orchestrator/boot_walk:
+//   0x00000000 - 0x00000500  vector table (1280 B)
+//   0x00000500 - 0x00020200  kernel flash (~127 KB)
+//   then app flash (128 KB)
+//   0x00060000 - 0x00080000  kernel RAM (128 KB)
+//   then app RAM (32 KB)
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,
+    },
+    kernel: {
+        flash_start_address: 0x00000500,
+        flash_size_bytes: 129792,
+        ram_start_address: 0x00060000,
+        ram_size_bytes: 131072,
+    },
+    apps: [
+        {
+            name: "test_runtime",
+            flash_size_bytes: 131072,
+            processes: [
+                {
+                    name: "test_runtime_process",
+                    ram_size_bytes: 32768,
+                    objects: [
+                        {
+                            name: "boot_signal",
+                            type: "interrupt",
+                            irqs: [
+                                {
+                                    name: "boot_progress",
+                                    number: 44,
+                                },
+                            ],
+                        },
+                        {
+                            type: "thread",
+                            name: "test_runtime_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },],
+
+                },
+            ],
+            constants: [
+                {
+                    name: "boot_progress",
+                    type: "u32",
+                    value: 44,
+                },
+            ],
+        },
+    ],
+}

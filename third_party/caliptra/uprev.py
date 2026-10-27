@@ -412,7 +412,10 @@ def cmd_verify(args: argparse.Namespace, versions: dict) -> int:
     expected_cfi = extract_rev_from_cargo_lock(lock_contents, "caliptra-cfi")
 
     actual_sw = versions["caliptra_sw"]
-    actual_cfi = extract_rev_from_cargo_toml(embedded_contents, "caliptra-cfi-lib-git")
+    actual_cfi = extract_rev_from_cargo_toml(embedded_contents, "caliptra-cfi-lib")
+    actual_cfi_derive = extract_rev_from_cargo_toml(
+        embedded_contents, "caliptra-cfi-derive"
+    )
 
     ok = True
 
@@ -426,10 +429,11 @@ def cmd_verify(args: argparse.Namespace, versions: dict) -> int:
         print(f"OK: caliptra_sw = {actual_sw}")
 
     # caliptra_cfi check
-    if expected_cfi != actual_cfi:
+    if expected_cfi != actual_cfi or expected_cfi != actual_cfi_derive:
         print("MISMATCH: caliptra_cfi")
-        print(f"  Cargo.toml: {actual_cfi}")
-        print(f"  Cargo.lock: {expected_cfi}")
+        print(f"  Cargo.toml (caliptra-cfi-lib):    {actual_cfi}")
+        print(f"  Cargo.toml (caliptra-cfi-derive): {actual_cfi_derive}")
+        print(f"  Cargo.lock:                       {expected_cfi}")
         ok = False
     else:
         print(f"OK: caliptra_cfi = {actual_cfi}")
@@ -442,14 +446,22 @@ def cmd_verify(args: argparse.Namespace, versions: dict) -> int:
         embedded_contents, "caliptra-dpe-crypto"
     )
     actual_dpe = extract_rev_from_cargo_toml(embedded_contents, "caliptra-dpe")
+    actual_dpe_response_buffer = extract_rev_from_cargo_toml(
+        embedded_contents, "caliptra-dpe-response-buffer"
+    )
     if not actual_dpe_platform:
         print("MISMATCH: caliptra_dpe — could not read caliptra-dpe-platform rev")
         ok = False
-    elif actual_dpe_platform != actual_dpe_crypto or actual_dpe_platform != actual_dpe:
+    elif (
+        actual_dpe_platform != actual_dpe_crypto
+        or actual_dpe_platform != actual_dpe
+        or actual_dpe_platform != actual_dpe_response_buffer
+    ):
         print("MISMATCH: caliptra_dpe entries out of sync")
-        print(f"  caliptra-dpe-platform: {actual_dpe_platform}")
-        print(f"  caliptra-dpe-crypto  : {actual_dpe_crypto}")
-        print(f"  caliptra-dpe         : {actual_dpe}")
+        print(f"  caliptra-dpe-platform       : {actual_dpe_platform}")
+        print(f"  caliptra-dpe-crypto         : {actual_dpe_crypto}")
+        print(f"  caliptra-dpe                : {actual_dpe}")
+        print(f"  caliptra-dpe-response-buffer: {actual_dpe_response_buffer}")
         ok = False
     else:
         print(f"OK: caliptra_dpe = {actual_dpe_platform} (independently tracked)")
@@ -601,10 +613,10 @@ def _do_bump_transaction(
         )
     if new_cfi != old_cfi:
         embedded_content = replace_rev_in_cargo_toml(
-            embedded_content, "caliptra-cfi-lib-git", old_cfi, new_cfi
+            embedded_content, "caliptra-cfi-lib", old_cfi, new_cfi
         )
         embedded_content = replace_rev_in_cargo_toml(
-            embedded_content, "caliptra-cfi-derive-git", old_cfi, new_cfi
+            embedded_content, "caliptra-cfi-derive", old_cfi, new_cfi
         )
         _info(f"caliptra_cfi: {old_cfi} -> {new_cfi} (Cargo.toml)")
         _info(
@@ -700,9 +712,14 @@ def _revalidate_writes(new_mcu_sha: str, new_sw: str, new_cfi: str) -> None:
             "versions.bzl caliptra_cfi",
         ),
         (
-            extract_rev_from_cargo_toml(embedded_contents, "caliptra-cfi-lib-git"),
+            extract_rev_from_cargo_toml(embedded_contents, "caliptra-cfi-lib"),
             new_cfi,
-            "embedded Cargo.toml caliptra-cfi-lib-git",
+            "embedded Cargo.toml caliptra-cfi-lib",
+        ),
+        (
+            extract_rev_from_cargo_toml(embedded_contents, "caliptra-cfi-derive"),
+            new_cfi,
+            "embedded Cargo.toml caliptra-cfi-derive",
         ),
     ]
     failures = []

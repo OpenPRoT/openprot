@@ -13,8 +13,13 @@
 
 MEMORY
 {
-  /* Internal SRAM */
-  RAM(rw) : ORIGIN = 0x40000000, LENGTH = 0x60000
+  /* The kernel's slice of MCU SRAM. Code, data, bss and stack all live here.
+   * Taken from the kernel "flash" window in the system config: the system
+   * generator places app code right after this window, so the kernel must not
+   * extend past it. The kernel "ram" window only tells the generator where app
+   * data starts. */
+  RAM(rwx) : ORIGIN = {{kernel.flash_start_address | hex}},
+             LENGTH = {{kernel.flash_size_bytes}}
 
   /* Each memory region above has an associated .*.unused_space section that
    * overlays the unused space at the end of the memory segment. These segments

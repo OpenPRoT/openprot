@@ -148,6 +148,14 @@ impl<'a, Y: FnMut(u32)> Ast1060I2c<'a, Y> {
         i2c
     }
 
+    /// Copy of the MMIO façade, for handing to short-lived helpers (e.g. the
+    /// [`super::dma::ArmedDma`] teardown guard) that must outlive an `&mut self`
+    /// borrow. Sound because the façade is `Copy` and access stays serialized.
+    #[inline]
+    pub(crate) fn mmio(&self) -> super::registers::Ast1060I2cRegisters {
+        self.mmio
+    }
+
     /// I2C register block, via the MMIO façade (sole `unsafe` deref is inside
     /// [`Ast1060I2cRegisters`]). Driver-internal use.
     #[inline]

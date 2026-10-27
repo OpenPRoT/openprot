@@ -3,7 +3,7 @@
 #![no_main]
 #![no_std]
 
-use kernel_config::{KernelConfig, KernelConfigInterface};
+use kernel_config::{KernelConfig, KernelConfigInterface, MTIME_REGISTER};
 use pw_status::Result;
 //use registers::rv_timer::RvTimer;
 use userspace::{entry, syscall};
@@ -17,7 +17,7 @@ const IO_CLOCK_HZ: u64 = 1_000_000;
 
 #[inline(always)]
 fn mtime_value() -> u64 {
-    let mtime = core::ptr::with_exposed_provenance::<u64>(0x21000000 + 0xe4);
+    let mtime = core::ptr::with_exposed_provenance::<u64>(MTIME_REGISTER);
     unsafe { mtime.read_volatile() }
 }
 

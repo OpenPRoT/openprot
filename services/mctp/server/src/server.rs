@@ -252,7 +252,12 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
     /// binding. The packet should be a raw MCTP packet without transport
     /// headers (the transport binding strips those).
     pub fn inbound(&mut self, pkt: &[u8]) -> Result<(), MctpError> {
-        self.stack.inbound(pkt).map_err(mctp_error_to_server_error)
+        // The AppCookie of the matching listener/request is discarded;
+        // pending receives are serviced by polling, not by this result.
+        self.stack
+            .inbound(pkt)
+            .map(|_| ())
+            .map_err(mctp_error_to_server_error)
     }
 }
 

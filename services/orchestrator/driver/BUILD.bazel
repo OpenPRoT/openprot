@@ -1,0 +1,29 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "orchestrator_driver",
+    srcs = [
+        "src/board.rs",
+        "src/driver.rs",
+        "src/lib.rs",
+        "src/tests.rs",
+    ],
+    crate_name = "openprot_orchestrator_driver",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/orchestrator/capabilities:orchestrator_capabilities",
+        "//services/orchestrator/sm:orchestrator_sm",
+        "@rust_crates//:heapless",
+    ],
+)
+
+# Host tests: build on the host platform, no kernel/QEMU.
+rust_test(
+    name = "orchestrator_driver_test",
+    crate = ":orchestrator_driver",
+    edition = "2024",
+)

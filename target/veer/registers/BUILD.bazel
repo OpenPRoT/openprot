@@ -1,0 +1,17 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Umbrella crate re-exporting all Caliptra-SS peripheral register modules.
+rust_library(
+    name = "registers",
+    srcs = ["registers.rs"],
+    crate_name = "caliptra_ss_registers",
+    edition = "2024",
+    deps = [
+        "//third_party/caliptra/caliptra-mcu-sw:firmware_registers_generated",
+    ],
+)

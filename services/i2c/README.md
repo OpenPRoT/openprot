@@ -44,7 +44,7 @@ SoC-specific backend is the **only** crate that does, so it lives under
 | `client` | `//services/i2c/client:i2c_client` | ✅ | `I2cClient<T: Transport>` implements `I2c` (master); also exposes slave methods (`configure_slave()`, `enable_slave()`, `slave_receive()`, etc.). All marshalling, no kernel/IPC dep. |
 | `client-ipc` | `//services/i2c/client-ipc:i2c_client_ipc` | ❌ embedded | `IpcTransport` (`channel_transact`). The one IPC-coupled client piece. |
 | `server` | `//services/i2c/server:i2c_server` | ✅ | Pure `dispatch()` + `dispatch_slave()` + `LoopbackTransport`. Host dispatch + e2e tests (master + slave RX). |
-| `server-runtime` | `//services/i2c/server-runtime:i2c_server_runtime` | ❌ embedded | The Pigweed WaitGroup wait/respond loop. One channel per bus. On slave-RX IRQ, latches buffer + metadata (event kind, source address) and raises `Signals::USER`. |
+| `server-runtime` | `//services/i2c/server-runtime:i2c_server_runtime` | ❌ embedded | The Pigweed WaitGroup wait/respond loop. One channel per bus. On slave-RX IRQ, latches buffer + metadata (event kind) and raises `Signals::USER`. |
 | `backend` (ast10x0) | `//target/ast10x0/backend/i2c:i2c_backend_ast10x0` (crate `i2c_backend`) | ❌ embedded | bus → reg-ptr map, `init_bus`, `open_bus`/`open_bus_dma`. Under `target/`. |
 
 ## Key invariants
@@ -64,7 +64,7 @@ SoC-specific backend is the **only** crate that does, so it lives under
   `embedded_hal::i2c::I2c`; never depend on the SoC backend. Errors map via
   the embedded-hal `ErrorKind` taxonomy.
 - **Dual-role responder support.** Interrupt-driven slave RX with event
-  metadata (kind + source address). Client waits on `Signals::USER`, fetches
+  metadata (kind). Client waits on `Signals::USER`, fetches
   event via `slave_receive()`, stages response via `slave_set_response()`.
   Enables SPDM responders, register-echo patterns, and multi-master state
   tracking. See [Dual-role responder support](#dual-role-responder-support).
@@ -80,14 +80,12 @@ the interrupt-driven slave API:
 - **Slave (responder):** Interrupt-driven event notification + event metadata:
   - `enable_notification()` — arm IRQ; server raises `Signals::USER` on event
   - `slave_receive()` — non-blocking fetch after signal, returns
-    `SlaveReceiveEvent` with `kind`, `source_address`, `data_len`
+    `SlaveReceiveEvent` with `kind`, `data_len`
   - `slave_set_response()` — pre-load TX buffer (one response at a time)
 
 **Event metadata:**
 - `event_kind` — `DataReceived`, `ReadRequest`, or `Stop` (for responder
   state machines)
-- `source_address` — 7-bit I2C address of the requester (supports multi-master
-  buses; may be `0xFF` if hardware doesn't track it)
 
 **Responder pattern (SPDM, register-echo, etc.):**
 ```rust
@@ -100,16 +98,12 @@ loop {
     object_wait_signal(&channel, USER_BIT)?;
 
     let event = client.slave_receive(&mut buf)?;
-    // Use event.source_address for per-requester state
     // Use event.kind to distinguish read/write/stop
 
     // Stage response for master's next read
     client.slave_set_response(&buf[..event.data_len])?;
 }
 ```
-
-**Source address:** Captured during slave RX IRQ drain. Currently defaults to
-`0xFF` (unavailable) until the hardware backend extracts it from registers.
 
 ## Wiring binaries
 
@@ -152,8 +146,6 @@ target needs it — not fabricated speculatively.
 **Critical gaps blocking full SPDM responder:**
 - ❌ Event kind propagation — `rx_event_kind` hardcoded to `DataReceived`;
   responder cannot distinguish `Stop` event (transaction boundary)
-- ❌ Source address extraction — `rx_source` hardcoded to `0xFF`; responder
-  cannot identify which requester sent the message
 - ❌ `try_next_slave_event()` missing from HAL — backend must return event kind
   alongside rx length so server-runtime can store it
 

@@ -104,6 +104,13 @@ test:stress_k_ast1060_evb   --run_under="//target/ast10x0/harness:test_runner \
   --timeout 0 "
 test:stress_k_ast1060_evb   --test_env=AST1060_EVB_PI_HOST
 
+# ── VeeR RISC-V kernel target ──
+# Platform setup for building //target/veer/* artifacts.
+common:k_veer --platforms=//target/veer:veer
+build:k_veer --build_tag_filters=-do_not_build,-kernel_doc_test
+# Usage: VCK190_FPGA_HOST=<host> bazel test --config=k_veer //target/veer/unittest_runner:fpga_test
+test:k_veer --test_env=VCK190_FPGA_HOST
+
 # Site-local overrides. Kept last so developer machine-specific settings (e.g. a
 # local QEMU source override via --override_repository) take precedence. This
 # file is not checked in; see third_party/qemu/setup.md.
