@@ -113,8 +113,17 @@ build:k_veer --build_tag_filters=-do_not_build,-kernel_doc_test
 # Caliptra VCK190 FPGA board via SSH.
 # Host-side test binaries compile for the VCK190's ARM cores (//toolchain/aarch64_linux)
 # while MCU firmware images transition to //target/veer:veer with target_type=fpga.
+# Usage: bazel test --config=fpga --test_env=VCK190_FPGA_HOST=<host> //target/veer/...
+# (or set `test:fpga --test_env=VCK190_FPGA_HOST=<host>` in .bazelrc-site).
 common:fpga --platforms=//toolchain/aarch64_linux
 build:fpga --build_tag_filters=-do_not_build,-kernel_doc_test
+test:fpga --local_test_jobs=1
+test:fpga --run_under=//target/veer/tooling/fpga:run_remote
+test:fpga --strategy=TestRunner=local
+test:fpga --test_env=SSH_AUTH_SOCK
+test:fpga --test_env=VCK190_FPGA_HOST
+test:fpga --test_tag_filters=fpga,-disabled,-do_not_build,-do_not_run_test,-kernel_doc_test
+test:fpga --test_timeout=600
 
 # Site-local overrides. Kept last so developer machine-specific settings (e.g. a
 # local QEMU source override via --override_repository) take precedence. This

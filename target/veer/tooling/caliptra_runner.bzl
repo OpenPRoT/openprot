@@ -292,10 +292,16 @@ def caliptra_test(
         }
         test_env.update(env)
 
+        test_data = list(data) + [image_label]
+        if iface == "fpga":
+            # Board-side script and bitstream used by
+            # //target/veer/tooling/fpga:run_remote.
+            test_data.append("//target/veer/tooling/fpga:board_files")
+
         rust_test(
             name = target_name,
             srcs = srcs,
-            data = list(data) + [image_label],
+            data = test_data,
             deps = full_deps,
             edition = edition,
             env = test_env,
