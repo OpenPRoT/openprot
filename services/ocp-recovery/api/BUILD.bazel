@@ -1,0 +1,24 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "ocp_recovery_api",
+    srcs = [
+        "src/command.rs",
+        "src/error.rs",
+        "src/lib.rs",
+        "src/regs.rs",
+    ],
+    crate_name = "openprot_ocp_recovery_api",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@rust_crates//:zerocopy"],
+)
+
+# Host tests: build on the host platform, no kernel/QEMU.
+rust_test(
+    name = "ocp_recovery_api_test",
+    crate = ":ocp_recovery_api",
+)
