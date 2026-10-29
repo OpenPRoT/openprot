@@ -79,21 +79,22 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
     ///
     /// If `on_effect` reports an [`EffectError`], the orchestrator injects an
     /// [`Event::EffectFailed`] at the *front* of the queue, so a failed
-    /// actuation is handled fail-secure: the latch settles next, and feedback
-    /// still queued behind it drains into [`State::Locked`] (discarded)
-    /// instead of actuating hardware after a failure. A pending-queue
-    /// overflow is handled the same way: losing a returned event would break
-    /// the honest-feedback contract, so the run latches instead.
+    /// actuation is handled fail-secure: `EffectFailed` settles next, and
+    /// feedback still queued behind it drains into [`State::Locked`]
+    /// (discarded) instead of actuating hardware after a failure. A
+    /// pending-queue overflow is handled the same way: losing a returned
+    /// event would break the honest-feedback contract, so the run injects
+    /// `EffectFailed` instead.
     pub fn dispatch_with(
         &mut self,
         event: Event,
         mut on_effect: impl FnMut(Effect) -> Result<Option<Event>, EffectError>,
     ) {
-        // Fail-secure latch: `EffectFailed` goes to the *front*, so it settles
+        // Fail secure: `EffectFailed` goes to the *front*, so it settles
         // next and everything still queued drains into `Locked` (discarded)
         // instead of actuating hardware after a failure. Prefer evicting the
-        // newest queued event over losing the latch itself.
-        fn latch(pending: &mut heapless::Deque<Event, PENDING_CAP>) {
+        // newest queued event over losing `EffectFailed` itself.
+        fn inject_effect_failed(pending: &mut heapless::Deque<Event, PENDING_CAP>) {
             if pending.is_full() {
                 pending.pop_back();
             }
@@ -124,12 +125,13 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
                         Err(_) => {
                             // Fail-secure AND fail-fast: abandon the rest of
                             // this batch. `step` has already advanced the
-                            // state as if the whole batch applied, and the
-                            // latch overrides that transition, so nothing
-                            // ordered after the failure may hit hardware.
+                            // state as if the whole batch applied, and
+                            // `EffectFailed` overrides that transition, so
+                            // nothing ordered after the failure may hit
+                            // hardware.
                             if !failed {
                                 failed = true;
-                                latch(&mut pending);
+                                inject_effect_failed(&mut pending);
                             }
                             break;
                         }
@@ -142,7 +144,7 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
                     // Queue full: `next` would be lost, breaking the
                     // honest-feedback contract. Fail secure instead.
                     failed = true;
-                    latch(&mut pending);
+                    inject_effect_failed(&mut pending);
                     break;
                 }
             }
