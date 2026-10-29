@@ -140,6 +140,25 @@ fn self_verification_failure_latches_immediately() {
     assert_eq!(state, State::Locked);
 }
 
+/// `Locked` discards an event that would actuate anywhere else.
+/// `AttestationChallenge` is the strongest case: every
+/// `SupervisingPlatform` state answers it with `Effect::SignAttestation`,
+/// so an effect list holding nothing but the latch says the event was
+/// dropped rather than merely unmapped. `Locked` is unsupervised, so its
+/// blanket `Super` drops the event before any handler sees it.
+#[test]
+fn a_locked_platform_discards_an_attestation_challenge() {
+    let (effects, state) = drive(
+        passive_required(&[C0]),
+        &[
+            Event::PowerGood(PowerOnResult::Unprovisioned),
+            Event::AttestationChallenge,
+        ],
+    );
+    assert_eq!(effects, std::vec![Effect::LatchLockdown]);
+    assert_eq!(state, State::Locked);
+}
+
 /// INV6: AttestationChallenge is answerable from every SupervisingPlatform state.
 #[test]
 fn attestation_shared_across_supervising_platform_states() {
