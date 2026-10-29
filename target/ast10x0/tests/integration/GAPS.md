@@ -172,6 +172,33 @@ leaves the state machine locked and the managed devices running, with
 nothing saying so. Surfacing the failed latch needs a `Report` variant or
 a log dependency in the driver crate.
 
+## What no scenario can show about a locked platform
+
+`Locked` entry emits `LatchLockdown` and no report. One path reports
+first: `exhaust_recovery` emits `Effect::ReportRecoveryFailed` before the
+internal `Emit` that settles `RecoveryFailed`, so the driver sees the
+report before `Locked` entry runs. The other routes into `Locked` say
+nothing: an unprovisioned power-on, a failed eRoT self-verification, an
+`EffectFailed` from any supervised state, and a commit window that times
+out.
+
+The scenarios cannot show the difference. Each `LogSink` writes
+`pw_log::info!` to the console and the tests grep it, which is what an
+operator has instead of a management transport; `impl ReportSink for ()`
+drops every report, and no board crate wires a sink of its own. Nothing
+in the tree emits a PLDM platform event, an SPDM alert or an error GPIO,
+and `services/telemetry` is an empty stub, so a scenario that asserted a
+report left the eRoT would have nothing to assert against.
+
+The latch holds every managed device in reset, and the AST1060 device
+table manages the eRoT and the BMC, so the peer that would carry a report
+to an operator is held by the same call. Only a report emitted before the
+latch leaves the platform, which is why `Report::RecoveryFailed` is
+ordered the way it is. An eRoT serving the OCP recovery interface has the
+same ordering constraint on `DEVICE_STATUS`. The eRoT writes 0xE Boot
+Failure with a reason code before the latch, or the Recovery Agent polls
+a frozen heartbeat and infers the failure from the absence of progress.
+
 ## Arcs the trial gate does not cover
 
 `DeviceTrialBoot` is wired and `full_update` closes the trial for a
