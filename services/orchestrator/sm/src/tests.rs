@@ -3542,9 +3542,9 @@ fn returned_event_overflow_latches_locked() {
 }
 
 /// A failed effect with the pending queue already full still latches: the
-/// latch evicts the newest queued event rather than being dropped itself.
-/// Regression test — a back-of-queue push would be lost here, and the run
-/// would settle to `Ready` as if nothing failed.
+/// injection evicts the back event so `EffectFailed` fits. Remove that
+/// eviction and this test fails, because `push_front` finds no room, no
+/// `EffectFailed` is queued, and the run settles to `Ready`.
 #[test]
 fn failed_effect_with_full_queue_still_latches() {
     struct ChattyThenFail {
@@ -3583,8 +3583,8 @@ fn failed_effect_with_full_queue_still_latches() {
 }
 
 /// An event returned by executing `LatchLockdown` itself is queued, settles
-/// in `Locked`, and is discarded — the latch stays terminal and nothing is
-/// actuated after the lockdown.
+/// in `Locked`, and is discarded: `Locked` stays terminal, so no effect
+/// reaches the platform after the lockdown.
 #[test]
 fn event_returned_during_lockdown_is_discarded() {
     struct FailRelease {
