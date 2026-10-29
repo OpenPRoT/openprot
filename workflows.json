@@ -61,8 +61,8 @@
         "build_type": "bazel",
         "args": [
           "--keep_going",
-          "--build_tag_filters=-hardware,-disabled,-verilator,-emulator,-qemu",
-          "--test_tag_filters=-hardware,-disabled,-verilator,-emulator,-qemu",
+          "--build_tag_filters=-hardware,-disabled,-verilator,-emulator,-qemu,-fpga",
+          "--test_tag_filters=-hardware,-disabled,-verilator,-emulator,-qemu,-fpga",
           "--test_output=streamed"
         ],
         "driver_options": {
@@ -121,12 +121,12 @@
       "name": "caliptra_fpga_build",
       "build_config": {
         "name": "caliptra_fpga_build_config",
-        "description": "Build (do not run) the Caliptra MCU fpga target image. Catches fpga cfg/build-wiring regressions without requiring lab hardware; actually running it needs a VCK190 board (see //target/veer/unittest_runner:fpga_test, tagged manual).",
+        "description": "Build (do not run) the Caliptra MCU FPGA test binaries and images. Catches FPGA cfg, cross-compile, and build-wiring regressions without requiring lab hardware.",
         "build_type": "bazel",
         "args": [
           "--keep_going",
-          "--config=k_veer",
-          "--//target/veer:target_type=fpga"
+          "--config=fpga",
+          "--build_tag_filters=+fpga,-disabled"
         ],
         "driver_options": {
           "@type": "pw.build.proto.BazelDriverOptions",
@@ -134,7 +134,7 @@
         }
       },
       "targets": [
-        "//target/veer/unittest_runner:fpga_test"
+        "//target/veer/..."
       ]
     },
     {

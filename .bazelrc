@@ -23,6 +23,7 @@ common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 
 test --@pigweed//pw_kernel:enable_tests=true
 test --platform_suffix=test
+test --test_tag_filters=-fpga,-disabled
 
 # Remote execution config definitions
 # ===================================
@@ -108,8 +109,12 @@ test:stress_k_ast1060_evb   --test_env=AST1060_EVB_PI_HOST
 # Platform setup for building //target/veer/* artifacts.
 common:k_veer --platforms=//target/veer:veer
 build:k_veer --build_tag_filters=-do_not_build,-kernel_doc_test
-# Usage: VCK190_FPGA_HOST=<host> bazel test --config=k_veer //target/veer/unittest_runner:fpga_test
-test:k_veer --test_env=VCK190_FPGA_HOST
+
+# Caliptra VCK190 FPGA board via SSH.
+# Host-side test binaries compile for the VCK190's ARM cores (//toolchain/aarch64_linux)
+# while MCU firmware images transition to //target/veer:veer with target_type=fpga.
+common:fpga --platforms=//toolchain/aarch64_linux
+build:fpga --build_tag_filters=-do_not_build,-kernel_doc_test
 
 # Site-local overrides. Kept last so developer machine-specific settings (e.g. a
 # local QEMU source override via --override_repository) take precedence. This

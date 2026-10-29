@@ -1,14 +1,13 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
-load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
 load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
-load("//target/veer:defs.bzl", "TARGET_COMPATIBLE_WITH", "veer_system_config")
-load("//target/veer/tooling:caliptra_runner.bzl", "caliptra_runner", "caliptra_test")
+load("//target/veer:defs.bzl", "TARGET_COMPATIBLE_WITH", "veer_system_config", "veer_system_image")
+load("//target/veer/tooling:caliptra_runner.bzl", "caliptra_on_device_test")
 
-system_image(
+veer_system_image(
     name = "interrupts",
     kernel = ":target",
     platform = "//target/veer",
@@ -49,21 +48,12 @@ rust_binary(
     ],
 )
 
-caliptra_runner(
-    name = "interrupts_runner_emulator",
-    interface = "emulator",
-    tags = ["manual"],
-    target = ":interrupts",
-)
-
-caliptra_test(
-    name = "emulator_test",
-    interface = "emulator",
-    # caliptra_runner.py hardcodes --i3c-port=65534, so caliptra emulator
-    # tests cannot run in parallel without an EADDRINUSE collision.
-    tags = [
+# target.rs triggers McuRootBus::PRIMARY_FLASH_CTRL_ERROR_IRQ via the
+# emulator-only primary flash controller at 0x2000_8000.
+caliptra_on_device_test(
+    name = "interrupts_test",
+    interfaces = [
         "emulator",
-        "exclusive",
     ],
-    target = ":interrupts",
+    mcu_image = ":interrupts",
 )
