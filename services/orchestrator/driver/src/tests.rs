@@ -1157,6 +1157,29 @@ fn entering_lockdown_latches_the_platform() {
     );
 }
 
+// A later event reaches a locked platform and actuates nothing: the latch
+// ran on entry and `Locked` discards what arrives after, so the driver does
+// not call the board a second time.
+#[test]
+fn a_later_event_does_not_latch_a_locked_platform_again() {
+    let mut orch = orchestrator();
+    let mut image = MemImage::holding(valid_image());
+    image.fail_open = true;
+    let mut driver = driver([image]);
+
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    assert_eq!(orch.state(), State::Locked);
+
+    orch.dispatch(&mut driver, Event::AttestationChallenge);
+
+    assert_eq!(orch.state(), State::Locked);
+    assert_eq!(
+        driver.board().lockdown.latched,
+        1,
+        "an event arriving in Locked must not latch again"
+    );
+}
+
 // A board that cannot engage its safe state leaves the state machine
 // locked, and the driver does not retry the latch: the state machine is
 // already where the failure would send it.
@@ -1938,8 +1961,8 @@ fn execute_routes_recover_component() {
 // Lockdown latch.
 // ---------------------------------------------------------------------------
 
-/// The terminal safe state, as a test can see it: how many times the state
-/// machine latched, and whether the board refuses to.
+/// The terminal safe state, as a test can see it: how many times the
+/// driver called `latch`, and whether the board refuses the call.
 #[derive(Default)]
 struct TestLatch {
     latched: u32,
@@ -1963,8 +1986,8 @@ impl LockdownLatch for TestLatch {
     type Error = LatchFaultInjected;
 
     fn latch(&mut self) -> Result<(), LatchFaultInjected> {
-        // Counted before the refusal: a board that tried and could not is
-        // what the failing case is about.
+        // The count is attempts, not successes, so the refusing case can
+        // assert the driver called `latch` once and did not retry.
         self.latched += 1;
         if self.fails {
             return Err(LatchFaultInjected);

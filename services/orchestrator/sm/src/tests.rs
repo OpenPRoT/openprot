@@ -140,6 +140,25 @@ fn self_verification_failure_latches_immediately() {
     assert_eq!(state, State::Locked);
 }
 
+/// `Locked` is unsupervised, so its blanket `Super` arm drops an event
+/// before any handler sees it. The test dispatches `AttestationChallenge`
+/// because every `SupervisingPlatform` state answers it with
+/// `Effect::SignAttestation`. An effect list holding nothing but the latch
+/// therefore shows that `Locked` refused an event the state machine does
+/// handle, not one that no state handles.
+#[test]
+fn a_locked_platform_discards_an_attestation_challenge() {
+    let (effects, state) = drive(
+        passive_required(&[C0]),
+        &[
+            Event::PowerGood(PowerOnResult::Unprovisioned),
+            Event::AttestationChallenge,
+        ],
+    );
+    assert_eq!(effects, std::vec![Effect::LatchLockdown]);
+    assert_eq!(state, State::Locked);
+}
+
 /// INV6: AttestationChallenge is answerable from every SupervisingPlatform state.
 #[test]
 fn attestation_shared_across_supervising_platform_states() {
@@ -2103,9 +2122,13 @@ fn an_unrelated_boot_confirmed_leaves_the_commit_window_open() {
     );
 }
 
-/// Entering lockdown emits the one effect that engages the safe state.
-/// That effect is the only thing `Locked` entry emits, and no path
-/// re-enters `Locked`.
+/// Pins the whole effect list of `Locked` entry to the latch alone.
+/// `Locked` exists to stop actuation and the driver executes every
+/// effect, so anything beside the latch is work a locked platform would
+/// still perform; adding an effect there, such as the report GAPS.md
+/// records as missing, has to fail here and be decided on. Nothing
+/// leaves `Locked`, so the entry action cannot run twice and the latch
+/// effect fires once per run.
 #[test]
 fn entering_lockdown_emits_one_latch() {
     let (effects, state) = drive(
