@@ -89,10 +89,10 @@ output is tokenized, and it can be detected without an ELF for detokenization.
 
 ### QEMU
 
-`qemu_runner.py` starts QEMU with a PTY for serial I/O and a named pipe for
-the raw byte stream. A sentinel watcher thread scans the raw stream; when a
-sentinel is found QEMU is killed and the runner exits 0 or 1. A 30-second
-watchdog kills QEMU if no sentinel arrives.
+`qemu_runner.py` starts QEMU with `-serial mon:stdio` and redirects the QEMU
+stdout into a temporary file, which holds the raw byte stream. A sentinel
+watcher thread scans that file; when the thread finds a sentinel it kills
+QEMU and the runner exits 0 or 1. A 30-second watchdog kills QEMU if no sentinel arrives.
 
 ### Physical board
 
