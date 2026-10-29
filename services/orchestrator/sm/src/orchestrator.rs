@@ -6,8 +6,9 @@ use crate::platform::{EffectError, Platform};
 use crate::rot::Rot;
 use crate::sink::{Outcome, Sink, PENDING_CAP};
 
-/// A handle for a caller's own event loop. Owns the machine's storage
-/// ([`Rot`]) and its current [`State`], and drives them through [`step`].
+/// A handle the caller drives from its own event loop. Owns the state
+/// machine storage ([`Rot`]) and the current [`State`], and passes both to
+/// [`step`].
 ///
 /// [`step`]: Self::step
 pub struct Orchestrator<const N: usize, const E: usize> {
@@ -29,22 +30,23 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
         self.state
     }
 
-    /// Reduce one event: dispatch, fall through to the supervisor if needed, and
-    /// apply the resulting outcome.
+    /// Handles one event: dispatch to the current state, fall through to the
+    /// supervisor if needed, and apply the outcome.
     ///
-    /// The machine defines no exit actions and no supervisor entry/exit actions,
-    /// so a transition's only side effect is the target state's entry action —
-    /// and it lands in the *same* `ctx` as the handler that caused it, which the
-    /// `E >= 2 * N + 2` bound relies on (a full gate cascade, with its paired
-    /// isolation reports, plus the destination `PreSupervision` entry's two
-    /// effects share one `Sink`).
+    /// The state machine defines no exit actions and no supervisor
+    /// entry/exit actions, so the one side effect of a transition is the
+    /// entry action for the target state. That action lands in the *same*
+    /// `ctx` as the handler that caused it, which the `E >= 2 * N + 2` bound
+    /// relies on: a full gate cascade, with the isolation reports it pairs
+    /// each gate with, plus the two effects the destination `PreSupervision`
+    /// entry emits, all share one `Sink`.
     fn step(&mut self, event: &Event, ctx: &mut Sink<E>) {
-        // 0. Single point of id-membership enforcement. The core supervises
-        //    only the components in the configured chain, so an event that names
-        //    an id the chain does not contain is dropped here, before any
-        //    handler runs — no handler needs its own membership check, and none
-        //    can act on a component the core never modeled. Events that name no
-        //    component (`component_id() == None`) always pass through.
+        // 0. The core checks chain membership here, once. It supervises only
+        //    the components in the configured chain, so an event naming an id
+        //    the chain does not contain is dropped before any handler runs.
+        //    Each handler can then skip its own membership check and cannot
+        //    act on a component the core never modeled. An event naming no
+        //    component (`component_id() == None`) passes through.
         if let Some(id) = event.component_id()
             && !self.rot.in_chain(id)
         {
@@ -54,10 +56,11 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
         // 1. Dispatch to the current (leaf) state.
         let mut outcome = self.rot.handle(self.state, event, ctx);
 
-        // 2. On `Super`, defer to the supervising handler if this state has one;
-        //    otherwise the event is discarded. Discarding is what keeps `Locked`
-        //    terminal: it is unsupervised, so its blanket `Super` drops every
-        //    event — including the `EffectFailed` from a failed `LatchLockdown`,
+        // 2. On `Super`, defer to the supervising handler where the current
+        //    state has one, and discard the event where it does not.
+        //    Discarding is what keeps `Locked` terminal: `Locked` is
+        //    unsupervised, so its blanket `Super` drops every event,
+        //    including the `EffectFailed` a failed `LatchLockdown` injects,
         //    which would otherwise loop.
         if let Outcome::Super = outcome
             && self.state.is_supervised()
@@ -65,35 +68,33 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
             outcome = self.rot.handle_supervising(event, ctx);
         }
 
-        // 3. Apply a transition. `Handled` and an unhandled `Super` both leave
-        //    the state alone and run no entry action.
+        // 3. Apply a transition. On `Handled` and on an unhandled `Super`,
+        //    nothing writes `self.state` and no entry action runs.
         if let Outcome::Transition(target) = outcome {
             self.state = target;
             self.rot.entry_action(target, ctx);
         }
     }
 
-    /// Handle one event all the way through — every [`Effect::Emit`]
-    /// follow-up and every event the executors return — calling `on_effect`
-    /// for each external effect in order. One call runs to quiescence.
+    /// Handles one event all the way through, calling `on_effect` for each
+    /// external effect in order. One call runs to quiescence: it covers every
+    /// [`Effect::Emit`] follow-up and every event the executors return.
     ///
     /// If `on_effect` reports an [`EffectError`], the orchestrator injects an
     /// [`Event::EffectFailed`] at the *front* of the queue, so a failed
-    /// actuation is handled fail-secure: `EffectFailed` settles next, and
-    /// feedback still queued behind it drains into [`State::Locked`]
-    /// (discarded) instead of actuating hardware after a failure. A
-    /// pending-queue overflow is handled the same way: losing a returned
-    /// event would break the honest-feedback contract, so the run injects
-    /// `EffectFailed` instead.
+    /// actuation is handled fail secure: `EffectFailed` settles next, and
+    /// [`State::Locked`] discards the feedback still queued behind it rather
+    /// than actuating hardware after a failure. A pending-queue overflow
+    /// takes the same path: losing a returned event would break the
+    /// honest-feedback contract, so the run injects `EffectFailed` instead.
     pub fn dispatch_with(
         &mut self,
         event: Event,
         mut on_effect: impl FnMut(Effect) -> Result<Option<Event>, EffectError>,
     ) {
-        // Fail secure: `EffectFailed` goes to the *front*, so it settles
-        // next and everything still queued drains into `Locked` (discarded)
-        // instead of actuating hardware after a failure. Prefer evicting the
-        // newest queued event over losing `EffectFailed` itself.
+        // The front of the queue, for the ordering the doc comment above
+        // describes. Evicts the newest queued event rather than losing
+        // `EffectFailed` itself when the queue is full.
         fn inject_effect_failed(pending: &mut heapless::Deque<Event, PENDING_CAP>) {
             if pending.is_full() {
                 pending.pop_back();
@@ -107,9 +108,9 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
         // build time), so the first push always fits.
         let _ = pending.push_back(event);
         // `EffectFailed` is injected at most once: it is idempotent and
-        // terminal (drives to `Locked`, which discards everything after). The
-        // only external effect executed after it settles is `Locked`'s own
-        // entry, whose failure must not inject again.
+        // terminal, driving to `Locked`, which discards everything after. The
+        // one external effect that runs after it settles is the entry action
+        // for `Locked`, and a failure there must not inject again.
         let mut failed = false;
 
         while let Some(ev) = pending.pop_front() {
@@ -118,12 +119,13 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
 
             for &effect in buf.effects() {
                 let follow_up = match effect {
-                    // Internal: handle next, never forwarded to the platform.
+                    // Internal: handled next, and the orchestrator never
+                    // forwards it to the platform.
                     Effect::Emit(internal) => Some(internal),
                     external => match on_effect(external) {
                         Ok(follow_up) => follow_up,
                         Err(_) => {
-                            // Fail-secure AND fail-fast: abandon the rest of
+                            // Fail secure and fail fast: abandon the rest of
                             // this batch. `step` has already advanced the
                             // state as if the whole batch applied, and
                             // `EffectFailed` overrides that transition, so
@@ -151,7 +153,7 @@ impl<const N: usize, const E: usize> Orchestrator<N, E> {
         }
     }
 
-    /// Same as [`dispatch_with`] but routes effects to a [`Platform`].
+    /// Same as [`dispatch_with`], with the effects routed to a [`Platform`].
     pub fn dispatch(&mut self, platform: &mut impl Platform, event: Event) {
         self.dispatch_with(event, |effect| platform.execute(effect));
     }
