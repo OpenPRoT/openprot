@@ -6,6 +6,7 @@
 #![no_std]
 #![no_main]
 
+use arch_arm_cortex_m::Arch;
 use ast10x0_peripherals::scu::{pinctrl, ScuRegisters};
 use console_backend::console_backend_write_all;
 use entry as _;

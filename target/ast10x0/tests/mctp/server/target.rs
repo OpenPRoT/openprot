@@ -4,6 +4,7 @@
 #![no_std]
 #![no_main]
 
+use arch_arm_cortex_m::Arch;
 use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor, I2cBusCfg};
 use ast10x0_peripherals::i2c::{ClockConfig, I2cConfig, I2cSpeed, I2cXferMode};
 use ast10x0_peripherals::scu::pinctrl;

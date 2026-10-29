@@ -285,7 +285,7 @@ def _run_remote(
     """SCP firmware and runner to Pi; stream UART back over SSH stdout."""
     host = args.pi_host
     dev_a = config["device_a"]
-    baudrate = args.baudrate if args.baudrate else config["baudrate"]
+    baudrate = args.baudrate if args.baudrate else config["uart"]["baudrate"]
 
     remote_dir = "/tmp/ast1060_test"
 
@@ -395,7 +395,7 @@ def main() -> int:
         "--baudrate",
         type=int,
         default=None,
-        help=f"Override baud rate from evb_config.toml (default: {config['baudrate']})",
+        help=f"Override baud rate from evb_config.toml (default: {config['uart']['baudrate']})",
     )
     parser.add_argument(
         "--log-file",
