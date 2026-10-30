@@ -367,8 +367,9 @@ keeps both.
 
 ## What is not proven yet
 
-GAPS.md has the full list, including the arcs of the update state machine
-with no scenario yet and the assertions that are looser than they look.
+GAPS.md has the full list, including the paths through the update state
+machine with no scenario yet and the assertions that are looser than they
+look.
 The short version:
 
 Signature checking is stubbed until the crypto service exists, so all the
