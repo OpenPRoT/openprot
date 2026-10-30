@@ -300,6 +300,17 @@ that check would hold even with no boot walk ever polled.
   times out, and the host checks CS1 afterwards. It does not cover the
   device's consent flags.
 
+- In `slot_resync` the RoT owns the result sentinel and writes it as soon
+  as the re-sync pass finishes, while the Firmware Device is still serving
+  the UpdateSecurityRevision exchange with the Update Agent. Under the
+  config option `rot_owns_verdict` the Firmware Device only logs the
+  verdict, so the run would still pass with a device that answered the
+  UpdateSecurityRevision request with the wrong completion code.
+  `svn_commit` covers that half: there the Firmware Device owns the result
+  sentinel and fails the run when it did not serve the commit.
+  `slot_resync` adds the claim the Firmware Device cannot see: the SVN
+  floor keeps its SVN until the spare slot holds the committed image, and
+  advances once it does.
 - The RoT's own verifier reads the staging region, which in this scenario
   is a synthetic pattern rather than the bytes the device actually staged.
   The device checks the real bytes; the RoT checks a stand-in.
