@@ -34,6 +34,8 @@ def _gpio_set(pin: int, state: str) -> None:
 
 def _gpio_set_input(pin: int, pull: str) -> None:
     subprocess.run(["pinctrl", "set", str(pin), "ip", pull], check=True)
+
+
 _DISCOVERY_TIMEOUT = 30  # seconds to wait for a reset board to answer
 _FLUSH_DURATION = 0.5  # drain ports this long while reset is held, comfortably
 # longer than the FTDI latency timer (~16ms) so every pre-reset byte lands and
