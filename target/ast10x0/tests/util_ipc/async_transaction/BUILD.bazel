@@ -60,7 +60,6 @@ rust_app(
     srcs = ["handler_main.rs"],
     codegen_crate_name = "app_handler",
     edition = "2024",
-    system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
@@ -79,7 +78,6 @@ rust_app(
     srcs = ["initiator_main.rs"],
     codegen_crate_name = "app_initiator",
     edition = "2024",
-    system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
