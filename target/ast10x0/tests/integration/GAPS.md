@@ -154,6 +154,55 @@ image settles through `settle_self_update_at_boot`, which dispatches the
 settlement event without calling a verifier. Measuring it needs a seam on
 that path, not another scenario.
 
+## What the lockdown latch does not prove
+
+`LockdownLatch` is wired and the scenarios count it: each run that ends
+in lockdown expects the count, and each run that comes up expects none.
+What they do not exercise is a safe state. The mock counts; a real one on
+this board holds every managed device in reset and denies writes in the
+SPI monitor, and answers `Ok` only when both are in force. QEMU models
+one chip and there is no second device to hold, so the claim here is
+about the orchestrator, not the platform.
+
+A failed latch is invisible. The attempt happens: `Locked` entry emits the
+effect and the driver calls the board once. What is lost is the failure.
+The driver answers `EffectError`, and the orchestrator injects
+`Event::EffectFailed` at most once per dispatch, so a run that reached
+`Locked` through an earlier failure has already spent that injection;
+where it has not, the event arrives in `Locked`, which is unsupervised and
+drops it. Either way there is no second attempt and no report, and the
+driver crate has no logger. So a board that cannot engage its safe state
+leaves the state machine locked and the managed devices running, with
+nothing saying so. Surfacing the failed latch needs a `Report` variant or
+a log dependency in the driver crate.
+
+## What no scenario can show about a locked platform
+
+`Locked` entry emits `LatchLockdown` and no report. One path reports
+first: `exhaust_recovery` emits `Effect::ReportRecoveryFailed` before the
+internal `Emit` that settles `RecoveryFailed`, so the driver sees the
+report before `Locked` entry runs. The other routes into `Locked` say
+nothing: an unprovisioned power-on, a failed eRoT self-verification, an
+`EffectFailed` from any supervised state, and a commit window that times
+out.
+
+The scenarios cannot show the difference. Each `LogSink` writes
+`pw_log::info!` to the console and the tests grep it, which is what an
+operator has instead of a management transport; `impl ReportSink for ()`
+drops every report, and no board crate wires a sink of its own. Nothing
+in the tree emits a PLDM platform event, an SPDM alert or an error GPIO,
+and `services/telemetry` is an empty stub, so a scenario that asserted a
+report left the eRoT would have nothing to assert against.
+
+The latch holds every managed device in reset, and the AST1060 device
+table manages the eRoT and the BMC, so the peer that would carry a report
+to an operator is held by the same call. Only a report emitted before the
+latch leaves the platform, which is why `Report::RecoveryFailed` is
+ordered the way it is. An eRoT serving the OCP recovery interface has the
+same ordering constraint on `DEVICE_STATUS`. The eRoT writes 0xE Boot
+Failure with a reason code before the latch, or the Recovery Agent polls
+a frozen heartbeat and infers the failure from the absence of progress.
+
 ## Arcs the trial gate does not cover
 
 `DeviceTrialBoot` is wired and `full_update` closes the trial for a

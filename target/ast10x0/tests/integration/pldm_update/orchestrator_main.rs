@@ -43,7 +43,7 @@ use openprot_orchestrator_sm::{
 // Only the accepting path checks the state it reached.
 #[cfg(not(slot_resync))]
 use board_stubs::StubVerifier;
-use board_stubs::{BoardFault, StubImage};
+use board_stubs::{BoardFault, CountingLatch, StubImage};
 #[cfg(not(refused_update))]
 use openprot_orchestrator_sm::State;
 use orchestrator_capabilities::{
@@ -470,6 +470,7 @@ impl BoardCapabilities for UpdateBoard {
     type Updatable = ScenarioUpdatable;
     type Recovery = ();
     type DeviceTrial = ();
+    type Lockdown = CountingLatch;
     type Staging = PatternStaging;
     type UpdateVerifier = PatternVerifier;
     type SelfUpdate = ();
@@ -498,6 +499,7 @@ fn board() -> Board<UpdateBoard, N> {
         }),
         verifier: scenario_verifier(),
         report_sink: LogSink,
+        lockdown: CountingLatch,
         update_staging: PatternStaging,
         update_verifier: Some(PatternVerifier),
         self_update: None,
@@ -605,16 +607,22 @@ fn entry() {
     // a failure is what the test passes on. So the orchestrator logs what
     // it reached and parks.
     let completed = run(&mut core, &mut driver, &mut fd);
-    if completed {
-        pw_log::info!("ORCH: the update completed");
-    } else {
+    // Checked on both paths: the run that ends badly by design is where
+    // an unexpected lockdown would hide.
+    let no_stray_latch = latched_as_expected();
+    if !completed {
         pw_log::error!("ORCH: the update did not complete");
+    } else if !no_stray_latch {
+        pw_log::error!("ORCH: the update completed and the platform latched");
+    } else {
+        pw_log::info!("ORCH: the update completed");
     }
     // `rot_owns_verdict` means the claim is about state the Firmware
     // Device cannot see, such as the SVN floor the RoT keeps, so the RoT
-    // writes the result sentinel and the Firmware Device only logs.
+    // writes the result sentinel and the Firmware Device only logs. The
+    // latch count is RoT state too, so it fails the run on this side.
     #[cfg(rot_owns_verdict)]
-    let _ = if completed {
+    let _ = if completed && no_stray_latch {
         syscall::debug_shutdown(Ok(()))
     } else {
         syscall::debug_shutdown(Err(pw_status::Error::Internal))
@@ -1069,6 +1077,29 @@ enum Commit {
     Refused,
     /// The exchange with the device did not complete.
     Failed,
+}
+
+/// How many times these scenarios expect the terminal safe state to be
+/// engaged: never. Every one of them ends with the state machine still
+/// supervising, whether the update went through, was refused, errored or
+/// was withdrawn. The device is the one that fails a negative run, not
+/// the platform.
+const EXPECT_LATCHES: u32 = 0;
+
+/// Whether the safe state stayed untouched. Checked on both outcomes,
+/// because an unexpected lockdown is likeliest in the runs that end
+/// badly by design, and there the firmware device owns the verdict.
+fn latched_as_expected() -> bool {
+    let latches = board_stubs::latches();
+    if latches == EXPECT_LATCHES {
+        return true;
+    }
+    pw_log::error!(
+        "ORCH: the platform latched {} times, expected {}",
+        latches as u32,
+        EXPECT_LATCHES as u32
+    );
+    false
 }
 
 /// Asks the device what it is waiting for.
