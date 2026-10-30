@@ -236,6 +236,72 @@ rust_library(
     ],
 )
 
+# Upstream hw/model (crate caliptra-mcu-hw-model) for host-side test binaries.
+# On aarch64 (//toolchain/aarch64_linux), enables `fpga_realtime` so
+# `DefaultHwModel` is `ModelFpgaRealtime`; on x86_64 host, `DefaultHwModel` is
+# `ModelEmulated`. caliptra-mcu-builder is left out: the library only uses it
+# from tests (see hw_model_no_builder.patch), which keeps signing and OpenSSL
+# out of the build.
+rust_library(
+    name = "mcu_hw_model",
+    srcs = ["@caliptra_mcu_sw//:hw_model_srcs"],
+    crate_features = select({
+        "@platforms//cpu:aarch64": ["fpga_realtime"],
+        "//conditions:default": [],
+    }),
+    crate_name = "caliptra_mcu_hw_model",
+    crate_root = "@caliptra_mcu_sw//:hw/model/src/lib.rs",
+    edition = "2021",
+    proc_macro_deps = ["@rust_caliptra_crates_host//:int-enum"],
+    rustc_flags = ["--cap-lints=allow"],
+    deps = [
+        ":emulator_bmc",
+        ":emulator_caliptra",
+        ":emulator_consts",
+        ":emulator_periph",
+        ":emulator_registers_generated",
+        ":mcu_testing_common",
+        ":romtime",
+        "//third_party/caliptra:crate_bitfield",
+        "//third_party/caliptra:crate_caliptra-mcu-otp-lifecycle",
+        "//third_party/caliptra:crate_caliptra-mcu-registers-generated",
+        "//third_party/caliptra:crate_tock-registers",
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_bus",
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_cpu",
+        "//third_party/caliptra/caliptra-sw:caliptra_emu_periph",
+        "//third_party/caliptra/caliptra-sw:caliptra_hw_model",
+        "//third_party/caliptra/caliptra-sw:caliptra_hw_model_types",
+        "@rust_caliptra_crates//:caliptra-api",
+        "@rust_caliptra_crates//:caliptra-api-types",
+        "@rust_caliptra_crates//:caliptra-mcu-mbox-common",
+        "@rust_caliptra_crates//:caliptra-mcu-ocp",
+        "@rust_caliptra_crates//:caliptra-mcu-otp-digest",
+        "@rust_caliptra_crates//:caliptra-registers",
+        "@rust_caliptra_crates//:caliptra-ureg",
+        # Same zerocopy as caliptra-api (embedded repo), whose types derive it.
+        "@rust_caliptra_crates//:zerocopy",
+        "@rust_caliptra_crates_host//:anyhow",
+        "@rust_caliptra_crates_host//:caliptra-emu-types",
+        "@rust_caliptra_crates_host//:caliptra-image-types",
+        "@rust_caliptra_crates_host//:caliptra-mcu-config",
+        "@rust_caliptra_crates_host//:caliptra-mcu-config-emulator",
+        "@rust_caliptra_crates_host//:caliptra-mcu-config-fpga",
+        "@rust_caliptra_crates_host//:caliptra-mcu-poll-common",
+        "@rust_caliptra_crates_host//:ecdsa",
+        "@rust_caliptra_crates_host//:fips204",
+        "@rust_caliptra_crates_host//:hex",
+        "@rust_caliptra_crates_host//:libc",
+        "@rust_caliptra_crates_host//:p384",
+        "@rust_caliptra_crates_host//:rand",
+        "@rust_caliptra_crates_host//:semver",
+        "@rust_caliptra_crates_host//:sha2",
+        "@rust_caliptra_crates_host//:sha3",
+        "@rust_caliptra_crates_host//:tempfile",
+        "@rust_caliptra_crates_host//:thiserror",
+        "@rust_caliptra_crates_host//:uio",
+    ],
+)
+
 rust_library(
     name = "romtime",
     srcs = ["@caliptra_mcu_sw//:all_files"],
