@@ -70,7 +70,7 @@ request again. The run also ends with `run_terminus` returning an error rather
 than the device going back to idle, so what a second update attempt after an
 abort would do is untested.
 
-## Arcs of the update state machine with no scenario
+## Paths through the update state machine with no scenario
 
 - `UpdateSecurityRevision` arriving over PLDM for the eRoT. The
   downstream half runs end to end in `pldm_update/svn_commit`: the Update
