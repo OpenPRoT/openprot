@@ -3,9 +3,11 @@
 
 //! Kernel target for the PLDM update QEMU test.
 //!
-//! The Firmware Device reports the result with
+//! The app that owns the verdict reports the result with
 //! `syscall::debug_shutdown(Ok(()) | Err(..))`, which lands here and writes
-//! the UART sentinel qemu_runner.py greps for.
+//! the result sentinel to the UART for qemu_runner.py to grep. The Firmware
+//! Device owns the verdict in most scenarios; under the config option
+//! `rot_owns_verdict` the orchestrator does.
 
 #![no_std]
 #![no_main]

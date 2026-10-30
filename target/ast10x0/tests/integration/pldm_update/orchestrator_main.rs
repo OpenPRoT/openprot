@@ -134,6 +134,23 @@ static CHAIN: ChainEntries<N> = chain_of(&DEVICES);
 
 const _: () = assert_retry_reaches_every_image(MAX_RETRY, &DEVICES);
 
+// Hitting this assert means a scenario BUILD file sets slot_resync
+// without svn_commit. Add svn_commit to the scenario cfgs, or give the
+// `run` loop below another path to `resync`: the re-sync pass only
+// starts from the SvnCommitPending arm, so without the commit flow the
+// run reports TEST_RESULT:PASS and the re-sync pass never runs.
+#[cfg(slot_resync)]
+const _: () = assert!(AGENT_COMMITS_SVN);
+
+// Hitting this assert means a scenario BUILD file sets slot_resync
+// together with svn_commit_refused. Restructure the Granted arms in the
+// `run` loop below before combining the two cfgs: the slot_resync arm
+// returns on the first grant, so the second UpdateSecurityRevision
+// request the Update Agent sends never goes out and the refusal
+// svn_commit_refused tests never happens.
+#[cfg(slot_resync)]
+const _: () = assert!(!cfg!(svn_commit_refused));
+
 /// Set when the RoT's own verifier authenticates the candidate. The device
 /// verifies its image too, and the update only goes through when both say
 /// so, so this records one half of that.
@@ -155,8 +172,8 @@ static RESYNC_FAILED: AtomicBool = AtomicBool::new(false);
 /// spare slot.
 static FLOOR_COMMIT_FAILED: AtomicBool = AtomicBool::new(false);
 
-/// Set when the image the component runs carried no SVN, which leaves
-/// the floor where it is.
+/// Set when the image the component runs carried no SVN, so the SVN
+/// floor keeps the SVN it has.
 static FLOOR_HELD: AtomicBool = AtomicBool::new(false);
 
 /// The byte the candidate carries at `offset`. Offset-dependent, matching
@@ -265,10 +282,9 @@ fn scenario_verifier() -> ScenarioVerifier {
 /// for real. Replacing this stub with an IPC call to the Firmware Device is
 /// the next step; what it would prove is the push direction, which this
 /// flow does not use.
+#[cfg(not(slot_resync))]
 struct FdUpdatable;
 
-// The slot_resync build implements `Updatable` in `mod slot_resync`
-// instead, next to the spare slot the second staging pass writes.
 #[cfg(not(slot_resync))]
 impl Updatable for FdUpdatable {
     fn poll_stage(&mut self, _payload: &dyn ByteSource) -> Result<StageProgress, UpdateError> {
@@ -278,9 +294,33 @@ impl Updatable for FdUpdatable {
     fn abandon(&mut self) {}
 
     fn activate(&mut self) -> Result<(), UpdateError> {
-        ACTIVATIONS.fetch_add(1, Ordering::Relaxed);
-        Ok(())
+        record_activation()
     }
+}
+
+/// The `Updatable` this scenario wires for the managed component. The
+/// slot_resync build wires `ResyncUpdatable` from `mod slot_resync`, the
+/// variant that adds the spare slot the second staging pass writes.
+#[cfg(not(slot_resync))]
+type ScenarioUpdatable = FdUpdatable;
+#[cfg(slot_resync)]
+type ScenarioUpdatable = slot_resync::ResyncUpdatable;
+
+#[cfg(not(slot_resync))]
+fn scenario_updatable() -> ScenarioUpdatable {
+    FdUpdatable
+}
+
+#[cfg(slot_resync)]
+fn scenario_updatable() -> ScenarioUpdatable {
+    slot_resync::ResyncUpdatable
+}
+
+/// Counts the activation. The run loop checks the count is exactly 1, so
+/// both `Updatable` types go through this one function.
+fn record_activation() -> Result<(), UpdateError> {
+    ACTIVATIONS.fetch_add(1, Ordering::Relaxed);
+    Ok(())
 }
 
 /// The staging region, as big as the candidate and carrying the same bytes
@@ -427,7 +467,7 @@ impl BoardCapabilities for UpdateBoard {
     type BootWatch = CheckpointWalk<AlwaysBooted, u8>;
     type SvnFloor = ScenarioFloor;
     type ReportSink = LogSink;
-    type Updatable = FdUpdatable;
+    type Updatable = ScenarioUpdatable;
     type Recovery = ();
     type DeviceTrial = ();
     type Staging = PatternStaging;
@@ -452,7 +492,7 @@ fn board() -> Board<UpdateBoard, N> {
             boot_control: NoReset,
             boot_watch: CheckpointWalk::new(AlwaysBooted, &DEVICES[i]),
             svn_floor: svn_floor_binding(i),
-            updatable: FdUpdatable,
+            updatable: scenario_updatable(),
             recovery: (),
             trial: (),
         }),
@@ -559,20 +599,21 @@ fn entry() {
         pw_log::info!("ORCH: supervising, waiting for the firmware device");
     }
 
-    // The Firmware Device declares the run's verdict, as it did before: the
-    // runner greps one sentinel, and in a scenario where the RoT refuses,
-    // the RoT reaching a failure is what the test passes on. So this logs
-    // what it reached and parks.
+    // The runner greps one result sentinel per run. In every scenario but
+    // the `rot_owns_verdict` ones the Firmware Device writes the result
+    // sentinel, and in a scenario where the RoT refuses, the RoT reaching
+    // a failure is what the test passes on. So the orchestrator logs what
+    // it reached and parks.
     let completed = run(&mut core, &mut driver, &mut fd);
     if completed {
         pw_log::info!("ORCH: the update completed");
     } else {
         pw_log::error!("ORCH: the update did not complete");
     }
-    // The claim here is about the SVN floor the RoT keeps, which the
-    // Firmware Device cannot see, so the RoT declares this run. The
-    // Firmware Device is built with `rot_owns_verdict` and only logs.
-    #[cfg(slot_resync)]
+    // `rot_owns_verdict` means the claim is about state the Firmware
+    // Device cannot see, such as the SVN floor the RoT keeps, so the RoT
+    // writes the result sentinel and the Firmware Device only logs.
+    #[cfg(rot_owns_verdict)]
     let _ = if completed {
         syscall::debug_shutdown(Ok(()))
     } else {
@@ -780,7 +821,7 @@ fn svn_commit(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> Commit {
 /// the eRoT keeps for the managed component, the verifier that stamps an
 /// SVN on the verdict, the spare slot the second staging pass writes, and
 /// the re-sync run itself. The rest of the file names `DeviceFloor`,
-/// `SvnVerifier` and `resync`.
+/// `SvnVerifier`, `ResyncUpdatable` and `resync`.
 #[cfg(slot_resync)]
 mod slot_resync {
     use core::sync::atomic::{AtomicU32, AtomicU8};
@@ -819,8 +860,9 @@ mod slot_resync {
     const RESYNC_SVN: Svn = Svn(9);
 
     /// The board verifier for the re-sync run: the verdict the chain walk
-    /// makes, with an SVN on it. `StubVerifier` authenticates without one, which would
-    /// leave the floor where it is.
+    /// makes, with an SVN on it. A run wired with `StubVerifier`, as every
+    /// other scenario here is, authenticates without an SVN, and the SVN
+    /// floor then keeps the SVN it has.
     pub(super) struct SvnVerifier;
 
     impl Verifier for SvnVerifier {
@@ -852,7 +894,9 @@ mod slot_resync {
     /// A chunk per call, so the pass takes several polls. A pass that ended
     /// in one would say nothing about the SVN floor advance waiting behind
     /// it.
-    impl Updatable for FdUpdatable {
+    pub(super) struct ResyncUpdatable;
+
+    impl Updatable for ResyncUpdatable {
         fn poll_stage(&mut self, payload: &dyn ByteSource) -> Result<StageProgress, UpdateError> {
             if ACTIVATIONS.load(Ordering::Relaxed) == 0 {
                 return Ok(StageProgress::Ready);
@@ -865,12 +909,11 @@ mod slot_resync {
             }
 
             let total = payload.len();
+            RESYNC_TOTAL.store(total as usize, Ordering::Relaxed);
             let written = SPARE_WRITTEN.load(Ordering::Relaxed) as u64;
             let take = core::cmp::min(RESYNC_CHUNK as u64, total - written) as usize;
             let mut chunk = [0u8; RESYNC_CHUNK];
-            payload
-                .read_at(written, &mut chunk[..take])
-                .map_err(UpdateError::Payload)?;
+            payload.read_at(written, &mut chunk[..take])?;
             for (i, byte) in chunk[..take].iter().enumerate() {
                 SPARE_SLOT[written as usize + i].store(*byte, Ordering::Relaxed);
             }
@@ -891,8 +934,7 @@ mod slot_resync {
         }
 
         fn activate(&mut self) -> Result<(), UpdateError> {
-            ACTIVATIONS.fetch_add(1, Ordering::Relaxed);
-            Ok(())
+            record_activation()
         }
     }
 
@@ -903,6 +945,10 @@ mod slot_resync {
 
     /// How much of the spare slot the pass has written.
     static SPARE_WRITTEN: AtomicUsize = AtomicUsize::new(0);
+
+    /// The length of the image the pass is staging, as the re-queued job
+    /// carries it.
+    static RESYNC_TOTAL: AtomicUsize = AtomicUsize::new(0);
 
     /// Set when the SVN floor moved while the re-sync pass was still running.
     static FLOOR_ADVANCED_MID_PASS: AtomicBool = AtomicBool::new(false);
@@ -962,15 +1008,17 @@ mod slot_resync {
             pw_log::error!("ORCH: the SVN floor moved while the spare slot was still behind");
             return false;
         }
+        let total = RESYNC_TOTAL.load(Ordering::Relaxed);
         let written = SPARE_WRITTEN.load(Ordering::Relaxed);
-        if written != IMAGE_SIZE {
+        if total == 0 || written != total {
             pw_log::error!(
-                "ORCH: the spare slot took {} bytes of the image",
-                written as u32
+                "ORCH: the spare slot took {} of {} bytes of the image",
+                written as u32,
+                total as u32
             );
             return false;
         }
-        for (offset, byte) in SPARE_SLOT.iter().enumerate() {
+        for (offset, byte) in SPARE_SLOT.iter().take(written).enumerate() {
             if byte.load(Ordering::Relaxed) != expected_byte(offset) {
                 pw_log::error!(
                     "ORCH: the spare slot holds the wrong byte at offset {}",
@@ -1001,7 +1049,7 @@ mod slot_resync {
             return false;
         }
         if core.state() != State::Ready {
-            pw_log::error!("ORCH: the machine left Ready while the spare slot was re-staged");
+            pw_log::error!("ORCH: the state machine left Ready while the spare slot was re-staged");
             return false;
         }
         pw_log::info!(
