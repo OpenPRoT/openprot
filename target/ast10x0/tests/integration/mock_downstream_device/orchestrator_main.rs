@@ -985,7 +985,7 @@ fn restore_calls_as_expected() -> bool {
 /// Advances the eRoT SVN floor to the SVN the confirmed trial recorded,
 /// and closes the session.
 ///
-/// `Ready` entry confirms the trial and names the eRoT in
+/// Entering `Ready` confirms the trial and names the eRoT in
 /// `awaiting_floor_advance`, so the request the Update Agent would send
 /// finds something outstanding. A request the state machine drops emits no
 /// effect, which is why the grant waits on `Effect::CommitSvnFloor`
@@ -1000,16 +1000,19 @@ fn commit_self_floor(core: &mut Core, driver: &mut Driver) -> Result<(), ()> {
         driver.execute(effect)
     });
     if !granted {
-        pw_log::error!("the request for the SVN floor advance was dropped");
+        pw_log::error!("the state machine dropped the request for the SVN floor advance");
         return Err(());
     }
     let floor = EROT_FLOOR.load(Ordering::Relaxed);
     if floor != TRIAL_SVN.0 {
-        pw_log::error!("the eRoT SVN floor reads {} after the commit", floor as u32);
+        pw_log::error!(
+            "the eRoT SVN floor reads {} after the SVN floor commit",
+            floor as u32
+        );
         return Err(());
     }
     if SelfSession::read() != SelfUpdateState::Idle {
-        pw_log::error!("the floor took the SVN and the session stayed open");
+        pw_log::error!("the SVN floor took the SVN and the session stayed open");
         return Err(());
     }
     pw_log::info!(
@@ -1095,10 +1098,10 @@ fn run() -> Result<(), ()> {
                 pw_log::error!("the chain came up and the self trial was not confirmed");
                 return Err(());
             }
-            // Confirming the trial is not the commit. The SVN floor moves
-            // on the request the Update Agent sends afterwards, which
-            // nothing serves for the eRoT yet, so the run dispatches the
-            // event the way it dispatches the ones a device would cause.
+            // The SVN floor moves on the request the Update Agent sends
+            // after the walk confirms the trial, and no app serves that
+            // request for the eRoT yet, so the run dispatches the event
+            // the way it dispatches the events a device would cause.
             #[cfg(self_trial)]
             commit_self_floor(&mut core, &mut driver)?;
             // Without the call count, `recovery` would pass on a verifier
