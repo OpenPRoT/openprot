@@ -1,12 +1,18 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
+[gpio]
+srst_pin = 27
+fwspick_pin = 18
+
+[uart]
+serial_port = "/dev/ttyUSB0"
 baudrate = 115200
 
 [device_a]  # master
-srst_pin    = 23
+srst_pin    = 27
 fwspick_pin = 18
 
 [device_b]  # slave
-srst_pin    = 25
+srst_pin    = 17
 fwspick_pin = 24

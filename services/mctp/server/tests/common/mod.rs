@@ -354,12 +354,3 @@ impl<S: Sender, const N: usize> MctpReqChannel for DirectReqChannel<'_, S, N> {
         self.remote_eid
     }
 }
-
-// ---------------------------------------------------------------------------
-// make_server helper
-// ---------------------------------------------------------------------------
-
-/// Construct a `Server` + its outbound packet buffer, for two-endpoint tests.
-pub fn make_server(eid: u8, packets: &RefCell<Vec<Vec<u8>>>) -> Server<BufferSender<'_>, 16> {
-    Server::new(Eid(eid), 0, BufferSender { packets })
-}

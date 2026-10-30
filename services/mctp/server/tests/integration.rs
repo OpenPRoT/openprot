@@ -477,7 +477,7 @@ fn max_payload_roundtrip() {
         .unwrap();
     transfer(&buf_b, &mut server_a.borrow_mut());
 
-    let mut recv_buf = [0u8; 1024];
+    let mut recv_buf = [0u8; ServerConfig::MAX_PAYLOAD];
     let meta = client_a.recv(listener, 0, &mut recv_buf).unwrap();
     assert_eq!(meta.payload_size, payload.len());
     assert_eq!(&recv_buf[..meta.payload_size], payload.as_slice());
@@ -494,7 +494,7 @@ fn max_payload_roundtrip() {
         .unwrap();
     transfer(&buf_a, &mut server_b.borrow_mut());
 
-    let mut resp_buf = [0u8; 1024];
+    let mut resp_buf = [0u8; ServerConfig::MAX_PAYLOAD];
     let resp = client_b.recv(req, 0, &mut resp_buf).unwrap();
     assert_eq!(resp.payload_size, payload.len());
     assert_eq!(&resp_buf[..resp.payload_size], payload.as_slice());

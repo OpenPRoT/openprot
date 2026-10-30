@@ -1,0 +1,27 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//target:defs.bzl", "KERNEL_TARGET_COMPATIBLE_WITH")
+
+# The only kernel-tagged MCTP server crate: wraps openprot_mctp_server's
+# platform-independent Server/dispatch in the Pigweed WaitGroup loop.
+# Topology-agnostic — one IPC channel per client, any number of clients.
+# The loop and its deferred replies are //util/service.
+rust_library(
+    name = "mctp_server_runtime",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = KERNEL_TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/mctp/api:mctp_api",
+        "//services/mctp/server:mctp_server_lib",
+        "//util/service",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:mctp-lib",
+    ],
+)

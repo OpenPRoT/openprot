@@ -25,8 +25,13 @@
 
 use core::cell::RefCell;
 
-use openprot_mctp_api::wire::{self, MctpResponseHeader, MAX_REQUEST_SIZE, MAX_RESPONSE_SIZE};
+use mctp_lib::config;
+use openprot_mctp_api::wire::{self, MctpRequestHeader, MctpResponseHeader};
 use openprot_mctp_api::{Handle, MctpClient, MctpError, RecvMetadata, ResponseCode};
+
+const STACK_MAX_PAYLOAD_SIZE: usize = config::MAX_PAYLOAD;
+const MAX_REQUEST_SIZE: usize = MctpRequestHeader::SIZE + STACK_MAX_PAYLOAD_SIZE;
+const MAX_RESPONSE_SIZE: usize = MctpResponseHeader::SIZE + STACK_MAX_PAYLOAD_SIZE;
 
 /// Internal mutable state for the IPC client.
 struct ClientBuffers {

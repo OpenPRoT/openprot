@@ -7,7 +7,7 @@
 //! This is the server-side counterpart of `openprot-mctp-client`.
 
 use openprot_mctp_api::wire::{self, flags, MctpOp, MctpRequestHeader};
-use openprot_mctp_api::{Handle, ResponseCode};
+use openprot_mctp_api::{Handle, RecvMetadata, ResponseCode};
 
 use crate::{RecvResult, Sender, Server};
 
@@ -17,8 +17,10 @@ pub enum DispatchOutcome {
     Reply(usize),
     /// No message was available for `Recv`; the call has been registered
     /// as pending. The platform must store its reply token keyed on
-    /// `handle` and call [`drive_pending`] when new data arrives or on
-    /// each timer tick.
+    /// `handle` and call [`drive_pending`] after every later event and no
+    /// later than [`Server::next_recv_deadline`]. If the platform cannot
+    /// hold the reply token after all, it must call
+    /// [`Server::cancel_recv`] and answer the client itself.
     Pending {
         /// The handle whose recv was deferred.
         handle: Handle,
@@ -30,11 +32,17 @@ pub enum DispatchOutcome {
 /// Decodes the request header, calls the appropriate `Server` method,
 /// and encodes the response into `response`.
 ///
-/// `now_millis` is the current monotonic time used to set recv deadlines.
+/// `now_millis` is the current monotonic time. The server's clock is
+/// advanced to it before the request is handled, so what the request
+/// creates (a recv deadline, the flow a `Send` opens for its response) is
+/// dated now and not at the previous event.
 ///
 /// Returns `DispatchOutcome::Reply(n)` when a response is immediately
 /// available, or `DispatchOutcome::Pending { handle }` when a `Recv`
 /// has been registered and will be fulfilled later by [`drive_pending`].
+/// `Pending` is returned only if the registration succeeded: a `Recv` that
+/// cannot be registered (table full, or one already outstanding on the
+/// handle) is answered with that error instead of being left to hang.
 pub fn dispatch_mctp_op<S: Sender, const N: usize>(
     request: &[u8],
     response: &mut [u8],
@@ -42,6 +50,8 @@ pub fn dispatch_mctp_op<S: Sender, const N: usize>(
     recv_buf: &mut [u8],
     now_millis: u64,
 ) -> DispatchOutcome {
+    server.advance(now_millis);
+
     let header = match MctpRequestHeader::from_bytes(request) {
         Some(h) => h,
         None => return DispatchOutcome::Reply(encode_error(response, ResponseCode::BadArgument)),
@@ -79,22 +89,13 @@ pub fn dispatch_mctp_op<S: Sender, const N: usize>(
             let handle = Handle(header.handle);
 
             match server.try_recv(handle, recv_buf) {
-                Some(meta) => {
-                    let payload = &recv_buf[..meta.payload_size];
-                    wire::encode_recv_response(
-                        response,
-                        meta.msg_type,
-                        meta.msg_ic,
-                        meta.remote_eid,
-                        meta.msg_tag,
-                        payload,
-                    )
-                    .unwrap_or_else(|_| encode_error(response, ResponseCode::InternalError))
-                }
+                Some(meta) => encode_recv(response, recv_buf, &meta),
                 None => {
                     let timeout = wire::get_recv_timeout(request);
-                    let _ = server.register_recv(handle, timeout, now_millis);
-                    return DispatchOutcome::Pending { handle };
+                    match server.register_recv(handle, timeout, now_millis) {
+                        Ok(()) => return DispatchOutcome::Pending { handle },
+                        Err(e) => encode_error(response, e.code),
+                    }
                 }
             }
         }
@@ -139,37 +140,52 @@ pub fn dispatch_mctp_op<S: Sender, const N: usize>(
 
 /// Drive pending receive calls to completion.
 ///
-/// Call this on timer ticks and after feeding inbound packets to the server.
+/// Call this after every event the platform handles (an inbound packet fed
+/// to the server, a client request dispatched) and no later than
+/// [`Server::next_recv_deadline`]. Besides resolving receives, each call
+/// advances the router's clock, which is why it should follow every event
+/// and not only those that could resolve one.
 /// For each handle that is now ready (message arrived or timed out),
-/// `on_ready(handle, response_len)` is called with `response` filled.
+/// `on_ready(handle, response_bytes)` is called with the encoded response.
 /// The platform must look up its stored reply token for `handle` and send
-/// the response through it.
+/// `response_bytes` through it *before returning*, since `response` is
+/// reused for the next ready handle (if any).
 pub fn drive_pending<S: Sender, const N: usize>(
     server: &mut Server<S, N>,
     now_millis: u64,
     recv_buf: &mut [u8],
     response: &mut [u8],
-    mut on_ready: impl FnMut(Handle, usize),
+    mut on_ready: impl FnMut(Handle, &[u8]),
 ) {
+    // The router's suggested housekeeping interval is deliberately unused;
+    // see `Server::next_recv_deadline`.
     let (_, ready) = server.update(now_millis, recv_buf);
     for (handle, result) in ready {
         let len = match result {
-            RecvResult::Message(meta) => {
-                let payload = &recv_buf[..meta.payload_size];
-                wire::encode_recv_response(
-                    response,
-                    meta.msg_type,
-                    meta.msg_ic,
-                    meta.remote_eid,
-                    meta.msg_tag,
-                    payload,
-                )
-                .unwrap_or_else(|_| encode_error(response, ResponseCode::InternalError))
-            }
+            RecvResult::Message(meta) => encode_recv(response, recv_buf, &meta),
             RecvResult::TimedOut => encode_error(response, ResponseCode::TimedOut),
         };
-        on_ready(handle, len);
+        on_ready(handle, response.get(..len).unwrap_or(&[]));
     }
+}
+
+/// Encode the response to a `Recv` whose payload the server copied into
+/// `recv_buf`. A payload that did not fit there was not copied (see
+/// `Server::try_recv`); the client gets `NoSpace` rather than a truncated
+/// or stale message.
+fn encode_recv(response: &mut [u8], recv_buf: &[u8], meta: &RecvMetadata) -> usize {
+    let Some(payload) = recv_buf.get(..meta.payload_size) else {
+        return encode_error(response, ResponseCode::NoSpace);
+    };
+    wire::encode_recv_response(
+        response,
+        meta.msg_type,
+        meta.msg_ic,
+        meta.remote_eid,
+        meta.msg_tag,
+        payload,
+    )
+    .unwrap_or_else(|_| encode_error(response, ResponseCode::InternalError))
 }
 
 fn encode_error(response: &mut [u8], code: ResponseCode) -> usize {

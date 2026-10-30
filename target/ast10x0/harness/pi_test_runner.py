@@ -133,6 +133,10 @@ def _discover_uart_port(
             port.close()
 
 
+def _gpio_set_input(pin: int, pull: str) -> None:
+    subprocess.run(["pinctrl", "set", str(pin), "ip", pull], check=True)
+
+
 def _sequence_to_fwspick_mode(
     srst_pin: int, fwspick_pin: int, port: serial.Serial
 ) -> None:
@@ -142,7 +146,7 @@ def _sequence_to_fwspick_mode(
     port.read(4096)
     _gpio_set(fwspick_pin, "pn dh")
     time.sleep(1)
-    _gpio_set(srst_pin, "dh")
+    _gpio_set_input(srst_pin, "pn")
     time.sleep(1)
 
 

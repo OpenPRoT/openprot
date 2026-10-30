@@ -25,9 +25,8 @@
 #![no_std]
 
 use app_mctp_server::handle;
-use openprot_mctp_api::wire::{
-    self, MctpOp, MctpRequestHeader, MAX_REQUEST_SIZE, MAX_RESPONSE_SIZE,
-};
+use mctp_lib::config;
+use openprot_mctp_api::wire::{self, MctpOp, MctpRequestHeader, MctpResponseHeader};
 use openprot_mctp_api::ResponseCode;
 use userspace::syscall::Signals;
 use userspace::time::Instant;
@@ -36,6 +35,8 @@ use userspace::{entry, syscall};
 const LISTENER_HANDLE: u32 = 1;
 const REQ_HANDLE: u32 = 2;
 const LOCAL_EID: u8 = 8;
+const MAX_REQUEST_SIZE: usize = MctpRequestHeader::SIZE + config::MAX_PAYLOAD;
+const MAX_RESPONSE_SIZE: usize = MctpResponseHeader::SIZE + config::MAX_PAYLOAD;
 
 #[entry]
 fn entry() {
