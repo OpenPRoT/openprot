@@ -319,7 +319,13 @@ def _run_remote(
     _ssh(host, f"rm -rf {remote_dir} && mkdir -p {remote_dir}", check=True)
 
     subprocess.run(
-        ["scp", *_SSH_CONFIG_OPTS, "-q", str(runner), f"{host}:{remote_dir}/pi_test_runner.py"],
+        [
+            "scp",
+            *_SSH_CONFIG_OPTS,
+            "-q",
+            str(runner),
+            f"{host}:{remote_dir}/pi_test_runner.py",
+        ],
         check=True,
     )
 
@@ -338,7 +344,13 @@ def _run_remote(
         slave_firmware_path = Path(args.slave_firmware)
         remote_slave_fw = f"{remote_dir}/{slave_firmware_path.name}"
         subprocess.run(
-            ["scp", *_SSH_CONFIG_OPTS, "-q", str(slave_firmware_path), f"{host}:{remote_slave_fw}"],
+            [
+                "scp",
+                *_SSH_CONFIG_OPTS,
+                "-q",
+                str(slave_firmware_path),
+                f"{host}:{remote_slave_fw}",
+            ],
             check=True,
         )
 
