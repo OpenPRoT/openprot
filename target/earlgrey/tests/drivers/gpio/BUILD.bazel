@@ -16,7 +16,6 @@ rust_app(
     ],
     codegen_crate_name = "test_gpio_codegen",
     edition = "2024",
-    system_config = "@pigweed//pw_kernel/target:system_config_file",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],

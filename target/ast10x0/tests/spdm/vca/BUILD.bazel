@@ -61,7 +61,6 @@ rust_app(
     srcs = ["i2c_server_main.rs"],
     codegen_crate_name = "app_i2c_server",
     edition = "2024",
-    system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
@@ -78,7 +77,6 @@ rust_app(
     srcs = ["i2c_server_main_peer.rs"],
     codegen_crate_name = "app_i2c_server_peer",
     edition = "2024",
-    system_config = ":peer_system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
@@ -95,7 +93,6 @@ rust_app(
     srcs = ["mctp_server_main.rs"],
     codegen_crate_name = "app_mctp_server",
     edition = "2024",
-    system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
@@ -120,7 +117,6 @@ rust_app(
     srcs = ["mctp_server_main_peer.rs"],
     codegen_crate_name = "app_mctp_server_peer",
     edition = "2024",
-    system_config = ":peer_system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
@@ -150,7 +146,6 @@ rust_app(
     codegen_crate_name = "app_spdm_requester",
     crate_root = "spdm_requester_main.rs",
     edition = "2024",
-    system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
@@ -176,7 +171,6 @@ rust_app(
     codegen_crate_name = "app_spdm_responder",
     crate_root = "spdm_responder_main.rs",
     edition = "2024",
-    system_config = ":peer_system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
