@@ -17,7 +17,6 @@ rust_app(
     ],
     codegen_crate_name = "test_uart_codegen",
     edition = "2024",
-    system_config = "@pigweed//pw_kernel/target:system_config_file",
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [
@@ -35,7 +34,6 @@ rust_app(
     ],
     codegen_crate_name = "test_uart_listener_codegen",
     edition = "2024",
-    system_config = "@pigweed//pw_kernel/target:system_config_file",
     tags = ["kernel"],
     visibility = ["//visibility:public"],
     deps = [

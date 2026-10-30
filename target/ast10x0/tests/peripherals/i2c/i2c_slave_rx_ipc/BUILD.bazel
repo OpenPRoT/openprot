@@ -115,7 +115,6 @@ rust_app(
     srcs = ["server_main.rs"],
     codegen_crate_name = "app_i2c_server",
     edition = "2024",
-    system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
@@ -132,7 +131,6 @@ rust_app(
     srcs = ["slave_rx_main.rs"],
     codegen_crate_name = "app_i2c_slave_rx",
     edition = "2024",
-    system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
