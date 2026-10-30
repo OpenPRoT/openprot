@@ -19,8 +19,8 @@ use std::cell::RefCell;
 use mctp::Eid;
 use openprot_mctp_api::stack::Stack;
 use openprot_mctp_api::{Handle, MctpClient, MctpListener, MctpReqChannel, MctpRespChannel};
-use openprot_mctp_server::{RecvResult, Server};
 use openprot_mctp_server::ServerConfig;
+use openprot_mctp_server::{RecvResult, Server};
 
 use common::{
     transfer, BufferSender, DirectClient, DirectListener, DirectReqChannel, DroppingBufferSender,
@@ -181,12 +181,22 @@ fn deferred_recv_resolved_together_does_not_alias_payloads() {
             }
         });
 
-    assert_eq!(delivered.len(), 2, "both deferred recvs should resolve together");
+    assert_eq!(
+        delivered.len(),
+        2,
+        "both deferred recvs should resolve together"
+    );
     for (handle, payload) in delivered {
         if handle == listener_type1 {
-            assert_eq!(payload, b"from peer B", "type-1 listener got the wrong payload");
+            assert_eq!(
+                payload, b"from peer B",
+                "type-1 listener got the wrong payload"
+            );
         } else if handle == listener_type2 {
-            assert_eq!(payload, b"from peer C", "type-2 listener got the wrong payload");
+            assert_eq!(
+                payload, b"from peer C",
+                "type-2 listener got the wrong payload"
+            );
         } else {
             panic!("unexpected handle resolved: {handle:?}");
         }
