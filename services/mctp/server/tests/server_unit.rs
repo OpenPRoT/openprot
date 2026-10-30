@@ -12,10 +12,24 @@ mod common;
 use std::cell::RefCell;
 
 use mctp::Eid;
-use openprot_mctp_api::ResponseCode;
+use openprot_mctp_api::{Handle, ResponseCode};
 use openprot_mctp_server::{RecvResult, Server, ServerConfig};
 
 use common::{transfer, BufferSender, DroppingBufferSender};
+
+/// Collect every handle resolved by one `Server::update` call, discarding
+/// the per-handle payload (tests here only need the handle/result pairs).
+fn collect_ready<S: mctp_lib::Sender, const N: usize>(
+    server: &mut Server<S, N>,
+    now_millis: u64,
+    recv_buf: &mut [u8],
+) -> Vec<(Handle, RecvResult)> {
+    let mut ready = Vec::new();
+    server.update(now_millis, recv_buf, |handle, result, _payload| {
+        ready.push((handle, result));
+    });
+    ready
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -202,11 +216,11 @@ fn pending_recv_times_out() {
     let mut recv_buf = [0u8; 255];
 
     // At t=50 ms: not yet timed out, no message.
-    let (_, ready) = server.update(50, &mut recv_buf);
+    let ready = collect_ready(&mut server, 50, &mut recv_buf);
     assert!(ready.is_empty(), "should not fire before deadline");
 
     // At t=100 ms: deadline reached.
-    let (_, ready) = server.update(100, &mut recv_buf);
+    let ready = collect_ready(&mut server, 100, &mut recv_buf);
     assert_eq!(ready.len(), 1);
     assert!(
         matches!(ready[0], (h, RecvResult::TimedOut) if h == listener),
@@ -230,7 +244,7 @@ fn pending_recv_fulfilled_before_timeout() {
     deliver_to(42, 8, 1, b"data", &mut server);
 
     let mut recv_buf = [0u8; 255];
-    let (_, ready) = server.update(50, &mut recv_buf);
+    let ready = collect_ready(&mut server, 50, &mut recv_buf);
 
     assert_eq!(ready.len(), 1);
     assert!(
@@ -283,7 +297,7 @@ fn next_recv_deadline_is_earliest_timeout() {
 
     // Once `soon` times out it no longer counts.
     let mut recv_buf = [0u8; 255];
-    let (_, ready) = server.update(120, &mut recv_buf);
+    let ready = collect_ready(&mut server, 120, &mut recv_buf);
     assert_eq!(ready.len(), 1);
     assert_eq!(server.next_recv_deadline(), Some(310));
 }
@@ -308,7 +322,7 @@ fn cancel_recv_withdraws_the_registration() {
     assert_eq!(server.next_recv_deadline(), None);
 
     let mut recv_buf = [0u8; 255];
-    let (_, ready) = server.update(1_000, &mut recv_buf);
+    let ready = collect_ready(&mut server, 1_000, &mut recv_buf);
     assert!(ready.is_empty(), "a cancelled recv must not time out");
 
     server.register_recv(listener, 100, 1_000).unwrap();
@@ -347,7 +361,7 @@ fn fragments_in_separate_events_after_a_quiet_period_are_reassembled() {
     // Event 1: the first fragment.
     a.advance(10_000);
     a.inbound(&fragments[0]).unwrap();
-    let (_, ready) = a.update(10_000, &mut recv_buf);
+    let ready = collect_ready(&mut a, 10_000, &mut recv_buf);
     assert!(ready.is_empty());
 
     // Event 2, a millisecond later: the rest.
@@ -355,7 +369,7 @@ fn fragments_in_separate_events_after_a_quiet_period_are_reassembled() {
     for fragment in &fragments[1..] {
         a.inbound(fragment).unwrap();
     }
-    let _ = a.update(10_001, &mut recv_buf);
+    let _ = collect_ready(&mut a, 10_001, &mut recv_buf);
 
     let meta = a
         .try_recv(listener, &mut recv_buf)

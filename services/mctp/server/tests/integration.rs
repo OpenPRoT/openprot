@@ -18,12 +18,13 @@ use std::cell::RefCell;
 
 use mctp::Eid;
 use openprot_mctp_api::stack::Stack;
-use openprot_mctp_api::{MctpClient, MctpListener, MctpReqChannel, MctpRespChannel};
-use openprot_mctp_server::Server;
+use openprot_mctp_api::{Handle, MctpClient, MctpListener, MctpReqChannel, MctpRespChannel};
+use openprot_mctp_server::{RecvResult, Server};
 use openprot_mctp_server::ServerConfig;
 
 use common::{
-    transfer, BufferSender, DirectClient, DirectListener, DirectReqChannel, SmallMtuBufferSender,
+    transfer, BufferSender, DirectClient, DirectListener, DirectReqChannel, DroppingBufferSender,
+    SmallMtuBufferSender,
 };
 
 // ---------------------------------------------------------------------------
@@ -119,6 +120,77 @@ fn multiple_listeners_no_crosstalk() {
         .recv(listener_type2, 0, &mut buf)
         .expect("type-2 listener should receive the message");
     assert_eq!(&buf[..meta.payload_size], msg_type2);
+}
+
+/// Two deferred `Recv` calls that both resolve to a message in the *same*
+/// `Server::update` call must each be delivered their own payload, not the
+/// other's.
+///
+/// Regression test for a CWE-488 buffer-aliasing bug: `update` used to
+/// collect every ready handle's metadata while repeatedly overwriting a
+/// single shared `recv_buf`, then hand the whole batch back to the caller
+/// afterward — by which point `recv_buf` held only the last handle's
+/// payload, so every other handle in the batch was delivered the wrong
+/// message. `update` now calls back per handle immediately, while
+/// `recv_buf` still holds that handle's own payload.
+#[test]
+fn deferred_recv_resolved_together_does_not_alias_payloads() {
+    let buf_b = RefCell::new(Vec::new());
+    let buf_c = RefCell::new(Vec::new());
+
+    let server_a: RefCell<Server<_, 16>> =
+        RefCell::new(Server::new(Eid(8), 0, DroppingBufferSender));
+    let server_b: RefCell<Server<_, 16>> =
+        RefCell::new(Server::new(Eid(42), 0, BufferSender { packets: &buf_b }));
+    let server_c: RefCell<Server<_, 16>> =
+        RefCell::new(Server::new(Eid(43), 0, BufferSender { packets: &buf_c }));
+
+    let client_a = DirectClient::new(&server_a);
+    let client_b = DirectClient::new(&server_b);
+    let client_c = DirectClient::new(&server_c);
+
+    // Two listeners, each with a deferred recv already outstanding.
+    let listener_type1 = client_a.listener(1).unwrap();
+    let listener_type2 = client_a.listener(2).unwrap();
+    {
+        let mut a = server_a.borrow_mut();
+        a.register_recv(listener_type1, 1000, 0).unwrap();
+        a.register_recv(listener_type2, 1000, 0).unwrap();
+    }
+
+    // Both peers send before `update` runs, so both listeners have a
+    // message waiting and resolve together in one pass.
+    let req_b = client_b.req(8).unwrap();
+    client_b
+        .send(Some(req_b), 1, None, None, false, b"from peer B")
+        .unwrap();
+    let req_c = client_c.req(8).unwrap();
+    client_c
+        .send(Some(req_c), 2, None, None, false, b"from peer C")
+        .unwrap();
+    transfer(&buf_b, &mut server_a.borrow_mut());
+    transfer(&buf_c, &mut server_a.borrow_mut());
+
+    let mut recv_buf = [0u8; 255];
+    let mut delivered: Vec<(Handle, Vec<u8>)> = Vec::new();
+    server_a
+        .borrow_mut()
+        .update(0, &mut recv_buf, |handle, result, payload| {
+            if let RecvResult::Message(meta) = result {
+                delivered.push((handle, payload[..meta.payload_size].to_vec()));
+            }
+        });
+
+    assert_eq!(delivered.len(), 2, "both deferred recvs should resolve together");
+    for (handle, payload) in delivered {
+        if handle == listener_type1 {
+            assert_eq!(payload, b"from peer B", "type-1 listener got the wrong payload");
+        } else if handle == listener_type2 {
+            assert_eq!(payload, b"from peer C", "type-2 listener got the wrong payload");
+        } else {
+            panic!("unexpected handle resolved: {handle:?}");
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -264,9 +336,12 @@ fn drop_handle_mid_flight_clears_entry() {
 
     // update should return nothing for that handle
     let mut recv_buf = [0u8; 255];
-    let (_, ready) = server.update(500, &mut recv_buf);
+    let mut resolved_handles: Vec<_> = Vec::new();
+    server.update(500, &mut recv_buf, |h, _result, _payload| {
+        resolved_handles.push(h);
+    });
     assert!(
-        ready.iter().all(|(h, _)| *h != handle),
+        resolved_handles.iter().all(|h| *h != handle),
         "dropped handle should not appear in update results"
     );
 }
