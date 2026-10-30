@@ -86,7 +86,7 @@ def _discover_uart_port(
                 port.read(4096)
         _gpio_set(fwspick_pin, "pn dh")
         time.sleep(1)
-        _gpio_set(srst_pin, "dh")
+        _gpio_set_input(srst_pin, "pn")
 
         buffers = {dev: bytearray() for dev, _ in opened}
         deadline = time.time() + _DISCOVERY_TIMEOUT
