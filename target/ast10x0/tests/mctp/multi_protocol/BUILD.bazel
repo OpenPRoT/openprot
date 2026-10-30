@@ -59,7 +59,6 @@ rust_app(
     srcs = ["server_main.rs"],
     codegen_crate_name = "app_mctp_server",
     edition = "2024",
-    system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
@@ -101,7 +100,6 @@ rust_app(
     srcs = ["spdm_echo_main.rs"],
     codegen_crate_name = "app_spdm_echo",
     edition = "2024",
-    system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
@@ -115,7 +113,6 @@ rust_app(
     srcs = ["pldm_echo_main.rs"],
     codegen_crate_name = "app_pldm_echo",
     edition = "2024",
-    system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
@@ -132,7 +129,6 @@ rust_app(
     srcs = ["harness_main.rs"],
     codegen_crate_name = "app_harness",
     edition = "2024",
-    system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
