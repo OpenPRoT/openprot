@@ -29,8 +29,6 @@
 
 use core::convert::Infallible;
 use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-#[cfg(slot_resync)]
-use core::sync::atomic::{AtomicU32, AtomicU8};
 
 use openprot_orchestrator_driver::{
     bring_up, Board, BoardCapabilities, ComponentWiring, Report, ReportSink, SvnFloorBinding,
@@ -46,12 +44,8 @@ use openprot_orchestrator_sm::{
 #[cfg(not(slot_resync))]
 use board_stubs::StubVerifier;
 use board_stubs::{BoardFault, StubImage};
-#[cfg(slot_resync)]
-use openprot_orchestrator_driver::{ImageSource, Verdict, Verifier};
 #[cfg(not(refused_update))]
 use openprot_orchestrator_sm::State;
-#[cfg(slot_resync)]
-use orchestrator_capabilities::Progress;
 use orchestrator_capabilities::{
     AuthenticatedImage, BootControl, BootStatus, EvidenceReader, IncrementalVerifier, PollOutcome,
     StageProgress, Svn, SvnFloor, Updatable, UpdateError, VerifySession,
@@ -227,30 +221,7 @@ impl SvnFloor for NoFloor {
 #[cfg(not(slot_resync))]
 type ScenarioFloor = NoFloor;
 #[cfg(slot_resync)]
-type ScenarioFloor = DeviceFloor;
-
-/// The floor the eRoT keeps for the managed component, in RAM. The image
-/// boots once, so nothing has to survive a reset; what the run needs is a
-/// floor it can read back, which the capability alone does not offer.
-#[cfg(slot_resync)]
-struct DeviceFloor;
-
-#[cfg(slot_resync)]
-static DEVICE_FLOOR: AtomicU32 = AtomicU32::new(0);
-
-#[cfg(slot_resync)]
-impl SvnFloor for DeviceFloor {
-    type Error = BoardFault;
-
-    fn floor(&self) -> Result<Svn, BoardFault> {
-        Ok(Svn(DEVICE_FLOOR.load(Ordering::Relaxed)))
-    }
-
-    fn advance(&mut self, to: Svn) -> Result<(), BoardFault> {
-        DEVICE_FLOOR.fetch_max(to.0, Ordering::Relaxed);
-        Ok(())
-    }
-}
+type ScenarioFloor = slot_resync::DeviceFloor;
 
 /// Who keeps the SVN floor for the component at table index `i`.
 ///
@@ -264,48 +235,16 @@ fn svn_floor_binding(_i: usize) -> SvnFloorBinding<ScenarioFloor> {
 #[cfg(slot_resync)]
 fn svn_floor_binding(i: usize) -> SvnFloorBinding<ScenarioFloor> {
     if i == TARGET.get() as usize {
-        SvnFloorBinding::Erot(DeviceFloor)
+        SvnFloorBinding::Erot(slot_resync::DeviceFloor)
     } else {
         SvnFloorBinding::SelfManaged
-    }
-}
-
-/// The SVN the board verifier reads out of the image the component runs.
-///
-/// `commit_svn_floor` moves the floor to the SVN the chain walk recorded,
-/// and an image with none makes it hold the advance and report
-/// `SvnFloorHeld` instead. So the floor this run ends at says both that
-/// the binding took effect and that the advance came from a verdict.
-#[cfg(slot_resync)]
-const RESYNC_SVN: Svn = Svn(9);
-
-/// The board verifier for the re-sync run: the verdict the chain walk
-/// makes, with an SVN on it. `StubVerifier` authenticates without one, which would
-/// leave the floor where it is.
-#[cfg(slot_resync)]
-struct SvnVerifier;
-
-#[cfg(slot_resync)]
-impl Verifier for SvnVerifier {
-    type Error = BoardFault;
-
-    fn verify(
-        &mut self,
-        _id: ComponentId,
-        _image: &mut impl ImageSource,
-    ) -> Result<Verdict, BoardFault> {
-        Ok(Verdict::Authenticated(AuthenticatedImage {
-            svn: Some(RESYNC_SVN),
-            // No hash engine on a test board, so nothing to measure.
-            measurement: None,
-        }))
     }
 }
 
 #[cfg(not(slot_resync))]
 type ScenarioVerifier = StubVerifier;
 #[cfg(slot_resync)]
-type ScenarioVerifier = SvnVerifier;
+type ScenarioVerifier = slot_resync::SvnVerifier;
 
 #[cfg(not(slot_resync))]
 fn scenario_verifier() -> ScenarioVerifier {
@@ -314,7 +253,7 @@ fn scenario_verifier() -> ScenarioVerifier {
 
 #[cfg(slot_resync)]
 fn scenario_verifier() -> ScenarioVerifier {
-    SvnVerifier
+    slot_resync::SvnVerifier
 }
 
 /// The Firmware Device as the driver sees it.
@@ -328,6 +267,8 @@ fn scenario_verifier() -> ScenarioVerifier {
 /// flow does not use.
 struct FdUpdatable;
 
+// The slot_resync build implements `Updatable` in `mod slot_resync`
+// instead, next to the spare slot the second staging pass writes.
 #[cfg(not(slot_resync))]
 impl Updatable for FdUpdatable {
     fn poll_stage(&mut self, _payload: &dyn ByteSource) -> Result<StageProgress, UpdateError> {
@@ -341,90 +282,6 @@ impl Updatable for FdUpdatable {
         Ok(())
     }
 }
-
-/// The same device, plus the slot the commit re-stages.
-///
-/// The first pass is what every other scenario sees: the device pulled
-/// its own chunks from the Update Agent, so staging is already done.
-/// After the activation the driver stages a second time, into the slot
-/// the device stopped booting from, and that pass is the one the eRoT
-/// performs. There is no PLDM operation that pushes bytes to a Firmware
-/// Device, and only the Firmware Device process maps the flash, so the
-/// spare slot is modelled here, in memory the RoT owns.
-///
-/// A chunk per call, so the pass takes several polls. A pass that ended
-/// in one would say nothing about the SVN floor advance waiting behind
-/// it.
-#[cfg(slot_resync)]
-impl Updatable for FdUpdatable {
-    fn poll_stage(&mut self, payload: &dyn ByteSource) -> Result<StageProgress, UpdateError> {
-        if ACTIVATIONS.load(Ordering::Relaxed) == 0 {
-            return Ok(StageProgress::Ready);
-        }
-
-        // Read inside the pass, where the SVN floor must still hold the
-        // value it had before the commit.
-        if DEVICE_FLOOR.load(Ordering::Relaxed) != 0 {
-            FLOOR_ADVANCED_MID_PASS.store(true, Ordering::Relaxed);
-        }
-
-        let total = payload.len();
-        let written = SPARE_WRITTEN.load(Ordering::Relaxed) as u64;
-        let take = core::cmp::min(RESYNC_CHUNK as u64, total - written) as usize;
-        let mut chunk = [0u8; RESYNC_CHUNK];
-        payload
-            .read_at(written, &mut chunk[..take])
-            .map_err(UpdateError::Payload)?;
-        for (i, byte) in chunk[..take].iter().enumerate() {
-            SPARE_SLOT[written as usize + i].store(*byte, Ordering::Relaxed);
-        }
-        let written = written + take as u64;
-        SPARE_WRITTEN.store(written as usize, Ordering::Relaxed);
-
-        if written < total {
-            Ok(StageProgress::Transferring {
-                progress: Progress { written, total },
-            })
-        } else {
-            Ok(StageProgress::Ready)
-        }
-    }
-
-    fn abandon(&mut self) {
-        SPARE_WRITTEN.store(0, Ordering::Relaxed);
-    }
-
-    fn activate(&mut self) -> Result<(), UpdateError> {
-        ACTIVATIONS.fetch_add(1, Ordering::Relaxed);
-        Ok(())
-    }
-}
-
-/// The slot the device stopped booting from, as the `Updatable` the RoT
-/// wires fills it. Checked byte for byte at the end of the run, so a pass that
-/// wrote a pattern of its own rather than the staged bytes is caught.
-#[cfg(slot_resync)]
-static SPARE_SLOT: [AtomicU8; IMAGE_SIZE] = [const { AtomicU8::new(0) }; IMAGE_SIZE];
-
-/// How much of the spare slot the pass has written.
-#[cfg(slot_resync)]
-static SPARE_WRITTEN: AtomicUsize = AtomicUsize::new(0);
-
-/// Set when the SVN floor moved while the re-sync pass was still running.
-#[cfg(slot_resync)]
-static FLOOR_ADVANCED_MID_PASS: AtomicBool = AtomicBool::new(false);
-
-/// Bytes one re-sync poll writes. Small enough that the pass takes more
-/// than one call, which is what gives the held advance a window to be
-/// observed in.
-#[cfg(slot_resync)]
-const RESYNC_CHUNK: usize = 64;
-
-/// How many polls the re-sync pass may take. The image needs
-/// `IMAGE_SIZE / RESYNC_CHUNK` of them, and this leaves room for the
-/// steps the driver takes around them.
-#[cfg(slot_resync)]
-const MAX_RESYNC_PUMPS: usize = 4 * (IMAGE_SIZE / RESYNC_CHUNK);
 
 /// The staging region, as big as the candidate and carrying the same bytes
 /// the Firmware Device expects. Nothing reads it while the device stages
@@ -782,7 +639,7 @@ fn run(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> bool {
                     // The commit queued a second staging pass, and the
                     // SVN floor advance waits behind it.
                     #[cfg(slot_resync)]
-                    Commit::Granted => return resync(core, driver),
+                    Commit::Granted => return slot_resync::resync(core, driver),
                     // `svn_commit` sends one request and is done.
                     #[cfg(not(slot_resync))]
                     Commit::Granted if !cfg!(svn_commit_refused) => return true,
@@ -919,99 +776,240 @@ fn svn_commit(core: &mut Core, driver: &mut Driver, fd: &mut Fd) -> Commit {
     Commit::Granted
 }
 
-/// Runs the spare-slot re-sync the granted commit queued, and checks that
-/// the SVN floor advance waited for it.
-///
-/// `commit_svn_floor` answers the effect before the pass starts, so the
-/// Update Agent has already been told the commit succeeded. What is left
-/// to show is the order the driver keeps: the floor keeps the old SVN
-/// while the slot the device stopped booting from is still behind, and
-/// takes the new one once that slot holds the image.
+/// Everything that only the slot_resync scenario compiles: the SVN floor
+/// the eRoT keeps for the managed component, the verifier that stamps an
+/// SVN on the verdict, the spare slot the second staging pass writes, and
+/// the re-sync run itself. The rest of the file names `DeviceFloor`,
+/// `SvnVerifier` and `resync`.
 #[cfg(slot_resync)]
-fn resync(core: &mut Core, driver: &mut Driver) -> bool {
-    if DEVICE_FLOOR.load(Ordering::Relaxed) != 0 {
-        pw_log::error!("ORCH: the SVN floor moved before the spare slot was re-staged");
-        return false;
-    }
-    if driver.pending_update() != Some(TARGET) {
-        pw_log::error!("ORCH: the commit queued no re-sync for the spare slot");
-        return false;
+mod slot_resync {
+    use core::sync::atomic::{AtomicU32, AtomicU8};
+
+    use openprot_orchestrator_driver::{ImageSource, Verdict, Verifier};
+    use orchestrator_capabilities::Progress;
+
+    use super::*;
+
+    /// The floor the eRoT keeps for the managed component, in RAM. The image
+    /// boots once, so nothing has to survive a reset; what the run needs is a
+    /// floor it can read back, which the capability alone does not offer.
+    pub(super) struct DeviceFloor;
+
+    static DEVICE_FLOOR: AtomicU32 = AtomicU32::new(0);
+
+    impl SvnFloor for DeviceFloor {
+        type Error = BoardFault;
+
+        fn floor(&self) -> Result<Svn, BoardFault> {
+            Ok(Svn(DEVICE_FLOOR.load(Ordering::Relaxed)))
+        }
+
+        fn advance(&mut self, to: Svn) -> Result<(), BoardFault> {
+            DEVICE_FLOOR.fetch_max(to.0, Ordering::Relaxed);
+            Ok(())
+        }
     }
 
-    // The pass belongs to the driver alone: nothing is told, and no
-    // requester is waiting on it, so it reports no event and no progress.
-    let mut done = false;
-    for _ in 0..MAX_RESYNC_PUMPS {
-        let poll = driver.pump_update(now_millis());
-        if poll.event.is_some() {
-            pw_log::error!("ORCH: the re-sync told the state machine something");
-            return false;
+    /// The SVN the board verifier reads out of the image the component runs.
+    ///
+    /// `commit_svn_floor` moves the floor to the SVN the chain walk recorded,
+    /// and an image with none makes it hold the advance and report
+    /// `SvnFloorHeld` instead. So the floor this run ends at says both that
+    /// the binding took effect and that the advance came from a verdict.
+    const RESYNC_SVN: Svn = Svn(9);
+
+    /// The board verifier for the re-sync run: the verdict the chain walk
+    /// makes, with an SVN on it. `StubVerifier` authenticates without one, which would
+    /// leave the floor where it is.
+    pub(super) struct SvnVerifier;
+
+    impl Verifier for SvnVerifier {
+        type Error = BoardFault;
+
+        fn verify(
+            &mut self,
+            _id: ComponentId,
+            _image: &mut impl ImageSource,
+        ) -> Result<Verdict, BoardFault> {
+            Ok(Verdict::Authenticated(AuthenticatedImage {
+                svn: Some(RESYNC_SVN),
+                // No hash engine on a test board, so nothing to measure.
+                measurement: None,
+            }))
         }
-        if poll.progress.is_some() {
-            pw_log::error!("ORCH: the re-sync reported progress to a requester");
-            return false;
-        }
-        if driver.pending_update().is_none() {
-            done = true;
-            break;
-        }
-    }
-    if !done {
-        pw_log::error!("ORCH: the re-sync pass never finished");
-        return false;
     }
 
-    if FLOOR_ADVANCED_MID_PASS.load(Ordering::Relaxed) {
-        pw_log::error!("ORCH: the SVN floor moved while the spare slot was still behind");
-        return false;
+    /// The same device, plus the slot the commit re-stages.
+    ///
+    /// The first pass is what every other scenario sees: the device pulled
+    /// its own chunks from the Update Agent, so staging is already done.
+    /// After the activation the driver stages a second time, into the slot
+    /// the device stopped booting from, and that pass is the one the eRoT
+    /// performs. There is no PLDM operation that pushes bytes to a Firmware
+    /// Device, and only the Firmware Device process maps the flash, so the
+    /// spare slot is modelled here, in memory the RoT owns.
+    ///
+    /// A chunk per call, so the pass takes several polls. A pass that ended
+    /// in one would say nothing about the SVN floor advance waiting behind
+    /// it.
+    impl Updatable for FdUpdatable {
+        fn poll_stage(&mut self, payload: &dyn ByteSource) -> Result<StageProgress, UpdateError> {
+            if ACTIVATIONS.load(Ordering::Relaxed) == 0 {
+                return Ok(StageProgress::Ready);
+            }
+
+            // Read inside the pass, where the SVN floor must still hold the
+            // value it had before the commit.
+            if DEVICE_FLOOR.load(Ordering::Relaxed) != 0 {
+                FLOOR_ADVANCED_MID_PASS.store(true, Ordering::Relaxed);
+            }
+
+            let total = payload.len();
+            let written = SPARE_WRITTEN.load(Ordering::Relaxed) as u64;
+            let take = core::cmp::min(RESYNC_CHUNK as u64, total - written) as usize;
+            let mut chunk = [0u8; RESYNC_CHUNK];
+            payload
+                .read_at(written, &mut chunk[..take])
+                .map_err(UpdateError::Payload)?;
+            for (i, byte) in chunk[..take].iter().enumerate() {
+                SPARE_SLOT[written as usize + i].store(*byte, Ordering::Relaxed);
+            }
+            let written = written + take as u64;
+            SPARE_WRITTEN.store(written as usize, Ordering::Relaxed);
+
+            if written < total {
+                Ok(StageProgress::Transferring {
+                    progress: Progress { written, total },
+                })
+            } else {
+                Ok(StageProgress::Ready)
+            }
+        }
+
+        fn abandon(&mut self) {
+            SPARE_WRITTEN.store(0, Ordering::Relaxed);
+        }
+
+        fn activate(&mut self) -> Result<(), UpdateError> {
+            ACTIVATIONS.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
     }
-    let written = SPARE_WRITTEN.load(Ordering::Relaxed);
-    if written != IMAGE_SIZE {
-        pw_log::error!(
-            "ORCH: the spare slot took {} bytes of the image",
-            written as u32
-        );
-        return false;
-    }
-    for (offset, byte) in SPARE_SLOT.iter().enumerate() {
-        if byte.load(Ordering::Relaxed) != expected_byte(offset) {
+
+    /// The slot the device stopped booting from, as the `Updatable` the RoT
+    /// wires fills it. Checked byte for byte at the end of the run, so a pass that
+    /// wrote a pattern of its own rather than the staged bytes is caught.
+    static SPARE_SLOT: [AtomicU8; IMAGE_SIZE] = [const { AtomicU8::new(0) }; IMAGE_SIZE];
+
+    /// How much of the spare slot the pass has written.
+    static SPARE_WRITTEN: AtomicUsize = AtomicUsize::new(0);
+
+    /// Set when the SVN floor moved while the re-sync pass was still running.
+    static FLOOR_ADVANCED_MID_PASS: AtomicBool = AtomicBool::new(false);
+
+    /// Bytes one re-sync poll writes. Small enough that the pass takes more
+    /// than one call, which is what gives the held advance a window to be
+    /// observed in.
+    const RESYNC_CHUNK: usize = 64;
+
+    /// How many polls the re-sync pass may take. The image needs
+    /// `IMAGE_SIZE / RESYNC_CHUNK` of them, and this leaves room for the
+    /// steps the driver takes around them.
+    const MAX_RESYNC_PUMPS: usize = 4 * (IMAGE_SIZE / RESYNC_CHUNK);
+
+    /// Runs the spare-slot re-sync the granted commit queued, and checks that
+    /// the SVN floor advance waited for it.
+    ///
+    /// `commit_svn_floor` answers the effect before the pass starts, so the
+    /// Update Agent has already been told the commit succeeded. What is left
+    /// to show is the order the driver keeps: the floor keeps the old SVN
+    /// while the slot the device stopped booting from is still behind, and
+    /// takes the new one once that slot holds the image.
+    pub(super) fn resync(core: &mut Core, driver: &mut Driver) -> bool {
+        if DEVICE_FLOOR.load(Ordering::Relaxed) != 0 {
+            pw_log::error!("ORCH: the SVN floor moved before the spare slot was re-staged");
+            return false;
+        }
+        if driver.pending_update() != Some(TARGET) {
+            pw_log::error!("ORCH: the commit queued no re-sync for the spare slot");
+            return false;
+        }
+
+        // The pass belongs to the driver alone: nothing is told, and no
+        // requester is waiting on it, so it reports no event and no progress.
+        let mut done = false;
+        for _ in 0..MAX_RESYNC_PUMPS {
+            let poll = driver.pump_update(now_millis());
+            if poll.event.is_some() {
+                pw_log::error!("ORCH: the re-sync told the state machine something");
+                return false;
+            }
+            if poll.progress.is_some() {
+                pw_log::error!("ORCH: the re-sync reported progress to a requester");
+                return false;
+            }
+            if driver.pending_update().is_none() {
+                done = true;
+                break;
+            }
+        }
+        if !done {
+            pw_log::error!("ORCH: the re-sync pass never finished");
+            return false;
+        }
+
+        if FLOOR_ADVANCED_MID_PASS.load(Ordering::Relaxed) {
+            pw_log::error!("ORCH: the SVN floor moved while the spare slot was still behind");
+            return false;
+        }
+        let written = SPARE_WRITTEN.load(Ordering::Relaxed);
+        if written != IMAGE_SIZE {
             pw_log::error!(
-                "ORCH: the spare slot holds the wrong byte at offset {}",
-                offset as u32
+                "ORCH: the spare slot took {} bytes of the image",
+                written as u32
             );
             return false;
         }
-    }
-    if DEVICE_FLOOR.load(Ordering::Relaxed) != RESYNC_SVN.0 {
-        pw_log::error!(
-            "ORCH: the SVN floor reads {} after the re-sync",
+        for (offset, byte) in SPARE_SLOT.iter().enumerate() {
+            if byte.load(Ordering::Relaxed) != expected_byte(offset) {
+                pw_log::error!(
+                    "ORCH: the spare slot holds the wrong byte at offset {}",
+                    offset as u32
+                );
+                return false;
+            }
+        }
+        if DEVICE_FLOOR.load(Ordering::Relaxed) != RESYNC_SVN.0 {
+            pw_log::error!(
+                "ORCH: the SVN floor reads {} after the re-sync",
+                DEVICE_FLOOR.load(Ordering::Relaxed) as u32
+            );
+            return false;
+        }
+        if RESYNC_FAILED.load(Ordering::Relaxed)
+            || FLOOR_COMMIT_FAILED.load(Ordering::Relaxed)
+            || FLOOR_HELD.load(Ordering::Relaxed)
+        {
+            pw_log::error!("ORCH: the re-sync reported a failure");
+            return false;
+        }
+        // The device keeps running what it committed: the pass stages, and
+        // nothing activates behind it.
+        let activations = ACTIVATIONS.load(Ordering::Relaxed);
+        if activations != 1 {
+            pw_log::error!("ORCH: the image was activated {} times", activations as u32);
+            return false;
+        }
+        if core.state() != State::Ready {
+            pw_log::error!("ORCH: the machine left Ready while the spare slot was re-staged");
+            return false;
+        }
+        pw_log::info!(
+            "ORCH: the spare slot holds the committed image and the SVN floor reads {}",
             DEVICE_FLOOR.load(Ordering::Relaxed) as u32
         );
-        return false;
+        true
     }
-    if RESYNC_FAILED.load(Ordering::Relaxed)
-        || FLOOR_COMMIT_FAILED.load(Ordering::Relaxed)
-        || FLOOR_HELD.load(Ordering::Relaxed)
-    {
-        pw_log::error!("ORCH: the re-sync reported a failure");
-        return false;
-    }
-    // The device keeps running what it committed: the pass stages, and
-    // nothing activates behind it.
-    let activations = ACTIVATIONS.load(Ordering::Relaxed);
-    if activations != 1 {
-        pw_log::error!("ORCH: the image was activated {} times", activations as u32);
-        return false;
-    }
-    if core.state() != State::Ready {
-        pw_log::error!("ORCH: the machine left Ready while the spare slot was re-staged");
-        return false;
-    }
-    pw_log::info!(
-        "ORCH: the spare slot holds the committed image and the SVN floor reads {}",
-        DEVICE_FLOOR.load(Ordering::Relaxed) as u32
-    );
-    true
 }
 
 /// What the RoT answered one UpdateSecurityRevision request with.
