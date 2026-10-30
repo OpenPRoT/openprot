@@ -74,10 +74,16 @@ _LOCK_ACQUIRE_TIMEOUT = 120  # seconds to wait before giving up
 # ── SSH helpers ───────────────────────────────────────────────────────────────
 
 
+# Skip system/user ssh config. Under the Bazel sandbox, root-owned files in
+# /etc/ssh/ssh_config.d appear as owned by nobody and OpenSSH rejects them
+# ("Bad owner or permissions"). Default identities/known_hosts still apply.
+_SSH_CONFIG_OPTS = ["-F", "/dev/null"]
+
+
 def _ssh(host: str, cmd: str, **kwargs) -> subprocess.CompletedProcess:
     """Run a single SSH command synchronously."""
     return subprocess.run(
-        ["ssh", "-o", "BatchMode=yes", host, cmd],
+        ["ssh", *_SSH_CONFIG_OPTS, "-o", "BatchMode=yes", host, cmd],
         **kwargs,
     )
 
@@ -85,7 +91,16 @@ def _ssh(host: str, cmd: str, **kwargs) -> subprocess.CompletedProcess:
 def _ssh_stream(host: str, cmd: str) -> subprocess.Popen:
     """Open a streaming SSH session; stdout is a pipe the caller reads."""
     return subprocess.Popen(
-        ["ssh", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=5", host, cmd],
+        [
+            "ssh",
+            *_SSH_CONFIG_OPTS,
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ServerAliveInterval=5",
+            host,
+            cmd,
+        ],
         stdout=subprocess.PIPE,
         stderr=sys.stderr,
     )
@@ -304,7 +319,7 @@ def _run_remote(
     _ssh(host, f"rm -rf {remote_dir} && mkdir -p {remote_dir}", check=True)
 
     subprocess.run(
-        ["scp", "-q", str(runner), f"{host}:{remote_dir}/pi_test_runner.py"],
+        ["scp", *_SSH_CONFIG_OPTS, "-q", str(runner), f"{host}:{remote_dir}/pi_test_runner.py"],
         check=True,
     )
 
@@ -312,7 +327,7 @@ def _run_remote(
         firmware_path = Path(args.firmware)
         remote_fw = f"{remote_dir}/{firmware_path.name}"
         subprocess.run(
-            ["scp", "-q", str(firmware_path), f"{host}:{remote_fw}"],
+            ["scp", *_SSH_CONFIG_OPTS, "-q", str(firmware_path), f"{host}:{remote_fw}"],
             check=True,
         )
     else:
@@ -323,7 +338,7 @@ def _run_remote(
         slave_firmware_path = Path(args.slave_firmware)
         remote_slave_fw = f"{remote_dir}/{slave_firmware_path.name}"
         subprocess.run(
-            ["scp", "-q", str(slave_firmware_path), f"{host}:{remote_slave_fw}"],
+            ["scp", *_SSH_CONFIG_OPTS, "-q", str(slave_firmware_path), f"{host}:{remote_slave_fw}"],
             check=True,
         )
 
