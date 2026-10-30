@@ -158,15 +158,17 @@ pub fn drive_pending<S: Sender, const N: usize>(
     mut on_ready: impl FnMut(Handle, &[u8]),
 ) {
     // The router's suggested housekeeping interval is deliberately unused;
-    // see `Server::next_recv_deadline`.
-    let (_, ready) = server.update(now_millis, recv_buf);
-    for (handle, result) in ready {
+    // see `Server::next_recv_deadline`. `Server::update` calls back for
+    // each ready handle in turn, with `payload` holding only that handle's
+    // data, so it's encoded into `response` and delivered before the next
+    // ready handle (if any) overwrites `recv_buf`.
+    server.update(now_millis, recv_buf, |handle, result, payload| {
         let len = match result {
-            RecvResult::Message(meta) => encode_recv(response, recv_buf, &meta),
+            RecvResult::Message(meta) => encode_recv(response, payload, &meta),
             RecvResult::TimedOut => encode_error(response, ResponseCode::TimedOut),
         };
         on_ready(handle, response.get(..len).unwrap_or(&[]));
-    }
+    });
 }
 
 /// Encode the response to a `Recv` whose payload the server copied into

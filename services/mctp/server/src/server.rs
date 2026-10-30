@@ -225,25 +225,34 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
         }
     }
 
-    /// Update the stack and check for fulfilled receive calls.
+    /// Update the stack and resolve any fulfilled receive calls.
     ///
     /// Call this after every event the platform layer handles (an inbound
     /// packet, a client request) and no later than
     /// [`next_recv_deadline`](Self::next_recv_deadline). Returns the
     /// router's suggested housekeeping interval (ms), which callers may
-    /// ignore for the reason given there, and the handles whose registered
-    /// receive is now resolved, each with a message or a timeout. A message
-    /// payload larger than `recv_buf` is consumed but not copied, as in
-    /// [`try_recv`](Self::try_recv).
+    /// ignore for the reason given there.
+    ///
+    /// `recv_buf` is a single shared scratch buffer, reused for each
+    /// resolved handle in turn. For every handle whose registered receive
+    /// is now fulfilled, `on_ready(handle, result, recv_buf)` is called
+    /// immediately — with `recv_buf` holding only *that* handle's payload
+    /// (empty for `RecvResult::TimedOut`) — so the caller must copy or
+    /// encode what it needs before `on_ready` returns. Holding onto
+    /// `recv_buf` past the callback would alias a later handle's message,
+    /// since the buffer is overwritten for the next resolved handle (if
+    /// any). A message payload larger than `recv_buf` is consumed but not
+    /// copied, as in [`try_recv`](Self::try_recv).
     pub fn update(
         &mut self,
         now_millis: u64,
         recv_buf: &mut [u8],
-    ) -> (u32, heapless::Vec<(Handle, RecvResult), OUTSTANDING>) {
+        mut on_ready: impl FnMut(Handle, RecvResult, &[u8]),
+    ) -> u32 {
         // Update the mctp-stack; get the next timeout interval
         let stack_timeout = self.stack.update(now_millis).unwrap_or(60_000) as u32;
 
-        let mut ready: heapless::Vec<(Handle, RecvResult), OUTSTANDING> = heapless::Vec::new();
+        let mut resolved: heapless::Vec<u32, OUTSTANDING> = heapless::Vec::new();
 
         for (handle_val, pending) in self.outstanding.iter() {
             let handle = Handle(*handle_val);
@@ -252,22 +261,26 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
             // Check if a message arrived for this handle
             if let Some(mctp_msg) = self.stack.recv(cookie) {
                 let metadata = recv_metadata_from_msg(&mctp_msg, recv_buf);
-                let _ = ready.push((handle, RecvResult::Message(metadata)));
+                let _ = resolved.push(*handle_val);
+                // Deliver now, while recv_buf still holds this handle's
+                // payload; the next resolved handle (if any) overwrites it.
+                on_ready(handle, RecvResult::Message(metadata), recv_buf);
                 continue;
             }
 
             // Check for timeout
             if pending.deadline.is_some_and(|d| now_millis >= d) {
-                let _ = ready.push((handle, RecvResult::TimedOut));
+                let _ = resolved.push(*handle_val);
+                on_ready(handle, RecvResult::TimedOut, &[]);
             }
         }
 
         // Remove fulfilled/timed-out entries
-        for (handle, _) in &ready {
-            self.outstanding.remove(&handle.0);
+        for handle_val in &resolved {
+            self.outstanding.remove(handle_val);
         }
 
-        (stack_timeout, ready)
+        stack_timeout
     }
 
     /// Unbind a handle previously allocated by `req` or `listener`.
