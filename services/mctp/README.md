@@ -1,6 +1,7 @@
 # MCTP Service
 
-This directory contains the MCTP API, echo policy crate, and server implementation.
+This directory contains the MCTP API, the echo policy crate, the control
+responder, and the server implementation.
 
 ## Test Coverage
 
@@ -17,6 +18,7 @@ bazelisk test //services/mctp:mctp_host_tests --test_output=errors
 `//services/mctp:mctp_host_tests` includes:
 
 - `//services/mctp/api:mctp_api_test`
+- `//services/mctp/control:mctp_control_responder_test`
 - `//services/mctp/echo:mctp_echo_host_test`
 - `//services/mctp/server:mctp_server_dispatch_test`
 - `//services/mctp/server:mctp_server_echo_test`

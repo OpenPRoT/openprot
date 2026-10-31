@@ -537,6 +537,13 @@ paste! {
     gen_pin_pairs!(SCU6B0, 0x6B0, 31);
 }
 
+/// I2C0 pin group: SCL1/SDA1 mux selection on SCU414[28:29].
+///
+/// The SVD names these EnblSCL1FnPin/EnblSDA1FnPin (1-based naming),
+/// corresponding to PAC peripheral I2c0 (controller 0, base 0x7e7b_0080) on
+/// balls R15 (SCL) / P12 (SDA).
+pub const PINCTRL_I2C0: &[PinctrlPin] = &[PIN_SCU414_28, PIN_SCU414_29];
+
 /// I2C1 pin group: SCL2/SDA2 mux selection on SCU414[30:31].
 ///
 /// The SVD names these EnblSCL2FnPin/EnblSDA2FnPin, but they correspond to
