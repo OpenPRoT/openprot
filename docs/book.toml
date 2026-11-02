@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 [book]
-authors = ["OpenProt Team"]
+authors = ["OpenPRoT Team"]
 language = "en"
 src = "src"
-title = "OpenProt Documentation"
+title = "OpenPRoT Documentation"
 
 [preprocessor.mermaid]
 command = "mdbook-mermaid"
