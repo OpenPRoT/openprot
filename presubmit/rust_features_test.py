@@ -13,9 +13,7 @@ class FindViolationsTest(unittest.TestCase):
             'rust_test(\n    name = "a",\n    features = ["test-support"],\n)\n'
             'rust_library(name = "b", features = ["x"])\n'
         )
-        self.assertEqual(
-            find_violations(src), [(1, "rust_test"), (5, "rust_library")]
-        )
+        self.assertEqual(find_violations(src), [(1, "rust_test"), (5, "rust_library")])
 
     def test_allows_crate_features(self):
         src = 'rust_test(name = "a", crate_features = ["test-support"])\n'
