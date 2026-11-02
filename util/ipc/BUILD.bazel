@@ -20,7 +20,7 @@ rust_library(
     }),
     visibility = ["//visibility:public"],
     deps = [
-        "//util/service",
+        "//util/transport",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_status/rust:pw_status",
     ],

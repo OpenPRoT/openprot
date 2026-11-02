@@ -32,7 +32,7 @@ use userspace::entry;
 use userspace::syscall::{self, Signals};
 use userspace::time::{Clock, Instant, SystemClock};
 use util_ipc::{AsyncChannelTransport, AsyncTransaction, IpcHandle, IpcInitiator};
-use util_service::{AsyncTransport, TransportError};
+use util_transport::{AsyncTransport, TransportError};
 
 static mut SEND_BUF: [u8; 1] = [0x10];
 static mut RECV_BUF: [u8; 1] = [0u8; 1];
