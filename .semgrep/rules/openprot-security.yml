@@ -17,9 +17,10 @@ rules:
       Verdict::Authenticated should be validated against SvnFloor::floor().
       Anti-rollback is not enforced on the admission path. Attackers can
       roll back to older, known-vulnerable images.
-    pattern-inside: verify_firmware
-    pattern-either:
-      - pattern: Verdict::Authenticated
+    patterns:
+      - pattern-inside: verify_firmware
+      - pattern-either:
+          - pattern: Verdict::Authenticated
     paths:
       include:
         - "**/driver.rs"
@@ -35,8 +36,8 @@ rules:
     message: >-
       PKT_ERROR handling must re-arm RX DMA. Slave receiver wedges
       permanently on packet errors if re-arm is missing.
-    pattern-inside: handle_slave_interrupt
     patterns:
+      - pattern-inside: handle_slave_interrupt
       - pattern-either:
           - pattern: PKT_ERROR
           - pattern: SLAVE_PKT_ERROR
@@ -52,7 +53,7 @@ rules:
     message: >-
       Use bitwise AND tests for IRQ status (sts & constant), not exact
       equality (sts == constant). Exact matching misses status combinations.
-    pattern: if sts == ...
+    pattern: if sts == $CONST { ... }
     paths:
       include:
         - "**/slave.rs"
@@ -64,9 +65,10 @@ rules:
     message: >-
       TODO comments in interrupt handlers indicate unfinished state
       handling. All status paths must clear interrupts and re-arm RX.
-    pattern-inside: handle_slave_interrupt
-    pattern: |
-      // TODO
+    patterns:
+      - pattern-inside: handle_slave_interrupt
+      - pattern: |
+          // TODO
     paths:
       include:
         - "**/slave.rs"
