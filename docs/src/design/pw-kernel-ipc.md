@@ -3,9 +3,10 @@
 This guide explains how to wire up cross-process communication between two
 `pw_kernel` userspace processes using channel objects.
 
-A worked example lives at `target/veer/ipc/` (system image) and upstream at
-`@pigweed//pw_kernel/tests/ipc/user/` (the two processes themselves) — refer
-to those files alongside this document.
+A worked example lives at
+[`target/veer/ipc/`](https://github.com/OpenPRoT/openprot/tree/main/target/veer/ipc)
+(system image) and upstream at `@pigweed//pw_kernel/tests/ipc/user/` (the two
+processes themselves) — refer to those files alongside this document.
 
 ## Conceptual model
 
@@ -158,7 +159,8 @@ fn entry() -> ! {
 
 On a target like veer, the `system_image` macro consumes both the
 `system.json5` and the upstream `multi_process_app` target that bundles the
-two process binaries. See `target/veer/ipc/user/BUILD.bazel`:
+two process binaries. See
+[`target/veer/ipc/user/BUILD.bazel`](https://github.com/OpenPRoT/openprot/blob/main/target/veer/ipc/user/BUILD.bazel):
 
 ```python
 system_image(

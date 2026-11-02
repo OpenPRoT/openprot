@@ -94,8 +94,9 @@ Cargo workspace. The relevant pieces:
 - `./pw` is `bazelisk run //:pw -- "$@"` and dispatches to the named groups
   in `workflows.json` (`presubmit`, `default`, `ci`, `upstream_pigweed`).
 
-See `usage.md` for the everyday command surface and `workflows.json` for the
-authoritative workflow definitions.
+See [`usage.md`](./usage.md) for the everyday command surface and
+[`workflows.json`](https://github.com/OpenPRoT/openprot/blob/main/workflows.json)
+for the authoritative workflow definitions.
 
 ## Pigweed integration
 
@@ -113,8 +114,9 @@ The veer target builds on Pigweed's microkernel and runtime crates:
 - `@pigweed//pw_toolchain/riscv_clang:riscv_clang_cc_toolchain_rv32imc` —
   RISC-V C/C++ toolchain used by the veer target's mixed-language build.
 
-For a concrete cross-process example, see `design/pw-kernel-ipc.md` and
-`target/veer/ipc/`.
+For a concrete cross-process example, see
+[`design/pw-kernel-ipc.md`](./design/pw-kernel-ipc.md) and
+[`target/veer/ipc/`](https://github.com/OpenPRoT/openprot/tree/main/target/veer/ipc).
 
 ## Targets
 
@@ -164,6 +166,10 @@ still exercising the same protocol codecs and dispatch logic used by firmware.
 
 ## Where to read next
 
-- `coding-style.md` — formatter configs and Rust conventions.
-- `contributing.md` and `development-process.md` — review and merge process.
-- `design/` — focused notes on individual subsystems (e.g. pw_kernel IPC).
+- [`coding-style.md`](./coding-style.md) — formatter configs and Rust
+  conventions.
+- [`contributing.md`](./contributing.md) and
+  [`development-process.md`](./development-process.md) — review and merge
+  process.
+- [`design/`](./design/index.md) — focused notes on individual subsystems
+  (e.g. [pw_kernel IPC](./design/pw-kernel-ipc.md)).

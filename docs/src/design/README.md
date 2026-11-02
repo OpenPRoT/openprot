@@ -12,7 +12,8 @@ of the project.
     crate universe, the `./pw` launcher) and where each piece is pinned.
 -   [**pw_kernel IPC**](./pw-kernel-ipc.md): How to declare and use channel
     objects to communicate between two `pw_kernel` userspace processes.
-    Worked example lives at `target/veer/ipc/`.
+    Worked example lives at
+    [`target/veer/ipc/`](https://github.com/OpenPRoT/openprot/tree/main/target/veer/ipc).
 -   [**Orchestrator**](./orchestrator/orchestrator-overview.md): The eRoT boot-sequence state
     machine (`services/orchestrator/sm`). Covers the two-tier firmware
     verification model (`ComponentAttrs`, eRoT gate, iRoT gate), the
