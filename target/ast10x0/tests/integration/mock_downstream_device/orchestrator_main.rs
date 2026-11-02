@@ -1099,10 +1099,11 @@ fn run() -> Result<(), ()> {
                 return Err(());
             }
             // The SVN floor moves on the request the Update Agent sends
-            // after the walk confirms the trial, and no app serves that
-            // request for the eRoT yet, so the run dispatches
-            // `Event::SvnCommitRequest` the way it dispatches the events
-            // a device would cause.
+            // after the walk confirms the trial, and no app in this image
+            // serves UpdateSecurityRevision for the eRoT. The run
+            // dispatches `Event::SvnCommitRequest` itself, standing in for
+            // the Update Agent the way `pldm_update` stands in for the one
+            // that updates its device.
             #[cfg(self_trial)]
             commit_self_floor(&mut core, &mut driver)?;
             // Without the call count, `recovery` would pass on a verifier
