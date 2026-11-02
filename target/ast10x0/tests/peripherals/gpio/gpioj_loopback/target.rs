@@ -6,7 +6,7 @@
 #![no_std]
 #![no_main]
 
-use ast10x0_peripherals::gpio::{gpioi, GpioExt, InterruptMode};
+use ast10x0_peripherals::gpio::{gpioj, GpioExt, InterruptMode};
 use ast10x0_peripherals::scu::{pinctrl, ScuRegisters};
 use console_backend::console_backend_write_all;
 use embedded_hal::digital::{InputPin, OutputPin};
@@ -19,17 +19,17 @@ const GPIO_LEVEL_DELAY_CYCLES: u32 = 200_000_000;
 
 fn test_gpio_loopback() -> bool {
     // The loopback requires a jumper between the fixture board's exposed
-    // GPIOI0/I2C2 SCL pin and GPIOI1/I2C2 SDA pin.
-    let gpioi = unsafe {
+    // GPIOJ4 pin and GPIOJ5 pin.
+    let gpioj = unsafe {
         let scu = ScuRegisters::new_global_unlocked();
-        scu.apply_pinctrl_group(pinctrl::PINCTRL_GPIOI0);
-        scu.apply_pinctrl_group(pinctrl::PINCTRL_GPIOI1);
-        gpioi::GPIOI::new_global().split()
+        scu.apply_pinctrl_group(pinctrl::PINCTRL_GPIOJ4);
+        scu.apply_pinctrl_group(pinctrl::PINCTRL_GPIOJ5);
+        gpioj::GPIOJ::new_global().split()
     };
-    pw_log::info!("--- GPIOI loopback test ---");
+    pw_log::info!("--- GPIOJ loopback test ---");
 
-    let mut output = gpioi.pi0.into_push_pull_output();
-    let mut input = gpioi.pi1.into_pull_down_input();
+    let mut output = gpioj.pj4.into_push_pull_output();
+    let mut input = gpioj.pj5.into_pull_down_input();
 
     let interrupt_cases = [
         ("level-high", InterruptMode::LevelHigh, false, true),
@@ -41,7 +41,7 @@ fn test_gpio_loopback() -> bool {
     ];
 
     for (name, mode, initial_high, trigger_high) in interrupt_cases {
-        pw_log::info!("=== Testing GPIOI1 {} interrupt ===", name as &str);
+        pw_log::info!("=== Testing GPIOJ5 {} interrupt ===", name as &str);
 
         input.set_interrupt_mode(InterruptMode::Disabled);
         input.clear_interrupt();
@@ -52,12 +52,12 @@ fn test_gpio_loopback() -> bool {
             output.set_low()
         };
         if initial_result.is_err() {
-            pw_log::error!("{}: GPIOI0 could not drive initial level", name as &str);
+            pw_log::error!("{}: GPIOJ4 could not drive initial level", name as &str);
             return false;
         }
         let initial_level = if initial_high { "high" } else { "low" };
         pw_log::info!(
-            "{}: GPIOI0 as output drive initial level {}",
+            "{}: GPIOJ4 as output drive initial level {}",
             name as &str,
             initial_level as &str
         );
@@ -73,7 +73,7 @@ fn test_gpio_loopback() -> bool {
             return false;
         }
         pw_log::info!(
-            "{}: GPIOI1 as input read initial level {}",
+            "{}: GPIOJ5 as input read initial level {}",
             name as &str,
             initial_level as &str
         );
@@ -92,13 +92,13 @@ fn test_gpio_loopback() -> bool {
             output.set_low()
         };
         if trigger_result.is_err() {
-            pw_log::error!("{}: GPIOI0 could not drive trigger level", name as &str);
+            pw_log::error!("{}: GPIOJ4 could not drive trigger level", name as &str);
             input.set_interrupt_mode(InterruptMode::Disabled);
             return false;
         }
         let trigger_level = if trigger_high { "high" } else { "low" };
         pw_log::info!(
-            "{}: GPIOI0 as output drive trigger level {}",
+            "{}: GPIOJ4 as output drive trigger level {}",
             name as &str,
             trigger_level as &str
         );
@@ -115,7 +115,7 @@ fn test_gpio_loopback() -> bool {
             return false;
         }
         pw_log::info!(
-            "{}: GPIOI1 as input read trigger level {}",
+            "{}: GPIOJ5 as input read trigger level {}",
             name as &str,
             trigger_level as &str
         );
@@ -125,7 +125,7 @@ fn test_gpio_loopback() -> bool {
             input.set_interrupt_mode(InterruptMode::Disabled);
             return false;
         }
-        pw_log::info!("GPIOI1 {} interrupt status set", name as &str);
+        pw_log::info!("GPIOJ5 {} interrupt status set", name as &str);
 
         // Disable level-sensitive modes before clearing so an active level
         // cannot immediately reassert the status bit.
@@ -140,17 +140,17 @@ fn test_gpio_loopback() -> bool {
     true
 }
 
-fn run_gpioi_loopback_test() -> bool {
-    pw_log::info!("=== AST10x0 GPIOI loopback test ===");
-    // connect a jumper between the exposed GPIOI0/I2C2 SCL and GPIOI1/I2C2 SDA pins to verify the loopback.
+fn run_gpioj_loopback_test() -> bool {
+    pw_log::info!("=== AST10x0 GPIOJ loopback test ===");
+    // connect a jumper between the exposed GPIOJ4 and GPIOJ5 pins to verify the loopback.
     test_gpio_loopback()
 }
 
 impl TargetInterface for Target {
-    const NAME: &'static str = "AST10x0 GPIOI loopback test";
+    const NAME: &'static str = "AST10x0 GPIOJ loopback test";
 
     fn main() -> ! {
-        let sentinel = if run_gpioi_loopback_test() {
+        let sentinel = if run_gpioj_loopback_test() {
             b"TEST_RESULT:PASS\n"
         } else {
             b"TEST_RESULT:FAIL\n"
