@@ -86,9 +86,10 @@ abort would do is untested.
   Device to the Update Agent, and no image here makes it one. Making the
   eRoT a Firmware Device takes a four-app image on a memory map holding
   two, and a session in storage rather than RAM, because the request
-  belongs to the boot after the reset. The other update scenarios dispatch the event themselves too,
-  the way they already dispatch `BootConfirmed`: without the 0x22
-  exchange nothing parks their device at the status.
+  belongs to the boot after the reset. The other update scenarios
+  dispatch the event themselves too, the way they already dispatch
+  `BootConfirmed`: without the 0x22 exchange nothing parks their device
+  at the status.
 - A self-update in one run. The two scenarios split it at the reset.
   `self_update` offers the eRoT a candidate, stages it, authenticates it
   and reports the SVN it carries, and the activation records the session
@@ -124,9 +125,9 @@ abort would do is untested.
   pass re-stages the slot the eRoT stopped booting from.
   `queue_slot_resync` cannot serve the eRoT: the claim it reads,
   `last_activated`, is RAM, and the self-reset wipes it. The ROM rejects
-  an image below the counter, so after the advance the other slot is
-  unbootable, and a corruption of the running slot leaves the eRoT with
-  nothing to fall back to.
+  an image below the counter, so after the SVN floor advance the other
+  slot is unbootable, and a corruption of the running slot leaves the
+  eRoT with nothing to fall back to.
 - A board that wires no self-update at all. `Board.self_update` is an
   `Option` and `()` satisfies `SelfUpdate` and `SelfReset`, so such a
   board builds and refuses an update aimed at the eRoT at submit, with
