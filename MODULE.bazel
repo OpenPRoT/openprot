@@ -218,6 +218,12 @@ qemu = use_extension("//third_party/qemu:extensions.bzl", "qemu")
 use_repo(qemu, "qemu_opentitan", "qemu_opentitan_src")
 
 # ── Python deps for QEMU tooling scripts (cfggen, flashgen) ──
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    is_default = True,
+    python_version = "3.12",
+)
+
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
     # AMD's Zscaler proxy intercepts TLS to pypi.org with its own cert; skip
@@ -230,7 +236,7 @@ pip.parse(
         "files.pythonhosted.org",
     ],
     hub_name = "openprot_python_deps",
-    python_version = "3.11",
+    python_version = "3.12",
     requirements_lock = "//third_party/qemu:requirements.txt",
 )
 use_repo(pip, "openprot_python_deps")
