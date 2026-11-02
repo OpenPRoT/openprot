@@ -22,10 +22,14 @@
 
 #![no_std]
 
+#[cfg(test)]
 mod delayed;
+#[cfg(test)]
 mod loopback;
 
+#[cfg(test)]
 pub use delayed::Delayed;
+#[cfg(test)]
 pub use loopback::Loopback;
 
 /// Why a transport round-trip failed. Small and service-neutral;
