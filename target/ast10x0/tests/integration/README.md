@@ -168,7 +168,7 @@ floor for.
 The SVN floor moves on the request the Update Agent sends after the walk
 confirms the trial, so the run dispatches `Event::SvnCommitRequest` for
 the eRoT the way the update scenarios dispatch it for their device, and
-then checks the SVN floor reads the SVN the trial recorded and the
+then checks the SVN floor holds the SVN the trial recorded and the
 session has closed:
 
     [INF] the self trial was confirmed and the eRoT SVN floor reads 7
