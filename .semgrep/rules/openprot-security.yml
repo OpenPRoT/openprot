@@ -14,17 +14,22 @@ rules:
     languages: [rust]
     severity: ERROR
     message: >-
-      Verdict::Authenticated should be validated against SvnFloor::floor().
-      Anti-rollback is not enforced on the admission path. Attackers can
-      roll back to older, known-vulnerable images.
+      Verdict::Authenticated { svn } is consumed in a function that never
+      compares against SvnFloor::floor(). Anti-rollback is not enforced on
+      the admission path, so a validly-signed image with a lower SVN can
+      roll the device back to a known-vulnerable version.
+    # Semgrep's Rust grammar cannot express a destructuring match arm, so
+    # this is a function-scoped regex: it matches a fn whose body mentions
+    # `Verdict::Authenticated {` before (and without) any `.floor()` call and
+    # before the next `fn`. It is heuristic; it flags the enclosing function.
     patterns:
-      - pattern-inside: verify_firmware
-      - pattern-either:
-          - pattern: Verdict::Authenticated
+      - pattern: fn $F(...) { ... }
+      - pattern-regex: '(?s)fn\s+\w+[^{]*\{(?:(?!\.floor\(\)|\bfn\s).)*Verdict::Authenticated\s*\{'
     paths:
       include:
         - "**/driver.rs"
         - "**/board.rs"
+        - "**/openprot-security.rs"
 
   # ============================================================================
   # I2C INTERRUPT HANDLING
@@ -34,18 +39,31 @@ rules:
     languages: [rust]
     severity: ERROR
     message: >-
-      PKT_ERROR handling must re-arm RX DMA. Slave receiver wedges
-      permanently on packet errors if re-arm is missing.
+      The PKT_ERROR branch of handle_slave_interrupt returns without
+      calling arm_slave_receive(). The slave receiver wedges permanently
+      on a packet error if RX DMA is not re-armed (the INACTIVE_TO branch
+      re-arms; this one must too).
     patterns:
-      - pattern-inside: handle_slave_interrupt
-      - pattern-either:
-          - pattern: PKT_ERROR
-          - pattern: SLAVE_PKT_ERROR
-      - pattern-not: rearm_slave_rx
-      - pattern-not: arm_slave_receive
+      - pattern-inside: |
+          fn handle_slave_interrupt(...) { ... }
+      - pattern: |
+          if ($STS & $PKT_ERR) != 0 {
+            ...
+            return $R;
+          }
+      - metavariable-regex:
+          metavariable: $PKT_ERR
+          regex: ^(.*::)?[A-Za-z0-9_]*PKT_ERROR$
+      - pattern-not: |
+          if ($STS & $PKT_ERR) != 0 {
+            ...
+            $SELF.arm_slave_receive(...);
+            ...
+          }
     paths:
       include:
         - "**/slave.rs"
+        - "**/openprot-security.rs"
 
   - id: ast10x0-irq-exact-match
     languages: [rust]
@@ -53,25 +71,25 @@ rules:
     message: >-
       Use bitwise AND tests for IRQ status (sts & constant), not exact
       equality (sts == constant). Exact matching misses status combinations.
-    pattern: if sts == $CONST { ... }
+    pattern: sts == $CONST
     paths:
       include:
         - "**/slave.rs"
         - "**/i2c.rs"
+        - "**/openprot-security.rs"
 
   - id: ast10x0-irq-todo-comment
     languages: [rust]
     severity: ERROR
     message: >-
-      TODO comments in interrupt handlers indicate unfinished state
+      TODO comments in the slave interrupt path indicate unfinished state
       handling. All status paths must clear interrupts and re-arm RX.
-    patterns:
-      - pattern-inside: handle_slave_interrupt
-      - pattern: |
-          // TODO
+    # Comments are not AST nodes, so this must be a regex rule.
+    pattern-regex: '//\s*TODO'
     paths:
       include:
         - "**/slave.rs"
+        - "**/openprot-security.rs"
 
   # ============================================================================
   # BUFFER BOUNDARY VALIDATION
@@ -110,6 +128,7 @@ rules:
         - "**/protocol.rs"
         - "**/receiver.rs"
         - "**/dispatch.rs"
+        - "**/openprot-security.rs"
       exclude:
         - "**/tests/**"
 
@@ -135,3 +154,4 @@ rules:
         - "**/slave.rs"
         - "**/i2c.rs"
         - "**/register*.rs"
+        - "**/openprot-security.rs"

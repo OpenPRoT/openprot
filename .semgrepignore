@@ -4,8 +4,9 @@
 # Ignore xtask development tools - not production code
 xtask/
 
-# Ignore build artifacts
-target/
+# Rule fixtures intentionally contain violations (see .semgrep/rules/*.rs);
+# they are exercised by `semgrep --test`, not scanned as production code.
+.semgrep/
 
 # Ignore external dependencies and examples
 external/
