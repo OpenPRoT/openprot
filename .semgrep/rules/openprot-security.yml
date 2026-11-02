@@ -1,0 +1,123 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+#
+# OpenPRoT security findings from the comprehensive audit.
+# These rules detect patterns indicative of the vulnerabilities
+# documented in the OpenPRoT security report.
+
+rules:
+  # ============================================================================
+  # ANTI-ROLLBACK & SVN FLOOR ENFORCEMENT
+  # ============================================================================
+
+  - id: openprot-authenticated-svn-without-floor-check
+    languages: [rust]
+    severity: ERROR
+    message: >-
+      Verdict::Authenticated should be validated against SvnFloor::floor().
+      Anti-rollback is not enforced on the admission path. Attackers can
+      roll back to older, known-vulnerable images.
+    pattern-inside: verify_firmware
+    pattern-either:
+      - pattern: Verdict::Authenticated
+    paths:
+      include:
+        - "**/driver.rs"
+        - "**/board.rs"
+
+  # ============================================================================
+  # I2C INTERRUPT HANDLING
+  # ============================================================================
+
+  - id: ast10x0-pkt-error-handling
+    languages: [rust]
+    severity: ERROR
+    message: >-
+      PKT_ERROR handling must re-arm RX DMA. Slave receiver wedges
+      permanently on packet errors if re-arm is missing.
+    pattern-inside: handle_slave_interrupt
+    patterns:
+      - pattern-either:
+          - pattern: PKT_ERROR
+          - pattern: SLAVE_PKT_ERROR
+      - pattern-not: rearm_slave_rx
+      - pattern-not: arm_slave_receive
+    paths:
+      include:
+        - "**/slave.rs"
+
+  - id: ast10x0-irq-exact-match
+    languages: [rust]
+    severity: WARNING
+    message: >-
+      Use bitwise AND tests for IRQ status (sts & constant), not exact
+      equality (sts == constant). Exact matching misses status combinations.
+    pattern: if sts == ...
+    paths:
+      include:
+        - "**/slave.rs"
+        - "**/i2c.rs"
+
+  - id: ast10x0-irq-todo-comment
+    languages: [rust]
+    severity: ERROR
+    message: >-
+      TODO comments in interrupt handlers indicate unfinished state
+      handling. All status paths must clear interrupts and re-arm RX.
+    pattern-inside: handle_slave_interrupt
+    pattern: |
+      // TODO
+    paths:
+      include:
+        - "**/slave.rs"
+
+  # ============================================================================
+  # BUFFER BOUNDARY VALIDATION
+  # ============================================================================
+
+  - id: openprot-decoded-length-unchecked
+    languages: [rust]
+    severity: ERROR
+    message: >-
+      Decoded length fields must be validated before indexing buffers.
+      Oversized values cause out-of-bounds access.
+    patterns:
+      - pattern-either:
+          - pattern: $BUF[$VAR..]
+          - pattern: $BUF[..$VAR]
+      - metavariable-regex:
+          metavariable: $VAR
+          regex: (?i).*(len|size|length|count).*
+      - pattern-not-inside: |
+          if $VAR <= $BOUND { ... }
+      - pattern-not-inside: |
+          if $VAR >= $BOUND { return ... }
+    paths:
+      include:
+        - "**/wire.rs"
+        - "**/protocol.rs"
+        - "**/receiver.rs"
+        - "**/dispatch.rs"
+
+  # ============================================================================
+  # MEMORY SAFETY IN HARDWARE REGISTERS
+  # ============================================================================
+
+  - id: openprot-type-cast-truncation
+    languages: [rust]
+    severity: WARNING
+    message: >-
+      Casting between types can silently truncate or extend values.
+      Ensure register reads/writes preserve bit patterns exactly.
+    patterns:
+      - pattern-either:
+          - pattern: $X as u8
+          - pattern: $X as u16
+      - metavariable-regex:
+          metavariable: $X
+          regex: (?i).*(bitmap|flags|status|field).*
+    paths:
+      include:
+        - "**/slave.rs"
+        - "**/i2c.rs"
+        - "**/register*.rs"

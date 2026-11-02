@@ -106,3 +106,23 @@ jobs:
       uses: returntocorp/semgrep-action@v1
       with:
         config: p/rust
+
+    - name: Run semgrep parsing-safety rules
+      # Project-specific rules targeting wire/protocol decode paths
+      # (no unwrap/expect, no raw buffer indexing, no unchecked length
+      # arithmetic/casts). Non-blocking until the ruleset has been
+      # validated against the full codebase; flip to blocking once the
+      # false-positive rate has been confirmed acceptable.
+      uses: returntocorp/semgrep-action@v1
+      continue-on-error: true
+      with:
+        config: .semgrep/rules/parsing-safety.yml
+
+    - name: Run semgrep OpenPRoT security audit rules
+      # Project-specific rules based on the comprehensive OpenPRoT security
+      # audit, targeting anti-rollback enforcement, I2C interrupt handling,
+      # and wire-level protocol state machine errors.
+      # Blocking until findings have been addressed.
+      uses: returntocorp/semgrep-action@v1
+      with:
+        config: .semgrep/rules/openprot-security.yml
