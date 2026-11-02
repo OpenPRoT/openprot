@@ -181,8 +181,8 @@ Device, and no image here builds that. GAPS.md records the gap.
 The session is two atomics rather than storage. This scenario never
 resets the eRoT, so nothing has to survive a reset; what it exercises is
 the path from the session, through `Event::SelfTrialBooted` and
-`Effect::ConfirmSelfTrial`, to the SVN floor advance
-`Event::SvnCommitRequest` brings.
+`Effect::ConfirmSelfTrial`, to the SVN floor advance that follows
+`Event::SvnCommitRequest`.
 
 ## The full update scenario
 
