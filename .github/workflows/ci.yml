@@ -102,15 +102,27 @@ jobs:
     - name: Run cargo deny checks
       run: cd third_party/crates_io; cargo deny check
 
+    - name: Set up Python for semgrep
+      # semgrep==1.86.0 ships only a cp38-cp311 wheel on PyPI. Relying on
+      # the runner image's system Python (e.g. Python 3.14 on the
+      # ubuntu-26.04 image) forces pip to build its pydantic-core
+      # dependency from source, which fails because that dependency's
+      # pyo3 version caps at Python 3.13. Pin a supported interpreter
+      # explicitly so this doesn't depend on the runner image's default.
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install semgrep
+      run: pip install --quiet "semgrep==1.86.0"
+
     - name: Run semgrep security scan
       # Uses the semgrep CLI directly (pinned version) rather than the
       # legacy returntocorp/semgrep-action@v1 wrapper, which was found to
       # silently swallow rule-schema errors and exit 0 without ever
       # completing a scan (see PR discussion). Direct CLI invocation with
       # --error gives a deterministic, visible exit code.
-      run: |
-        pip install --quiet "semgrep==1.86.0"
-        semgrep scan --config p/rust --error
+      run: semgrep scan --config p/rust --error
 
     - name: Run semgrep parsing-safety rules
       # Project-specific rules targeting wire/protocol decode paths
