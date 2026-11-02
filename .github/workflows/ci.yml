@@ -103,9 +103,14 @@ jobs:
       run: cd third_party/crates_io; cargo deny check
 
     - name: Run semgrep security scan
-      uses: returntocorp/semgrep-action@v1
-      with:
-        config: p/rust
+      # Uses the semgrep CLI directly (pinned version) rather than the
+      # legacy returntocorp/semgrep-action@v1 wrapper, which was found to
+      # silently swallow rule-schema errors and exit 0 without ever
+      # completing a scan (see PR discussion). Direct CLI invocation with
+      # --error gives a deterministic, visible exit code.
+      run: |
+        pip install --quiet "semgrep==1.86.0"
+        semgrep scan --config p/rust --error
 
     - name: Run semgrep parsing-safety rules
       # Project-specific rules targeting wire/protocol decode paths
@@ -113,16 +118,12 @@ jobs:
       # arithmetic/casts). Non-blocking until the ruleset has been
       # validated against the full codebase; flip to blocking once the
       # false-positive rate has been confirmed acceptable.
-      uses: returntocorp/semgrep-action@v1
       continue-on-error: true
-      with:
-        config: .semgrep/rules/parsing-safety.yml
+      run: semgrep scan --config .semgrep/rules/parsing-safety.yml --error
 
     - name: Run semgrep OpenPRoT security audit rules
       # Project-specific rules based on the comprehensive OpenPRoT security
       # audit, targeting anti-rollback enforcement, I2C interrupt handling,
       # and wire-level protocol state machine errors.
       # Blocking until findings have been addressed.
-      uses: returntocorp/semgrep-action@v1
-      with:
-        config: .semgrep/rules/openprot-security.yml
+      run: semgrep scan --config .semgrep/rules/openprot-security.yml --error
