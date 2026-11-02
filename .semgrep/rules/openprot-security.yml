@@ -81,25 +81,37 @@ rules:
     languages: [rust]
     severity: ERROR
     message: >-
-      Decoded length fields must be validated before indexing buffers.
-      Oversized values cause out-of-bounds access.
+      A length decoded from a wire header is used directly as a slice
+      bound. Validate it against the buffer length first (and use
+      checked arithmetic) or use .get(..); oversized values panic.
+    # Matches only slice bounds taken straight from a decoded header field
+    # (e.g. buf[..hdr.payload_len as usize]). Constants such as
+    # Header::SIZE and locally computed lengths are not peer-controlled and
+    # are deliberately not flagged. A length first copied into a local
+    # variable is not tracked; parsing-safety.yml covers that case.
     patterns:
       - pattern-either:
-          - pattern: $BUF[$VAR..]
-          - pattern: $BUF[..$VAR]
+          - pattern: $BUF[..$HDR.$FIELD as usize]
+          - pattern: $BUF[$START..$HDR.$FIELD as usize]
+          - pattern: $BUF[..$START + $HDR.$FIELD as usize]
+          - pattern: $BUF[$START..$START + $HDR.$FIELD as usize]
+          - pattern: $BUF[..$HDR.$FIELD]
+          - pattern: $BUF[$HDR.$FIELD..]
+          - pattern: $BUF[$HDR.$FIELD as usize..]
       - metavariable-regex:
-          metavariable: $VAR
-          regex: (?i).*(len|size|length|count).*
-      - pattern-not-inside: |
-          if $VAR <= $BOUND { ... }
-      - pattern-not-inside: |
-          if $VAR >= $BOUND { return ... }
+          metavariable: $FIELD
+          regex: ^[a-z_0-9]*(len|size|length|count)[a-z_0-9]*$
+      - metavariable-regex:
+          metavariable: $HDR
+          regex: ^[a-z_][a-z_0-9]*$
     paths:
       include:
         - "**/wire.rs"
         - "**/protocol.rs"
         - "**/receiver.rs"
         - "**/dispatch.rs"
+      exclude:
+        - "**/tests/**"
 
   # ============================================================================
   # MEMORY SAFETY IN HARDWARE REGISTERS
