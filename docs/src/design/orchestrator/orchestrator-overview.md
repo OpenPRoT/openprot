@@ -28,6 +28,9 @@ avoid the two drifting apart.
 - [**Platform Architecture**](./orchestrator-platform.md): The platform half around
   the core — surrounding services, capability contracts, the board device table,
   and the fail-safe rules at the responsibility boundary.
+- [**Slot Condition**](./orchestrator-slot-condition.md): What makes a slot
+  unusable, who records it, and how the record survives the reset that wipes
+  the RAM claims behind it.
 - [**Runtime**](./orchestrator-runtime.md): How the runtime loop
   gathers hardware interrupts, IPC channel messages, and watchdog deadlines into
   the core's event stream, and carries the resulting effects and decisions back
