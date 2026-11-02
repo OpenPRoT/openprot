@@ -620,9 +620,10 @@ fn entry() {
     }
     // `rot_owns_verdict` means the claim is about state the Firmware
     // Device cannot see, such as the SVN floor the RoT keeps, so the RoT
-    // writes the result sentinel and the Firmware Device only logs.
+    // writes the result sentinel and the Firmware Device only logs. The
+    // latch count is RoT state too, so the RoT shutdown reads it as well.
     #[cfg(rot_owns_verdict)]
-    let _ = if completed {
+    let _ = if completed && no_stray_latch {
         syscall::debug_shutdown(Ok(()))
     } else {
         syscall::debug_shutdown(Err(pw_status::Error::Internal))
@@ -1085,10 +1086,9 @@ enum Commit {
 /// errored or was withdrawn, so the count is zero.
 const EXPECT_LATCHES: u32 = 0;
 
-/// Whether the safe state stayed untouched. Checked on both outcomes,
-/// because an unexpected lockdown is likeliest in the runs that end
-/// badly by design, and in those runs the Firmware Device owns the
-/// verdict.
+/// Whether the driver engaged the safe state `EXPECT_LATCHES` times,
+/// which for these scenarios is never. A latch means the state machine
+/// reached `Locked`, and no other check in this file looks for that.
 fn latched_as_expected() -> bool {
     let latches = board_stubs::latches();
     if latches == EXPECT_LATCHES {
