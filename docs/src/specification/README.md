@@ -127,7 +127,7 @@ The following block diagram illustrates the high-level architecture of OpenPRoT.
 The OpenPRoT architecture can be broken down into the following layers:
 
 1.  **Hardware Abstraction Layer (HAL):** At the lowest level, the
-    [Driver Development Kit](./device_abstraction/README.md) (DDK) provides
+    [Driver Development Kit](./device_abstraction/index.md) (DDK) provides
     hardware abstractions. This layer is responsible for interfacing with the
     specific RoT silicon and platform hardware.
 2.  **Operating System:** Above the DDK sits the operating system, which
