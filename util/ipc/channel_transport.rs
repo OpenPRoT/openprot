@@ -1,7 +1,7 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! `util_service::AsyncTransport` over a kernel channel.
+//! `util_transport::AsyncTransport` over a kernel channel.
 //!
 //! `AsyncTransaction` lends the kernel `'static` buffers for the duration of
 //! a transaction, which a caller holding an ordinary `&[u8]` request cannot
@@ -13,7 +13,7 @@
 //! buffer, or a response longer than the caller's, is `TooLarge` rather than
 //! a truncated frame.
 
-use util_service::{AsyncTransport, TransportError};
+use util_transport::{AsyncTransport, TransportError};
 
 use super::async_transaction::{AsyncTransaction, Buffers};
 use super::IpcInitiator;
