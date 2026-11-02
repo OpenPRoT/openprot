@@ -17,8 +17,9 @@ done with `rustfmt` using the
 from the upstream [Pigweed](https://pigweed.googlesource.com/pigweed/pigweed) repository.
 
 Beyond formatting, openprot is embedded, security-critical firmware and review
-enforces the following constraints. See `.github/copilot-instructions.md` for
-the full list.
+enforces the following constraints. See
+[`.github/copilot-instructions.md`](https://github.com/OpenPRoT/openprot/blob/main/.github/copilot-instructions.md)
+for the full list.
 
 - **`no_std` only.** No heap types (`Vec`, `String`, `HashMap`, `Box`). Use
   fixed-size arrays and `heapless` collections.

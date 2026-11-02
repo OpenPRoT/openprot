@@ -73,11 +73,15 @@ to the named groups defined in `workflows.json`:
 - `./pw ci` - CI test suite, same exclusions plus `-verilator`.
 - `./pw upstream_pigweed` - `ci` plus the Earlgrey verilator tests.
 
-See `workflows.json` for the group definitions and `usage.md` for the everyday
+See
+[`workflows.json`](https://github.com/OpenPRoT/openprot/blob/main/workflows.json)
+for the group definitions and [`usage.md`](../usage.md) for the everyday
 command surface.
 
 ## Where to go next
 
-- `design/pw-kernel-ipc.md` - concrete `pw_kernel` IPC walkthrough.
-- `usage.md` - `./pw` and `bazel` command reference.
-- `architecture.md` - how the Pigweed pieces slot into the openprot tree.
+- [`design/pw-kernel-ipc.md`](./pw-kernel-ipc.md) - concrete `pw_kernel` IPC
+  walkthrough.
+- [`usage.md`](../usage.md) - `./pw` and `bazel` command reference.
+- [`architecture.md`](../architecture.md) - how the Pigweed pieces slot into
+  the openprot tree.
