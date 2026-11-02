@@ -1,7 +1,7 @@
 # Design
 
 This section contains design documents that provide a detailed overview of the
-design and implementation of the OpenProt project. These documents are intended
+design and implementation of the OpenPRoT project. These documents are intended
 to provide guidance to developers and anyone interested in the internal workings
 of the project.
 
