@@ -65,7 +65,56 @@ crate.from_cargo(
         "thumbv7em-none-eabi",
     ],
 )
-use_repo(crate, "rust_caliptra_crates", "rust_caliptra_crates_host", "rust_crates")
+
+# mdbook preprocessors for //docs. They are host-only tools, so they get their
+# own crate universe instead of joining the firmware crate graph in
+# //third_party/crates_io.
+crate.from_specs(
+    name = "rust_mdbook_plugins",
+    cargo_lockfile = "//third_party/mdbook_plugins:Cargo.lock",
+    supported_platform_triples = [
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin",
+    ],
+)
+crate.spec(
+    package = "mdbook-mermaid",
+    repositories = ["rust_mdbook_plugins"],
+    # 0.17 moved to the mdbook 0.5 preprocessor API; the mdbook shipped by
+    # rules_rust_mdbook is 0.4.
+    version = "=0.16.2",
+)
+crate.spec(
+    default_features = False,
+    package = "mdbook",
+    repositories = ["rust_mdbook_plugins"],
+    # mdbook-mermaid links the mdbook library for the preprocessor protocol and
+    # warns at build time when that version differs from the mdbook running it.
+    # Keep this equal to the mdbook that rules_rust_mdbook ships.
+    version = "=0.4.44",
+)
+crate.annotation(
+    crate = "mdbook-mermaid",
+    gen_binaries = ["mdbook-mermaid"],
+    repositories = ["rust_mdbook_plugins"],
+)
+crate.annotation(
+    # rules_rust appends these to the host C toolchain's CFLAGS. The pigweed
+    # clang toolchain enables `-Wundef -Werror`, which rejects the `#if` on
+    # undefined CFG_TARGET_OS_* macros when psm preprocesses its assembly.
+    build_script_env = {"CFLAGS": "-Wno-undef"},
+    crate = "psm",
+    repositories = ["rust_mdbook_plugins"],
+)
+use_repo(
+    crate,
+    "rust_caliptra_crates",
+    "rust_caliptra_crates_host",
+    "rust_crates",
+    "rust_mdbook_plugins",
+)
 
 pw_rust_crates_ext = use_extension("@pigweed//pw_build:pw_rust_crates_extension.bzl", "pw_rust_crates_extension")
 

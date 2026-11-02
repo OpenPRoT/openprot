@@ -7,6 +7,7 @@ mdbook(
     name = "docs",
     srcs = glob(["**"]),
     book = "book.toml",
+    plugins = ["//third_party/mdbook_plugins:mdbook-mermaid"],
 )
 
 mdbook_server(

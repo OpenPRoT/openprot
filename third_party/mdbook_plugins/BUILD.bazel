@@ -1,0 +1,16 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
+
+# mdbook resolves `[preprocessor.<name>] command = "..."` in book.toml by
+# looking the command up on PATH, so the plugin file must be called exactly
+# `mdbook-mermaid`. crate_universe names the binary it builds
+# `mdbook-mermaid__bin`; copy it to the name mdbook expects.
+copy_file(
+    name = "mdbook-mermaid",
+    src = "@rust_mdbook_plugins//:mdbook-mermaid__mdbook-mermaid",
+    out = "bin/mdbook-mermaid",
+    is_executable = True,
+    visibility = ["//docs:__pkg__"],
+)
