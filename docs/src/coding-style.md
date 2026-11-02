@@ -1,6 +1,8 @@
 # Coding Style
 
-This document describes the coding style used by this project.
+This document describes the coding style used by this project. The prose in
+the tree, meaning comments, doc comments, commit messages and the documents
+under `docs/`, follows [Writing Style](./writing-style.md).
 All of the formatters can be invoked by the `pw` utility script in the root of
 the project:
 

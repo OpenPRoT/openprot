@@ -27,6 +27,7 @@
 
 * [Architecture](./architecture.md)
 * [Coding Style](./coding-style.md)
+* [Writing Style](./writing-style.md)
 * [Contributing](./contributing.md)
 * [Development Process](./development-process.md)
 * [Design](./design/README.md)
