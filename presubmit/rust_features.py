@@ -10,7 +10,6 @@ running anything. Cargo features are set with `crate_features`.
 
 import ast
 import logging
-from pathlib import Path
 
 from pw_presubmit.presubmit import PresubmitContext, PresubmitFailure, filter_paths
 
@@ -55,7 +54,7 @@ def rust_features_check(ctx: PresubmitContext):
     failed = False
     for path in ctx.paths:
         try:
-            violations = find_violations(Path(path).read_text())
+            violations = find_violations(path.read_text())
         except (SyntaxError, UnicodeDecodeError) as exc:
             raise PresubmitFailure(f"failed to parse {path}: {exc}") from exc
         for line, rule in violations:
