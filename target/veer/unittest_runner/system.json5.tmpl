@@ -6,7 +6,9 @@
   },
   kernel: {
     flash_start_address: @KERNEL_FLASH_START@,
-    flash_size_bytes: 65536,
+    // Code, data, bss and stack all share this window, and the kernel unit-test
+    // corpus outgrew the 64 KiB that the other images use.
+    flash_size_bytes: 131072,
     ram_start_address: @KERNEL_RAM_START@,
     ram_size_bytes: 32768,
     interrupt_table: {
