@@ -51,6 +51,15 @@
                             start_address: 0x7e7b0000,
                             size_bytes: 0x4000,
                         },
+                        // SCUA54 (cache invalidate): the CM4F cache is write-
+                        // through and covers the slave DMA buffer, so the driver
+                        // must invalidate before reading what DMA wrote.
+                        {
+                            name: "scu_regs",
+                            type: "device",
+                            start_address: 0x7e6e2000,
+                            size_bytes: 0x1000,
+                        },
                     ],
 
                 },

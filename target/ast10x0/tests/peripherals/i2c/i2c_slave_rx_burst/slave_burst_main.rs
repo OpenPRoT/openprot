@@ -89,26 +89,10 @@ fn entry() {
             loop {}
         }
 
-        // TEMP DIAG: sentinel so stale bytes are distinguishable from fresh ones.
-        rx.fill(0xCC);
-
         let event = match client.slave_receive(&mut rx) {
             Ok(event) => event,
             Err(_) => fail!("slave_receive failed"),
         };
-
-        // TEMP DIAG: is a short frame the payload without its address byte, or a
-        // genuine truncation?
-        pw_log::info!(
-            "DIAG frame {} len={} bytes={:02x} {:02x} {:02x} {:02x} {:02x}",
-            received as u32,
-            event.data_len as u32,
-            rx[0] as u32,
-            rx[1] as u32,
-            rx[2] as u32,
-            rx[3] as u32,
-            rx[4] as u32,
-        );
 
         if event.data_len != FRAME_LEN {
             pw_log::error!(
