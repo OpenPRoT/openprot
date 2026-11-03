@@ -63,7 +63,8 @@
           "--keep_going",
           "--build_tag_filters=-hardware,-disabled,-verilator,-emulator,-qemu",
           "--test_tag_filters=-hardware,-disabled,-verilator,-emulator,-qemu",
-          "--test_output=streamed"
+          "--test_output=streamed",
+          "--build_event_json_file=${BUILD_ROOT}/pw_ci_tests_bep.json"
         ],
         "driver_options": {
           "@type": "pw.build.proto.BazelDriverOptions",
@@ -196,6 +197,20 @@
       "use_config": "bazel_default",
       "target": "//presubmit:presubmit",
       "type": "ANALYZER"
+    },
+    {
+      "name": "zero_test_audit",
+      "description": "Fail if a rust_test target in ci_tests ran zero tests",
+      "build_config": {
+        "name": "zero_test_audit_config",
+        "description": "Hand the audit the BEP file that ci_tests writes in its sibling build directory",
+        "build_type": "bazel",
+        "args": [
+          "--run_under=env ZERO_TESTS_BEP=${BUILD_ROOT}/../ci_tests_config/pw_ci_tests_bep.json"
+        ]
+      },
+      "target": "//presubmit:zero_tests",
+      "type": "ANALYZER"
     }
   ],
   "groups": [
@@ -226,6 +241,9 @@
         "earlgrey_qemu_tests",
         "caliptra_emulator_tests",
         "caliptra_fpga_build"
+      ],
+      "analyzers": [
+        "zero_test_audit"
       ]
     },
     {
