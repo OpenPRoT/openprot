@@ -12,15 +12,14 @@
 //! the slave's receive latch and mask the defect under test, so nothing touches
 //! the bus until the burst itself.
 //!
-//! The loop body currently logs per frame, which paces the sender enough for
-//! the receiver to keep up. Removing that log puts the burst back under the
-//! load that exposes the defect this test exists to show.
+//! Nothing paces the loop: frames go out back-to-back. The slave ACKs each
+//! address and then holds SCL low ("slave wait for FW") until its consumer has
+//! taken the previous frame, so a write blocks longer rather than failing.
 
 #![no_std]
 #![no_main]
 
 use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
-use ast10x0_peripherals::create_pins;
 use ast10x0_peripherals::i2c::{
     Ast1060I2c, Ast1060I2cRegisters, ClockConfig, I2cConfig, I2cSpeed, I2cXferMode,
 };
@@ -41,7 +40,7 @@ const BURST_LEN: u8 = 8;
 /// and boot. Its 500 KB upload alone takes about a minute. The serial log
 /// timestamps the message either side of this delay, so the achieved wait is
 /// readable from a run and this count can be retuned against it.
-const ARM_DELAY_SPINS: u64 = 2_000_000_000;
+const ARM_DELAY_SPINS: u64 = 500_000_000;
 
 /// Attempts per frame before the burst is declared failed. A refused frame means
 /// the slave has not re-armed yet, so retrying is the expected path, not an error.
@@ -68,14 +67,14 @@ fn i2c2_config() -> I2cConfig {
 fn run_master() -> Result<(), &'static str> {
     let board = Ast10x0Board::new(Ast10x0BoardDescriptor {
         pinctrl_groups: &[pinctrl::PINCTRL_I2C2],
+        i2c_buses: &[],
     });
     // SAFETY: single call at boot with exclusive access to SCU/I2C global regs.
     unsafe { board.init() }.map_err(|_| "board init failed")?;
 
-    // SAFETY: sole pin creation site in this binary, at boot; the pins! table is this chip's true pin map.
-    let pins = unsafe { create_pins() };
-    // Naming Bus 2's SCL/SDA pins binds that controller's registers at compile time.
-    let mmio = Ast1060I2cRegisters::from_pins(&pins.scu418_0, &pins.scu418_1);
+    // SAFETY: I2C2 registers accessed only through `master` for this test.
+    let mmio =
+        unsafe { Ast1060I2cRegisters::new(ast1060_pac::I2c2::ptr(), ast1060_pac::I2cbuff2::ptr()) };
     let mut master = Ast1060I2c::new(mmio, &i2c2_config(), |_| core::hint::spin_loop())
         .map_err(|_| "I2C2 master init failed")?;
 
@@ -86,28 +85,16 @@ fn run_master() -> Result<(), &'static str> {
     pw_log::info!("Master starting burst");
 
     for seq in 0..BURST_LEN {
-        // TEMP DIAG: this log is also the pacing — it buys the slave enough time
-        // between frames to re-arm. Remove it to put the burst back under load.
-        pw_log::info!("DIAG master sending seq={}", seq as u32);
         let mut attempts = 0;
         while master.write(SLAVE_ADDR, &frame(seq)).is_err() {
             attempts += 1;
             if attempts == MAX_RETRIES {
-                // TEMP DIAG
-                pw_log::error!("DIAG master gave up at seq={}", seq as u32);
+                pw_log::error!("master gave up at seq={}", seq as u32);
                 return Err("master write failed mid-burst");
             }
             for _ in 0..RETRY_SPINS {
                 core::hint::spin_loop();
             }
-        }
-        if attempts > 0 {
-            // TEMP DIAG
-            pw_log::info!(
-                "DIAG seq={} took {} retries",
-                seq as u32,
-                attempts as u32
-            );
         }
     }
 
