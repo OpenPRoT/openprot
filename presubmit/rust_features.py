@@ -33,7 +33,9 @@ def find_violations(source: str) -> list[tuple[int, str]]:
     """Returns (line, rule) for each Rust rule call that sets `features`.
 
     BUILD files are parsed as Python, which is a superset of the Starlark
-    subset they use. Raises SyntaxError if the source cannot be parsed.
+    subset they use. Rules are matched by call name, so a renamed load
+    (`load(..., rust_lib = "rust_library")`) is not caught. Raises SyntaxError
+    if the source cannot be parsed.
     """
     violations = []
     for node in ast.walk(ast.parse(source)):
