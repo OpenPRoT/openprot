@@ -157,9 +157,8 @@ where
                             }
                         },
                         Ok(None) => {
-                            pw_log::debug!(
-                                "slave IRQ fired but no data ready — spurious or non-data event"
-                            );
+                            // Routine: the driver handles a parked frame's
+                            // address phase itself and reports no event.
                         }
                         Err(_) => {
                             pw_log::error!("try_next_slave_event failed");
@@ -251,6 +250,13 @@ where
                         response_buf[payload_offset + 1..payload_offset + 1 + n]
                             .copy_from_slice(&bus.rx[..n]);
                         bus.rx_len = 0;
+                        // Only now that the client has actually taken the data:
+                        // re-arm the receive path so the hardware that was
+                        // holding the bus (clock-stretching) lets the next
+                        // master write through. This is what makes backpressure
+                        // reach the client instead of a fixed buffer silently
+                        // overwriting data it hasn't read yet.
+                        bus.driver.rearm_slave_receive();
                         encode_ok(&mut response_buf, metadata_size + n)
                     }
                 }
