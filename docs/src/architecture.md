@@ -152,8 +152,11 @@ test/runner tooling.
 - `target/earlgrey/` — OpenTitan Earl Grey. QEMU tests run on every PR;
   Verilator-driven tests are gated behind the `verilator` tag and the
   corresponding workflow group (see `workflows.json`).
-- `target/veer/` — Caliptra VeeR-EL2. Built on `pw_kernel` and exercised
-  on the Caliptra emulator via `target/veer/tooling/caliptra_runner.bzl`.
+- `target/veer/` — Caliptra VeeR-EL2. Built on `pw_kernel`. Tests under
+  `target/veer/tests/` run on the Caliptra emulator with
+  `bazel test //target/veer/...` and on a VCK190 FPGA with
+  `bazel test --config=fpga //target/veer/...`; see
+  [`target/veer/tooling/fpga/README.md`](https://github.com/OpenPRoT/openprot/blob/main/target/veer/tooling/fpga/README.md).
 
 When adding a new target, prefer the `target/<name>/defs.bzl` helpers over
 hand-rolled `rust_binary` rules, and always set `target_compatible_with =
