@@ -24,3 +24,17 @@ pw_py_test(
     main = "rust_features_test.py",
     deps = [":presubmit"],
 )
+
+pw_py_binary(
+    name = "zero_tests",
+    srcs = ["zero_tests.py"],
+    main = "zero_tests.py",
+)
+
+pw_py_test(
+    name = "zero_tests_test",
+    srcs = ["zero_tests_test.py"],
+    imports = [".."],
+    main = "zero_tests_test.py",
+    deps = [":zero_tests"],
+)
