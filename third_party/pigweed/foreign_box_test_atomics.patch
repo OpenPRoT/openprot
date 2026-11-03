@@ -1,0 +1,25 @@
+pw_kernel: Gate the ForeignRc ref-count test on native atomics
+
+`static_foreign_rc_ref_count_is_correct` instantiates `ForeignRc` with
+`core::sync::atomic::AtomicUsize`, which only implements
+`pw_atomic::AtomicUsize` when pw_atomic's `builtin_impls` feature is on.
+pw_atomic turns that feature off for riscv32 targets without the A
+extension (`riscv32imc-unknown-none-elf`), so the kernel unit-test build
+fails to compile on OpenPRoT's VeeR and Earl Grey targets. Upstream only
+runs these tests on hosts, Cortex-M and riscv32imac, where the impl exists.
+
+Remove this patch once the equivalent change lands in Pigweed.
+
+--- a/pw_kernel/lib/foreign_box/foreign_box.rs
++++ b/pw_kernel/lib/foreign_box/foreign_box.rs
+@@ -528,6 +528,10 @@
+         Ok(())
+     }
+
++    // `core::sync::atomic::AtomicUsize` only implements `pw_atomic::AtomicUsize`
++    // on targets with native compare-and-swap (the `builtin_impls` feature of
++    // `pw_atomic`), which riscv32 cores without the A extension lack.
++    #[cfg(target_has_atomic = "ptr")]
+     #[test]
+     fn static_foreign_rc_ref_count_is_correct() -> unittest::Result<()> {
+         let rc = unsafe { static_foreign_rc!(core::sync::atomic::AtomicUsize, u32, 42) };

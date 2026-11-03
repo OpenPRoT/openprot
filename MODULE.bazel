@@ -25,7 +25,9 @@ git_override(
     module_name = "pigweed",
     commit = "7ea8ded5447e71c4100135ea9d8fe5d68c0f9b9d",
     patch_args = ["-p1"],
-    patches = [],
+    # Keep these to the minimum needed to build and test downstream; each one
+    # should be on its way upstream.
+    patches = ["//third_party/pigweed:foreign_box_test_atomics.patch"],
     remote = "https://pigweed.googlesource.com/pigweed/pigweed",
 )
 
