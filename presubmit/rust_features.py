@@ -18,6 +18,8 @@ _LOG = logging.getLogger("rust_features")
 
 _RUST_RULES = frozenset(
     (
+        # Pigweed wrapper that forwards **kwargs to rust_binary.
+        "rust_app",
         "rust_binary",
         "rust_library",
         "rust_proc_macro",
