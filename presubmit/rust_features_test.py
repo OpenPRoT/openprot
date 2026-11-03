@@ -23,6 +23,10 @@ class FindViolationsTest(unittest.TestCase):
         src = 'cc_library(name = "a", features = ["-use_header_modules"])\n'
         self.assertEqual(find_violations(src), [])
 
+    def test_flags_features_on_rust_app(self):
+        src = 'rust_app(name = "x", features = ["test-support"])\n'
+        self.assertEqual(find_violations(src), [(1, "rust_app")])
+
     def test_flags_nested_call(self):
         src = 'if True:\n    rust_binary(name = "a", features = [])\n'
         self.assertEqual(find_violations(src), [(2, "rust_binary")])
