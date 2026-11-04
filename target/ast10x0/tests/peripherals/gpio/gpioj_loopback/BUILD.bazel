@@ -62,7 +62,7 @@ system_image(
 system_image_test(
     name = "gpioj_loopback_test",
     image = ":gpioj_loopback",
-    tags = ["hardware"],
+    tags = ["manual"],  # This test requires jumper wires to be connected between GPIOJ pin 4 and 5 which conflicts with other tests that use GPIOJ pin 4 and 5 used for I3C tests.
     target_compatible_with = select({
         "//target/ast10x0:qemu_enabled": ["@platforms//:incompatible"],
         "//conditions:default": [],
