@@ -621,7 +621,7 @@ def _do_bump_transaction(
         _info(f"caliptra_cfi: {old_cfi} -> {new_cfi} (Cargo.toml)")
         _info(
             "  NOTE: run 'CARGO_BAZEL_REPIN=1 bazel build "
-            "//target/veer/tooling:caliptra_runner' to regenerate Cargo.lock"
+            "//target/veer/...' to regenerate Cargo.lock"
         )
     else:
         _info(f"caliptra_cfi: already at {new_cfi} (no change)")
@@ -678,7 +678,7 @@ def _do_bump_transaction(
     print("    1. Check if overlay BUILD files need updating")
     print("       (upstream may have added/removed source files)")
     print("    2. Verify the build:")
-    print("       bazel build //target/veer/tooling:caliptra_runner")
+    print("       bazel test //target/veer/...")
     print("    3. Run tests and commit the changes")
     print("============================================================")
     return 0
