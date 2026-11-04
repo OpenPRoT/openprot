@@ -120,9 +120,9 @@ Design decisions:
   CancelUpdate and GetStatus have to be answerable mid-phase, so the gate has
   to return at 0% rather than park. Out of transport the state machine never
   leaves Idle, no session timer is running, and the UA has one outstanding
-  command whose response carries the outcome, so running the whole sequence
-  inside handle_pending_component costs nothing the UA can observe except its
-  own wait.
+  command whose response carries the outcome, so the whole sequence can run
+  inside handle_pending_component and the only thing the UA sees is a longer
+  wait for that response.
 - Minimal copies: firmware lands in its final staging region and is verified
   in place. FdOps::download_fw_data writes directly to the staging address;
   FdOps::verify reads from there. No intermediate buffers or extra copies
@@ -133,7 +133,7 @@ Design decisions:
 The FD pulls firmware chunks from the UA over MCTP. Each chunk is written to
 the staging region by FdOps::download_fw_data, which calls the flash device
 server over IPC. Firmware bytes do not pass through the orchestrator. After
-transfer, the FD asks the orchestrator for permission to verify, then runs
+transfer, the FD requests permission to verify from the orchestrator, then runs
 FdOps::verify (which delegates to the crypto service; the crypto service
 reads the staged image directly from the device server). The orchestrator
 also orders apply before the FD commits the image. The orchestrator handles
@@ -184,7 +184,7 @@ sequenceDiagram
     end
     end
 
-    Note over FD, Orch: transfer done, ask orchestrator to order verify
+    Note over FD, Orch: transfer done, nudge the orchestrator for the verify order
 
     FD->>UA: TransferComplete (MCTP)
     FD->>Orch: USER signal (nudge: verify pending)
@@ -213,7 +213,7 @@ sequenceDiagram
     end
     FD->>UA: VerifyComplete (MCTP)
 
-    Note over FD, Orch: verify done, ask orchestrator to order apply
+    Note over FD, Orch: verify done, nudge the orchestrator for the apply order
 
     FD->>Orch: USER signal (nudge: apply pending)
 
@@ -238,7 +238,7 @@ sequenceDiagram
     end
     FD->>UA: ApplyComplete (MCTP)
 
-    Note over FD, Orch: apply done, decide activation before the UA asks
+    Note over FD, Orch: apply done, decide activation before the UA requests it
 
     FD->>Orch: USER signal (nudge: activation decision)
 
@@ -322,7 +322,7 @@ pldm-interface/src/firmware_device/fd_context.rs), so there is no
 RequestUpdate, no PassComponentTable, no UpdateComponent and no update mode on
 this path. The FD never enters the download/verify/apply state machine.
 
-Everything we do hangs off one callback. pldm-lib decodes the request and calls
+One callback carries the whole path. pldm-lib decodes the request and calls
 FdOps::handle_pending_component, which is synchronous and returns a
 PendingComponentResult: Activated, ActivationNotRequired, or NotPermitted. The
 image is already in staging, so nothing downloads here: verify, apply and
@@ -350,9 +350,9 @@ inside the callback. pldm-lib drives nothing here: its state machine stays Idle,
 so there is no fd_progress to poll and no PLDM state to report through.
 
 The callback holds the responder for the whole sequence, so the UA gets no
-answer to CancelUpdate or GetStatus until it returns. In return the 0x1F
-response carries the real outcome: a verify or apply failure reaches the UA in
-the completion code instead of through our status path. A policy refusal still
+answer to CancelUpdate or GetStatus until it returns. The 0x1F response then
+carries the real outcome, so a verify or apply failure reaches the UA in the
+completion code instead of through our status path. A policy refusal still
 reads to the UA as no pending image, because Table 44 has no other code for it;
 the distinction lives orchestrator-side.
 
@@ -403,7 +403,7 @@ sequenceDiagram
     Crypto-->>FD: signal: Verdict
     end
 
-    Note over FD, Orch: verify done, ask orchestrator to order apply
+    Note over FD, Orch: verify done, nudge the orchestrator for the apply order
 
     FD->>Orch: USER signal (nudge: apply pending)
 
@@ -421,7 +421,7 @@ sequenceDiagram
     DevSrv-->>FD: signal: Ok
     end
 
-    Note over FD, Orch: apply done, ask orchestrator to order activation
+    Note over FD, Orch: apply done, nudge the orchestrator for the activation order
 
     FD->>Orch: USER signal (nudge: activation decision)
 
@@ -482,30 +482,29 @@ learns it stopped, is open; see the open questions.
 ## Write-access containment
 
 The FD never holds a flash handle. It writes through the device server, one
-ServiceCall per chunk, so the containment is the device server's to enforce.
+ServiceCall per chunk, so the device server is what enforces the containment.
 
 First layer, in software. The orchestrator arms the device server at
 AcceptOffer with the base address and total it just handed the FD, and disarms
 it when the staging window closes, by the rule below. Writes outside that
 range are rejected. This catches offset bugs in the FD. It does not catch a
-compromised FD, which can still ask the device server to write anywhere inside
+compromised FD, which can still have the device server write anywhere inside
 the window. Arming and disarming are orchestrator-to-device-server calls the
 diagrams do not show yet.
 
 Second layer, in hardware. The SMC write filter raises
 `SmcInterrupt::WriteProtected` on writes outside the allowed region
-(target/ast10x0/peripherals/smc/interrupts.rs). It sits in the eRoT's own
-controller, so it checks every write that reaches flash through that controller
-and cannot tell one eRoT-side writer from another. Whether the host can reach
-staging at all depends on how the board is wired, and this filter does not
-answer that. The orchestrator opens the region at AcceptOffer and closes it by
-the same rule. What this needs from the hardware is one thing: whoever drives
-erase and program must not reach the write-protect registers. How to get that
-is open. Three candidates: a separate chip select for staging, a separate MPU
-region over the filter registers, or lock-until-reset bits. The separate chip
-select is the current preference, and it is also what keeps the host off
-staging. Picking one needs the AST10x0 register layout, and it does not block
-the rest of this design.
+(target/ast10x0/peripherals/smc/interrupts.rs). It sits in the controller the
+eRoT drives, so it checks every write that reaches flash through that
+controller and cannot tell one eRoT-side writer from another. Whether the host
+can reach staging at all depends on how the board is wired, and this filter
+does not answer that. The orchestrator opens the region at AcceptOffer and closes it by
+the same rule. The hardware has to keep whoever drives erase and program away
+from the write-protect registers, and how to get that is open. The candidates
+are a separate chip select for staging, a separate MPU region over the filter
+registers, or lock-until-reset bits. The separate chip select is the current
+preference, and it keeps the host off staging as well. Picking one needs the
+AST10x0 register layout, and it does not block the rest of this design.
 
 Both windows close before PerformVerify and stay closed until the next
 AcceptOffer. Verify hashes what is on flash, and the verdict has to match the
@@ -520,23 +519,22 @@ left until such a board exists.
 
 Both layers cover staging only. Apply and activate are a separate problem: the
 FD initiates both as ServiceCalls to the device server, and the order gate for
-them lives inside the FD's own FdOps callback. A compromised FD skips its own
-gate and calls the device server directly. Closing that means the device server
-refuses apply and activate without an order it got from the orchestrator, not
-from the FD. Open, and not covered by the write filter, which spans staging
-only.
+them lives inside the FdOps callback in the FD. A compromised FD skips that
+gate and calls the device server directly. Closing it means the device server
+refuses apply and activate without an order that came from the orchestrator.
+That remains open.
 
-Out-of-transport is different. The FD writes nothing, so the first layer does
-not apply to it. The writer is the third party the orchestrator handed the
-staging address to, and the same two questions land on that path: what bounds
-its writes, and who opens the filter for it. Not answered here. The same close
-applies: whatever window that writer has shuts before ArmPendingImage, which is
-what makes the image eligible for activation at all. The orchestrator closes it
-when it learns the copy finished, and how it learns that is open.
+Out of transport the FD writes nothing, so the first layer does not apply. The
+writer is the third party the orchestrator handed the staging address to, and
+the same two questions land on that path: what bounds the writes, and who
+opens the filter for them. Neither is answered here. The window that writer has
+shuts before ArmPendingImage, which is what makes the image eligible for
+activation. The orchestrator closes it when it learns the copy finished, and
+how it learns that is open.
 
 ## Activation reporting
 
-The orchestrator decides activation before the UA asks for it. FdOps::activate
+The orchestrator decides activation before the UA requests it. FdOps::activate
 is synchronous, and what it returns is the completion code in the
 ActivateFirmware response. fd_progress never polls Activate either, so the FD
 cannot report 0% and wait there the way it does for verify and apply. Instead
@@ -545,10 +543,11 @@ nothing is waiting on it, and sends PerformActivate or RejectActivate. The FD
 stores that verdict and answers ActivateFirmware from it: an order returns
 success and starts the boot-preference ServiceCall, a denial returns
 INCOMPLETE_UPDATE, which per DSP0267 leaves the FD in READY XFER without
-activating. The gap before the UA asks is unbounded, so the order is revocable:
-a RejectActivate arriving later overrides a stored order, so CompromiseDetected
-can still stop an activation the UA has not asked for yet. Once the UA does
-ask, the FD has answered and the boot-preference call is running, so a refusal
+activating. The gap before the UA requests activation is unbounded, so the
+order is revocable: a RejectActivate arriving later overrides a stored order,
+so CompromiseDetected can still stop an activation the UA has not requested
+yet. Once the request arrives, the FD has answered and the boot-preference
+call is running, so a refusal
 racing that request loses. Closing that race needs the device server to refuse
 activate without an orchestrator-side order, which is the containment gap
 above. A session that ends any way but activation, a cancel or an FD_T1 timeout
@@ -556,12 +555,13 @@ alike, invalidates a stored order, and the FD nudges again when activation is
 done so the orchestrator can release staging and start judging the boot.
 
 CancelUpdate answers immediately too, from the FD's own state, the way pldm-lib
-already does it. AckCancel is the orchestrator's bookkeeping, not permission.
+already does it. AckCancel records the cancel on the orchestrator side and
+authorizes nothing.
 
-Activation reports, it does not roll back. The ActivateFirmware response means
-accepted, not done. The UA learns the outcome from GetStatus AuxStateStatus and
-from GetFirmwareParameters, which shows which version is actually active. The
-diagrams do not show that poll.
+The ActivateFirmware response means accepted, and a failed activation is not
+rolled back from here. The UA learns the outcome from GetStatus AuxStateStatus
+and from GetFirmwareParameters, which shows which version is actually active.
+The diagrams do not show that poll.
 
 A failed activation leaves the boot preference unchanged, so the old image
 keeps booting and the UA can retry. A bad new image is the trial boot's problem
@@ -631,7 +631,7 @@ out.
 
 ## Status
 
-QueryStatus answers with the condition the FD is really in. Some of those are
+QueryStatus answers with the condition the FD is in. Some of those are
 DSP0267 states: Idle carries the reason the FD went idle, one of the
 GetStatusReasonCode values, ActivateFw after an activation, a cancel reason, a
 timeout reason like VerifyTimeout, and nothing at all on a fresh start, which
@@ -642,20 +642,21 @@ carries the phase and the DSP0267 result code the FD already sent the UA. The
 rest are decisions the orchestrator owes the FD, the pending phases and
 SvnCommitPending.
 
-PhaseFailed is a real place to sit, not an error flag. A failed verify or apply
-leaves the FD in that phase with its request marked failed, waiting for the UA
-to cancel (process_verify_complete_rsp in
+PhaseFailed is a state the FD stays in. A failed verify or apply leaves the FD
+in that phase with its request marked failed, waiting for the UA to cancel
+(process_verify_complete_rsp in
 pldm-interface/src/firmware_device/fd_context.rs), and FD_T1 resets on every
-message, so a polling UA can hold it there for as long as it likes. The
+message, so a polling UA can hold it there indefinitely. The
 orchestrator therefore releases staging and closes the window on PhaseFailed
 rather than on the cancel that may follow much later; a retry re-enters through
-a new offer and reserves again. How the session continues is the UA's choice,
-not a field: a CancelUpdateComponent puts the FD in ReadyXfer, a CancelUpdate
-puts it in Idle. That exit is in-transport only. Out-of-transport the state
-machine is already Idle and cancel returns NOT_IN_UPDATE_MODE, so PhaseFailed
-there is a condition of the FD's own loop that the UA cannot clear.
+a new offer and reserves again. The UA chooses how the session continues and
+no status field records the choice: a CancelUpdateComponent puts the FD in
+ReadyXfer, a CancelUpdate puts it in Idle. That exit is in-transport only. Out
+of transport the state machine is already Idle and cancel returns
+NOT_IN_UPDATE_MODE, so PhaseFailed there is a condition of the loop in the FD
+that the UA cannot clear.
 
-Cancelled is a session condition with a lifetime. The FD reports it from the
+Cancelled lasts only from one command to another. The FD reports it from the
 UA's CancelUpdate until the orchestrator's AckCancel, and afterwards reports
 Idle or ReadyXfer depending on which cancel command arrived. That is what
 AckCancel does to the FD's state; it orders nothing.
@@ -736,9 +737,10 @@ does the same thing, the server raises on its bus channel and clears it when it
 answers the client's SlaveReceive (the `should_wake` raise and the
 `SlaveReceive` arm in services/i2c/server-runtime/src/lib.rs).
 
-The FD clears first, before it reads out the state it returns. In one thread the
-order cannot matter, since nothing can change between the two. It is the order
-that stays right if the loop ever yields mid-reply, and it is what i2c does.
+The FD clears first, before it reads out the state it returns. In one thread
+the order cannot matter, since nothing can change between the two. Clearing
+first stays correct if the loop ever yields mid-reply, and it is what i2c
+does.
 
 Events that trigger a nudge:
 - Offer ready (UA sent UpdateComponent, FD has target + total)
@@ -868,10 +870,10 @@ READABLE, WRITEABLE, ERROR, JOINABLE, USER and the interrupt bits (the
 `Signals` bitflags in pw_kernel/syscall/syscall_defs.rs). That matters because
 the staging reservation stays held, from AcceptOffer in-transport and from
 before ArmPendingImage out-of-transport, until the activated nudge, a cancel,
-or PhaseFailed. It is released by orchestrator code that only runs
-when the FD sends something, so nothing releases it until the chip resets.
+or PhaseFailed. Orchestrator code releases it, and that code runs only when
+the FD sends something, so the reservation stands until the chip resets.
 
-The plan is to let the FD tell us after the fact. A supervisor restarts it, the
+The plan is to learn it from the FD afterwards. A supervisor restarts it, the
 fresh FD nudges, and QueryStatus comes back Idle, or with a fresh offer, while
 the orchestrator still believes an update is in flight. That mismatch is the
 signal, and the orchestrator then closes the filter and frees staging. The
@@ -883,7 +885,7 @@ the supervisor joins it, before the restart
 this, because a restarted FD starts Idle and a new UA session cannot get past
 OfferPending without an AcceptOffer from the orchestrator.
 
-Two gaps remain. There is no supervisor: nothing in this tree calls
+Gaps remain. There is no supervisor: nothing in this tree calls
 `process_start` or `task_terminate`, and target/ast10x0/erot/system.json5 has
 no apps yet. Without one the stale nudge is never cleared either, so the
 orchestrator can wake on a nudge from an FD that is already gone. And an FD
@@ -927,8 +929,8 @@ AcceptOffer and Activate/Cancel.
 
 ## Gaps against the tree
 
-Where the code today does something other than this design. Each one is work
-to do, not a decision taken back.
+Where the code today does something other than this design. Each entry is
+work still to do.
 
 The FD blocks inside the FdOps callback instead of returning at 0%. It raises
 the USER signal on the orchestrator and then serves only the orchestrator
