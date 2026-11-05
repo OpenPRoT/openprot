@@ -15,7 +15,9 @@ pub mod registers;
 pub mod spi;
 pub mod types;
 
-pub use controller::{Ready, ReadySmc, Smc, UninitSmc, Uninitialized};
+pub use controller::{
+    Cs, GeometrySource, Pinned, Ready, ReadySmc, Smc, SmcMode, UninitSmc, Uninitialized,
+};
 pub use device::{
     BlockDeviceInfo, FlashAddressingPolicy, FlashCommandProfile, JedecId, SpiNorBlockDevice,
     SpiNorFlash, SpiNorFlashDevice,
@@ -24,9 +26,10 @@ pub use fmc::{FmcReady, FmcUninit};
 pub use interrupts::{SmcInterrupt, SmcInterruptDecoder};
 pub use spi::{SpiReady, SpiTransaction, SpiUninit};
 pub use types::{
-    AddressWidth, ChipSelect, FlashConfig, SmcConfig, SmcController, SmcError, SmcRetryable,
-    SmcTopology, TransferMode,
+    AddressWidth, ChipSelect, Discover, FlashConfig, SmcConfig, SmcController, SmcError,
+    SmcInstance, SmcRetryable, SmcTopology, TransferMode,
 };
+pub use util_sfdp::FlashGeometry;
 
 /// Result type for SMC operations
 pub type Result<T> = core::result::Result<T, SmcError>;

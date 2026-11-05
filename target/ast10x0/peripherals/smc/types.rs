@@ -5,6 +5,8 @@
 
 use embedded_storage::nor_flash::{NorFlashError, NorFlashErrorKind};
 
+use crate::smc::controller::GeometrySource;
+
 /// Terminal errors: operation failed, don't retry
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SmcError {
@@ -40,7 +42,7 @@ pub enum SmcError {
 pub enum ChipSelect {
     /// Primary chip select (CS0) — always valid when any flash is configured.
     Cs0 = 0,
-    /// Secondary chip select (CS1) — valid only when `SmcConfig.cs1.is_some()`.
+    /// Secondary chip select (CS1) — valid only when `SmcConfig.cs1` is `Some`.
     Cs1 = 1,
 }
 
@@ -151,7 +153,7 @@ pub enum SmcController {
 
 impl SmcController {
     /// Get the base hardware address for this controller
-    pub fn base_address(&self) -> usize {
+    pub const fn base_address(&self) -> usize {
         match self {
             Self::Fmc => 0x7E620000,
             Self::Spi1 => 0x7E630000,
@@ -160,7 +162,7 @@ impl SmcController {
     }
 
     /// Get the memory-mapped flash window address
-    pub fn flash_window_address(&self) -> usize {
+    pub const fn flash_window_address(&self) -> usize {
         match self {
             Self::Fmc => 0x80000000,
             Self::Spi1 => 0x90000000,
@@ -178,44 +180,21 @@ impl SmcController {
     }
 }
 
-/// Configuration for a single flash device
+/// Per-chip-select input configuration. Holds only the SPI clock; the flash
+/// geometry is resolved once at init from the [`SmcInstance`]'s per-CS
+/// [`GeometrySource`](crate::smc::controller::GeometrySource).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FlashConfig {
-    /// Device capacity in MB
-    pub capacity_mb: u32,
-    /// Page size in bytes (typically 256)
-    pub page_size: u32,
-    /// Sector size in bytes (typically 4096)
-    pub sector_size: u32,
-    /// Block size in bytes (typically 65536)
-    pub block_size: u32,
     /// Desired SPI clock frequency in MHz
     pub spi_clock_mhz: u32,
 }
 
-impl FlashConfig {
-    /// Winbond W25Q64 (8 MB) configuration
-    pub const fn winbond_w25q64() -> Self {
-        Self {
-            capacity_mb: 8,
-            page_size: 256,
-            sector_size: 4096,
-            block_size: 65536,
-            spi_clock_mhz: 25,
-        }
-    }
-
-    /// Winbond W25Q256 (32 MB) configuration
-    pub const fn winbond_w25q256() -> Self {
-        Self {
-            capacity_mb: 32,
-            page_size: 256,
-            sector_size: 4096,
-            block_size: 65536,
-            spi_clock_mhz: 25,
-        }
-    }
-}
+/// Geometry-source marker: discover the geometry by reading SFDP from the chip.
+///
+/// This is the only place SFDP discovery lives; a build whose markers never name
+/// `Discover` never links the SFDP decode code.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Discover;
 
 /// SPI controller topology: role and master index
 ///
@@ -270,14 +249,15 @@ impl SmcTopology {
     }
 }
 
-/// Per-controller configuration
+/// Per-controller input configuration.
+///
+/// A chip select is present when its slot is `Some`. Geometry is not stored
+/// here; it is supplied per chip when the handle is built (`cs0`/`cs1`).
 #[derive(Clone, Copy, Debug)]
 pub struct SmcConfig {
-    /// Which controller to configure
-    pub controller_id: SmcController,
-    /// Optional configuration for CS0 flash device
+    /// Configuration for the CS0 flash device, if present
     pub cs0: Option<FlashConfig>,
-    /// Optional configuration for CS1 flash device
+    /// Configuration for the CS1 flash device, if present
     pub cs1: Option<FlashConfig>,
     /// Enable DMA transfers
     pub dma_enabled: bool,
@@ -285,4 +265,40 @@ pub struct SmcConfig {
     pub enable_interrupts: bool,
     /// Controller topology (role and master index)
     pub topology: SmcTopology,
+}
+
+/// Compile-time description of a wired SMC controller: which hardware block it
+/// is and how it is configured.
+///
+/// A target implements this on a zero-sized marker type, one per wired
+/// controller. Because both fields are `const`, everything derivable from them —
+/// segment layout, decode-region size, memory-map bases, flash-type config bits —
+/// is computed at compile time, and an invalid configuration becomes a build
+/// error rather than a runtime `Err`. The controller carries this marker as a
+/// type parameter, so its configuration is never laundered through a runtime
+/// value.
+pub trait SmcInstance {
+    /// Which hardware controller this marker describes.
+    const CONTROLLER: SmcController;
+    /// The controller's configuration (chip selects, clocks, topology, …).
+    const CONFIG: SmcConfig;
+    /// How CS0's geometry is resolved at init: [`Discover`] to read SFDP, or a
+    /// target-defined [`GeometrySource`] returning a fixed geometry. Only
+    /// consulted when `CONFIG.cs0` is `Some`. Defaults to [`Discover`].
+    ///
+    /// To pin geometry instead of discovering it, define the struct up top and
+    /// name it in the type slot:
+    /// ```ignore
+    /// const CS0_GEOM: FlashGeometry = FlashGeometry {
+    ///     capacity_bytes: 0x0400_0000,
+    ///     page_size: 256,
+    ///     sector_size: 4096,
+    ///     block_size: 65536,
+    /// };
+    /// type Cs0Geometry = Pinned<CS0_GEOM>;
+    /// ```
+    type Cs0Geometry: GeometrySource = Discover;
+    /// How CS1's geometry is resolved at init. Only consulted when `CONFIG.cs1`
+    /// is `Some`. Defaults to [`Discover`].
+    type Cs1Geometry: GeometrySource = Discover;
 }

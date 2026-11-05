@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 #![no_std]
+#![feature(associated_type_defaults)]
+#![feature(adt_const_params)]
 
 pub mod gpio;
 pub mod hace;
