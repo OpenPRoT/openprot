@@ -34,23 +34,25 @@ impl<'a> SpiTransaction<'a> {
             proprietary_state: None,
         };
 
-        if let Some(spim) = spim {
-            let scu = unsafe { ScuRegisters::new_global_unlocked() };
-            scu.validate_spim_instance(spim)
-                .map_err(|_| SmcError::HardwareError)?;
-
-            if spi.master_idx() != 0 {
-                scu.set_spim_internal_mux(Self::spim_source(spi)?, spim as u8 + 1)
+        let scu = unsafe { ScuRegisters::new_global() };
+        scu.unlock_and_lock_after(|scu| {
+            if let Some(spim) = spim {
+                scu.validate_spim_instance(spim)
                     .map_err(|_| SmcError::HardwareError)?;
-                mux_state.internal_mux_active = true;
+
+                if spi.master_idx() != 0 {
+                    scu.set_spim_internal_mux(Self::spim_source(spi)?, spim as u8 + 1)
+                        .map_err(|_| SmcError::HardwareError)?;
+                    mux_state.internal_mux_active = true;
+                }
+
+                mux_state.proprietary_state = scu.spim_proprietary_pre_config();
             }
 
-            mux_state.proprietary_state = scu.spim_proprietary_pre_config();
-        }
-
-        Ok(Self {
-            spi,
-            previous_mux: Some(mux_state),
+            Ok(Self {
+                spi,
+                previous_mux: Some(mux_state),
+            })
         })
     }
 
@@ -148,15 +150,16 @@ impl<'a> SpiTransaction<'a> {
     fn finish_restore(&mut self) -> Result<(), SmcError> {
         if let Some(state) = self.previous_mux.take() {
             if state.spim_present {
-                let scu = unsafe { ScuRegisters::new_global_unlocked() };
+                let scu = unsafe { ScuRegisters::new_global() };
+                scu.unlock_and_lock_after(|scu| {
+                    if let Some(proprietary_state) = state.proprietary_state {
+                        scu.spim_proprietary_post_config(proprietary_state);
+                    }
 
-                if let Some(proprietary_state) = state.proprietary_state {
-                    scu.spim_proprietary_post_config(proprietary_state);
-                }
-
-                if state.internal_mux_active {
-                    scu.clear_spim_internal_master_route();
-                }
+                    if state.internal_mux_active {
+                        scu.clear_spim_internal_master_route();
+                    }
+                })
             }
         }
 
@@ -176,15 +179,16 @@ impl Drop for SpiTransaction<'_> {
     fn drop(&mut self) {
         if let Some(state) = self.previous_mux.take() {
             if state.spim_present {
-                let scu = unsafe { ScuRegisters::new_global_unlocked() };
+                let scu = unsafe { ScuRegisters::new_global() };
+                scu.unlock_and_lock_after(|scu| {
+                    if let Some(proprietary_state) = state.proprietary_state {
+                        scu.spim_proprietary_post_config(proprietary_state);
+                    }
 
-                if let Some(proprietary_state) = state.proprietary_state {
-                    scu.spim_proprietary_post_config(proprietary_state);
-                }
-
-                if state.internal_mux_active {
-                    scu.clear_spim_internal_master_route();
-                }
+                    if state.internal_mux_active {
+                        scu.clear_spim_internal_master_route();
+                    }
+                })
             }
         }
     }

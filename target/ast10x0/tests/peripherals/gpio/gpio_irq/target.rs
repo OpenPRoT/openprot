@@ -20,8 +20,10 @@ impl TargetInterface for Target {
     fn main() -> ! {
         // SAFETY: single call at boot with exclusive access to SCU global registers.
         unsafe {
-            let scu = ScuRegisters::new_global_unlocked();
-            scu.apply_pinctrl_group(pinctrl::PINCTRL_GPIOA0);
+            let scu = ScuRegisters::new_global();
+            scu.unlock_and_lock_after(|scu| {
+                scu.apply_pinctrl_group(pinctrl::PINCTRL_GPIOA0);
+            });
         }
 
         codegen::start();
