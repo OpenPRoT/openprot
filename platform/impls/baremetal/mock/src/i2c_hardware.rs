@@ -266,36 +266,40 @@ impl Default for MockI2cConfig {
 /// the OpenPRoT hardware traits. All operations are no-ops or return predictable
 /// dummy data, making it perfect for unit testing and development.
 ///
-/// # Memory Usage (Exact Calculation)
+/// # Memory Usage
+///
+/// Measured with `-Zprint-type-sizes` on `thumbv7m-none-eabi`,
+/// `riscv32imc-unknown-none-elf` and `x86_64-unknown-linux-gnu`. The field
+/// order is the one rustc chose, not the declaration order; it is not
+/// guaranteed and may change between compiler versions.
 ///
 /// ```text
-/// Field                    | Size (bytes) | Alignment
-/// -------------------------|--------------|----------
-/// config                   |     5        |    4
-/// initialized              |     1        |    1
-/// [padding]                |     2        |    -
-/// slave_enabled            |     1        |    1
-/// slave_address            |     1        |    1
-/// [padding]                |     6        |    -
-/// slave_rx_buffer          |    64        |    1
-/// slave_rx_count           |     8        |    8
-/// slave_tx_buffer          |    64        |    1
-/// [padding]                |     7        |    -
-/// slave_tx_count           |     8        |    8
-/// last_slave_event         |     1        |    1
-/// [padding]                |     7        |    -
-/// -------------------------|--------------|----------
-/// TOTAL                    |   168 bytes  |    8
+/// Field                    | Offset | Size | Align | Offset | Size | Align
+///                          | 32-bit target         | 64-bit target
+/// -------------------------|--------|------|-------|--------|------|------
+/// slave_rx_buffer          |     0  |  64  |   1   |     0  |  64  |   1
+/// slave_tx_buffer          |    64  |  64  |   1   |    64  |  64  |   1
+/// slave_rx_count           |   128  |   4  |   4   |   128  |   8  |   8
+/// slave_tx_count           |   132  |   4  |   4   |   136  |   8  |   8
+/// config                   |   136  |   8  |   4   |   144  |   8  |   4
+/// last_slave_event         |   144  |   1  |   1   |   152  |   1  |   1
+/// slave_address            |   145  |   2  |   1   |   153  |   2  |   1
+/// initialized              |   147  |   1  |   1   |   155  |   1  |   1
+/// slave_enabled            |   148  |   1  |   1   |   156  |   1  |   1
+/// [end padding]            |   149  |   3  |   -   |   157  |   3  |   -
+/// -------------------------|--------|------|-------|--------|------|------
+/// TOTAL                    |        | 152  |   4   |        | 160  |   8
 /// ```
 ///
-/// **Final Size**: 168 bytes per instance (72% reduction from original 608 bytes)
+/// **Final Size**: 152 bytes per instance on 32-bit targets, 160 bytes on
+/// 64-bit targets
 ///
-/// **Memory Breakdown**:
-/// - Base fields: 16 bytes (config, flags, addresses)
+/// **Memory Breakdown** (32-bit / 64-bit):
 /// - Slave buffers: 128 bytes (2x 64-byte arrays)
-/// - Counters: 16 bytes (2x usize = 2x 8 bytes on 64-bit)
-/// - Event storage: 1 byte (enum discriminant)
-/// - Padding: 7 bytes (for alignment)
+/// - Counters: 8 / 16 bytes (2x usize)
+/// - Base fields: 12 bytes (config including its 3 padding bytes, flags, address)
+/// - Event storage: 1 byte (`Option<enum>`, `None` stored in a niche)
+/// - End padding: 3 bytes (for alignment)
 ///
 /// # Examples
 ///
@@ -321,7 +325,7 @@ impl Default for MockI2cConfig {
 /// ```
 #[derive(Debug)]
 pub struct MockI2cHardware {
-    /// Current configuration settings (5 bytes: bool + u32)
+    /// Current configuration settings (8 bytes: u32 + bool + 3 bytes padding)
     config: MockI2cConfig,
     /// Whether init() has been called (1 byte)
     initialized: bool,
@@ -329,15 +333,15 @@ pub struct MockI2cHardware {
     // Slave mode fields
     /// Whether slave mode is currently enabled (1 byte)
     slave_enabled: bool,
-    /// Currently configured slave address (1 byte: `Option<u8>`)
+    /// Currently configured slave address (2 bytes: `Option<u8>`)
     slave_address: Option<SevenBitAddress>,
     /// Slave receive buffer (64 bytes) - realistic I2C message size
     slave_rx_buffer: [u8; 64],
-    /// Number of valid bytes in receive buffer (8 bytes: usize on 64-bit)
+    /// Number of valid bytes in receive buffer (usize: 4 bytes on 32-bit, 8 on 64-bit)
     slave_rx_count: usize,
     /// Slave transmit buffer (64 bytes) - realistic I2C message size  
     slave_tx_buffer: [u8; 64],
-    /// Number of valid bytes in transmit buffer (8 bytes: usize on 64-bit)
+    /// Number of valid bytes in transmit buffer (usize: 4 bytes on 32-bit, 8 on 64-bit)
     slave_tx_count: usize,
     /// Most recent slave event that occurred (1 byte: `Option<enum>`)
     last_slave_event: Option<openprot_hal_blocking::i2c_hardware::slave::I2cIsrEvent>,
