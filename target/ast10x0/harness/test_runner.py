@@ -287,6 +287,7 @@ def _run_remote(
     """SCP firmware and runner to Pi; stream UART back over SSH stdout."""
     host = args.pi_host
     dev_a = config["device_a"]
+    gpio = config.get("gpio", {})
     baudrate = args.baudrate if args.baudrate else config["baudrate"]
 
     remote_dir = "/tmp/ast1060_test"
