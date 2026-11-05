@@ -1,18 +1,97 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-// I2C slave RX burst test — master side memory layout.
-// Single kernel binary; mirrors i2c_slave_rx_ipc/master_system.json5.
+// AST10x0 I2C burst test — master side: i2c_server (hw owner, DMA mode) +
+// i2c_burst_master (sender). Same shape as the PLDM firmware-update test's
+// update agent: an IPC client behind a DMA-mode i2c_server, not a bare-metal
+// register driver, so a master-side write exercises the same `write_dma_mode`
+// path real PLDM traffic uses.
+//
+// Memory layout:
+//   0x00000000 - 0x000007FF: Vector table (2048 bytes)
+//   0x00000800 - 0x0001FFFF: Kernel flash (~126KB)
+//   0x00020000 - 0x0003FFFF: i2c_server flash (128KB)
+//   0x00040000 - 0x0005FFFF: i2c_burst_master flash (128KB)
+//   0x00060000 - 0x0007FFFF: Kernel RAM (128KB)
+//   0x00080000 - 0x0008FFFF: i2c_server RAM (64KB)
+//   0x00090000 - 0x00097FFF: i2c_burst_master RAM (32KB)
 {
     arch: {
         type: "armv7m",
         vector_table_start_address: 0x00000000,
-        vector_table_size_bytes: 1280,  // 0x500 (320 vectors)
+        vector_table_size_bytes: 2048,
     },
     kernel: {
-        flash_start_address: 0x00000500,
-        flash_size_bytes: 262144,         // 256KB
-        ram_start_address: 0x00040500,
-        ram_size_bytes: 391936,           // ends at RAM_NC boundary (0x000A0000)
+        flash_start_address: 0x00000800,
+        flash_size_bytes: 129024,
+        ram_start_address: 0x00060000,
+        ram_size_bytes: 131072,
     },
+    apps: [
+        {
+            name: "i2c_server_master",
+            flash_size_bytes: 131072,
+            processes: [
+                {
+                    name: "i2c_server_master_process",
+                    ram_size_bytes: 65536,
+                    objects: [
+                        { name: "wg",       type: "wait_group" },
+                        { name: "i2c",      type: "channel_handler" },
+                        {
+                            name: "i2c2_irq",
+                            type: "interrupt",
+                            irqs: [{ name: "i2c2", number: 112 }],
+                        },
+                        {
+                            type: "thread",
+                            name: "i2c_server_master_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },],
+                    memory_mappings: [
+                        {
+                            name: "i2c_regs",
+                            type: "device",
+                            start_address: 0x7e7b0000,
+                            size_bytes: 0x4000,
+                        },
+                        // Unused by this bus's master-only role (no slave_read
+                        // cache-invalidate ever runs here), kept for parity with
+                        // the known-working slave-side config.
+                        {
+                            name: "scu_regs",
+                            type: "device",
+                            start_address: 0x7e6e2000,
+                            size_bytes: 0x1000,
+                        },
+                    ],
+
+                },
+            ],
+        },
+        // ──── I2C Burst Master (sender) ────
+        {
+            name: "i2c_burst_master",
+            flash_size_bytes: 131072,
+            processes: [
+                {
+                    name: "i2c_burst_master_process",
+                    ram_size_bytes: 32768,
+                    objects: [
+                        {
+                            name: "i2c",
+                            type: "channel_initiator",
+                            handler_process: "i2c_server_master_process",
+                            handler_object_name: "i2c",
+                        },
+                        {
+                            type: "thread",
+                            name: "i2c_burst_master_thread",
+                            kernel_stack_size_bytes: 2048,
+                        },],
+
+                },
+            ],
+        },
+    ],
 }
