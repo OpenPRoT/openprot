@@ -38,8 +38,10 @@ use userspace::time::Instant;
 pub struct Bus<B> {
     /// IPC channel handle (`channel_handler`) dedicated to this bus.
     pub channel: u32,
-    /// IRQ handle for this bus's controller.
-    pub irq: u32,
+    /// IRQ handle for this bus's controller, or `None` for a bus that never
+    /// arms slave notification — master writes complete by polling status
+    /// registers, so there is nothing for the interrupt to deliver.
+    pub irq: Option<u32>,
     /// The bus driver — implements both the master and slave seams.
     pub driver: B,
     notif_enabled: bool,
@@ -51,7 +53,7 @@ pub struct Bus<B> {
 }
 
 impl<B> Bus<B> {
-    pub const fn new(channel: u32, irq: u32, driver: B) -> Self {
+    pub const fn new(channel: u32, irq: Option<u32>, driver: B) -> Self {
         Self {
             channel,
             irq,
@@ -100,8 +102,10 @@ where
         {
             pw_log::error!("wait_group_add bus channel failed");
         }
-        if let Err(_) = syscall::wait_group_add(wg, bus.irq, irq_signals, bus.irq as usize) {
-            pw_log::error!("wait_group_add irq failed");
+        if let Some(irq) = bus.irq {
+            if let Err(_) = syscall::wait_group_add(wg, irq, irq_signals, irq as usize) {
+                pw_log::error!("wait_group_add irq failed");
+            }
         }
     }
 
@@ -117,12 +121,18 @@ where
         // ---- hardware slave IRQ: drain the armed bus, ack, wake client ----
         // Each bus registered its IRQ with user_data = bus.irq, so check if this
         // signal came from an IRQ (vs. a client channel READABLE event).
-        if w.pending_signals.contains(irq_signals) {
+        if w.pending_signals.intersects(irq_signals) {
             let irq = w.user_data as u32;
             let acked = w.pending_signals & irq_signals;
-            if let Some(bus) = buses.iter_mut().find(|b| b.irq == irq) {
+            if let Some(bus) = buses.iter_mut().find(|b| b.irq == Some(irq)) {
+                // Service the controller even with no client listening: a master
+                // write leaves I2CM14 latched, holding the shared IRQ line
+                // asserted, and only the driver clears it. Skipping this makes
+                // the `interrupt_ack` below re-enable an interrupt that is still
+                // asserted, so it re-fires forever.
+                let event = bus.driver.try_next_slave_event();
                 if bus.notif_enabled {
-                    match bus.driver.try_next_slave_event() {
+                    match event {
                         Ok(Some((kind, _))) => match kind {
                             I2cIsrEvent::SlaveWrRecvd => {
                                 // Master finished writing — drain buffer into latch.
@@ -157,9 +167,8 @@ where
                             }
                         },
                         Ok(None) => {
-                            pw_log::debug!(
-                                "slave IRQ fired but no data ready — spurious or non-data event"
-                            );
+                            // Routine: the driver handles a parked frame's
+                            // address phase itself and reports no event.
                         }
                         Err(_) => {
                             pw_log::error!("try_next_slave_event failed");
@@ -251,6 +260,13 @@ where
                         response_buf[payload_offset + 1..payload_offset + 1 + n]
                             .copy_from_slice(&bus.rx[..n]);
                         bus.rx_len = 0;
+                        // Only now that the client has actually taken the data:
+                        // re-arm the receive path so the hardware that was
+                        // holding the bus (clock-stretching) lets the next
+                        // master write through. This is what makes backpressure
+                        // reach the client instead of a fixed buffer silently
+                        // overwriting data it hasn't read yet.
+                        bus.driver.rearm_slave_receive();
                         encode_ok(&mut response_buf, metadata_size + n)
                     }
                 }

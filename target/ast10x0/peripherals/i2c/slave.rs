@@ -16,6 +16,14 @@ const BUFFER_SIZE: usize = 32;
 /// Maximum slave receive buffer size (hardware limitation)
 pub const SLAVE_BUFFER_SIZE: usize = 256;
 
+/// Write-1-only control for the slave command register (i2cs28 bit 31).
+///
+/// With this bit set the write asserts just the bits that are 1 and leaves the
+/// rest of I2CS28 as it was, so re-asserting the buffer-enable does not rewrite
+/// the active-address selection (18:17) or packet-mode enable (16) underneath a
+/// parked transaction.
+const AST_I2CS_CMD_W1T: u32 = 1 << 31;
+
 /// Slave RX DMA enable bit in slave command register (i2cs28 bit 9).
 ///
 /// When set, the hardware writes received bytes into the DMA buffer pointed to
@@ -141,8 +149,8 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
     /// Arm slave receive path based on transfer mode.
     fn arm_slave_receive(&mut self, cmd: &mut u32) {
         if self.xfer_mode == I2cXferMode::DmaMode {
-            if let Some(dma_buf) = self.slave_dma_buf.as_deref_mut() {
-                let dma_addr = dma_buf.as_mut_ptr() as u32;
+            if let Some(dma_buf) = self.slave_dma_buf.as_deref() {
+                let dma_addr = dma_buf.as_ptr() as u32;
                 let dma_len = u16::try_from(dma_buf.len().min(4096) - 1).unwrap_or(u16::MAX);
                 unsafe {
                     self.regs().i2cs4c().write(|w| w.bits(0));
@@ -210,45 +218,18 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
             cmd |= constants::AST_I2CS_ACTIVE_ALL;
         }
 
-        if self.xfer_mode == I2cXferMode::BufferMode {
-            cmd |= constants::AST_I2CS_RX_BUFF_EN;
-            self.regs()
-                .i2cc0c()
-                .write(|w| unsafe { w.rx_pool_buffer_size().bits(constants::I2C_BUF_SIZE - 1) });
-        } else if self.xfer_mode == I2cXferMode::DmaMode {
-            if let Some(dma_buf) = self.slave_dma_buf.as_deref_mut() {
-                // Arm slave DMA: point hardware at the non-cached buffer and enable RX_DMA.
-                // i2cs38/i2cs3c hold the physical DMA buffer address (same address in
-                // both registers — the hardware uses both for different address widths).
-                // i2cs2c sets the DMA receive length and enables the length register.
-                let dma_addr = dma_buf.as_mut_ptr() as u32;
-                let dma_len = u16::try_from(dma_buf.len().min(4096) - 1).unwrap_or(u16::MAX);
-                unsafe {
-                    self.regs().i2cs38().write(|w| w.bits(dma_addr));
-                    self.regs().i2cs3c().write(|w| w.bits(dma_addr));
-                    self.regs().i2cs2c().write(|w| {
-                        w.dmarx_buf_len_byte()
-                            .bits(dma_len)
-                            .dmarx_buf_len_wr_enbl_for_cur_cmd()
-                            .set_bit()
-                    });
-                }
-                cmd |= AST_I2CS_RX_DMA_EN;
-            } else {
-                // No DMA buffer provided — fall back to buffer mode.
-                cmd |= constants::AST_I2CS_RX_BUFF_EN;
-                self.regs().i2cc0c().write(|w| unsafe {
-                    w.rx_pool_buffer_size().bits(constants::I2C_BUF_SIZE - 1)
-                });
-            }
-        } else {
-            cmd &= !constants::AST_I2CS_PKT_MODE_EN;
-        }
+        // Reuse the exact same arm sequence every re-arm uses, instead of a
+        // hand-duplicated copy that can quietly drift out of sync with it.
+        self.arm_slave_receive(&mut cmd);
 
         // Set slave command register
         unsafe {
             self.regs().i2cs28().write(|w| w.bits(cmd));
         }
+
+        // The first frame is paid for by this setup, so it can park and resume
+        // like any other.
+        self.slave_rx_credit = true;
 
         // Enable slave interrupts
         self.enable_slave_interrupts();
@@ -344,20 +325,43 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
             self.copy_from_buffer(&mut tmp[..to_read])?;
             buffer[..to_read].copy_from_slice(&tmp[..to_read]);
 
-            // Re-enable RX buffer
-            let mut cmd = constants::AST_I2CS_ACTIVE_ALL | constants::AST_I2CS_PKT_MODE_EN;
-            cmd |= constants::AST_I2CS_RX_BUFF_EN;
-            unsafe {
-                self.regs().i2cs28().write(|w| w.bits(cmd));
-            }
-
+            // Deliberately not re-armed here: see `rearm_slave_receive()`.
             Ok(to_read)
         } else if self.xfer_mode == I2cXferMode::DmaMode {
             // DMA mode: the hardware has already DMA'd into `self.dma_buf`.
             // AST_I2CC_SLAVE_PKT_SAVE_ADDR deposits the address byte at dma_buf[0];
             // include it in the returned data (matches buffer-mode treatment above).
+
             let hw_len = self.regs().i2cs4c().read().dmarx_actual_len_byte().bits() as usize;
             let to_read = hw_len.min(buffer.len());
+
+            // The CM4F cache is write-through and covers this buffer, so the
+            // CPU's own earlier stores here satisfy reads and hide what the DMA
+            // engine wrote. Invalidate the covering entries first. SCUA50 cannot
+            // mark the region uncacheable: it is only writable while the CM4F is
+            // held in reset, so it keeps its all-cacheable reset value.
+            if let Some(dma_buf) = self.slave_dma_buf.as_deref() {
+                let base = dma_buf.as_ptr() as u32;
+                let span = to_read.min(dma_buf.len()) as u32;
+                // SAFETY: SCUA54/SCUA58 are granted to this process. The cache is
+                // taken down around the invalidate, matching `entry.rs`'s
+                // init_cache sequence (disable, invalidate, re-enable) — the
+                // W1T invalidate does not take effect on a live cache.
+                unsafe {
+                    let scu = &*ast1060_pac::Scu::ptr();
+                    scu.scua58().write(|w| w.bits(0));
+                    let mut off = 0u32;
+                    loop {
+                        let addr = (base.wrapping_add(off)) & 0x7ff;
+                        scu.scua54().write(|w| w.bits((1 << 31) | (addr << 16)));
+                        if off >= span {
+                            break;
+                        }
+                        off = off.wrapping_add(4);
+                    }
+                    scu.scua58().write(|w| w.bits(1));
+                }
+            }
 
             if let Some(dma_buf) = self.slave_dma_buf.as_deref() {
                 let src_len = to_read.min(dma_buf.len());
@@ -367,30 +371,16 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
                 }
             }
 
-            // Re-arm slave DMA for next receive
-            let mut cmd = constants::AST_I2CS_ACTIVE_ALL | constants::AST_I2CS_PKT_MODE_EN;
-            if let Some(dma_buf) = self.slave_dma_buf.as_deref_mut() {
-                let dma_addr = dma_buf.as_mut_ptr() as u32;
-                let dma_len = u16::try_from(dma_buf.len().min(4096) - 1).unwrap_or(u16::MAX);
-                unsafe {
-                    self.regs().i2cs4c().write(|w| w.bits(0));
-                    self.regs().i2cs38().write(|w| w.bits(dma_addr));
-                    self.regs().i2cs3c().write(|w| w.bits(dma_addr));
-                    self.regs().i2cs2c().write(|w| {
-                        w.dmarx_buf_len_byte()
-                            .bits(dma_len)
-                            .dmarx_buf_len_wr_enbl_for_cur_cmd()
-                            .set_bit()
-                    });
-                }
-                cmd |= AST_I2CS_RX_DMA_EN;
-            } else {
-                cmd |= constants::AST_I2CS_RX_BUFF_EN;
-            }
+            // Clear the DMA length status now that these bytes are copied out.
+            // One frame can raise two completion events; since the re-arm is
+            // deferred, the second would otherwise still see this length and
+            // deliver the same bytes twice.
+            // SAFETY: writing I2CS4C clears it, per the datasheet.
             unsafe {
-                self.regs().i2cs28().write(|w| w.bits(cmd));
+                self.regs().i2cs4c().write(|w| w.bits(0));
             }
 
+            // Deliberately not re-armed here: see `rearm_slave_receive()`.
             Ok(to_read)
         } else {
             // byte mode
@@ -404,6 +394,86 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
 
             self.clear_slave_interrupts();
             Ok(1)
+        }
+    }
+
+    /// Re-arm the slave receive path after a drained frame has actually been
+    /// consumed (not just copied into `slave_read`'s caller-supplied buffer).
+    ///
+    /// Deferring this — rather than re-arming immediately after `slave_read`
+    /// drains — is what holds the receive path unarmed until the consumer has
+    /// actually taken the frame. With no buffer prepared the next frame is
+    /// ACKed and then holds SCL low ("slave wait for FW"), and preparing the
+    /// buffer here releases it: the datasheet's `slave wait for FW -> RxD -> P`.
+    pub fn rearm_slave_receive(&mut self) {
+        if self.xfer_mode != I2cXferMode::BufferMode && self.xfer_mode != I2cXferMode::DmaMode {
+            return;
+        }
+
+        // The consumer has taken a frame, so grant permission for one more. A
+        // parked frame spends this on its address packet and then on its data;
+        // nothing else may arm the receive.
+        self.slave_rx_credit = true;
+
+        // A parked transaction has already been accepted by the hardware.
+        // Re-preparing its buffer drops it and admits the frame after it, so in
+        // that state only the enable below is re-asserted. The base and length
+        // are unchanged anyway — skipping the writes costs nothing.
+        let parked = (self.regs().i2cs24().read().bits() & constants::AST_I2CS_WAIT_RX_DMA) != 0;
+
+        // Clear the finished frame's status while the slave is still parked with
+        // no RX command. After the command below lands, a clear truncates the
+        // frame it just released.
+        // SAFETY: PKT_DONE is write-1-to-clear.
+        unsafe {
+            self.regs()
+                .i2cs24()
+                .write(|w| w.bits(constants::AST_I2CS_PKT_DONE));
+        }
+
+        // Step 8 of the slave programming sequence: prepare the Rx buffer.
+        let enable = if self.xfer_mode == I2cXferMode::DmaMode {
+            if let Some(dma_buf) = self.slave_dma_buf.as_deref() {
+                let dma_addr = dma_buf.as_ptr() as u32;
+                let dma_len = u16::try_from(dma_buf.len().min(4096) - 1).unwrap_or(u16::MAX);
+                // SAFETY: I2CS3C is the slave DMA *Rx* base (I2CS38 is Tx, and
+                // is left alone). I2CS2C[31] is the Rx-length write enable, so
+                // only the Rx length field is updated.
+                if !parked {
+                    unsafe {
+                        self.regs().i2cs4c().write(|w| w.bits(0));
+                        self.regs().i2cs3c().write(|w| w.bits(dma_addr));
+                        self.regs().i2cs2c().write(|w| {
+                            w.dmarx_buf_len_byte()
+                                .bits(dma_len)
+                                .dmarx_buf_len_wr_enbl_for_cur_cmd()
+                                .set_bit()
+                        });
+                    }
+                }
+                AST_I2CS_RX_DMA_EN
+            } else {
+                constants::AST_I2CS_RX_BUFF_EN
+            }
+        } else {
+            if !parked {
+                self.regs().i2cc0c().write(|w| unsafe {
+                    w.rx_pool_buffer_size().bits(constants::I2C_BUF_SIZE - 1)
+                });
+            }
+            constants::AST_I2CS_RX_BUFF_EN
+        };
+
+        self.enable_slave_interrupts();
+
+        // Step 9: the hardware consumes I2CS28[9] on every completed packet, so
+        // it has to be re-asserted. This write is what releases the parked frame
+        // and ends the clock stretch, so it comes last.
+        // SAFETY: W1T write asserting a single command bit.
+        unsafe {
+            self.regs()
+                .i2cs28()
+                .write(|w| w.bits(AST_I2CS_CMD_W1T | enable));
         }
     }
 
@@ -502,6 +572,7 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
             }
             // Slave mode requires the command before the status clear.
             self.clear_slave_interrupts();
+            self.enable_slave_interrupts();
             return None;
         }
 
@@ -517,10 +588,54 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
 
         if (status & constants::AST_I2CS_PKT_DONE) != 0 {
             let mut cmd: u32 = constants::AST_I2CS_ACTIVE_ALL | constants::AST_I2CS_PKT_MODE_EN;
-            unsafe {
-                self.regs()
-                    .i2cs24()
-                    .write(|w| w.bits(constants::AST_I2CS_PKT_DONE));
+            // Parked waiting for an RX buffer: hold the bus. Masking keeps the
+            // level-triggered IRQ quiet without clearing the status, and only
+            // `rearm_slave_receive` arms again — one consumer drain, one frame.
+            if (status & constants::AST_I2CS_WAIT_RX_DMA) != 0 {
+                unsafe {
+                    self.regs()
+                        .i2cs20()
+                        .write(|w| w.bits(constants::AST_I2CS_INACTIVE_TO));
+                }
+                // Without STOP nothing has completed: this is the address phase,
+                // and the arm the consumer just spent went on its 1-byte address
+                // packet. The data needs an arm of its own. That is a
+                // continuation of the frame already paid for, not a new one.
+                if (status & constants::AST_I2CS_STOP) == 0 {
+                    if self.slave_rx_credit {
+                        let enable = if self.xfer_mode == I2cXferMode::DmaMode
+                            && self.slave_dma_buf.is_some()
+                        {
+                            AST_I2CS_RX_DMA_EN
+                        } else {
+                            constants::AST_I2CS_RX_BUFF_EN
+                        };
+                        // SAFETY: PKT_DONE is write-1-to-clear; the I2CS28 write
+                        // is W1T asserting a single command bit.
+                        unsafe {
+                            self.regs()
+                                .i2cs24()
+                                .write(|w| w.bits(constants::AST_I2CS_PKT_DONE));
+                            self.regs()
+                                .i2cs28()
+                                .write(|w| w.bits(AST_I2CS_CMD_W1T | enable));
+                        }
+                        self.slave_rx_credit = false;
+                        self.enable_slave_interrupts();
+                    }
+                    return None;
+                }
+            } else {
+                unsafe {
+                    self.regs()
+                        .i2cs24()
+                        .write(|w| w.bits(constants::AST_I2CS_PKT_DONE));
+                }
+            }
+            // A frame ended here, so any unspent grant expires with it: the next
+            // frame has to be paid for by its own drain.
+            if (status & constants::AST_I2CS_STOP) != 0 {
+                self.slave_rx_credit = false;
             }
             let sts = status & (!(constants::AST_I2CS_PKT_DONE | constants::AST_I2CS_PKT_ERROR));
             if sts == constants::AST_I2CS_SLAVE_MATCH
@@ -534,10 +649,8 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
                         | constants::AST_I2CS_RX_DONE
                         | constants::AST_I2CS_WAIT_RX_DMA
             {
-                // S: Sw|D
-                return Some(SlaveEvent::DataReceived {
-                    len: self.slave_rx_len(),
-                });
+                // S: Sw — address phase with no STOP, already held above.
+                return None;
             } else if sts == constants::AST_I2CS_SLAVE_MATCH | constants::AST_I2CS_STOP {
                 // S: Sw|P
                 self.arm_slave_receive(&mut cmd);

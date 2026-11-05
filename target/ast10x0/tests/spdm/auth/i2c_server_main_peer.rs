@@ -40,7 +40,7 @@ fn entry() {
 
     pw_log::info!("I2C server peer ready on Bus 2");
 
-    let mut buses = [Bus::new(handle::I2C, handle::I2C2_IRQ, driver)];
+    let mut buses = [Bus::new(handle::I2C, Some(handle::I2C2_IRQ), driver)];
     run(handle::WG, signals::I2C2, &mut buses);
 }
 

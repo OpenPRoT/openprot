@@ -46,6 +46,10 @@ pub struct Ast1060I2c<'a, Y: FnMut(u32)> {
     pub(crate) master_dma_buf: Option<&'a mut [u8]>,
     /// Slave DMA buffer for slave RX (non-cached SRAM, caller-owned)
     pub(crate) slave_dma_buf: Option<&'a mut [u8]>,
+    /// Permission to admit one more slave frame, granted by the consumer's
+    /// drain. A parked frame costs two buffer arms — one for its address byte,
+    /// one for its data — and both come out of this single grant.
+    pub slave_rx_credit: bool,
     /// Cooperative yield invoked between status polls in
     /// [`wait_completion`]. Argument is the suggested wait window in
     /// nanoseconds.
@@ -99,6 +103,7 @@ impl<'a, Y: FnMut(u32)> Ast1060I2c<'a, Y> {
             completion: false,
             master_dma_buf: None,
             slave_dma_buf: None,
+            slave_rx_credit: false,
             yield_ns,
         }
     }
