@@ -460,7 +460,7 @@ _MCU_ROM_RUSTC_FLAGS = [
 ]
 
 # NOTE: This target requires the caliptra RISC-V platform transition to build.
-# Build via //target/veer/tooling:mcu_rom_bin_transitioned instead of directly.
+# Build via //target/veer/tooling:mcu_rom_{emulator,fpga} instead of directly.
 rust_binary(
     name = "mcu_rom",
     srcs = ["@caliptra_mcu_sw//:all_files"],

@@ -161,10 +161,11 @@ _CHANNELS = {
         rustc_lib = "@rust_toolchain_host_linux_x86_64//:rustc_lib",
         staticlib_ext = ".a",
         stdlib_linkflags = [],
+        # Strip debug info to save on file size that gets rsynced to the board
         strip_level = {
             "dbg": "none",
-            "fastbuild": "none",
-            "opt": "none",
+            "fastbuild": "debuginfo",
+            "opt": "debuginfo",
         },
         # rust_toolchain's own target_compatible_with is confusing (see
         # https://pwbug.dev/342695883); constraints live on toolchain() below.
