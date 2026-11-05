@@ -153,7 +153,7 @@ def _discover_uart_port(
                 port.read(4096)
         _gpio_set(fwspick_pin, "pn dh")
         time.sleep(1)
-        _gpio_set(srst_pin, "dh")
+        _gpio_set_input(srst_pin, "pn")
 
         buffers = {dev: bytearray() for dev, _ in opened}
         deadline = time.time() + _DISCOVERY_TIMEOUT
@@ -235,7 +235,7 @@ def _sequence_to_normal_mode(
     time.sleep(0.1)
     _gpio_set(srst_pin, "dl")
     time.sleep(0.5)
-    _gpio_set(srst_pin, "dh")
+    _gpio_set_input(srst_pin, "pn")
     time.sleep(2)
 
 
@@ -287,7 +287,10 @@ def _mirror_reset_passthrough(
         last = is_high
         if not is_high:
             _gpio_set(fwspick_pin, "pn dl")
-        _gpio_set(srst_pin, "dl" if is_high else "dh")
+        if is_high:
+            _gpio_set(srst_pin, "dl")
+        else:
+            _gpio_set_input(srst_pin, "pn")
         stamped = b"[%7.2f mirror] passthrough %s; mock BMC %s\n" % (
             time.monotonic() - _T0,
             b"high" if is_high else b"low",
