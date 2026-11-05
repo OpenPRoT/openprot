@@ -121,8 +121,14 @@ where
             let irq = w.user_data as u32;
             let acked = w.pending_signals & irq_signals;
             if let Some(bus) = buses.iter_mut().find(|b| b.irq == irq) {
+                // Service the controller even with no client listening: a master
+                // write leaves I2CM14 latched, holding the shared IRQ line
+                // asserted, and only the driver clears it. Skipping this makes
+                // the `interrupt_ack` below re-enable an interrupt that is still
+                // asserted, so it re-fires forever.
+                let event = bus.driver.try_next_slave_event();
                 if bus.notif_enabled {
-                    match bus.driver.try_next_slave_event() {
+                    match event {
                         Ok(Some((kind, _))) => match kind {
                             I2cIsrEvent::SlaveWrRecvd => {
                                 // Master finished writing — drain buffer into latch.
