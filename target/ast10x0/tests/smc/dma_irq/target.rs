@@ -25,8 +25,8 @@ use arch_arm_cortex_m::Arch;
 use ast10x0_peripherals::scu::pinctrl::PINCTRL_FMC_QUAD;
 use ast10x0_peripherals::scu::ScuRegisters;
 use ast10x0_peripherals::smc::{
-    ChipSelect, FlashConfig, SmcConfig, SmcController, SmcError, SmcInterrupt, SmcTopology,
-    UninitSmc,
+    Cs, FlashConfig, FmcUninit, SmcConfig, SmcController, SmcError, SmcInstance, SmcInterrupt,
+    SmcTopology,
 };
 use codegen as _;
 use console_backend::console_backend_write_all;
@@ -41,13 +41,21 @@ use target_debug::{dump_smc_read, dump_smc_register};
 
 pub struct Target {}
 
-const FLASH_CFG: FlashConfig = FlashConfig {
-    capacity_mb: 16,
-    page_size: 256,
-    sector_size: 4096,
-    block_size: 65536,
-    spi_clock_mhz: 50,
-};
+/// Compile-time FMC descriptor: single CS0 device at 50 MHz on the boot-SPI
+/// interface, DMA-completion interrupts enabled, geometry discovered over SFDP
+/// at init.
+struct FmcInstance;
+
+impl SmcInstance for FmcInstance {
+    const CONTROLLER: SmcController = SmcController::Fmc;
+    const CONFIG: SmcConfig = SmcConfig {
+        cs0: Some(FlashConfig { spi_clock_mhz: 50 }),
+        cs1: None,
+        dma_enabled: true,
+        enable_interrupts: true,
+        topology: SmcTopology::BootSpi { master_idx: 0 },
+    };
+}
 
 const DMA_FLASH_OFFSET: u32 = 0x500;
 const DMA_DRAM_ADDR: usize = 0x0004_1000;
@@ -90,14 +98,12 @@ pub fn fmc_dma_irq_handler<K: Kernel>(_kernel: K) {
     );
 }
 
-fn poll_dma_irq_completion(
-    controller: &mut ast10x0_peripherals::smc::ReadySmc,
-) -> Poll<Result<(), SmcError>> {
+fn poll_dma_irq_completion(cs: &mut Cs<'_>) -> Poll<Result<(), SmcError>> {
     if !FMC_DMA_IRQ_FIRED.swap(false, Ordering::AcqRel) {
         return Poll::Pending;
     }
 
-    match controller.handle_dma_irq() {
+    match cs.handle_dma_irq() {
         Ok(SmcInterrupt::DmaComplete) => Poll::Ready(Ok(())),
         Ok(_) => Poll::Ready(Err(SmcError::HardwareError)),
         Err(err) => Poll::Ready(Err(err)),
@@ -108,19 +114,7 @@ fn run_dma_read_irq_test() -> Result<(), SmcError> {
     let scu = unsafe { ScuRegisters::new_global_unlocked() };
     scu.apply_pinctrl_group(PINCTRL_FMC_QUAD);
 
-    let config = SmcConfig {
-        controller_id: SmcController::Fmc,
-        cs0: Some(FLASH_CFG),
-        cs1: None,
-        dma_enabled: true,
-        enable_interrupts: true,
-        topology: SmcTopology::BootSpi { master_idx: 0 },
-    };
-
-    let uninit = unsafe { UninitSmc::new(config)? };
-    let mut controller = uninit.init()?;
-
-    controller.spi_nor_read_init(ChipSelect::Cs0)?;
+    let mut controller = unsafe { FmcUninit::<FmcInstance>::new()? }.init()?;
 
     if !controller.is_ready() || controller.controller_id() != SmcController::Fmc {
         return Err(SmcError::HardwareError);
@@ -136,7 +130,10 @@ fn run_dma_read_irq_test() -> Result<(), SmcError> {
     pw_log::info!("SMC DMA IRQ: starting DMA read");
     dump_smc_register(0x7E62_0000, 8);
     dump_smc_register(0x7E62_0080, 8);
-    controller.dma_read(ChipSelect::Cs0, DMA_FLASH_OFFSET, DMA_DRAM_ADDR, DMA_LEN)?;
+    {
+        let mut cs0 = controller.cs0()?;
+        cs0.dma_read(DMA_FLASH_OFFSET, DMA_DRAM_ADDR, DMA_LEN)?;
+    }
     pw_log::info!("after calling dma_read()");
     dump_smc_register(0x7E62_0000, 8);
     dump_smc_register(0x7E62_0080, 8);
@@ -144,36 +141,47 @@ fn run_dma_read_irq_test() -> Result<(), SmcError> {
         return Err(SmcError::HardwareError);
     }
 
-    for _ in 0..DMA_IRQ_TIMEOUT {
-        match poll_dma_irq_completion(&mut controller) {
-            Poll::Ready(result) => {
-                result?;
-                if !controller.is_ready() {
-                    return Err(SmcError::HardwareError);
+    let mut completed = false;
+    {
+        let mut cs0 = controller.cs0()?;
+        for _ in 0..DMA_IRQ_TIMEOUT {
+            match poll_dma_irq_completion(&mut cs0) {
+                Poll::Ready(result) => {
+                    result?;
+                    completed = true;
+                    break;
                 }
-                pw_log::info!("SMC DMA IRQ: DMA read completed via IRQ");
-                let dma_buf = unsafe {
-                    core::slice::from_raw_parts(DMA_DRAM_ADDR as *const u8, DMA_LEN as usize)
-                };
-                dump_smc_register(0x7E62_0000, 8);
-                dump_smc_register(0x7E62_0080, 8);
-                dump_smc_read(dma_buf, DMA_LEN);
-                return Ok(());
+                Poll::Pending => core::hint::spin_loop(),
             }
-            Poll::Pending => core::hint::spin_loop(),
+        }
+        if !completed {
+            pw_log::info!("dma Timeout");
+            pw_log::info!(
+                "FMC IRQ count={}",
+                FMC_DMA_IRQ_COUNT.load(Ordering::Acquire) as u32
+            );
+            pw_log::info!(
+                "FMC DMA status at timeout=0x{:08x}",
+                cs0.dma_status() as u32
+            );
         }
     }
-    pw_log::info!("dma Timeout");
-    pw_log::info!(
-        "FMC IRQ count={}",
-        FMC_DMA_IRQ_COUNT.load(Ordering::Acquire) as u32
-    );
-    pw_log::info!(
-        "FMC DMA status at timeout=0x{:08x}",
-        controller.dma_status() as u32
-    );
-    dump_nvic_irq_state(FMC_IRQ);
-    Err(SmcError::Timeout)
+
+    if !completed {
+        dump_nvic_irq_state(FMC_IRQ);
+        return Err(SmcError::Timeout);
+    }
+
+    if !controller.is_ready() {
+        return Err(SmcError::HardwareError);
+    }
+    pw_log::info!("SMC DMA IRQ: DMA read completed via IRQ");
+    let dma_buf =
+        unsafe { core::slice::from_raw_parts(DMA_DRAM_ADDR as *const u8, DMA_LEN as usize) };
+    dump_smc_register(0x7E62_0000, 8);
+    dump_smc_register(0x7E62_0080, 8);
+    dump_smc_read(dma_buf, DMA_LEN);
+    Ok(())
 }
 
 codegen::declare_kernel_interrupt_handlers!();
