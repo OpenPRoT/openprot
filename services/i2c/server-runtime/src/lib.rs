@@ -38,8 +38,10 @@ use userspace::time::Instant;
 pub struct Bus<B> {
     /// IPC channel handle (`channel_handler`) dedicated to this bus.
     pub channel: u32,
-    /// IRQ handle for this bus's controller.
-    pub irq: u32,
+    /// IRQ handle for this bus's controller, or `None` for a bus that never
+    /// arms slave notification — master writes complete by polling status
+    /// registers, so there is nothing for the interrupt to deliver.
+    pub irq: Option<u32>,
     /// The bus driver — implements both the master and slave seams.
     pub driver: B,
     notif_enabled: bool,
@@ -51,7 +53,7 @@ pub struct Bus<B> {
 }
 
 impl<B> Bus<B> {
-    pub const fn new(channel: u32, irq: u32, driver: B) -> Self {
+    pub const fn new(channel: u32, irq: Option<u32>, driver: B) -> Self {
         Self {
             channel,
             irq,
@@ -100,8 +102,10 @@ where
         {
             pw_log::error!("wait_group_add bus channel failed");
         }
-        if let Err(_) = syscall::wait_group_add(wg, bus.irq, irq_signals, bus.irq as usize) {
-            pw_log::error!("wait_group_add irq failed");
+        if let Some(irq) = bus.irq {
+            if let Err(_) = syscall::wait_group_add(wg, irq, irq_signals, irq as usize) {
+                pw_log::error!("wait_group_add irq failed");
+            }
         }
     }
 
@@ -117,10 +121,10 @@ where
         // ---- hardware slave IRQ: drain the armed bus, ack, wake client ----
         // Each bus registered its IRQ with user_data = bus.irq, so check if this
         // signal came from an IRQ (vs. a client channel READABLE event).
-        if w.pending_signals.contains(irq_signals) {
+        if w.pending_signals.intersects(irq_signals) {
             let irq = w.user_data as u32;
             let acked = w.pending_signals & irq_signals;
-            if let Some(bus) = buses.iter_mut().find(|b| b.irq == irq) {
+            if let Some(bus) = buses.iter_mut().find(|b| b.irq == Some(irq)) {
                 // Service the controller even with no client listening: a master
                 // write leaves I2CM14 latched, holding the shared IRQ line
                 // asserted, and only the driver clears it. Skipping this makes
