@@ -23,6 +23,11 @@ You can run tasks using the Pigweed workflow launcher `pw` or `bazel`.
 
 The project is structured as a bazel module.
 
+### Supply chain security
+
+Release firmware is published with signed SLSA build provenance. See
+[docs/src/supply-chain.md](docs/src/supply-chain.md) for how to verify it.
+
 ## Requirements
 
 - [Bazel](https://bazel.build/).  We recommend installing [bazelisk](https://github.com/bazelbuild/bazelisk) to automatically manage bazel versions.

@@ -29,6 +29,7 @@
 * [Coding Style](./coding-style.md)
 * [Contributing](./contributing.md)
 * [Development Process](./development-process.md)
+* [Supply Chain Security (SLSA)](./supply-chain.md)
 * [Design](./design/README.md)
   * [Pigweed Integration Overview](./design/pigweed-overview.md)
   * [pw_kernel IPC](./design/pw-kernel-ipc.md)

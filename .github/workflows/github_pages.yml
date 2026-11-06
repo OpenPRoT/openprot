@@ -24,10 +24,10 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
     - name: Checkout
-      uses: actions/checkout@v7
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
     - name: Setup Bazel
-      uses: bazel-contrib/setup-bazel@0.19.1
+      uses: bazel-contrib/setup-bazel@104e3eea9447cdaa4b00d0fb46191a3985d26ab3 # 0.19.1
       with:
         bazelisk-cache: true
         disk-cache: true
@@ -40,13 +40,13 @@ jobs:
         echo "path=$(bazel cquery --output=files --platform_suffix= --@@pigweed+//pw_kernel:enable_tests=false //docs 2>/dev/null)" >> "$GITHUB_OUTPUT"
 
     - name: Setup Pages
-      uses: actions/configure-pages@v6
+      uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 
     - name: Upload artifact
-      uses: actions/upload-pages-artifact@v5
+      uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
       with:
         path: ${{ steps.build-docs.outputs.path }}
 
     - name: Deploy to GitHub Pages
       id: deployment
-      uses: actions/deploy-pages@v5
+      uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
