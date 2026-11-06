@@ -21,6 +21,15 @@ common --incompatible_default_to_explicit_init_py
 # our toolchains, and CI VMs may not have any local toolchain to detect.
 common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 
+# Don't propagate flags or defines to the exec config. Without this, every flag
+# set by a target platform or a system_image transition forks the exec config,
+# rebuilding host tools once per combination. Required by Pigweed; see
+# @pigweed//pw_build:pigweed.bazelrc.
+common --experimental_exclude_defines_from_exec_config
+common --experimental_exclude_starlark_flags_from_exec_config
+# Tools with -C lto=fat need -C embed-bitcode=yes; see the flag's definition below.
+common --experimental_propagate_custom_flag=@@rules_rust+//rust/settings:extra_exec_rustc_flags
+
 test --@pigweed//pw_kernel:enable_tests=true
 test --platform_suffix=test
 
