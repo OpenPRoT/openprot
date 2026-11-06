@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load("@rules_rust//rust:defs.bzl", "rust_library")
-load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//:defs.bzl", "TARGET_COMPATIBLE_WITH")
 
 rust_library(
     name = "i2c_backend_ast10x0",
@@ -12,9 +12,9 @@ rust_library(
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],
     deps = [
-        "//hal/blocking",
-        "//services/i2c/api:i2c_api",
-        "//target/ast10x0/peripherals",
+        "@openprot//hal/blocking",
+        "@openprot//services/i2c/api:i2c_api",
+        "//peripherals",
         "@ast1060_pac",
         "@rust_crates//:embedded-hal",
     ],

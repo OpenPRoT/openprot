@@ -1,0 +1,102 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+module(
+    name = "openprot_ast10x0",
+    version = "0.0.1",
+)
+
+bazel_dep(name = "bazel_skylib", version = "1.8.2")
+bazel_dep(name = "pigweed")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_python", version = "1.8.3")
+bazel_dep(name = "rules_rust", version = "0.70.0")
+bazel_dep(name = "rules_platform", version = "0.1.0")
+bazel_dep(name = "openprot")
+
+# In-tree intermediate step: build against the enclosing checkout. When this
+# module moves out of tree, replace with a `git_override` pinned to a commit.
+local_path_override(
+    module_name = "openprot",
+    path = "../..",
+)
+
+# Keep in sync with openprot's MODULE.bazel.
+git_override(
+    module_name = "pigweed",
+    commit = "e21bf7763475a456efdcc49dafb651ef952b3be1",
+    remote = "https://pigweed.googlesource.com/pigweed/pigweed",
+)
+
+# Repeated from openprot: overrides and extension config only take effect from
+# the root module.
+bazel_dep(name = "ureg")
+git_override(
+    module_name = "ureg",
+    commit = "4762ed5eef323a4267720a6b6da287c88738f901",
+    remote = "https://github.com/chipsalliance/caliptra-ureg",
+)
+
+bazel_dep(name = "caliptra_deps", version = "0.0.0")
+local_path_override(
+    module_name = "caliptra_deps",
+    path = "../../third_party/caliptra",
+)
+
+bazel_dep(name = "opentitan_devbundle")
+archive_override(
+    module_name = "opentitan_devbundle",
+    integrity = "sha256-LGKvET6WY+P4kwrZMSnkBrkqxS1f/ES/rmkPBQmfnwg=",
+    url = "https://github.com/lowRISC/opentitan/releases/download/devbundle-2026-06-02-1/devbundle.tar.xz",
+)
+
+pw_rust = use_extension("@pigweed//pw_toolchain/rust:extensions.bzl", "pw_rust")
+pw_rust.toolchain(cipd_tag = "git_revisions:fe5c95d4ae33ec9d7831921e448e2daf8264ea42,7b074fc9362a4a6a5f172dd8936a22fb25eff96b")
+use_repo(pw_rust, "pw_rust_toolchains")
+
+register_toolchains(
+    "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_linux",
+    "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_macos",
+    "@pigweed//pw_toolchain/arm_clang:arm_clang_cc_toolchain_cortex-m4",
+    "@pw_rust_toolchains//:all",
+)
+
+# Same manifest and lockfile as openprot's `rust_crates` universe, so crate
+# versions stay identical. Bazel requires every module that uses the `crate`
+# extension to declare a universe, and the universe name must be unique, so
+# this one is named differently and then replaces openprot's `rust_crates`
+# (override_repo) so that openprot libs and this SoC share a single copy of
+# each crate.
+crate = use_extension("@rules_rust//crate_universe:extension.bzl", "crate")
+crate.from_cargo(
+    name = "ast10x0_crates",
+    cargo_lockfile = "@openprot//third_party/crates_io:Cargo.lock",
+    manifests = ["@openprot//third_party/crates_io:Cargo.toml"],
+    supported_platform_triples = [
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin",
+        "riscv32imc-unknown-none-elf",
+        "thumbv7em-none-eabi",
+    ],
+)
+use_repo(crate, "ast10x0_crates")
+override_repo(
+    crate,
+    rust_crates = "ast10x0_crates",
+)
+use_repo(crate, "rust_crates")
+
+pw_rust_crates_ext = use_extension("@pigweed//pw_build:pw_rust_crates_extension.bzl", "pw_rust_crates_extension")
+override_repo(
+    pw_rust_crates_ext,
+    rust_crates = "ast10x0_crates",
+)
+
+# ── AST1060 Peripheral Access Crate (svd2rust-generated) ──
+ast1060_pac_ext = use_extension(
+    "//third_party:ast1060_pac.bzl",
+    "ast1060_pac_ext",
+)
+use_repo(ast1060_pac_ext, "ast1060_pac", "vcell")

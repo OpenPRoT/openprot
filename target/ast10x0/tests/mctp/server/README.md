@@ -83,7 +83,7 @@ bazel test \
     --config=k_ast1060_evb \
     --test_env=AST1060_EVB_PI_HOST=<pi-hostname> \
     --test_output=streamed \
-    -- //target/ast10x0/tests/mctp/server:mctp_server_test
+    -- //tests/mctp/server:mctp_server_test
 ```
 
 Replace `<pi-hostname>` with the hostname or IP address of your Pi fixture.

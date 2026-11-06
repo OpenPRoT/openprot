@@ -3,7 +3,7 @@
 
 load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
-load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//:defs.bzl", "TARGET_COMPATIBLE_WITH")
 load(":spimonitor_test.bzl", "spimonitor_setup_all", "spimonitor_test")
 
 filegroup(
@@ -23,7 +23,7 @@ target_linker_script(
     system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
-    template = "//target/ast10x0:linker_script_template",
+    template = "//:linker_script_template",
 )
 
 spimonitor_test(1, TARGET_COMPATIBLE_WITH)

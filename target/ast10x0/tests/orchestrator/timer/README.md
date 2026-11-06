@@ -67,7 +67,7 @@ This test recreates that wait loop and confirms each part behaves.
 
 ```sh
 bazelisk test --config=virt_ast10x0 \
-  //target/ast10x0/tests/orchestrator/timer:timer_test --test_output=all
+  //tests/orchestrator/timer:timer_test --test_output=all
 ```
 
 Other build targets in this folder:

@@ -173,11 +173,12 @@
         ],
         "driver_options": {
           "@type": "pw.build.proto.BazelDriverOptions",
-          "no_test": false
+          "no_test": false,
+          "project_working_subdir": "target/ast10x0"
         }
       },
       "targets": [
-        "//target/ast10x0/..."
+        "//..."
       ]
     },
     {
