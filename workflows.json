@@ -179,6 +179,29 @@
       "targets": [
         "//target/ast10x0/..."
       ]
+    },
+    {
+      "name": "flaky_tests",
+      "build_config": {
+        "name": "flaky_tests_config",
+        "description": "Execute flaky tests",
+        "build_type": "bazel",
+        "args": [
+          "--runs_per_test=3",
+          "--runs_per_test_detects_flakes",
+          "--cache_test_results=no",
+          "--keep_going",
+          "--test_output=errors",
+          "--config=k_ast1060_evb"
+        ],
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "no_test": false
+        }
+      },
+      "targets": [
+        "//target/ast10x0/..."
+      ]
     }
   ],
   "tools": [
@@ -262,6 +285,13 @@
         "ast10x0_qemu_tests",
         "caliptra_emulator_tests",
         "earlgrey_verilator_tests"
+      ]
+    },
+    {
+      "name": "flaky",
+      "description": "Execute flaky tests",
+      "builds": [
+        "flaky_tests"
       ]
     }
   ]

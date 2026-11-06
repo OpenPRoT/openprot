@@ -55,6 +55,14 @@ for the fixture details.
 To check the hardware tests for flakiness, run each test multiple times with
 result caching disabled:
 
+Using Pigweed workflow
+
+```console
+AST1060_EVB_PI_HOST=<user>@<pi-host> ./pw flaky
+```
+
+Or directly with Bazel
+
 ```console
 AST1060_EVB_PI_HOST=<user>@<pi-host> bazel test \
   --runs_per_test=2 \
@@ -66,7 +74,7 @@ AST1060_EVB_PI_HOST=<user>@<pi-host> bazel test \
   //target/ast10x0/tests/...
 ```
 
-- `--runs_per_test=2` runs every test twice (increase for a stricter check).
+- `--runs_per_test=3` runs every test thrice (increase for a stricter check).
 - `--runs_per_test_detects_flakes` reports a test that passes in some runs and
   fails in others as `FLAKY` instead of `FAILED`.
 - `--cache_test_results=no` forces real runs on the board.
