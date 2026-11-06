@@ -96,8 +96,8 @@ rust_library(
     ],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "@openprot//hal/blocking",
         "@ast1060_pac",
+        "@openprot//hal/blocking",
         "@pigweed//pw_log/rust:pw_log",
         "@rust_crates//:bitflags",
         "@rust_crates//:cortex-m",
