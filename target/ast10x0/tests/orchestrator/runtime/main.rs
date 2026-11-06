@@ -20,7 +20,7 @@
 #![no_std]
 
 use app_test_runtime::{constants, handle, signals};
-use openprot_millis_clock::Epoch;
+use util_millis_epoch::Epoch;
 use openprot_orchestrator_server::BootWatchdogs;
 use openprot_orchestrator_sm::{
     BootFailureKind, Chain, ComponentAttrs, ComponentId, Effect, EffectError, Event, Orchestrator,

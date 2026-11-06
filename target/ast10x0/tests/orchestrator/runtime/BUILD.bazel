@@ -65,7 +65,7 @@ rust_app(
         "//services/orchestrator/config:orchestrator_config",
         "//services/orchestrator/server:orchestrator_server",
         "//services/orchestrator/sm:orchestrator_sm",
-        "//util/millis_clock",
+        "//util/millis_epoch",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",

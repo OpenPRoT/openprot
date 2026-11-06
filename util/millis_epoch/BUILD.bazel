@@ -9,9 +9,9 @@ load("@rules_rust//rust:defs.bzl", "rust_library")
 # on //target:defs.bzl, as //util/ipc is, so shared code does not load from
 # //target.
 rust_library(
-    name = "millis_clock",
+    name = "millis_epoch",
     srcs = ["src/lib.rs"],
-    crate_name = "openprot_millis_clock",
+    crate_name = "util_millis_epoch",
     edition = "2024",
     tags = ["kernel"],
     target_compatible_with = select({

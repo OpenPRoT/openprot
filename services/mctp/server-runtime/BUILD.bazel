@@ -18,7 +18,7 @@ rust_library(
     deps = [
         "//services/mctp/api:mctp_api",
         "//services/mctp/server:mctp_server_lib",
-        "//util/millis_clock",
+        "//util/millis_epoch",
         "//util/service",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
