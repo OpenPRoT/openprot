@@ -19,19 +19,19 @@ no separate hardware-only test targets exist.
 ### QEMU (no hardware required)
 
 ```
-bazel test --config=virt_ast10x0 //target/ast10x0/tests/...
+bazel test --config=virt_ast10x0 //tests/...
 ```
 
 ### Physical AST1060 EVB via Raspberry Pi SSH fixture
 
 ```
-AST1060_EVB_PI_HOST=<pi-hostname> bazel test --config=k_ast1060_evb //target/ast10x0/tests/...
+AST1060_EVB_PI_HOST=<pi-hostname> bazel test --config=k_ast1060_evb //tests/...
 ```
 
 or inline without modifying the shell environment:
 
 ```
-bazel test --config=k_ast1060_evb --test_env=AST1060_EVB_PI_HOST=<pi-hostname> //target/ast10x0/tests/...
+bazel test --config=k_ast1060_evb --test_env=AST1060_EVB_PI_HOST=<pi-hostname> //tests/...
 ```
 
 Key-based SSH auth is required (`ssh-copy-id <user>@<pi-host>`). The Pi runs

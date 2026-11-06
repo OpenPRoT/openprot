@@ -91,26 +91,26 @@ Bazel tool package:
 
 Board-level SGPIOM pipeline targets:
 
-- `//target/ast10x0/board:sgpiom_validate`
-- `//target/ast10x0/board:sgpiom_merged`
-- `//target/ast10x0/board:sgpiom_generate`
-- `//target/ast10x0/board:sgpiom_check`
-- `//target/ast10x0/board:sgpiom_report`
+- `(from target/ast10x0) //board:sgpiom_validate`
+- `(from target/ast10x0) //board:sgpiom_merged`
+- `(from target/ast10x0) //board:sgpiom_generate`
+- `(from target/ast10x0) //board:sgpiom_check`
+- `(from target/ast10x0) //board:sgpiom_report`
 
 Board crate consumption target:
 
-- `//target/ast10x0/board:ast10x0_board`
+- `(from target/ast10x0) //board:ast10x0_board`
 
 Build all SGPIOM pipeline targets:
 
 ```bash
 bazelisk build --config=k_ast1060_evb \
-  //target/ast10x0/board:ast10x0_board \
-  //target/ast10x0/board:sgpiom_validate \
-  //target/ast10x0/board:sgpiom_merged \
-  //target/ast10x0/board:sgpiom_generate \
-  //target/ast10x0/board:sgpiom_check \
-  //target/ast10x0/board:sgpiom_report
+  (from target/ast10x0) //board:ast10x0_board \
+  (from target/ast10x0) //board:sgpiom_validate \
+  (from target/ast10x0) //board:sgpiom_merged \
+  (from target/ast10x0) //board:sgpiom_generate \
+  (from target/ast10x0) //board:sgpiom_check \
+  (from target/ast10x0) //board:sgpiom_report
 ```
 
 ## Notes

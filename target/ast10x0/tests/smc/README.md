@@ -6,10 +6,10 @@ This package is now a compatibility layer and shared helper location.
 
 Active SMC test flows are split into dedicated subpackages:
 
-- `//target/ast10x0/tests/smc/read`
-- `//target/ast10x0/tests/smc/dma_irq`
+- `//tests/smc/read`
+- `//tests/smc/dma_irq`
 
-The parent package (`//target/ast10x0/tests/smc`) keeps only:
+The parent package (`//tests/smc`) keeps only:
 
 - Compatibility aliases:
   - `smc_read_test`
@@ -22,10 +22,10 @@ The parent package (`//target/ast10x0/tests/smc`) keeps only:
 
 Use these subpackage labels as canonical:
 
-- Read flow image: `//target/ast10x0/tests/smc/read:smc_read_test`
-- Read flow runnable EVB test: `//target/ast10x0/tests/smc/read:smc_read_evb_test`
-- DMA IRQ flow image: `//target/ast10x0/tests/smc/dma_irq:smc_irq_test`
-- DMA IRQ flow runnable EVB test: `//target/ast10x0/tests/smc/dma_irq:smc_irq_evb_test`
+- Read flow image: `//tests/smc/read:smc_read_test`
+- Read flow runnable EVB test: `//tests/smc/read:smc_read_evb_test`
+- DMA IRQ flow image: `//tests/smc/dma_irq:smc_irq_test`
+- DMA IRQ flow runnable EVB test: `//tests/smc/dma_irq:smc_irq_evb_test`
 
 Legacy compatibility aliases in this package resolve to the same targets.
 
@@ -36,7 +36,7 @@ Read flow:
 ```bash
 AST1060_EVB_PI_HOST=<pi-hostname-or-ip> \
   bazel test --config=k_ast1060_evb \
-  //target/ast10x0/tests/smc/read:smc_read_evb_test
+  //tests/smc/read:smc_read_evb_test
 ```
 
 DMA IRQ flow:
@@ -44,7 +44,7 @@ DMA IRQ flow:
 ```bash
 AST1060_EVB_PI_HOST=<pi-hostname-or-ip> \
   bazel test --config=k_ast1060_evb \
-  //target/ast10x0/tests/smc/dma_irq:smc_irq_evb_test
+  //tests/smc/dma_irq:smc_irq_evb_test
 ```
 
 Both flows are hardware-only by design.

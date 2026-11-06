@@ -16,10 +16,10 @@ from CI and must be run manually using one of the configs below.
 ```
 # Open-ended soak — runs until Ctrl-C or FAIL, no timeout.
 # Target the system_image directly, not the _stress_test rule.
-bazel run --config=stress_virt_ast10x0 //target/ast10x0/tests/stress/mutex/kernel:mutex
+bazel run --config=stress_virt_ast10x0 //tests/stress/mutex/kernel:mutex
 
 # Timed run — Bazel kills after 3600s if no FAIL detected.
-bazel test --config=stress_virt_ast10x0 //target/ast10x0/tests/stress/<test>:*_stress_test
+bazel test --config=stress_virt_ast10x0 //tests/stress/<test>:*_stress_test
 ```
 
 Use `bazel run` on the `system_image` target (`:mutex`, `:ipc`, `:process_termination`)
@@ -29,7 +29,7 @@ for open-ended soak testing — this runs QEMU directly with no wrappers.
 ## Running on hardware (EVB via Pi fixture)
 
 ```
-AST1060_EVB_PI_HOST=<pi-hostname> bazel test --config=stress_k_ast1060_evb //target/ast10x0/tests/stress/<test>
+AST1060_EVB_PI_HOST=<pi-hostname> bazel test --config=stress_k_ast1060_evb //tests/stress/<test>
 ```
 
 `bazel run` is not supported for EVB — the Pi fixture is only wired into

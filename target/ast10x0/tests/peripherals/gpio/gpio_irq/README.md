@@ -21,5 +21,5 @@ The kernel emits `TEST_RESULT:PASS` or `TEST_RESULT:FAIL` at shutdown.
 
 ```sh
 bazelisk build --config=k_ast1060_evb \
-  //target/ast10x0/tests/peripherals/gpio/gpio_irq:gpio_irq
+  //tests/peripherals/gpio/gpio_irq:gpio_irq
 ```
