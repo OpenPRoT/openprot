@@ -8,6 +8,9 @@ on:
   pull_request:
     branches: [ main, earlgrey-hwe ]
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
@@ -17,10 +20,10 @@ jobs:
     name: Presubmit Checks
     runs-on: openprot-ci-runner
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
     - name: Setup Bazel
-      uses: bazel-contrib/setup-bazel@0.19.1
+      uses: bazel-contrib/setup-bazel@104e3eea9447cdaa4b00d0fb46191a3985d26ab3 # 0.19.1
       with:
         bazelisk-cache: false
         disk-cache: false
@@ -37,10 +40,10 @@ jobs:
     needs: presubmit
     runs-on: openprot-ci-runner
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
     - name: Setup Bazel
-      uses: bazel-contrib/setup-bazel@0.19.1
+      uses: bazel-contrib/setup-bazel@104e3eea9447cdaa4b00d0fb46191a3985d26ab3 # 0.19.1
       with:
         bazelisk-cache: false
         disk-cache: false
@@ -56,10 +59,10 @@ jobs:
     runs-on: openprot-ci-runner
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
     - name: Setup Bazel
-      uses: bazel-contrib/setup-bazel@0.19.1
+      uses: bazel-contrib/setup-bazel@104e3eea9447cdaa4b00d0fb46191a3985d26ab3 # 0.19.1
       with:
         bazelisk-cache: false
         disk-cache: false
@@ -74,15 +77,15 @@ jobs:
     needs: presubmit
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
     - name: Install Rust toolchain
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       with:
         components: clippy
 
     - name: Cache cargo registry
-      uses: actions/cache@v6
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
       with:
         path: |
           ~/.cargo/registry
@@ -91,7 +94,7 @@ jobs:
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
     - name: Install cargo-audit
-      run: cargo install cargo-audit --locked
+      run: cargo install cargo-audit --version 0.22.2 --locked
 
     - name: Install cargo-deny
       run: cargo install cargo-deny --version 0.19.0 --locked
@@ -103,6 +106,6 @@ jobs:
       run: cd third_party/crates_io; cargo deny check
 
     - name: Run semgrep security scan
-      uses: returntocorp/semgrep-action@v1
+      uses: returntocorp/semgrep-action@713efdd345f3035192eaa63f56867b88e63e4e5d # v1
       with:
         config: p/rust
