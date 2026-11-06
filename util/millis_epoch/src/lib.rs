@@ -1,17 +1,17 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! Kernel side of a `u64` millisecond deadline.
+//! Converts between a kernel [`Instant`] and a `u64` millisecond count.
 //!
-//! A server that already counts time in whole milliseconds, such as MCTP,
-//! never sees a kernel type. The run loop owns an [`Epoch`] and converts both
-//! ways: [`Epoch::millis`] into the server, [`Epoch::instant_at`] back to the
-//! [`Instant`] that `object_wait` waits on.
+//! [`Epoch::millis`] turns the time since the origin into whole milliseconds.
+//! [`Epoch::instant_at`] turns a millisecond deadline back into the
+//! [`Instant`] that `object_wait` waits on. A caller that already counts
+//! milliseconds, such as MCTP, never sees a kernel type. The run loop owns
+//! the [`Epoch`].
 //!
-//! Not a clock for every service. A loop that already waits on an [`Instant`]
-//! should keep that deadline. These milliseconds are the kernel tick count
-//! divided by its configured rate, so they order deadlines. They are not wall
-//! time, and a wait is only as fine as the scheduler tick.
+//! These milliseconds are the kernel tick count divided by its configured
+//! rate. They order deadlines. They are not wall time, and a wait is only as
+//! fine as the scheduler tick.
 
 #![no_std]
 
