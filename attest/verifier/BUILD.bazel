@@ -1,0 +1,29 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+
+rust_library(
+    name = "attest_verifier",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "openprot_attest_verifier",
+    edition = "2021",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//attest/api:attest_api",
+        "@rust_crates//:ciborium",
+        "@rust_crates//:heapless",
+        "@rust_crates//:thiserror",
+    ],
+)
+
+rust_binary(
+    name = "openprot_verify",
+    srcs = ["tools/openprot-verify/src/main.rs"],
+    edition = "2021",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":attest_verifier",
+        "@rust_crates//:ciborium",
+    ],
+)
