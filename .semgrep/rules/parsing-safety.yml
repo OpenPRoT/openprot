@@ -1,0 +1,128 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+#
+# Custom Semgrep rules targeting the wire/protocol parsing paths of this
+# repo (MCTP, I2C and USART request/response decoding). These complement
+# the generic `p/rust` registry ruleset already run in CI by enforcing the
+# project's panic-free parsing policy (see PR review checklist):
+#   - no unwrap()/expect() on data decoded from a peer-supplied buffer
+#   - no raw indexing into peer-supplied buffers
+#   - no unchecked arithmetic on lengths/offsets taken from parsed fields
+#
+# Scope is restricted to this repo's conventionally-named transport/
+# protocol modules (wire.rs, protocol.rs, receiver.rs, sender.rs,
+# dispatch.rs, slave.rs). Note: the low-level MCTP-over-I2C byte decoder
+# (PEC validation, header framing) lives out-of-tree in the `mctp-lib`
+# git dependency and is not scanned here.
+rules:
+  - id: parsing-no-unwrap-expect
+    languages: [rust]
+    severity: WARNING
+    message: >-
+      Avoid .unwrap()/.expect() when handling decoded wire/protocol data.
+      Parsing entry points must return Result/Option and propagate errors
+      instead of panicking on malformed or malicious input.
+    patterns:
+      - pattern-either:
+          - pattern: $X.unwrap()
+          - pattern: $X.expect($MSG)
+      - pattern-not-inside: |
+          #[cfg(test)]
+          mod $TESTMOD { ... }
+    paths:
+      include:
+        - "**/wire.rs"
+        - "**/protocol.rs"
+        - "**/receiver.rs"
+        - "**/sender.rs"
+        - "**/dispatch.rs"
+        - "**/slave.rs"
+
+  - id: parsing-no-raw-buffer-indexing
+    languages: [rust]
+    severity: INFO
+    message: >-
+      Avoid raw scalar indexing into a peer-supplied buffer. Use .get()
+      and return a decode error instead of panicking when the buffer is
+      shorter than expected. (Slice-range indexing, e.g. buf[a..b], is
+      not flagged here since it is the idiomatic way to write validated
+      output ranges in this codebase.)
+    patterns:
+      - pattern-either:
+          - pattern: bytes[$IDX]
+          - pattern: buf[$IDX]
+          - pattern: data[$IDX]
+          - pattern: frame_data[$IDX]
+          - pattern: request[$IDX]
+          - pattern: response[$IDX]
+      - pattern-not-inside: |
+          #[cfg(test)]
+          mod $TESTMOD { ... }
+      # Exclude slice-range forms (buf[a..b], buf[..b], buf[a..], etc.) —
+      # these are output-range writes already guarded by an explicit
+      # length check earlier in the function, not unguarded scalar reads.
+      - pattern-not: $X[$A..$B]
+      - pattern-not: $X[$A..=$B]
+      - pattern-not: $X[..$B]
+      - pattern-not: $X[..=$B]
+      - pattern-not: $X[$A..]
+      - pattern-not: $X[..]
+    paths:
+      include:
+        - "**/wire.rs"
+        - "**/protocol.rs"
+        - "**/receiver.rs"
+        - "**/sender.rs"
+        - "**/dispatch.rs"
+        - "**/slave.rs"
+
+  - id: parsing-unchecked-length-arithmetic
+    languages: [rust]
+    severity: WARNING
+    message: >-
+      Unchecked arithmetic combining a constant with a length/offset field
+      decoded from a peer-supplied header. Use checked_add/saturating_add
+      (or validate the bound explicitly) instead of raw `+`, to avoid
+      overflow/panic on a malicious length field.
+    patterns:
+      - pattern-either:
+          - pattern: $SIZE + $STRUCT.$FIELD as usize
+          - pattern: $SIZE + $STRUCT.$FIELD as $TY
+      - pattern-not-inside: |
+          #[cfg(test)]
+          mod $TESTMOD { ... }
+    paths:
+      include:
+        - "**/wire.rs"
+        - "**/protocol.rs"
+        - "**/receiver.rs"
+        - "**/sender.rs"
+        - "**/dispatch.rs"
+        - "**/slave.rs"
+
+  - id: parsing-truncating-length-cast
+    languages: [rust]
+    severity: WARNING
+    message: >-
+      Truncating cast of a length/size/count value to a narrower integer
+      type. This can silently drop high bits on a value derived from
+      parsed input. Prefer try_into() and handle the error, or an explicit
+      saturating conversion.
+    patterns:
+      - pattern-either:
+          - pattern: $LEN as u8
+          - pattern: $LEN as u16
+      - metavariable-regex:
+          metavariable: $LEN
+          regex: (?i).*(len|size|count)[a-z_0-9]*$
+      - pattern-not-inside: |
+          #[cfg(test)]
+          mod $TESTMOD { ... }
+    paths:
+      include:
+        - "**/wire.rs"
+        - "**/protocol.rs"
+        - "**/receiver.rs"
+        - "**/sender.rs"
+        - "**/dispatch.rs"
+        - "**/slave.rs"
