@@ -82,13 +82,16 @@ crate.from_cargo(
     ],
 )
 use_repo(crate, "ast10x0_crates")
+
 override_repo(
     crate,
     rust_crates = "ast10x0_crates",
 )
+
 use_repo(crate, "rust_crates")
 
 pw_rust_crates_ext = use_extension("@pigweed//pw_build:pw_rust_crates_extension.bzl", "pw_rust_crates_extension")
+
 override_repo(
     pw_rust_crates_ext,
     rust_crates = "ast10x0_crates",

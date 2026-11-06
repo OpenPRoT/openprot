@@ -57,8 +57,8 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "@openprot//drivers/usart/server:usart_server",
         "//backend/usart:usart_backend_ast10x0",
+        "@openprot//drivers/usart/server:usart_server",
         "@pigweed//pw_kernel/userspace",
     ],
 )
