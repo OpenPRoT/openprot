@@ -4,58 +4,58 @@
 exports_files(
     ["target_debug.rs"],
     visibility = [
-        "//target/ast10x0/tests/smc/dma_irq:__pkg__",
-        "//target/ast10x0/tests/smc/read:__pkg__",
-        "//target/ast10x0/tests/smc/write:__pkg__",
+        "//tests/smc/dma_irq:__pkg__",
+        "//tests/smc/read:__pkg__",
+        "//tests/smc/write:__pkg__",
     ],
 )
 
 alias(
     name = "smc_read_test",
-    actual = "//target/ast10x0/tests/smc/read:smc_read_test",
+    actual = "//tests/smc/read:smc_read_test",
 )
 
 alias(
     name = "smc_read_evb_test",
-    actual = "//target/ast10x0/tests/smc/read:smc_read_evb_test",
+    actual = "//tests/smc/read:smc_read_evb_test",
 )
 
 alias(
     name = "smc_irq_test",
-    actual = "//target/ast10x0/tests/smc/dma_irq:smc_irq_test",
+    actual = "//tests/smc/dma_irq:smc_irq_test",
 )
 
 alias(
     name = "smc_irq_evb_test",
-    actual = "//target/ast10x0/tests/smc/dma_irq:smc_irq_evb_test",
+    actual = "//tests/smc/dma_irq:smc_irq_evb_test",
 )
 
 alias(
     name = "smc_write_test",
-    actual = "//target/ast10x0/tests/smc/write:smc_write_test",
+    actual = "//tests/smc/write:smc_write_test",
 )
 
 alias(
     name = "smc_write_evb_test",
-    actual = "//target/ast10x0/tests/smc/write:smc_write_evb_test",
+    actual = "//tests/smc/write:smc_write_evb_test",
 )
 
 alias(
     name = "smc_spi1_read_test",
-    actual = "//target/ast10x0/tests/smc/read:smc_spi1_read_test",
+    actual = "//tests/smc/read:smc_spi1_read_test",
 )
 
 alias(
     name = "smc_spi1_read_evb_test",
-    actual = "//target/ast10x0/tests/smc/read:smc_spi1_read_evb_test",
+    actual = "//tests/smc/read:smc_spi1_read_evb_test",
 )
 
 alias(
     name = "smc_spi_cs0_read_test",
-    actual = "//target/ast10x0/tests/smc/read:smc_spi_cs0_read_test",
+    actual = "//tests/smc/read:smc_spi_cs0_read_test",
 )
 
 alias(
     name = "smc_spi_cs0_read_evb_test",
-    actual = "//target/ast10x0/tests/smc/read:smc_spi_cs0_read_evb_test",
+    actual = "//tests/smc/read:smc_spi_cs0_read_evb_test",
 )

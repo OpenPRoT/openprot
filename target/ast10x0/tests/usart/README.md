@@ -53,23 +53,23 @@ The test instantiates two processes:
 
 ```bash
 # Run with virt_ast10x0 platform config
-bazelisk test //target/ast10x0/tests/usart:usart_test --config=virt_ast10x0
+bazelisk test //tests/usart:usart_test --config=virt_ast10x0
 
 # With verbose/streamed output
-bazelisk test //target/ast10x0/tests/usart:usart_test --config=virt_ast10x0 --test_output=streamed
+bazelisk test //tests/usart:usart_test --config=virt_ast10x0 --test_output=streamed
 
 # Show all test output
-bazelisk test //target/ast10x0/tests/usart:usart_test --config=virt_ast10x0 --test_output=all
+bazelisk test //tests/usart:usart_test --config=virt_ast10x0 --test_output=all
 ```
 
 ### Expected Output
 
 ```
 INFO: Found 1 test target...
-Target //target/ast10x0/tests/usart:usart_test up-to-date:
-  bazel-bin/target/ast10x0/tests/usart/usart_test
+Target //tests/usart:usart_test up-to-date:
+  bazel-bin/tests/usart/usart_test
 INFO: Build completed successfully, X total actions
-//target/ast10x0/tests/usart:usart_test                                  PASSED in 0.4s
+//tests/usart:usart_test                                  PASSED in 0.4s
 
 Executed 1 out of 1 test: 1 test passes.
 ```
@@ -106,7 +106,7 @@ Executed 1 out of 1 test: 1 test passes.
 ### USART Backend
 
 The test uses the concrete AST10x0 USART backend:
-- **Location**: `//target/ast10x0/backend/usart:usart_backend_ast10x0`
+- **Location**: `//backend/usart:usart_backend_ast10x0`
 - **Hardware**: UART5 at 0x7e78_4000 (AST10x0 MMIO base)
 - **Features**: Blocking read/write, IRQ masking, line status
 
@@ -175,7 +175,7 @@ See [ASYNC_NONBLOCKING_IMPLEMENTATION_PLAN.md](../../drivers/usart/api/ASYNC_NON
 
 After a successful build, the test artifacts are located at:
 ```
-bazel-bin/target/ast10x0/tests/usart/
+bazel-bin/tests/usart/
 ├── usart                    # System image (kernel + rootfs)
 ├── usart_test               # Test runner
 ├── usart_server_bin         # Compiled server binary
