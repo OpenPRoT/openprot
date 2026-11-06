@@ -20,6 +20,7 @@
 #![no_std]
 
 use app_test_runtime::{constants, handle, signals};
+use openprot_millis_clock::Epoch;
 use openprot_orchestrator_server::BootWatchdogs;
 use openprot_orchestrator_sm::{
     BootFailureKind, Chain, ComponentAttrs, ComponentId, Effect, EffectError, Event, Orchestrator,
@@ -29,7 +30,7 @@ use orchestrator_capabilities::{BootStatus, BootWatch, EvidenceReader, FailureCa
 use orchestrator_checkpoint_walk::CheckpointWalk;
 use orchestrator_config::{BootCheckpoint, DeviceConfig};
 use pw_status::{Error, Result};
-use userspace::time::{Clock, Duration, Instant, SystemClock};
+use userspace::time::Duration;
 use userspace::{entry, syscall};
 
 /// The components this test supervises.
@@ -83,14 +84,6 @@ impl EvidenceReader<u8> for ProgressReader {
             BootStatus::Booting
         })
     }
-}
-
-fn ticks_to_millis(ticks: u64) -> u64 {
-    ticks * 1000 / SystemClock::TICKS_PER_SEC
-}
-
-fn millis_to_ticks(millis: u64) -> u64 {
-    millis * SystemClock::TICKS_PER_SEC / 1000
 }
 
 fn failure_kind(cause: FailureCause) -> BootFailureKind {
@@ -167,10 +160,11 @@ fn walk_device(
     reached: usize,
 ) -> Result<Event> {
     walk.arm();
+    let epoch = Epoch::since_boot();
     let mut k = 0usize;
 
     loop {
-        let now = ticks_to_millis(SystemClock::now().ticks());
+        let now = epoch.millis();
         match walk.poll(now) {
             WalkVerdict::Waiting { deadline_millis } => {
                 // Simulate device progress after the poll returned Waiting,
@@ -180,7 +174,7 @@ fn walk_device(
                     syscall::debug_trigger_interrupt(constants::BOOT_PROGRESS)?;
                 }
 
-                let deadline = Instant::from_ticks(millis_to_ticks(deadline_millis));
+                let deadline = epoch.instant_at(Some(deadline_millis));
                 match syscall::object_wait(handle::BOOT_SIGNAL, signals::BOOT_PROGRESS, deadline) {
                     Ok(wait) => {
                         if !wait.pending_signals.contains(signals::BOOT_PROGRESS) {
