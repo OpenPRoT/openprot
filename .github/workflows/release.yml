@@ -1,0 +1,131 @@
+# Licensed under the Apache-2.0 license
+
+# Builds release firmware images on a GitHub-hosted runner and publishes signed
+# SLSA build provenance for them. See docs/src/supply-chain.md.
+
+name: Release
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Bazel platform to build for'
+        default: '//target/ast10x0'
+        required: true
+      targets:
+        description: 'Space-separated Bazel targets to release'
+        default: '//target/ast10x0/erot:erot'
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  RELEASE_PLATFORM: ${{ inputs.platform || '//target/ast10x0' }}
+  RELEASE_TARGETS: ${{ inputs.targets || '//target/ast10x0/erot:erot' }}
+
+jobs:
+  build-firmware:
+    name: Build and attest firmware
+    # GitHub-hosted runner only: the self-hosted CI runner is not used for
+    # release builds.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # attach artifacts to the GitHub release
+      id-token: write      # Sigstore OIDC identity for the attestation
+      attestations: write  # store the provenance attestation
+    steps:
+    - name: Checkout
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      with:
+        persist-credentials: false
+
+    - name: Reject site-local Bazel overrides
+      run: |
+        if [ -e .bazelrc-site ]; then
+          echo "::error::.bazelrc-site must not exist in a release build"
+          exit 1
+        fi
+
+    - name: Setup Bazel
+      uses: bazel-contrib/setup-bazel@104e3eea9447cdaa4b00d0fb46191a3985d26ab3 # 0.19.1
+      with:
+        # No caches: release outputs must not depend on cached state.
+        bazelisk-cache: false
+        disk-cache: false
+        repository-cache: false
+
+    - name: Build
+      run: |
+        bazel --nosystem_rc --nohome_rc build \
+            --config=release \
+            --platforms="${RELEASE_PLATFORM}" \
+            ${RELEASE_TARGETS}
+
+    - name: Collect artifacts
+      run: |
+        mkdir -p release-artifacts
+        bazel --nosystem_rc --nohome_rc cquery \
+            --config=release \
+            --platforms="${RELEASE_PLATFORM}" \
+            --output=files \
+            ${RELEASE_TARGETS} 2>/dev/null \
+          | sort -u > artifact-paths.txt
+        if [ ! -s artifact-paths.txt ]; then
+          echo "::error::No output files found for ${RELEASE_TARGETS}"
+          exit 1
+        fi
+        while read -r f; do
+          cp -L "$f" release-artifacts/
+        done < artifact-paths.txt
+        (cd release-artifacts && sha256sum -- * > ../SHA256SUMS.txt)
+        mv SHA256SUMS.txt release-artifacts/
+        cat release-artifacts/SHA256SUMS.txt
+
+    - name: Attest build provenance
+      uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+      with:
+        subject-path: 'release-artifacts/*'
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      with:
+        name: release-artifacts
+        path: release-artifacts/
+        if-no-files-found: error
+
+    - name: Publish GitHub release
+      if: startsWith(github.ref, 'refs/tags/')
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh release create "${GITHUB_REF_NAME}" release-artifacts/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --verify-tag \
+            --generate-notes
+
+  verify-provenance:
+    name: Verify provenance
+    needs: build-firmware
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      attestations: read
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      with:
+        name: release-artifacts
+        path: release-artifacts
+
+    - name: Verify attestations
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        for f in release-artifacts/*; do
+          gh attestation verify "$f" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml"
+        done
