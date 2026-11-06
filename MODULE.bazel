@@ -202,13 +202,6 @@ nonhermetic_repo = use_repo_rule("//target/earlgrey/tooling/signing:nonhermetic.
 
 nonhermetic_repo(name = "nonhermetic")
 
-# ── AST1060 Peripheral Access Crate (svd2rust-generated) ──
-ast1060_pac_ext = use_extension(
-    "//third_party:ast1060_pac.bzl",
-    "ast1060_pac_ext",
-)
-use_repo(ast1060_pac_ext, "ast1060_pac", "vcell")
-
 hsm = use_extension("//third_party/hsm:extensions.bzl", "hsm")
 use_repo(hsm, "cloud_kms_hsm")
 

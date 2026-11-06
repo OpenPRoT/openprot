@@ -3,14 +3,14 @@
 
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load("@rules_rust//rust:defs.bzl", "rust_test")
-load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//:defs.bzl", "TARGET_COMPATIBLE_WITH")
 
 target_linker_script(
     name = "linker_script",
     system_config = "system.json5",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
-    template = "//target/ast10x0:linker_script_template",
+    template = "//:linker_script_template",
 )
 
 rust_test(
@@ -27,7 +27,7 @@ rust_test(
     use_libtest_harness = False,
     deps = [
         ":linker_script",
-        "//target/ast10x0:entry",
+        "//:entry",
         "@pigweed//pw_kernel/kernel",
         "@pigweed//pw_kernel/kernel/tests:integration_tests",
         "@pigweed//pw_kernel/lib/unittest:unittest_core",

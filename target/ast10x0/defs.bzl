@@ -5,7 +5,7 @@
 load("@pigweed//pw_kernel/tooling:system_image.bzl", "SystemImageInfo")
 
 TARGET_COMPATIBLE_WITH = select({
-    "//target/ast10x0:target_ast10x0": [],
+    "//:target_ast10x0": [],
     "//conditions:default": ["@platforms//:incompatible"],
 })
 
