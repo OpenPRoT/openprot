@@ -3,10 +3,11 @@
 
 load("@rules_rust//rust:defs.bzl", "rust_library")
 
-# Binds the portable millisecond clock that the servers use to the pw_kernel
-# clock. Kernel only, because it reads the kernel's system clock. Gated on the
-# OS rather than on //target:defs.bzl, as //util/ipc is, so shared code does not
-# load from //target.
+# Kernel side of a u64 millisecond deadline. Not the clock for every service:
+# a loop that already waits on an Instant should keep that deadline. Kernel
+# only, because it reads the kernel's system clock. Gated on the OS rather than
+# on //target:defs.bzl, as //util/ipc is, so shared code does not load from
+# //target.
 rust_library(
     name = "millis_clock",
     srcs = ["src/lib.rs"],
