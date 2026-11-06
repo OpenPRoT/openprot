@@ -105,8 +105,8 @@ fn poll_dma_irq_completion(
 }
 
 fn run_dma_read_irq_test() -> Result<(), SmcError> {
-    let scu = unsafe { ScuRegisters::new_global_unlocked() };
-    scu.apply_pinctrl_group(PINCTRL_FMC_QUAD);
+    let scu = unsafe { ScuRegisters::new_global() };
+    scu.unlock_and_lock_after(|scu| scu.apply_pinctrl_group(PINCTRL_FMC_QUAD));
 
     let config = SmcConfig {
         controller_id: SmcController::Fmc,

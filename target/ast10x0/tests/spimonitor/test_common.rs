@@ -312,8 +312,9 @@ fn test_policy_locking(configured: ConfiguredSpiMonitor) -> Result<(), TestError
 pub fn run<C: TestConfig>() -> Result<(), TestError> {
     pw_log::info!("=== AST10x0 external SPI monitor configuration test ===");
 
-    let scu = unsafe { ScuRegisters::new_global_unlocked() };
-    configure_wiring::<C>(&scu)?;
+    let scu = unsafe { ScuRegisters::new_global() };
+
+    scu.unlock_and_lock_after(|scu| configure_wiring::<C>(scu))?;
     let configured = initialize_monitor::<C>(log_buffer())?;
     test_passthrough_control(&configured)?;
     test_command_policy(&configured)?;

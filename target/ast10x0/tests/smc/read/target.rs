@@ -39,8 +39,10 @@ pub struct Target {}
 fn run_smc_read_test() -> Result<(), SmcError> {
     // --- 1. Init ---
     // TODO:: set pinctrl in board/src/lib.rs
-    let scu = unsafe { ScuRegisters::new_global_unlocked() };
-    scu.apply_pinctrl_group(PINCTRL_FMC_QUAD);
+    let scu = unsafe { ScuRegisters::new_global() };
+    scu.unlock_and_lock_after(|scu| {
+        scu.apply_pinctrl_group(PINCTRL_FMC_QUAD);
+    });
 
     let config = SmcConfig {
         controller_id: SmcController::Fmc,

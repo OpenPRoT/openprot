@@ -37,24 +37,9 @@ impl ScuRegisters {
     ///
     /// # Safety
     /// Caller must ensure access to the singleton SCU is coordinated.
-    pub(crate) const unsafe fn new_global() -> Self {
+    pub const unsafe fn new_global() -> Self {
         // SAFETY: Caller upholds the singleton access contract.
         unsafe { Self::new(device::Scu::ptr()) }
-    }
-
-    /// Create a register accessor for the global SCU instance, with write
-    /// protection immediately unlocked.
-    ///
-    /// Follows the aspeed-rust pattern: unlock once, then perform all
-    /// register writes in sequence without re-locking between operations.
-    ///
-    /// # Safety
-    /// Caller must ensure access to the singleton SCU is coordinated.
-    pub unsafe fn new_global_unlocked() -> Self {
-        // SAFETY: Caller upholds the singleton access contract.
-        let scu = unsafe { Self::new_global() };
-        scu.unlock_write_protection();
-        scu
     }
 
     #[inline]
@@ -68,9 +53,36 @@ impl ScuRegisters {
     /// Call this once before a sequence of SCU writes, following the aspeed-rust
     /// pattern of a single unlock per batch of register operations.
     #[inline]
-    pub(crate) fn unlock_write_protection(&self) {
+    fn unlock_write_protection(&self) {
         self.regs()
             .scu000()
             .write(|w| unsafe { w.bits(SCU_UNLOCK_KEY) });
+    }
+
+    /// Lock SCU write-protected registers after a sequence of write operations.
+    #[inline]
+    fn lock_write_protection(&self) {
+        self.regs().scu000().write(|w| unsafe { w.bits(0) });
+    }
+
+    /// Lock SCU write-protected registers after a sequence of write operations.
+    /// ## Example
+    /// ```rust,no_run
+    /// let scu = ScuRegisters::new_global();
+    /// scu.unlock_and_lock_after(|scu| {
+    ///   let mut bits = scu.regs().scu0f0().read().bits();
+    ///   bits &= !0xF;
+    ///   scu.regs().scu0f0().write(|w| unsafe { w.bits(bits) });
+    /// });
+    /// ```
+    #[inline]
+    pub fn unlock_and_lock_after<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&ScuRegisters) -> R,
+    {
+        self.unlock_write_protection();
+        let result = f(self);
+        self.lock_write_protection();
+        result
     }
 }

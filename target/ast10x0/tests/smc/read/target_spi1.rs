@@ -33,17 +33,20 @@ const SPI_FLASH_CONFIG: FlashConfig = FlashConfig {
 pub struct Target {}
 
 fn config_spi1_master_controller() -> Result<(), SmcError> {
-    let scu = unsafe { ScuRegisters::new_global_unlocked() };
-    scu.apply_pinctrl_group(PINCTRL_SPIM1_DEFAULT);
-    scu.apply_pinctrl_group(PINCTRL_SPI1_QUAD);
-    // Configure the mux for the SPI master controller path.
-    scu.set_spim_internal_mux(SpiMonitorSource::Spi1, 1)
-        .map_err(|_| SmcError::HardwareError)?;
-    scu.set_spim_internal_master_route(SpiMonitorInstance::Spim0, SpiMonitorSource::Spi1);
-    scu.set_spim_passthrough(SpiMonitorInstance::Spim0, SpiMonitorPassthrough::Enabled);
-    scu.set_spim_ext_mux(SpiMonitorInstance::Spim0, ScuExtMuxSelect::Mux1);
-    pw_log::info!("SCU pinmux and SPIM routing configured for SPI1 monitoring");
-    Ok(())
+    let scu = unsafe { ScuRegisters::new_global() };
+
+    scu.unlock_and_lock_after(|scu| {
+        scu.apply_pinctrl_group(PINCTRL_SPIM1_DEFAULT);
+        scu.apply_pinctrl_group(PINCTRL_SPI1_QUAD);
+        // Configure the mux for the SPI master controller path.
+        scu.set_spim_internal_mux(SpiMonitorSource::Spi1, 1)
+            .map_err(|_| SmcError::HardwareError)?;
+        scu.set_spim_internal_master_route(SpiMonitorInstance::Spim0, SpiMonitorSource::Spi1);
+        scu.set_spim_passthrough(SpiMonitorInstance::Spim0, SpiMonitorPassthrough::Enabled);
+        scu.set_spim_ext_mux(SpiMonitorInstance::Spim0, ScuExtMuxSelect::Mux1);
+        pw_log::info!("SCU pinmux and SPIM routing configured for SPI1 monitoring");
+        Ok(())
+    })
 }
 
 fn run_spi1_read_test() -> Result<(), SmcError> {

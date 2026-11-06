@@ -28,10 +28,10 @@ impl TargetInterface for Target {
 
     fn main() -> ! {
         // SAFETY: single call at boot with exclusive access to SCU global regs.
-        unsafe {
-            let scu = ScuRegisters::new_global_unlocked();
+        let scu = unsafe { ScuRegisters::new_global() };
+        scu.unlock_and_lock_after(|scu| {
             scu.apply_pinctrl_group(pinctrl::PINCTRL_SGPIOM);
-        }
+        });
 
         codegen::start();
         loop {

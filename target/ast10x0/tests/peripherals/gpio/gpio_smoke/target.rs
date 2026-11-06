@@ -17,14 +17,14 @@ pub struct Target {}
 
 fn run_gpioa_test() -> bool {
     // SAFETY: this kernel-only test is the sole owner of the SCU and GPIO peripherals.
-    let gpioa = unsafe {
-        let scu = ScuRegisters::new_global_unlocked();
+    let scu = unsafe { ScuRegisters::new_global() };
+    scu.unlock_and_lock_after(|scu| {
         scu.apply_pinctrl_group(pinctrl::PINCTRL_GPIOA0);
         scu.apply_pinctrl_group(pinctrl::PINCTRL_GPIOA1);
         scu.apply_pinctrl_group(pinctrl::PINCTRL_GPIOA3);
         scu.apply_pinctrl_group(pinctrl::PINCTRL_GPIOA4);
-        gpioa::GPIOA::new_global().split()
-    };
+    });
+    let gpioa = unsafe { gpioa::GPIOA::new_global().split() };
     pw_log::info!("=== AST10x0 GPIOA smoke test ===");
 
     // AST1060 does not provide internal pull-up or pull-down control for these
