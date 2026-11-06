@@ -62,9 +62,7 @@ rust_library(
     ],
 )
 
-# caliptra-hw-model for host-side test binaries. Used by
-# //third_party/caliptra/caliptra-mcu-sw:mcu_hw_model. On aarch64
-# (//toolchain/aarch64_linux), enables `fpga_subsystem`.
+# caliptra-hw-model for host-side test binaries.
 #
 # Its build script reads caliptra-ss's OTP memory map from
 # $CARGO_MANIFEST_DIR/../hw/latest/caliptra-ss/... (a submodule @caliptra_sw

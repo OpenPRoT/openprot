@@ -237,11 +237,10 @@ rust_library(
 )
 
 # Upstream hw/model (crate caliptra-mcu-hw-model) for host-side test binaries.
-# On aarch64 (//toolchain/aarch64_linux), enables `fpga_realtime` so
-# `DefaultHwModel` is `ModelFpgaRealtime`; on x86_64 host, `DefaultHwModel` is
-# `ModelEmulated`. caliptra-mcu-builder is left out: the library only uses it
-# from tests (see hw_model_no_builder.patch), which keeps signing and OpenSSL
-# out of the build.
+# On aarch64, enables `fpga_realtime` so `DefaultHwModel` is `ModelFpgaRealtime`;
+# on x86_64 host, `DefaultHwModel` is `ModelEmulated`. caliptra-mcu-builder is
+# left out: the library only uses it from tests (see hw_model_no_builder.patch),
+# which keeps signing and OpenSSL out of the build.
 rust_library(
     name = "mcu_hw_model",
     srcs = ["@caliptra_mcu_sw//:hw_model_srcs"],
