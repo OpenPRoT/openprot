@@ -118,6 +118,27 @@ For a concrete cross-process example, see
 [`design/pw-kernel-ipc.md`](./design/pw-kernel-ipc.md) and
 [`target/veer/ipc/`](https://github.com/OpenPRoT/openprot/tree/main/target/veer/ipc).
 
+## Terminology
+
+- **Product**: This is the ultimate umbrella term for which we will construct a
+  firmware bundle, that is, it is where the specific processor, memory map,
+  board, features, configuration, etc., are finally combined. For two things to
+  be the same product, they should be able to run the same firmware binary. This
+  could be a single chip, a family of chips, a board, or a family of boards.
+  This combines the Pigweed **target** along with all of the details for the
+  final firmware build. Examples: AST1060 QEMU, Earlgrey Verilator, Caliptra MCU
+  Test FPGA, Caliptra MCU Emulator.
+- **Product class**: Useful to talk about groups of products, like Caliptra MCU
+  implementations, though not something we will build specific firmware for.
+- **Chip**: this is the SoC that a product uses, that is, collecting together
+  the processor architecture (rv32imc, Cortex-M4F, etc.), interrupt controller,
+  internal I2C/I3C controllers and targets, and all other internal components,
+  the memory map, interrupt assignments, I2C/I3C addresses, etc., may
+  not be static. This corresponds roughly to a Pigweed **target**. For example:
+  AST1060 chip, Earlgrey 1.0 chip, Caliptra MCU 2.2 VeeR. Drivers might be
+  chip-specific but rarely should be product-specific (though might be
+  configured differently per product or product class).
+
 ## Targets
 
 Each silicon/SoC target lives under `target/<name>/` and provides its own
