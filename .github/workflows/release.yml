@@ -67,11 +67,16 @@ jobs:
     - name: Collect artifacts
       run: |
         mkdir -p release-artifacts
+        # cquery inherits the `test` rc settings (--platform_suffix=test,
+        # enable_tests=true), which would point at a different output
+        # directory than the build above. Reset them so the paths match.
         bazel --nosystem_rc --nohome_rc cquery \
             --config=release \
             --platforms="${RELEASE_PLATFORM}" \
+            --platform_suffix= \
+            --@pigweed//pw_kernel:enable_tests=false \
             --output=files \
-            ${RELEASE_TARGETS} 2>/dev/null \
+            ${RELEASE_TARGETS} \
           | sort -u > artifact-paths.txt
         if [ ! -s artifact-paths.txt ]; then
           echo "::error::No output files found for ${RELEASE_TARGETS}"
