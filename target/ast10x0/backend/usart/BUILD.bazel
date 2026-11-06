@@ -12,8 +12,8 @@ rust_library(
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],
     deps = [
-        "@openprot//drivers/usart/api:usart_api",
         "//peripherals",
+        "@openprot//drivers/usart/api:usart_api",
         "@rust_crates//:embedded-io",
     ],
 )
