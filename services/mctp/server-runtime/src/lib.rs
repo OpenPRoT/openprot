@@ -24,9 +24,9 @@ use openprot_mctp_api::wire::{self, MctpRequestHeader, MctpResponseHeader};
 use openprot_mctp_api::ResponseCode;
 use openprot_mctp_server::dispatch::{self, DispatchOutcome};
 use openprot_mctp_server::{Sender, Server};
+use util_millis_epoch::Epoch;
 use pw_status::Result;
 use userspace::syscall::Signals;
-use userspace::time::{Clock, Duration, Instant, SystemClock};
 use util_service::{ChannelId, Event, ServiceLoop};
 
 pub use util_service::Channel;
@@ -78,16 +78,14 @@ pub fn run<S: Sender, const N: usize>(
     let mut service = ServiceLoop::new(wg, channels)?;
     service.add_source(transport_handle, transport_signal)?;
 
-    let epoch = Epoch::now();
+    let epoch = Epoch::start();
     let mut request_buf = [0u8; MAX_REQUEST_SIZE];
     let mut response_buf = [0u8; MAX_RESPONSE_SIZE];
     let mut recv_buf = [0u8; STACK_MAX_PAYLOAD_SIZE];
 
     loop {
         // The server is the single owner of when a deferred Recv is due.
-        let deadline = server
-            .next_recv_deadline()
-            .map_or(Instant::MAX, |millis| epoch.instant_at(millis));
+        let deadline = epoch.instant_at(server.next_recv_deadline());
 
         let event = service.next(deadline, &mut request_buf)?;
 
@@ -155,34 +153,5 @@ fn serve<S: Sender, const N: usize>(
         .is_err()
     {
         pw_log::error!("mctp: reply failed");
-    }
-}
-
-/// A fixed origin tying the kernel's tick clock to the `Server`'s portable
-/// `u64` millisecond clock.
-#[derive(Clone, Copy)]
-struct Epoch(Instant);
-
-impl Epoch {
-    fn now() -> Self {
-        Self(SystemClock::now())
-    }
-
-    /// Whole milliseconds elapsed since the epoch.
-    fn millis(&self) -> u64 {
-        (SystemClock::now() - self.0).as_millis() as u64
-    }
-
-    /// A kernel instant by which `millis()` is guaranteed to have reached
-    /// `millis`, or `Instant::MAX` if that is unrepresentable.
-    ///
-    /// One millisecond late on purpose. `millis()` rounds down and the
-    /// conversion to ticks may too, so waking exactly on time could read
-    /// the clock as one short, find nothing due, and wait again on a
-    /// deadline already in the past.
-    fn instant_at(&self, millis: u64) -> Instant {
-        self.0
-            .checked_add_duration(Duration::from_millis(millis.saturating_add(1)))
-            .unwrap_or(Instant::MAX)
     }
 }
