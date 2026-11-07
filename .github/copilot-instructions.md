@@ -13,6 +13,7 @@
 - [ ] Fixed-size arrays and heapless collections used instead of dynamic allocation
 - [ ] Stack usage is bounded and reasonable for embedded targets
 - [ ] Shared/reused scratch buffers are not aliased across multiple batched results — each consumer's data is copied or encoded before the buffer is overwritten for the next one
+- [ ] Untrusted IPC input is validated in the server, not in the hardware driver. Client-controlled address, size, and length meet the driver's documented preconditions (supported size, alignment, in-bounds range) before the handler calls into the HAL or driver
 
 ## Quick Reference: Forbidden Patterns
 
@@ -61,3 +62,4 @@ for item in pending {
 - **Hardware abstraction**: All register access must go through HAL traits
 - **Error information**: Don't leak sensitive data in error messages
 - **Buffer aliasing (CWE-488)**: Never collect metadata for multiple pending/ready items against a single shared buffer and process them afterward — the buffer only ever holds the last write. Each item must be fully encoded/consumed before the buffer is reused for the next.
+- **IPC trust boundary**: Validate untrusted input in the IPC server, not in the hardware driver. A client-controlled address, size, or length must already satisfy the driver's documented preconditions — supported size, alignment, and an in-bounds range — before the handler calls into the HAL or the driver.

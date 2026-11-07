@@ -195,7 +195,11 @@ are byte buffers. A few rules of thumb that follow from that:
   stack — they live inside `no_std` userspace.
 - Validate everything coming off the wire: length, range, enum variants.
   Treat the request side as untrusted — it is in a different process and may
-  be running independently maintained code.
+  be running independently maintained code. That check belongs in the IPC
+  server, which is the trust boundary, not in the hardware driver. Before
+  calling into a HAL or driver, the handler must already have established
+  the driver's documented preconditions: a supported size, an aligned
+  address, and a range that stays inside the device.
 - Keep the handler loop free of `unwrap` / panic paths. The handler is the
   service for every other process holding an initiator endpoint, so a
   panic-on-malformed-input becomes a denial-of-service.
