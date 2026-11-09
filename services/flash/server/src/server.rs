@@ -156,7 +156,7 @@ impl<TFlash: Flash<Error = ErrorCode>> Server<TFlash> {
             return 0;
         };
         head.copy_from_slice(status.as_bytes());
-        STATUS_LEN + reply_len
+        STATUS_LEN.saturating_add(reply_len)
     }
 }
 
