@@ -1,0 +1,18 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_test")
+
+# The real client and server over an in-memory transport: no kernel, no IPC.
+rust_test(
+    name = "flash_client_server_test",
+    srcs = ["client_server.rs"],
+    edition = "2024",
+    deps = [
+        "//hal/blocking/flash",
+        "//services/flash/client:flash_client",
+        "//services/flash/server:flash_server_lib",
+        "//util/error",
+        "//util/types",
+    ],
+)
