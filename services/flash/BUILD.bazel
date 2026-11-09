@@ -11,3 +11,11 @@ filegroup(
         "//services/flash/server:flash_server_lib",
     ],
 )
+
+# Host-side tests; run without embedded target config.
+test_suite(
+    name = "flash_host_tests",
+    tests = [
+        "//services/flash/server:flash_server_handler_test",
+    ],
+)
