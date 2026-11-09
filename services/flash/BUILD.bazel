@@ -8,6 +8,7 @@ filegroup(
     name = "flash_embedded_all",
     srcs = [
         "//services/flash/api:flash_api",
+        "//services/flash/client:flash_client",
         "//services/flash/server:flash_server_lib",
     ],
 )
