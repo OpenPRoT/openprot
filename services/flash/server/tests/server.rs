@@ -12,10 +12,11 @@ use openprot_flash_api::*;
 use openprot_flash_server::Server;
 use util_error::{self as error, ErrorCode};
 use util_types::{Opcode, PowerOf2Usize};
-use zerocopy::IntoBytes;
+use zerocopy::{FromBytes, IntoBytes};
 
 const TOTAL: usize = 0x1_0000;
 const SECTOR: usize = 4096;
+const OPCODE_LEN: usize = core::mem::size_of::<Opcode>();
 
 struct CountingFlash<'a> {
     calls: &'a Cell<u32>,
@@ -46,18 +47,25 @@ impl Flash for CountingFlash<'_> {
     }
 }
 
+/// Decodes a response frame: a status word, then the reply if it is zero.
+fn decode(frame: &[u8]) -> Result<Vec<u8>, ErrorCode> {
+    let status = u32::from_ne_bytes(frame[..4].try_into().unwrap());
+    ErrorCode::check_status(status).map(|()| frame[4..].to_vec())
+}
+
 /// Returns the reply, or the error, and how many times the flash was called.
 fn serve(op: Opcode, parts: &[&[u8]]) -> (Result<Vec<u8>, ErrorCode>, u32) {
     let calls = Cell::new(0);
     let mut server = Server::new(CountingFlash { calls: &calls });
     let mut buf = [0u8; 8192];
-    let mut len = 0;
+    buf[..OPCODE_LEN].copy_from_slice(op.as_bytes());
+    let mut len = OPCODE_LEN;
     for part in parts {
         buf[len..len + part.len()].copy_from_slice(part);
         len += part.len();
     }
-    let reply = server.handle(op, &mut buf, len).map(|r| r.to_vec());
-    (reply, calls.get())
+    let frame_len = server.handle_frame(&mut buf, len);
+    (decode(&buf[..frame_len]), calls.get())
 }
 
 fn erase(address: u32, size: u32) -> (Result<Vec<u8>, ErrorCode>, u32) {
@@ -170,4 +178,35 @@ fn unknown_opcode_is_rejected() {
     let (reply, calls) = serve(Opcode::new(*b"NOPE"), &[]);
     assert!(reply == Err(error::IPC_ERROR_UNKNOWN_OP));
     assert_eq!(calls, 0);
+}
+
+#[test]
+fn get_info_reports_the_geometry() {
+    let (reply, calls) = serve(IPC_OP_FLASH_GET_INFO, &[]);
+    let info = FlashInfo::read_from_bytes(&reply.unwrap()).unwrap();
+    assert_eq!(info.total_size, TOTAL as u32);
+    assert_eq!(info.page_size, SECTOR as u32);
+    assert_eq!(info.erasable_sizes_bitmap, 1 << 12);
+    assert_eq!(calls, 0);
+}
+
+#[test]
+fn request_shorter_than_an_opcode_is_not_served_under_the_stale_one() {
+    let calls = Cell::new(0);
+    let mut server = Server::new(CountingFlash { calls: &calls });
+    let mut buf = [0u8; 8192];
+
+    for len in 0..OPCODE_LEN {
+        buf[..OPCODE_LEN].copy_from_slice(IPC_OP_FLASH_GET_INFO.as_bytes());
+        let frame_len = server.handle_frame(&mut buf, len);
+        assert!(decode(&buf[..frame_len]) == Err(error::IPC_ERROR_BAD_REQ_LEN));
+    }
+}
+
+#[test]
+fn a_buffer_too_small_for_a_status_gets_no_frame() {
+    let calls = Cell::new(0);
+    let mut server = Server::new(CountingFlash { calls: &calls });
+    let mut buf = [0u8; 3];
+    assert_eq!(server.handle_frame(&mut buf, 3), 0);
 }
