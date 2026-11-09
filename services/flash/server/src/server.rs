@@ -1,27 +1,21 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! Flash IPC server implementation.
-
-#![no_std]
+//! Flash request handling, independent of the kernel and of IPC.
 
 use hal_flash::{Flash, FlashAddress};
-use services_flash_opcode::*;
+use openprot_flash_api::*;
 use util_error::{self as error, ErrorCode};
-use util_ipc::{IpcHandle, IpcHandler};
 use util_types::{Opcode, PowerOf2Usize};
 use zerocopy::{FromBytes, IntoBytes};
 
-/// A flash server that handles flash IPC requests.
-///
-/// This struct wraps an object implementing the `Flash` trait and provides
-/// an IPC interface to it.
-pub struct FlashIpcServer<TFlash: Flash> {
+/// Serves flash requests against a [`Flash`].
+pub struct Server<TFlash: Flash> {
     flash: TFlash,
 }
 
-impl<TFlash: Flash<Error = ErrorCode>> FlashIpcServer<TFlash> {
-    /// Creates a new `FlashIpcServer` wrapping the given flash implementation.
+impl<TFlash: Flash<Error = ErrorCode>> Server<TFlash> {
+    /// Creates a new `Server` wrapping the given flash implementation.
     pub fn new(flash: TFlash) -> Self {
         Self { flash }
     }
@@ -93,7 +87,9 @@ impl<TFlash: Flash<Error = ErrorCode>> FlashIpcServer<TFlash> {
         Ok(&data[..length])
     }
 
-    fn handle_op<'a>(
+    /// Handles one request: `data` holds `reqsz` request bytes and is the
+    /// scratch for the reply, which is returned as a slice of it.
+    pub fn handle<'a>(
         &mut self,
         opcode: Opcode,
         data: &'a mut [u8],
@@ -106,29 +102,5 @@ impl<TFlash: Flash<Error = ErrorCode>> FlashIpcServer<TFlash> {
             IPC_OP_FLASH_READ => self.handle_read(data, reqsz),
             _ => Err(error::IPC_ERROR_UNKNOWN_OP),
         }
-    }
-
-    /// Handles a single IPC request.
-    ///
-    /// This method performs a non-blocking read on the IPC handle. The caller
-    /// must ensure the handle is readable (e.g., by calling `syscall::object_wait`)
-    /// before calling this method.
-    pub fn handle_one(&mut self, ipc: &IpcHandle, data: &mut [u8]) -> Result<(), ErrorCode> {
-        let len = ipc.read(0, data).map_err(ErrorCode::kernel_error)?;
-        let (opcode, reqrsp) = data.split_at_mut(core::mem::size_of::<Opcode>());
-        let opcode = Opcode::read_from_bytes(opcode).map_err(|_| error::IPC_ERROR_BAD_REQ_LEN)?;
-        let len = len.saturating_sub(core::mem::size_of::<Opcode>());
-
-        let mut status = 0u32;
-        let result = match self.handle_op(opcode, reqrsp, len) {
-            Ok(result) => result,
-            Err(e) => {
-                status = e.0.get();
-                &[]
-            }
-        };
-        ipc.respond(&[status.as_bytes(), result])
-            .map_err(ErrorCode::kernel_error)?;
-        Ok(())
     }
 }
