@@ -1,7 +1,7 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
-load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
 rust_library(
     name = "flash_server_lib",
@@ -13,6 +13,21 @@ rust_library(
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
+        "//hal/blocking/flash",
+        "//services/flash/api:flash_api",
+        "//util/error",
+        "//util/types",
+        "@rust_crates//:zerocopy",
+    ],
+)
+
+# A rejected request must not reach the flash.
+rust_test(
+    name = "flash_server_handler_test",
+    srcs = ["tests/server.rs"],
+    edition = "2024",
+    deps = [
+        ":flash_server_lib",
         "//hal/blocking/flash",
         "//services/flash/api:flash_api",
         "//util/error",
