@@ -40,6 +40,14 @@ pub use channels::Channel;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ChannelId(usize);
 
+impl ChannelId {
+    /// Position of the channel in the slice given to [`ServiceLoop::new`], so
+    /// a caller that keeps one handler per channel can pick the right one.
+    pub const fn index(self) -> usize {
+        self.0
+    }
+}
+
 /// Why [`ServiceLoop::next`] returned.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Event {
