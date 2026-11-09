@@ -1,0 +1,67 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# Pins and bazel_dep versions include()'d by openprot's MODULE.bazel, and
+# currently also by target/ast10x0/MODULE.bazel (today, target/ast10x0 is
+# nested inside this checkout and reaches this file via a symlink, so the
+# two stay in sync; once it moves to its own repo, it gets its own copy of
+# this file instead — at that point it's no longer "shared", just pins).
+# Either way, each including MODULE.bazel is its own root module when built
+# standalone, so neither can see the other's overrides, extension tags, or
+# version requests (see presubmit/module_pins.py) without this.
+#
+# While target/ast10x0 is still nested here: its pins.MODULE.bazel is a
+# symlink to this file, which only works because both directories are in the
+# same checkout. When target/ast10x0 moves to its own repo, replace that
+# symlink with a real copy of this file there and keep its include() line
+# unchanged — see the comment at that include() call.
+#
+# Variable bindings do not cross an include() boundary in either direction, so
+# the `pw_rust` extension proxy is created and consumed entirely in this file;
+# the including file never refers to it by name.
+
+bazel_dep(name = "bazel_skylib", version = "1.8.2")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_rust", version = "0.70.0")
+bazel_dep(name = "rules_platform", version = "0.1.0")
+bazel_dep(name = "rules_python", version = "1.8.3")
+
+# Local patch to pw_kernel's VeeR PIC code (see third_party/pigweed/):
+# veer_pic_gateways.patch makes the PIC gateways level-triggered and active
+# high explicitly, as caliptra-mcu-sw's PIC driver does.
+# veer_pic_claim.patch drops the MEICPCT write from the external-interrupt
+# claim, which traps as an illegal instruction on the Caliptra FPGA's VeeR core;
+# caliptra-mcu-sw's VeeR kernel reads MEIHAP directly.
+git_override(
+    module_name = "pigweed",
+    commit = "e21bf7763475a456efdcc49dafb651ef952b3be1",
+    patch_strip = 1,
+    patches = [
+        "@openprot//third_party/pigweed:veer_pic_gateways.patch",
+        "@openprot//third_party/pigweed:veer_pic_claim.patch",
+    ],
+    remote = "https://pigweed.googlesource.com/pigweed/pigweed",
+)
+
+git_override(
+    module_name = "ureg",
+    commit = "4762ed5eef323a4267720a6b6da287c88738f901",
+    remote = "https://github.com/chipsalliance/caliptra-ureg",
+)
+
+archive_override(
+    module_name = "opentitan_devbundle",
+    integrity = "sha256-LGKvET6WY+P4kwrZMSnkBrkqxS1f/ES/rmkPBQmfnwg=",
+    url = "https://github.com/lowRISC/opentitan/releases/download/devbundle-2026-06-02-1/devbundle.tar.xz",
+)
+
+pw_rust = use_extension("@pigweed//pw_toolchain/rust:extensions.bzl", "pw_rust")
+pw_rust.toolchain(cipd_tag = "git_revisions:fe5c95d4ae33ec9d7831921e448e2daf8264ea42,7b074fc9362a4a6a5f172dd8936a22fb25eff96b")
+use_repo(
+    pw_rust,
+    "pw_rust_toolchains",
+    # Used by //toolcain/aarch64_linux; unused by (but harmless for)
+    # target/ast10x0's standalone build.
+    "rust_toolchain_host_linux_x86_64",
+    "rust_toolchain_target_aarch64-unknown-linux-gnu_aarch64",
+)
