@@ -3,8 +3,9 @@
 
 load("@rules_rust//rust:defs.bzl", "rust_library")
 
-# The only kernel-tagged flash server crate: wraps openprot_flash_server's
-# platform-independent Server in a wait on one IPC channel.
+# The only kernel-tagged flash server crate: serves one flash device per IPC
+# channel, using openprot_flash_server's platform-independent Server. The loop
+# and its WaitGroup are //util/service.
 rust_library(
     name = "flash_server_runtime",
     srcs = ["src/lib.rs"],
@@ -16,8 +17,9 @@ rust_library(
         "//hal/blocking/flash",
         "//services/flash/server:flash_server_lib",
         "//util/error",
-        "//util/ipc",
+        "//util/service",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
     ],
 )
