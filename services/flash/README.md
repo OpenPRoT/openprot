@@ -7,21 +7,21 @@ The Flash Service provides a centralized interface for userspace applications to
 Applications interact with flash through the `Flash` trait, typically using the `FlashIpcClient` implementation. All operations are blocking from the perspective of the caller.
 
 ### Key Features
-- **Partition Support**: Access to both primary Data partitions and auxiliary Info partitions.
 - **Flexible Erase**: Support for multiple erase granularities (e.g., page vs. block) as reported by the hardware.
 - **Unified Addressing**: A logical `FlashAddress` system that abstracts hardware-specific bank and page layouts.
 
 ## Usage
 
-To use the flash service, initialize a `FlashIpcClient` with a handle to the flash service:
+To use the flash service, initialize a `FlashIpcClient` with a transport over the channel to the flash service:
 
 ```rust
 use hal_flash::{Flash, FlashAddress};
-use services_flash_client::FlashIpcClient;
+use openprot_flash_client_ipc::{ChannelTransport, FlashIpcClient};
 use util_ipc::IpcHandle;
 
 // 1. Connect to the flash service
-let mut flash = FlashIpcClient::new(IpcHandle::new(FLASH_SERVICE_HANDLE))?;
+let transport = ChannelTransport::new(IpcHandle::new(FLASH_SERVICE_HANDLE));
+let mut flash = FlashIpcClient::new(transport)?;
 
 // 2. Retrieve device geometry
 let (total_size, page_size, erasable_bitmap) = flash.geometry();
@@ -56,21 +56,29 @@ The `erasable_bitmap` is a `u32` where each set bit `i` indicates that an erase 
 
 Flash memory is addressed using the `FlashAddress` type, which wraps a single 32-bit `offset`.
 
-On platforms like Earlgrey, the most significant bit (MSB) of this offset is used to distinguish between different partitions:
-- **DATA partition**: MSB is 0 (offset < 0x80000000).
-- **INFO partition**: MSB is 1 (offset >= 0x80000000).
-
-The `EarlgreyFlashAddress` trait (from `earlgrey_util`) provides helper methods to construct and inspect addresses:
-- `FlashAddress::data(offset)`: Accesses the main data partition.
-- `FlashAddress::info(bank, page, offset)`: Accesses specific info pages.
+The server treats the offset as a byte position in a flat range from 0 to the size reported by `geometry()`, and rejects any read, program, or erase that does not fit in it. A target whose offsets carry more than a position, such as a partition selector, needs its own address handling in front of the server.
 
 ## Implementation Details
 
 The service is built on several layers of abstraction:
 
+### Crates
+
+| Directory | Crate | Role |
+|---|---|---|
+| `api/` | `openprot_flash_api` | Opcodes and request layouts shared by client and server. |
+| `client/` | `openprot_flash_client` | `FlashClient`, the `Flash` trait over any `FlashTransport`. No kernel types. |
+| `client-ipc/` | `openprot_flash_client_ipc` | `ChannelTransport`, which carries requests over a kernel channel, and `FlashIpcClient`. Kernel only. |
+| `server/` | `openprot_flash_server` | `Server`: decodes a request frame, checks it, and builds the response frame. No kernel types. |
+| `server-runtime/` | `flash_server_runtime` | `run`: the wait loop that moves frames between a channel and `Server`. Kernel only. |
+
+Host tests: `bazelisk test //services/flash:flash_host_tests`. They include the real client talking to the real server over an in-memory transport.
+
 ### IPC Layer
-- **`FlashIpcServer`**: Wraps a hardware-backed `Flash` implementation and dispatches IPC requests.
-- **`FlashIpcClient`**: Implements the `Flash` trait by proxying calls to the server.
+- **`Server`** is the trust boundary. Client address, erase size, and length are checked here, before `BlockingFlash` or the hardware driver is called. The erase size is a bit in the erasable-size bitmap, the erase address is aligned to that size, and every read, program, and erase range stays inside the device. A rejected request never reaches the flash.
+- **`FlashClient`**: Implements the `Flash` trait by proxying calls to the server. It checks the length of each response.
+
+A request is an opcode followed by its body. A response is a four-byte status, zero for success or an `ErrorCode`, followed by the reply.
 
 ### Hardware Abstraction
 - **`FlashDriver` Trait**: Defines the low-level, often asynchronous, interface for hardware drivers.
@@ -80,9 +88,11 @@ The service is built on several layers of abstraction:
 
 ```mermaid
 graph TD
-    Client[Userspace Application] -- "Flash Trait" --> IPC_Client[FlashIpcClient]
-    IPC_Client -- "IPC" --> IPC_Server[FlashIpcServer]
-    IPC_Server -- "Flash Trait" --> BlockingFlash[BlockingFlash]
+    Client[Userspace Application] -- "Flash Trait" --> IPC_Client[FlashClient]
+    IPC_Client -- "FlashTransport" --> Transport[ChannelTransport]
+    Transport -- "IPC" --> IPC_Server[flash_server_runtime]
+    IPC_Server -- "handle_frame()" --> Server[Server]
+    Server -- "Flash Trait" --> BlockingFlash[BlockingFlash]
     BlockingFlash -- "FlashDriver Trait" --> HardwareDriver[e.g., EmbeddedFlash]
     HardwareDriver --> HW[Flash Controller]
 ```
