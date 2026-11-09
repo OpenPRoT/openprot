@@ -12,6 +12,7 @@ filegroup(
         # Kernel-only crates (depend on pw_kernel userspace; not host-testable).
         "//services/flash/client-ipc:flash_client_ipc",
         "//services/flash/server:flash_server_lib",
+        "//services/flash/server-runtime:flash_server_runtime",
     ],
 )
 
