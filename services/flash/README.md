@@ -70,7 +70,7 @@ The service is built on several layers of abstraction:
 | `client/` | `openprot_flash_client` | `FlashClient`, the `Flash` trait over any `FlashTransport`. No kernel types. |
 | `client-ipc/` | `openprot_flash_client_ipc` | `ChannelTransport`, which carries requests over a kernel channel, and `FlashIpcClient`. Kernel only. |
 | `server/` | `openprot_flash_server` | `Server`: decodes a request frame, checks it, and builds the response frame. No kernel types. |
-| `server-runtime/` | `flash_server_runtime` | `run`: the wait loop that moves frames between a channel and `Server`. Kernel only. |
+| `server-runtime/` | `flash_server_runtime` | `run`: serves one `Server` per IPC channel, through `util_service`'s loop. Kernel only. |
 
 Host tests: `bazelisk test //services/flash:flash_host_tests`. They include the real client talking to the real server over an in-memory transport.
 
@@ -79,6 +79,10 @@ Host tests: `bazelisk test //services/flash:flash_host_tests`. They include the 
 - **`FlashClient`**: Implements the `Flash` trait by proxying calls to the server. It checks the length of each response.
 
 A request is an opcode followed by its body. A response is a four-byte status, zero for success or an `ErrorCode`, followed by the reply.
+
+### Several devices
+
+One flash device is one IPC channel. A controller with several chip selects is served by giving each chip select its own channel and `Server`, and passing them to `run` as parallel slices. The channel a request arrives on picks the device, so the wire protocol has no device id, and a process can only reach the devices it was given a channel to. A device a client should not touch is a channel it does not get.
 
 ### Hardware Abstraction
 - **`FlashDriver` Trait**: Defines the low-level, often asynchronous, interface for hardware drivers.
