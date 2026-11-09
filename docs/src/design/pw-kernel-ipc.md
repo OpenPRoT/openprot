@@ -193,13 +193,12 @@ are byte buffers. A few rules of thumb that follow from that:
 - Pick a fixed-size request/response layout (or a length-prefixed one) so
   the handler can size its read buffer up front. Keep the buffers on the
   stack — they live inside `no_std` userspace.
-- Validate everything coming off the wire: length, range, enum variants.
-  Treat the request side as untrusted — it is in a different process and may
-  be running independently maintained code. That check belongs in the IPC
-  server, which is the trust boundary, not in the hardware driver. Before
-  calling into a HAL or driver, the handler must already have established
-  the driver's documented preconditions: a supported size, an aligned
-  address, and a range that stays inside the device.
+- Treat everything that comes off the wire as untrusted input. Validate its
+  length, bounds, and allowed values. Do not rely on clients, including
+  third-party code, to send valid requests.
+- Do this in the server, not in the hardware driver. The driver assumes its
+  inputs are valid. Before the handler calls it, check that the size is
+  supported, the address is aligned, and the range lies inside the device.
 - Keep the handler loop free of `unwrap` / panic paths. The handler is the
   service for every other process holding an initiator endpoint, so a
   panic-on-malformed-input becomes a denial-of-service.
