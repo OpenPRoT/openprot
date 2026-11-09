@@ -4,7 +4,9 @@
 //! The real flash client and server talking over an in-memory transport,
 //! with no kernel and no IPC. The flash behind the server is RAM.
 
+use core::cell::RefCell;
 use core::num::NonZero;
+use std::rc::Rc;
 
 use hal_flash::{Flash, FlashAddress};
 use openprot_flash_client::{FlashClient, FlashTransport};
@@ -109,6 +111,58 @@ impl FlashTransport for Skewed {
             len.checked_add_signed(self.delta).unwrap()
         })
     }
+}
+
+/// One channel of a server that serves one device per channel. Every channel
+/// shares the same devices; `device` is the one this channel reaches.
+struct Channel {
+    servers: Rc<RefCell<Vec<Server<RamFlash>>>>,
+    device: usize,
+    scratch: Vec<u8>,
+}
+
+impl FlashTransport for Channel {
+    fn transact(&mut self, send: &[&[u8]], recv: &mut [&mut [u8]]) -> Result<usize, ErrorCode> {
+        let mut len = 0;
+        for piece in send {
+            self.scratch[len..len + piece.len()].copy_from_slice(piece);
+            len += piece.len();
+        }
+        let frame_len = match self.servers.borrow_mut().get_mut(self.device) {
+            Some(server) => server.handle_frame(&mut self.scratch, len),
+            None => 0,
+        };
+
+        let mut rest = &self.scratch[..frame_len];
+        for piece in recv.iter_mut() {
+            let take = piece.len().min(rest.len());
+            let (head, tail) = rest.split_at(take);
+            piece[..take].copy_from_slice(head);
+            rest = tail;
+        }
+        Ok(frame_len)
+    }
+}
+
+/// Devices of different sizes behind one server, and a channel to each.
+fn two_devices() -> (Rc<RefCell<Vec<Server<RamFlash>>>>, [Channel; 2]) {
+    let sizes = [TOTAL, 2 * TOTAL];
+    let servers: Vec<_> = sizes
+        .iter()
+        .map(|&size| {
+            Server::new(RamFlash {
+                data: vec![0xff; size],
+            })
+        })
+        .collect();
+    let servers = Rc::new(RefCell::new(servers));
+    let channel = |device| Channel {
+        servers: servers.clone(),
+        device,
+        scratch: vec![0; 8192],
+    };
+    let channels = [channel(0), channel(1)];
+    (servers, channels)
 }
 
 fn loopback() -> Loopback {
@@ -220,4 +274,58 @@ fn an_erase_response_that_is_too_long_is_an_error() {
     let mut client = FlashClient::new(transport).unwrap();
     let result = client.erase(FlashAddress::new(0), sector());
     assert_eq!(result, Err(error::IPC_ERROR_RSP_BAD_LEN));
+}
+
+#[test]
+fn each_channel_reports_the_geometry_of_its_own_device() {
+    let (_servers, [first, second]) = two_devices();
+    let mut first = FlashClient::new(first).unwrap();
+    let mut second = FlashClient::new(second).unwrap();
+
+    assert_eq!(first.geometry().unwrap().0.get(), TOTAL);
+    assert_eq!(second.geometry().unwrap().0.get(), 2 * TOTAL);
+}
+
+#[test]
+fn a_write_on_one_channel_does_not_reach_the_other_device() {
+    let (_servers, [first, second]) = two_devices();
+    let mut first = FlashClient::new(first).unwrap();
+    let mut second = FlashClient::new(second).unwrap();
+    let addr = FlashAddress::new(0x1000);
+
+    first.program(addr, &[0x12; 16]).unwrap();
+
+    let mut on_first = [0u8; 16];
+    let mut on_second = [0u8; 16];
+    first.read(addr, &mut on_first).unwrap();
+    second.read(addr, &mut on_second).unwrap();
+    assert_eq!(on_first, [0x12; 16]);
+    assert_eq!(on_second, [0xff; 16]);
+}
+
+#[test]
+fn a_range_valid_on_a_larger_device_is_rejected_on_a_smaller_one() {
+    let (_servers, [first, second]) = two_devices();
+    let mut first = FlashClient::new(first).unwrap();
+    let mut second = FlashClient::new(second).unwrap();
+    let past_first = FlashAddress::new(TOTAL as u32 + 0x100);
+    let mut buf = [0u8; 16];
+
+    assert_eq!(
+        first.read(past_first, &mut buf),
+        Err(error::FLASH_GENERIC_ADDR_OUT_OF_BOUNDS)
+    );
+    assert!(second.read(past_first, &mut buf).is_ok());
+}
+
+#[test]
+fn a_channel_with_no_device_behind_it_gets_no_frame() {
+    let (servers, [first, _]) = two_devices();
+    let orphan = Channel {
+        servers,
+        device: 2,
+        scratch: first.scratch,
+    };
+    let result = FlashClient::new(orphan);
+    assert!(matches!(result, Err(e) if e == error::IPC_ERROR_RSP_BAD_LEN));
 }
