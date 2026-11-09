@@ -113,10 +113,12 @@ impl FlashTransport for Skewed {
     }
 }
 
+type Servers = Rc<RefCell<Vec<Server<RamFlash>>>>;
+
 /// One channel of a server that serves one device per channel. Every channel
 /// shares the same devices; `device` is the one this channel reaches.
 struct Channel {
-    servers: Rc<RefCell<Vec<Server<RamFlash>>>>,
+    servers: Servers,
     device: usize,
     scratch: Vec<u8>,
 }
@@ -145,7 +147,7 @@ impl FlashTransport for Channel {
 }
 
 /// Devices of different sizes behind one server, and a channel to each.
-fn two_devices() -> (Rc<RefCell<Vec<Server<RamFlash>>>>, [Channel; 2]) {
+fn two_devices() -> (Servers, [Channel; 2]) {
     let sizes = [TOTAL, 2 * TOTAL];
     let servers: Vec<_> = sizes
         .iter()
