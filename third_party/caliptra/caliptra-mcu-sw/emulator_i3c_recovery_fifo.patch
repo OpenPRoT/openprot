@@ -1,0 +1,50 @@
+--- emulator/periph/src/i3c.rs
++++ emulator/periph/src/i3c.rs
+@@ -682,7 +682,14 @@
+     }
+ 
+     fn write_i3c_ec_tti_tx_data_port(&mut self, val: u32) {
+-        if self.hw_revision == Version::new(2, 0, 0) {
++        let bypass_cfg = self
++            .i3c_ec_soc_mgmt_if_rec_intf_cfg
++            .reg
++            .read(RecIntfCfg::RecIntfBypass);
++        // openprot: with bypass set, HW revision 2.0.0 also loads the recovery
++        // FIFO, so a host test can play the BMC in streaming boot.
++        if self.hw_revision == Version::new(2, 0, 0) && bypass_cfg != I3C_REC_INT_BYPASS_AXI_DIRECT
++        {
+             // for HW revision 2.0.0, data is written to i3c core target
+             self.tti_tx_data_raw
+                 .back_mut()
+@@ -691,10 +698,6 @@
+             self.write_tx_data_into_target();
+         } else {
+             // for HW revision 2.1.0 and later, data can be written to i3c core or recovery interface
+-            let bypass_cfg = self
+-                .i3c_ec_soc_mgmt_if_rec_intf_cfg
+-                .reg
+-                .read(RecIntfCfg::RecIntfBypass);
+             if bypass_cfg == I3C_REC_INT_BYPASS_I3C_CORE || !self.tti_tx_data_raw.is_empty() {
+                 // Route to I3C core TTI when bypass is not set, OR when a TTI TX
+                 // descriptor is pending (tti_tx_data_raw non-empty). The latter case
+@@ -888,6 +891,20 @@
+         u32,
+         caliptra_mcu_registers_generated::i3c::bits::IndirectFifoStatus0::Register,
+     > {
++        // openprot: when Caliptra is not the reader (streaming boot), the MCU
++        // drains the FIFO, so report how full it is. In flash and network
++        // boot, the MCU ROM waits for EMPTY before writing each chunk and
++        // Caliptra reads only after the last one, so EMPTY stays set there.
++        if self.events_to_caliptra.is_none() {
++            let used = self
++                .indirect_fifo_words_written
++                .saturating_sub(self.indirect_fifo_words_read);
++            return caliptra_emu_bus::ReadWriteRegister::new(
++                (IndirectFifoStatus0::Empty.val(u32::from(used == 0))
++                    + IndirectFifoStatus0::Full.val(u32::from(used >= INDIRECT_FIFO_DEPTH)))
++                .value,
++            );
++        }
+         caliptra_emu_bus::ReadWriteRegister::new(
+             self.i3c_ec_sec_fw_recovery_if_indirect_fifo_status_0
+                 .reg
