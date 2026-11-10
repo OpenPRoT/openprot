@@ -127,9 +127,8 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
     type Error = TDriver::Error;
     fn geometry(&mut self) -> Result<(NonZero<usize>, PowerOf2Usize, u32), Self::Error> {
         let bitmap = self.driver.erasable_sizes_bitmap()?;
-        let page_size =
-            PowerOf2Usize::new(1 << (bitmap.trailing_zeros())).expect("1 << n is a power of 2");
-        Ok((self.driver.size(), page_size, bitmap))
+        let page_size = PowerOf2Usize::from_shift(bitmap.trailing_zeros());
+        Ok((self.driver.size(), page_size, bitmap.get()))
     }
     /// Reads data from flash.
     ///
@@ -172,7 +171,7 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
     /// and do not cross window boundaries. Each chunk is programmed asynchronously,
     /// and the thread blocks until it completes before starting the next chunk.
     fn program(&mut self, start_addr: FlashAddress, mut data: &[u8]) -> Result<(), Self::Error> {
-        let program_window_size = self.driver.program_window_size();
+        let program_window_size = self.driver.program_window_size().get();
         let window_mask = program_window_size - 1;
         let mut addr = start_addr;
         while !data.is_empty() {
@@ -234,8 +233,8 @@ mod test {
         const READ_ALIGNMENT: usize = 4;
         const PROGRAM_ALIGNMENT: usize = 8;
 
-        fn erasable_sizes_bitmap(&mut self) -> Result<u32, Self::Error> {
-            Ok(1 << 11)
+        fn erasable_sizes_bitmap(&mut self) -> Result<NonZero<u32>, Self::Error> {
+            Ok(NonZero::new(1 << 11).unwrap())
         }
         fn size(&self) -> NonZero<usize> {
             NonZero::new(self.data.len()).unwrap()
@@ -266,7 +265,7 @@ mod test {
             data: &[u8],
         ) -> Result<(), Self::Error> {
             let start_addr = start_addr.offset() as usize;
-            let program_window_size = self.program_window_size();
+            let program_window_size = self.program_window_size().get();
             assert!(start_addr.checked_add(data.len()).unwrap() <= self.data.len());
             assert!(
                 data.len() <= program_window_size,

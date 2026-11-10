@@ -55,15 +55,23 @@ pub trait FlashDriver {
 
     /// The maximum size of a single program operation (write window).
     /// Program operations cannot span across boundaries aligned to this size.
-    fn program_window_size(&self) -> usize {
-        Self::PROGRAM_WINDOW_SIZE
+    ///
+    /// The default proves `PROGRAM_WINDOW_SIZE` is a power of two at compile
+    /// time. An override providing a runtime-discovered value (e.g. via SFDP)
+    /// must itself produce a valid `PowerOf2Usize`.
+    fn program_window_size(&self) -> PowerOf2Usize {
+        const {
+            PowerOf2Usize::new(Self::PROGRAM_WINDOW_SIZE)
+                .expect("PROGRAM_WINDOW_SIZE must be a power of 2")
+        }
     }
 
     /// Returns a bitmap of supported erase block sizes.
     ///
     /// Each bit `i` represents a supported erase block size of `2^i` bytes.
     /// For example, if bit 11 is set, then 2048-byte erases are supported.
-    fn erasable_sizes_bitmap(&mut self) -> Result<u32, Self::Error>;
+    /// At least one bit must be set.
+    fn erasable_sizes_bitmap(&mut self) -> Result<NonZero<u32>, Self::Error>;
 
     /// Reads data from flash synchronously.
     ///
