@@ -143,8 +143,10 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
             const { assert!(TDriver::READ_ALIGNMENT <= PREFIX_BUF_LEN) };
             let mut tmp = [0_u8; PREFIX_BUF_LEN];
             let prefix_count = min(TDriver::READ_ALIGNMENT - align_skip_len, buf.len());
-            self.driver
-                .read(addr & !(TDriver::READ_ALIGNMENT - 1), &mut tmp)?;
+            self.driver.read(
+                addr & !(TDriver::READ_ALIGNMENT - 1),
+                &mut tmp[..TDriver::READ_ALIGNMENT],
+            )?;
             buf[..prefix_count].copy_from_slice(&tmp[align_skip_len..][..prefix_count]);
             buf = &mut buf[prefix_count..];
             addr += prefix_count;

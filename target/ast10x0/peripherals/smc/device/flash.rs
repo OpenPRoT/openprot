@@ -245,6 +245,12 @@ impl<'a> SpiNorFlash<'a> {
     /// needed here.
     pub fn new(cs: Cs<'a>) -> Result<Self, SmcError> {
         let cfg = cs.geometry();
+        // `command_profile.erase_sector_4k` always erases exactly 4096 bytes;
+        // a device reporting a different smallest erase size would silently
+        // over/under-erase, so reject it rather than mis-advertise alignment.
+        if cfg.sector_size != 4096 {
+            return Err(SmcError::DeviceNotSupported);
+        }
         let addressing_policy = Self::default_addressing_for_cfg(cfg);
         Ok(Self {
             cs,
