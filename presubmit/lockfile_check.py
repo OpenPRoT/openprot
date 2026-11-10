@@ -5,8 +5,7 @@
 Bazel's default `--lockfile_mode=update` silently rewrites a stale lockfile, and
 `./pw` itself runs Bazel before this check, so `--lockfile_mode=error` would
 only ever validate a file that was already regenerated. Instead, regenerate the
-lockfile and fail if it differs from what git has. A stale lockfile is left
-modified in the working tree so it can be committed.
+lockfile and fail if it differs from what git has.
 """
 
 import os
@@ -40,8 +39,11 @@ def main() -> int:
     )
     if diff.returncode != 0:
         print(
-            f"\n{_LOCKFILE} is out of date: regenerating it changed it. The "
-            "regenerated file is in your working tree; commit it.",
+            f"\n{_LOCKFILE} is out of date: it differs from the file regenerated "
+            "from the current module inputs.\n"
+            "To fix it, run:\n"
+            "    bazelisk mod deps --lockfile_mode=update\n"
+            f"then commit the updated {_LOCKFILE}.",
             file=sys.stderr,
         )
     return diff.returncode
