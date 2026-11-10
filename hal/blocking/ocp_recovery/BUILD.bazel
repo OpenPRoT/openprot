@@ -1,0 +1,22 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "ocp_recovery",
+    srcs = [
+        "ocp_recovery.rs",
+    ],
+    crate_name = "hal_ocp_recovery",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util/types",
+    ],
+)
+
+rust_test(
+    name = "ocp_recovery_test",
+    crate = ":ocp_recovery",
+)
