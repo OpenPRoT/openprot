@@ -12,8 +12,8 @@
 use core::num::NonZero;
 
 use ast10x0_peripherals::smc::{
-    FlashConfig, FlashGeometry, FmcReady, FmcUninit, GeometrySource, SmcConfig, SmcController,
-    SmcError, SmcInstance, SmcTopology, SpiNorFlash, SpiNorFlashDevice,
+    FlashConfig, FlashGeometry, FmcReady, FmcUninit, SmcConfig, SmcController, SmcError,
+    SmcInstance, SmcTopology, SpiNorFlash, SpiNorFlashDevice,
 };
 use hal_flash_driver::{FlashAddress, FlashDriver};
 use util_error::{self as error, ErrorCode};
@@ -32,10 +32,6 @@ impl SmcInstance for FmcInstance {
         topology: SmcTopology::BootSpi { master_idx: 0 },
     };
 }
-
-/// Geometry source for the served chip (CS1). `Pinned` here makes the reported
-/// geometry a compile-time constant; `Discover` reports the SFDP-read value.
-type Cs1Geometry = <FmcInstance as SmcInstance>::Cs1Geometry;
 
 fn map_smc_error(e: SmcError) -> ErrorCode {
     match e {
@@ -69,6 +65,9 @@ impl Blocking for NoWaitBlocking {
 pub struct Ast10x0FmcFlashDriver {
     fmc: FmcReady<FmcInstance>,
     geometry: FlashGeometry,
+    capacity: NonZero<usize>,
+    program_window_size: PowerOf2Usize,
+    erasable_sizes_bitmap: NonZero<u32>,
 }
 
 /// Stable alias used by the server binary for compile-time backend selection.
@@ -96,9 +95,19 @@ impl Ast10x0FmcFlashDriver {
             let cs1 = fmc.cs1().map_err(map_smc_error)?;
             cs1.geometry()
         };
-        NonZero::new(geometry.capacity_bytes as usize)
+        let capacity = NonZero::new(geometry.capacity_bytes as usize)
             .ok_or(error::FLASH_AST10X0_INVALID_CAPACITY)?;
-        Ok(Self { fmc, geometry })
+        let program_window_size = PowerOf2Usize::new(geometry.page_size as usize)
+            .ok_or(error::FLASH_GENERIC_INVALID_PAGE_SIZE)?;
+        let erasable_sizes_bitmap =
+            NonZero::new(geometry.sector_size).ok_or(error::FLASH_GENERIC_ERASE_INVALID_SIZE)?;
+        Ok(Self {
+            fmc,
+            geometry,
+            capacity,
+            program_window_size,
+            erasable_sizes_bitmap,
+        })
     }
 
     fn device(&mut self) -> Result<SpiNorFlash<'_>, ErrorCode> {
@@ -116,26 +125,22 @@ impl FlashDriver for Ast10x0FmcFlashDriver {
     const PROGRAM_ALIGNMENT: usize = 1;
 
     fn size(&self) -> NonZero<usize> {
-        NonZero::new(Cs1Geometry::geometry(&self.geometry).capacity_bytes as usize)
-            .expect("capacity validated in new()")
+        self.capacity
     }
 
     /// Default erase page: one SFDP-discovered sector.
     fn page_size(&self) -> usize {
-        Cs1Geometry::geometry(&self.geometry).sector_size as usize
+        self.geometry.sector_size as usize
     }
 
     /// SPI NOR program page: writes must not cross this boundary.
-    fn program_window_size(&self) -> usize {
-        Cs1Geometry::geometry(&self.geometry).page_size as usize
+    fn program_window_size(&self) -> PowerOf2Usize {
+        self.program_window_size
     }
 
-    fn erasable_sizes_bitmap(&mut self) -> Result<u32, Self::Error> {
+    fn erasable_sizes_bitmap(&mut self) -> Result<NonZero<u32>, Self::Error> {
         // Only sector erase is implemented by the peripheral driver.
-        Ok(1u32
-            << Cs1Geometry::geometry(&self.geometry)
-                .sector_size
-                .trailing_zeros())
+        Ok(self.erasable_sizes_bitmap)
     }
 
     fn read(&mut self, start_addr: FlashAddress, buf: &mut [u8]) -> Result<(), Self::Error> {

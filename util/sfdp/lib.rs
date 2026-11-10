@@ -233,6 +233,16 @@ pub struct FlashGeometry {
     pub block_size: u32,
 }
 
+impl FlashGeometry {
+    /// True if capacity is nonzero and every size field is a power of two.
+    pub const fn is_valid(&self) -> bool {
+        self.capacity_bytes != 0
+            && self.page_size.is_power_of_two()
+            && self.sector_size.is_power_of_two()
+            && self.block_size.is_power_of_two()
+    }
+}
+
 /// Locate the JEDEC Basic Flash parameter header, given the already-read SFDP
 /// `header` (>= 8 bytes) and the `param_headers` block (`num_param_headers` * 8
 /// bytes). The returned `pointer`/`dwords` tell the caller what BFP bytes to

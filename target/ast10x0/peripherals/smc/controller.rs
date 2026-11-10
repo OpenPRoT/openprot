@@ -121,7 +121,11 @@ impl GeometrySource for Discover {
             &mut image,
             TransferMode::Mode111,
         );
-        decode_geometry(&image).map_err(|_| SmcError::DeviceNotSupported)
+        let geometry = decode_geometry(&image).map_err(|_| SmcError::DeviceNotSupported)?;
+        if !geometry.is_valid() {
+            return Err(SmcError::DeviceNotSupported);
+        }
+        Ok(geometry)
     }
 }
 
@@ -139,17 +143,13 @@ impl<const G: FlashGeometry> GeometrySource for Pinned<G> {
         _window_base: usize,
         _baseline_ctrl: u32,
     ) -> Result<FlashGeometry, SmcError> {
-        Ok(G)
-    }
-
-    fn geometry(_discovered: &FlashGeometry) -> FlashGeometry {
         const {
             assert!(
-                G.page_size.is_power_of_two(),
-                "Pinned geometry page_size must be a power of 2"
+                G.is_valid(),
+                "Pinned geometry must have nonzero capacity and power-of-2 sizes"
             )
         };
-        G
+        Ok(G)
     }
 }
 
