@@ -192,10 +192,10 @@ impl<C: PageController> FlashDriver for SoftFlash<C> {
         C::SIZE
     }
 
-    fn erasable_sizes_bitmap(&mut self) -> Result<u32, Self::Error> {
+    fn erasable_sizes_bitmap(&mut self) -> Result<NonZero<u32>, Self::Error> {
         // Bit n stands for an erase size of 2^n bytes. `ERASE_SIZE` is the
         // only erase size.
-        Ok(ERASE_SIZE as u32)
+        const { Ok(NonZero::new(ERASE_SIZE as u32).unwrap()) }
     }
 
     fn read(&mut self, start_addr: FlashAddress, mut buf: &mut [u8]) -> Result<(), Self::Error> {
