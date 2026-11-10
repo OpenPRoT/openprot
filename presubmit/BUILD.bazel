@@ -26,6 +26,12 @@ pw_py_test(
 )
 
 pw_py_binary(
+    name = "lockfile_check",
+    srcs = ["lockfile_check.py"],
+    main = "lockfile_check.py",
+)
+
+pw_py_binary(
     name = "zero_tests",
     srcs = ["zero_tests.py"],
     main = "zero_tests.py",

@@ -199,6 +199,13 @@
       "type": "ANALYZER"
     },
     {
+      "name": "lockfile_check",
+      "description": "Fail if MODULE.bazel.lock is out of date (bazel mod deps --lockfile_mode=error)",
+      "use_config": "bazel_default",
+      "target": "//presubmit:lockfile_check",
+      "type": "ANALYZER"
+    },
+    {
       "name": "zero_test_audit",
       "description": "Fail if a rust_test target in ci_tests ran zero tests",
       "build_config": {
@@ -219,6 +226,7 @@
       "description": "Quick presubmit for validating code changes locally",
       "analyzers": [
         "format",
+        "lockfile_check",
         "presubmit_checks"
       ],
       "builds": [
