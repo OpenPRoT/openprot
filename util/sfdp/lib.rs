@@ -234,9 +234,11 @@ pub struct FlashGeometry {
 }
 
 impl FlashGeometry {
-    /// True if capacity is nonzero and every size field is a power of two.
+    /// True if capacity is nonzero, fits in `usize` on this target, and every
+    /// size field is a power of two.
     pub const fn is_valid(&self) -> bool {
         self.capacity_bytes != 0
+            && self.capacity_bytes <= usize::MAX as u64
             && self.page_size.is_power_of_two()
             && self.sector_size.is_power_of_two()
             && self.block_size.is_power_of_two()
