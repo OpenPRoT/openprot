@@ -17,7 +17,8 @@ attested, how to verify it, and what is not yet covered.
 - The build uses `bazel build --config=release`, which sets
   `--lockfile_mode=error`: a stale `MODULE.bazel.lock` fails the build rather
   than re-resolving dependencies. Build caches are disabled. The same
-  lockfile check also runs in the CI presubmit job on every pull request.
+  lockfile check also runs in `./pw presubmit`, and therefore on every pull
+  request, so drift is caught before release time.
 - The GitHub release is created only after `gh attestation verify` passes for
   every artifact, so a failed verification never leaves a published release.
 
