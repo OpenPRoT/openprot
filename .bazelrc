@@ -127,7 +127,8 @@ build:fpga --build_tag_filters=-do_not_build,-kernel_doc_test
 
 # ── Release builds (SLSA provenance) ──
 # Used by .github/workflows/release.yml. Fails the build if MODULE.bazel.lock
-# is out of date instead of silently re-resolving dependencies.
+# is out of date instead of silently re-resolving dependencies. The `presubmit`
+# job in .github/workflows/ci.yml runs the same check on every PR.
 common:release --lockfile_mode=error
 common:release --stamp=false
 

@@ -33,8 +33,8 @@ jobs:
     # release builds.
     runs-on: ubuntu-latest
     permissions:
-      contents: write      # attach artifacts to the GitHub release
-      id-token: write      # Sigstore OIDC identity for the attestation
+      contents: read
+      id-token: write     # Sigstore OIDC identity for the attestation
       attestations: write  # store the provenance attestation
     steps:
     - name: Checkout
@@ -101,16 +101,6 @@ jobs:
         path: release-artifacts/
         if-no-files-found: error
 
-    - name: Publish GitHub release
-      if: startsWith(github.ref, 'refs/tags/')
-      env:
-        GH_TOKEN: ${{ github.token }}
-      run: |
-        gh release create "${GITHUB_REF_NAME}" release-artifacts/* \
-            --repo "${GITHUB_REPOSITORY}" \
-            --verify-tag \
-            --generate-notes
-
   verify-provenance:
     name: Verify provenance
     needs: build-firmware
@@ -134,3 +124,28 @@ jobs:
               --repo "${GITHUB_REPOSITORY}" \
               --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml"
         done
+
+  # Publishing is gated on verification so a failed check never leaves a
+  # published release behind.
+  publish-release:
+    name: Publish GitHub release
+    needs: verify-provenance
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # create the release and attach artifacts
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      with:
+        name: release-artifacts
+        path: release-artifacts
+
+    - name: Publish GitHub release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh release create "${GITHUB_REF_NAME}" release-artifacts/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --verify-tag \
+            --generate-notes
