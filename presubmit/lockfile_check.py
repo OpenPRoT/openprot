@@ -1,10 +1,12 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
-"""Fail if MODULE.bazel.lock is out of date.
+"""Fail if the committed MODULE.bazel.lock is out of date.
 
-Runs `bazel mod deps --lockfile_mode=error`, the same lockfile check the
-release build uses (`--config=release`). Bazel's default `update` mode rewrites
-a stale lockfile silently, so drift is otherwise only found at release time.
+Bazel's default `--lockfile_mode=update` silently rewrites a stale lockfile, and
+`./pw` itself runs Bazel before this check, so `--lockfile_mode=error` would
+only ever validate a file that was already regenerated. Instead, regenerate the
+lockfile and fail if it differs from what git has. A stale lockfile is left
+modified in the working tree so it can be committed.
 """
 
 import os
@@ -12,7 +14,7 @@ import shutil
 import subprocess
 import sys
 
-_FIX = "bazelisk mod deps --lockfile_mode=update"
+_LOCKFILE = "MODULE.bazel.lock"
 
 
 def main() -> int:
@@ -25,16 +27,24 @@ def main() -> int:
     cwd = os.environ.get("BUILD_WORKSPACE_DIRECTORY") or os.environ.get(
         "BUILD_WORKING_DIRECTORY", "."
     )
+
     result = subprocess.run(
-        [bazel, "mod", "deps", "--lockfile_mode=error"], cwd=cwd, check=False
+        [bazel, "mod", "deps", "--lockfile_mode=update"], cwd=cwd, check=False
     )
     if result.returncode != 0:
+        return result.returncode
+
+    # Compares the working tree to the index, which is HEAD in CI.
+    diff = subprocess.run(
+        ["git", "diff", "--exit-code", "--", _LOCKFILE], cwd=cwd, check=False
+    )
+    if diff.returncode != 0:
         print(
-            f"\nMODULE.bazel.lock is out of date. Run `{_FIX}` and commit the "
-            "result.",
+            f"\n{_LOCKFILE} is out of date: regenerating it changed it. The "
+            "regenerated file is in your working tree; commit it.",
             file=sys.stderr,
         )
-    return result.returncode
+    return diff.returncode
 
 
 if __name__ == "__main__":
