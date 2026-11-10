@@ -70,11 +70,16 @@ rust_binary(
 caliptra_test(
     name = "ocp_recovery_test",
     srcs = [
+        "emulator_agent.rs",
         "fpga_agent.rs",
         "ocp_recovery_host_test.rs",
     ],
     crate_root = "ocp_recovery_host_test.rs",
-    interfaces = ["fpga"],
     mcu_image = ":ocp_recovery",
-    deps = [":image"],
+    deps = [
+        ":image",
+        "//target/veer/peripherals/ocp_recovery",
+        "//target/veer/registers",
+        "@rust_caliptra_crates//:caliptra-ureg",
+    ],
 )

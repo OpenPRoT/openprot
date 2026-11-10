@@ -26,6 +26,9 @@ def _caliptra_repos_impl(module_ctx):
         patches = [
             # Lets mcu-hw-model build without introducing OpenSSL
             "//third_party/caliptra/caliptra-mcu-sw:hw_model_no_builder.patch",
+            # Lets a host test fill and drain the MCU recovery FIFO in
+            # streaming boot (//target/veer/tests/ocp_recovery)
+            "//third_party/caliptra/caliptra-mcu-sw:emulator_i3c_recovery_fifo.patch",
         ],
         patch_args = ["-p0"],
     )

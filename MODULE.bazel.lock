@@ -574,7 +574,7 @@
   "moduleExtensions": {
     "//third_party/caliptra:extensions.bzl%caliptra_repos": {
       "general": {
-        "bzlTransitiveDigest": "EXXLxWzNA8W1PKEleW1BaBtu+7Nur3xh88/UFt5p2J8=",
+        "bzlTransitiveDigest": "VTD/4hlAxfVD7ayqtEkIpG4ShCve+6MaYdS8+8MLL3k=",
         "usagesDigest": "ODX7jX2XQ5ywJ6htOZNVOezD0lY5SqvrMRMaa38fSMQ=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"
@@ -587,7 +587,8 @@
               "commit": "8c9c8ff27de1babf63c0be74e973185837439040",
               "remote": "https://github.com/chipsalliance/caliptra-mcu-sw",
               "patches": [
-                "@@//third_party/caliptra/caliptra-mcu-sw:hw_model_no_builder.patch"
+                "@@//third_party/caliptra/caliptra-mcu-sw:hw_model_no_builder.patch",
+                "@@//third_party/caliptra/caliptra-mcu-sw:emulator_i3c_recovery_fifo.patch"
               ],
               "patch_args": [
                 "-p0"

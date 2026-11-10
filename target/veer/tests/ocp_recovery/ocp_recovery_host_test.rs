@@ -12,6 +12,10 @@ use test_boot_files::BootFiles;
 #[path = "fpga_agent.rs"]
 mod agent;
 
+#[cfg(not(target_arch = "aarch64"))]
+#[path = "emulator_agent.rs"]
+mod agent;
+
 #[test]
 fn ocp_recovery() {
     let files = BootFiles::from_env();
