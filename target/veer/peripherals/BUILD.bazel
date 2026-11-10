@@ -1,0 +1,28 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "flash",
+    srcs = [
+        "flash.rs",
+        "flash_emulator.rs",
+    ],
+    crate_name = "veer_flash",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking/flash:driver",
+        "//target/veer/registers",
+        "//util/error",
+        "//util/types",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
+rust_test(
+    name = "flash_test",
+    crate = ":flash",
+    deps = ["//hal/blocking/flash"],
+)
