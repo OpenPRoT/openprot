@@ -143,6 +143,12 @@ impl<const G: FlashGeometry> GeometrySource for Pinned<G> {
     }
 
     fn geometry(_discovered: &FlashGeometry) -> FlashGeometry {
+        const {
+            assert!(
+                G.page_size.is_power_of_two(),
+                "Pinned geometry page_size must be a power of 2"
+            )
+        };
         G
     }
 }
