@@ -200,7 +200,7 @@
     },
     {
       "name": "lockfile_check",
-      "description": "Fail if MODULE.bazel.lock is out of date (bazel mod deps --lockfile_mode=error)",
+      "description": "Fail if regenerating MODULE.bazel.lock changes the committed file",
       "use_config": "bazel_default",
       "target": "//presubmit:lockfile_check",
       "type": "ANALYZER"
