@@ -17,6 +17,7 @@ exports_files(
         "sw-emulator/lib/periph/src/lib.rs",
         "hw-model/types/src/lib.rs",
         "hw-model/build.rs",
+        "hw-model/src/fpga_regs.rs",
         "hw-model/src/lib.rs",
         "image/gen/src/lib.rs",
         "image/crypto/src/lib.rs",

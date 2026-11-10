@@ -1,7 +1,8 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! Flash driver for the flash controllers of the Caliptra MCU emulator.
+//! Flash driver for the flash controllers of the Caliptra MCU emulator and
+//! FPGA.
 //!
 //! The emulator has a primary and a secondary flash controller. They are
 //! implemented in software by `DummyFlashCtrl` in caliptra-mcu-sw
@@ -9,6 +10,9 @@
 //! A controller transfers one 256-byte page at a time between that file and a
 //! page buffer in MCU RAM. Its registers are described in caliptra-mcu-sw
 //! `hw/flash_ctrl.rdl`.
+//!
+//! The FPGA has two controllers with the same registers and a page buffer
+//! after them. [`FpgaFlashCtrl`] describes how they are implemented.
 //!
 //! [`SoftFlash`] implements `hal_flash_driver::FlashDriver` for a controller.
 //! It presents the controller as NOR flash with a 256-byte program window and
@@ -29,8 +33,13 @@ use util_error::{self as error, ErrorCode, ErrorModule};
 use util_types::{Blocking, PowerOf2Usize};
 
 mod flash_emulator;
+mod flash_fpga;
 
 pub use flash_emulator::EmulatorFlashCtrl;
+pub use flash_fpga::{
+    BufWord, FpgaFlashCtrl, FpgaMmio, FpgaMmioBlock, FPGA_PRIMARY_FLASH_CTRL_ADDR,
+    FPGA_SECONDARY_FLASH_CTRL_ADDR,
+};
 
 /// Size of the page that a controller transfers, and of the program window.
 pub const PAGE_SIZE: usize = 256;
@@ -46,10 +55,11 @@ pub const FLASH_VEER_TIMEOUT: ErrorCode = FLASH_VEER.from_pw(0, Error::DeadlineE
 pub const FLASH_VEER_OP_FAILED: ErrorCode = FLASH_VEER.from_pw(1, Error::Internal);
 
 /// Maximum number of status polls for one operation. The emulator completes an
-/// operation within a few hundred instructions.
+/// operation within a few hundred instructions. On the FPGA, completion time
+/// depends on the host, so the limit allows for several seconds of polling.
 const POLL_LIMIT: u32 = 10_000_000;
 
-/// A controller register. Each value is the register's offset, from
+/// A register that both controllers have. Each value is its offset, from
 /// caliptra-mcu-sw `hw/flash_ctrl.rdl`.
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[repr(usize)]
@@ -79,7 +89,7 @@ impl Op {
     }
 }
 
-/// Access to a controller's registers.
+/// Access to the registers that both controllers have.
 pub trait Mmio {
     fn read(&self, reg: Reg) -> u32;
     fn write(&mut self, reg: Reg, value: u32);

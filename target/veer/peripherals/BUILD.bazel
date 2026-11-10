@@ -8,6 +8,7 @@ rust_library(
     srcs = [
         "flash.rs",
         "flash_emulator.rs",
+        "flash_fpga.rs",
     ],
     crate_name = "veer_flash",
     edition = "2024",
@@ -25,4 +26,20 @@ rust_test(
     name = "flash_test",
     crate = ":flash",
     deps = ["//hal/blocking/flash"],
+)
+
+# Tests the FPGA flash driver against a copy of the caliptra-sw host code that
+# implements the FPGA's flash controllers.
+rust_test(
+    name = "flash_fpga_test",
+    srcs = ["flash_fpga_test.rs"],
+    edition = "2024",
+    deps = [
+        ":flash",
+        "//hal/blocking/flash",
+        "//third_party/caliptra:crate_tock-registers",
+        "//third_party/caliptra/caliptra-sw:caliptra_hw_model_fpga_regs",
+        "//util/error",
+        "//util/types",
+    ],
 )

@@ -1,8 +1,9 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! Erases, programs and reads back the emulator's primary flash through the
-//! flash HAL.
+//! Erases, programs and reads back the primary flash of the emulator or the
+//! FPGA through the flash HAL. The `fpga` feature selects the FPGA's
+//! controller.
 //!
 //! The emulator stores flash contents in a file, which can exist from an
 //! earlier run, so the test does not assume that the flash starts out erased.
@@ -14,7 +15,11 @@ use entry::exit;
 use hal_flash::{BlockingFlash, Flash, FlashAddress};
 use target_common::{declare_target, TargetInterface};
 use util_types::PowerOf2Usize;
-use veer_flash::{EmulatorFlashCtrl, NoWait, SoftFlash, ERASE_SIZE, PAGE_SIZE};
+#[cfg(not(feature = "fpga"))]
+use veer_flash::EmulatorFlashCtrl as FlashCtrl;
+#[cfg(feature = "fpga")]
+use veer_flash::FpgaFlashCtrl as FlashCtrl;
+use veer_flash::{NoWait, SoftFlash, ERASE_SIZE, PAGE_SIZE};
 use {codegen as _, console_backend as _};
 
 // The second and third erase blocks.
@@ -112,7 +117,7 @@ impl TargetInterface for Target {
     fn main() -> ! {
         // SAFETY: this code runs in the kernel, which can access the
         // registers, and this image has no other user of the controller.
-        let driver = SoftFlash::new(unsafe { EmulatorFlashCtrl::primary() });
+        let driver = SoftFlash::new(unsafe { FlashCtrl::primary() });
         let mut flash = BlockingFlash {
             driver,
             blocking: NoWait,
