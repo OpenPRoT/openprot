@@ -1,0 +1,157 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+#
+# OpenPRoT security findings from the comprehensive audit.
+# These rules detect patterns indicative of the vulnerabilities
+# documented in the OpenPRoT security report.
+
+rules:
+  # ============================================================================
+  # ANTI-ROLLBACK & SVN FLOOR ENFORCEMENT
+  # ============================================================================
+
+  - id: openprot-authenticated-svn-without-floor-check
+    languages: [rust]
+    severity: ERROR
+    message: >-
+      Verdict::Authenticated { svn } is consumed in a function that never
+      compares against SvnFloor::floor(). Anti-rollback is not enforced on
+      the admission path, so a validly-signed image with a lower SVN can
+      roll the device back to a known-vulnerable version.
+    # Semgrep's Rust grammar cannot express a destructuring match arm, so
+    # this is a function-scoped regex: it matches a fn whose body mentions
+    # `Verdict::Authenticated {` before (and without) any `.floor()` call and
+    # before the next `fn`. It is heuristic; it flags the enclosing function.
+    patterns:
+      - pattern: fn $F(...) { ... }
+      - pattern-regex: '(?s)fn\s+\w+[^{]*\{(?:(?!\.floor\(\)|\bfn\s).)*Verdict::Authenticated\s*\{'
+    paths:
+      include:
+        - "**/driver.rs"
+        - "**/board.rs"
+        - "**/openprot-security.rs"
+
+  # ============================================================================
+  # I2C INTERRUPT HANDLING
+  # ============================================================================
+
+  - id: ast10x0-pkt-error-handling
+    languages: [rust]
+    severity: ERROR
+    message: >-
+      The PKT_ERROR branch of handle_slave_interrupt returns without
+      calling arm_slave_receive(). The slave receiver wedges permanently
+      on a packet error if RX DMA is not re-armed (the INACTIVE_TO branch
+      re-arms; this one must too).
+    patterns:
+      - pattern-inside: |
+          fn handle_slave_interrupt(...) { ... }
+      - pattern: |
+          if ($STS & $PKT_ERR) != 0 {
+            ...
+            return $R;
+          }
+      - metavariable-regex:
+          metavariable: $PKT_ERR
+          regex: ^(.*::)?[A-Za-z0-9_]*PKT_ERROR$
+      - pattern-not: |
+          if ($STS & $PKT_ERR) != 0 {
+            ...
+            $SELF.arm_slave_receive(...);
+            ...
+          }
+    paths:
+      include:
+        - "**/slave.rs"
+        - "**/openprot-security.rs"
+
+  - id: ast10x0-irq-exact-match
+    languages: [rust]
+    severity: WARNING
+    message: >-
+      Use bitwise AND tests for IRQ status (sts & constant), not exact
+      equality (sts == constant). Exact matching misses status combinations.
+    pattern: sts == $CONST
+    paths:
+      include:
+        - "**/slave.rs"
+        - "**/i2c.rs"
+        - "**/openprot-security.rs"
+
+  - id: ast10x0-irq-todo-comment
+    languages: [rust]
+    severity: ERROR
+    message: >-
+      TODO comments in the slave interrupt path indicate unfinished state
+      handling. All status paths must clear interrupts and re-arm RX.
+    # Comments are not AST nodes, so this must be a regex rule.
+    pattern-regex: '//\s*TODO'
+    paths:
+      include:
+        - "**/slave.rs"
+        - "**/openprot-security.rs"
+
+  # ============================================================================
+  # BUFFER BOUNDARY VALIDATION
+  # ============================================================================
+
+  - id: openprot-decoded-length-unchecked
+    languages: [rust]
+    severity: ERROR
+    message: >-
+      A length decoded from a wire header is used directly as a slice
+      bound. Validate it against the buffer length first (and use
+      checked arithmetic) or use .get(..); oversized values panic.
+    # Matches only slice bounds taken straight from a decoded header field
+    # (e.g. buf[..hdr.payload_len as usize]). Constants such as
+    # Header::SIZE and locally computed lengths are not peer-controlled and
+    # are deliberately not flagged. A length first copied into a local
+    # variable is not tracked; parsing-safety.yml covers that case.
+    patterns:
+      - pattern-either:
+          - pattern: $BUF[..$HDR.$FIELD as usize]
+          - pattern: $BUF[$START..$HDR.$FIELD as usize]
+          - pattern: $BUF[..$START + $HDR.$FIELD as usize]
+          - pattern: $BUF[$START..$START + $HDR.$FIELD as usize]
+          - pattern: $BUF[..$HDR.$FIELD]
+          - pattern: $BUF[$HDR.$FIELD..]
+          - pattern: $BUF[$HDR.$FIELD as usize..]
+      - metavariable-regex:
+          metavariable: $FIELD
+          regex: ^[a-z_0-9]*(len|size|length|count)[a-z_0-9]*$
+      - metavariable-regex:
+          metavariable: $HDR
+          regex: ^[a-z_][a-z_0-9]*$
+    paths:
+      include:
+        - "**/wire.rs"
+        - "**/protocol.rs"
+        - "**/receiver.rs"
+        - "**/dispatch.rs"
+        - "**/openprot-security.rs"
+      exclude:
+        - "**/tests/**"
+
+  # ============================================================================
+  # MEMORY SAFETY IN HARDWARE REGISTERS
+  # ============================================================================
+
+  - id: openprot-type-cast-truncation
+    languages: [rust]
+    severity: WARNING
+    message: >-
+      Casting between types can silently truncate or extend values.
+      Ensure register reads/writes preserve bit patterns exactly.
+    patterns:
+      - pattern-either:
+          - pattern: $X as u8
+          - pattern: $X as u16
+      - metavariable-regex:
+          metavariable: $X
+          regex: (?i).*(bitmap|flags|status|field).*
+    paths:
+      include:
+        - "**/slave.rs"
+        - "**/i2c.rs"
+        - "**/register*.rs"
+        - "**/openprot-security.rs"
