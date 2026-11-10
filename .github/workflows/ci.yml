@@ -29,6 +29,11 @@ jobs:
         disk-cache: false
         repository-cache: false
 
+    - name: Check MODULE.bazel.lock is up to date
+      # Same lockfile check the release build uses (--config=release), so
+      # drift is caught on every PR instead of at release time.
+      run: bazel mod deps --lockfile_mode=error
+
     - name: Presubmit Checks
       # The presubmit workflow performs formatting checks, license checks
       # C/C++ include checks and clippy lints.
