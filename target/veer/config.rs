@@ -36,6 +36,9 @@ pub const MBOX_BASE: usize = MCU_MEMORY_MAP.mbox_offset as usize;
 /// Base of the Caliptra SoC interface registers.
 pub const SOC_IFC_BASE: usize = MCU_MEMORY_MAP.soc_offset as usize;
 
+/// Base of the I3C core 0 register block.
+pub const I3C_BASE: usize = MCU_MEMORY_MAP.i3c_offset as usize;
+
 const PIC_BASE: usize = MCU_MEMORY_MAP.pic_offset as usize;
 const DCCM_BASE: usize = MCU_MEMORY_MAP.dccm_offset as usize;
 
