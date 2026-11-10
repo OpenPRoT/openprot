@@ -173,10 +173,6 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
     /// and the thread blocks until it completes before starting the next chunk.
     fn program(&mut self, start_addr: FlashAddress, mut data: &[u8]) -> Result<(), Self::Error> {
         let program_window_size = self.driver.program_window_size();
-        assert!(
-            program_window_size.count_ones() == 1,
-            "program_window_size() must be a power of 2"
-        );
         let window_mask = program_window_size - 1;
         let mut addr = start_addr;
         while !data.is_empty() {
