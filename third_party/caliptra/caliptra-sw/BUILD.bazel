@@ -62,6 +62,19 @@ rust_library(
     ],
 )
 
+# The register layout of the FPGA wrapper (hw-model/src/fpga_regs.rs), built as
+# a separate crate. The FPGA wrapper is a block of registers in the FPGA design.
+# caliptra-hw-model keeps this module private and only builds its FPGA model for
+# aarch64. Tests that run on the build machine, such as tests of FPGA drivers,
+# use this crate, which is not limited to aarch64.
+rust_library(
+    name = "caliptra_hw_model_fpga_regs",
+    srcs = ["@caliptra_sw//:hw-model/src/fpga_regs.rs"],
+    crate_name = "caliptra_hw_model_fpga_regs",
+    edition = "2021",
+    deps = ["//third_party/caliptra:crate_tock-registers"],
+)
+
 # caliptra-hw-model for host-side test binaries.
 #
 # Its build script reads caliptra-ss's OTP memory map from

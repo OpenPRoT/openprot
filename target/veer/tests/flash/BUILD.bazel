@@ -35,6 +35,10 @@ target_codegen(
 rust_binary(
     name = "target",
     srcs = ["target.rs"],
+    crate_features = select({
+        "//target/veer:fpga": ["fpga"],
+        "//conditions:default": [],
+    }),
     edition = "2024",
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
@@ -51,10 +55,8 @@ rust_binary(
     ],
 )
 
-# The FPGA does not have the emulator's flash controllers.
 caliptra_on_device_test(
     name = "flash_test",
-    interfaces = ["emulator"],
     mcu_image = ":flash",
 )
 
