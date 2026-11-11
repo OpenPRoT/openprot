@@ -17,6 +17,8 @@ rust_binary(
     target_compatible_with = ["@platforms//os:linux"],
     visibility = ["//target/veer:__subpackages__"],
     deps = [
+        "//target/veer/peripherals:flash",
+        "//target/veer/registers",
         "@rust_caliptra_crates_host//:caliptra-mcu-config",
         "@rust_caliptra_crates_host//:caliptra-mcu-config-emulator",
         "@rust_caliptra_crates_host//:caliptra-mcu-config-fpga",

@@ -1,0 +1,112 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app")
+load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//target/veer:defs.bzl", "TARGET_COMPATIBLE_WITH", "veer_system_config", "veer_system_image")
+load("//target/veer/tooling:caliptra_runner.bzl", "caliptra_on_device_test")
+
+# A flash server that serves the primary flash with the VeeR flash driver, and
+# a client that tests it over IPC.
+veer_system_image(
+    name = "flash_service",
+    apps = [
+        ":flash_server",
+        ":flash_client",
+    ],
+    kernel = ":target",
+    platform = "//target/veer",
+    system_config = ":system_config",
+    tags = ["kernel"],
+)
+
+rust_app(
+    name = "flash_server",
+    srcs = ["server_main.rs"],
+    codegen_crate_name = "app_flash_server",
+    crate_features = select({
+        "//target/veer:fpga": ["fpga"],
+        "//conditions:default": [],
+    }),
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//hal/blocking/flash",
+        "//services/flash/server:flash_server_lib",
+        "//services/flash/server-runtime:flash_server_runtime",
+        "//target/veer/peripherals:flash",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
+rust_app(
+    name = "flash_client",
+    srcs = ["client_main.rs"],
+    codegen_crate_name = "app_flash_client",
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//hal/blocking/flash",
+        "//services/flash/client-ipc:flash_client_ipc",
+        "//target/veer/peripherals:flash",
+        "//util/ipc",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    template = "//target/veer:linker_script_template",
+)
+
+veer_system_config(
+    name = "system_config",
+    src = "system.json5.tmpl",
+)
+
+target_codegen(
+    name = "codegen",
+    arch = "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+    system_config = ":system_config",
+)
+
+rust_binary(
+    name = "target",
+    srcs = ["target.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":codegen",
+        ":linker_script",
+        "//target/veer:entry",
+        "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/subsys/console:console_backend",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)
+
+caliptra_on_device_test(
+    name = "flash_service_test",
+    mcu_image = ":flash_service",
+)
+
+rust_binary_no_panics_test(
+    name = "no_panics_test",
+    binary = ":flash_service",
+    tags = ["kernel"],
+)
