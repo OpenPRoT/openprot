@@ -71,6 +71,7 @@ rust_process(
         "//services/i3c/server-runtime:i3c_server_runtime",
         "//target/veer/peripherals/i3c",
         "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
     ],
 )
 

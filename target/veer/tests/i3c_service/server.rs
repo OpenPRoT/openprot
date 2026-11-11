@@ -25,5 +25,7 @@ fn entry() {
     // device region by system.json5; Caliptra ROM already initialized the core.
     let target = unsafe { CaliptraI3cTarget::new() };
     let mut srv = Server::new(handle::CHANNEL, handle::I3C_IRQ, target);
-    i3c_server_runtime::run(handle::WG, signals::I3C, &mut srv);
+    if let Err(e) = i3c_server_runtime::run(handle::WG, signals::I3C, &mut srv) {
+        pw_log::error!("i3c server stopped: {}", e as u32);
+    }
 }
