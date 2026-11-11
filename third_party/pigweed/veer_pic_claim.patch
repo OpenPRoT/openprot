@@ -1,0 +1,19 @@
+diff --git a/pw_kernel/arch/riscv/veer_pic.rs b/pw_kernel/arch/riscv/veer_pic.rs
+index 77da403..69854b4 100644
+--- a/pw_kernel/arch/riscv/veer_pic.rs
++++ b/pw_kernel/arch/riscv/veer_pic.rs
+@@ -26,3 +26,3 @@ use crate::regs::Interrupt;
+ use crate::regs::veer::{
+-    MEIVT_NUM_ENTRIES, MeiCPCT, MeiCPCTVal, MeiHAP, MeiPT, MeiPTVal, MeiVT, MeiVTVal,
++    MEIVT_NUM_ENTRIES, MeiHAP, MeiPT, MeiPTVal, MeiVT, MeiVTVal,
+ };
+@@ -244,5 +244,6 @@ impl VeerPic {
+     fn external_interrupt(from_userspace: bool) {
+-        // Claim the interrupt.  The VeeR document leads me to believe that I
+-        // need to write to MEICPCT to capture the interrupt value into meihap.
+-        MeiCPCT::write(MeiCPCTVal::default());
++        // Claim the interrupt by reading MEIHAP directly, as caliptra-mcu-sw's
++        // VeeR kernel does. Local patch: the MEICPCT (CSR 0xBCA) write that used
++        // to precede this read traps as an illegal instruction on the Caliptra
++        // FPGA's VeeR core.
+         let meihap = MeiHAP::read();
