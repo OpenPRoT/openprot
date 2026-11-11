@@ -1,0 +1,25 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//target/veer:defs.bzl", "TARGET_COMPATIBLE_WITH")
+
+# The single kernel-tagged i3c server crate: wraps i3c_server::{Server, dispatch}
+# in the Pigweed WaitGroup loop and adds the IRQ->latch->USER wake. One IPC
+# channel carries the transport protocol. Reactor logic is verified on-target
+# (veer emulator), not host.
+rust_library(
+    name = "i3c_server_runtime",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking",
+        "//services/i3c/api:i3c_api",
+        "//services/i3c/server:i3c_server",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)

@@ -1,0 +1,25 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+# Host-buildable: target-owning `Server` state + `dispatch` against the
+# `I3cTarget` facade. No kernel/IPC dep — that is what makes the request path
+# and the single-frame inbound latch host-testable. The Pigweed wait/respond
+# loop lives in //services/i3c/server-runtime (kernel-tagged).
+rust_library(
+    name = "i3c_server",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking",
+        "//services/i3c/api:i3c_api",
+    ],
+)
+
+# Host dispatch + latch tests, no kernel/emulator.
+rust_test(
+    name = "i3c_server_test",
+    crate = ":i3c_server",
+)
