@@ -9,6 +9,8 @@
 use caliptra_mcu_config::McuMemoryMap;
 use caliptra_mcu_config_emulator::EMULATOR_MEMORY_MAP;
 use caliptra_mcu_config_fpga::FPGA_MEMORY_MAP;
+use caliptra_ss_registers::primary_flash_ctrl::PRIMARY_FLASH_CTRL_ADDR;
+use veer_flash::FPGA_PRIMARY_FLASH_CTRL_ADDR;
 
 /// Offset of the kernel's RAM within MCU SRAM. This is OpenPRoT's own layout
 /// choice (code first, data after), not part of the upstream memory map.
@@ -20,9 +22,11 @@ fn main() {
         panic!("usage: render_system_config <emulator|fpga> <template> <output>");
     };
 
-    let map: &McuMemoryMap = match platform.as_str() {
-        "emulator" => &EMULATOR_MEMORY_MAP,
-        "fpga" => &FPGA_MEMORY_MAP,
+    // The memory maps do not include the flash controllers, so their
+    // addresses come from the register definitions and the flash driver.
+    let (map, primary_flash_ctrl): (&McuMemoryMap, u32) = match platform.as_str() {
+        "emulator" => (&EMULATOR_MEMORY_MAP, PRIMARY_FLASH_CTRL_ADDR),
+        "fpga" => (&FPGA_MEMORY_MAP, FPGA_PRIMARY_FLASH_CTRL_ADDR as u32),
         other => panic!("unknown platform {other:?}; expected emulator or fpga"),
     };
     assert!(
@@ -38,6 +42,7 @@ fn main() {
     //   @KERNEL_RAM_START@    Where the system generator starts placing app
     //                         data: KERNEL_RAM_OFFSET into MCU SRAM.
     //   @MCI_BASE@            MCI register block (timer, device mappings).
+    //   @PRIMARY_FLASH_CTRL@  Registers of the primary flash controller.
     let substitutions = [
         // Start of MCU SRAM. MCU ROM will jump here.
         ("@KERNEL_FLASH_START@", map.sram_offset),
@@ -45,6 +50,7 @@ fn main() {
         ("@KERNEL_RAM_START@", map.sram_offset + KERNEL_RAM_OFFSET),
         // MCI register block base offset
         ("@MCI_BASE@", map.mci_offset),
+        ("@PRIMARY_FLASH_CTRL@", primary_flash_ctrl),
     ];
 
     let mut rendered =

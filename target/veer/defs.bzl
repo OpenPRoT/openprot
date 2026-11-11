@@ -17,8 +17,9 @@ def veer_system_config(name, src, **kwargs):
     """Renders a pw_kernel system config for the selected target type.
 
     `src` is a system config template containing `@KERNEL_FLASH_START@`,
-    `@KERNEL_RAM_START@` and/or `@MCI_BASE@`. They are filled in from upstream
-    caliptra-mcu-sw's EMULATOR_MEMORY_MAP / FPGA_MEMORY_MAP by
+    `@KERNEL_RAM_START@`, `@MCI_BASE@` and/or `@PRIMARY_FLASH_CTRL@`. They are
+    filled in from upstream caliptra-mcu-sw's EMULATOR_MEMORY_MAP /
+    FPGA_MEMORY_MAP and the flash controller addresses by
     //target/veer/tooling:render_system_config. The output is `<name>.json5`.
     """
     tool = "//target/veer/tooling:render_system_config"
