@@ -45,6 +45,7 @@ fn main() {
     //   @MBOX_BASE@           Caliptra mailbox registers.
     //   @SOC_IFC_BASE@        Caliptra SoC interface registers.
     //   @PRIMARY_FLASH_CTRL@  Registers of the primary flash controller.
+    //   @I3C_BASE@            Caliptra-SS I3C register block.
     let substitutions = [
         // Start of MCU SRAM. MCU ROM will jump here.
         ("@KERNEL_FLASH_START@", map.sram_offset),
@@ -57,6 +58,8 @@ fn main() {
         // Caliptra SoC interface registers
         ("@SOC_IFC_BASE@", map.soc_offset),
         ("@PRIMARY_FLASH_CTRL@", primary_flash_ctrl),
+        // I3C register block base offset
+        ("@I3C_BASE@", map.i3c_offset),
     ];
 
     let mut rendered =
