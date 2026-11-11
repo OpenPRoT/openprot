@@ -76,8 +76,14 @@ All workflows follow these rules:
   - Some crates in `third_party/crates_io/Cargo.toml` use floating git refs
     (pinned only by `Cargo.lock`).
   - Bazel itself is downloaded by Bazelisk without a hash check.
-- **Reproducibility.** The release build has not been verified to be
-  reproducible bit-for-bit.
+- **Reproducibility.** The release build is not yet known to be reproducible.
+  `.github/workflows/reproducibility.yml` runs weekly and on release tags. It
+  builds the release target twice in checkouts at different paths and compares
+  the outputs: `.bin` images must be identical, and differences in other
+  outputs (such as the `.elf`, which carries debug info) are reported as
+  warnings. On a difference it uploads a diffoscope report and runs a
+  same-path rebuild to tell path dependence from non-determinism. Do not
+  assume bit-for-bit reproducibility until this check passes consistently.
 - **Image signing.** Provenance covers the build, not the Earlgrey ECDSA or
   SPHINCS+ image signing step, which needs HSM credentials.
 - **Source track.** Branch protection, required reviews and `CODEOWNERS` are

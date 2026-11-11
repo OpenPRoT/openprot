@@ -1,0 +1,161 @@
+# Licensed under the Apache-2.0 license
+
+# Builds the release targets twice, in two checkouts at different absolute
+# paths, and compares the outputs. A difference means the build depends on
+# something other than the sources (paths, time, environment), which would make
+# independent verification of release artifacts impossible.
+# See docs/src/supply-chain.md.
+
+name: Reproducibility
+
+on:
+  schedule:
+    - cron: '17 3 * * 1'  # weekly, Monday 03:17 UTC
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Bazel platform to build for'
+        default: '//target/ast10x0'
+        required: true
+      targets:
+        description: 'Space-separated Bazel targets to compare'
+        default: '//target/ast10x0/erot:erot'
+        required: true
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: read
+
+env:
+  RELEASE_PLATFORM: ${{ inputs.platform || '//target/ast10x0' }}
+  RELEASE_TARGETS: ${{ inputs.targets || '//target/ast10x0/erot:erot' }}
+  # Different depth and name lengths, so any embedded absolute path differs.
+  DIR_A: repro/a/openprot
+  DIR_B: repro/bb/deeper/openprot-long-different-name
+
+jobs:
+  reproducibility:
+    name: Build twice and compare
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout (path A)
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      with:
+        path: ${{ env.DIR_A }}
+        persist-credentials: false
+
+    - name: Checkout (path B)
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      with:
+        path: ${{ env.DIR_B }}
+        persist-credentials: false
+
+    - name: Reject site-local Bazel overrides
+      run: |
+        for d in "${DIR_A}" "${DIR_B}"; do
+          if [ -e "${d}/.bazelrc-site" ]; then
+            echo "::error::.bazelrc-site must not exist in a release build"
+            exit 1
+          fi
+        done
+
+    - name: Setup Bazel
+      uses: bazel-contrib/setup-bazel@104e3eea9447cdaa4b00d0fb46191a3985d26ab3 # 0.19.1
+      with:
+        # No caches: outputs must not depend on cached state.
+        bazelisk-cache: false
+        disk-cache: false
+        repository-cache: false
+
+    - name: Build at path A
+      run: bash "${DIR_A}/.github/scripts/repro-build.sh" "${DIR_A}" "${GITHUB_WORKSPACE}/out/a"
+
+    - name: Build at path B
+      run: bash "${DIR_A}/.github/scripts/repro-build.sh" "${DIR_B}" "${GITHUB_WORKSPACE}/out/b"
+
+    - name: Compare outputs
+      id: compare
+      # Flashable images (*.bin) must be identical. Other outputs (e.g. .elf,
+      # which carries debug info) are reported as warnings until they are
+      # promoted to a gate.
+      run: |
+        (cd out/a && ls) > a.list
+        (cd out/b && ls) > b.list
+        if ! diff a.list b.list; then
+          echo "::error::The two builds produced different sets of output files"
+          exit 1
+        fi
+        status=0
+        # differing.txt is created only when something differs: later steps
+        # key off hashFiles('differing.txt'), and an empty file still hashes.
+        while read -r f; do
+          if cmp -s "out/a/${f}" "out/b/${f}"; then
+            echo "identical: ${f}"
+          else
+            echo "${f}" >> differing.txt
+            case "${f}" in
+              *.bin) echo "::error::${f} differs between the two builds"; status=1 ;;
+              *) echo "::warning::${f} differs between the two builds (not gating)" ;;
+            esac
+          fi
+        done < a.list
+        exit "${status}"
+
+    - name: Diagnose differences
+      if: always() && hashFiles('differing.txt') != ''
+      run: |
+        mkdir -p repro-report
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq diffoscope-minimal binutils
+
+        while read -r f; do
+          diffoscope --text "repro-report/${f}.diffoscope.txt" \
+              --html "repro-report/${f}.diffoscope.html" \
+              "out/a/${f}" "out/b/${f}" || true
+          # Which absolute paths leaked into each build?
+          for side in a b; do
+            grep -a -o -E "${GITHUB_WORKSPACE}[^\"[:space:]]*" "out/${side}/${f}" \
+              | sort -u | head -50 > "repro-report/${f}.paths-${side}.txt" || true
+          done
+          case "${f}" in
+            *.elf)
+              for side in a b; do
+                readelf -wi "out/${side}/${f}" 2>/dev/null \
+                  | grep -m5 -E 'DW_AT_comp_dir|DW_AT_name' \
+                  > "repro-report/${f}.dwarf-${side}.txt" || true
+              done ;;
+          esac
+        done < differing.txt
+
+        {
+          echo "Differing outputs:"
+          cat differing.txt
+          echo
+          echo "Leaked checkout paths (should be empty):"
+          wc -l repro-report/*.paths-*.txt
+        } | tee repro-report/summary.txt
+
+    - name: Negative control (clean rebuild at path A)
+      # If a second build at the SAME path also differs, the build is
+      # non-deterministic on its own. If it matches the first, the difference
+      # comes from the checkout path.
+      if: always() && hashFiles('differing.txt') != ''
+      run: |
+        bash "${DIR_A}/.github/scripts/repro-build.sh" "${DIR_A}" "${GITHUB_WORKSPACE}/out/a2"
+        mkdir -p repro-report
+        while read -r f; do
+          if cmp -s "out/a/${f}" "out/a2/${f}"; then
+            echo "${f}: same path, clean rebuild: IDENTICAL (difference is path-dependent)"
+          else
+            echo "${f}: same path, clean rebuild: DIFFERS (non-deterministic build)"
+          fi
+        done < differing.txt | tee repro-report/negative-control.txt
+
+    - name: Upload report
+      if: always() && hashFiles('differing.txt') != ''
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      with:
+        name: reproducibility-report
+        path: repro-report/
+        if-no-files-found: warn
