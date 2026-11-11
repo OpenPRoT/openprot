@@ -82,8 +82,11 @@ jobs:
           echo "::error::Release closure reaches a non-hermetic or out-of-scope repo"
           exit 1
         fi
+        # `caliptra_deps+` itself is always present (it is a local_path_override
+        # module in MODULE.bazel), so only match repos its extensions fetch
+        # (`caliptra_deps++...`), not the module's own directory.
         ls "$(bazel --nosystem_rc --nohome_rc info output_base)/external" > fetched-repos.txt
-        if grep -Ei 'nonhermetic|qemu_opentitan|cloud_kms|openprot_python_deps|caliptra' fetched-repos.txt; then
+        if grep -Ei 'nonhermetic|qemu_opentitan|cloud_kms|openprot_python_deps|caliptra_deps\+\+' fetched-repos.txt; then
           echo "::error::Release build fetched a non-hermetic or out-of-scope repo"
           exit 1
         fi
