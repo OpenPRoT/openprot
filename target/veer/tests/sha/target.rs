@@ -1,0 +1,36 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+#![no_std]
+#![no_main]
+
+use arch_riscv::Arch;
+use console_backend as _;
+use entry::exit;
+use target_common::{declare_target, TargetInterface};
+
+pub struct Target {}
+
+impl TargetInterface for Target {
+    const NAME: &'static str = "Caliptra-MCU SHA";
+
+    fn main() -> ! {
+        codegen::start();
+        // The bootstrap thread has nothing left to do. Sleep rather than spin: a
+        // spinning thread at the same priority as the app threads takes a time
+        // slice at every scheduler tick and delays every wake-up behind it.
+        loop {
+            let _ = kernel::sleep_until(Arch, kernel::Instant::MAX);
+        }
+    }
+
+    fn shutdown(code: u32) -> ! {
+        match code {
+            0 => pw_log::info!("PASS"),
+            _ => pw_log::info!("FAIL: {}", code as u32),
+        };
+        exit(code);
+    }
+}
+
+declare_target!(Target);
