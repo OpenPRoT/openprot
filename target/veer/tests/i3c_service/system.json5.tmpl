@@ -15,8 +15,6 @@
 //
 // The wake under test is the one the server performs from inside its interrupt
 // handling: `object_set_peer_user_signal` makes a *different process* runnable.
-// That is a different kernel path from the interrupt-object wake exercised by
-// `tests/i3c_user_irq` and `tests/i3c_irq_preempt`.
 //
 // Addresses are rendered per platform (emulator or FPGA) from upstream
 // caliptra-mcu-sw's memory maps by `veer_system_config`:
