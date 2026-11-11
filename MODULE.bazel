@@ -23,12 +23,16 @@ local_path_override(
 # Local patch to pw_kernel's VeeR PIC code (see third_party/pigweed/):
 # veer_pic_gateways.patch makes the PIC gateways level-triggered and active
 # high explicitly, as caliptra-mcu-sw's PIC driver does.
+# veer_pic_claim.patch drops the MEICPCT write from the external-interrupt
+# claim, which traps as an illegal instruction on the Caliptra FPGA's VeeR core;
+# caliptra-mcu-sw's VeeR kernel reads MEIHAP directly.
 git_override(
     module_name = "pigweed",
     commit = "e21bf7763475a456efdcc49dafb651ef952b3be1",
     patch_strip = 1,
     patches = [
         "//third_party/pigweed:veer_pic_gateways.patch",
+        "//third_party/pigweed:veer_pic_claim.patch",
     ],
     remote = "https://pigweed.googlesource.com/pigweed/pigweed",
 )
