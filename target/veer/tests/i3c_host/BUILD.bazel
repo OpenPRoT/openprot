@@ -1,0 +1,18 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "i3c_host",
+    srcs = ["lib.rs"],
+    edition = "2024",
+)
+
+rust_test(
+    name = "i3c_host_unit_test",
+    crate = ":i3c_host",
+    edition = "2024",
+)

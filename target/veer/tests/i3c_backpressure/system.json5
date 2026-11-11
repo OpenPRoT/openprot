@@ -1,0 +1,78 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// VeeR on-target test for outbound I3C back-pressure in
+// //services/i3c/server-runtime.
+//
+// One app, two processes (as in tests/i3c_service):
+//
+//   server -- owns the I3C peripheral and PIC IRQ 2, runs the reactor. Holds a
+//             second Send until the controller reads the first (ResponseRead).
+//   client -- on one trigger frame, stages three distinct responses in a row;
+//             the sends block on the server's back-pressure so the frames reach
+//             the host in order, one per private read.
+//
+// Memory follows the caliptra emulator map from caliptra_runner.py:
+//   SRAM 0x40000000/0x80000, I3C 0x20004000/0x1000, PIC 0x60000000.
+{
+  arch: {
+    type: "riscv",
+  },
+  kernel: {
+    flash_start_address: 0x40000000,
+    flash_size_bytes: 0x10000,
+    ram_start_address: 0x40040000,
+    ram_size_bytes: 0x8000,
+  },
+  apps: [
+    {
+      name: "i3c_backpressure",
+      flash_size_bytes: 0x10000,
+      processes: [
+        {
+          name: "server",
+          ram_size_bytes: 0x4000,
+          objects: [
+            { name: "wg", type: "wait_group" },
+            {
+              name: "i3c_irq",
+              type: "interrupt",
+              irqs: [{ name: "i3c", number: 2 }],
+            },
+            { name: "channel", type: "channel_handler" },
+            {
+              type: "thread",
+              name: "server_thread",
+              kernel_stack_size_bytes: 2048,
+            },
+          ],
+          memory_mappings: [
+            {
+              name: "i3c_regs",
+              type: "device",
+              start_address: 0x20004000,
+              size_bytes: 0x1000,
+            },
+          ],
+        },
+        {
+          name: "client",
+          ram_size_bytes: 0x2000,
+          objects: [
+            {
+              name: "channel",
+              type: "channel_initiator",
+              handler_process: "server",
+              handler_object_name: "channel",
+            },
+            {
+              type: "thread",
+              name: "client_thread",
+              kernel_stack_size_bytes: 2048,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}

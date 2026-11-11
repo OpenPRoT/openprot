@@ -1,0 +1,89 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// VeeR on-target test for //services/i3c/server-runtime.
+//
+// Two processes joined by one IPC channel, mirroring the service's intended
+// deployment shape:
+//
+//   server -- owns the I3C peripheral and the PIC IRQ 2 interrupt object, runs
+//             the WaitGroup reactor (`i3c_server_runtime::run`). On an inbound
+//             frame it latches the payload, `interrupt_ack`s, and raises USER
+//             on the client channel.
+//   client -- parks in `object_wait(CHANNEL, USER)`, and on wake issues an
+//             `I3cOp::Recv` transaction to collect the latched frame.
+//
+// The wake under test is the one the server performs from inside its interrupt
+// handling: `object_set_peer_user_signal` makes a *different process* runnable.
+// That is a different kernel path from the interrupt-object wake exercised by
+// `tests/i3c_user_irq` and `tests/i3c_irq_preempt`.
+//
+// Memory follows the caliptra emulator map from caliptra_runner.py:
+//   SRAM  0x40000000, size 0x80000   (code + data execute here)
+//   I3C   0x20004000, size 0x1000    (device-mapped into the server)
+//   PIC   0x60000000
+{
+  arch: {
+    type: "riscv",
+  },
+  kernel: {
+    flash_start_address: 0x40000000,
+    flash_size_bytes: 0x10000,
+    ram_start_address: 0x40040000,
+    ram_size_bytes: 0x8000,
+  },
+  apps: [
+    {
+      name: "i3c_service",
+      flash_size_bytes: 0x10000,
+      processes: [
+        {
+          name: "server",
+          ram_size_bytes: 0x4000,
+          objects: [
+            { name: "wg", type: "wait_group" },
+            {
+              name: "i3c_irq",
+              type: "interrupt",
+              irqs: [{ name: "i3c", number: 2 }],
+            },
+            {
+              name: "channel",
+              type: "channel_handler",
+            },
+            {
+              type: "thread",
+              name: "server_thread",
+              kernel_stack_size_bytes: 2048,
+            },
+          ],
+          memory_mappings: [
+            {
+              name: "i3c_regs",
+              type: "device",
+              start_address: 0x20004000,
+              size_bytes: 0x1000,
+            },
+          ],
+        },
+        {
+          name: "client",
+          ram_size_bytes: 0x2000,
+          objects: [
+            {
+              name: "channel",
+              type: "channel_initiator",
+              handler_process: "server",
+              handler_object_name: "channel",
+            },
+            {
+              type: "thread",
+              name: "client_thread",
+              kernel_stack_size_bytes: 2048,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}

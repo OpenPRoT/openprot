@@ -1,0 +1,55 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// Minimal VeeR userspace-IRQ test: one app process owns the I3C peripheral
+// (device-mapped), registers a userspace `interrupt` object (I3C = PIC IRQ 2)
+// with a WaitGroup, and drains one private write through the I3cTarget facade.
+//
+// Memory follows the caliptra emulator map from caliptra_runner.py:
+//   SRAM  0x40000000, size 0x80000   (code + data execute here)
+//   I3C   0x20004000, size 0x1000    (device-mapped into the process)
+//   PIC   0x60000000
+{
+  arch: {
+    type: "riscv",
+  },
+  kernel: {
+    flash_start_address: 0x40000000,
+    flash_size_bytes: 0x10000,
+    ram_start_address: 0x40040000,
+    ram_size_bytes: 0x8000,
+  },
+  apps: [
+    {
+      name: "i3c_user_irq",
+      flash_size_bytes: 0x10000,
+      processes: [
+        {
+          name: "i3c_user_irq_process",
+          ram_size_bytes: 0x4000,
+          objects: [
+            { name: "wg", type: "wait_group" },
+            {
+              name: "i3c_irq",
+              type: "interrupt",
+              irqs: [{ name: "i3c", number: 2 }],
+            },
+            {
+              type: "thread",
+              name: "i3c_user_irq_thread",
+              kernel_stack_size_bytes: 2048,
+            },
+          ],
+          memory_mappings: [
+            {
+              name: "i3c_regs",
+              type: "device",
+              start_address: 0x20004000,
+              size_bytes: 0x1000,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}

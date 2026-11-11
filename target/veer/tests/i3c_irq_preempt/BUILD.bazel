@@ -1,0 +1,124 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@pigweed//pw_kernel/tooling:multi_process_app.bzl", "multi_process_app")
+load("@pigweed//pw_kernel/tooling:rust_process.bzl", "rust_process")
+load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
+load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+load("//target/veer:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//target/veer/tooling:caliptra_runner.bzl", "caliptra_runner")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "system_config",
+    srcs = ["system.json5"],
+)
+
+target_codegen(
+    name = "codegen",
+    arch = "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+    system_config = ":system_config",
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    template = "//target/veer:linker_script_template",
+)
+
+rust_binary(
+    name = "target",
+    srcs = ["target.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":codegen",
+        ":linker_script",
+        "//target/veer:entry",
+        "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/subsys/console:console_backend",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)
+
+# Two processes in one app image. `spinner` is what distinguishes this test
+# from `tests/i3c_user_irq` -- see system.json5.
+multi_process_app(
+    name = "i3c_irq_preempt",
+    processes = [
+        ":receiver",
+        ":spinner",
+    ],
+    tags = ["kernel"],
+)
+
+rust_process(
+    name = "receiver",
+    srcs = ["receiver.rs"],
+    codegen_crate_name = "receiver_codegen",
+    edition = "2024",
+    tags = ["kernel"],
+    deps = [
+        "//hal/blocking",
+        "//target/veer/peripherals/i3c",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
+rust_process(
+    name = "spinner",
+    srcs = ["spinner.rs"],
+    codegen_crate_name = "spinner_codegen",
+    edition = "2024",
+    tags = ["kernel"],
+    deps = [
+        "@pigweed//pw_kernel/userspace",
+    ],
+)
+
+system_image(
+    name = "i3c_irq_preempt_image",
+    apps = [":i3c_irq_preempt"],
+    kernel = ":target",
+    platform = "//target/veer",
+    system_config = ":system_config",
+    tags = ["kernel"],
+)
+
+rust_binary_no_panics_test(
+    name = "no_panics_test",
+    binary = ":i3c_irq_preempt_image",
+    tags = ["kernel"],
+)
+
+caliptra_runner(
+    name = "i3c_irq_preempt_runner",
+    interface = "emulator",
+    tags = ["manual"],
+    target = ":i3c_irq_preempt_image",
+)
+
+rust_test(
+    name = "i3c_irq_preempt_test",
+    srcs = ["host_test.rs"],
+    crate_root = "host_test.rs",
+    data = [":i3c_irq_preempt_runner"],
+    edition = "2024",
+    # caliptra_runner.py hardcodes --i3c-port=65534; must not run in parallel.
+    tags = [
+        "emulator",
+        "exclusive",
+    ],
+    deps = ["//target/veer/tests/i3c_host"],
+)
