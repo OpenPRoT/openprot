@@ -1,0 +1,80 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// VeeR two-process I3C userspace-IRQ test.
+//
+// This is `tests/i3c_user_irq` plus a second, permanently-runnable process.
+// That second process is the entire point of this test.
+//
+// With only one userspace thread (as in `tests/i3c_user_irq`), an interrupt
+// that wakes the blocked receiver re-selects the thread that was already
+// running, and `scheduler::context_switch` returns early at its
+// `current_thread_id == new_thread.id()` check without ever calling
+// `Arch::context_switch`. The arch-level interrupt-context switch path is
+// therefore never reached, and that test passes on a kernel whose RISC-V
+// port switches unsafely from trap context.
+//
+// Adding `spinner` -- which never blocks, so it is always in the run queue --
+// means the receiver is *not* the current thread when the I3C IRQ arrives.
+// The wake then selects a different thread, the early-out does not fire, and
+// `Arch::context_switch` runs from inside `trap_handler`.
+//
+// Memory follows the caliptra emulator map from caliptra_runner.py:
+//   SRAM  0x40000000, size 0x80000   (code + data execute here)
+//   I3C   0x20004000, size 0x1000    (device-mapped into the receiver)
+//   PIC   0x60000000
+{
+  arch: {
+    type: "riscv",
+  },
+  kernel: {
+    flash_start_address: 0x40000000,
+    flash_size_bytes: 0x10000,
+    ram_start_address: 0x40040000,
+    ram_size_bytes: 0x8000,
+  },
+  apps: [
+    {
+      name: "i3c_irq_preempt",
+      flash_size_bytes: 0x10000,
+      processes: [
+        {
+          name: "receiver",
+          ram_size_bytes: 0x4000,
+          objects: [
+            { name: "wg", type: "wait_group" },
+            {
+              name: "i3c_irq",
+              type: "interrupt",
+              irqs: [{ name: "i3c", number: 2 }],
+            },
+            {
+              type: "thread",
+              name: "receiver_thread",
+              kernel_stack_size_bytes: 2048,
+            },
+          ],
+          memory_mappings: [
+            {
+              name: "i3c_regs",
+              type: "device",
+              start_address: 0x20004000,
+              size_bytes: 0x1000,
+            },
+          ],
+        },
+        {
+          name: "spinner",
+          ram_size_bytes: 0x1000,
+          objects: [
+            {
+              type: "thread",
+              name: "spinner_thread",
+              kernel_stack_size_bytes: 1024,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}
