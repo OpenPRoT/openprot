@@ -76,14 +76,16 @@ All workflows follow these rules:
   - Some crates in `third_party/crates_io/Cargo.toml` use floating git refs
     (pinned only by `Cargo.lock`).
   - Bazel itself is downloaded by Bazelisk without a hash check.
-- **Reproducibility.** The release build is not yet known to be reproducible.
-  `.github/workflows/reproducibility.yml` runs weekly and on release tags. It
-  builds the release target twice in checkouts at different paths and compares
-  the outputs: `.bin` images must be identical, and differences in other
-  outputs (such as the `.elf`, which carries debug info) are reported as
+- **Reproducibility.** In testing, the AST10x0 eRoT build reproduced
+  bit-for-bit (`erot.bin` and `erot.elf`) across two checkouts at different
+  paths and against the published release artifacts. That is one commit, one
+  platform and one runner image, so it is not a guarantee.
+  `.github/workflows/reproducibility.yml` re-checks it weekly and on release
+  tags: it builds the release target twice in checkouts at different paths
+  and compares the outputs. `.bin` images must be identical; differences in
+  other outputs (such as the `.elf`, which carries debug info) are reported as
   warnings. On a difference it uploads a diffoscope report and runs a
-  same-path rebuild to tell path dependence from non-determinism. Do not
-  assume bit-for-bit reproducibility until this check passes consistently.
+  same-path rebuild to tell path dependence from non-determinism.
 - **Image signing.** Provenance covers the build, not the Earlgrey ECDSA or
   SPHINCS+ image signing step, which needs HSM credentials.
 - **Source track.** Branch protection, required reviews and `CODEOWNERS` are
