@@ -20,9 +20,16 @@ local_path_override(
     path = "third_party/caliptra",
 )
 
+# Local patch to pw_kernel's VeeR PIC code (see third_party/pigweed/):
+# veer_pic_gateways.patch makes the PIC gateways level-triggered and active
+# high explicitly, as caliptra-mcu-sw's PIC driver does.
 git_override(
     module_name = "pigweed",
     commit = "e21bf7763475a456efdcc49dafb651ef952b3be1",
+    patch_strip = 1,
+    patches = [
+        "//third_party/pigweed:veer_pic_gateways.patch",
+    ],
     remote = "https://pigweed.googlesource.com/pigweed/pigweed",
 )
 

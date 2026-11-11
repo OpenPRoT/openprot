@@ -1,0 +1,10 @@
+--- a/pw_kernel/arch/riscv/veer_pic.rs
++++ b/pw_kernel/arch/riscv/veer_pic.rs
+@@ -278,2 +278,7 @@
+             set_interrupt_priority(irq, IRQ_PRIORITY);
++            // Local patch: make every gateway level-triggered and active high
++            // explicitly, as caliptra-mcu-sw's PIC driver does, instead of relying
++            // on the reset value (a previous boot stage could have changed it).
++            let mut gateway = MeiGwCtrl {};
++            gateway.write(&CONTEXT_0, irq, MeiGwCtrlValue(0));
+         }
