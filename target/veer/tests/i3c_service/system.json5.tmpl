@@ -18,18 +18,19 @@
 // That is a different kernel path from the interrupt-object wake exercised by
 // `tests/i3c_user_irq` and `tests/i3c_irq_preempt`.
 //
-// Memory follows the caliptra emulator map from caliptra_runner.py:
-//   SRAM  0x40000000, size 0x80000   (code + data execute here)
-//   I3C   0x20004000, size 0x1000    (device-mapped into the server)
-//   PIC   0x60000000
+// Addresses are rendered per platform (emulator or FPGA) from upstream
+// caliptra-mcu-sw's memory maps by `veer_system_config`:
+//   @KERNEL_FLASH_START@  MCU SRAM start (code + data execute here)
+//   @KERNEL_RAM_START@    app data, 0x40000 into MCU SRAM
+//   @I3C_BASE@            I3C register block (device-mapped into the server)
 {
   arch: {
     type: "riscv",
   },
   kernel: {
-    flash_start_address: 0x40000000,
+    flash_start_address: @KERNEL_FLASH_START@,
     flash_size_bytes: 0x10000,
-    ram_start_address: 0x40040000,
+    ram_start_address: @KERNEL_RAM_START@,
     ram_size_bytes: 0x8000,
   },
   apps: [
@@ -61,7 +62,7 @@
             {
               name: "i3c_regs",
               type: "device",
-              start_address: 0x20004000,
+              start_address: @I3C_BASE@,
               size_bytes: 0x1000,
             },
           ],
