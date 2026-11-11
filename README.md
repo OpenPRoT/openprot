@@ -102,6 +102,43 @@ bazel run @rules_rust//tools/rust_analyzer:gen_rust_project -- \
   --config=virt_ast10x0 //target/ast10x0/peripherals:peripherals
 ```
 
+The same applies to Earl Grey:
+
+```bash
+bazel run @rules_rust//tools/rust_analyzer:gen_rust_project -- \
+  --config=k_earlgrey //target/earlgrey/...
+```
+
+#### Troubleshooting: rust-analyzer shows nothing for a file or a new target
+
+If a file has no highlighting, hover or go-to-definition, its crate is most likely not
+in `rust-project.json`. Check, in order:
+
+1. **Is the target listed?** Search `rust-project.json` for the crate name or file path.
+   If it is missing, add the target (or a parent package such as `//path/to/pkg/...`)
+   to the `gen_rust_project` command. Remember that each run overwrites the file.
+2. **Is it embedded-only?** If the target uses `target_compatible_with`, it is skipped
+   on the host platform, with no error. Pass the config that selects its platform
+   after the `--`. The configs are defined in `.bazelrc`:
+
+   | Directory               | Config                          |
+   |-------------------------|---------------------------------|
+   | `target/ast10x0/`       | `--config=virt_ast10x0`         |
+   | `target/earlgrey/`      | `--config=k_earlgrey`           |
+   | `target/veer/`          | `--config=k_veer`               |
+
+3. **No config exists for your target?** Add one to `.bazelrc` next to the existing
+   ones. It must use the `common:` prefix, not just `build:`, so the setting also
+   reaches the generator's inner build:
+
+   ```
+   common:k_mytarget --platforms=//target/mytarget:mytarget
+   build:k_mytarget --build_tag_filters=-do_not_build,-kernel_doc_test
+   ```
+
+4. **Reload.** After regenerating, run "rust-analyzer: Reload Workspace". Double-check
+   the spelling of the command and config names, since a typo in either fails the run.
+
 Notes:
 
 - Put `--config` after the `--`. Using `--platforms` on `bazel run` itself builds the

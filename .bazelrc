@@ -143,6 +143,11 @@ test:fpga --test_timeout=600
 common:release --lockfile_mode=error
 common:release --stamp=false
 
+# --- Earl Grey RISC-V kernel target ---
+# Platform setup for building //target/earlgrey/* artifacts.
+common:k_earlgrey --platforms=//target/earlgrey:earlgrey
+build:k_earlgrey --build_tag_filters=-do_not_build,-kernel_doc_test
+
 # Site-local overrides. Kept last so developer machine-specific settings (e.g. a
 # local QEMU source override via --override_repository) take precedence. This
 # file is not checked in; see third_party/qemu/setup.md.
