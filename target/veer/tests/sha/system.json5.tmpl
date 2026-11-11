@@ -1,0 +1,49 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+{
+  arch: {
+    type: "riscv",
+  },
+  kernel: {
+    flash_start_address: @KERNEL_FLASH_START@,
+    flash_size_bytes: 65536,
+    ram_start_address: @KERNEL_RAM_START@,
+    ram_size_bytes: 32768,
+    interrupt_table: {
+      table: {}
+    },
+  },
+  apps: [
+    {
+      name: "test_sha",
+      flash_size_bytes: 32768,
+      processes: [
+        {
+          name: "test_sha",
+          ram_size_bytes: 8192,
+          objects: [
+            {
+              type: "thread",
+              name: "main_thread",
+              kernel_stack_size_bytes: 2048,
+            },
+          ],
+          memory_mappings: [
+            {
+              name: "mbox",
+              type: "device",
+              start_address: @MBOX_BASE@,
+              size_bytes: 0x1000,
+            },
+            {
+              name: "soc_ifc",
+              type: "device",
+              start_address: @SOC_IFC_BASE@,
+              size_bytes: 0x1000,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}

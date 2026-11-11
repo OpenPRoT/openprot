@@ -42,6 +42,8 @@ fn main() {
     //   @KERNEL_RAM_START@    Where the system generator starts placing app
     //                         data: KERNEL_RAM_OFFSET into MCU SRAM.
     //   @MCI_BASE@            MCI register block (timer, device mappings).
+    //   @MBOX_BASE@           Caliptra mailbox registers.
+    //   @SOC_IFC_BASE@        Caliptra SoC interface registers.
     //   @PRIMARY_FLASH_CTRL@  Registers of the primary flash controller.
     let substitutions = [
         // Start of MCU SRAM. MCU ROM will jump here.
@@ -50,6 +52,10 @@ fn main() {
         ("@KERNEL_RAM_START@", map.sram_offset + KERNEL_RAM_OFFSET),
         // MCI register block base offset
         ("@MCI_BASE@", map.mci_offset),
+        // Caliptra mailbox registers
+        ("@MBOX_BASE@", map.mbox_offset),
+        // Caliptra SoC interface registers
+        ("@SOC_IFC_BASE@", map.soc_offset),
         ("@PRIMARY_FLASH_CTRL@", primary_flash_ctrl),
     ];
 

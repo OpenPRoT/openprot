@@ -28,6 +28,31 @@ rust_test(
     deps = ["//hal/blocking/flash"],
 )
 
+rust_library(
+    name = "mailbox",
+    srcs = ["mailbox.rs"],
+    crate_name = "veer_mailbox",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//target/veer/registers",
+        "//third_party/caliptra:crate_tock-registers",
+    ],
+)
+
+rust_library(
+    name = "sha",
+    srcs = ["sha.rs"],
+    crate_name = "veer_sha",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":mailbox",
+        "//hal/blocking",
+        "@rust_caliptra_crates//:caliptra-api",
+    ],
+)
+
 # Tests the FPGA flash driver against a copy of the caliptra-sw host code that
 # implements the FPGA's flash controllers.
 rust_test(
