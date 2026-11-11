@@ -1,0 +1,26 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//target/veer:defs.bzl", "TARGET_COMPATIBLE_WITH")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "i3c",
+    srcs = ["lib.rs"],
+    crate_features = select({
+        "//target/veer:fpga": ["fpga"],
+        "//conditions:default": [],
+    }),
+    crate_name = "caliptra_i3c_target",
+    edition = "2024",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        "//hal/blocking",
+        "//target/veer/registers",
+        "@rust_caliptra_crates//:caliptra-mcu-config-emulator",
+        "@rust_caliptra_crates//:caliptra-mcu-config-fpga",
+        "//third_party/caliptra:crate_tock-registers",
+    ],
+)
