@@ -142,6 +142,8 @@ test:fpga --test_timeout=600
 # instead, because `./pw` runs Bazel in update mode before the check.
 common:release --lockfile_mode=error
 common:release --stamp=false
+# Don't leak the invoking shell's environment (PATH, etc.) into build actions.
+common:release --incompatible_strict_action_env
 
 # --- Earl Grey RISC-V kernel target ---
 # Platform setup for building //target/earlgrey/* artifacts.
