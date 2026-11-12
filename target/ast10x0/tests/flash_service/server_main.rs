@@ -11,13 +11,17 @@ use app_flash_server::handle;
 use flash_backend::{Backend, NoWaitBlocking};
 use flash_server_runtime::Channel;
 use hal_flash::BlockingFlash;
+use hal_flash_driver::FlashDriver;
 use openprot_flash_server::Server;
 use pw_status::{Error, Result};
 use userspace::{entry, syscall};
 
-/// Holds one request or reply, including its 4-byte opcode or status. Reads
-/// are at most 4 KiB.
-const BUF_SIZE: usize = 4352;
+/// The 4-byte opcode of a request or status of a reply.
+const HEADER_LEN: usize = 4;
+
+/// Holds one request or reply: the header and the largest read the driver
+/// serves in one call.
+const BUF_SIZE: usize = HEADER_LEN + Backend::MAX_READ_SIZE;
 
 #[entry]
 fn entry() -> Result<()> {
