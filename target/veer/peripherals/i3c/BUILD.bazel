@@ -19,8 +19,8 @@ rust_library(
     deps = [
         "//hal/blocking",
         "//target/veer/registers",
+        "//third_party/caliptra:crate_tock-registers",
         "@rust_caliptra_crates//:caliptra-mcu-config-emulator",
         "@rust_caliptra_crates//:caliptra-mcu-config-fpga",
-        "//third_party/caliptra:crate_tock-registers",
     ],
 )
