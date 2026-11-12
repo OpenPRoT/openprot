@@ -16,6 +16,15 @@ use util_types::{Blocking, PowerOf2Usize};
 /// cannot use `BlockingFlash`.
 const PREFIX_BUF_LEN: usize = 16;
 
+/// Outcome of polling an operation started with [`Flash::start_erase`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpPoll {
+    /// Still in progress.
+    Busy,
+    /// Finished; the driver's error state has been checked and cleared.
+    Done,
+}
+
 /// High-level flash interface.
 ///
 /// This trait provides a simplified, synchronous, blocking interface for flash operations.
@@ -52,6 +61,24 @@ pub trait Flash {
     /// * `start_addr`: The start address of the block to erase. Must be aligned to `size`.
     /// * `size`: The size of the block to erase. Must be one of the supported sizes in `geometry().2`.
     fn erase(&mut self, start_addr: FlashAddress, size: PowerOf2Usize) -> Result<(), Self::Error>;
+
+    /// Starts an erase without necessarily waiting for it to finish.
+    ///
+    /// Default blocks via [`erase`](Self::erase); override with `poll_erase` to defer instead.
+    fn start_erase(
+        &mut self,
+        start_addr: FlashAddress,
+        size: PowerOf2Usize,
+    ) -> Result<(), Self::Error> {
+        self.erase(start_addr, size)
+    }
+
+    /// Polls an erase begun with [`start_erase`](Self::start_erase).
+    ///
+    /// `Err` must mean the busy check already came back false, same as `Done`.
+    fn poll_erase(&mut self) -> Result<OpPoll, Self::Error> {
+        Ok(OpPoll::Done)
+    }
 
     /// Programs data into flash.
     ///
@@ -91,6 +118,18 @@ impl<F: Flash> Flash for &mut F {
     fn erase(&mut self, start_addr: FlashAddress, size: PowerOf2Usize) -> Result<(), Self::Error> {
         (**self).erase(start_addr, size)
     }
+    #[inline(always)]
+    fn start_erase(
+        &mut self,
+        start_addr: FlashAddress,
+        size: PowerOf2Usize,
+    ) -> Result<(), Self::Error> {
+        (**self).start_erase(start_addr, size)
+    }
+    #[inline(always)]
+    fn poll_erase(&mut self) -> Result<OpPoll, Self::Error> {
+        (**self).poll_erase()
+    }
 }
 
 /// A trait that can be used to constrain the page-size of the flash.
@@ -109,6 +148,8 @@ pub trait FlashPageSize {
 /// complete.
 ///
 /// It also handles address alignment for reads and program window constraints for writes.
+///
+/// `start_erase`/`poll_erase` bypass `blocking`; a deferring caller does its own waiting.
 pub struct BlockingFlash<TDriver: FlashDriver, TBlocking: Blocking> {
     /// The underlying flash driver.
     pub driver: TDriver,
@@ -164,8 +205,25 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
     /// until the operation completes.
     fn erase(&mut self, start_addr: FlashAddress, size: PowerOf2Usize) -> Result<(), Self::Error> {
         self.driver.start_erase(start_addr, size)?;
-        self.blocking.wait_for_notification();
+        while self.driver.is_busy() {
+            self.blocking.wait_for_notification();
+        }
         self.driver.complete_op()
+    }
+    /// Starts the erase and returns without waiting; `poll_erase` reports its real status.
+    fn start_erase(
+        &mut self,
+        start_addr: FlashAddress,
+        size: PowerOf2Usize,
+    ) -> Result<(), Self::Error> {
+        self.driver.start_erase(start_addr, size)
+    }
+    fn poll_erase(&mut self) -> Result<OpPoll, Self::Error> {
+        if self.driver.is_busy() {
+            return Ok(OpPoll::Busy);
+        }
+        self.driver.complete_op()?;
+        Ok(OpPoll::Done)
     }
     /// Programs data into flash.
     ///
@@ -183,6 +241,7 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
                 program_window_size - ((addr.offset() & window_mask as u32) as usize),
             )];
             self.driver.start_program(addr, chunk)?;
+            // start_program fully blocks, so is_busy is already false here.
             self.blocking.wait_for_notification();
             self.driver.complete_op()?;
             data = &data[chunk.len()..];

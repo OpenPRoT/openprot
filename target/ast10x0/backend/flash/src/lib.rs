@@ -50,16 +50,17 @@ fn map_smc_error(e: SmcError) -> ErrorCode {
     }
 }
 
-/// No-op `Blocking` impl paired with this driver.
+/// `Blocking` impl paired with this driver.
 ///
-/// FMC user-mode SPI-NOR commands have no completion interrupt; the peripheral
-/// driver polls the device's WIP status bit to completion inside
-/// `program_page`/`erase_sector`, so `start_*` below return with the operation
-/// already finished and there is nothing to wait for.
+/// No completion interrupt exists; this just paces `BlockingFlash`'s `is_busy` poll loop.
 pub struct NoWaitBlocking;
 
 impl Blocking for NoWaitBlocking {
-    fn wait_for_notification(&self) {}
+    fn wait_for_notification(&self) {
+        for _ in 0..64 {
+            core::hint::spin_loop();
+        }
+    }
 }
 
 /// The FMC controller, shared by the per-chip-select flash drivers.
@@ -211,8 +212,13 @@ impl FlashDriver for Ast10x0FmcFlashDriver<'_> {
         Ok(())
     }
 
+    /// Reads the device's WIP status bit. A read failure reports busy rather than
+    /// masking the fault as done.
     fn is_busy(&mut self) -> bool {
-        false
+        match self.device() {
+            Ok(device) => device.write_in_progress().unwrap_or(true),
+            Err(_) => true,
+        }
     }
 
     fn complete_op(&mut self) -> Result<(), Self::Error> {
