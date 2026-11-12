@@ -1,0 +1,164 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+//! I3C MCTP sender — outbound transport binding.
+//!
+//! Shaped like `services/mctp/transport-i2c`'s `I2cSender`: the same
+//! fragmentation loop, the same error mapping. What differs is dictated by I3C
+//! target mode, not by taste:
+//!
+//! * **This side is a target, not a bus master.** It cannot start a transfer,
+//!   so "send" stages a TX and raises an IBI that prompts the controller to
+//!   collect it with a private read. That is one `I3cOp::Send`, and the whole
+//!   framed packet goes in it — unlike the embedded-hal I2C path, nothing
+//!   prepends a destination byte, so nothing is trimmed off the front here.
+//! * **The source address is runtime state.** It is assigned by ENTDAA, so it
+//!   is read back per message rather than fixed at construction.
+//! * **One response is staged at a time.** The i3c service answers a second
+//!   `Send` with `I3cStatus::Busy` until the controller has read the first. A
+//!   multi-fragment message therefore waits between fragments: the sender
+//!   retries the same frame, calling an injected wait hook between attempts, a
+//!   bounded number of times.
+
+use i3c_api::{I3cStatus, Transport};
+use i3c_client::{ClientError, I3cClient};
+use mctp::Result;
+use mctp_lib::fragment::SendOutput;
+
+use crate::encap::{mctp_i3c_ipc_mtu, MctpI3cEncap, MCTP_I3C_IPC_FRAME, MCTP_I3C_IPC_PACKET};
+
+/// How many times one frame is retried while the i3c service reports `Busy`
+/// before the send fails. With a wait of a few milliseconds per attempt this
+/// allows the controller a couple of seconds to read the previous fragment.
+pub const MAX_BUSY_RETRIES: u16 = 400;
+
+/// I3C MCTP sender.
+///
+/// Implements [`mctp_lib::Sender`] to fragment and frame MCTP packets for an
+/// I3C target, handing each finished frame to the i3c service.
+///
+/// `W` is the wait hook, called between attempts while the service is `Busy`.
+/// The crate is kernel-free, so the caller supplies it: a sleep on target, a
+/// no-op or a counter in host tests.
+pub struct I3cSender<T, W> {
+    client: I3cClient<T>,
+    /// The controller's dynamic address. DSP0233 has no destination or source
+    /// field, so it is not carried on the wire (an I3C target always sends to the
+    /// controller); it is kept for diagnostics and API stability. A full
+    /// EID → address neighbour table is tracked in
+    /// <https://github.com/OpenPRoT/mctp-lib/issues/4>.
+    remote_addr: u8,
+    /// Whether to append an SMBus PEC. DSP0233 requires one, so this is `true`
+    /// for any conforming controller.
+    pec: bool,
+    wait: W,
+}
+
+impl<T: Transport, W: FnMut()> I3cSender<T, W> {
+    /// Create a sender over an i3c client.
+    ///
+    /// * `client` — the i3c target service client
+    /// * `remote_addr` — the controller's 7-bit dynamic address
+    /// * `pec` — append and expect an SMBus PEC
+    /// * `wait` — called between retries while the service is `Busy`
+    pub const fn new(client: I3cClient<T>, remote_addr: u8, pec: bool, wait: W) -> Self {
+        Self {
+            client,
+            remote_addr,
+            pec,
+            wait,
+        }
+    }
+
+    /// Borrow the underlying client — to `recv` inbound frames on the same
+    /// channel, or to read the dynamic address.
+    pub fn client(&mut self) -> &mut I3cClient<T> {
+        &mut self.client
+    }
+
+    /// This target's current dynamic address.
+    ///
+    /// Read fresh rather than cached: ENTDAA runs whenever the controller
+    /// re-enumerates the bus, and a stale value would put the wrong address in
+    /// every outbound PEC (which covers the address byte) — a fault that is
+    /// invisible locally because the frames still encode and send cleanly.
+    fn own_addr(&mut self) -> Result<u8> {
+        match self.client.dynamic_address() {
+            Ok(Some(addr)) => Ok(addr),
+            // On the bus but not yet enumerated: nothing can be addressed from
+            // here until the controller assigns an address.
+            Ok(None) => Err(mctp::Error::Unreachable),
+            Err(_) => Err(mctp::Error::TxFailure),
+        }
+    }
+
+    /// Hand one finished frame to the service, waiting out `Busy`.
+    fn send_frame(&mut self, frame: &[u8]) -> Result<()> {
+        let mut retries: u16 = 0;
+        loop {
+            match self.client.send(frame) {
+                Ok(()) => return Ok(()),
+                Err(ClientError::Server(I3cStatus::Busy)) if retries < MAX_BUSY_RETRIES => {
+                    retries += 1;
+                    (self.wait)();
+                }
+                Err(ClientError::Server(I3cStatus::Busy)) => {
+                    pw_log::error!(
+                        "i3c send still busy after {} retries: len=0x{:04x}",
+                        retries as u32,
+                        frame.len() as u32
+                    );
+                    return Err(mctp::Error::TxFailure);
+                }
+                Err(_) => {
+                    pw_log::error!(
+                        "i3c send failed: addr=0x{:02x} len=0x{:04x}",
+                        self.remote_addr as u32,
+                        frame.len() as u32
+                    );
+                    return Err(mctp::Error::TxFailure);
+                }
+            }
+        }
+    }
+}
+
+impl<T: Transport, W: FnMut()> mctp_lib::Sender for I3cSender<T, W> {
+    fn send_vectored(
+        &mut self,
+        // DSP0233 has no destination field and a target always sends to the
+        // controller, so the EID is not used to pick an address.
+        _eid: mctp::Eid,
+        mut fragmenter: mctp_lib::fragment::Fragmenter,
+        payload: &[&[u8]],
+    ) -> Result<mctp::Tag> {
+        let encoder = MctpI3cEncap::new(self.own_addr()?);
+        let pec = self.pec;
+
+        // Fragments are staged one at a time with back-pressure: the i3c server
+        // answers a second `Send` with `Busy` until the controller has read the
+        // first (signalled by TargetEvent::ResponseRead). `send_frame` waits
+        // that out, so this loop cannot outrun the controller and overrun the
+        // target TX queue.
+        loop {
+            let mut pkt = [0u8; MCTP_I3C_IPC_PACKET];
+            match fragmenter.fragment_vectored(payload, &mut pkt) {
+                SendOutput::Packet(p) => {
+                    let mut out = [0u8; MCTP_I3C_IPC_FRAME];
+                    let n = encoder.encode(p, pec, &mut out)?;
+                    let frame = out.get(..n).ok_or(mctp::Error::TxFailure)?;
+                    self.send_frame(frame)?;
+                }
+                SendOutput::Complete { tag, .. } => break Ok(tag),
+                SendOutput::Error { err, .. } => break Err(err),
+            }
+        }
+    }
+
+    fn get_mtu(&self) -> usize {
+        // The framed size depends on whether a PEC is appended, so the MTU
+        // does too — a fixed value would under-fill every frame by one byte
+        // when PEC is off.
+        mctp_i3c_ipc_mtu(self.pec)
+    }
+}
