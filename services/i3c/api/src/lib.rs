@@ -5,8 +5,8 @@
 //!
 //! The wire contract between the i3c server-runtime (which owns the
 //! [`I3cTarget`](openprot_hal_blocking::i3c_hardware::I3cTarget) facade) and
-//! any client process that speaks to it over a Pigweed channel — the i3c IPC
-//! transport client that the `services/mctp` binding drives.
+//! any client process that speaks to it over a Pigweed channel. A consumer such
+//! as an MCTP binding sits on top of the client.
 //!
 //! Both directions are a single opcode/status byte followed by an optional
 //! payload; there is one operation per whole request. This crate is

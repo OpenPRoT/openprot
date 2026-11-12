@@ -39,8 +39,8 @@ pub enum Inbound {
     Latched,
     /// Nothing was available to latch (empty or a zero-length descriptor).
     Empty,
-    /// A frame was read but dropped because the ring was full — a lost MCTP
-    /// fragment. [`RX_RING`] is sized so this should not occur in normal flow;
+    /// A frame was read but dropped because the ring was full — a lost frame
+    /// (for a fragmenting consumer, a lost fragment). [`RX_RING`] is sized so this should not occur in normal flow;
     /// the runtime logs it.
     DroppedFull,
 }
@@ -48,8 +48,8 @@ pub enum Inbound {
 /// The I3C target the server owns, plus its IPC channel, IRQ handle, the
 /// inbound frame ring, and the outbound "response staged, awaiting read" flag.
 ///
-/// Inbound frames are queued in a [`RX_RING`]-deep FIFO. MCTP over I3C is
-/// request/response, but the client draining a latched frame spans a
+/// Inbound frames are queued in a [`RX_RING`]-deep FIFO. A consumer is
+/// typically request/response, but the client draining a latched frame spans a
 /// cross-process round-trip, during which the controller can land the next
 /// frame (a resend, or the next fragment); the ring holds those so none is
 /// lost. `latch_inbound` pushes the oldest-first; `Recv` pops it. The ring
@@ -144,7 +144,7 @@ impl<T: I3cTarget, const RING: usize> Server<T, RING> {
     /// A zero-length descriptor is not a real frame: the RX-descriptor interrupt
     /// can fire with no payload (seen on the emulator around the controller's
     /// write/private-read command traffic), and `read_frame` then reports
-    /// `Some(0)`. A zero-length inbound is never a valid MCTP frame, so it is
+    /// `Some(0)`. A zero-length inbound carries nothing for a consumer, so it is
     /// treated as "nothing arrived" ([`Inbound::Empty`]).
     ///
     /// When the ring is full the frame is still read out of the hardware (to
