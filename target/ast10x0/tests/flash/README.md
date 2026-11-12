@@ -5,7 +5,9 @@ runs in the kernel with `Ast10x0FmcFlashDriver` wrapped in `BlockingFlash`.
 This is the AST10x0 counterpart of `target/veer/tests/flash`.
 [`flash_service`](../flash_service/README.md) covers the same flash over IPC.
 
-The test checks the geometry, then erases two sectors, programs data across a
+The test takes the sector and program page from the flash, which the driver
+discovers over SFDP, and checks that they are consistent instead of comparing
+them with fixed values. Then it erases two sectors, programs data across a
 program page boundary, checks that programming only clears bits, and checks
 that an erase leaves the next sector unchanged. It also checks that a read
 past the end and an unaligned erase are rejected. It saves both sectors, 1 MiB

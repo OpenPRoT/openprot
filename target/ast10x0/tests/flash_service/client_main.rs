@@ -20,13 +20,18 @@ use util_types::PowerOf2Usize;
 
 /// 1 MiB in: same offset the on-hardware smc write test uses; clear of code.
 const TEST_OFFSET: usize = 0x0010_0000;
-const SECTOR: usize = 4096;
+/// The largest sector the test saves, which sizes the backup. The backend
+/// accepts only 4 KiB sectors today.
+const MAX_SECTOR: usize = 4096;
 /// Starts 6 bytes before a 256-byte program page boundary, so the program
-/// crosses it.
+/// crosses it. The service does not report the program page, so this assumes
+/// the usual SPI NOR 256-byte page.
 const PROGRAM_START: usize = 250;
 const DATA_LEN: usize = 300;
 /// The bytes the read back covers: the data plus 50 bytes of flash after it.
 const READ_LEN: usize = 600;
+/// The chunk the restore compares at a time.
+const CHUNK: usize = 256;
 
 fn addr(offset: usize) -> FlashAddress {
     FlashAddress::new(offset as u32)
@@ -36,24 +41,37 @@ fn pattern(i: usize) -> u8 {
     (i as u8).wrapping_mul(31).wrapping_add(7)
 }
 
-fn run(flash: &mut impl Flash) -> core::result::Result<(), &'static str> {
-    let sector = PowerOf2Usize::new(SECTOR).ok_or("sector size")?;
-    let small = PowerOf2Usize::new(512).ok_or("small size")?;
+/// Checks that the geometry the server reports, which the backend discovers
+/// over SFDP, is consistent and that the test fits in the flash. Returns the
+/// erase sector and the flash size.
+fn check_geometry(
+    flash: &mut impl Flash,
+) -> core::result::Result<(PowerOf2Usize, usize), &'static str> {
+    let (total, sector, erase_sizes) = flash.geometry().map_err(|_| "geometry")?;
+    let sector_len = sector.get();
+    if sector_len > MAX_SECTOR || sector_len < READ_LEN {
+        return Err("unsupported sector size");
+    }
+    // The only erase size is the sector.
+    if erase_sizes != 1 << sector_len.trailing_zeros() {
+        return Err("erase sizes do not match the sector");
+    }
+    if total.get() % sector_len != 0 || total.get() < TEST_OFFSET + sector_len {
+        return Err("flash size does not fit the test");
+    }
+    Ok((sector, total.get()))
+}
 
-    // 1. The geometry matches the FMC flash.
-    let (total, page, bitmap) = flash.geometry().map_err(|_| "geometry")?;
-    if total.get() != 0x0400_0000 {
-        return Err("total size");
-    }
-    if page != sector {
-        return Err("page size");
-    }
-    if bitmap != 1 << 12 {
-        return Err("erase bitmap");
-    }
+fn run(
+    flash: &mut impl Flash,
+    sector: PowerOf2Usize,
+    total: usize,
+) -> core::result::Result<(), &'static str> {
+    // A size the flash cannot erase: half the sector.
+    let small = PowerOf2Usize::new(sector.get() / 2).ok_or("small size")?;
 
-    // 2. Erase one sector, verify it reads back erased.
-    flash.erase(addr(TEST_OFFSET), page).map_err(|_| "erase")?;
+    // 1. Erase one sector, verify it reads back erased.
+    flash.erase(addr(TEST_OFFSET), sector).map_err(|_| "erase")?;
     let mut buf = [0u8; 64];
     flash
         .read(addr(TEST_OFFSET), &mut buf)
@@ -62,7 +80,7 @@ fn run(flash: &mut impl Flash) -> core::result::Result<(), &'static str> {
         return Err("not erased");
     }
 
-    // 3. Unaligned program crossing a 256-byte program-page boundary.
+    // 2. Unaligned program crossing a 256-byte program-page boundary.
     let mut data = [0u8; DATA_LEN];
     for (i, b) in data.iter_mut().enumerate() {
         *b = pattern(i);
@@ -71,7 +89,7 @@ fn run(flash: &mut impl Flash) -> core::result::Result<(), &'static str> {
         .program(addr(TEST_OFFSET + PROGRAM_START), &data)
         .map_err(|_| "program")?;
 
-    // 4. Read back and verify, including the untouched prefix and suffix.
+    // 3. Read back and verify, including the untouched prefix and suffix.
     let mut rb = [0u8; READ_LEN];
     flash
         .read(addr(TEST_OFFSET), &mut rb)
@@ -88,38 +106,43 @@ fn run(flash: &mut impl Flash) -> core::result::Result<(), &'static str> {
         return Err("suffix clobbered");
     }
 
-    // 5. Error paths: bad erase size, unaligned erase, out-of-bounds read.
+    // 4. Error paths: bad erase size, unaligned erase, out-of-bounds read.
     if flash.erase(addr(TEST_OFFSET), small).is_ok() {
         return Err("erase size not rejected");
     }
-    if flash.erase(addr(TEST_OFFSET + 256), page).is_ok() {
+    if flash
+        .erase(addr(TEST_OFFSET + sector.get() / 2), sector)
+        .is_ok()
+    {
         return Err("unaligned erase not rejected");
     }
-    if flash.read(addr(total.get()), &mut [0u8; 16]).is_ok() {
+    if flash.read(addr(total), &mut [0u8; 16]).is_ok() {
         return Err("oob read not rejected");
     }
-
     Ok(())
 }
 
 /// Writes `backup` back over the sector and checks it.
 fn restore(
     flash: &mut impl Flash,
-    backup: &[u8; SECTOR],
+    sector: PowerOf2Usize,
+    backup: &[u8],
 ) -> core::result::Result<(), &'static str> {
-    let sector = PowerOf2Usize::new(SECTOR).ok_or("sector size")?;
     flash
         .erase(addr(TEST_OFFSET), sector)
         .map_err(|_| "restore erase")?;
     flash
         .program(addr(TEST_OFFSET), backup)
         .map_err(|_| "restore program")?;
-    let mut restored = [0u8; SECTOR];
-    flash
-        .read(addr(TEST_OFFSET), &mut restored)
-        .map_err(|_| "restore read")?;
-    if restored != *backup {
-        return Err("restore verify");
+    for (i, expected) in backup.chunks(CHUNK).enumerate() {
+        let mut buf = [0u8; CHUNK];
+        let buf = buf.get_mut(..expected.len()).ok_or("restore buffer")?;
+        flash
+            .read(addr(TEST_OFFSET + i * CHUNK), buf)
+            .map_err(|_| "restore read")?;
+        if buf != expected {
+            return Err("restore verify");
+        }
     }
     Ok(())
 }
@@ -127,15 +150,17 @@ fn restore(
 fn run_with_backup() -> core::result::Result<(), &'static str> {
     let transport = ChannelTransport::new(IpcHandle::new(handle::FLASH));
     let mut flash = FlashIpcClient::new(transport).map_err(|_| "connect/geometry")?;
+    let (sector, total) = check_geometry(&mut flash)?;
 
-    let mut backup = [0u8; SECTOR];
+    let mut backup = [0u8; MAX_SECTOR];
+    let backup = backup.get_mut(..sector.get()).ok_or("backup buffer")?;
     flash
-        .read(addr(TEST_OFFSET), &mut backup)
+        .read(addr(TEST_OFFSET), backup)
         .map_err(|_| "backup read")?;
-    let result = run(&mut flash);
+    let result = run(&mut flash, sector, total);
     // Restore even when a check failed, so the test leaves the flash as it
     // found it.
-    let restored = restore(&mut flash, &backup);
+    let restored = restore(&mut flash, sector, backup);
     result.and(restored)
 }
 

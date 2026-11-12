@@ -38,6 +38,7 @@ rust_binary(
         ":codegen",
         ":linker_script",
         "//hal/blocking/flash",
+        "//hal/blocking/flash:driver",
         "//target/ast10x0:entry",
         "//target/ast10x0/backend/flash:flash_backend_ast10x0",
         "//target/ast10x0/peripherals",
