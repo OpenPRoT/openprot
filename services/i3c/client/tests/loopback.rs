@@ -97,6 +97,24 @@ fn send_reaches_the_target() {
 }
 
 #[test]
+fn second_send_is_busy_until_the_controller_reads_the_first() {
+    let mut c = client(Some(0x08));
+    c.send(b"first").expect("send");
+
+    // Only one response is staged at a time. Nothing of the second reaches the
+    // target while the first is unread.
+    assert_eq!(c.send(b"second"), Err(ClientError::Server(I3cStatus::Busy)));
+    let target = &c.transport().server().target;
+    assert_eq!(&target.sent[..target.sent_len], b"first");
+
+    // The controller reads the first (the runtime reports ResponseRead).
+    c.transport().server().notify_response_read();
+    c.send(b"second").expect("send after the read");
+    let target = &c.transport().server().target;
+    assert_eq!(&target.sent[..target.sent_len], b"second");
+}
+
+#[test]
 fn recv_on_an_idle_bus_is_none() {
     let mut c = client(Some(0x08));
     let mut buf = [0u8; MAX_PAYLOAD];

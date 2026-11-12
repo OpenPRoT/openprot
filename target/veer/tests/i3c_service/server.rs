@@ -30,8 +30,9 @@ fn entry() {
     let mut target = unsafe { CaliptraI3cTarget::new() };
     // Raise IBIs with a non-MCTP Mandatory Data Byte. After an MCTP pending-read
     // IBI (0xAE) the FPGA hardware model reads the reply itself at once, which
-    // would clear the server's outbound back-pressure before a second send could
-    // be held. With any other MDB the reply stays queued until the host reads it.
+    // would release the server's outbound back-pressure before a second send
+    // could be refused as busy. With any other MDB the reply stays queued until
+    // the host reads it.
     target.set_config(I3cTargetConfig {
         static_address: None,
         ibi_mdb: NON_MCTP_MDB,

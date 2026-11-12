@@ -9,12 +9,14 @@
 //! `step_until`.
 //!
 //! After the first write the firmware stages a reply and then sends a second
-//! one. Whether the server holds that second send (outbound back-pressure)
-//! depends on whether the hardware model reads the first reply on its own. The
-//! emulator does, so the second send is not held there and the test carries on.
-//! The FPGA model leaves the reply queued (the server raises IBIs with a
-//! non-MCTP MDB), so on the FPGA the test requires the send to be held, and
-//! fails if it is not. When it is held, the test writes again to release it.
+//! one. Only one reply is staged at a time, so while the first is unread the
+//! server answers `Busy` and the firmware retries. Whether that happens depends
+//! on whether the hardware model reads the first reply on its own. The emulator
+//! does, so the second send is accepted at once and the test carries on. The FPGA
+//! model leaves the reply queued (the server raises IBIs with a non-MCTP MDB), so
+//! on the FPGA the test requires the second send to be refused, and fails if it
+//! is not. It then makes the controller read the first reply, which is what
+//! releases the next send (`ResponseRead`), and waits for the retry to succeed.
 //!
 //! The same binary runs on the emulator (x86_64) and on the VCK190, where the
 //! model forwards the socket to the FPGA's I3C host controller.
@@ -39,14 +41,16 @@ const READY: &str = "waiting for private write";
 /// Logged by `client.rs` after it has checked the payload.
 const RECEIVED: &str = "received expected payload";
 
-/// Logged by the server when it holds the client's second send.
-const HELD: &str = "i3c: send held";
+/// Length of the first reply `client.rs` stages (`REPLY` there). The host reads
+/// exactly that many bytes: the model's default read is 256, which the target
+/// cannot supply.
+const FIRST_REPLY_LEN: u16 = 4;
 
-/// Logged by `client.rs` when its second send has returned.
-const RELEASED: &str = "second send released";
+/// Logged by `client.rs` when its second send is refused as busy.
+const BUSY: &str = "second send busy";
 
-/// A second write, to release a held send. Its contents do not matter.
-const PAYLOAD2: [u8; 4] = [0x05, 0x06, 0x07, 0x08];
+/// Logged by `client.rs` when its second send has been accepted.
+const ACCEPTED: &str = "second send accepted";
 
 const TIMEOUT_SECS: u64 = 120;
 
@@ -113,25 +117,24 @@ fn i3c_service_host_test() {
     // The firmware checks the bytes; it logs this only on a match.
     wait_for_log(&mut hw, &mut log, RECEIVED);
 
-    // The client now sends a second reply. If the first is still unread the
-    // server holds it and logs so; release it with a second write. Otherwise it
-    // returns at once. Held is checked first: a held send is always logged
-    // before it is released.
+    // The client now sends a second reply. While the first is unread the server
+    // refuses it as busy, and the client retries. Busy is checked first: a busy
+    // send is always logged before it is accepted.
     let on_fpga = std::env::var("CALIPTRA_INTERFACE").as_deref() == Ok("fpga");
-    let held = wait_for_any(&mut hw, &mut log, &[HELD, RELEASED]) == 0;
+    let busy = wait_for_any(&mut hw, &mut log, &[BUSY, ACCEPTED]) == 0;
     assert!(
-        held || !on_fpga,
-        "the second send was not held on the FPGA: the hardware model read the first reply itself"
+        busy || !on_fpga,
+        "the second send was not refused on the FPGA: the hardware model read the first reply itself"
     );
-    if held {
-        println!("i3c host: second send was HELD; writing again to release it");
-        assert!(
-            stream.send_private_write(target_addr, PAYLOAD2.to_vec()),
-            "I3C socket closed before the second write"
-        );
-        wait_for_log(&mut hw, &mut log, RELEASED);
+    if busy {
+        println!("i3c host: second send was BUSY; reading the first reply to release it");
+        // The controller reading the staged reply makes the target report
+        // ResponseRead, which releases the next send. The reply itself is not
+        // checked.
+        stream.send_private_read_request_with_len(target_addr, FIRST_REPLY_LEN);
+        wait_for_log(&mut hw, &mut log, ACCEPTED);
     } else {
-        println!("i3c host: second send was NOT held (emulator: first reply already read)");
+        println!("i3c host: second send was accepted at once (emulator: first reply already read)");
     }
 
     hw.step_until_exit_success()

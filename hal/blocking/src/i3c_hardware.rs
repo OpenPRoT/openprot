@@ -105,11 +105,12 @@ pub trait I3cTarget {
     /// staged response out of the target's TX queue.
     ///
     /// Reporting that event can cost an extra interrupt per outbound message on
-    /// some controllers, and only a runtime that holds a second send until the
-    /// first has been read needs it, so [`enable`](Self::enable) does not turn it
-    /// on. Such a runtime calls this after `enable`. The default does nothing:
-    /// a target that never reports `ResponseRead` leaves its runtime to release
-    /// outbound back-pressure on the next inbound frame instead.
+    /// some controllers, so [`enable`](Self::enable) does not turn it on. A
+    /// runtime that allows one staged response at a time, and refuses the next
+    /// send until the first has been read, needs it: `ResponseRead` is the only
+    /// thing that releases the next send, so a runtime like that calls this after
+    /// `enable`, and a target it runs on must report the event. The default does
+    /// nothing, which is only right for a target that is never used that way.
     fn enable_response_read_events(&mut self) -> Result<(), Self::Error> {
         Ok(())
     }

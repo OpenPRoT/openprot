@@ -4,8 +4,8 @@
 //! Host-buildable core of the i3c server: the target-owning [`Server`] state
 //! and the request [`dispatch`] against the [`I3cTarget`] facade.
 //!
-//! No syscalls live here, so the request handling and the single-frame inbound
-//! latch are verified in host tests. The kernel-tagged `i3c_server_runtime`
+//! No syscalls live here, so the request handling and the inbound frame ring
+//! are verified in host tests. The kernel-tagged `i3c_server_runtime`
 //! wraps this in the Pigweed WaitGroup loop and supplies the IRQ/IPC syscalls.
 
 #![no_std]
@@ -55,14 +55,16 @@ pub enum Inbound {
 /// instead (an error path `RX_RING` is sized to avoid). The bus is never
 /// blocked.
 ///
-/// Outbound has back-pressure. A `Send` stages a response for the controller's
-/// next private read and sets [`tx_pending`](Server::tx_pending); the flag
-/// clears only when the controller has read it, signalled by
-/// [`notify_response_read`](Server::notify_response_read) on a
-/// [`TargetEvent::ResponseRead`]. The runtime uses the flag to hold a second
-/// `Send` until the first has been read, so fragments are not staged faster
-/// than the controller drains them. `dispatch` itself always stages (the
-/// gating is the runtime's), so the in-process loopback path is unaffected.
+/// Outbound allows one staged response at a time. A `Send` stages a response
+/// for the controller's next private read and sets
+/// [`tx_pending`](Server::tx_pending); the flag clears only when the controller
+/// has read it, signalled by [`notify_response_read`](Server::notify_response_read)
+/// on a [`TargetEvent::ResponseRead`]. While it is set, `dispatch` answers a
+/// further `Send` with [`I3cStatus::Busy`] and stages nothing, so a second
+/// response can never be queued over an unread one. The client retries once the
+/// controller has read the first. (caliptra-mcu-sw's I3C driver does the same:
+/// its `transmit_read` returns `ErrorCode::BUSY` while a transmit is
+/// outstanding.)
 ///
 /// [`TargetEvent::ResponseRead`]: openprot_hal_blocking::i3c_hardware::TargetEvent::ResponseRead
 pub struct Server<T> {
@@ -104,13 +106,14 @@ impl<T> Server<T> {
     }
 
     /// Whether a staged transmit is still awaiting the controller's private
-    /// read. The runtime holds a further `Send` while this is set.
+    /// read. A further `Send` is answered `Busy` while this is set.
     pub fn tx_pending(&self) -> bool {
         self.tx_pending
     }
 
-    /// Clear the outbound back-pressure flag: the controller has read the staged
-    /// response. Called by the runtime on [`TargetEvent::ResponseRead`].
+    /// Clear the outbound flag: the controller has read the staged response, so
+    /// the next `Send` can be staged. Called by the runtime on
+    /// [`TargetEvent::ResponseRead`], which is the only thing that clears it.
     ///
     /// [`TargetEvent::ResponseRead`]: openprot_hal_blocking::i3c_hardware::TargetEvent::ResponseRead
     pub fn notify_response_read(&mut self) {
@@ -184,11 +187,16 @@ pub fn dispatch<T: I3cTarget>(srv: &mut Server<T>, req: &[u8], resp: &mut [u8]) 
             if payload.len() > MAX_PAYLOAD {
                 return status_only(resp, I3cStatus::TooLong);
             }
+            // One staged response at a time: staging another over an unread one
+            // could overrun the target's TX queue. The client retries.
+            if srv.tx_pending {
+                return status_only(resp, I3cStatus::Busy);
+            }
             match srv.target.send(payload) {
                 Ok(()) => {
-                    // Staged for the controller's next private read; hold further
-                    // sends until it has been read (cleared by the runtime on
-                    // ResponseRead).
+                    // Staged for the controller's next private read; further
+                    // sends are `Busy` until it has been read (cleared by the
+                    // runtime on ResponseRead).
                     srv.tx_pending = true;
                     status_only(resp, I3cStatus::Ok)
                 }
@@ -338,6 +346,65 @@ mod tests {
         // The controller reads it; the runtime clears the flag.
         s.notify_response_read();
         assert!(!s.tx_pending(), "back-pressure released after the read");
+    }
+
+    fn send(s: &mut Server<FakeTarget>, payload: &[u8]) -> I3cStatus {
+        let mut req = [0u8; MAX_FRAME];
+        let mut resp = [0u8; MAX_FRAME];
+        let n = encode_request(I3cOp::Send, payload, &mut req).unwrap();
+        let rn = dispatch(s, &req[..n], &mut resp);
+        decode_response(&resp[..rn]).unwrap().0
+    }
+
+    #[test]
+    fn second_send_is_busy_and_stages_nothing() {
+        let mut s = srv();
+        assert_eq!(send(&mut s, b"first"), I3cStatus::Ok);
+
+        // The first is still unread: the second is refused, and the target is
+        // left holding the first, untouched.
+        assert_eq!(send(&mut s, b"second"), I3cStatus::Busy);
+        assert_eq!(&s.target.sent[..s.target.sent_len], b"first");
+        assert!(s.tx_pending(), "the first is still awaiting its read");
+
+        // Busy again on a retry before the read.
+        assert_eq!(send(&mut s, b"second"), I3cStatus::Busy);
+    }
+
+    #[test]
+    fn send_is_accepted_again_after_the_response_is_read() {
+        let mut s = srv();
+        assert_eq!(send(&mut s, b"first"), I3cStatus::Ok);
+        assert_eq!(send(&mut s, b"second"), I3cStatus::Busy);
+
+        s.notify_response_read();
+        assert_eq!(send(&mut s, b"second"), I3cStatus::Ok);
+        assert_eq!(&s.target.sent[..s.target.sent_len], b"second");
+        assert!(s.tx_pending(), "the second is now the unread one");
+    }
+
+    #[test]
+    fn an_inbound_frame_does_not_release_a_staged_send() {
+        // Only the controller reading the response clears it. A new inbound
+        // frame proves nothing: a controller may write again before it reads.
+        let mut s = srv();
+        assert_eq!(send(&mut s, b"first"), I3cStatus::Ok);
+        s.target.push_inbound(b"hello");
+        assert!(!drain(&mut s), "the frame is latched, not dropped");
+        assert!(s.has_frame());
+        assert!(s.tx_pending());
+        assert_eq!(send(&mut s, b"second"), I3cStatus::Busy);
+    }
+
+    #[test]
+    fn oversize_send_is_too_long_even_while_busy() {
+        let mut s = srv();
+        assert_eq!(send(&mut s, b"first"), I3cStatus::Ok);
+        let mut req = [0u8; MAX_FRAME + 8];
+        let mut resp = [0u8; MAX_FRAME];
+        req[0] = I3cOp::Send as u8;
+        let rn = dispatch(&mut s, &req[..HEADER + MAX_PAYLOAD + 1], &mut resp);
+        assert_eq!(decode_response(&resp[..rn]).unwrap().0, I3cStatus::TooLong);
     }
 
     #[test]
