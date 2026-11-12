@@ -28,8 +28,13 @@ use mctp_lib::fragment::SendOutput;
 use crate::encap::{MctpI3cEncap, MCTP_I3C_IPC_FRAME, MCTP_I3C_IPC_MAXMTU, MCTP_I3C_IPC_PACKET};
 
 /// How many times one frame is retried while the i3c service reports `Busy`
-/// before the send fails. With a wait of a few milliseconds per attempt this
-/// allows the controller a couple of seconds to read the previous fragment.
+/// before the send fails.
+///
+/// The service discards a response the controller has not read after
+/// [`i3c_api::STAGED_RESPONSE_TIMEOUT_MS`] and then accepts `Send` again. So
+/// `MAX_BUSY_RETRIES` waits have to add up to more than that, or a stalled
+/// controller makes every send fail instead of just losing one message. The
+/// caller picks the wait; at 5 ms, 400 retries are 2 seconds.
 pub const MAX_BUSY_RETRIES: u16 = 400;
 
 /// I3C MCTP sender.
