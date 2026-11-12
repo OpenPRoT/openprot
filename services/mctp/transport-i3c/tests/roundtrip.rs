@@ -59,6 +59,10 @@ impl I3cTarget for CaptureTarget<'_> {
         Ok(())
     }
 
+    fn cancel_response(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
     fn disable(&mut self) -> Result<(), Self::Error> {
         Ok(())
     }
