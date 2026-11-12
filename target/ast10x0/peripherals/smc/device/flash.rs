@@ -462,6 +462,22 @@ impl<'a> SpiNorFlash<'a> {
         }
         Err(SmcError::Timeout)
     }
+
+    /// Issues the erase-sector command without waiting for WIP to clear; pair with
+    /// [`write_in_progress`](Self::write_in_progress) to poll completion.
+    pub fn start_erase_sector(&mut self, offset: u32) -> Result<(), SmcError> {
+        self.validate_sector_erase(offset)?;
+        let profile = self.command_profile();
+        let width = self.addr_width();
+        self.write_enable()?;
+        let (cmd, len) = encode_addr_cmd(profile.erase_sector_4k, offset, width);
+        self.issue_command(&cmd[..len], &[])
+    }
+
+    /// Whether the device's WIP bit is still set (one status-register read, no polling).
+    pub fn write_in_progress(&self) -> Result<bool, SmcError> {
+        Ok(self.read_status_impl()? & STATUS_WIP != 0)
+    }
 }
 
 impl SpiNorFlashDevice for SpiNorFlash<'_> {
@@ -480,13 +496,7 @@ impl SpiNorFlashDevice for SpiNorFlash<'_> {
     }
 
     fn erase_sector(&mut self, offset: u32) -> Result<(), SmcError> {
-        self.validate_sector_erase(offset)?;
-
-        let profile = self.command_profile();
-        let width = self.addr_width();
-        self.write_enable()?;
-        let (cmd, len) = encode_addr_cmd(profile.erase_sector_4k, offset, width);
-        self.issue_command(&cmd[..len], &[])?;
+        self.start_erase_sector(offset)?;
         self.wait_write_complete(WRITE_COMPLETE_MAX_POLLS)
     }
 

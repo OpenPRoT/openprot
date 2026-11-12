@@ -36,6 +36,8 @@ pub const FLASH_GENERIC_INVALID_SIZE: ErrorCode = FLASH_GENERIC.from_pw(8, Error
 /// The erase size is invalid.
 pub const FLASH_GENERIC_ERASE_INVALID_SIZE: ErrorCode =
     FLASH_GENERIC.from_pw(9, Error::InvalidArgument);
+/// Gave up waiting for a deferred operation to finish.
+pub const FLASH_GENERIC_TIMEOUT: ErrorCode = FLASH_GENERIC.from_pw(10, Error::DeadlineExceeded);
 
 /// SFDP: Invalid memory density.
 pub const FLASH_GENERIC_SFDP_INVALID_MEMORY_DENSITY: ErrorCode =
