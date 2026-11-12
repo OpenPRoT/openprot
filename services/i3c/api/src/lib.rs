@@ -20,9 +20,12 @@
 
 #![no_std]
 
-mod transport;
-
-pub use transport::{Transport, TransportError};
+// The transport seam is the shared one in //util/transport: one whole serialized
+// request in, one whole response out. `I3cClient` (in `i3c-client`) is generic
+// over it, so swapping `IpcTransport` (in `i3c-client-ipc`, the cross-process
+// path) for `LoopbackTransport` (in `i3c-server`, an in-process call to
+// `dispatch`) is a wiring choice, never a code fork.
+pub use util_transport::{Transport, TransportError};
 
 /// Largest message payload carried in one request or response, matching the
 /// caliptra i3c-core private read/write limit.
