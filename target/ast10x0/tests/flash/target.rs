@@ -18,23 +18,42 @@ use ast10x0_peripherals::scu::ScuRegisters;
 use console_backend::console_backend_write_all;
 use flash_backend::{Backend, NoWaitBlocking};
 use hal_flash::{BlockingFlash, Flash, FlashAddress};
+use hal_flash_driver::FlashDriver;
 use target_common::{declare_target, TargetInterface};
 use util_types::PowerOf2Usize;
 use {codegen as _, console_backend as _, entry as _};
 
-const SECTOR: usize = 4096;
-const PAGE: usize = 256;
+/// The largest sector the test saves, which sizes the backup. The backend
+/// accepts only 4 KiB sectors today.
+const MAX_SECTOR: usize = 4096;
 
 // Two sectors 1 MiB in, the offset the smc write test uses. Clear of code.
 const BLOCK_A: usize = 0x10_0000;
-const BLOCK_B: usize = BLOCK_A + SECTOR;
 
-// The data starts in the middle of a page and ends in the next page.
-const DATA_START: usize = BLOCK_A + PAGE - 20;
 const DATA_LEN: usize = 48;
 
 /// Holds both sectors while the test runs.
-static mut BACKUP: [u8; 2 * SECTOR] = [0; 2 * SECTOR];
+static mut BACKUP: [u8; 2 * MAX_SECTOR] = [0; 2 * MAX_SECTOR];
+
+/// The flash's geometry, discovered from the device over SFDP.
+#[derive(Clone, Copy)]
+struct Geometry {
+    /// The erase sector.
+    sector: PowerOf2Usize,
+    /// The program page: a program must not cross its boundary.
+    page: usize,
+}
+
+impl Geometry {
+    fn block_b(&self) -> usize {
+        BLOCK_A + self.sector.get()
+    }
+
+    /// The data starts in the middle of a page and ends in the next page.
+    fn data_start(&self) -> usize {
+        BLOCK_A + self.page - 20
+    }
+}
 
 fn addr(offset: usize) -> FlashAddress {
     FlashAddress::new(offset as u32)
@@ -61,76 +80,102 @@ fn check<const N: usize>(
     }
 }
 
-fn run(flash: &mut impl Flash) -> Result<(), &'static str> {
-    let block = PowerOf2Usize::new(SECTOR).ok_or("sector size")?;
-    let (size, page_size, erase_sizes) = flash.geometry().map_err(|_| "geometry failed")?;
-    if page_size != block || erase_sizes != SECTOR as u32 {
-        return Err("wrong geometry");
+/// Checks that the geometry the flash reports is consistent, and that the test
+/// fits in the flash.
+fn check_geometry(flash: &mut impl Flash, page: usize) -> Result<Geometry, &'static str> {
+    let (size, sector, erase_sizes) = flash.geometry().map_err(|_| "geometry failed")?;
+    let geometry = Geometry { sector, page };
+    let sector_len = sector.get();
+    if sector_len > MAX_SECTOR || page < 20 + DATA_LEN || page >= sector_len {
+        return Err("unsupported geometry");
     }
+    // The only erase size is the sector.
+    if erase_sizes != 1 << sector_len.trailing_zeros() {
+        return Err("erase sizes do not match the sector");
+    }
+    if size.get() % sector_len != 0 || size.get() < geometry.block_b() + sector_len {
+        return Err("flash size does not fit the test");
+    }
+    Ok(geometry)
+}
 
-    for start in [BLOCK_A, BLOCK_B] {
+fn run(flash: &mut impl Flash, geometry: Geometry) -> Result<(), &'static str> {
+    let block = geometry.sector;
+    let sector = block.get();
+    let page = geometry.page;
+    let (block_a, block_b) = (BLOCK_A, geometry.block_b());
+    let data_start = geometry.data_start();
+    let (size, _, _) = flash.geometry().map_err(|_| "geometry failed")?;
+
+    for start in [block_a, block_b] {
         flash
             .erase(addr(start), block)
             .map_err(|_| "erase failed")?;
     }
-    check::<DATA_LEN>(flash, DATA_START, |_| 0xff)?;
+    check::<DATA_LEN>(flash, data_start, |_| 0xff)?;
 
     let mut data = [0; DATA_LEN];
     for (i, byte) in data.iter_mut().enumerate() {
         *byte = pattern(i);
     }
     flash
-        .program(addr(DATA_START), &data)
+        .program(addr(data_start), &data)
         .map_err(|_| "program failed")?;
-    check::<DATA_LEN>(flash, DATA_START, pattern)?;
+    check::<DATA_LEN>(flash, data_start, pattern)?;
     // The bytes before and after the data are unchanged.
-    check::<8>(flash, DATA_START - 8, |_| 0xff)?;
-    check::<8>(flash, DATA_START + DATA_LEN, |_| 0xff)?;
+    check::<8>(flash, data_start - 8, |_| 0xff)?;
+    check::<8>(flash, data_start + DATA_LEN, |_| 0xff)?;
 
     // Programming can only clear bits.
     flash
-        .program(addr(DATA_START), &[0x0f; DATA_LEN])
+        .program(addr(data_start), &[0x0f; DATA_LEN])
         .map_err(|_| "second program failed")?;
-    check::<DATA_LEN>(flash, DATA_START, |i| pattern(i) & 0x0f)?;
+    check::<DATA_LEN>(flash, data_start, |i| pattern(i) & 0x0f)?;
 
     // An erase clears its block and leaves the next block unchanged.
-    for start in [BLOCK_A + SECTOR - 8, BLOCK_B] {
+    for start in [block_a + sector - 8, block_b] {
         flash
             .program(addr(start), &[0; 8])
             .map_err(|_| "program failed")?;
     }
     flash
-        .erase(addr(BLOCK_A), block)
+        .erase(addr(block_a), block)
         .map_err(|_| "second erase failed")?;
-    check::<DATA_LEN>(flash, DATA_START, |_| 0xff)?;
-    check::<8>(flash, BLOCK_A + SECTOR - 8, |_| 0xff)?;
-    check::<8>(flash, BLOCK_B, |_| 0)?;
+    check::<DATA_LEN>(flash, data_start, |_| 0xff)?;
+    check::<8>(flash, block_a + sector - 8, |_| 0xff)?;
+    check::<8>(flash, block_b, |_| 0)?;
 
     if flash.read(addr(size.get() - 1), &mut [0; 2]).is_ok() {
         return Err("read past the end succeeded");
     }
-    if flash.erase(addr(BLOCK_A + PAGE), block).is_ok() {
+    if flash.erase(addr(block_a + page), block).is_ok() {
         return Err("unaligned erase succeeded");
     }
     Ok(())
 }
 
 /// Writes `backup` back over both sectors and checks it.
-fn restore(flash: &mut impl Flash, backup: &[u8]) -> Result<(), &'static str> {
-    let block = PowerOf2Usize::new(SECTOR).ok_or("sector size")?;
-    for (start, saved) in [BLOCK_A, BLOCK_B].into_iter().zip(backup.chunks(SECTOR)) {
+fn restore(
+    flash: &mut impl Flash,
+    geometry: Geometry,
+    backup: &[u8],
+) -> Result<(), &'static str> {
+    let sector = geometry.sector.get();
+    let starts = [BLOCK_A, geometry.block_b()];
+    for (start, saved) in starts.into_iter().zip(backup.chunks(sector)) {
         flash
-            .erase(addr(start), block)
+            .erase(addr(start), geometry.sector)
             .map_err(|_| "restore erase failed")?;
         flash
             .program(addr(start), saved)
             .map_err(|_| "restore program failed")?;
-        for (i, expected) in saved.chunks(PAGE).enumerate() {
-            let mut buf = [0; PAGE];
+        for (i, expected) in saved.chunks(geometry.page).enumerate() {
+            let mut buf = [0; MAX_SECTOR];
+            let buf = buf.get_mut(..expected.len()).ok_or("restore buffer")?;
             flash
-                .read(addr(start + i * PAGE), &mut buf)
+                .read(addr(start + i * geometry.page), buf)
                 .map_err(|_| "restore read failed")?;
-            if buf.as_slice() != expected {
+            if buf != expected {
                 return Err("restore verify failed");
             }
         }
@@ -138,16 +183,23 @@ fn restore(flash: &mut impl Flash, backup: &[u8]) -> Result<(), &'static str> {
     Ok(())
 }
 
-fn run_with_backup(flash: &mut impl Flash) -> Result<(), &'static str> {
+fn run_with_backup(
+    flash: &mut impl Flash,
+    program_page: usize,
+) -> Result<(), &'static str> {
+    let geometry = check_geometry(flash, program_page)?;
     // SAFETY: the kernel runs this once on a single thread, and nothing else
     // refers to `BACKUP`.
     let backup = unsafe { &mut *addr_of_mut!(BACKUP) };
+    let backup = backup
+        .get_mut(..2 * geometry.sector.get())
+        .ok_or("backup buffer")?;
     flash
         .read(addr(BLOCK_A), backup)
         .map_err(|_| "backup read failed")?;
-    let result = run(flash);
+    let result = run(flash, geometry);
     // Restore even when the test failed, so it leaves the flash as it found it.
-    let restored = restore(flash, backup);
+    let restored = restore(flash, geometry, backup);
     result.and(restored)
 }
 
@@ -163,7 +215,9 @@ fn run_flash_test() -> Result<(), &'static str> {
         driver,
         blocking: NoWaitBlocking,
     };
-    run_with_backup(&mut flash)
+    // The SFDP-derived program page the driver reports.
+    let program_page = flash.driver.program_window_size().get();
+    run_with_backup(&mut flash, program_page)
 }
 
 pub struct Target {}

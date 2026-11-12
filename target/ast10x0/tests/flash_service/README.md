@@ -7,9 +7,13 @@ owns the FMC and serves its CS1 flash on one channel through
 `target/veer/tests/flash_service`. The `smc/*` tests drive the controller
 directly in one task and do not cover the IPC path.
 
-The client checks the reported geometry, then erases, programs (across a
-program page boundary) and reads back one sector at 1 MiB. It also checks that
-a wrong-size erase, an unaligned erase and a read past the end are rejected.
+The client takes the sector size and flash size the server reports, which the
+driver discovers over SFDP, and checks that they are consistent instead of
+comparing them with fixed values. The service does not report the program
+page, so the program that crosses a page boundary assumes 256 bytes.
+
+Then it erases, programs (across a program page boundary) and reads back one
+sector at 1 MiB. It also checks that a wrong-size erase, an unaligned erase and a read past the end are rejected.
 It backs the sector up first and restores it at the end, even if a check
 failed, so it leaves the flash as it found it on the EVB.
 
