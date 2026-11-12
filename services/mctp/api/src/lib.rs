@@ -45,6 +45,14 @@ pub use error::{MctpError, ResponseCode};
 pub use stack::{Stack, StackListener, StackReqChannel, StackRespChannel};
 pub use traits::{MctpClient, MctpListener, MctpReqChannel, MctpRespChannel};
 
+/// Length in bytes of the MCTP transport header (DSP0236): version, destination
+/// EID, source EID, and the flags/tag byte.
+///
+/// `mctp_estack::MctpHeader::LEN` is the same value but not re-exported, so
+/// transport bindings that must reason about framed sizes take it from here
+/// rather than re-hardcoding `4`.
+pub const MCTP_HEADER_LEN: usize = 4;
+
 /// An opaque handle for a listener, request, or response channel.
 ///
 /// Handles are allocated by the MCTP server and must be released
