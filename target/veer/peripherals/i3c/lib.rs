@@ -16,7 +16,7 @@
 //!
 //! - **Incoming write** (controller → target): hardware pushes a descriptor
 //!   into `tti_rx_desc_queue_port` then `data_length` words into
-//!   `tti_rx_data_port`.  Poll `rx_pending()` or enable the RX interrupt.
+//!   `tti_rx_data_port`; the RX interrupt (enabled by `enable`) says when.
 //! - **Outgoing read** (target → controller): firmware writes a descriptor
 //!   to `tti_tx_desc_queue_port` then `data_length` words to
 //!   `tti_tx_data_port`.
@@ -236,31 +236,12 @@ impl<M: Mmio> CaliptraI3cTarget<M> {
     }
 
     // -------------------------------------------------------------------------
-    // Interrupts
-    // -------------------------------------------------------------------------
-
-    /// Enable the RX descriptor threshold interrupt.
-    pub fn enable_rx_interrupt(&mut self) {
-        self.update_interrupt_enable(InterruptEnable::RxDescStatEn::SET);
-    }
-
-    /// Disable the RX descriptor threshold interrupt.
-    pub fn disable_rx_interrupt(&mut self) {
-        self.update_interrupt_enable(InterruptEnable::RxDescStatEn::CLEAR);
-    }
-
-    // -------------------------------------------------------------------------
     // TTI receive (controller → target private write)
     // -------------------------------------------------------------------------
 
-    /// Return `true` if an RX descriptor is waiting in the TTI queue.
-    pub fn rx_pending(&self) -> bool {
-        self.interrupt_status().is_set(InterruptStatus::RxDescStat)
-    }
-
     /// Drain one incoming write into `buf`.  Returns the number of bytes read,
     /// or `None` if no descriptor was present.
-    pub fn rx_read(&mut self, buf: &mut [u8]) -> Option<usize> {
+    fn rx_read(&mut self, buf: &mut [u8]) -> Option<usize> {
         // `RxDescStat` is not a reliable "queue not empty" flag: on the FPGA it
         // deasserts while one descriptor is still queued (seen after a burst of
         // four frames: depth 1, status 0), which strands the last frame because
@@ -308,7 +289,7 @@ impl<M: Mmio> CaliptraI3cTarget<M> {
     /// (and the emulator model) opens a new TX buffer on the descriptor
     /// write and appends subsequent data-port writes to it, matching the
     /// upstream caliptra-mcu-sw runtime driver.
-    pub fn tx_write(&mut self, data: &[u8]) {
+    fn tx_write(&mut self, data: &[u8]) {
         // Descriptor: data_length in lower 16 bits; saturate rather than truncate.
         let desc = u32::try_from(data.len()).unwrap_or(u16::MAX as u32);
         self.mmio.write(Reg::TtiTxDescPort, desc);
@@ -325,7 +306,7 @@ impl<M: Mmio> CaliptraI3cTarget<M> {
     /// The descriptor word must be written before the payload words: the
     /// hardware (and the emulator model) parses the first word written to
     /// the IBI port as the descriptor and takes the payload length from it.
-    pub fn ibi_raise(&mut self, mdb: u8, payload: &[u8]) {
+    fn ibi_raise(&mut self, mdb: u8, payload: &[u8]) {
         let payload = &payload[..payload.len().min(255)];
         // IBI descriptor: MDB in bits [31:24], payload length in bits [7:0].
         let desc = ((mdb as u32) << 24) | (payload.len() as u32 & 0xff);
