@@ -14,6 +14,10 @@
 //! 3. park in `object_wait(CHANNEL, USER)`, then `recv` -> the host's payload.
 //! 4. a second `recv` -> `None` again, proving `recv` consumed the latch.
 //! 5. `send` -> stages a TX the host collects with a private read.
+//! 6. a second `send`, before the host has read the first. If the controller has
+//!    not read the first reply yet the server holds this one (outbound
+//!    back-pressure) until the host's next write releases it; if it has, the
+//!    call returns at once.
 //!
 //! Step 3 is also the wake this test exists to exercise: the server raises USER
 //! from inside its I3C interrupt handling, so the process made runnable by that
@@ -35,6 +39,9 @@ const EXPECTED: &[u8] = &[0x01, 0x02, 0x03, 0x04];
 
 /// The payload the firmware stages for the host to collect by private read.
 const REPLY: &[u8] = &[0xa5, 0x5a, 0xc3, 0x3c];
+
+/// The second staged payload.
+const REPLY2: &[u8] = &[0x5a, 0xa5, 0x3c, 0xc3];
 
 macro_rules! fail {
     ($msg:literal) => {{
@@ -102,6 +109,13 @@ fn entry() {
         fail!("send failed");
     }
     pw_log::info!("i3c service: staged reply for private read");
+
+    // 6. Whether this is held depends on the controller: see the module docs.
+    pw_log::info!("i3c service: sending second reply");
+    if i3c.send(REPLY2).is_err() {
+        fail!("second send failed");
+    }
+    pw_log::info!("i3c service: second send released");
 
     let _ = syscall::debug_shutdown(Ok(()));
     loop {}
