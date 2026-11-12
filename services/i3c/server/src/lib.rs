@@ -242,8 +242,8 @@ pub fn dispatch<T: I3cTarget, const RING: usize>(
             // the wire frame hold, whatever the target says.
             let clamp = |n: usize| n.min(MAX_PAYLOAD) as u16;
             let wire = DeviceInfo {
-                dynamic_address: info.dynamic_address.map(|a| a.as_u8()),
-                static_address: info.static_address.map(|a| a.as_u8()),
+                dynamic_address: info.dynamic_address.map(u8::from),
+                static_address: info.static_address.map(u8::from),
                 max_send_len: clamp(info.max_send_len),
                 max_recv_len: clamp(info.max_recv_len),
             };
@@ -255,7 +255,7 @@ pub fn dispatch<T: I3cTarget, const RING: usize>(
             }
         }
         I3cOp::DynamicAddress => match srv.target.dynamic_address() {
-            Some(addr) => encode_response(I3cStatus::Ok, &[addr.as_u8()], resp)
+            Some(addr) => encode_response(I3cStatus::Ok, &[u8::from(addr)], resp)
                 .unwrap_or_else(|| status_only(resp, I3cStatus::Internal)),
             None => status_only(resp, I3cStatus::Unassigned),
         },
