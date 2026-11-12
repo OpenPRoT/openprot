@@ -218,6 +218,7 @@ fn serve<T: I3cTarget>(
             dst.copy_from_slice(request);
             if service.defer(channel, HELD_SEND).is_ok() {
                 *held_len = Some(request.len());
+                pw_log::info!("i3c: send held");
                 return;
             }
         }

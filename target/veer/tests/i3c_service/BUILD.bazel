@@ -67,6 +67,7 @@ rust_process(
     edition = "2024",
     tags = ["kernel"],
     deps = [
+        "//hal/blocking",
         "//services/i3c/server:i3c_server",
         "//services/i3c/server-runtime:i3c_server_runtime",
         "//target/veer/peripherals/i3c",
