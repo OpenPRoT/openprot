@@ -9,6 +9,7 @@
 use embedded_hal::i2c::I2c;
 use mctp::Result;
 use mctp_lib::i2c::{MctpI2cEncap, MCTP_I2C_MAXMTU};
+use openprot_mctp_api::MCTP_HEADER_LEN;
 
 /// I2C MCTP sender.
 ///
@@ -66,7 +67,7 @@ impl<C: I2c<u8>> mctp_lib::Sender for I2cSender<C> {
         );
 
         loop {
-            let mut pkt = [0u8; MCTP_I2C_MAXMTU + 4]; // MTU + MCTP transport header
+            let mut pkt = [0u8; MCTP_I2C_MAXMTU + MCTP_HEADER_LEN]; // MTU + MCTP transport header
             pw_log::debug!(
                 "Calling fragment_vectored with buffer size 0x{:04x}",
                 pkt.len() as u32

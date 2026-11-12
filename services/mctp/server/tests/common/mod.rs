@@ -23,7 +23,7 @@ use mctp_lib::fragment::{Fragmenter, SendOutput};
 use mctp_lib::Sender;
 use openprot_mctp_api::{
     Handle, MctpClient, MctpError, MctpListener, MctpReqChannel, MctpRespChannel, RecvMetadata,
-    ResponseCode,
+    ResponseCode, MCTP_HEADER_LEN,
 };
 use openprot_mctp_server::Server;
 
@@ -40,8 +40,6 @@ pub struct BufferSender<'a> {
 
 /// MTU for MCTP payload (without header)
 const MCTP_MTU: usize = 255;
-/// MCTP header size (4 bytes)
-const MCTP_HEADER_SIZE: usize = 4;
 
 impl Sender for BufferSender<'_> {
     fn send_vectored(
@@ -52,7 +50,7 @@ impl Sender for BufferSender<'_> {
     ) -> mctp::Result<Tag> {
         loop {
             // Buffer must be MTU + header size
-            let mut buf = [0u8; MCTP_MTU + MCTP_HEADER_SIZE];
+            let mut buf = [0u8; MCTP_MTU + MCTP_HEADER_LEN];
             match fragmenter.fragment_vectored(payload, &mut buf) {
                 SendOutput::Packet(p) => {
                     self.packets.borrow_mut().push(p.to_vec());
@@ -87,7 +85,7 @@ impl Sender for SmallMtuBufferSender<'_> {
     ) -> mctp::Result<Tag> {
         loop {
             // Buffer must be MTU + header size
-            let mut buf = [0u8; MCTP_MTU + MCTP_HEADER_SIZE];
+            let mut buf = [0u8; MCTP_MTU + MCTP_HEADER_LEN];
             match fragmenter.fragment_vectored(payload, &mut buf) {
                 SendOutput::Packet(p) => {
                     self.packets.borrow_mut().push(p.to_vec());
@@ -122,7 +120,7 @@ impl Sender for DroppingBufferSender {
     ) -> mctp::Result<Tag> {
         loop {
             // Buffer must be MTU + header size
-            let mut buf = [0u8; MCTP_MTU + MCTP_HEADER_SIZE];
+            let mut buf = [0u8; MCTP_MTU + MCTP_HEADER_LEN];
             match fragmenter.fragment_vectored(payload, &mut buf) {
                 SendOutput::Packet(_) => {}
                 SendOutput::Complete { tag, .. } => return Ok(tag),
