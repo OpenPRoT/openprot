@@ -10,7 +10,8 @@ directly in one task and do not cover the IPC path.
 The client takes the sector size and flash size the server reports, which the
 driver discovers over SFDP, and checks that they are consistent instead of
 comparing them with fixed values. The service does not report the program
-page, so the program that crosses a page boundary assumes 256 bytes.
+page, so the test starts its program just before the middle of the sector,
+which is a program page boundary for any page smaller than the sector.
 
 Then it erases, programs (across a program page boundary) and reads back one
 sector at 1 MiB. It also checks that a wrong-size erase, an unaligned erase and a read past the end are rejected.
