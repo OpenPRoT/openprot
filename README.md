@@ -154,13 +154,33 @@ suggested starting point:
 
 ```json
 {
-    "rust-analyzer.linkedProjects": ["rust-project.json"],
+    "rust-analyzer.workspace.discoverConfig": {
+        "command": [
+            "bazel", "run",
+            "--noshow_progress", "--noshow_loading_progress", "--show_result=0",
+            "--ui_event_filters=-info,-warning,-debug", "--curses=no", "--color=no",
+            "@rules_rust//tools/rust_analyzer:discover_bazel_rust_project", "--",
+            "--bazel_arg=--config=virt_ast10x0"
+        ],
+        "progressLabel": "bazel",
+        "filesToWatch": ["BUILD", "BUILD.bazel", "MODULE.bazel", "*.bzl"]
+    },
     "rust-analyzer.cachePriming.enable": false,
     "rust-analyzer.numThreads": 4,
-    "rust-analyzer.checkOnSave": false,
+    "rust-analyzer.checkOnSave": true,
+    "rust-analyzer.check.overrideCommand": [
+        "bazel", "build", "--keep_going", "--config=virt_ast10x0",
+        "--@rules_rust//:error_format=json",
+        "--noshow_progress", "--ui_event_filters=-info,-warning,-debug",
+        "//target/ast10x0/..."
+    ],
     "rust-analyzer.files.exclude": ["third_party/**", "bazel-*/**"],
     "bazel.buildifier.executable": "/usr/local/bin/buildifier",
     "bazel.codeLens.enable": true,
+    "[rust]": {
+        "editor.defaultFormatter": "rust-lang.rust-analyzer",
+        "editor.formatOnSave": true
+    },
     "[starlark]": {
         "editor.defaultFormatter": "BazelBuild.vscode-bazel",
         "editor.formatOnSave": true
@@ -168,9 +188,30 @@ suggested starting point:
 }
 ```
 
-- `linkedProjects` is required; it points rust-analyzer at the generated file.
-- `cachePriming.enable`, `numThreads`, `checkOnSave` and `files.exclude` limit
-  rust-analyzer's memory use; relax them if your machine has plenty of RAM.
-- Set `bazel.buildifierExecutable` to the output of `which buildifier`.
-- `checkOnSave` is disabled because the default `cargo check` does not work here. Use
-  `./pw presubmit` (which runs clippy through Bazel) instead.
+- `discoverConfig` makes rust-analyzer ask Bazel for the crate graph, so you do not need
+  to generate `rust-project.json` by hand. The `--bazel_arg` and `--ui_event_filters`
+  flags matter: rust-analyzer parses every line the command prints as JSON, so any Bazel
+  progress output on stderr makes discovery fail with `expected value`. Rerunning
+  `gen_rust_project` (step 3) and setting `"rust-analyzer.linkedProjects":
+  ["rust-project.json"]` instead is still supported.
+- Without an argument, discovery covers `//...` under the given config, which is large
+  (see the memory note in step 3). If it is too heavy, append `"{arg}"` to the command so
+  rust-analyzer discovers only the package of the file you open.
+- `checkOnSave` and `check.overrideCommand` show compiler errors inline. rust-analyzer
+  needs `--@rules_rust//:error_format=json` so rustc emits machine-readable diagnostics.
+  This builds the whole target tree on every save, so narrow the label
+  (e.g. `//target/ast10x0/peripherals/...`) if it is slow.
+- `cachePriming.enable`, `numThreads` and `files.exclude` limit rust-analyzer's memory
+  use; relax them if your machine has plenty of RAM.
+- Set `bazel.buildifier.executable` to the output of `which buildifier`.
+- `[rust]` formats on save with rustfmt, which the pinned toolchain in `rust-toolchain.toml`
+  provides. Run "Format Document" once to confirm it works.
+
+**Use the config for your target.** `--config=virt_ast10x0` appears twice above, in
+`discoverConfig` (as `--bazel_arg=--config=...`) and in `check.overrideCommand`. Change both
+to the config for the code you work on, and change the label in `check.overrideCommand` to
+match. The configs are listed in the table in step 3 and defined in `.bazelrc`; for
+example, use `k_earlgrey` and `//target/earlgrey/...` for Earl Grey. Without the right
+config, crates that only build for an embedded target are skipped with no error, so their
+files get no highlighting or diagnostics. After changing either command, run
+"rust-analyzer: Restart server".
