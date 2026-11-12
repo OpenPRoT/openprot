@@ -155,11 +155,7 @@ fn run(flash: &mut impl Flash, geometry: Geometry) -> Result<(), &'static str> {
 }
 
 /// Writes `backup` back over both sectors and checks it.
-fn restore(
-    flash: &mut impl Flash,
-    geometry: Geometry,
-    backup: &[u8],
-) -> Result<(), &'static str> {
+fn restore(flash: &mut impl Flash, geometry: Geometry, backup: &[u8]) -> Result<(), &'static str> {
     let sector = geometry.sector.get();
     let starts = [BLOCK_A, geometry.block_b()];
     for (start, saved) in starts.into_iter().zip(backup.chunks(sector)) {
@@ -183,10 +179,7 @@ fn restore(
     Ok(())
 }
 
-fn run_with_backup(
-    flash: &mut impl Flash,
-    program_page: usize,
-) -> Result<(), &'static str> {
+fn run_with_backup(flash: &mut impl Flash, program_page: usize) -> Result<(), &'static str> {
     let geometry = check_geometry(flash, program_page)?;
     // SAFETY: the kernel runs this once on a single thread, and nothing else
     // refers to `BACKUP`.

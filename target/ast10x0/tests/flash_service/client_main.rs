@@ -71,7 +71,9 @@ fn run(
     let small = PowerOf2Usize::new(sector.get() / 2).ok_or("small size")?;
 
     // 1. Erase one sector, verify it reads back erased.
-    flash.erase(addr(TEST_OFFSET), sector).map_err(|_| "erase")?;
+    flash
+        .erase(addr(TEST_OFFSET), sector)
+        .map_err(|_| "erase")?;
     let mut buf = [0u8; 64];
     flash
         .read(addr(TEST_OFFSET), &mut buf)
