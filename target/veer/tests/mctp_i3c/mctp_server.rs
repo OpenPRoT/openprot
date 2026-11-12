@@ -35,8 +35,6 @@ const OWN_EID: u8 = 8;
 /// The controller's 7-bit I3C address. DSP0233 carries no destination, so it is
 /// not on the wire; the sender keeps it for diagnostics.
 const REMOTE_I3C_ADDR: u8 = 0x0a;
-/// DSP0233 requires a PEC.
-const PEC: bool = true;
 /// How long the sender waits between attempts while the i3c server still holds
 /// the previous fragment, which the controller has not read yet.
 const BUSY_WAIT: Duration = Duration::from_millis(5);
@@ -56,12 +54,11 @@ fn mctp_server_loop() -> Result<()> {
     let sender = I3cSender::new(
         I3cClient::new(IpcTransport::new(handle::I3C)),
         REMOTE_I3C_ADDR,
-        PEC,
         wait_for_controller,
     );
     // A second client on the same i3c channel, used to collect inbound frames.
     let mut i3c_rx_client = I3cClient::new(IpcTransport::new(handle::I3C));
-    let mut i3c_receiver = MctpI3cReceiver::new(PEC);
+    let mut i3c_receiver = MctpI3cReceiver::new();
 
     let mut server = Server::<_, 16>::new(mctp::Eid(OWN_EID), 0, sender);
     let mut i3c_rx_buf = [0u8; I3C_RX_MAX];
