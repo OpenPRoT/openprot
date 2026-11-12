@@ -25,7 +25,7 @@ use i3c_client_ipc::IpcTransport;
 use mctp_server_codegen::handle;
 use mctp_server_runtime::Channel;
 use openprot_mctp_server::Server;
-use openprot_mctp_transport_i3c::{I3cSender, MctpI3cReceiver};
+use openprot_mctp_transport_i3c::{I3cSender, MctpI3cReceiver, MAX_BUSY_RETRIES};
 use pw_status::Result;
 use userspace::process_entry;
 use userspace::syscall::{self, Signals};
@@ -37,7 +37,13 @@ const OWN_EID: u8 = 8;
 const REMOTE_I3C_ADDR: u8 = 0x0a;
 /// How long the sender waits between attempts while the i3c server still holds
 /// the previous fragment, which the controller has not read yet.
-const BUSY_WAIT: Duration = Duration::from_millis(5);
+const BUSY_WAIT_MS: u64 = 5;
+const BUSY_WAIT: Duration = Duration::from_millis(BUSY_WAIT_MS);
+
+// The retries must outlast the i3c server's timeout for an unread response, or
+// a controller that stops reading would make every send fail, not just one.
+const _: () =
+    assert!(BUSY_WAIT_MS * MAX_BUSY_RETRIES as u64 > i3c_api::STAGED_RESPONSE_TIMEOUT_MS as u64);
 const I3C_RX_MAX: usize = i3c_api::MAX_PAYLOAD;
 
 /// Wait out `Busy` from the i3c server.

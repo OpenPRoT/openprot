@@ -60,7 +60,13 @@ The two are deliberately shaped alike, but three things are forced by I3C:
 - **One response is staged at a time.** The service answers a second `Send`
   with `Busy` until the controller has read the first, so a multi-fragment
   message waits between fragments (`MAX_BUSY_RETRIES` attempts, then
-  `TxFailure`).
+  `TxFailure`). A controller that stops reading cannot block this for good: the
+  service discards a response left unread for
+  `i3c_api::STAGED_RESPONSE_TIMEOUT_MS` (1 s) and accepts `Send` again, losing
+  that one message. The retries have to outlast it, so `MAX_BUSY_RETRIES` times
+  the wait must be more than that timeout (the image checks this at build time).
+  The wait runs in the MCTP server's thread, so it holds up every MCTP client
+  for as long as it lasts.
 
 ## MTU
 
