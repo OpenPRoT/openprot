@@ -21,11 +21,30 @@
 # the `pw_rust` extension proxy is created and consumed entirely in this file;
 # the including file never refers to it by name.
 
-bazel_dep(name = "bazel_skylib", version = "1.8.2")
-bazel_dep(name = "platforms", version = "1.0.0")
-bazel_dep(name = "rules_rust", version = "0.70.0")
-bazel_dep(name = "rules_platform", version = "0.1.0")
-bazel_dep(name = "rules_python", version = "1.8.3")
+bazel_dep(
+    name = "bazel_skylib",
+    version = "1.8.2",
+)
+
+bazel_dep(
+    name = "platforms",
+    version = "1.0.0",
+)
+
+bazel_dep(
+    name = "rules_rust",
+    version = "0.70.0",
+)
+
+bazel_dep(
+    name = "rules_platform",
+    version = "0.1.0",
+)
+
+bazel_dep(
+    name = "rules_python",
+    version = "1.8.3",
+)
 
 # Local patch to pw_kernel's VeeR PIC code (see third_party/pigweed/):
 # veer_pic_gateways.patch makes the PIC gateways level-triggered and active
@@ -33,13 +52,20 @@ bazel_dep(name = "rules_python", version = "1.8.3")
 # veer_pic_claim.patch drops the MEICPCT write from the external-interrupt
 # claim, which traps as an illegal instruction on the Caliptra FPGA's VeeR core;
 # caliptra-mcu-sw's VeeR kernel reads MEIHAP directly.
+#
+# git_override's `patches` must be labels in whichever repo is currently the
+# main (root) repo — not even a self-referencing `@openprot//...` label is
+# accepted cross-repo. target/ast10x0/third_party/pigweed/ mirrors this
+# directory via symlinks for the same reason target/ast10x0/pins.MODULE.bazel
+# is a symlink: so the identical //third_party/pigweed:... label resolves
+# correctly whichever module is root.
 git_override(
     module_name = "pigweed",
     commit = "e21bf7763475a456efdcc49dafb651ef952b3be1",
     patch_strip = 1,
     patches = [
-        "@openprot//third_party/pigweed:veer_pic_gateways.patch",
-        "@openprot//third_party/pigweed:veer_pic_claim.patch",
+        "//third_party/pigweed:veer_pic_gateways.patch",
+        "//third_party/pigweed:veer_pic_claim.patch",
     ],
     remote = "https://pigweed.googlesource.com/pigweed/pigweed",
 )
@@ -57,7 +83,9 @@ archive_override(
 )
 
 pw_rust = use_extension("@pigweed//pw_toolchain/rust:extensions.bzl", "pw_rust")
+
 pw_rust.toolchain(cipd_tag = "git_revisions:fe5c95d4ae33ec9d7831921e448e2daf8264ea42,7b074fc9362a4a6a5f172dd8936a22fb25eff96b")
+
 use_repo(
     pw_rust,
     "pw_rust_toolchains",
