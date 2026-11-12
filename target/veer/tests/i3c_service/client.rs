@@ -10,7 +10,9 @@
 //! Walks the full `dispatch()` surface of `//services/i3c/server`, in order:
 //!
 //! 1. `recv` before any frame has arrived -> `None` (the empty latch).
-//! 2. `dynamic_address` -> the address the Caliptra ROM assigned.
+//! 2. `dynamic_address` -> the address the Caliptra ROM assigned, then
+//!    `device_info` -> that address and the driver's transfer limits (256 bytes
+//!    each way on the TTI).
 //! 3. park in `object_wait(CHANNEL, USER)`, then `recv` -> the host's payload.
 //! 4. a second `recv` -> `None` again, proving `recv` consumed the latch.
 //! 5. `send` -> stages a TX the host collects with a private read.
@@ -75,6 +77,27 @@ fn entry() {
         Ok(Some(addr)) => pw_log::info!("i3c service: dynamic address {:#04x}", addr as u32),
         Ok(None) => fail!("dynamic address unassigned"),
         Err(_) => fail!("dynamic_address failed"),
+    }
+
+    // The driver's addresses and limits, as a client sees them.
+    match i3c.device_info() {
+        Ok(info) => {
+            pw_log::info!(
+                "i3c service: device info: dynamic {:#04x}, max send {}, max recv {}",
+                info.dynamic_address.unwrap_or(0) as u32,
+                info.max_send_len as u32,
+                info.max_recv_len as u32
+            );
+            if info.dynamic_address.is_none() {
+                fail!("device info has no dynamic address");
+            }
+            if info.max_send_len as usize != MAX_PAYLOAD
+                || info.max_recv_len as usize != MAX_PAYLOAD
+            {
+                fail!("unexpected device limits");
+            }
+        }
+        Err(_) => fail!("device_info failed"),
     }
 
     pw_log::info!("i3c service: waiting for private write");

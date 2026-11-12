@@ -14,7 +14,10 @@ pub mod loopback;
 
 pub use loopback::LoopbackTransport;
 
-use i3c_api::{decode_request, encode_response, I3cOp, I3cStatus, HEADER, MAX_PAYLOAD};
+use i3c_api::{
+    decode_request, encode_response, DeviceInfo, I3cOp, I3cStatus, DEVICE_INFO_LEN, HEADER,
+    MAX_PAYLOAD,
+};
 use openprot_hal_blocking::i3c_hardware::I3cTarget;
 
 /// Default depth of the inbound frame ring.
@@ -233,6 +236,24 @@ pub fn dispatch<T: I3cTarget, const RING: usize>(
             srv.rx_count -= 1;
             out.unwrap_or_else(|| status_only(resp, I3cStatus::Internal))
         }
+        I3cOp::DeviceInfo => {
+            let info = srv.target.device_info();
+            // Report what a client can use: never more than the ring slots and
+            // the wire frame hold, whatever the target says.
+            let clamp = |n: usize| n.min(MAX_PAYLOAD) as u16;
+            let wire = DeviceInfo {
+                dynamic_address: info.dynamic_address.map(|a| a.as_u8()),
+                static_address: info.static_address.map(|a| a.as_u8()),
+                max_send_len: clamp(info.max_send_len),
+                max_recv_len: clamp(info.max_recv_len),
+            };
+            let mut body = [0u8; DEVICE_INFO_LEN];
+            match wire.encode(&mut body) {
+                Some(n) => encode_response(I3cStatus::Ok, &body[..n], resp)
+                    .unwrap_or_else(|| status_only(resp, I3cStatus::Internal)),
+                None => status_only(resp, I3cStatus::Internal),
+            }
+        }
         I3cOp::DynamicAddress => match srv.target.dynamic_address() {
             Some(addr) => encode_response(I3cStatus::Ok, &[addr.as_u8()], resp)
                 .unwrap_or_else(|| status_only(resp, I3cStatus::Internal)),
@@ -262,6 +283,10 @@ mod tests {
         sent_len: usize,
         /// What the fake reports from `max_send_len`.
         send_limit: usize,
+        /// What the fake reports from `max_recv_len`.
+        recv_limit: usize,
+        /// What the fake reports from `static_address`.
+        static_addr: Option<u8>,
     }
 
     impl Default for FakeTarget {
@@ -275,6 +300,8 @@ mod tests {
                 sent: [0u8; MAX_PAYLOAD],
                 sent_len: 0,
                 send_limit: MAX_PAYLOAD,
+                recv_limit: MAX_PAYLOAD,
+                static_addr: None,
             }
         }
     }
@@ -336,10 +363,11 @@ mod tests {
             self.send_limit
         }
         fn static_address(&self) -> Option<DynamicAddress> {
-            None
+            self.static_addr
+                .and_then(|a| DynamicAddress::try_from(a).ok())
         }
         fn max_recv_len(&self) -> usize {
-            MAX_PAYLOAD
+            self.recv_limit
         }
         fn disable(&mut self) -> Result<(), Self::Error> {
             Ok(())
@@ -458,6 +486,53 @@ mod tests {
         let mut s = srv();
         assert_eq!(send(&mut s, &[0xa5u8; MAX_PAYLOAD]), I3cStatus::Ok);
         assert_eq!(s.target.sent_len, MAX_PAYLOAD);
+    }
+
+    fn device_info(s: &mut Server<FakeTarget>) -> DeviceInfo {
+        let mut req = [0u8; MAX_FRAME];
+        let mut resp = [0u8; MAX_FRAME];
+        let n = encode_request(I3cOp::DeviceInfo, &[], &mut req).unwrap();
+        let rn = dispatch(s, &req[..n], &mut resp);
+        let (status, body) = decode_response(&resp[..rn]).unwrap();
+        assert_eq!(status, I3cStatus::Ok);
+        DeviceInfo::decode(body).expect("a device-info payload")
+    }
+
+    #[test]
+    fn device_info_reports_the_targets_addresses_and_limits() {
+        let mut s = srv();
+        s.target.addr = Some(0x08);
+        s.target.static_addr = Some(0x30);
+        s.target.send_limit = 100;
+        s.target.recv_limit = 64;
+        assert_eq!(
+            device_info(&mut s),
+            DeviceInfo {
+                dynamic_address: Some(0x08),
+                static_address: Some(0x30),
+                max_send_len: 100,
+                max_recv_len: 64,
+            }
+        );
+    }
+
+    #[test]
+    fn device_info_for_an_unassigned_target_has_no_addresses() {
+        let mut s = srv();
+        let info = device_info(&mut s);
+        assert_eq!((info.dynamic_address, info.static_address), (None, None));
+    }
+
+    #[test]
+    fn device_info_limits_are_clamped_to_the_frame_ceiling() {
+        // A target claiming more than the ring slots and the wire frame hold is
+        // reported at the ceiling, so a client never plans a frame that cannot fit.
+        let mut s = srv();
+        s.target.send_limit = MAX_PAYLOAD + 100;
+        s.target.recv_limit = usize::MAX;
+        let info = device_info(&mut s);
+        assert_eq!(info.max_send_len as usize, MAX_PAYLOAD);
+        assert_eq!(info.max_recv_len as usize, MAX_PAYLOAD);
     }
 
     #[test]

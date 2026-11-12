@@ -131,6 +131,23 @@ fn second_send_is_busy_until_the_controller_reads_the_first() {
 }
 
 #[test]
+fn device_info_reports_the_target() {
+    let mut c = client(Some(0x08));
+    let info = c.device_info().expect("device_info");
+    assert_eq!(info.dynamic_address, Some(0x08));
+    assert_eq!(info.static_address, None);
+    assert_eq!(info.max_send_len as usize, MAX_PAYLOAD);
+    assert_eq!(info.max_recv_len as usize, MAX_PAYLOAD);
+}
+
+#[test]
+fn device_info_before_assignment_has_no_dynamic_address() {
+    let mut c = client(None);
+    let info = c.device_info().expect("device_info");
+    assert_eq!(info.dynamic_address, None);
+}
+
+#[test]
 fn recv_on_an_idle_bus_is_none() {
     let mut c = client(Some(0x08));
     let mut buf = [0u8; MAX_PAYLOAD];
