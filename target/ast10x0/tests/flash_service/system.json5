@@ -8,9 +8,13 @@
 // PMSAv7-Friendly Memory Layout (same as ../usart/system.json5):
 //   0x00000000 - 0x00000500: Vector table (1280 bytes)
 //   0x00000500 - 0x00020000: Kernel code (~126KB, ends at 128KB boundary)
-//   0x00020000 - 0x00060000: Flash server + client app flash (256KB)
+//   0x00020000 - 0x00040000: Flash server app flash (128KB)
+//   0x00040000 - 0x00050000: Flash client app flash (64KB)
+//   0x00050000 - 0x00060000: Unused (64KB)
 //   0x00060000 - 0x00080000: Kernel RAM (128KB)
-//   0x00080000 - 0x000A0000: App RAM (128KB)
+//   0x00080000 - 0x00090000: Flash server RAM (64KB)
+//   0x00090000 - 0x00098000: Flash client RAM (32KB)
+//   0x00098000 - 0x000A0000: Unused (32KB)
 {
     arch: {
         type: "armv7m",

@@ -58,6 +58,7 @@ rust_app(
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
         "//hal/blocking/flash",
+        "//hal/blocking/flash:driver",
         "//services/flash/server:flash_server_lib",
         "//services/flash/server-runtime:flash_server_runtime",
         "//target/ast10x0/backend/flash:flash_backend_ast10x0",
@@ -99,8 +100,9 @@ system_image(
     visibility = ["//visibility:public"],
 )
 
-# FMC flash is not modeled under QEMU in this repo (same restriction as
-# //target/ast10x0/tests/smc/...): run on EVB hardware.
+# Runs on the AST1060 EVB through the Pi fixture, so AST1060_EVB_PI_HOST must
+# name the Pi host:
+#   AST1060_EVB_PI_HOST=<pi_host> bazel test --config=k_ast1060_evb //target/ast10x0/tests/flash_service:flash_evb_test
 system_image_test(
     name = "flash_evb_test",
     image = ":flash",
@@ -112,7 +114,7 @@ system_image_test(
     visibility = ["//visibility:public"],
 )
 
-# QEMU variant: the runner seeds 1 MiB erased images on both FMC chip selects
+# QEMU variant: the runner seeds 64 MiB erased images on both FMC chip selects
 # (if=mtd), emulating the EVB where CS0 boot flash and the external W25Q512 on
 # CS1 are both present. The flash service binds CS1, so program/erase/read-back
 # runs there under emulation; CS0 is attached but untouched.

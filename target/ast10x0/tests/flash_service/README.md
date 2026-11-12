@@ -10,8 +10,8 @@ directly in one task and do not cover the IPC path.
 The client checks the reported geometry, then erases, programs (across a
 program page boundary) and reads back one sector at 1 MiB. It also checks that
 a wrong-size erase, an unaligned erase and a read past the end are rejected.
-It backs the sector up first and restores it at the end, so it leaves the
-flash as it found it on the EVB.
+It backs the sector up first and restores it at the end, even if a check
+failed, so it leaves the flash as it found it on the EVB.
 
 The kernel target applies the FMC pinmux before it starts any process, so no
 task maps the SCU.
