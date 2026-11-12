@@ -276,7 +276,7 @@ impl<M: Mmio> CaliptraI3cTarget<M> {
             // An empty descriptor means the queue has drained.
             return None;
         }
-        let nwords = (len + 3) / 4;
+        let nwords = len.div_ceil(4);
 
         for index in 0..nwords {
             let word = self.mmio.read(Reg::TtiRxDataPort);
