@@ -7,7 +7,7 @@ load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
-load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH", "system_image_test")
+load("//:defs.bzl", "TARGET_COMPATIBLE_WITH", "system_image_test")
 
 # ── System configurations ─────────────────────────────────────────────────────
 
@@ -38,7 +38,7 @@ target_linker_script(
     system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
-    template = "//target/ast10x0:linker_script_template",
+    template = "//:linker_script_template",
 )
 
 rust_binary(
@@ -50,9 +50,9 @@ rust_binary(
     deps = [
         ":codegen",
         ":linker_script",
-        "//target/ast10x0:entry",
-        "//target/ast10x0/board:ast10x0_board",
-        "//target/ast10x0/peripherals",
+        "//:entry",
+        "//board:ast10x0_board",
+        "//peripherals",
         "@ast1060_pac",
         "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
         "@pigweed//pw_kernel/kernel",
@@ -74,9 +74,9 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "//services/i2c/server-runtime:i2c_server_runtime",
-        "//target/ast10x0/backend/i2c:i2c_backend_ast10x0",
-        "//target/ast10x0/peripherals",
+        "//backend/i2c:i2c_backend_ast10x0",
+        "//peripherals",
+        "@openprot//services/i2c/server-runtime:i2c_server_runtime",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
     ],
@@ -90,13 +90,13 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "//services/i2c/api:i2c_api",
-        "//services/i2c/client:i2c_client",
-        "//services/i2c/client-ipc:i2c_client_ipc",
-        "//services/mctp/api:mctp_api",
-        "//services/mctp/server:mctp_server_lib",
-        "//services/mctp/server-runtime:mctp_server_runtime",
-        "//services/mctp/transport-i2c:mctp_transport_i2c",
+        "@openprot//services/i2c/api:i2c_api",
+        "@openprot//services/i2c/client:i2c_client",
+        "@openprot//services/i2c/client-ipc:i2c_client_ipc",
+        "@openprot//services/mctp/api:mctp_api",
+        "@openprot//services/mctp/server:mctp_server_lib",
+        "@openprot//services/mctp/server-runtime:mctp_server_runtime",
+        "@openprot//services/mctp/transport-i2c:mctp_transport_i2c",
         "@pigweed//pw_kernel/syscall:syscall_user",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
@@ -114,9 +114,9 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "//services/mctp/api:mctp_api",
-        "//services/mctp/client-ipc:mctp_client_ipc",
-        "//services/mctp/control:mctp_control",
+        "@openprot//services/mctp/api:mctp_api",
+        "@openprot//services/mctp/client-ipc:mctp_client_ipc",
+        "@openprot//services/mctp/control:mctp_control",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@rust_crates//:mctp-lib",
@@ -131,7 +131,7 @@ system_image(
         ":mctp_control",
     ],
     kernel = ":target",
-    platform = "//target/ast10x0",
+    platform = "//:ast10x0",
     system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
@@ -141,7 +141,7 @@ system_image(
 # Exchanges real traffic with a BMC on the hardware fixture. No app calls
 # debug_shutdown, so the run prints no TEST_RESULT and ends at the timeout;
 # the UART log and the BMC side give the result.
-# Run with: bazel test --config=k_ast1060_evb //target/ast10x0/tests/mctp/control:mctp_control_test
+# Run with: bazel test --config=k_ast1060_evb //tests/mctp/control:mctp_control_test
 
 system_image_test(
     name = "mctp_control_test",
@@ -152,7 +152,7 @@ system_image_test(
         "manual",
     ],
     target_compatible_with = select({
-        "//target/ast10x0:qemu_enabled": ["@platforms//:incompatible"],
+        "//:qemu_enabled": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
 )
@@ -177,7 +177,7 @@ target_linker_script(
     system_config = ":qemu_system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
-    template = "//target/ast10x0:linker_script_template",
+    template = "//:linker_script_template",
 )
 
 rust_binary(
@@ -190,7 +190,7 @@ rust_binary(
     deps = [
         ":qemu_codegen",
         ":qemu_linker_script",
-        "//target/ast10x0:entry",
+        "//:entry",
         "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
         "@pigweed//pw_kernel/kernel",
         "@pigweed//pw_kernel/subsys/console:console_backend",
@@ -208,7 +208,7 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "//services/mctp/api:mctp_api",
+        "@openprot//services/mctp/api:mctp_api",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
@@ -224,9 +224,9 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "//services/mctp/api:mctp_api",
-        "//services/mctp/client-ipc:mctp_client_ipc",
-        "//services/mctp/control:mctp_control",
+        "@openprot//services/mctp/api:mctp_api",
+        "@openprot//services/mctp/client-ipc:mctp_client_ipc",
+        "@openprot//services/mctp/control:mctp_control",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@rust_crates//:mctp-lib",
@@ -240,14 +240,14 @@ system_image(
         ":mctp_control_qemu",
     ],
     kernel = ":qemu_target",
-    platform = "//target/ast10x0",
+    platform = "//:ast10x0",
     system_config = ":qemu_system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],
 )
 
-# Run with: bazel test --config=virt_ast10x0 //target/ast10x0/tests/mctp/control:mctp_control_qemu_test
+# Run with: bazel test --config=virt_ast10x0 //tests/mctp/control:mctp_control_qemu_test
 
 system_image_test(
     name = "mctp_control_qemu_test",
