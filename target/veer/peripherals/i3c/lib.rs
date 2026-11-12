@@ -48,11 +48,15 @@ use openprot_hal_blocking::i3c_hardware::{
 /// 64 DWORDs. Matches caliptra-mcu-sw's `MAX_READ_WRITE_SIZE`.
 pub const MAX_READ_WRITE_SIZE: usize = 256;
 
-/// MIPI DCR value for an MCTP endpoint.
-pub const MCTP_DCR: u8 = 0xCC;
-
-/// Mandatory Data Byte the target raises with a pending-read IBI, matching the
-/// upstream caliptra-mcu-sw runtime driver's MCTP pending-read notification.
+/// Mandatory Data Byte the target raises with a pending-read IBI. This is the
+/// driver's default, and it is the MCTP pending-read value, matching the
+/// upstream caliptra-mcu-sw runtime driver.
+///
+/// The default has a side effect beyond interrupting the controller: after an
+/// IBI with this MDB the hardware models read the staged reply on their own,
+/// the way an MCTP controller would. A consumer that is not MCTP, or that wants
+/// to do the read itself, should choose another value with
+/// [`CaliptraI3cTarget::set_config`].
 pub const MDB_PENDING_READ: u8 = 0xAE;
 
 /// How many times a failed IBI is raised again before giving up. The
@@ -208,7 +212,8 @@ impl<M: Mmio> CaliptraI3cTarget<M> {
 
     /// Apply pre-kernel target configuration.
     ///
-    /// Only the IBI Mandatory Data Byte is consumed here; the static and
+    /// Only the IBI Mandatory Data Byte is consumed here (the default is
+    /// [`MDB_PENDING_READ`]); the static and
     /// dynamic addresses are programmed by the Caliptra ROM before this driver
     /// runs, so `config.static_address` is informational.
     pub fn set_config(&mut self, config: I3cTargetConfig) {

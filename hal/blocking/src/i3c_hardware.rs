@@ -17,7 +17,7 @@
 //! that widens the surface.
 //!
 //! ```text
-//! MCTP transport-i3c            consumer (out of scope here)
+//! consumer (e.g. MCTP)          out of scope here
 //!        │  IPC (send / recv / dynamic_address)
 //! i3c server-runtime            hooks pigweed IRQ + IPC to the facade
 //!        │  I3cTarget
