@@ -23,8 +23,7 @@
 //!   followed by the packet. For a controller write to this target that is
 //!   `(own_addr << 1) | 0`; for a controller read of this target's response it
 //!   is `(own_addr << 1) | 1`.
-//! * DSP0233 requires the PEC. The `pec` flags in this module exist so a test
-//!   can turn it off, not because a conforming controller may omit it.
+//! * DSP0233 requires the PEC, so there is no way to turn it off here.
 //!
 //! Addresses are I3C dynamic addresses, assigned by the controller during ENTDAA,
 //! so `own_addr` is read back from the hardware at runtime, not a build-time
@@ -105,7 +104,7 @@ const fn addr_byte(addr: u8, rnw: u8) -> u8 {
     (addr << 1) | rnw
 }
 
-/// The MTU `I3cSender::get_mtu` reports, given whether a PEC byte is appended.
+/// The MTU `I3cSender::get_mtu` reports (251).
 ///
 /// The i3c service carries one framed packet per `I3cOp::Send`, capped at
 /// `i3c_api::MAX_PAYLOAD` (the TTI FIFO size). `mctp-estack`'s `Fragmenter`
@@ -113,27 +112,20 @@ const fn addr_byte(addr: u8, rnw: u8) -> u8 {
 /// the MTU is what is left of the frame after the PEC:
 ///
 /// ```text
-/// packet + pec <= 256   =>   packet <= 256 - pec   (255 with PEC)
+/// packet + pec <= 256   =>   packet <= 255
 /// ```
 ///
 /// This reports 4 bytes (the MCTP header) fewer than that, so a frame has room
-/// to spare; raising it to `MAX_PAYLOAD - pec` would use them. The derivation is
+/// to spare; raising it to `MAX_PAYLOAD - 1` would use them. The derivation is
 /// the bench branch's, which ran at 245 when the service limit was 250.
 ///
 /// Derived from `i3c_api::MAX_PAYLOAD` rather than a literal so it tracks the
-/// service limit, and takes `pec` so it does not silently assume one.
-pub const fn mctp_i3c_ipc_mtu(pec: bool) -> usize {
-    i3c_api::MAX_PAYLOAD - MCTP_HEADER_LEN - pec as usize
-}
-
-/// The i3c IPC MTU with a PEC appended (251) — the smaller of the two cases,
-/// used where a single figure is wanted (tests, docs).
-pub const MCTP_I3C_IPC_MAXMTU: usize = mctp_i3c_ipc_mtu(true);
+/// service limit.
+pub const MCTP_I3C_IPC_MAXMTU: usize = i3c_api::MAX_PAYLOAD - MCTP_HEADER_LEN - 1;
 
 /// Buffer size for `Fragmenter::fragment_vectored`, which refuses to emit into
-/// anything smaller than its MTU. Sized for the larger, no-PEC MTU plus the
-/// header, so one buffer serves both cases.
-pub const MCTP_I3C_IPC_PACKET: usize = mctp_i3c_ipc_mtu(false) + MCTP_HEADER_LEN;
+/// anything smaller than its MTU.
+pub const MCTP_I3C_IPC_PACKET: usize = MCTP_I3C_IPC_MAXMTU + MCTP_HEADER_LEN;
 
 /// Largest whole framed packet the transport ever hands to `I3cOp::Send`.
 pub const MCTP_I3C_IPC_FRAME: usize = i3c_api::MAX_PAYLOAD;
@@ -142,17 +134,13 @@ pub const MCTP_I3C_IPC_FRAME: usize = i3c_api::MAX_PAYLOAD;
 ///
 /// `own_addr` is this target's 7-bit dynamic address: the controller's write
 /// address phase was `(own_addr << 1) | 0`, and that byte is covered by the PEC
-/// even though it is not in `frame`. When `pec` is clear the frame is returned
-/// unchanged and `own_addr` is not used.
+/// even though it is not in `frame`.
 ///
 /// Fails if the frame is empty, the PEC is wrong, or nothing is left after the
 /// PEC is removed.
-pub fn decode_write(own_addr: u8, frame: &[u8], pec: bool) -> Result<&[u8]> {
+pub fn decode_write(own_addr: u8, frame: &[u8]) -> Result<&[u8]> {
     if frame.is_empty() {
         return Err(Error::InvalidInput);
-    }
-    if !pec {
-        return Ok(frame);
     }
     if own_addr > 0x7f {
         return Err(Error::BadArgument);
@@ -187,26 +175,26 @@ impl MctpI3cEncap {
     }
 
     /// Strip the PEC from an inbound private write (see [`decode_write`]).
-    pub fn decode<'f>(&self, frame: &'f [u8], pec: bool) -> Result<&'f [u8]> {
-        decode_write(self.own_addr, frame, pec)
+    pub fn decode<'f>(&self, frame: &'f [u8]) -> Result<&'f [u8]> {
+        decode_write(self.own_addr, frame)
     }
 
     /// Frame one MCTP packet for an outbound transfer, which the controller
     /// collects with a private read.
     ///
-    /// Writes the packet and -- when `pec` is set -- the trailing PEC into `out`,
-    /// returning the framed length. The PEC covers `(own_addr << 1) | 1`
+    /// Writes the packet and the trailing PEC into `out`, returning the framed
+    /// length. The PEC covers `(own_addr << 1) | 1`
     /// followed by the packet.
     ///
     /// Fails with [`Error::NoSpace`] if `out` is too small, or
     /// [`Error::BadArgument`] if the address is not 7-bit or the framed packet
     /// would exceed [`MCTP_I3C_IPC_FRAME`].
-    pub fn encode(&self, packet: &[u8], pec: bool, out: &mut [u8]) -> Result<usize> {
+    pub fn encode(&self, packet: &[u8], out: &mut [u8]) -> Result<usize> {
         if self.own_addr > 0x7f {
             return Err(Error::BadArgument);
         }
 
-        let framed = packet.len() + usize::from(pec);
+        let framed = packet.len() + 1;
         if framed > MCTP_I3C_IPC_FRAME {
             return Err(Error::BadArgument);
         }
@@ -215,10 +203,8 @@ impl MctpI3cEncap {
             .ok_or(Error::NoSpace)?
             .copy_from_slice(packet);
 
-        if pec {
-            let crc = transfer_pec(addr_byte(self.own_addr, READ), packet);
-            *out.get_mut(packet.len()).ok_or(Error::NoSpace)? = crc;
-        }
+        let crc = transfer_pec(addr_byte(self.own_addr, READ), packet);
+        *out.get_mut(packet.len()).ok_or(Error::NoSpace)? = crc;
 
         Ok(framed)
     }
