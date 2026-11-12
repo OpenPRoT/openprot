@@ -315,8 +315,10 @@ fn monitor_spim_violations(
                     csin_levels as u32,
                     bmc_csin_low_us as u32
                 );
-                let scu = unsafe { ScuRegisters::new_global_unlocked() };
-                recover_bmc_path(&scu, spim1, spim2);
+                let scu = unsafe { ScuRegisters::new_global() };
+                scu.unlock_and_lock_after(|scu| {
+                    recover_bmc_path(scu, spim1, spim2);
+                });
                 log_indices[0] = spim1.regs().read_log_idx_reg();
                 log_indices[1] = spim2.regs().read_log_idx_reg();
                 bmc_csin_low_us = 0;
@@ -327,7 +329,7 @@ fn monitor_spim_violations(
 
         poll_count = poll_count.wrapping_add(1);
         if ENABLE_RUNTIME_DEBUG_LOGS && poll_count % 100 == 0 {
-            let scu = unsafe { ScuRegisters::new_global_unlocked() };
+            let scu = unsafe { ScuRegisters::new_global() };
             let mux = match spim_external_mux_state(Spim1Config::INSTANCE) {
                 Some(ScuExtMuxSelect::Mux0) => 0u32,
                 Some(ScuExtMuxSelect::Mux1) => 1u32,
@@ -451,7 +453,7 @@ fn production_policy() -> SpiMonitorPolicy {
 }
 
 fn setup_all_spim() -> Result<(), test_common::TestError> {
-    let scu = unsafe { ScuRegisters::new_global_unlocked() };
+    let scu = unsafe { ScuRegisters::new_global() };
     let policy = production_policy();
     //let spim4_policy = spim4_test_policy();
 

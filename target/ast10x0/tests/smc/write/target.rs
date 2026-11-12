@@ -76,8 +76,10 @@ fn restore_sector(flash: &mut SpiNorFlash<'_>, original: &[u8]) -> Result<(), Sm
 }
 
 fn run_smc_fmc_cs1_write_test() -> Result<(), SmcError> {
-    let scu = unsafe { ScuRegisters::new_global_unlocked() };
-    scu.apply_pinctrl_group(PINCTRL_FMC_QUAD);
+    let scu = unsafe { ScuRegisters::new_global() };
+    scu.unlock_and_lock_after(|scu| {
+        scu.apply_pinctrl_group(PINCTRL_FMC_QUAD);
+    });
 
     pw_log::info!("=== AST10x0 SMC FMC CS1 write test ===");
     let mut fmc = unsafe { FmcUninit::<FmcInstance>::new()? }.init()?;

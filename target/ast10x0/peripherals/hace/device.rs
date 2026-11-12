@@ -110,40 +110,43 @@ impl<Y: FnMut(u32)> HaceDevice<Y> {
         // clock-stop bit and enable the HACE YCLK before touching any HACE registers.
         // SAFETY: SCU is a singleton; this is called under the same single-instance
         // contract as HaceRegisters::new_global — the caller guarantees exclusivity.
-        let scu = unsafe { ScuRegisters::new_global_unlocked() };
-        scu.ungate_clock_mask(ClockRegisterHalf::Lower, 1 << 13);
-        // SCU040 bit 4 = HACE reset. Write bit 4 to SCU044 to deassert reset and
-        // bring the HACE out of reset before accessing any HACE registers. Without
-        // this, the AHB bus hangs on the first HACE register read when the ROM
-        // bootloader (UART/fwspick mode) leaves HACE in reset.
-        scu.deassert_reset_mask(ScuRegisterHalf::Lower, 1 << 4);
+        let scu = unsafe { ScuRegisters::new_global() };
 
-        // SAFETY: Caller coordinates singleton access.
-        let regs = unsafe { HaceRegisters::new_global() };
+        scu.unlock_and_lock_after(|scu| {
+            scu.ungate_clock_mask(ClockRegisterHalf::Lower, 1 << 13);
+            // SCU040 bit 4 = HACE reset. Write bit 4 to SCU044 to deassert reset and
+            // bring the HACE out of reset before accessing any HACE registers. Without
+            // this, the AHB bus hangs on the first HACE register read when the ROM
+            // bootloader (UART/fwspick mode) leaves HACE in reset.
+            scu.deassert_reset_mask(ScuRegisterHalf::Lower, 1 << 4);
 
-        // Drain any in-progress hash operation left by the bootloader.
-        // On real hardware the engine may be busy when firmware starts; the
-        // HACE W1C clear of `hash_intflag` is ignored while `HashEngStsFlag`
-        // (bit 0) is set, causing the first poll to return a stale flag and the
-        // digest buffer to read back as the IV (never written by the engine).
-        // We stop the engine, then spin until it goes idle, then clear the
-        // stale flag before handing the device to callers.
-        regs.stop_hash_operation();
-        while regs.hash_engine_is_busy() {
-            core::hint::spin_loop();
-        }
-        regs.clear_hash_intflag();
+            // SAFETY: Caller coordinates singleton access.
+            let regs = unsafe { HaceRegisters::new_global() };
 
-        Self {
-            regs,
-            cache_flush: scu_dcache_invd_all,
-            // SAFETY: the `unsafe fn new*` single-instance contract makes this
-            // the sole live device, hence the sole holder of these pointers.
-            ctx: unsafe { acquire_shared_ctx() },
-            crypto_ctx: unsafe { acquire_crypto_ctx() },
-            yield_fn,
-            poll_budget: DEFAULT_POLL_BUDGET,
-        }
+            // Drain any in-progress hash operation left by the bootloader.
+            // On real hardware the engine may be busy when firmware starts; the
+            // HACE W1C clear of `hash_intflag` is ignored while `HashEngStsFlag`
+            // (bit 0) is set, causing the first poll to return a stale flag and the
+            // digest buffer to read back as the IV (never written by the engine).
+            // We stop the engine, then spin until it goes idle, then clear the
+            // stale flag before handing the device to callers.
+            regs.stop_hash_operation();
+            while regs.hash_engine_is_busy() {
+                core::hint::spin_loop();
+            }
+            regs.clear_hash_intflag();
+
+            Self {
+                regs,
+                cache_flush: scu_dcache_invd_all,
+                // SAFETY: the `unsafe fn new*` single-instance contract makes this
+                // the sole live device, hence the sole holder of these pointers.
+                ctx: unsafe { acquire_shared_ctx() },
+                crypto_ctx: unsafe { acquire_crypto_ctx() },
+                yield_fn,
+                poll_budget: DEFAULT_POLL_BUDGET,
+            }
+        })
     }
 
     /// Create a device bound to the singleton HACE instance.
