@@ -8,7 +8,8 @@
 # this file instead — at that point it's no longer "shared", just pins).
 # Either way, each including MODULE.bazel is its own root module when built
 # standalone, so neither can see the other's overrides, extension tags, or
-# version requests (see presubmit/module_pins.py) without this.
+# version requests without this — add any future shared pin here, not as a
+# literal in both MODULE.bazel files, or it can drift unnoticed.
 #
 # While target/ast10x0 is still nested here: its pins.MODULE.bazel is a
 # symlink to this file, which only works because both directories are in the

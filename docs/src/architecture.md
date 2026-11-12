@@ -79,12 +79,12 @@ Cargo workspace. The relevant pieces:
   `pigweed`, `platforms`, `rules_rust`, `rules_rust_mdbook`, `rules_python`,
   plus `caliptra_deps` and `ureg` via overrides).
 - `git_override` pins Pigweed to a specific upstream commit
-  (`MODULE.bazel:23-27`), keeping the kernel/build/log/status/toolchain
-  pieces reproducible.
+  (`pins.MODULE.bazel:30-34`, `include()`d by `MODULE.bazel`), keeping the
+  kernel/build/log/status/toolchain pieces reproducible.
 - `pw_rust.toolchain` registers Pigweed's managed Rust toolchains
-  (`MODULE.bazel:35-37`); host C/C++ toolchains and the `rv32imc` RISC-V
+  (`pins.MODULE.bazel:48-49`); host C/C++ toolchains and the `rv32imc` RISC-V
   C/C++ toolchain are registered via `register_toolchains`
-  (`MODULE.bazel:39-44`).
+  (`MODULE.bazel:31-42`).
 - Three `crate_universe` workspaces govern Rust crate dependencies:
   - `@rust_crates` — cross-platform crates declared in
     `third_party/crates_io/Cargo.toml`.

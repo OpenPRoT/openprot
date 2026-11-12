@@ -8,7 +8,6 @@ pw_py_binary(
     srcs = [
         "cpp_include_guard.py",
         "license.py",
-        "module_pins.py",
         "presubmit.py",
         "rust_features.py",
     ],
@@ -16,14 +15,6 @@ pw_py_binary(
     deps = [
         "@pigweed//pw_presubmit/py:pw_presubmit",
     ],
-)
-
-pw_py_test(
-    name = "module_pins_test",
-    srcs = ["module_pins_test.py"],
-    imports = [".."],
-    main = "module_pins_test.py",
-    deps = [":presubmit"],
 )
 
 pw_py_test(
