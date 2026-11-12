@@ -18,14 +18,15 @@ pub struct Target {}
 const GPIO_LEVEL_DELAY_CYCLES: u32 = 200_000_000;
 
 fn test_gpio_loopback() -> bool {
-    // The loopback requires a jumper between the fixture board's exposed
-    // GPIOJ4 pin and GPIOJ5 pin.
-    let gpioj = unsafe {
-        let scu = ScuRegisters::new_global_unlocked();
+    let scu = unsafe { ScuRegisters::new_global() };
+    scu.unlock_and_lock_after(|scu| {
         scu.apply_pinctrl_group(pinctrl::PINCTRL_GPIOJ4);
         scu.apply_pinctrl_group(pinctrl::PINCTRL_GPIOJ5);
-        gpioj::GPIOJ::new_global().split()
-    };
+    });
+
+    // The loopback requires a jumper between the fixture board's exposed
+    // GPIOJ4 pin and GPIOJ5 pin.
+    let gpioj = unsafe { gpioj::GPIOJ::new_global().split() };
     pw_log::info!("--- GPIOJ loopback test ---");
 
     let mut output = gpioj.pj4.into_push_pull_output();
