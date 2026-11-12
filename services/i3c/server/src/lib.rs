@@ -17,17 +17,16 @@ pub use loopback::LoopbackTransport;
 use i3c_api::{decode_request, encode_response, I3cOp, I3cStatus, HEADER, MAX_PAYLOAD};
 use openprot_hal_blocking::i3c_hardware::I3cTarget;
 
-/// Depth of the inbound frame ring.
+/// Default depth of the inbound frame ring.
 ///
-/// Sized to cover the window between the IRQ latching a frame and the client
-/// draining it over IPC — a cross-process round-trip, plus a host controller
-/// that polls and may resend — and, crucially, to hold every fragment of one
-/// multi-fragment MCTP message: the controller bursts a message's fragments
-/// back-to-back and they are only consumed once the whole message reassembles,
-/// so the ring must be at least as deep as the largest message's fragment count
-/// (a ~960 B PLDM chunk is ~5 fragments at the 241 B MTU). The ring must not
-/// overflow in normal flow: a dropped frame is an unrecoverable hole in MCTP
-/// reassembly, so overflow is an error path only (see [`Inbound::DroppedFull`]).
+/// The ring covers the window between the IRQ latching a frame and the client
+/// draining it over IPC (a cross-process round-trip, plus a controller that
+/// polls and may resend), and it must hold every frame a consumer expects the
+/// controller to send back-to-back before it drains any. That last part belongs
+/// to the consumer, not to this crate: a [`Server`] takes its depth as a const
+/// parameter (`Server<T, RING>`, [`Server::with_ring`]), and `Server::new` uses
+/// this default of 6. Overflow is an error path only (see
+/// [`Inbound::DroppedFull`]).
 pub const RX_RING: usize = 6;
 
 /// Outcome of draining one inbound frame in [`Server::latch_inbound`].
@@ -67,7 +66,7 @@ pub enum Inbound {
 /// outstanding.)
 ///
 /// [`TargetEvent::ResponseRead`]: openprot_hal_blocking::i3c_hardware::TargetEvent::ResponseRead
-pub struct Server<T> {
+pub struct Server<T, const RING: usize = RX_RING> {
     /// IPC channel handle carrying the transport protocol.
     pub channel: u32,
     /// IRQ handle for the I3C controller.
@@ -75,9 +74,9 @@ pub struct Server<T> {
     /// The controller driver implementing the facade.
     pub target: T,
     /// Inbound frame ring buffers, one `MAX_PAYLOAD` slot per ring entry.
-    rx: [[u8; MAX_PAYLOAD]; RX_RING],
+    rx: [[u8; MAX_PAYLOAD]; RING],
     /// Payload length latched in each ring slot.
-    rx_len: [usize; RX_RING],
+    rx_len: [usize; RING],
     /// Index of the oldest queued frame (the next `Recv` pops this slot).
     rx_head: usize,
     /// Number of frames currently queued in the ring.
@@ -85,15 +84,25 @@ pub struct Server<T> {
     tx_pending: bool,
 }
 
-impl<T> Server<T> {
-    /// Bind the server to one channel, one IRQ, and one target driver.
+impl<T> Server<T, RX_RING> {
+    /// Bind the server to one channel, one IRQ, and one target driver, with the
+    /// default ring depth ([`RX_RING`]). Use [`with_ring`](Self::with_ring) for
+    /// another depth.
     pub const fn new(channel: u32, irq: u32, target: T) -> Self {
+        Self::with_ring(channel, irq, target)
+    }
+}
+
+impl<T, const RING: usize> Server<T, RING> {
+    /// Bind the server to one channel, one IRQ, and one target driver, with a
+    /// ring that holds `RING` inbound frames.
+    pub const fn with_ring(channel: u32, irq: u32, target: T) -> Self {
         Self {
             channel,
             irq,
             target,
-            rx: [[0u8; MAX_PAYLOAD]; RX_RING],
-            rx_len: [0usize; RX_RING],
+            rx: [[0u8; MAX_PAYLOAD]; RING],
+            rx_len: [0usize; RING],
             rx_head: 0,
             rx_count: 0,
             tx_pending: false,
@@ -121,7 +130,7 @@ impl<T> Server<T> {
     }
 }
 
-impl<T: I3cTarget> Server<T> {
+impl<T: I3cTarget, const RING: usize> Server<T, RING> {
     /// Drain one inbound frame into the ring after a [`TargetEvent::InboundReady`].
     ///
     /// Reads one frame from the target and, if the ring has room, queues it at
@@ -138,17 +147,17 @@ impl<T: I3cTarget> Server<T> {
     /// When the ring is full the frame is still read out of the hardware (to
     /// keep the RX path moving) but dropped — [`Inbound::DroppedFull`]. Dropping
     /// the new frame is the lesser evil: overwriting a queued one would lose an
-    /// earlier MCTP fragment. `RX_RING` is sized so this does not happen in
+    /// earlier fragment. The ring is sized so this does not happen in
     /// normal flow.
     pub fn latch_inbound(&mut self) -> Result<Inbound, T::Error> {
-        if self.rx_count >= RX_RING {
+        if self.rx_count >= RING {
             let mut scratch = [0u8; MAX_PAYLOAD];
             return Ok(match self.target.read_frame(&mut scratch)? {
                 Some(n) if n > 0 => Inbound::DroppedFull,
                 _ => Inbound::Empty,
             });
         }
-        let tail = (self.rx_head + self.rx_count) % RX_RING;
+        let tail = (self.rx_head + self.rx_count) % RING;
         Ok(match self.target.read_frame(&mut self.rx[tail])? {
             Some(n) if n > 0 => {
                 self.rx_len[tail] = n.min(MAX_PAYLOAD);
@@ -178,13 +187,19 @@ fn status_only(resp: &mut [u8], status: I3cStatus) -> usize {
 ///
 /// `Recv` consumes the latch. This function performs no syscalls; the runtime
 /// manages the `USER` notification around it.
-pub fn dispatch<T: I3cTarget>(srv: &mut Server<T>, req: &[u8], resp: &mut [u8]) -> usize {
+pub fn dispatch<T: I3cTarget, const RING: usize>(
+    srv: &mut Server<T, RING>,
+    req: &[u8],
+    resp: &mut [u8],
+) -> usize {
     let Some((op, payload)) = decode_request(req) else {
         return status_only(resp, I3cStatus::InvalidOp);
     };
     match op {
         I3cOp::Send => {
-            if payload.len() > MAX_PAYLOAD {
+            // Too long for the protocol, or for what this target can stage in one
+            // response.
+            if payload.len() > MAX_PAYLOAD || payload.len() > srv.target.max_send_len() {
                 return status_only(resp, I3cStatus::TooLong);
             }
             // One staged response at a time: staging another over an unread one
@@ -214,7 +229,7 @@ pub fn dispatch<T: I3cTarget>(srv: &mut Server<T>, req: &[u8], resp: &mut [u8]) 
             // Pop the oldest frame whether or not the encode succeeded: a
             // response buffer too small to hold it would otherwise wedge the
             // ring on the same frame forever.
-            srv.rx_head = (srv.rx_head + 1) % RX_RING;
+            srv.rx_head = (srv.rx_head + 1) % RING;
             srv.rx_count -= 1;
             out.unwrap_or_else(|| status_only(resp, I3cStatus::Internal))
         }
@@ -245,6 +260,8 @@ mod tests {
         frame_count: usize,
         sent: [u8; MAX_PAYLOAD],
         sent_len: usize,
+        /// What the fake reports from `max_send_len`.
+        send_limit: usize,
     }
 
     impl Default for FakeTarget {
@@ -257,6 +274,7 @@ mod tests {
                 frame_count: 0,
                 sent: [0u8; MAX_PAYLOAD],
                 sent_len: 0,
+                send_limit: MAX_PAYLOAD,
             }
         }
     }
@@ -313,6 +331,9 @@ mod tests {
         }
         fn dynamic_address(&self) -> Option<DynamicAddress> {
             self.addr.and_then(|a| DynamicAddress::try_from(a).ok())
+        }
+        fn max_send_len(&self) -> usize {
+            self.send_limit
         }
     }
 
@@ -405,6 +426,75 @@ mod tests {
         req[0] = I3cOp::Send as u8;
         let rn = dispatch(&mut s, &req[..HEADER + MAX_PAYLOAD + 1], &mut resp);
         assert_eq!(decode_response(&resp[..rn]).unwrap().0, I3cStatus::TooLong);
+    }
+
+    #[test]
+    fn send_larger_than_the_targets_limit_is_too_long() {
+        let mut s = srv();
+        s.target.send_limit = 8;
+
+        // One byte over what the target can stage: refused before it reaches the
+        // driver, and nothing is marked pending.
+        assert_eq!(send(&mut s, &[0u8; 9]), I3cStatus::TooLong);
+        assert_eq!(s.target.sent_len, 0, "nothing was staged");
+        assert!(!s.tx_pending());
+
+        // Exactly the limit is accepted.
+        assert_eq!(send(&mut s, &[0u8; 8]), I3cStatus::Ok);
+        assert_eq!(s.target.sent_len, 8);
+    }
+
+    #[test]
+    fn a_frame_of_the_protocol_ceiling_is_accepted_when_the_target_allows_it() {
+        let mut s = srv();
+        assert_eq!(send(&mut s, &[0xa5u8; MAX_PAYLOAD]), I3cStatus::Ok);
+        assert_eq!(s.target.sent_len, MAX_PAYLOAD);
+    }
+
+    #[test]
+    fn a_full_size_inbound_frame_arrives_intact() {
+        // The controller can write up to the protocol ceiling; none of it may be
+        // cut off on the way to the client.
+        let mut s = srv();
+        let frame: [u8; MAX_PAYLOAD] = core::array::from_fn(|i| i as u8);
+        s.target.push_inbound(&frame);
+        assert!(!drain(&mut s), "the frame is latched, not dropped");
+
+        let (status, out, n) = recv_once(&mut s);
+        assert_eq!(status, I3cStatus::Ok);
+        assert_eq!(n, MAX_PAYLOAD);
+        assert_eq!(out[..n], frame[..]);
+    }
+
+    #[test]
+    fn ring_depth_is_a_parameter() {
+        // A two-deep ring: the third frame overflows, the first two survive.
+        let mut s: Server<FakeTarget, 2> = Server::with_ring(1, 2, FakeTarget::default());
+        for i in 0..3u8 {
+            s.target.push_inbound(&[i]);
+        }
+        let mut dropped = 0;
+        loop {
+            match s.latch_inbound().expect("latch") {
+                Inbound::Latched => {}
+                Inbound::DroppedFull => dropped += 1,
+                Inbound::Empty => break,
+            }
+        }
+        assert_eq!(dropped, 1);
+        assert!(s.has_frame());
+
+        let mut req = [0u8; MAX_FRAME];
+        let mut resp = [0u8; MAX_FRAME];
+        let n = encode_request(I3cOp::Recv, &[], &mut req).unwrap();
+        for want in 0..2u8 {
+            let rn = dispatch(&mut s, &req[..n], &mut resp);
+            assert_eq!(
+                decode_response(&resp[..rn]),
+                Some((I3cStatus::Ok, &[want][..]))
+            );
+        }
+        assert!(!s.has_frame());
     }
 
     #[test]

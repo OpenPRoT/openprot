@@ -41,6 +41,10 @@ use openprot_hal_blocking::i3c_hardware::{
 };
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 
+/// Largest private read or write the TTI carries: its TX and RX data FIFOs are
+/// 64 DWORDs. Matches caliptra-mcu-sw's `MAX_READ_WRITE_SIZE`.
+pub const MAX_READ_WRITE_SIZE: usize = 256;
+
 /// MIPI DCR value for an MCTP endpoint.
 pub const MCTP_DCR: u8 = 0xCC;
 
@@ -348,5 +352,9 @@ impl I3cTarget for CaliptraI3cTarget {
         } else {
             None
         }
+    }
+
+    fn max_send_len(&self) -> usize {
+        MAX_READ_WRITE_SIZE
     }
 }

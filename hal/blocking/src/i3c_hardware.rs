@@ -143,6 +143,20 @@ pub trait I3cTarget {
     /// A local state read: it cannot fail, so it returns `Option`, not
     /// `Result<Option<_>>`.
     fn dynamic_address(&self) -> Option<DynamicAddress>;
+
+    /// The most bytes this target can stage for the controller in one response,
+    /// that is, the size limit of a controller private read.
+    ///
+    /// The service refuses a `Send` larger than this with `TooLong` before it
+    /// reaches [`send`](Self::send), so a driver is never asked to stage more than
+    /// its hardware holds.
+    ///
+    /// The receive side has no method: a private write from the controller must
+    /// fit the service's protocol ceiling (`i3c_api::MAX_PAYLOAD`, 256 bytes),
+    /// because the inbound ring slots are that size and a larger frame would be
+    /// truncated. A controller whose receive limit is larger than that cannot
+    /// implement this trait as it stands.
+    fn max_send_len(&self) -> usize;
 }
 
 #[cfg(test)]
@@ -209,6 +223,10 @@ mod tests {
 
         fn dynamic_address(&self) -> Option<DynamicAddress> {
             self.addr.and_then(|a| DynamicAddress::try_from(a).ok())
+        }
+
+        fn max_send_len(&self) -> usize {
+            256
         }
     }
 
