@@ -17,8 +17,8 @@
 #![deny(missing_docs)]
 
 use i3c_api::{
-    decode_response, encode_request, I3cOp, I3cStatus, Transport, TransportError, MAX_FRAME,
-    MAX_PAYLOAD,
+    decode_response, encode_request, DeviceInfo, I3cOp, I3cStatus, Transport, TransportError,
+    MAX_FRAME, MAX_PAYLOAD,
 };
 
 /// Why a client call failed.
@@ -154,6 +154,19 @@ impl<T: Transport> I3cClient<T> {
             (I3cStatus::Unassigned, _) => Ok(None),
             (I3cStatus::Ok, [addr]) => Ok(Some(*addr)),
             (I3cStatus::Ok, _) => Err(ClientError::InvalidResponse),
+            (status, _) => Err(ClientError::Server(status)),
+        }
+    }
+
+    /// Read the target's addresses and transfer limits.
+    ///
+    /// The limits are what one `send` and one received frame can carry; size
+    /// messages from them rather than assuming a number. They can change while
+    /// the target runs (a controller can set them), so ask again when they matter.
+    pub fn device_info(&mut self) -> Result<DeviceInfo, ClientError> {
+        let mut resp = [0u8; MAX_FRAME];
+        match self.transact(I3cOp::DeviceInfo, &[], &mut resp)? {
+            (I3cStatus::Ok, body) => DeviceInfo::decode(body).ok_or(ClientError::InvalidResponse),
             (status, _) => Err(ClientError::Server(status)),
         }
     }
