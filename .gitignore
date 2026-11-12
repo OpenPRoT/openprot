@@ -8,6 +8,7 @@ target/rust-analyzer/
 **/target/debug/
 **/target/release/
 **/target/CACHEDIR.TAG
+**/**/target/rust-analyzer/
 
 # Editors
 .pw_ide/
