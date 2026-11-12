@@ -1,0 +1,138 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@pigweed//pw_kernel/tooling:multi_process_app.bzl", "multi_process_app")
+load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_process")
+load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//target/veer:defs.bzl", "TARGET_COMPATIBLE_WITH", "veer_system_config", "veer_system_image")
+load("//target/veer/tooling:caliptra_runner.bzl", "caliptra_test")
+
+package(default_visibility = ["//visibility:public"])
+
+veer_system_config(
+    name = "system_config",
+    src = "system.json5.tmpl",
+)
+
+target_codegen(
+    name = "codegen",
+    arch = "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+    system_config = ":system_config",
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    template = "//target/veer:linker_script_template",
+)
+
+rust_binary(
+    name = "target",
+    srcs = ["target.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":codegen",
+        ":linker_script",
+        "//target/veer:entry",
+        "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/subsys/console:console_backend",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)
+
+# End-to-end MCTP over I3C: i3c server + MCTP router + echo app.
+multi_process_app(
+    name = "mctp_i3c",
+    processes = [
+        ":i3c_server",
+        ":mctp_server",
+        ":mctp_echo",
+    ],
+    tags = ["kernel"],
+)
+
+rust_process(
+    name = "i3c_server",
+    srcs = ["i3c_server.rs"],
+    codegen_crate_name = "i3c_server_codegen",
+    edition = "2024",
+    tags = ["kernel"],
+    deps = [
+        "//services/i3c/server:i3c_server",
+        "//services/i3c/server-runtime:i3c_server_runtime",
+        "//target/veer/peripherals/i3c",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)
+
+rust_process(
+    name = "mctp_server",
+    srcs = ["mctp_server.rs"],
+    codegen_crate_name = "mctp_server_codegen",
+    edition = "2024",
+    tags = ["kernel"],
+    deps = [
+        "//services/i3c/api:i3c_api",
+        "//services/i3c/client:i3c_client",
+        "//services/i3c/client-ipc:i3c_client_ipc",
+        "//services/mctp/server:mctp_server_lib",
+        "//services/mctp/server-runtime:mctp_server_runtime",
+        "//services/mctp/transport-i3c:mctp_transport_i3c",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_crates//:mctp",
+    ],
+)
+
+rust_process(
+    name = "mctp_echo",
+    srcs = ["echo.rs"],
+    codegen_crate_name = "mctp_echo_codegen",
+    edition = "2024",
+    tags = ["kernel"],
+    deps = [
+        "//services/mctp/api:mctp_api",
+        "//services/mctp/client-ipc:mctp_client_ipc",
+        "//services/mctp/echo:mctp_echo",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
+veer_system_image(
+    name = "mctp_i3c_image",
+    apps = [":mctp_i3c"],
+    kernel = ":target",
+    platform = "//target/veer",
+    system_config = ":system_config",
+    tags = ["kernel"],
+)
+
+rust_binary_no_panics_test(
+    name = "no_panics_test",
+    binary = ":mctp_i3c_image",
+    tags = ["kernel"],
+)
+
+# The host side drives the firmware through caliptra_mcu_hw_model, as
+# //target/veer/tests/i3c_service does: an MCTP request as a private write, the
+# echo read back after the IBI. Generates mctp_i3c_test_emulator and
+# mctp_i3c_test_fpga.
+caliptra_test(
+    name = "mctp_i3c_test",
+    srcs = ["host_test.rs"],
+    mcu_image = ":mctp_i3c_image",
+    deps = ["//third_party/caliptra/caliptra-mcu-sw:mcu_testing_common"],
+)
