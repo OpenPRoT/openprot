@@ -81,6 +81,18 @@ impl I3cTarget for FakeTarget {
     fn max_send_len(&self) -> usize {
         MAX_PAYLOAD
     }
+
+    fn static_address(&self) -> Option<DynamicAddress> {
+        None
+    }
+
+    fn max_recv_len(&self) -> usize {
+        MAX_PAYLOAD
+    }
+
+    fn disable(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
 }
 
 fn client(addr: Option<u8>) -> I3cClient<LoopbackTransport<FakeTarget>> {

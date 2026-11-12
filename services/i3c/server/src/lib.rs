@@ -335,6 +335,15 @@ mod tests {
         fn max_send_len(&self) -> usize {
             self.send_limit
         }
+        fn static_address(&self) -> Option<DynamicAddress> {
+            None
+        }
+        fn max_recv_len(&self) -> usize {
+            MAX_PAYLOAD
+        }
+        fn disable(&mut self) -> Result<(), Self::Error> {
+            Ok(())
+        }
     }
 
     fn srv() -> Server<FakeTarget> {

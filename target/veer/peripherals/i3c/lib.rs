@@ -354,7 +354,34 @@ impl I3cTarget for CaliptraI3cTarget {
         }
     }
 
+    fn static_address(&self) -> Option<DynamicAddress> {
+        let regs = self.regs();
+        if regs
+            .stdby_ctrl_mode_stby_cr_device_addr
+            .read(StbyCrDeviceAddr::StaticAddrValid)
+            == 1
+        {
+            let raw = regs
+                .stdby_ctrl_mode_stby_cr_device_addr
+                .read(StbyCrDeviceAddr::StaticAddr) as u8;
+            DynamicAddress::try_from(raw).ok()
+        } else {
+            None
+        }
+    }
+
     fn max_send_len(&self) -> usize {
         MAX_READ_WRITE_SIZE
+    }
+
+    fn max_recv_len(&self) -> usize {
+        MAX_READ_WRITE_SIZE
+    }
+
+    fn disable(&mut self) -> Result<(), Self::Error> {
+        // Stop every TTI interrupt: no more inbound, IBI-done or response-read
+        // events. `enable` arms them again.
+        self.regs().tti_interrupt_enable.set(0);
+        Ok(())
     }
 }
