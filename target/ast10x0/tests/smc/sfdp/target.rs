@@ -51,8 +51,10 @@ impl SmcInstance for FmcInstance {
 pub struct Target {}
 
 fn run_smc_fmc_cs1_sfdp_test() -> Result<(), SmcError> {
-    let scu = unsafe { ScuRegisters::new_global_unlocked() };
-    scu.apply_pinctrl_group(PINCTRL_FMC_QUAD);
+    let scu = unsafe { ScuRegisters::new_global() };
+    scu.unlock_and_lock_after(|scu| {
+        scu.apply_pinctrl_group(PINCTRL_FMC_QUAD);
+    });
 
     pw_log::info!("=== AST10x0 SMC FMC CS1 SFDP config test ===");
     // Both CS are driven on the EVB; capacity for each is an OUTPUT of init().

@@ -98,23 +98,25 @@ impl Ast10x0Board {
     /// - Not thread-safe; caller must ensure no concurrent SCU or I2C accesses.
     pub unsafe fn init(&self) -> Result<(), I2cError> {
         // Unlock SCU once before the sequence of writes (aspeed-rust pattern)
-        let scu = unsafe { ScuRegisters::new_global_unlocked() };
+        let scu = unsafe { ScuRegisters::new_global() };
 
-        // Apply pinctrl groups
-        for group in self.descriptor.pinctrl_groups {
-            scu.apply_pinctrl_group(group);
-        }
+        scu.unlock_and_lock_after(|scu| {
+            // Apply pinctrl groups
+            for group in self.descriptor.pinctrl_groups {
+                scu.apply_pinctrl_group(group);
+            }
 
-        // Enable I2C clock (Group 0, bit 2)
-        scu.ungate_clock_mask(ClockRegisterHalf::Lower, 1 << 2);
+            // Enable I2C clock (Group 0, bit 2)
+            scu.ungate_clock_mask(ClockRegisterHalf::Lower, 1 << 2);
 
-        // Assert I2C reset (Upper half, bit 2)
-        scu.assert_reset_mask(ScuRegisterHalf::Upper, 1 << 2);
-        delay_us(1000);
+            // Assert I2C reset (Upper half, bit 2)
+            scu.assert_reset_mask(ScuRegisterHalf::Upper, 1 << 2);
+            delay_us(1000);
 
-        // Deassert I2C reset
-        scu.deassert_reset_mask(ScuRegisterHalf::Upper, 1 << 2);
-        delay_us(1000);
+            // Deassert I2C reset
+            scu.deassert_reset_mask(ScuRegisterHalf::Upper, 1 << 2);
+            delay_us(1000);
+        });
 
         // Configure I2C global registers (clock dividers, etc.)
         unsafe { ast10x0_peripherals::i2c::init_i2c_global() };
