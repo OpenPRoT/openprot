@@ -119,7 +119,7 @@ fn second_send_is_busy_until_the_controller_reads_the_first() {
 
     // Only one response is staged at a time. Nothing of the second reaches the
     // target while the first is unread.
-    assert_eq!(c.send(b"second"), Err(ClientError::Server(I3cStatus::Busy)));
+    assert_eq!(c.send(b"second"), Err(ClientError::Busy));
     let target = &c.transport().server().target;
     assert_eq!(&target.sent[..target.sent_len], b"first");
 

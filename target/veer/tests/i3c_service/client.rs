@@ -31,7 +31,7 @@
 #![no_std]
 
 use client_codegen::handle;
-use i3c_api::{I3cStatus, MAX_PAYLOAD};
+use i3c_api::MAX_PAYLOAD;
 use i3c_client::{ClientError, I3cClient};
 use i3c_client_ipc::IpcTransport;
 use userspace::process_entry;
@@ -147,7 +147,7 @@ fn entry() {
     loop {
         match i3c.send(REPLY2) {
             Ok(()) => break,
-            Err(ClientError::Server(I3cStatus::Busy)) => {
+            Err(ClientError::Busy) => {
                 if !busy {
                     busy = true;
                     pw_log::info!("i3c service: second send busy");

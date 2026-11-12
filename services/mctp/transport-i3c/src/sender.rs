@@ -15,12 +15,12 @@
 //! * **The source address is runtime state.** It is assigned by ENTDAA, so it
 //!   is read back per message rather than fixed at construction.
 //! * **One response is staged at a time.** The i3c service answers a second
-//!   `Send` with `I3cStatus::Busy` until the controller has read the first. A
+//!   `Send` with `Busy` until the controller has read the first. A
 //!   multi-fragment message therefore waits between fragments: the sender
 //!   retries the same frame, calling an injected wait hook between attempts, a
 //!   bounded number of times.
 
-use i3c_api::{I3cStatus, Transport};
+use i3c_api::Transport;
 use i3c_client::{ClientError, I3cClient};
 use mctp::Result;
 use mctp_lib::fragment::SendOutput;
@@ -93,11 +93,11 @@ impl<T: Transport, W: FnMut()> I3cSender<T, W> {
         loop {
             match self.client.send(frame) {
                 Ok(()) => return Ok(()),
-                Err(ClientError::Server(I3cStatus::Busy)) if retries < MAX_BUSY_RETRIES => {
+                Err(ClientError::Busy) if retries < MAX_BUSY_RETRIES => {
                     retries += 1;
                     (self.wait)();
                 }
-                Err(ClientError::Server(I3cStatus::Busy)) => {
+                Err(ClientError::Busy) => {
                     pw_log::error!(
                         "i3c send still busy after {} retries: len=0x{:04x}",
                         retries as u32,

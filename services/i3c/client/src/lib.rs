@@ -26,9 +26,13 @@ use i3c_api::{
 pub enum ClientError {
     /// The transport round-trip itself failed.
     Transport(TransportError),
+    /// The previous response is still staged: the controller has not read it, so
+    /// nothing was staged for this `Send`. Try again later. Only `send` returns
+    /// this.
+    Busy,
     /// The server returned a status this call does not treat as success.
     ///
-    /// `NoData` and `Unassigned` are *not* reported here — they are expected
+    /// `NoData`, `Unassigned` and `Busy` are *not* reported here — they are expected
     /// outcomes and surface as `Ok(None)` from the calls that can see them.
     Server(I3cStatus),
     /// The response was empty, truncated, or carried an unknown status byte.
@@ -42,6 +46,7 @@ impl core::fmt::Display for ClientError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Transport(e) => write!(f, "i3c transport error: {e}"),
+            Self::Busy => f.write_str("i3c server busy: the previous response is unread"),
             Self::Server(s) => write!(f, "i3c server error: {s:?}"),
             Self::InvalidResponse => f.write_str("malformed i3c response"),
             Self::BufferTooSmall => f.write_str("i3c frame exceeds one round-trip buffer"),
@@ -96,7 +101,10 @@ impl<T: Transport> I3cClient<T> {
         // `req_len <= MAX_FRAME` and the slice below is always in bounds.
         let req_len = encode_request(op, payload, &mut req).ok_or(ClientError::BufferTooSmall)?;
         let resp_len = self.transport.transact(&req[..req_len], resp)?;
-        decode_response(&resp[..resp_len]).ok_or(ClientError::InvalidResponse)
+        match decode_response(&resp[..resp_len]).ok_or(ClientError::InvalidResponse)? {
+            (I3cStatus::Busy, _) => Err(ClientError::Busy),
+            decoded => Ok(decoded),
+        }
     }
 
     /// Stage `payload` for transmission to the controller.
@@ -107,7 +115,7 @@ impl<T: Transport> I3cClient<T> {
     ///
     /// Only one response is staged at a time. While the previous one has not
     /// been read by the controller, nothing is staged and this returns
-    /// `Err(ClientError::Server(I3cStatus::Busy))`: retry later.
+    /// `Err(ClientError::Busy)`: retry later.
     pub fn send(&mut self, payload: &[u8]) -> Result<(), ClientError> {
         let mut resp = [0u8; MAX_FRAME];
         match self.transact(I3cOp::Send, payload, &mut resp)? {
