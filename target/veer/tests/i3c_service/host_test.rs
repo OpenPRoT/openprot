@@ -18,6 +18,14 @@
 //! is not. It then makes the controller read the first reply, which is what
 //! releases the next send (`ResponseRead`), and waits for the retry to succeed.
 //!
+//! The firmware then sends a third reply while the second is still unread, and
+//! the host leaves it unread. The server gives up on a response that stays unread
+//! for `STAGED_RESPONSE_TIMEOUT_MS`, discards it and accepts the send. Only the
+//! real controller can discard a staged response (the emulator ignores the reset
+//! that does it, and reads the reply itself anyway), so on the FPGA the test
+//! requires that the third send was refused, and that the server logged the
+//! discard.
+//!
 //! The same binary runs on the emulator (x86_64) and on the VCK190, where the
 //! model forwards the socket to the FPGA's I3C host controller.
 //!
@@ -51,6 +59,14 @@ const BUSY: &str = "second send busy";
 
 /// Logged by `client.rs` when its second send has been accepted.
 const ACCEPTED: &str = "second send accepted";
+
+/// Logged by `client.rs` when its third send is refused as busy, and when it is
+/// accepted.
+const THIRD_BUSY: &str = "third send busy";
+const THIRD_ACCEPTED: &str = "third send accepted";
+
+/// Logged by the server runtime when it discards a response that stayed unread.
+const DISCARDED: &str = "staged response not read in time; discarded";
 
 const TIMEOUT_SECS: u64 = 120;
 
@@ -135,6 +151,24 @@ fn i3c_service_host_test() {
         wait_for_log(&mut hw, &mut log, ACCEPTED);
     } else {
         println!("i3c host: second send was accepted at once (emulator: first reply already read)");
+    }
+
+    // The third send, with the second reply left unread. On the FPGA nothing
+    // reads it, so the send is refused until the server discards the reply.
+    let busy = wait_for_any(&mut hw, &mut log, &[THIRD_BUSY, THIRD_ACCEPTED]) == 0;
+    assert!(
+        busy || !on_fpga,
+        "the third send was not refused on the FPGA: the unread reply was gone already"
+    );
+    wait_for_log(&mut hw, &mut log, THIRD_ACCEPTED);
+    if on_fpga {
+        assert!(
+            log.contains(DISCARDED),
+            "the third send went through but the server did not log discarding the unread reply"
+        );
+        println!("i3c host: third send was BUSY until the server discarded the unread reply");
+    } else {
+        println!("i3c host: third send accepted (emulator: second reply already read)");
     }
 
     hw.step_until_exit_success()
