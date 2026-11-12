@@ -15,8 +15,8 @@ mod receiver;
 mod sender;
 
 pub use encap::{
-    decode_write, mctp_i3c_ipc_mtu, transfer_pec, MctpI3cEncap, MCTP_I3C_IPC_FRAME,
-    MCTP_I3C_IPC_MAXMTU, MCTP_I3C_IPC_PACKET,
+    decode_write, transfer_pec, MctpI3cEncap, MCTP_I3C_IPC_FRAME, MCTP_I3C_IPC_MAXMTU,
+    MCTP_I3C_IPC_PACKET,
 };
 pub use receiver::MctpI3cReceiver;
 pub use sender::{I3cSender, MAX_BUSY_RETRIES};
@@ -60,7 +60,7 @@ mod tests {
         let packet = [0xde, 0xad, 0xbe, 0xef];
         let mut out = [0u8; 64];
 
-        let n = encap.encode(&packet, true, &mut out).expect("encode");
+        let n = encap.encode(&packet, &mut out).expect("encode");
         assert_eq!(n, packet.len() + 1);
         assert_eq!(&out[..packet.len()], &packet, "packet starts at byte 0");
 
@@ -70,29 +70,12 @@ mod tests {
     }
 
     #[test]
-    fn encode_without_pec_is_just_the_packet() {
-        let encap = MctpI3cEncap::new(OWN);
-        let packet = [0x11, 0x22, 0x33];
-        let mut out = [0u8; 8];
-
-        let n = encap.encode(&packet, false, &mut out).expect("encode");
-        assert_eq!(n, packet.len());
-        assert_eq!(&out[..n], &packet);
-    }
-
-    #[test]
     fn decode_strips_a_controller_write_pec() {
         let packet = [0x01, 0x0a, 0x08, 0xc8, 0x01, 0x02];
         let frame = controller_write(OWN, &packet);
 
-        let decoded = MctpI3cEncap::new(OWN).decode(&frame, true).expect("decode");
+        let decoded = MctpI3cEncap::new(OWN).decode(&frame).expect("decode");
         assert_eq!(decoded, &packet);
-    }
-
-    #[test]
-    fn decode_without_pec_returns_the_frame() {
-        let frame = [0x01, 0x02, 0x03];
-        assert_eq!(decode_write(0, &frame, false).expect("decode"), &frame);
     }
 
     #[test]
@@ -100,13 +83,13 @@ mod tests {
         let mut frame = controller_write(OWN, &[0xaa, 0xbb, 0xcc]);
         let last = frame.len() - 1;
         frame[last] ^= 0xff;
-        assert!(MctpI3cEncap::new(OWN).decode(&frame, true).is_err());
+        assert!(MctpI3cEncap::new(OWN).decode(&frame).is_err());
     }
 
     #[test]
     fn decode_rejects_a_pec_for_a_different_address() {
         let frame = controller_write(OTHER, &[0xaa, 0xbb, 0xcc]);
-        assert!(MctpI3cEncap::new(OWN).decode(&frame, true).is_err());
+        assert!(MctpI3cEncap::new(OWN).decode(&frame).is_err());
     }
 
     #[test]
@@ -116,14 +99,13 @@ mod tests {
         let packet = [0xaa, 0xbb, 0xcc];
         let mut frame = packet.to_vec();
         frame.push(transfer_pec((OWN << 1) | 1, &packet));
-        assert!(MctpI3cEncap::new(OWN).decode(&frame, true).is_err());
+        assert!(MctpI3cEncap::new(OWN).decode(&frame).is_err());
     }
 
     #[test]
     fn decode_rejects_empty_and_pec_only_frames() {
-        assert!(MctpI3cEncap::new(OWN).decode(&[], false).is_err());
-        assert!(MctpI3cEncap::new(OWN).decode(&[], true).is_err());
-        assert!(MctpI3cEncap::new(OWN).decode(&[0x00], true).is_err());
+        assert!(MctpI3cEncap::new(OWN).decode(&[]).is_err());
+        assert!(MctpI3cEncap::new(OWN).decode(&[0x00]).is_err());
     }
 
     #[test]
@@ -131,10 +113,10 @@ mod tests {
         let encap = MctpI3cEncap::new(OWN);
         let packet = [0u8; 8];
         let mut out = [0u8; 4];
-        assert!(encap.encode(&packet, false, &mut out).is_err());
+        assert!(encap.encode(&packet, &mut out).is_err());
         // Room for the packet but not the PEC.
         let mut out = [0u8; 8];
-        assert!(encap.encode(&packet, true, &mut out).is_err());
+        assert!(encap.encode(&packet, &mut out).is_err());
     }
 
     #[test]
@@ -142,29 +124,29 @@ mod tests {
         let encap = MctpI3cEncap::new(OWN);
         let packet = [0u8; MCTP_I3C_IPC_FRAME + 1];
         let mut out = [0u8; 512];
-        assert!(encap.encode(&packet, false, &mut out).is_err());
-        // Fits without a PEC but not with one.
+        assert!(encap.encode(&packet, &mut out).is_err());
+        // The packet and its PEC must fit: one byte under the limit does, the
+        // limit itself leaves no room for the PEC.
+        let packet = [0u8; MCTP_I3C_IPC_FRAME - 1];
+        assert!(encap.encode(&packet, &mut out).is_ok());
         let packet = [0u8; MCTP_I3C_IPC_FRAME];
-        assert!(encap.encode(&packet, false, &mut out).is_ok());
-        assert!(encap.encode(&packet, true, &mut out).is_err());
+        assert!(encap.encode(&packet, &mut out).is_err());
     }
 
     #[test]
     fn encode_rejects_a_non_7bit_address() {
         let mut out = [0u8; 16];
         assert!(MctpI3cEncap::new(0x80)
-            .encode(&[1, 2, 3], true, &mut out)
+            .encode(&[1, 2, 3], &mut out)
             .is_err());
     }
 
     #[test]
     fn mtu_accounts_for_pec_and_the_mctp_header() {
         assert_eq!(
-            mctp_i3c_ipc_mtu(true),
+            MCTP_I3C_IPC_MAXMTU,
             i3c_api::MAX_PAYLOAD - MCTP_HEADER_LEN - 1
         );
-        assert_eq!(mctp_i3c_ipc_mtu(false), mctp_i3c_ipc_mtu(true) + 1);
-        assert_eq!(MCTP_I3C_IPC_MAXMTU, mctp_i3c_ipc_mtu(true));
         // A maximum-size packet plus its PEC exactly fills the i3c frame.
         assert_eq!(
             MCTP_I3C_IPC_MAXMTU + MCTP_HEADER_LEN + 1,
@@ -174,7 +156,7 @@ mod tests {
 
     #[test]
     fn receiver_reads_the_address_once_and_caches_it() {
-        let mut rx = MctpI3cReceiver::new(true);
+        let mut rx = MctpI3cReceiver::new();
         let reads = Cell::new(0u32);
         let read_addr = || {
             reads.set(reads.get() + 1);
@@ -191,7 +173,7 @@ mod tests {
 
     #[test]
     fn receiver_re_reads_the_address_after_a_pec_failure() {
-        let mut rx = MctpI3cReceiver::new(true);
+        let mut rx = MctpI3cReceiver::new();
         let current = Cell::new(OWN);
         let reads = Cell::new(0u32);
         let read_addr = || {
@@ -217,25 +199,15 @@ mod tests {
     }
 
     #[test]
-    fn receiver_without_pec_never_reads_the_address() {
-        let mut rx = MctpI3cReceiver::new(false);
-        let frame = [0x01, 0x02, 0x03];
-        let decoded = rx
-            .decode(&frame, || panic!("address must not be read without PEC"))
-            .expect("decode");
-        assert_eq!(decoded, &frame);
-    }
-
-    #[test]
     fn receiver_fails_before_an_address_is_assigned() {
-        let mut rx = MctpI3cReceiver::new(true);
+        let mut rx = MctpI3cReceiver::new();
         let frame = controller_write(OWN, &[0x01, 0x02, 0x03]);
         assert!(rx.decode(&frame, || None).is_err());
     }
 
     #[test]
     fn receiver_rejects_a_corrupt_pec_without_changing_the_cache() {
-        let mut rx = MctpI3cReceiver::new(true);
+        let mut rx = MctpI3cReceiver::new();
         let packet = [0x01, 0x02, 0x03];
         rx.decode(&controller_write(OWN, &packet), || Some(OWN))
             .expect("decode");

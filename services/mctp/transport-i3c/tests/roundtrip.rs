@@ -104,7 +104,6 @@ type Sender<'a> = I3cSender<GatedTransport<'a>, Box<dyn FnMut()>>;
 fn server_counting(
     sends: &RefCell<Vec<Vec<u8>>>,
     addr: Option<u8>,
-    pec: bool,
 ) -> (Server<Sender<'_>, 16>, Rc<Cell<u32>>) {
     let released = Rc::new(Cell::new(false));
     let waits = Rc::new(Cell::new(0));
@@ -120,26 +119,19 @@ fn server_counting(
             released.set(true);
         })
     };
-    let srv = Server::new(
-        Eid(OWN_EID),
-        0,
-        I3cSender::new(client, REMOTE_ADDR, pec, wait),
-    );
+    let srv = Server::new(Eid(OWN_EID), 0, I3cSender::new(client, REMOTE_ADDR, wait));
     (srv, waits)
 }
 
-fn server(sends: &RefCell<Vec<Vec<u8>>>, addr: Option<u8>, pec: bool) -> Server<Sender<'_>, 16> {
-    server_counting(sends, addr, pec).0
+fn server(sends: &RefCell<Vec<Vec<u8>>>, addr: Option<u8>) -> Server<Sender<'_>, 16> {
+    server_counting(sends, addr).0
 }
 
 /// Decode a frame the way the I3C *controller* sees it: the target's response to
 /// a private read. DSP0233 frames it as the MCTP packet followed by a PEC over
 /// the read address byte `(addr << 1) | 1` and the packet. Nothing precedes the
 /// packet.
-fn controller_read_decode(addr: u8, frame: &[u8], pec: bool) -> &[u8] {
-    if !pec {
-        return frame;
-    }
+fn controller_read_decode(addr: u8, frame: &[u8]) -> &[u8] {
     let (received, packet) = frame.split_last().expect("frame carries a PEC");
     assert_eq!(
         *received,
@@ -152,7 +144,7 @@ fn controller_read_decode(addr: u8, frame: &[u8], pec: bool) -> &[u8] {
 #[test]
 fn sender_receiver_roundtrip() {
     let sends = RefCell::new(Vec::new());
-    let mut srv = server(&sends, Some(OWN_ADDR), true);
+    let mut srv = server(&sends, Some(OWN_ADDR));
 
     let payload = b"hello mctp";
     let req = srv.req(REMOTE_EID).expect("req");
@@ -163,7 +155,7 @@ fn sender_receiver_roundtrip() {
     assert_eq!(frames.len(), 1, "short payload should be one frame");
 
     // The frame is exactly the MCTP packet plus a PEC.
-    let pkt = controller_read_decode(OWN_ADDR, &frames[0], true);
+    let pkt = controller_read_decode(OWN_ADDR, &frames[0]);
     assert_eq!(frames[0].len(), pkt.len() + 1);
 
     // MCTP transport header (4) then the message-type byte, then the payload.
@@ -173,27 +165,9 @@ fn sender_receiver_roundtrip() {
 }
 
 #[test]
-fn roundtrip_without_pec() {
-    let sends = RefCell::new(Vec::new());
-    let mut srv = server(&sends, Some(OWN_ADDR), false);
-
-    let payload = b"no pec";
-    let req = srv.req(REMOTE_EID).expect("req");
-    srv.send(Some(req), MSG_TYPE, None, None, false, payload)
-        .expect("send");
-
-    let frames = sends.borrow();
-    let pkt = controller_read_decode(OWN_ADDR, &frames[0], false);
-    assert_eq!(&pkt[5..], payload);
-
-    // Without a PEC the frame is the bare packet.
-    assert_eq!(frames[0].len(), pkt.len());
-}
-
-#[test]
 fn single_fragment_produces_one_send() {
     let sends = RefCell::new(Vec::new());
-    let mut srv = server(&sends, Some(OWN_ADDR), true);
+    let mut srv = server(&sends, Some(OWN_ADDR));
 
     let req = srv.req(REMOTE_EID).expect("req");
     srv.send(Some(req), 1, None, None, false, b"short")
@@ -207,7 +181,7 @@ fn single_fragment_produces_one_send() {
 #[test]
 fn large_payload_fragments_and_every_frame_fits() {
     let sends = RefCell::new(Vec::new());
-    let (mut srv, waits) = server_counting(&sends, Some(OWN_ADDR), true);
+    let (mut srv, waits) = server_counting(&sends, Some(OWN_ADDR));
 
     let payload = vec![0x5au8; MCTP_I3C_IPC_MAXMTU * 3];
     let req = srv.req(REMOTE_EID).expect("req");
@@ -235,7 +209,7 @@ fn large_payload_fragments_and_every_frame_fits() {
             I3C_MAX_PAYLOAD
         );
         // Each frame must carry a valid PEC on its own.
-        controller_read_decode(OWN_ADDR, frame, true);
+        controller_read_decode(OWN_ADDR, frame);
     }
 }
 
@@ -248,7 +222,7 @@ fn the_mtu_bounds_a_whole_packet_and_the_frame_fits_the_i3c_limit() {
     let first_fragment_payload = MCTP_I3C_IPC_MAXMTU - MCTP_HEADER_LEN - 1;
 
     let sends = RefCell::new(Vec::new());
-    let mut srv = server(&sends, Some(OWN_ADDR), true);
+    let mut srv = server(&sends, Some(OWN_ADDR));
     let req = srv.req(REMOTE_EID).expect("req");
     srv.send(
         Some(req),
@@ -268,7 +242,7 @@ fn the_mtu_bounds_a_whole_packet_and_the_frame_fits_the_i3c_limit() {
     }
 
     let sends = RefCell::new(Vec::new());
-    let mut srv = server(&sends, Some(OWN_ADDR), true);
+    let mut srv = server(&sends, Some(OWN_ADDR));
     let req = srv.req(REMOTE_EID).expect("req");
     srv.send(
         Some(req),
@@ -293,7 +267,7 @@ fn the_mtu_bounds_a_whole_packet_and_the_frame_fits_the_i3c_limit() {
 #[test]
 fn send_before_entdaa_fails_without_touching_the_bus() {
     let sends = RefCell::new(Vec::new());
-    let mut srv = server(&sends, None, true);
+    let mut srv = server(&sends, None);
 
     let req = srv.req(REMOTE_EID).expect("req");
     assert!(
@@ -313,21 +287,21 @@ fn send_before_entdaa_fails_without_touching_the_bus() {
 #[test]
 fn receiver_rejects_an_outbound_frame() {
     let sends = RefCell::new(Vec::new());
-    let mut srv = server(&sends, Some(OWN_ADDR), true);
+    let mut srv = server(&sends, Some(OWN_ADDR));
 
     let req = srv.req(REMOTE_EID).expect("req");
     srv.send(Some(req), MSG_TYPE, None, None, false, b"loopback")
         .expect("send");
 
     let frame = sends.borrow()[0].clone();
-    let mut rx = MctpI3cReceiver::new(true);
+    let mut rx = MctpI3cReceiver::new();
     assert!(rx.decode(&frame, || Some(OWN_ADDR)).is_err());
 }
 
 #[test]
 fn receiver_rejects_a_corrupt_pec() {
     let sends = RefCell::new(Vec::new());
-    let mut srv = server(&sends, Some(OWN_ADDR), true);
+    let mut srv = server(&sends, Some(OWN_ADDR));
 
     let req = srv.req(REMOTE_EID).expect("req");
     srv.send(Some(req), MSG_TYPE, None, None, false, b"tamper")
@@ -335,11 +309,11 @@ fn receiver_rejects_a_corrupt_pec() {
 
     // Re-frame the packet the way a controller writes it, then corrupt the PEC.
     let frame = sends.borrow()[0].clone();
-    let packet = controller_read_decode(OWN_ADDR, &frame, true).to_vec();
+    let packet = controller_read_decode(OWN_ADDR, &frame).to_vec();
     let mut write = packet.clone();
     write.push(transfer_pec(OWN_ADDR << 1, &packet));
 
-    let mut rx = MctpI3cReceiver::new(true);
+    let mut rx = MctpI3cReceiver::new();
     assert_eq!(
         rx.decode(&write, || Some(OWN_ADDR)).expect("good write"),
         &packet[..]
@@ -395,11 +369,8 @@ fn send_scripted(script: Vec<I3cStatus>, repeat: I3cStatus) -> (Result<(), ()>, 
         let waits = waits.clone();
         move || waits.set(waits.get() + 1)
     };
-    let mut srv: Server<_, 16> = Server::new(
-        Eid(OWN_EID),
-        0,
-        I3cSender::new(client, REMOTE_ADDR, true, wait),
-    );
+    let mut srv: Server<_, 16> =
+        Server::new(Eid(OWN_EID), 0, I3cSender::new(client, REMOTE_ADDR, wait));
     let req = srv.req(REMOTE_EID).expect("req");
     let result = srv
         .send(Some(req), MSG_TYPE, None, None, false, b"x")

@@ -25,7 +25,7 @@ use i3c_client::{ClientError, I3cClient};
 use mctp::Result;
 use mctp_lib::fragment::SendOutput;
 
-use crate::encap::{mctp_i3c_ipc_mtu, MctpI3cEncap, MCTP_I3C_IPC_FRAME, MCTP_I3C_IPC_PACKET};
+use crate::encap::{MctpI3cEncap, MCTP_I3C_IPC_FRAME, MCTP_I3C_IPC_MAXMTU, MCTP_I3C_IPC_PACKET};
 
 /// How many times one frame is retried while the i3c service reports `Busy`
 /// before the send fails. With a wait of a few milliseconds per attempt this
@@ -48,9 +48,6 @@ pub struct I3cSender<T, W> {
     /// EID → address neighbour table is tracked in
     /// <https://github.com/OpenPRoT/mctp-lib/issues/4>.
     remote_addr: u8,
-    /// Whether to append an SMBus PEC. DSP0233 requires one, so this is `true`
-    /// for any conforming controller.
-    pec: bool,
     wait: W,
 }
 
@@ -59,13 +56,11 @@ impl<T: Transport, W: FnMut()> I3cSender<T, W> {
     ///
     /// * `client` — the i3c target service client
     /// * `remote_addr` — the controller's 7-bit dynamic address
-    /// * `pec` — append and expect an SMBus PEC
     /// * `wait` — called between retries while the service is `Busy`
-    pub const fn new(client: I3cClient<T>, remote_addr: u8, pec: bool, wait: W) -> Self {
+    pub const fn new(client: I3cClient<T>, remote_addr: u8, wait: W) -> Self {
         Self {
             client,
             remote_addr,
-            pec,
             wait,
         }
     }
@@ -133,8 +128,6 @@ impl<T: Transport, W: FnMut()> mctp_lib::Sender for I3cSender<T, W> {
         payload: &[&[u8]],
     ) -> Result<mctp::Tag> {
         let encoder = MctpI3cEncap::new(self.own_addr()?);
-        let pec = self.pec;
-
         // Fragments are staged one at a time with back-pressure: the i3c server
         // answers a second `Send` with `Busy` until the controller has read the
         // first (signalled by TargetEvent::ResponseRead). `send_frame` waits
@@ -145,7 +138,7 @@ impl<T: Transport, W: FnMut()> mctp_lib::Sender for I3cSender<T, W> {
             match fragmenter.fragment_vectored(payload, &mut pkt) {
                 SendOutput::Packet(p) => {
                     let mut out = [0u8; MCTP_I3C_IPC_FRAME];
-                    let n = encoder.encode(p, pec, &mut out)?;
+                    let n = encoder.encode(p, &mut out)?;
                     let frame = out.get(..n).ok_or(mctp::Error::TxFailure)?;
                     self.send_frame(frame)?;
                 }
@@ -156,9 +149,6 @@ impl<T: Transport, W: FnMut()> mctp_lib::Sender for I3cSender<T, W> {
     }
 
     fn get_mtu(&self) -> usize {
-        // The framed size depends on whether a PEC is appended, so the MTU
-        // does too — a fixed value would under-fill every frame by one byte
-        // when PEC is off.
-        mctp_i3c_ipc_mtu(self.pec)
+        MCTP_I3C_IPC_MAXMTU
     }
 }

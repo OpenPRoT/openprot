@@ -19,40 +19,27 @@ use crate::encap::decode_write;
 /// fails -- the one case where the controller may have re-run ENTDAA and moved
 /// the address.
 pub struct MctpI3cReceiver {
-    pec: bool,
     own_addr: Option<u8>,
 }
 
 impl MctpI3cReceiver {
     /// Create a receiver.
-    ///
-    /// `pec` must match what the controller sends. DSP0233 requires a PEC, so
-    /// this is `true` for any conforming controller.
-    pub const fn new(pec: bool) -> Self {
-        Self {
-            pec,
-            own_addr: None,
-        }
+    pub const fn new() -> Self {
+        Self { own_addr: None }
     }
 
     /// Decode one inbound frame into a raw MCTP packet.
     ///
-    /// Verifies and strips the trailing PEC (when enabled) and returns the MCTP
-    /// packet.
+    /// Verifies and strips the trailing PEC and returns the MCTP packet.
     ///
     /// `read_addr` returns this target's current 7-bit dynamic address, or `None`
     /// if the controller has not assigned one. It is called only when the cache
-    /// is empty or the PEC check fails, never on the hot path, and never when PEC
-    /// is disabled.
+    /// is empty or the PEC check fails, never on the hot path.
     pub fn decode<'a>(
         &mut self,
         data: &'a [u8],
         mut read_addr: impl FnMut() -> Option<u8>,
     ) -> Result<&'a [u8], mctp::Error> {
-        if !self.pec {
-            return decode_write(0, data, false);
-        }
-
         let cached = match self.own_addr {
             Some(addr) => addr,
             None => {
@@ -62,7 +49,7 @@ impl MctpI3cReceiver {
             }
         };
 
-        match decode_write(cached, data, true) {
+        match decode_write(cached, data) {
             Ok(packet) => Ok(packet),
             Err(err) => {
                 // A bad PEC may just mean the address moved. Re-read once and
@@ -70,11 +57,17 @@ impl MctpI3cReceiver {
                 match read_addr() {
                     Some(addr) if addr != cached => {
                         self.own_addr = Some(addr);
-                        decode_write(addr, data, true)
+                        decode_write(addr, data)
                     }
                     _ => Err(err),
                 }
             }
         }
+    }
+}
+
+impl Default for MctpI3cReceiver {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -14,8 +14,9 @@ stay in the MCTP stack, which is transport-independent.
 
 ## Key Types
 
-- `I3cSender<T>` — implements `mctp_lib::Sender`; handles fragmentation,
-  framing and the PEC via `MctpI3cEncap`
+- `I3cSender<T, W>` — implements `mctp_lib::Sender`; handles fragmentation,
+  framing and the PEC via `MctpI3cEncap`, and retries a frame while the i3c
+  service is `Busy`, calling the wait hook `W` between attempts
 - `MctpI3cReceiver` — verifies and strips the PEC of inbound I3C frames and
   returns the MCTP packets; caches this target's dynamic address for the PEC
 - `MctpI3cEncap` — frames an outbound MCTP packet (packet, then PEC)
@@ -54,8 +55,12 @@ The two are deliberately shaped alike, but three things are forced by I3C:
   fail its PEC. `I3cSender` reads the address back per message rather than
   taking it at construction (sending before enumeration is `Unreachable`);
   `MctpI3cReceiver` caches it and re-reads it only when a PEC check fails.
-- **The PEC is mandatory.** DSP0233 requires it, so the `pec` flags default to
-  `true` everywhere. They exist so a test can turn it off.
+- **The PEC is mandatory.** DSP0233 requires it, so every frame carries one and
+  every inbound frame is checked; there is no switch to turn it off.
+- **One response is staged at a time.** The service answers a second `Send`
+  with `Busy` until the controller has read the first, so a multi-fragment
+  message waits between fragments (`MAX_BUSY_RETRIES` attempts, then
+  `TxFailure`).
 
 ## MTU
 
