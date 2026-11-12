@@ -23,18 +23,28 @@ const TEST_OFFSET: usize = 0x0010_0000;
 /// The largest sector the test saves, which sizes the backup. The backend
 /// accepts only 4 KiB sectors today.
 const MAX_SECTOR: usize = 4096;
-/// Starts 6 bytes before a 256-byte program page boundary, so the program
-/// crosses it. The service does not report the program page, so this assumes
-/// the usual SPI NOR 256-byte page.
-const PROGRAM_START: usize = 250;
+/// The program data, and the flash read back before and after it.
 const DATA_LEN: usize = 300;
-/// The bytes the read back covers: the data plus 50 bytes of flash after it.
-const READ_LEN: usize = 600;
+const MARGIN: usize = 50;
+const READ_LEN: usize = MARGIN + DATA_LEN + MARGIN;
+/// The data starts this many bytes before the middle of the sector.
+const BEFORE_MIDDLE: usize = 6;
+/// The smallest sector that holds the read back around the middle.
+const MIN_SECTOR: usize = 2 * (BEFORE_MIDDLE + DATA_LEN + MARGIN);
 /// The chunk the restore compares at a time.
 const CHUNK: usize = 256;
 
 fn addr(offset: usize) -> FlashAddress {
     FlashAddress::new(offset as u32)
+}
+
+/// Where the program starts. A program window is a power of two smaller than
+/// the sector, so it divides the middle of the sector, as long as the sector
+/// is aligned to it. The service does not report the window, but a program
+/// that starts just before the middle crosses a window boundary for any
+/// window.
+fn program_start(sector: PowerOf2Usize) -> usize {
+    TEST_OFFSET + sector.get() / 2 - BEFORE_MIDDLE
 }
 
 fn pattern(i: usize) -> u8 {
@@ -49,7 +59,7 @@ fn check_geometry(
 ) -> core::result::Result<(PowerOf2Usize, usize), &'static str> {
     let (total, sector, erase_sizes) = flash.geometry().map_err(|_| "geometry")?;
     let sector_len = sector.get();
-    if sector_len > MAX_SECTOR || sector_len < READ_LEN {
+    if !(MIN_SECTOR..=MAX_SECTOR).contains(&sector_len) || TEST_OFFSET % sector_len != 0 {
         return Err("unsupported sector size");
     }
     // The only erase size is the sector.
@@ -82,21 +92,21 @@ fn run(
         return Err("not erased");
     }
 
-    // 2. Unaligned program crossing a 256-byte program-page boundary.
+    // 2. Unaligned program crossing a program-page boundary.
     let mut data = [0u8; DATA_LEN];
     for (i, b) in data.iter_mut().enumerate() {
         *b = pattern(i);
     }
     flash
-        .program(addr(TEST_OFFSET + PROGRAM_START), &data)
+        .program(addr(program_start(sector)), &data)
         .map_err(|_| "program")?;
 
     // 3. Read back and verify, including the untouched prefix and suffix.
     let mut rb = [0u8; READ_LEN];
     flash
-        .read(addr(TEST_OFFSET), &mut rb)
+        .read(addr(program_start(sector) - MARGIN), &mut rb)
         .map_err(|_| "read back")?;
-    let (prefix, rest) = rb.split_at(PROGRAM_START);
+    let (prefix, rest) = rb.split_at(MARGIN);
     let (written, suffix) = rest.split_at(DATA_LEN);
     if prefix.iter().any(|&b| b != 0xff) {
         return Err("prefix clobbered");
