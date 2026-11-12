@@ -19,9 +19,10 @@ git_override(
 )
 ```
 
-See `MODULE.bazel`. Use the canonical `pigweed.googlesource.com` remote when
-reading upstream. The GitHub mirror is read-only and not the authoritative
-source.
+See `MODULE.bazel` (`bazel_dep`) and `pins.MODULE.bazel` (`git_override`,
+`include()`d by `MODULE.bazel`). Use the canonical `pigweed.googlesource.com`
+remote when reading upstream. The GitHub mirror is read-only and not the
+authoritative source.
 
 ## What OpenPRoT uses
 
