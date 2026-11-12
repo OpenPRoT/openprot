@@ -27,9 +27,15 @@
 // `dispatch`) is a wiring choice, never a code fork.
 pub use util_transport::{Transport, TransportError};
 
-/// Largest message payload carried in one request or response, matching the
-/// caliptra i3c-core private read/write limit.
-pub const MAX_PAYLOAD: usize = 250;
+/// Largest message payload carried in one request or response: the service's
+/// protocol ceiling.
+///
+/// A frame from the controller is at most 256 bytes on the hardware this was
+/// written against (a 64-DWORD FIFO), so the ceiling is 256; it sizes the wire
+/// frame, every inbound ring slot, and the client buffers. A target that can
+/// stage less reports a smaller limit through `I3cTarget::max_send_len`, which
+/// `dispatch` enforces, and an inbound frame must never exceed this ceiling.
+pub const MAX_PAYLOAD: usize = 256;
 
 /// Size of the one-byte opcode/status header on each frame.
 pub const HEADER: usize = 1;

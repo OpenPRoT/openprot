@@ -77,6 +77,10 @@ impl I3cTarget for FakeTarget {
     fn dynamic_address(&self) -> Option<DynamicAddress> {
         self.addr.and_then(|a| DynamicAddress::try_from(a).ok())
     }
+
+    fn max_send_len(&self) -> usize {
+        MAX_PAYLOAD
+    }
 }
 
 fn client(addr: Option<u8>) -> I3cClient<LoopbackTransport<FakeTarget>> {

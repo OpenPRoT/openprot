@@ -56,7 +56,11 @@ pub use util_service::Channel;
 ///
 /// Only setup and WaitGroup failures return; anything that goes wrong with one
 /// request or one interrupt is logged and the loop carries on.
-pub fn run<T: I3cTarget>(wg: u32, irq_signals: Signals, srv: &mut Server<T>) -> Result<()> {
+pub fn run<T: I3cTarget, const RING: usize>(
+    wg: u32,
+    irq_signals: Signals,
+    srv: &mut Server<T, RING>,
+) -> Result<()> {
     if srv.target.enable().is_err() {
         pw_log::error!("i3c target enable failed");
     }

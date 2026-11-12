@@ -13,32 +13,32 @@
 use i3c_api::{Transport, TransportError};
 use openprot_hal_blocking::i3c_hardware::I3cTarget;
 
-use crate::{dispatch, Server};
+use crate::{dispatch, Server, RX_RING};
 
 /// A [`Transport`] that calls [`dispatch`] directly against an owned [`Server`].
-pub struct LoopbackTransport<T> {
-    server: Server<T>,
+pub struct LoopbackTransport<T, const RING: usize = RX_RING> {
+    server: Server<T, RING>,
 }
 
-impl<T> LoopbackTransport<T> {
+impl<T, const RING: usize> LoopbackTransport<T, RING> {
     /// Wrap a server, taking ownership of it and its target.
-    pub const fn new(server: Server<T>) -> Self {
+    pub const fn new(server: Server<T, RING>) -> Self {
         Self { server }
     }
 
     /// Borrow the wrapped server — to latch an inbound frame, or to inspect
     /// what the mock target recorded.
-    pub fn server(&mut self) -> &mut Server<T> {
+    pub fn server(&mut self) -> &mut Server<T, RING> {
         &mut self.server
     }
 
     /// Unwrap back to the server.
-    pub fn into_server(self) -> Server<T> {
+    pub fn into_server(self) -> Server<T, RING> {
         self.server
     }
 }
 
-impl<T: I3cTarget> Transport for LoopbackTransport<T> {
+impl<T: I3cTarget, const RING: usize> Transport for LoopbackTransport<T, RING> {
     fn transact(&mut self, req: &[u8], resp: &mut [u8]) -> Result<usize, TransportError> {
         // `dispatch` always produces a response frame; a failure to encode one
         // surfaces as an `I3cStatus` inside it, never as a transport failure.
