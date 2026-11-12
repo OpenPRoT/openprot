@@ -34,16 +34,16 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DynamicAddress(u8);
 
-impl DynamicAddress {
-    /// The raw 7-bit value.
-    pub const fn as_u8(self) -> u8 {
-        self.0
-    }
-}
-
 /// Error returned when a value is not a valid 7-bit dynamic address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InvalidAddress;
+
+impl From<DynamicAddress> for u8 {
+    /// The raw 7-bit value.
+    fn from(addr: DynamicAddress) -> u8 {
+        addr.0
+    }
+}
 
 impl TryFrom<u8> for DynamicAddress {
     type Error = InvalidAddress;
@@ -232,9 +232,9 @@ mod tests {
 
     #[test]
     fn dynamic_address_accepts_valid_range() {
-        assert_eq!(DynamicAddress::try_from(0x01).map(|a| a.as_u8()), Ok(0x01));
-        assert_eq!(DynamicAddress::try_from(0x42).map(|a| a.as_u8()), Ok(0x42));
-        assert_eq!(DynamicAddress::try_from(0x7D).map(|a| a.as_u8()), Ok(0x7D));
+        assert_eq!(DynamicAddress::try_from(0x01).map(u8::from), Ok(0x01));
+        assert_eq!(DynamicAddress::try_from(0x42).map(u8::from), Ok(0x42));
+        assert_eq!(DynamicAddress::try_from(0x7D).map(u8::from), Ok(0x7D));
     }
 
     #[test]
