@@ -9,6 +9,7 @@ rust_library(
     name = "i3c_api",
     srcs = glob(["src/**/*.rs"]),
     edition = "2024",
+    deps = ["//util/transport"],
 )
 
 # Host wire-codec tests: builds on the host platform, no kernel/QEMU.
