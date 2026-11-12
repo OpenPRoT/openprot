@@ -3,12 +3,12 @@
 
 //! I3C target-mode server facade.
 //!
-//! A single, narrow trait — [`I3cTarget`] — that each controller implements
-//! **directly on top of its own register interface** (ast10x0, caliptra-mcu,
-//! …). It is a *deep module*: the FIFO mechanics, ISR bodies, dynamic-address
-//! assignment, and IBI sequencing all live inside each controller's impl; the
-//! surface exposed here is only what the pigweed server-runtime needs to hook
-//! interrupts and service IPC.
+//! A single, narrow trait — [`I3cTarget`](crate::i3c_hardware::I3cTarget) — that each
+//! controller implements **directly on top of its own register interface**
+//! (ast10x0, caliptra-mcu, …). It is a *deep module*: the FIFO mechanics, ISR
+//! bodies, dynamic-address assignment, and IBI sequencing all live inside each
+//! controller's impl; the surface exposed here is only what the pigweed
+//! server-runtime needs to hook interrupts and service IPC.
 //!
 //! This is deliberately **not** a portable capability HAL. There is one facade,
 //! not a family of segregated traits, and it is shaped by the server-runtime's
