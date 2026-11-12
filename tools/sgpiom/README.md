@@ -89,28 +89,32 @@ Bazel tool package:
 
 - `//tools/sgpiom`
 
+`target/ast10x0` is its own Bazel module, so the labels below are relative to
+`target/ast10x0`, not the repo root — run Bazel from that directory.
+
 Board-level SGPIOM pipeline targets:
 
-- `(from target/ast10x0) //board:sgpiom_validate`
-- `(from target/ast10x0) //board:sgpiom_merged`
-- `(from target/ast10x0) //board:sgpiom_generate`
-- `(from target/ast10x0) //board:sgpiom_check`
-- `(from target/ast10x0) //board:sgpiom_report`
+- `//board:sgpiom_validate`
+- `//board:sgpiom_merged`
+- `//board:sgpiom_generate`
+- `//board:sgpiom_check`
+- `//board:sgpiom_report`
 
 Board crate consumption target:
 
-- `(from target/ast10x0) //board:ast10x0_board`
+- `//board:ast10x0_board`
 
 Build all SGPIOM pipeline targets:
 
 ```bash
+cd target/ast10x0
 bazelisk build --config=k_ast1060_evb \
-  (from target/ast10x0) //board:ast10x0_board \
-  (from target/ast10x0) //board:sgpiom_validate \
-  (from target/ast10x0) //board:sgpiom_merged \
-  (from target/ast10x0) //board:sgpiom_generate \
-  (from target/ast10x0) //board:sgpiom_check \
-  (from target/ast10x0) //board:sgpiom_report
+  //board:ast10x0_board \
+  //board:sgpiom_validate \
+  //board:sgpiom_merged \
+  //board:sgpiom_generate \
+  //board:sgpiom_check \
+  //board:sgpiom_report
 ```
 
 ## Notes
