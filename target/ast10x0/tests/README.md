@@ -53,6 +53,8 @@ connection, but currently logs an unimplemented error.
 | Test | Description |
 |------|-------------|
 | [`mctp/server`](mctp/server/README.md) | MCTP echo stress test between two AST1060 EVBs over I2C |
+| [`flash`](flash/README.md) | QEMU and EVB: the flash HAL erases, programs and reads back CS1 in the kernel, without IPC |
+| [`flash_service`](flash_service/README.md) | QEMU and EVB: flash client erases, programs and reads back CS1 through the flash server over a kernel IPC channel |
 | `mctp/multi_protocol` | QEMU: one MCTP server as the messaging layer for two protocol tasks (SPDM/PLDM echo stand-ins), each on its own IPC channel |
 
 ## Test Results (2026-05-12)
