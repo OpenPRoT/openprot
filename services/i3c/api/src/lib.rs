@@ -43,6 +43,19 @@ pub const HEADER: usize = 1;
 /// Largest whole frame (header + payload) in either direction.
 pub const MAX_FRAME: usize = HEADER + MAX_PAYLOAD;
 
+/// How long the service keeps a staged response that the controller has not
+/// read, in milliseconds.
+///
+/// Only one response is staged at a time and a `Send` is `Busy` until it is
+/// read. A controller that never reads would block every later `Send`, so after
+/// this long the server discards the staged response and accepts `Send` again.
+/// The discarded message is lost. A client that retries on `Busy` has to keep
+/// retrying for longer than this to get through after such a stall.
+///
+/// It is much longer than a controller takes to read after an IBI, and shorter
+/// than the MCTP reassembly timeout (about 6 s).
+pub const STAGED_RESPONSE_TIMEOUT_MS: u32 = 1000;
+
 /// Operation a client asks the i3c server to perform.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]

@@ -134,6 +134,30 @@ impl<T, const RING: usize> Server<T, RING> {
 }
 
 impl<T: I3cTarget, const RING: usize> Server<T, RING> {
+    /// Give up on a staged response the controller has not read.
+    ///
+    /// Discards it in the target ([`I3cTarget::cancel_response`]) and releases
+    /// the outbound flag, so the next `Send` is accepted. Returns whether
+    /// anything was cancelled: `false`, with the target untouched, if no
+    /// response was staged. The runtime calls this once a response has waited
+    /// [`STAGED_RESPONSE_TIMEOUT_MS`](i3c_api::STAGED_RESPONSE_TIMEOUT_MS).
+    ///
+    /// The flag is released even if the target could not really discard the
+    /// response (see [`I3cTarget::cancel_response`]), and also if it reports an
+    /// error. Keeping it set would refuse every later `Send` for good, which is
+    /// the failure this exists to end.
+    ///
+    /// # Errors
+    ///
+    /// The target's error from `cancel_response`, after the flag is released.
+    pub fn cancel_staged(&mut self) -> Result<bool, T::Error> {
+        if !self.tx_pending {
+            return Ok(false);
+        }
+        self.tx_pending = false;
+        self.target.cancel_response().map(|()| true)
+    }
+
     /// Drain one inbound frame into the ring after a [`TargetEvent::InboundReady`].
     ///
     /// Reads one frame from the target and, if the ring has room, queues it at
@@ -274,6 +298,8 @@ mod tests {
 
     struct FakeTarget {
         addr: Option<u8>,
+        /// How many times `cancel_response` was called.
+        cancels: u32,
         /// Pending inbound frames, oldest first; `read_frame` pops the front.
         frames: [[u8; MAX_PAYLOAD]; FAKE_INBOUND],
         frame_lens: [usize; FAKE_INBOUND],
@@ -293,6 +319,7 @@ mod tests {
         fn default() -> Self {
             Self {
                 addr: None,
+                cancels: 0,
                 frames: [[0u8; MAX_PAYLOAD]; FAKE_INBOUND],
                 frame_lens: [0usize; FAKE_INBOUND],
                 frame_head: 0,
@@ -356,6 +383,11 @@ mod tests {
             self.sent_len = n;
             Ok(())
         }
+        fn cancel_response(&mut self) -> Result<(), Self::Error> {
+            self.cancels += 1;
+            self.sent_len = 0;
+            Ok(())
+        }
         fn dynamic_address(&self) -> Option<DynamicAddress> {
             self.addr.and_then(|a| DynamicAddress::try_from(a).ok())
         }
@@ -387,6 +419,33 @@ mod tests {
         let rn = dispatch(&mut s, &req[..n], &mut resp);
         assert_eq!(decode_response(&resp[..rn]), Some((I3cStatus::Ok, &[][..])));
         assert_eq!(&s.target.sent[..s.target.sent_len], b"pong");
+    }
+
+    #[test]
+    fn cancelling_a_staged_response_accepts_the_next_send() {
+        let mut s = srv();
+        assert_eq!(send(&mut s, b"first"), I3cStatus::Ok);
+        assert_eq!(send(&mut s, b"second"), I3cStatus::Busy, "first is unread");
+
+        assert_eq!(s.cancel_staged(), Ok(true));
+        assert_eq!(s.target.cancels, 1, "the target discarded it");
+        assert!(!s.tx_pending());
+
+        assert_eq!(send(&mut s, b"second"), I3cStatus::Ok);
+        assert_eq!(&s.target.sent[..s.target.sent_len], b"second");
+    }
+
+    #[test]
+    fn cancelling_with_nothing_staged_does_not_touch_the_target() {
+        let mut s = srv();
+        assert_eq!(s.cancel_staged(), Ok(false));
+        assert_eq!(s.target.cancels, 0);
+
+        // A response that was read is not staged any more either.
+        assert_eq!(send(&mut s, b"first"), I3cStatus::Ok);
+        s.notify_response_read();
+        assert_eq!(s.cancel_staged(), Ok(false));
+        assert_eq!(s.target.cancels, 0);
     }
 
     #[test]

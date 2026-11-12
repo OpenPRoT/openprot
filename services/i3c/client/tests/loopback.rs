@@ -74,6 +74,11 @@ impl I3cTarget for FakeTarget {
         Ok(())
     }
 
+    fn cancel_response(&mut self) -> Result<(), Self::Error> {
+        self.sent_len = 0;
+        Ok(())
+    }
+
     fn dynamic_address(&self) -> Option<DynamicAddress> {
         self.addr.and_then(|a| DynamicAddress::try_from(a).ok())
     }
