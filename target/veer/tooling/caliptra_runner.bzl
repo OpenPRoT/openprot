@@ -259,7 +259,8 @@ def caliptra_test(
         interfaces: List of interfaces to generate targets for; subset of `["emulator", "fpga"]`.
         deps: Additional Rust dependencies for the test binary.
         data: Additional runfile data dependencies.
-        env: Additional runtime environment variables.
+        env: Additional runtime environment variables. Every target also gets
+            CALIPTRA_INTERFACE set to "emulator" or "fpga".
         tags: Base tags applied to generated test targets.
         edition: Rust edition (defaults to "2024").
         **kwargs: Additional arguments forwarded to `rust_test`.
@@ -288,6 +289,9 @@ def caliptra_test(
 
         test_env = {
             "CALIPTRA_BOOT_ENV": "$(rlocationpath {})".format(image_label),
+            # Which interface this target runs on ("emulator" or "fpga"), for a
+            # test that must behave differently on one of them.
+            "CALIPTRA_INTERFACE": iface,
             "RUST_TEST_THREADS": "1",
         }
         test_env.update(env)
