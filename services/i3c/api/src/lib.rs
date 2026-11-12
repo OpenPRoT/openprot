@@ -38,7 +38,9 @@ pub const MAX_FRAME: usize = HEADER + MAX_PAYLOAD;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum I3cOp {
-    /// Transmit `payload` to the controller (staged TX + IBI).
+    /// Transmit `payload` to the controller (staged TX + IBI). At most one
+    /// response is staged at a time: a `Send` while one is still unread by the
+    /// controller is answered with [`I3cStatus::Busy`].
     Send = 0,
     /// Return the latched inbound frame, or `NoData` if none is pending.
     Recv = 1,
@@ -74,6 +76,9 @@ pub enum I3cStatus {
     Internal = 4,
     /// Opcode byte was unknown or the frame was empty.
     InvalidOp = 5,
+    /// `Send` while the previous staged response has not been read by the
+    /// controller yet. Nothing was staged; retry once the controller has read it.
+    Busy = 6,
 }
 
 impl I3cStatus {
@@ -86,6 +91,7 @@ impl I3cStatus {
             3 => Some(Self::TooLong),
             4 => Some(Self::Internal),
             5 => Some(Self::InvalidOp),
+            6 => Some(Self::Busy),
             _ => None,
         }
     }
@@ -150,10 +156,11 @@ mod tests {
             I3cStatus::TooLong,
             I3cStatus::Internal,
             I3cStatus::InvalidOp,
+            I3cStatus::Busy,
         ] {
             assert_eq!(I3cStatus::from_u8(st as u8), Some(st));
         }
-        assert_eq!(I3cStatus::from_u8(6), None);
+        assert_eq!(I3cStatus::from_u8(7), None);
     }
 
     #[test]

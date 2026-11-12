@@ -300,16 +300,20 @@ impl I3cTarget for CaliptraI3cTarget {
                 .write(InterruptStatus::TxDescComplete::SET);
         }
 
-        if status.is_set(InterruptStatus::RxDescStat) {
-            // An inbound write is queued; the runtime drains it with
-            // `read_frame`. If a response read is reported in the same
-            // interrupt it is not returned separately: a new inbound request
-            // proves the previous response was read, and the runtimes release
-            // outbound back-pressure on `InboundReady` for exactly that reason.
-            return Ok(TargetEvent::InboundReady);
-        }
+        // One interrupt can carry both a response read and an inbound write, and
+        // only one event is returned. `TxDescComplete` was just cleared above, so
+        // it cannot be reported on a later call, and the runtime releases the
+        // next outbound `Send` only on `ResponseRead`: report it first.
+        // `RxDescStat` is level-triggered and is not cleared here, so the inbound
+        // write is reported by the interrupt that fires again once the runtime
+        // acknowledges this one.
         if response_read {
             return Ok(TargetEvent::ResponseRead);
+        }
+        if status.is_set(InterruptStatus::RxDescStat) {
+            // An inbound write is queued; the runtime drains it with
+            // `read_frame`.
+            return Ok(TargetEvent::InboundReady);
         }
         Ok(TargetEvent::None)
     }

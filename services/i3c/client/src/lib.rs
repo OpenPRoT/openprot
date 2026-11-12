@@ -104,6 +104,10 @@ impl<T: Transport> I3cClient<T> {
     /// The target cannot initiate a transfer, so this stages a TX and raises an
     /// IBI; the controller collects it with a private read. A payload over
     /// [`MAX_PAYLOAD`] cannot be framed and returns [`ClientError::BufferTooSmall`].
+    ///
+    /// Only one response is staged at a time. While the previous one has not
+    /// been read by the controller, nothing is staged and this returns
+    /// `Err(ClientError::Server(I3cStatus::Busy))`: retry later.
     pub fn send(&mut self, payload: &[u8]) -> Result<(), ClientError> {
         let mut resp = [0u8; MAX_FRAME];
         match self.transact(I3cOp::Send, payload, &mut resp)? {
@@ -115,12 +119,12 @@ impl<T: Transport> I3cClient<T> {
     /// Take the latched inbound frame, copying it into `buf`.
     ///
     /// Returns `Ok(None)` when no frame is latched — the ordinary outcome of
-    /// polling an idle bus, not an error. A successful read consumes the latch.
+    /// polling an idle bus, not an error. A successful read consumes the frame.
     ///
-    /// `buf` must be at least [`MAX_PAYLOAD`] bytes. The server clears the
-    /// single-frame latch the instant it answers `Recv`, so a buffer too small
-    /// to hold the frame would lose it with no way to re-read; this is rejected
-    /// *before* the round-trip rather than after, leaving the latch intact.
+    /// `buf` must be at least [`MAX_PAYLOAD`] bytes. The server pops the frame
+    /// from its queue the instant it answers `Recv`, so a buffer too small to
+    /// hold it would lose it with no way to re-read; this is rejected *before*
+    /// the round-trip rather than after, leaving the frame queued.
     pub fn recv(&mut self, buf: &mut [u8]) -> Result<Option<usize>, ClientError> {
         if buf.len() < MAX_PAYLOAD {
             return Err(ClientError::BufferTooSmall);

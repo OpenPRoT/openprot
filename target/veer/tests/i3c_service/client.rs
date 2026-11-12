@@ -14,10 +14,12 @@
 //! 3. park in `object_wait(CHANNEL, USER)`, then `recv` -> the host's payload.
 //! 4. a second `recv` -> `None` again, proving `recv` consumed the latch.
 //! 5. `send` -> stages a TX the host collects with a private read.
-//! 6. a second `send`, before the host has read the first. If the controller has
-//!    not read the first reply yet the server holds this one (outbound
-//!    back-pressure) until the host's next write releases it; if it has, the
-//!    call returns at once.
+//! 6. a second `send`, before the host has read the first. Only one reply is
+//!    staged at a time, so while the first is unread the server answers `Busy`
+//!    and the client retries. The host reads the first reply, which makes the
+//!    server's `ResponseRead` release the next send. If the controller read the
+//!    first reply on its own (the emulator does) the second send is accepted at
+//!    once.
 //!
 //! Step 3 is also the wake this test exists to exercise: the server raises USER
 //! from inside its I3C interrupt handling, so the process made runnable by that
@@ -27,12 +29,12 @@
 #![no_std]
 
 use client_codegen::handle;
-use i3c_api::MAX_PAYLOAD;
-use i3c_client::I3cClient;
+use i3c_api::{I3cStatus, MAX_PAYLOAD};
+use i3c_client::{ClientError, I3cClient};
 use i3c_client_ipc::IpcTransport;
 use userspace::process_entry;
 use userspace::syscall::{self, Signals};
-use userspace::time::Instant;
+use userspace::time::{self, Clock, Duration, Instant, SystemClock};
 
 /// The host sends exactly this private-write payload.
 const EXPECTED: &[u8] = &[0x01, 0x02, 0x03, 0x04];
@@ -42,6 +44,10 @@ const REPLY: &[u8] = &[0xa5, 0x5a, 0xc3, 0x3c];
 
 /// The second staged payload.
 const REPLY2: &[u8] = &[0x5a, 0xa5, 0x3c, 0xc3];
+
+/// How long to wait between retries of a `Busy` send, and how many to make.
+const BUSY_RETRY: Duration = Duration::from_millis(10);
+const BUSY_RETRIES: u32 = 6000;
 
 macro_rules! fail {
     ($msg:literal) => {{
@@ -110,12 +116,32 @@ fn entry() {
     }
     pw_log::info!("i3c service: staged reply for private read");
 
-    // 6. Whether this is held depends on the controller: see the module docs.
+    // 6. The first reply is probably still unread, so this is refused with
+    //    `Busy` until the controller reads it: see the module docs.
     pw_log::info!("i3c service: sending second reply");
-    if i3c.send(REPLY2).is_err() {
-        fail!("second send failed");
+    let mut busy = false;
+    let mut tries = 0u32;
+    loop {
+        match i3c.send(REPLY2) {
+            Ok(()) => break,
+            Err(ClientError::Server(I3cStatus::Busy)) => {
+                if !busy {
+                    busy = true;
+                    pw_log::info!("i3c service: second send busy");
+                }
+                tries += 1;
+                if tries >= BUSY_RETRIES {
+                    fail!("second send still busy: the first reply was never read");
+                }
+                let deadline = SystemClock::now()
+                    .checked_add_duration(BUSY_RETRY)
+                    .unwrap_or(Instant::MAX);
+                let _ = time::sleep_until(deadline);
+            }
+            Err(_) => fail!("second send failed"),
+        }
     }
-    pw_log::info!("i3c service: second send released");
+    pw_log::info!("i3c service: second send accepted");
 
     let _ = syscall::debug_shutdown(Ok(()));
     loop {}
