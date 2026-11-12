@@ -26,7 +26,10 @@
 
 #![no_std]
 
-use caliptra_api::mailbox::{CmHashAlgorithm, CommandId, CMB_SHA_CONTEXT_SIZE, MAX_CMB_DATA_SIZE};
+use caliptra_api::mailbox::{
+    CmHashAlgorithm, CmShaInitResp, CommandId, MailboxRespHeader, CMB_SHA_CONTEXT_SIZE,
+    MAX_CMB_DATA_SIZE,
+};
 use openprot_hal_blocking::digest::{
     owned, scoped, Digest, Error, ErrorKind, ErrorType, Sha2_384, Sha2_512,
 };
@@ -40,7 +43,7 @@ const CM_SHA_FINAL: u32 = CommandId::CM_SHA_FINAL.0;
 const CONTEXT_WORDS: usize = CMB_SHA_CONTEXT_SIZE / 4;
 
 /// Size in words of the header of a response: the checksum and FIPS status.
-const HEADER_WORDS: usize = 2;
+const HEADER_WORDS: usize = size_of::<MailboxRespHeader>() / 4;
 
 /// Size in words of the largest digest, SHA-512.
 const MAX_DIGEST_WORDS: usize = 16;
@@ -50,6 +53,8 @@ const MAX_DIGEST_WORDS: usize = 16;
 /// the context from this buffer and receives the next response into it, so
 /// it needs no second buffer.
 type State = [u32; HEADER_WORDS + CONTEXT_WORDS];
+
+const _: () = assert!(size_of::<State>() == size_of::<CmShaInitResp>());
 
 /// Returns the context words that are in `state`.
 fn context(state: &State) -> impl Iterator<Item = u32> + Clone + '_ {

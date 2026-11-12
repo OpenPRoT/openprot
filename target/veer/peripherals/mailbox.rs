@@ -41,6 +41,10 @@ pub enum MailboxError {
     /// The mailbox lock is held, by another user of the mailbox or by a
     /// command that was sent and whose response was not received.
     Busy,
+    /// The lock register read 0 again after the read that takes the lock.
+    /// The mailbox registers are probably not readable, for example because
+    /// Caliptra does not accept the AXI user of the MCU.
+    Unreadable,
     /// Caliptra did not complete the command within the poll limit.
     Timeout,
     /// Caliptra reported that the command failed. The value is Caliptra's
@@ -100,6 +104,13 @@ impl Mailbox {
     /// `body` is the request without its first word. The first word is the
     /// checksum, which this function computes and sends.
     ///
+    /// The length of the request is always a multiple of 4 bytes. A request
+    /// whose last field has a variable length, such as `CmShaUpdateReq`,
+    /// gives that length in an earlier field, so Caliptra does not count the
+    /// zeros that pad the last word. A command that takes its data length
+    /// from the length of the request cannot be sent with this function
+    /// unless that length is a multiple of 4.
+    ///
     /// On success the mailbox stays locked until [`receive`](Self::receive)
     /// is called.
     pub fn send(
@@ -121,6 +132,10 @@ impl Mailbox {
         // Reading 0 from the lock register takes the lock.
         if self.mbox.mbox_lock.is_set(MboxLock::Lock) {
             return Err(MailboxError::Busy);
+        }
+        // The lock is now held, so the register reads 1.
+        if !self.mbox.mbox_lock.is_set(MboxLock::Lock) {
+            return Err(MailboxError::Unreadable);
         }
         self.mbox.mbox_cmd.set(cmd);
         self.mbox.mbox_dlen.set((words * 4) as u32);
