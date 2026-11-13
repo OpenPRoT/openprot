@@ -49,10 +49,10 @@ reset is performed.
 ## Build / run
 
 ```
-bazel build //target/ast10x0/tests/peripherals/sgpiom/sgpiom_irq:sgpiom_irq
+bazel build //tests/peripherals/sgpiom/sgpiom_irq:sgpiom_irq
 AST1060_EVB_PI_HOST=<pi-host> bazelisk test --config=k_ast1060_evb \
-  //target/ast10x0/tests/peripherals/sgpiom/sgpiom_irq:sgpiom_irq_test
-bazel test  //target/ast10x0/tests/peripherals/sgpiom/sgpiom_irq:no_panics_test
+  //tests/peripherals/sgpiom/sgpiom_irq:sgpiom_irq_test
+bazel test  //tests/peripherals/sgpiom/sgpiom_irq:no_panics_test
 ```
 
 ## Tunables (`sgpiom_irq_server_main.rs`)

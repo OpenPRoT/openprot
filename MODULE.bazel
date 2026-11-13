@@ -6,13 +6,8 @@ module(
     version = "0.0.1",
 )
 
-bazel_dep(name = "bazel_skylib", version = "1.8.2")
 bazel_dep(name = "pigweed")
-bazel_dep(name = "platforms", version = "1.0.0")
-bazel_dep(name = "rules_rust", version = "0.70.0")
 bazel_dep(name = "rules_rust_mdbook", version = "0.70.0")
-bazel_dep(name = "rules_platform", version = "0.1.0")
-bazel_dep(name = "rules_python", version = "1.8.3")
 bazel_dep(name = "ureg")
 bazel_dep(name = "caliptra_deps", version = "0.0.0")
 local_path_override(
@@ -20,32 +15,17 @@ local_path_override(
     path = "third_party/caliptra",
 )
 
-# Local patch to pw_kernel's VeeR PIC code (see third_party/pigweed/):
-# veer_pic_gateways.patch makes the PIC gateways level-triggered and active
-# high explicitly, as caliptra-mcu-sw's PIC driver does.
-# veer_pic_claim.patch drops the MEICPCT write from the external-interrupt
-# claim, which traps as an illegal instruction on the Caliptra FPGA's VeeR core;
-# caliptra-mcu-sw's VeeR kernel reads MEIHAP directly.
-git_override(
-    module_name = "pigweed",
-    commit = "e21bf7763475a456efdcc49dafb651ef952b3be1",
-    patch_strip = 1,
-    patches = [
-        "//third_party/pigweed:veer_pic_gateways.patch",
-        "//third_party/pigweed:veer_pic_claim.patch",
-    ],
-    remote = "https://pigweed.googlesource.com/pigweed/pigweed",
-)
+# Pins and shared bazel_dep versions, also used by target/ast10x0/MODULE.bazel,
+# which is its own root module when built standalone and so cannot see
+# overrides, extension tags, or version requests declared here.
+include("//:pins.MODULE.bazel")
 
-git_override(
-    module_name = "ureg",
-    commit = "4762ed5eef323a4267720a6b6da287c88738f901",
-    remote = "https://github.com/chipsalliance/caliptra-ureg",
-)
+# Used by //toolcain/aarch64_linux
+pw_cxx_toolchain = use_extension("@pigweed//pw_toolchain/cc:pw_cxx_toolchain.bzl", "pw_cxx_toolchain")
+use_repo(pw_cxx_toolchain, "llvm_toolchain")
 
-pw_rust = use_extension("@pigweed//pw_toolchain/rust:extensions.bzl", "pw_rust")
-pw_rust.toolchain(cipd_tag = "git_revisions:fe5c95d4ae33ec9d7831921e448e2daf8264ea42,7b074fc9362a4a6a5f172dd8936a22fb25eff96b")
-use_repo(pw_rust, "pw_rust_toolchains")
+pw_cipd = use_extension("@pigweed//pw_env_setup/bazel/cipd:defs.bzl", "cipd")
+use_repo(pw_cipd, linux_sysroot = "pigweed.linux_sysroot")
 
 register_toolchains(
     "@pigweed//pw_toolchain/host_clang:host_cc_toolchain_linux",
@@ -140,11 +120,6 @@ override_repo(
 )
 
 bazel_dep(name = "opentitan_devbundle")
-archive_override(
-    module_name = "opentitan_devbundle",
-    integrity = "sha256-LGKvET6WY+P4kwrZMSnkBrkqxS1f/ES/rmkPBQmfnwg=",
-    url = "https://github.com/lowRISC/opentitan/releases/download/devbundle-2026-06-02-1/devbundle.tar.xz",
-)
 
 # Caliptra source repositories — declared via a module_extension in
 # third_party/caliptra/extensions.bzl so the git_repository commits
@@ -193,13 +168,6 @@ http_file(
 nonhermetic_repo = use_repo_rule("//target/earlgrey/tooling/signing:nonhermetic.bzl", "nonhermetic_repo")
 
 nonhermetic_repo(name = "nonhermetic")
-
-# ── AST1060 Peripheral Access Crate (svd2rust-generated) ──
-ast1060_pac_ext = use_extension(
-    "//third_party:ast1060_pac.bzl",
-    "ast1060_pac_ext",
-)
-use_repo(ast1060_pac_ext, "ast1060_pac", "vcell")
 
 hsm = use_extension("//third_party/hsm:extensions.bzl", "hsm")
 use_repo(hsm, "cloud_kms_hsm")
