@@ -215,6 +215,13 @@
       "target": "//:format"
     },
     {
+      "name": "watch",
+      "description": "Run Bazel commands when files change",
+      "use_config": "bazel_default",
+      "target": "//:watch",
+      "type": "GENERAL"
+    },
+    {
       "name": "presubmit_checks",
       "description": "Run the presubmit checks",
       "use_config": "bazel_default",

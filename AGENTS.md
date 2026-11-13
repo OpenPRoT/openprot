@@ -29,4 +29,4 @@ Wildcard builds need the tag filters: `//...` includes hardware-only and verilat
 - `pw_kernel` IPC: `docs/src/design/pw-kernel-ipc.md`; example in `target/veer/ipc/`.
 - Orchestrator state machine and platform contracts: `docs/src/design/orchestrator/`.
 - Specification: `docs/src/specification/`.
-- Other `./pw` groups, direct Bazel usage and clippy: `docs/src/usage.md`. Docs build and serve: `docs/src/getting-started.md`.
+- Other `./pw` groups, direct Bazel usage and clippy: `docs/src/usage.md`. Docs build, watch and serve: `docs/src/getting-started.md`.
