@@ -18,6 +18,8 @@ You can run tasks using the Pigweed workflow launcher `pw` or `bazel`.
 - `./pw format` - Run the code formatters.
 - `bazel test //...` - Run all tests.
 - `bazel build //docs` - Build documentation.
+- `bazel run //:watch build //docs` - Rebuild documentation when files change. `./pw watch build //docs` does the same.
+- `bazel run //docs:serve` - Serve documentation on `http://localhost:8000`.
 
 ### Development
 

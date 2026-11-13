@@ -64,6 +64,36 @@ mdbook sources live under `docs/`. Build with:
 bazel build //docs
 ```
 
+The book is written to the `bazel-bin/docs/docs` directory; open `index.html`
+there to read it. To rebuild whenever a file changes:
+
+```bash
+bazel run //:watch build //docs
+```
+
+`//:watch` is Pigweed's `pw_watch`. It runs `bazelisk` with the arguments it is
+given, once at startup and again after each change to a source file in the
+repository. `./pw watch` is a shortcut for `bazel run //:watch`. Press Enter to
+rerun by hand and Ctrl-C to stop. The watcher also exits when stdin closes, so
+run it in an interactive terminal and use `bazel build //docs` for a single
+build in a script.
+
+To run several commands in order, put a comma between them as a separate
+argument:
+
+```bash
+bazel run //:watch build //docs , test //services/...
+```
+
+To preview the book in a browser, run:
+
+```bash
+bazel run //docs:serve
+```
+
+This serves the book on `http://localhost:8000`. When a source file changes it
+rebuilds the book and reloads the page, without the watcher.
+
 ## Tag reference
 
 Targets can carry tags that gate which environment they run in. The common

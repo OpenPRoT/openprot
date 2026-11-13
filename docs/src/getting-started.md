@@ -27,6 +27,7 @@ You can run common development tasks using the Pigweed workflow launcher `pw` or
 - `./pw ci` - Build and run the host test suite, excluding targets that require real hardware or a verilator sim.
 - `./pw default` - Build everything buildable on a dev host without running tests.
 - `./pw upstream_pigweed` - Full CI plus the Earlgrey verilator tests; used to validate upstream Pigweed bumps.
+- `./pw watch <bazel command>` - Rerun a Bazel command when files change, for example `./pw watch build //docs`. `bazel run //:watch <bazel command>` does the same.
 - `bazel build //docs` - Build the mdbook documentation.
 - `bazel run //docs:serve` - Serve the mdbook on `http://localhost:8000` for local review.
 

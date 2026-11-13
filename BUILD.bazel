@@ -14,3 +14,10 @@ alias(
     name = "format",
     actual = "@pigweed//pw_presubmit/py:format",
 )
+
+# Shortcut for pw_watch, which reruns Bazel commands when source files change.
+# Run `bazel run //:watch build //docs` to rebuild the docs on every edit.
+alias(
+    name = "watch",
+    actual = "@pigweed//pw_watch/py:bazel",
+)
