@@ -39,6 +39,9 @@ pub const SOC_IFC_BASE: usize = MCU_MEMORY_MAP.soc_offset as usize;
 /// Base of the I3C core 0 register block.
 pub const I3C_BASE: usize = MCU_MEMORY_MAP.i3c_offset as usize;
 
+/// Base of the region in DCCM where the MCU ROM leaves its handoff table.
+pub const HANDOFF_BASE: usize = MCU_MEMORY_MAP.handoff_offset as usize;
+
 const PIC_BASE: usize = MCU_MEMORY_MAP.pic_offset as usize;
 const DCCM_BASE: usize = MCU_MEMORY_MAP.dccm_offset as usize;
 
@@ -79,8 +82,8 @@ impl VeerPicConfigInterface for VeerPicConfig {
     const PIC_BASE_ADDRESS: usize = PIC_BASE;
     const MAX_IRQS: u32 = 256;
     // The VeeR core requires the external-interrupt redirect table to live
-    // in DCCM; this image does not otherwise use DCCM. 256 IRQs * 4 bytes
-    // fits well within the 16KiB DCCM.
+    // in DCCM. 256 IRQs * 4 bytes is the first 1 KiB of the 16 KiB DCCM. The
+    // ROM's handoff table is in the last 1 KiB.
     const MEIVT_BASE_ADDRESS: usize = DCCM_BASE;
 }
 
