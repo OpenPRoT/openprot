@@ -1,0 +1,22 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// System config of the OpenPRoT runtime image for the Caliptra MCU. The
+// services of the image go under `apps`. The image has no services.
+//
+// Addresses are rendered per platform (emulator or FPGA) from upstream
+// caliptra-mcu-sw's memory maps by `veer_system_config`.
+{
+  arch: {
+    type: "riscv",
+  },
+  kernel: {
+    flash_start_address: @KERNEL_FLASH_START@,
+    flash_size_bytes: 65536,
+    ram_start_address: @KERNEL_RAM_START@,
+    ram_size_bytes: 32768,
+    interrupt_table: {
+      table: {}
+    },
+  },
+}
