@@ -57,6 +57,24 @@ pub use util_service::Channel;
 /// [`STAGED_RESPONSE_TIMEOUT_MS`].
 const STAGED_TIMEOUT: Duration = Duration::from_millis(STAGED_RESPONSE_TIMEOUT_MS as u64);
 
+/// Discard the staged response if its time is up. `deadline` is when the staged
+/// response runs out of time to be read, and is cleared when it does.
+fn discard_if_expired<T: I3cTarget, const RING: usize>(
+    srv: &mut Server<T, RING>,
+    deadline: &mut Option<Instant>,
+) {
+    let Some(due) = *deadline else { return };
+    if SystemClock::now() < due {
+        return;
+    }
+    *deadline = None;
+    match srv.cancel_staged() {
+        Ok(true) => pw_log::error!("i3c staged response not read in time; discarded"),
+        Ok(false) => {}
+        Err(_) => pw_log::error!("i3c cancel_response failed"),
+    }
+}
+
 /// Run the I3C server loop until a fatal error.
 ///
 /// Serves the one IPC channel `srv.channel` and wakes on `irq_signals` of
@@ -91,17 +109,17 @@ pub fn run<T: I3cTarget, const RING: usize>(
     let mut staged_deadline: Option<Instant> = None;
 
     loop {
+        // Check the clock here and not only through `next`'s deadline: `next`
+        // returns `Deadline` only when nothing else is ready, and a client
+        // retrying `Busy` faster than the scheduler tick always has a request
+        // ready, so the deadline would never be seen and the staged response
+        // never discarded.
+        discard_if_expired(srv, &mut staged_deadline);
+
         match service.next(staged_deadline.unwrap_or(Instant::MAX), &mut request_buf)? {
             // The staged response was not read in time: give up on it so the
             // next `Send` is not refused for good.
-            Event::Deadline => {
-                staged_deadline = None;
-                match srv.cancel_staged() {
-                    Ok(true) => pw_log::error!("i3c staged response not read in time; discarded"),
-                    Ok(false) => {}
-                    Err(_) => pw_log::error!("i3c cancel_response failed"),
-                }
-            }
+            Event::Deadline => discard_if_expired(srv, &mut staged_deadline),
 
             // ---- I3C hardware IRQ: decode, latch an inbound frame, wake client ----
             Event::Source(_) => {
