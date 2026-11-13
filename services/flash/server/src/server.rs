@@ -3,11 +3,11 @@
 
 //! Flash request handling, independent of the kernel and of IPC.
 //!
-//! [`Server::handle_frame`] takes one request frame and leaves one response
-//! frame in the same buffer. The kernel loop that moves those frames over a
-//! channel is `flash_server_runtime`.
+//! [`Server::handle_frame`] takes one request frame and leaves one response frame in the same
+//! buffer, or reports [`Outcome::Pending`] for an erase not yet done; [`Server::poll_pending_erase`]
+//! finishes that one once [`Flash::poll_erase`] stops reporting busy.
 
-use hal_flash::{Flash, FlashAddress};
+use hal_flash::{Flash, FlashAddress, OpPoll};
 use openprot_flash_api::*;
 use util_error::{self as error, ErrorCode};
 use util_types::{Opcode, PowerOf2Usize};
@@ -20,6 +20,15 @@ const STATUS_LEN: usize = core::mem::size_of::<u32>();
 // precedes it in the response has to fit exactly where the opcode was.
 const _: () = assert!(OPCODE_LEN == STATUS_LEN);
 
+/// Outcome of [`Server::handle_frame`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    /// The response frame is ready at the front of the caller's buffer, `usize` bytes long.
+    Done(usize),
+    /// An erase was started and is not done yet; poll via [`Server::poll_pending_erase`].
+    Pending,
+}
+
 /// Serves flash requests against a [`Flash`].
 ///
 /// A request is untrusted. Each handler establishes the preconditions the
@@ -29,12 +38,18 @@ const _: () = assert!(OPCODE_LEN == STATUS_LEN);
 /// not check that the range stays on the device.
 pub struct Server<TFlash: Flash> {
     flash: TFlash,
+    /// Set when a deferred erase is abandoned without confirming it stopped; rejects every
+    /// request until [`recover_abandoned_erase`](Self::recover_abandoned_erase) clears it.
+    erase_unsafe: bool,
 }
 
 impl<TFlash: Flash<Error = ErrorCode>> Server<TFlash> {
     /// Creates a new `Server` wrapping the given flash implementation.
     pub fn new(flash: TFlash) -> Self {
-        Self { flash }
+        Self {
+            flash,
+            erase_unsafe: false,
+        }
     }
 
     /// Handles the `IPC_OP_FLASH_GET_INFO` request.
@@ -61,10 +76,9 @@ impl<TFlash: Flash<Error = ErrorCode>> Server<TFlash> {
 
     /// Handles the `IPC_OP_FLASH_ERASE` request.
     ///
-    /// Parses the `EraseOp` from the input data and erases the specified block.
-    /// The size must be a supported erase size, the address must be aligned to
-    /// it, and the block must lie inside the device.
-    fn handle_erase(&mut self, data: &mut [u8], reqsz: usize) -> Result<usize, ErrorCode> {
+    /// Validates size/alignment/bounds, then starts erasing. Returns `Pending` if the erase
+    /// is not done by the first poll; the caller defers via [`Server::poll_pending_erase`].
+    fn handle_erase(&mut self, data: &mut [u8], reqsz: usize) -> Result<Outcome, ErrorCode> {
         let req_data = data.get(..reqsz).ok_or(error::IPC_ERROR_BAD_REQ_LEN)?;
         let op = EraseOp::read_from_bytes(req_data).map_err(|_| error::IPC_ERROR_BAD_REQ_LEN)?;
         let Some(size) = PowerOf2Usize::new(op.size as usize) else {
@@ -74,8 +88,11 @@ impl<TFlash: Flash<Error = ErrorCode>> Server<TFlash> {
         erase_size_supported(size, bitmap)?;
         erase_address_aligned(op.address, size)?;
         region_in_bounds(op.address, size.get(), total)?;
-        self.flash.erase(op.address, size)?;
-        Ok(0)
+        self.flash.start_erase(op.address, size)?;
+        match self.flash.poll_erase()? {
+            OpPoll::Done => Ok(Outcome::Done(0)),
+            OpPoll::Busy => Ok(Outcome::Pending),
+        }
     }
 
     /// Handles the `IPC_OP_FLASH_PROGRAM` request.
@@ -110,26 +127,29 @@ impl<TFlash: Flash<Error = ErrorCode>> Server<TFlash> {
         Ok(length)
     }
 
-    /// Handles one request: `data` holds `reqsz` request bytes and receives
-    /// the reply at its front. Returns the reply length.
+    /// Handles one request: `data` holds `reqsz` request bytes and receives the reply at its
+    /// front. While `erase_unsafe` is set, every opcode but `IPC_OP_FLASH_GET_INFO` is rejected.
     fn handle_op(
         &mut self,
         opcode: Opcode,
         data: &mut [u8],
         reqsz: usize,
-    ) -> Result<usize, ErrorCode> {
+    ) -> Result<Outcome, ErrorCode> {
+        if self.erase_unsafe && opcode != IPC_OP_FLASH_GET_INFO {
+            return Err(error::FLASH_GENERIC_BUSY);
+        }
         match opcode {
-            IPC_OP_FLASH_GET_INFO => self.handle_geometry(data, reqsz),
+            IPC_OP_FLASH_GET_INFO => self.handle_geometry(data, reqsz).map(Outcome::Done),
             IPC_OP_FLASH_ERASE => self.handle_erase(data, reqsz),
-            IPC_OP_FLASH_PROGRAM => self.handle_program(data, reqsz),
-            IPC_OP_FLASH_READ => self.handle_read(data, reqsz),
+            IPC_OP_FLASH_PROGRAM => self.handle_program(data, reqsz).map(Outcome::Done),
+            IPC_OP_FLASH_READ => self.handle_read(data, reqsz).map(Outcome::Done),
             _ => Err(error::IPC_ERROR_UNKNOWN_OP),
         }
     }
 
     /// Decodes the request in `buf[..len]`, an opcode then its body, and runs
     /// it. The reply is left in `buf` right after the opcode.
-    fn handle_request(&mut self, buf: &mut [u8], len: usize) -> Result<usize, ErrorCode> {
+    fn handle_request(&mut self, buf: &mut [u8], len: usize) -> Result<Outcome, ErrorCode> {
         let body_len = len
             .checked_sub(OPCODE_LEN)
             .ok_or(error::IPC_ERROR_BAD_REQ_LEN)?;
@@ -140,23 +160,63 @@ impl<TFlash: Flash<Error = ErrorCode>> Server<TFlash> {
         self.handle_op(opcode, body, body_len)
     }
 
-    /// Serves the request frame in `buf[..len]` and leaves the response frame
-    /// at the start of `buf`: a four-byte status, zero for success or an
-    /// `ErrorCode`, then the reply. Returns the frame length.
-    ///
-    /// Only the first `len` bytes of `buf` are the request; the rest is stale.
-    /// The frame is built in place, so `buf` has to hold the larger of the
-    /// request and the response. Returns 0 if `buf` cannot hold a status.
-    pub fn handle_frame(&mut self, buf: &mut [u8], len: usize) -> usize {
-        let (status, reply_len) = match self.handle_request(buf, len) {
-            Ok(reply_len) => (0, reply_len),
-            Err(e) => (e.0.get(), 0),
-        };
+    /// A four-byte status (zero for success, else an `ErrorCode`) then
+    /// `reply_len` bytes already sitting right after it in `buf`. Returns
+    /// the frame length, or 0 if `buf` cannot hold a status.
+    fn write_status_frame(buf: &mut [u8], status: u32, reply_len: usize) -> usize {
         let Some(head) = buf.get_mut(..STATUS_LEN) else {
             return 0;
         };
         head.copy_from_slice(status.as_bytes());
         STATUS_LEN.saturating_add(reply_len)
+    }
+
+    /// Serves the request frame in `buf[..len]`. `Outcome::Done` leaves the response frame at
+    /// the start of `buf`; `Outcome::Pending` leaves `buf` untouched and the caller defers via
+    /// [`poll_pending_erase`](Self::poll_pending_erase). `buf` must hold the larger of the
+    /// request and response.
+    pub fn handle_frame(&mut self, buf: &mut [u8], len: usize) -> Outcome {
+        match self.handle_request(buf, len) {
+            Ok(Outcome::Pending) => Outcome::Pending,
+            Ok(Outcome::Done(reply_len)) => {
+                Outcome::Done(Self::write_status_frame(buf, 0, reply_len))
+            }
+            Err(e) => Outcome::Done(Self::write_status_frame(buf, e.0.get(), 0)),
+        }
+    }
+
+    /// Polls an erase that `handle_frame` reported `Pending` for. `None` while still busy;
+    /// once done, builds the response frame into `buf` and returns its length.
+    pub fn poll_pending_erase(&mut self, buf: &mut [u8]) -> Option<usize> {
+        let status = match self.flash.poll_erase() {
+            Ok(OpPoll::Busy) => return None,
+            Ok(OpPoll::Done) => 0,
+            Err(e) => e.0.get(),
+        };
+        Some(Self::write_status_frame(buf, status, 0))
+    }
+
+    /// Gives up on a previously-deferred erase and builds an error response frame for it.
+    /// Marks the channel unsafe until [`recover_abandoned_erase`](Self::recover_abandoned_erase)
+    /// observes the driver idle.
+    pub fn abandon_pending_erase(&mut self, buf: &mut [u8], status: ErrorCode) -> usize {
+        self.erase_unsafe = true;
+        Self::write_status_frame(buf, status.0.get(), 0)
+    }
+
+    /// Background check for a channel `abandon_pending_erase` marked unsafe. Returns `true`
+    /// once the driver reports idle, clearing the unsafe mark.
+    pub fn recover_abandoned_erase(&mut self) -> bool {
+        if !self.erase_unsafe {
+            return true;
+        }
+        match self.flash.poll_erase() {
+            Ok(OpPoll::Busy) => false,
+            Ok(OpPoll::Done) | Err(_) => {
+                self.erase_unsafe = false;
+                true
+            }
+        }
     }
 }
 
