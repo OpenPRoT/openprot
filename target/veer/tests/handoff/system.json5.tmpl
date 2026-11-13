@@ -1,0 +1,46 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// One service that reads the ROM's handoff table. Its mapping covers the ROM
+// table, which is the first 64 bytes of the handoff region.
+{
+  arch: {
+    type: "riscv",
+  },
+  kernel: {
+    flash_start_address: @KERNEL_FLASH_START@,
+    flash_size_bytes: 65536,
+    ram_start_address: @KERNEL_RAM_START@,
+    ram_size_bytes: 32768,
+    interrupt_table: {
+      table: {}
+    },
+  },
+  apps: [
+    {
+      name: "test_handoff",
+      flash_size_bytes: 16384,
+      processes: [
+        {
+          name: "test_handoff",
+          ram_size_bytes: 4096,
+          objects: [
+            {
+              type: "thread",
+              name: "main_thread",
+              kernel_stack_size_bytes: 2048,
+            },
+          ],
+          memory_mappings: [
+            {
+              name: "handoff",
+              type: "device",
+              start_address: @HANDOFF_BASE@,
+              size_bytes: 64,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}
