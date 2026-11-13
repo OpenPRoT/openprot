@@ -272,7 +272,8 @@ fn serve_ua_fw_request<S: Sender, const N: usize>(
 // Test
 // ---------------------------------------------------------------------------
 
-fn full_flow_via_requester(poll_every_steps: Option<u32>) {
+#[test]
+fn firmware_update_full_flow_via_requester() {
     let component_image: [u8; IMAGE_SIZE as usize] =
         core::array::from_fn(|offset| (offset as u8).wrapping_mul(31).wrapping_add(7));
     let fd_ops = MockFdOps {
@@ -327,16 +328,12 @@ fn full_flow_via_requester(poll_every_steps: Option<u32>) {
     });
     let responder_transport = MctpPldmTransport::new(responder_client);
 
-    let mut fd_device = FirmwareDevice::init(
+    let fd = RefCell::new(FirmwareDevice::init(
         &fd_ops,
         &pldm_interface::config::PLDM_PROTOCOL_CAPABILITIES,
         responder_transport,
         requester_transport,
-    );
-    if let Some(steps) = poll_every_steps {
-        fd_device.set_responder_poll_interval(steps);
-    }
-    let fd = RefCell::new(fd_device);
+    ));
     let fd_buf = RefCell::new([0u8; 1024]);
 
     // Orchestrator-facing latch: `run_terminus` marks it on each accepted
@@ -540,18 +537,6 @@ fn full_flow_via_requester(poll_every_steps: Option<u32>) {
         fd_ops.verified.get(),
         fd_ops.applied.get()
     );
-}
-
-#[test]
-fn firmware_update_full_flow_via_requester() {
-    full_flow_via_requester(None);
-}
-
-/// The same flow with the responder polled only every 16 steps while the FD is
-/// downloading: the update still completes.
-#[test]
-fn firmware_update_full_flow_with_rate_limited_responder_poll() {
-    full_flow_via_requester(Some(16));
 }
 
 /// `run_until` hands control back to an external stop condition instead of

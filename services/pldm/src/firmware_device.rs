@@ -127,9 +127,6 @@ pub struct FirmwareDevice<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> {
     cmd_interface: CmdInterface<'a, O>,
     responder_transport: MctpPldmTransport<Cr>,
     requester_transport: MctpPldmTransport<Cq>,
-    /// Poll the responder once every this many steps while an initiator
-    /// request is active. 1 polls every step.
-    responder_poll_every_steps: u32,
 }
 
 impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq> {
@@ -156,22 +153,7 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
             ),
             responder_transport,
             requester_transport,
-            responder_poll_every_steps: 1,
         }
-    }
-
-    /// Poll for an inbound Update Agent command only once every `steps` steps
-    /// while an FD-initiated request is active (default 1: every step).
-    ///
-    /// Each poll is an IPC round trip to the MCTP server plus a wait for the
-    /// poll timeout, which costs real time on a slow core when the transfer
-    /// sends one request per chunk. The trade-off is that an Update Agent
-    /// command such as `CancelUpdate` that arrives between polls is answered
-    /// up to `steps` requests late. Outside an active transfer the responder
-    /// still blocks on every step, so this only affects the transfer. A value
-    /// of 0 is treated as 1.
-    pub fn set_responder_poll_interval(&mut self, steps: u32) {
-        self.responder_poll_every_steps = steps.max(1);
     }
 
     /// The step body, taking each field it needs directly rather than
@@ -197,24 +179,47 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
         remote_eid: u8,
         timeout_millis: u32,
         requester_timeout_millis: u32,
-        poll_responder: bool,
         sink: &mut impl FdEventSink,
     ) -> Result<(), PldmServiceError> {
         // Phase 1: while in initiator mode, issue at most ONE outbound
-        // request this step. We deliberately fall through to the responder
-        // poll below (no early return) so an Update Agent command such as
-        // CancelUpdate is serviced between every RequestFirmwareData.
+        // request this step and wait for its response. The wait is
+        // event-driven: it wakes for whichever comes first, the response or
+        // an Update Agent command (e.g. CancelUpdate), and a command is
+        // answered at once and the wait resumed. So the responder path stays
+        // live during the transfer without polling it between requests.
+        // `handle_responder_msg` receives the *whole* buffer because
+        // responses may be larger than the request they answer (e.g. GetTid:
+        // 4-byte request, 5-byte response). Commands from any EID other than
+        // `remote_eid` are dropped without a response.
         let initiator_active = cmd_interface.fd_ctx.should_start_initiator_mode();
         if initiator_active
             && let Some(pldm_len) = cmd_interface
                 .generate_initiator_request(fw_buf)
                 .map_err(PldmServiceError::MsgHandler)?
         {
-            let resp_len = requester_transport.send_request(
+            let resp_len = requester_transport.send_request_serving(
                 remote_eid,
                 pldm_len,
                 fw_buf,
                 requester_timeout_millis,
+                listener,
+                buf,
+                |framed_buf, _req_total_len, source_eid| {
+                    if source_eid != remote_eid {
+                        return Ok(0);
+                    }
+                    // `RequestUpdate` is the only command that takes the FD out
+                    // of `Idle`, so the false→true edge of `is_update_mode()`
+                    // identifies exactly one accepted `RequestUpdate`.
+                    let was_update_mode = cmd_interface.fd_ctx.is_update_mode();
+                    let resp = cmd_interface
+                        .handle_responder_msg(framed_buf)
+                        .map_err(PldmServiceError::MsgHandler);
+                    if !was_update_mode && cmd_interface.fd_ctx.is_update_mode() {
+                        sink.notify(FdEvent::UpdateRequested);
+                    }
+                    resp
+                },
             )?;
             let resp_total_len = resp_len
                 .checked_add(1)
@@ -225,20 +230,14 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
             cmd_interface
                 .process_initiator_response(resp)
                 .map_err(PldmServiceError::MsgHandler)?;
-        }
-
-        // While a transfer is running the poll can be rate-limited (see
-        // `set_responder_poll_interval`); when idle it always blocks as before.
-        if initiator_active && !poll_responder {
             return Ok(());
         }
 
-        // Phase 2: poll for an inbound command so the responder path stays
-        // live during a transfer and the Update Agent can cancel at any
-        // time. `handle_responder_msg` receives the *whole* buffer because
-        // responses may be larger than the request they answer (e.g. GetTid:
-        // 4-byte request, 5-byte response). Commands from any EID other than
-        // `remote_eid` are dropped without a response.
+        // Phase 2: no request was sent this step, so wait for an inbound
+        // command: blocking up to `timeout_millis` when idle, or for a short
+        // poll when the FD is in initiator mode but had nothing to send this
+        // step (it will try again on the next one). Same command handling as
+        // in Phase 1.
         let poll_timeout = if initiator_active {
             RESPONDER_POLL_TIMEOUT_MILLIS
         } else {
@@ -354,13 +353,7 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
         // Scratch buffer for FD-initiated (outbound) requests, reused across
         // steps rather than re-zeroed on every one.
         let mut fw_buf = [0u8; FD_MAX_MSG];
-        let mut steps_since_poll = 0u32;
         while should_continue() {
-            steps_since_poll += 1;
-            let poll_responder = steps_since_poll >= self.responder_poll_every_steps;
-            if poll_responder {
-                steps_since_poll = 0;
-            }
             // Field-by-field, not `&mut self` — see `run_once_inner`'s doc.
             if let Err(e) = Self::run_once_inner(
                 &mut self.cmd_interface,
@@ -372,7 +365,6 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
                 remote_eid,
                 timeout_millis,
                 requester_timeout_millis,
-                poll_responder,
                 sink,
             ) {
                 return RunTerminusResult::StoppedByError(e);

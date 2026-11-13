@@ -20,7 +20,7 @@
 //! Callers only deal with PLDM bytes; the framing byte is inserted or stripped
 //! transparently.
 
-use openprot_mctp_api::stack::StackListener;
+use openprot_mctp_api::stack::{ReqEvent, StackListener};
 use openprot_mctp_api::{MctpClient, MctpListener, MctpReqChannel, MctpRespChannel, Stack};
 use pldm_common::util::mctp_transport::MCTP_PLDM_MSG_TYPE;
 
@@ -232,13 +232,35 @@ impl<C: MctpClient> MctpPldmTransport<C> {
         let recv_buf = buf
             .get_mut(1..)
             .ok_or(PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-        let (meta, mut resp_channel) = listener
+        let (meta, resp_channel) = listener
             .recv(recv_buf)
             .map(|(m, _, r)| (m, r))
             .map_err(PldmServiceError::Mctp)?;
 
-        let payload_size = meta.payload_size;
+        Self::answer_command(
+            resp_channel,
+            buf,
+            meta.payload_size,
+            meta.remote_eid,
+            handler,
+        )
+    }
 
+    /// Finish serving one inbound request already received into `buf[1..]`:
+    /// frame it, run `handler` and send its response, if any, on
+    /// `resp_channel`. Shared by [`respond_once`](Self::respond_once) and
+    /// [`send_request_serving`](Self::send_request_serving).
+    fn answer_command<R, F>(
+        mut resp_channel: R,
+        buf: &mut [u8],
+        payload_size: usize,
+        remote_eid: u8,
+        handler: F,
+    ) -> Result<(), PldmServiceError>
+    where
+        R: MctpRespChannel,
+        F: FnOnce(&mut [u8], usize, u8) -> Result<usize, PldmServiceError>,
+    {
         // Stamp the framing byte.
         match buf.first_mut() {
             Some(b) => *b = MCTP_PLDM_MSG_TYPE,
@@ -254,7 +276,7 @@ impl<C: MctpClient> MctpPldmTransport<C> {
 
         // Invoke the handler to process the request in-place.  The handler is
         // given the whole buffer so the response may exceed the request size.
-        let resp_total_len = handler(buf, req_total_len, meta.remote_eid)?;
+        let resp_total_len = handler(buf, req_total_len, remote_eid)?;
 
         // A handler returning 0 means it deliberately chose not to respond
         // (e.g. the request came from an EID it does not serve).
@@ -270,5 +292,93 @@ impl<C: MctpClient> MctpPldmTransport<C> {
         resp_channel
             .send(resp_payload)
             .map_err(PldmServiceError::Mctp)
+    }
+
+    /// Send a PLDM request and wait for its response, answering any command
+    /// that arrives on `listener` in the meantime.
+    ///
+    /// Same buffer contract as [`send_request`](Self::send_request): the
+    /// request is in `buf[1..1+pldm_len]` and the response comes back in
+    /// `buf[1..]`. Unlike `send_request` followed by a separate poll of the
+    /// responder, this blocks once and wakes for whichever comes first, so a
+    /// peer command (for example `CancelUpdate`) is answered immediately and
+    /// without polling. Each command is received into `cmd_buf`, handed to
+    /// `handler` exactly as in [`respond_once`](Self::respond_once) (same
+    /// framing, same "return 0 for no response" rule), and then the wait
+    /// resumes: the request stays outstanding until its response arrives.
+    ///
+    /// `timeout_millis` bounds each wait (0 blocks indefinitely). `listener`
+    /// may come from another transport, but its client must talk to the same
+    /// MCTP server as this one.
+    ///
+    /// # Errors
+    ///
+    /// As [`send_request`](Self::send_request), plus any error returned by
+    /// `handler`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn send_request_serving<Cl, F>(
+        &self,
+        remote_eid: u8,
+        pldm_len: usize,
+        buf: &mut [u8],
+        timeout_millis: u32,
+        listener: &StackListener<'_, Cl>,
+        cmd_buf: &mut [u8],
+        mut handler: F,
+    ) -> Result<usize, PldmServiceError>
+    where
+        Cl: MctpClient,
+        F: FnMut(&mut [u8], usize, u8) -> Result<usize, PldmServiceError>,
+    {
+        match buf.first_mut() {
+            Some(b) => *b = MCTP_PLDM_MSG_TYPE,
+            None => return Err(PldmServiceError::PldmMem(PldmMemError::MalformedBuffer)),
+        }
+
+        // Same reusable request handle as `send_request`.
+        let mut req_channel = self
+            .stack
+            .req_reusable(remote_eid, timeout_millis)
+            .map_err(PldmServiceError::Mctp)?;
+
+        let req_end = pldm_len
+            .checked_add(1)
+            .ok_or(PldmServiceError::PldmMem(PldmMemError::OverflowMaxSize))?;
+        let req_payload = buf
+            .get(1..req_end)
+            .ok_or(PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
+        req_channel
+            .send(MCTP_PLDM_MSG_TYPE, req_payload)
+            .map_err(PldmServiceError::Mctp)?;
+
+        loop {
+            // The request is already sent, so `buf` is free to receive into.
+            let recv_buf = buf
+                .get_mut(1..)
+                .ok_or(PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
+            match req_channel
+                .recv_or_command(listener, recv_buf)
+                .map_err(PldmServiceError::Mctp)?
+            {
+                ReqEvent::Response(meta, _) => return Ok(meta.payload_size),
+                ReqEvent::Command(meta, payload, resp_channel) => {
+                    // Move the command out of `buf` (the response will land
+                    // there) into `cmd_buf[1..]` and serve it as a normal
+                    // inbound request.
+                    let n = payload.len();
+                    let dst = cmd_buf
+                        .get_mut(1..1 + n)
+                        .ok_or(PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
+                    dst.copy_from_slice(payload);
+                    Self::answer_command(
+                        resp_channel,
+                        cmd_buf,
+                        meta.payload_size,
+                        meta.remote_eid,
+                        &mut handler,
+                    )?;
+                }
+            }
+        }
     }
 }
