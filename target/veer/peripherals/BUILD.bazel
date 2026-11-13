@@ -53,6 +53,24 @@ rust_library(
     ],
 )
 
+rust_library(
+    name = "wdt",
+    srcs = ["wdt.rs"],
+    crate_name = "veer_wdt",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//target/veer/registers",
+        "//third_party/caliptra:crate_tock-registers",
+    ],
+)
+
+# Host tests of the driver against a model of the watchdog RTL.
+rust_test(
+    name = "wdt_test",
+    crate = ":wdt",
+)
+
 # Tests the FPGA flash driver against a copy of the caliptra-sw host code that
 # implements the FPGA's flash controllers.
 rust_test(
