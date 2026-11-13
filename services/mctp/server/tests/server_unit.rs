@@ -376,3 +376,210 @@ fn fragments_in_separate_events_after_a_quiet_period_are_reassembled() {
         .expect("message must survive the quiet period");
     assert_eq!(&recv_buf[..meta.payload_size], &payload[..]);
 }
+
+// ---------------------------------------------------------------------------
+// register_recv_any: one receive that completes on whichever handle fires
+// ---------------------------------------------------------------------------
+
+/// A group resolves once, on the handle that got a message, and every member's
+/// registration goes with it.
+#[test]
+fn recv_any_resolves_on_the_handle_that_got_a_message() {
+    let buf_out = RefCell::new(Vec::new());
+    let mut server: Server<_, 16> = Server::new(Eid(8), 0, BufferSender { packets: &buf_out });
+    let first = server.listener(1).unwrap();
+    let second = server.listener(2).unwrap();
+
+    let key = server.register_recv_any(&[first, second], 1000, 0).unwrap();
+    assert_eq!(key, first, "the reply path is keyed by the first handle");
+
+    deliver_to(42, 8, 2, b"cmd", &mut server);
+
+    let mut recv_buf = [0u8; 255];
+    let ready = collect_ready(&mut server, 50, &mut recv_buf);
+    assert_eq!(ready.len(), 1, "one result for the whole group");
+    match ready[0] {
+        (k, RecvResult::MessageOn { handle, meta }) => {
+            assert_eq!(k, first);
+            assert_eq!(handle, second);
+            assert_eq!(meta.msg_type, 2);
+            assert_eq!(meta.remote_eid, 42);
+            assert_eq!(&recv_buf[..meta.payload_size], b"cmd");
+        }
+        other => panic!("expected MessageOn, got {other:?}"),
+    }
+    // Both registrations are gone: no deadline, and both handles can register again.
+    assert_eq!(server.next_recv_deadline(), None);
+    server.register_recv(first, 10, 50).unwrap();
+    server.register_recv(second, 10, 50).unwrap();
+}
+
+/// With a message waiting on more than one handle, the earliest in the list
+/// wins, and the other message stays queued.
+#[test]
+fn recv_any_prefers_the_earlier_handle_and_leaves_the_other_queued() {
+    let buf_out = RefCell::new(Vec::new());
+    let mut server: Server<_, 16> = Server::new(Eid(8), 0, BufferSender { packets: &buf_out });
+    let first = server.listener(1).unwrap();
+    let second = server.listener(2).unwrap();
+
+    server.register_recv_any(&[second, first], 1000, 0).unwrap();
+    deliver_to(42, 8, 1, b"for-first", &mut server);
+    deliver_to(43, 8, 2, b"for-second", &mut server);
+
+    let mut recv_buf = [0u8; 255];
+    let ready = collect_ready(&mut server, 10, &mut recv_buf);
+    assert_eq!(ready.len(), 1);
+    match ready[0] {
+        (_, RecvResult::MessageOn { handle, .. }) => {
+            assert_eq!(handle, second, "list order is the priority")
+        }
+        other => panic!("expected MessageOn, got {other:?}"),
+    }
+    // The lower-priority message was not consumed.
+    let meta = server.try_recv(first, &mut recv_buf).expect("still queued");
+    assert_eq!(&recv_buf[..meta.payload_size], b"for-first");
+}
+
+/// A message already waiting is returned at once by `try_recv_any`, earliest
+/// handle first, taking only one.
+#[test]
+fn try_recv_any_takes_one_message_in_list_order() {
+    let buf_out = RefCell::new(Vec::new());
+    let mut server: Server<_, 16> = Server::new(Eid(8), 0, BufferSender { packets: &buf_out });
+    let first = server.listener(1).unwrap();
+    let second = server.listener(2).unwrap();
+    let mut recv_buf = [0u8; 255];
+
+    assert!(server
+        .try_recv_any(&[first, second], &mut recv_buf)
+        .is_none());
+
+    deliver_to(42, 8, 1, b"one", &mut server);
+    deliver_to(42, 8, 2, b"two", &mut server);
+
+    let (handle, meta) = server
+        .try_recv_any(&[second, first], &mut recv_buf)
+        .expect("a message is waiting");
+    assert_eq!(handle, second);
+    assert_eq!(&recv_buf[..meta.payload_size], b"two");
+    let (handle, meta) = server
+        .try_recv_any(&[second, first], &mut recv_buf)
+        .expect("the other is still waiting");
+    assert_eq!(handle, first);
+    assert_eq!(&recv_buf[..meta.payload_size], b"one");
+}
+
+/// With no message, the group times out together, once.
+#[test]
+fn recv_any_times_out_as_a_group() {
+    let mut server: Server<_, 16> = Server::new(Eid(8), 0, DroppingBufferSender);
+    let first = server.listener(1).unwrap();
+    let second = server.listener(2).unwrap();
+    server.register_recv_any(&[first, second], 100, 0).unwrap();
+    assert_eq!(server.next_recv_deadline(), Some(100));
+
+    let mut recv_buf = [0u8; 255];
+    let ready = collect_ready(&mut server, 99, &mut recv_buf);
+    assert!(ready.is_empty());
+
+    let ready = collect_ready(&mut server, 100, &mut recv_buf);
+    assert_eq!(ready.len(), 1);
+    assert!(matches!(ready[0], (k, RecvResult::TimedOut) if k == first));
+    assert_eq!(server.next_recv_deadline(), None);
+    let ready = collect_ready(&mut server, 200, &mut recv_buf);
+    assert!(ready.is_empty(), "no second timeout for the same group");
+}
+
+/// A message and the deadline in the same update: the message wins.
+#[test]
+fn recv_any_message_beats_a_simultaneous_timeout() {
+    let buf_out = RefCell::new(Vec::new());
+    let mut server: Server<_, 16> = Server::new(Eid(8), 0, BufferSender { packets: &buf_out });
+    let first = server.listener(1).unwrap();
+    let second = server.listener(2).unwrap();
+    server.register_recv_any(&[first, second], 100, 0).unwrap();
+    deliver_to(42, 8, 2, b"late", &mut server);
+
+    let mut recv_buf = [0u8; 255];
+    let ready = collect_ready(&mut server, 100, &mut recv_buf);
+    assert_eq!(ready.len(), 1);
+    assert!(matches!(ready[0], (_, RecvResult::MessageOn { .. })));
+}
+
+/// Registration is all-or-nothing and rejects bad lists.
+#[test]
+fn register_recv_any_is_all_or_nothing() {
+    let mut server: Server<_, 16> = Server::new(Eid(8), 0, DroppingBufferSender);
+    let first = server.listener(1).unwrap();
+    let second = server.listener(2).unwrap();
+    let third = server.listener(3).unwrap();
+
+    // `second` already has a receive outstanding: nothing of the group registers.
+    server.register_recv(second, 500, 0).unwrap();
+    let err = server
+        .register_recv_any(&[first, second], 100, 0)
+        .unwrap_err();
+    assert_eq!(err.code, ResponseCode::AddrInUse);
+    assert_eq!(server.next_recv_deadline(), Some(500));
+    server
+        .register_recv(first, 50, 0)
+        .expect("`first` was left unregistered");
+    server.cancel_recv(first);
+
+    // Empty list, repeated handle, too many handles.
+    assert_eq!(
+        server.register_recv_any(&[], 100, 0).unwrap_err().code,
+        ResponseCode::BadArgument
+    );
+    assert_eq!(
+        server
+            .register_recv_any(&[first, first], 100, 0)
+            .unwrap_err()
+            .code,
+        ResponseCode::BadArgument
+    );
+    let many = [first, third, Handle(90), Handle(91), Handle(92)];
+    assert_eq!(
+        server.register_recv_any(&many, 100, 0).unwrap_err().code,
+        ResponseCode::BadArgument
+    );
+}
+
+/// A full table refuses a group without registering part of it.
+#[test]
+fn register_recv_any_without_room_registers_nothing() {
+    let mut server: Server<_, 2> = Server::new(Eid(8), 0, DroppingBufferSender);
+    let first = server.listener(1).unwrap();
+    let second = server.listener(2).unwrap();
+    let third = server.listener(3).unwrap();
+
+    server.register_recv(third, 0, 0).unwrap();
+    let err = server
+        .register_recv_any(&[first, second], 100, 0)
+        .unwrap_err();
+    assert_eq!(err.code, ResponseCode::NoSpace);
+    // The one slot left is still free.
+    server.register_recv(first, 100, 0).unwrap();
+}
+
+/// Cancelling the key, or unbinding any member, drops the whole group.
+#[test]
+fn cancel_or_unbind_drops_the_whole_group() {
+    let mut server: Server<_, 16> = Server::new(Eid(8), 0, DroppingBufferSender);
+    let first = server.listener(1).unwrap();
+    let second = server.listener(2).unwrap();
+    let mut recv_buf = [0u8; 255];
+
+    server.register_recv_any(&[first, second], 100, 0).unwrap();
+    server.cancel_recv(first);
+    assert_eq!(server.next_recv_deadline(), None);
+    let ready = collect_ready(&mut server, 1_000, &mut recv_buf);
+    assert!(ready.is_empty(), "a cancelled group must not fire");
+
+    server.register_recv_any(&[first, second], 100, 0).unwrap();
+    server.unbind(second).unwrap();
+    assert_eq!(server.next_recv_deadline(), None);
+    let ready = collect_ready(&mut server, 2_000, &mut recv_buf);
+    assert!(ready.is_empty(), "unbinding a member drops its group");
+}

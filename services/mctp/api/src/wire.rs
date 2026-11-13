@@ -66,6 +66,8 @@ pub enum MctpOp {
     Send = 5,
     /// Release a handle.
     Unbind = 6,
+    /// Receive a message on whichever of several handles gets one first.
+    RecvAny = 7,
 }
 
 impl MctpOp {
@@ -79,6 +81,7 @@ impl MctpOp {
             4 => Some(Self::Recv),
             5 => Some(Self::Send),
             6 => Some(Self::Unbind),
+            7 => Some(Self::RecvAny),
             _ => None,
         }
     }
@@ -477,6 +480,21 @@ pub fn encode_recv_response(
     tag: u8,
     payload: &[u8],
 ) -> Result<usize, WireError> {
+    encode_recv_any_response(buf, 0, msg_type, msg_ic, eid, tag, payload)
+}
+
+/// Encode a success response for `Recv` or `RecvAny`: metadata, payload, and in
+/// the header's `handle` field the handle the message arrived on. A plain `Recv`
+/// reports 0 there; a `RecvAny` uses it to say which of its handles fired.
+pub fn encode_recv_any_response(
+    buf: &mut [u8],
+    handle: u32,
+    msg_type: u8,
+    msg_ic: bool,
+    eid: u8,
+    tag: u8,
+    payload: &[u8],
+) -> Result<usize, WireError> {
     let Ok(payload_len_u16) = u16::try_from(payload.len()) else {
         return Err(WireError::PayloadTooLarge);
     };
@@ -492,7 +510,7 @@ pub fn encode_recv_response(
         flags: if msg_ic { flags::IC } else { 0 },
         msg_type,
         eid,
-        handle: 0,
+        handle,
         payload_len: payload_len_u16,
         tag,
     };
@@ -564,6 +582,87 @@ pub fn get_recv_timeout(buf: &[u8]) -> u32 {
         return 0;
     }
     u32::from_le_bytes(buf[start..start + 4].try_into().unwrap())
+}
+
+/// Most handles one `RecvAny` request can wait on.
+pub const MAX_RECV_ANY_HANDLES: usize = 4;
+
+/// Encode a `RecvAny` request: wait for a message on any of `handles`.
+///
+/// Payload layout after the 12-byte header: `timeout_millis` (u32 LE), the
+/// handle count (u8), then the handles (u32 LE each). The order is a
+/// priority: if more than one handle has a message waiting, the earliest in
+/// `handles` is received first and the others stay queued.
+pub fn encode_recv_any(
+    buf: &mut [u8],
+    handles: &[u32],
+    timeout_millis: u32,
+) -> Result<usize, WireError> {
+    if handles.is_empty() || handles.len() > MAX_RECV_ANY_HANDLES {
+        return Err(WireError::PayloadTooLarge);
+    }
+    let total = MctpRequestHeader::SIZE + 4 + 1 + 4 * handles.len();
+    if buf.len() < total {
+        return Err(WireError::BufferTooSmall);
+    }
+    let header = MctpRequestHeader {
+        op: MctpOp::RecvAny as u8,
+        flags: 0,
+        msg_type: 0,
+        eid: 0,
+        handle: 0,
+        tag: 0,
+    };
+    buf[..MctpRequestHeader::SIZE].copy_from_slice(&header.to_bytes());
+    let mut at = MctpRequestHeader::SIZE;
+    buf[at..at + 4].copy_from_slice(&timeout_millis.to_le_bytes());
+    at += 4;
+    buf[at] = handles.len() as u8;
+    at += 1;
+    for handle in handles {
+        buf[at..at + 4].copy_from_slice(&handle.to_le_bytes());
+        at += 4;
+    }
+    Ok(total)
+}
+
+/// The decoded payload of a `RecvAny` request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RecvAnyArgs {
+    /// Timeout in milliseconds; 0 waits forever.
+    pub timeout_millis: u32,
+    handles: [u32; MAX_RECV_ANY_HANDLES],
+    count: usize,
+}
+
+impl RecvAnyArgs {
+    /// The handles to wait on, in priority order.
+    pub fn handles(&self) -> &[u32] {
+        &self.handles[..self.count]
+    }
+}
+
+/// Decode the payload of a `RecvAny` request (see [`encode_recv_any`]).
+///
+/// Returns `None` if it is truncated, names no handle, or names more than
+/// [`MAX_RECV_ANY_HANDLES`].
+pub fn decode_recv_any(buf: &[u8]) -> Option<RecvAnyArgs> {
+    let payload = buf.get(MctpRequestHeader::SIZE..)?;
+    let timeout_millis = u32::from_le_bytes(payload.get(..4)?.try_into().ok()?);
+    let count = *payload.get(4)? as usize;
+    if count == 0 || count > MAX_RECV_ANY_HANDLES {
+        return None;
+    }
+    let mut handles = [0u32; MAX_RECV_ANY_HANDLES];
+    for (i, slot) in handles.iter_mut().enumerate().take(count) {
+        let at = 5 + 4 * i;
+        *slot = u32::from_le_bytes(payload.get(at..at + 4)?.try_into().ok()?);
+    }
+    Some(RecvAnyArgs {
+        timeout_millis,
+        handles,
+        count,
+    })
 }
 
 // ============================================================================
@@ -924,5 +1023,58 @@ mod tests {
     #[test]
     fn mctp_op_unknown() {
         assert_eq!(MctpOp::from_u8(0xFF), None);
+    }
+
+    #[test]
+    fn recv_any_request_round_trips() {
+        let mut buf = [0u8; 64];
+        let n = encode_recv_any(&mut buf, &[7, 300, 9], 1234).unwrap();
+        assert_eq!(n, MctpRequestHeader::SIZE + 4 + 1 + 12);
+        let header = decode_request_header(&buf[..n]).unwrap();
+        assert_eq!(header.operation(), Some(MctpOp::RecvAny));
+        let args = decode_recv_any(&buf[..n]).unwrap();
+        assert_eq!(args.timeout_millis, 1234);
+        assert_eq!(args.handles(), &[7, 300, 9]);
+    }
+
+    #[test]
+    fn recv_any_rejects_bad_handle_counts() {
+        let mut buf = [0u8; 64];
+        assert_eq!(
+            encode_recv_any(&mut buf, &[], 0),
+            Err(WireError::PayloadTooLarge)
+        );
+        assert_eq!(
+            encode_recv_any(&mut buf, &[1, 2, 3, 4, 5], 0),
+            Err(WireError::PayloadTooLarge)
+        );
+        // A count of 0 or 5 on the wire is rejected on decode.
+        let n = encode_recv_any(&mut buf, &[1, 2], 0).unwrap();
+        buf[MctpRequestHeader::SIZE + 4] = 0;
+        assert_eq!(decode_recv_any(&buf[..n]), None);
+        buf[MctpRequestHeader::SIZE + 4] = 5;
+        assert_eq!(decode_recv_any(&buf[..n]), None);
+    }
+
+    #[test]
+    fn recv_any_decode_rejects_truncated_payloads() {
+        let mut buf = [0u8; 64];
+        let n = encode_recv_any(&mut buf, &[1, 2, 3], 5).unwrap();
+        for cut in 0..n {
+            assert_eq!(decode_recv_any(&buf[..cut]), None, "cut at {cut}");
+        }
+        assert!(decode_recv_any(&buf[..n]).is_some());
+    }
+
+    #[test]
+    fn recv_any_response_carries_the_fired_handle() {
+        let mut buf = [0u8; 64];
+        let n = encode_recv_any_response(&mut buf, 42, 1, false, 9, 3, b"hi").unwrap();
+        let header = decode_response_header(&buf[..n]).unwrap();
+        assert_eq!(header.handle, 42);
+        assert_eq!(get_response_payload(&buf[..n], &header).unwrap(), b"hi");
+        // A plain Recv response still reports handle 0.
+        let n = encode_recv_response(&mut buf, 1, false, 9, 3, b"hi").unwrap();
+        assert_eq!(decode_response_header(&buf[..n]).unwrap().handle, 0);
     }
 }

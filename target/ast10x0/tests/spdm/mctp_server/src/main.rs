@@ -120,6 +120,11 @@ fn dispatch(header: &MctpRequestHeader, _req: &[u8], resp: &mut [u8]) -> usize {
             pw_log::debug!("Unbind: handle={}", header.handle as u32);
             wire::encode_success_response(resp).unwrap_or(0)
         }
+
+        // The SPDM responder never receives on several handles.
+        MctpOp::RecvAny => {
+            wire::encode_error_response(resp, ResponseCode::BadArgument).unwrap_or(0)
+        }
     }
 }
 

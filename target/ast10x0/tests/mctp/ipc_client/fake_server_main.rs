@@ -118,6 +118,11 @@ fn dispatch(header: &MctpRequestHeader, resp: &mut [u8]) -> usize {
         MctpOp::Send => wire::encode_send_response(resp, 1).unwrap_or(0),
 
         MctpOp::Unbind => wire::encode_success_response(resp).unwrap_or(0),
+
+        // This fake server has no listener that could receive on several handles.
+        MctpOp::RecvAny => {
+            wire::encode_error_response(resp, ResponseCode::BadArgument).unwrap_or(0)
+        }
     }
 }
 

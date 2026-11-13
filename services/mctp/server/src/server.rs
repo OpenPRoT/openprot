@@ -48,7 +48,24 @@ impl ServerConfig {
 struct PendingRecv {
     /// Absolute deadline in milliseconds, or `None` to wait forever.
     deadline: Option<u64>,
+    /// Set when this receive is one of several registered together by
+    /// [`Server::register_recv_any`].
+    group: Option<Group>,
 }
+
+/// Membership of a receive registered with [`Server::register_recv_any`].
+#[derive(Debug, Clone, Copy)]
+struct Group {
+    /// The handle the caller's reply path is keyed by: the first of the
+    /// handles it registered. All members resolve through this one key.
+    key: u32,
+    /// Position in the caller's list: lower is received first when several
+    /// members have a message waiting at once.
+    priority: u8,
+}
+
+/// Most handles one [`Server::register_recv_any`] can wait on.
+pub const MAX_RECV_ANY: usize = openprot_mctp_api::wire::MAX_RECV_ANY_HANDLES;
 
 /// The platform-independent MCTP server.
 ///
@@ -147,9 +164,109 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
             t => Some(now_millis.saturating_add(u64::from(t))),
         };
         self.outstanding
-            .insert(handle.0, PendingRecv { deadline })
+            .insert(
+                handle.0,
+                PendingRecv {
+                    deadline,
+                    group: None,
+                },
+            )
             .map_err(|_| MctpError::from_code(ResponseCode::NoSpace))?;
         Ok(())
+    }
+
+    /// Check for a message on any of `handles`, in the order given.
+    ///
+    /// Returns the handle it arrived on and its metadata, copying the payload
+    /// into `buf` as [`try_recv`](Self::try_recv) does. If several handles
+    /// have a message waiting, only the first one is taken; the others stay
+    /// queued for the next receive.
+    pub fn try_recv_any(
+        &mut self,
+        handles: &[Handle],
+        buf: &mut [u8],
+    ) -> Option<(Handle, RecvMetadata)> {
+        for &handle in handles {
+            if let Some(meta) = self.try_recv(handle, buf) {
+                return Some((handle, meta));
+            }
+        }
+        None
+    }
+
+    /// Register one pending receive that completes on whichever of `handles`
+    /// gets a message first, or on the timeout.
+    ///
+    /// The caller's reply path is keyed by the returned handle (the first of
+    /// `handles`); [`update`](Self::update) reports the outcome under that key
+    /// as [`RecvResult::MessageOn`] (naming the handle that fired) or
+    /// [`RecvResult::TimedOut`], once for the whole group, and drops every
+    /// member's registration. `timeout_millis` of 0 waits forever.
+    ///
+    /// All-or-nothing: fails with `BadArgument` for an empty list, too many
+    /// handles or a repeated handle, with `AddrInUse` if any handle already
+    /// has a receive outstanding, and with `NoSpace` if the table cannot hold
+    /// them all. On any error nothing is registered, so the caller must answer
+    /// the client now rather than wait.
+    pub fn register_recv_any(
+        &mut self,
+        handles: &[Handle],
+        timeout_millis: u32,
+        now_millis: u64,
+    ) -> Result<Handle, MctpError> {
+        let bad = || MctpError::from_code(ResponseCode::BadArgument);
+        let key = handles.first().ok_or_else(bad)?.0;
+        if handles.len() > MAX_RECV_ANY {
+            return Err(bad());
+        }
+        for (i, handle) in handles.iter().enumerate() {
+            if handles[..i].contains(handle) {
+                return Err(bad());
+            }
+            if self.outstanding.contains_key(&handle.0) {
+                return Err(MctpError::from_code(ResponseCode::AddrInUse));
+            }
+        }
+        if self.outstanding.len() + handles.len() > self.outstanding.capacity() {
+            return Err(MctpError::from_code(ResponseCode::NoSpace));
+        }
+        let deadline = match timeout_millis {
+            0 => None,
+            t => Some(now_millis.saturating_add(u64::from(t))),
+        };
+        for (priority, handle) in handles.iter().enumerate() {
+            // Cannot fail: capacity was checked above.
+            let _ = self.outstanding.insert(
+                handle.0,
+                PendingRecv {
+                    deadline,
+                    group: Some(Group {
+                        key,
+                        priority: priority as u8,
+                    }),
+                },
+            );
+        }
+        Ok(Handle(key))
+    }
+
+    /// Drop the receive registered on `handle`, and, if it belongs to a
+    /// [`register_recv_any`](Self::register_recv_any) group, every other
+    /// member of that group.
+    fn remove_pending(&mut self, handle: Handle) {
+        let group = self.outstanding.get(&handle.0).and_then(|p| p.group);
+        self.outstanding.remove(&handle.0);
+        if let Some(group) = group {
+            let mut members: heapless::Vec<u32, MAX_RECV_ANY> = heapless::Vec::new();
+            for (handle_val, pending) in self.outstanding.iter() {
+                if pending.group.is_some_and(|g| g.key == group.key) {
+                    let _ = members.push(*handle_val);
+                }
+            }
+            for member in members {
+                self.outstanding.remove(&member);
+            }
+        }
     }
 
     /// Bring the router's clock up to `now_millis`.
@@ -170,7 +287,7 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
     /// cannot hold the caller's reply path after all. A no-op if nothing is
     /// registered on `handle`.
     pub fn cancel_recv(&mut self, handle: Handle) {
-        self.outstanding.remove(&handle.0);
+        self.remove_pending(handle);
     }
 
     /// The earliest deadline, in the caller's millisecond clock, among
@@ -255,6 +372,9 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
         let mut resolved: heapless::Vec<u32, OUTSTANDING> = heapless::Vec::new();
 
         for (handle_val, pending) in self.outstanding.iter() {
+            if pending.group.is_some() {
+                continue; // resolved below, one result per group
+            }
             let handle = Handle(*handle_val);
             let cookie = AppCookie(*handle_val as usize);
 
@@ -275,6 +395,63 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
             }
         }
 
+        // Receives registered together resolve as one: the first member in
+        // priority order that has a message wins, and the others are left
+        // untouched (their messages stay queued). With no message, the group
+        // times out together.
+        let mut keys: heapless::Vec<u32, OUTSTANDING> = heapless::Vec::new();
+        for pending in self.outstanding.values() {
+            if let Some(group) = pending.group
+                && !keys.contains(&group.key)
+            {
+                let _ = keys.push(group.key);
+            }
+        }
+        for key in keys {
+            let mut members: heapless::Vec<(u8, u32, Option<u64>), MAX_RECV_ANY> =
+                heapless::Vec::new();
+            for (handle_val, pending) in self.outstanding.iter() {
+                if let Some(group) = pending.group.filter(|g| g.key == key) {
+                    let _ = members.push((group.priority, *handle_val, pending.deadline));
+                }
+            }
+            members.sort_unstable_by_key(|&(priority, _, _)| priority);
+
+            let mut result = None;
+            for &(_, handle_val, _) in members.iter() {
+                if let Some(meta) = self.try_recv(Handle(handle_val), recv_buf) {
+                    result = Some(RecvResult::MessageOn {
+                        handle: Handle(handle_val),
+                        meta,
+                    });
+                    break;
+                }
+            }
+            if result.is_none() {
+                let due = members
+                    .first()
+                    .and_then(|&(_, _, deadline)| deadline)
+                    .is_some_and(|d| now_millis >= d);
+                if due {
+                    result = Some(RecvResult::TimedOut);
+                }
+            }
+            if let Some(result) = result {
+                // Deliver now, while `recv_buf` still holds this group's payload
+                // (empty for a timeout); the next resolved handle or group, if
+                // any, overwrites it.
+                let payload: &[u8] = if matches!(result, RecvResult::TimedOut) {
+                    &[]
+                } else {
+                    recv_buf
+                };
+                on_ready(Handle(key), result, payload);
+                for &(_, handle_val, _) in members.iter() {
+                    self.outstanding.remove(&handle_val);
+                }
+            }
+        }
+
         // Remove fulfilled/timed-out entries
         for handle_val in &resolved {
             self.outstanding.remove(handle_val);
@@ -287,7 +464,7 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
     pub fn unbind(&mut self, handle: Handle) -> Result<(), MctpError> {
         let cookie = AppCookie(handle.0 as usize);
         let _ = self.stack.unbind(cookie);
-        self.outstanding.remove(&handle.0);
+        self.remove_pending(handle);
         Ok(())
     }
 
@@ -315,6 +492,14 @@ impl<S: Sender, const OUTSTANDING: usize> Server<S, OUTSTANDING> {
 pub enum RecvResult {
     /// A message was received.
     Message(RecvMetadata),
+    /// A message was received on `handle`, one of several registered with
+    /// [`Server::register_recv_any`].
+    MessageOn {
+        /// The handle the message arrived on.
+        handle: Handle,
+        /// The message.
+        meta: RecvMetadata,
+    },
     /// The receive call timed out.
     TimedOut,
 }

@@ -255,7 +255,7 @@ fn serve(script: &mut Script, request: &[u8], response: &mut [u8]) -> usize {
 
         MctpOp::Send => serve_send(script, &header, request, response),
 
-        MctpOp::Req | MctpOp::Unbind => {
+        MctpOp::Req | MctpOp::Unbind | MctpOp::RecvAny => {
             pw_log::error!("responder made an unexpected call: op {}", header.op as u32);
             fail();
         }
