@@ -184,6 +184,49 @@ impl MctpClient for IpcMctpClient {
         })
     }
 
+    fn recv_any(
+        &self,
+        handles: &[Handle],
+        timeout_millis: u32,
+        buf: &mut [u8],
+    ) -> Result<(Handle, RecvMetadata), MctpError> {
+        let mut raw = [0u32; wire::MAX_RECV_ANY_HANDLES];
+        if handles.len() > raw.len() {
+            return Err(MctpError::from_code(ResponseCode::BadArgument));
+        }
+        for (slot, handle) in raw.iter_mut().zip(handles) {
+            *slot = handle.0;
+        }
+        let req_len = {
+            let mut inner = self.inner.borrow_mut();
+            wire::encode_recv_any(
+                &mut inner.request_buf,
+                &raw[..handles.len()],
+                timeout_millis,
+            )
+            .map_err(|_| MctpError::from_code(ResponseCode::BadArgument))?
+        };
+        let (header, resp_len) = self.transact(req_len)?;
+
+        let inner = self.inner.borrow();
+        let payload = wire::get_response_payload(&inner.response_buf[..resp_len], &header)
+            .map_err(|_| MctpError::from_code(ResponseCode::InternalError))?;
+
+        let copy_len = core::cmp::min(payload.len(), buf.len());
+        buf[..copy_len].copy_from_slice(&payload[..copy_len]);
+
+        Ok((
+            Handle(header.handle),
+            RecvMetadata {
+                msg_type: header.msg_type,
+                msg_ic: header.flags & wire::flags::IC != 0,
+                msg_tag: header.tag,
+                remote_eid: header.eid,
+                payload_size: payload.len(),
+            },
+        ))
+    }
+
     fn send(
         &self,
         handle: Option<Handle>,

@@ -6,7 +6,7 @@
 //! Platform-independent traits for interacting with an MCTP server.
 //! Implementations are provided per-platform (Hubris IPC, Linux sockets, etc.).
 
-use crate::{Handle, MctpError, RecvMetadata};
+use crate::{Handle, MctpError, RecvMetadata, ResponseCode};
 
 /// A client interface to an MCTP stack/server.
 ///
@@ -34,6 +34,29 @@ pub trait MctpClient {
         timeout_millis: u32,
         buf: &mut [u8],
     ) -> Result<RecvMetadata, MctpError>;
+
+    /// Receive a message on whichever of `handles` gets one first, into `buf`.
+    ///
+    /// Returns the handle the message arrived on. If more than one handle has
+    /// a message waiting, the earliest in `handles` is received and the others
+    /// stay queued. `timeout_millis` of 0 means no timeout. At most
+    /// [`MAX_RECV_ANY_HANDLES`](crate::wire::MAX_RECV_ANY_HANDLES) handles; a
+    /// handle may not repeat or already have a receive outstanding.
+    ///
+    /// The handles must belong to the server this client talks to, but need
+    /// not have been allocated through this client.
+    ///
+    /// The default returns [`ResponseCode::BadArgument`], so clients that
+    /// cannot wait on several handles need not implement it.
+    fn recv_any(
+        &self,
+        handles: &[Handle],
+        timeout_millis: u32,
+        buf: &mut [u8],
+    ) -> Result<(Handle, RecvMetadata), MctpError> {
+        let _ = (handles, timeout_millis, buf);
+        Err(MctpError::from_code(ResponseCode::BadArgument))
+    }
 
     /// Send a message through the given handle.
     ///

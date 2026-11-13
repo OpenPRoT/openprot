@@ -42,7 +42,7 @@ mod traits;
 pub mod wire;
 
 pub use error::{MctpError, ResponseCode};
-pub use stack::{Stack, StackListener, StackReqChannel, StackRespChannel};
+pub use stack::{ReqEvent, Stack, StackListener, StackReqChannel, StackRespChannel};
 pub use traits::{MctpClient, MctpListener, MctpReqChannel, MctpRespChannel};
 
 /// Length in bytes of the MCTP transport header (DSP0236): version, destination
