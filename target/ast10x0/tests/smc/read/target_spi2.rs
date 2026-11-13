@@ -34,26 +34,28 @@ const SPI_FLASH_CONFIG: FlashConfig = FlashConfig {
 pub struct Target {}
 
 fn config_spi2_master_controller() -> Result<(), SmcError> {
-    let scu = unsafe { ScuRegisters::new_global_unlocked() };
-    scu.apply_pinctrl_group(PINCTRL_SPIM3_DEFAULT);
-    scu.apply_pinctrl_group(PINCTRL_SPIM4_DEFAULT);
-    scu.apply_pinctrl_group(PINCTRL_SPI2_QUAD);
-    if !enable_flash_power(&scu) {
-        pw_log::info!("GPIOL2/GPIOL3 flash power readback failed");
-        return Err(SmcError::HardwareError);
-    }
-    apply_spim_external_mux(SpiMonitorInstance::Spim2, ScuExtMuxSelect::Mux1);
+    let scu = unsafe { ScuRegisters::new_global() };
+    scu.unlock_and_lock_after(|scu| {
+        scu.apply_pinctrl_group(PINCTRL_SPIM3_DEFAULT);
+        scu.apply_pinctrl_group(PINCTRL_SPIM4_DEFAULT);
+        scu.apply_pinctrl_group(PINCTRL_SPI2_QUAD);
+        if !enable_flash_power(scu) {
+            pw_log::info!("GPIOL2/GPIOL3 flash power readback failed");
+            return Err(SmcError::HardwareError);
+        }
+        apply_spim_external_mux(SpiMonitorInstance::Spim2, ScuExtMuxSelect::Mux1);
 
-    // Configure the mux for the SPI master controller path.
-    scu.set_spim_internal_master_route(SpiMonitorInstance::Spim2, SpiMonitorSource::Spi2);
-    scu.set_spim_passthrough(SpiMonitorInstance::Spim2, SpiMonitorPassthrough::Enabled);
-    scu.set_spim_ext_mux(SpiMonitorInstance::Spim2, ScuExtMuxSelect::Mux1);
-    pw_log::info!("SCU pinmux and SPIM routing configured for SPI2 monitoring");
+        // Configure the mux for the SPI master controller path.
+        scu.set_spim_internal_master_route(SpiMonitorInstance::Spim2, SpiMonitorSource::Spi2);
+        scu.set_spim_passthrough(SpiMonitorInstance::Spim2, SpiMonitorPassthrough::Enabled);
+        scu.set_spim_ext_mux(SpiMonitorInstance::Spim2, ScuExtMuxSelect::Mux1);
+        pw_log::info!("SCU pinmux and SPIM routing configured for SPI2 monitoring");
 
-    for _ in 0..1_000_000 {
-        core::hint::spin_loop();
-    }
-    Ok(())
+        for _ in 0..1_000_000 {
+            core::hint::spin_loop();
+        }
+        Ok(())
+    })
 }
 
 fn run_spi2_read_test() -> Result<(), SmcError> {

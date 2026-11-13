@@ -61,8 +61,10 @@ static mut SMC_DMA_BUF: [u8; 256] = [0u8; 256];
 fn run_smc_read_test() -> Result<(), SmcError> {
     // --- 1. Init ---
     // TODO:: set pinctrl in board/src/lib.rs
-    let scu = unsafe { ScuRegisters::new_global_unlocked() };
-    scu.apply_pinctrl_group(PINCTRL_FMC_QUAD);
+    let scu = unsafe { ScuRegisters::new_global() };
+    scu.unlock_and_lock_after(|scu| {
+        scu.apply_pinctrl_group(PINCTRL_FMC_QUAD);
+    });
 
     pw_log::info!("=== AST10x0 smc  read test  ===");
     let mut controller = unsafe { FmcUninit::<FmcInstance>::new()? }.init()?;

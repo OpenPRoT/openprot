@@ -111,8 +111,8 @@ fn poll_dma_irq_completion(cs: &mut Cs<'_>) -> Poll<Result<(), SmcError>> {
 }
 
 fn run_dma_read_irq_test() -> Result<(), SmcError> {
-    let scu = unsafe { ScuRegisters::new_global_unlocked() };
-    scu.apply_pinctrl_group(PINCTRL_FMC_QUAD);
+    let scu = unsafe { ScuRegisters::new_global() };
+    scu.unlock_and_lock_after(|scu| scu.apply_pinctrl_group(PINCTRL_FMC_QUAD));
 
     let mut controller = unsafe { FmcUninit::<FmcInstance>::new()? }.init()?;
 

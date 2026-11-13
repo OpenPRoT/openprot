@@ -186,50 +186,53 @@ impl ScuRegisters {
         instance: SpiMonitorInstance,
         passthrough: SpiMonitorPassthrough,
     ) {
-        self.unlock_write_protection();
-        let enable = passthrough.is_enabled();
+        self.unlock_and_lock_after(|scu| {
+            let enable = passthrough.is_enabled();
 
-        self.regs().scu0f0().modify(|_, w| match instance {
-            SpiMonitorInstance::Spim0 => w.enbl_passthrough_of_spipf1().bit(enable),
-            SpiMonitorInstance::Spim1 => w.enbl_passthrough_of_spipf2().bit(enable),
-            SpiMonitorInstance::Spim2 => w.enbl_passthrough_of_spipf3().bit(enable),
-            SpiMonitorInstance::Spim3 => w.enbl_passthrough_of_spipf4().bit(enable),
+            scu.regs().scu0f0().modify(|_, w| match instance {
+                SpiMonitorInstance::Spim0 => w.enbl_passthrough_of_spipf1().bit(enable),
+                SpiMonitorInstance::Spim1 => w.enbl_passthrough_of_spipf2().bit(enable),
+                SpiMonitorInstance::Spim2 => w.enbl_passthrough_of_spipf3().bit(enable),
+                SpiMonitorInstance::Spim3 => w.enbl_passthrough_of_spipf4().bit(enable),
+            });
         });
     }
 
     /// Enable or disable the SCU-side SPI monitor filter path. Uses SCU0F0[11:8].
     pub fn set_spim_filter(&self, instance: SpiMonitorInstance, enable: bool) {
-        self.unlock_write_protection();
-        self.regs().scu0f0().modify(|_, w| match instance {
-            SpiMonitorInstance::Spim0 => w.enbl_filter_of_spipf1().bit(enable),
-            SpiMonitorInstance::Spim1 => w.enbl_filter_of_spipf2().bit(enable),
-            SpiMonitorInstance::Spim2 => w.enbl_filter_of_spipf3().bit(enable),
-            SpiMonitorInstance::Spim3 => w.enbl_filter_of_spipf4().bit(enable),
+        self.unlock_and_lock_after(|scu| {
+            scu.regs().scu0f0().modify(|_, w| match instance {
+                SpiMonitorInstance::Spim0 => w.enbl_filter_of_spipf1().bit(enable),
+                SpiMonitorInstance::Spim1 => w.enbl_filter_of_spipf2().bit(enable),
+                SpiMonitorInstance::Spim2 => w.enbl_filter_of_spipf3().bit(enable),
+                SpiMonitorInstance::Spim3 => w.enbl_filter_of_spipf4().bit(enable),
+            });
         });
     }
 
     /// Disable the internal pull-down on the monitor CS output pin.
     pub fn disable_spim_cs_internal_pull_down(&self, instance: SpiMonitorInstance) {
-        self.unlock_write_protection();
-        match instance {
-            SpiMonitorInstance::Spim0 => {
-                self.regs()
-                    .scu610()
-                    .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 6)) });
+        self.unlock_and_lock_after(|scu| {
+            match instance {
+                SpiMonitorInstance::Spim0 => {
+                    scu.regs()
+                        .scu610()
+                        .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 6)) });
+                }
+                SpiMonitorInstance::Spim1 => {
+                    scu.regs()
+                        .scu610()
+                        .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 20)) });
+                }
+                // SPIM3's corresponding pin cannot have its pull-down disabled.
+                SpiMonitorInstance::Spim2 => {}
+                SpiMonitorInstance::Spim3 => {
+                    scu.regs()
+                        .scu614()
+                        .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 16)) });
+                }
             }
-            SpiMonitorInstance::Spim1 => {
-                self.regs()
-                    .scu610()
-                    .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 20)) });
-            }
-            // SPIM3's corresponding pin cannot have its pull-down disabled.
-            SpiMonitorInstance::Spim2 => {}
-            SpiMonitorInstance::Spim3 => {
-                self.regs()
-                    .scu614()
-                    .modify(|r, w| unsafe { w.bits(r.bits() | (1 << 16)) });
-            }
-        }
+        });
     }
 
     /// Route an internal SPI master through the selected SPI monitor path.
@@ -238,15 +241,16 @@ impl ScuRegisters {
         instance: SpiMonitorInstance,
         source: SpiMonitorSource,
     ) {
-        self.unlock_write_protection();
-        self.regs()
-            .scu0f0()
-            .modify(|_, w| unsafe { w.select_int_spimaster_connection().bits(instance as u8 + 1) });
+        self.unlock_and_lock_after(|scu| {
+            scu.regs().scu0f0().modify(|_, w| unsafe {
+                w.select_int_spimaster_connection().bits(instance as u8 + 1)
+            });
 
-        let select_spi2 = matches!(source, SpiMonitorSource::Spi2);
-        self.regs()
-            .scu0f0()
-            .modify(|_, w| w.int_spimaster_sel().bit(select_spi2));
+            let select_spi2 = matches!(source, SpiMonitorSource::Spi2);
+            scu.regs()
+                .scu0f0()
+                .modify(|_, w| w.int_spimaster_sel().bit(select_spi2));
+        });
     }
 
     /// Select the internal SPI master source and SPIM output path.
@@ -258,105 +262,108 @@ impl ScuRegisters {
             return Err(super::types::ScuError::InvalidMuxSelection);
         }
 
-        self.unlock_write_protection();
-        let source_bit = if matches!(source, SpiMonitorSource::Spi2) {
-            0x8
-        } else {
-            0
-        };
-        let mut bits = self.regs().scu0f0().read().bits();
-        bits = (bits & !0xF) | source_bit | u32::from(output_select);
-        self.regs().scu0f0().write(|w| unsafe { w.bits(bits) });
-        Ok(())
+        self.unlock_and_lock_after(|scu| {
+            let source_bit = if matches!(source, SpiMonitorSource::Spi2) {
+                0x8
+            } else {
+                0
+            };
+            let mut bits = scu.regs().scu0f0().read().bits();
+            bits = (bits & !0xF) | source_bit | u32::from(output_select);
+            scu.regs().scu0f0().write(|w| unsafe { w.bits(bits) });
+            Ok(())
+        })
     }
 
     /// Disable any internal SPI-master detour route.
     pub fn clear_spim_internal_master_route(&self) {
-        self.unlock_write_protection();
-        let mut bits = self.regs().scu0f0().read().bits();
-        bits &= !0xF;
-        self.regs().scu0f0().write(|w| unsafe { w.bits(bits) });
+        self.unlock_and_lock_after(|scu| {
+            let mut bits = scu.regs().scu0f0().read().bits();
+            bits &= !0xF;
+            scu.regs().scu0f0().write(|w| unsafe { w.bits(bits) });
+        });
     }
 
     /// Apply AST1060 SPIM proprietary pin setup before a transaction.
     pub fn spim_proprietary_pre_config(&self) -> Option<SpimGpioOriVal> {
-        self.unlock_write_protection();
+        self.unlock_and_lock_after(|scu| {
+            let scu0f0 = scu.regs().scu0f0().read().bits();
+            pw_log::debug!("SPIM pre-config: SCU0F0=0x{:08x}", scu0f0 as u32);
+            let op_idx = match ast1060_spim_op_idx(scu0f0) {
+                Some(idx) => idx,
+                None => return None,
+            };
+            pw_log::debug!(
+                "SPIM pre-config: active SPIM index {}, op index {}",
+                ((scu0f0 & 0x7) - 1) as u32,
+                op_idx as u32
+            );
 
-        let scu0f0 = self.regs().scu0f0().read().bits();
-        pw_log::debug!("SPIM pre-config: SCU0F0=0x{:08x}", scu0f0 as u32);
-        let op_idx = match ast1060_spim_op_idx(scu0f0) {
-            Some(idx) => idx,
-            None => return None,
-        };
-        pw_log::debug!(
-            "SPIM pre-config: active SPIM index {}, op index {}",
-            ((scu0f0 & 0x7) - 1) as u32,
-            op_idx as u32
-        );
+            let clk = AST1060_SPIM_CLK_GPIO[op_idx];
+            let cs = AST1060_SPIM_CS_GPIO[op_idx];
+            let mut clk_gpio_ori_val = [0u32; 4];
+            // Change the paired SPIM CLKOUT pin to GPIO mode.
+            scu.set_spim_pin_function(clk, false);
 
-        let clk = AST1060_SPIM_CLK_GPIO[op_idx];
-        let cs = AST1060_SPIM_CS_GPIO[op_idx];
-        let mut clk_gpio_ori_val = [0u32; 4];
-        // Change the paired SPIM CLKOUT pin to GPIO mode.
-        self.set_spim_pin_function(clk, false);
+            // Save its GPIO direction bit, then configure it as an input.
+            clk_gpio_ori_val[op_idx] = gpio_direction(clk.gpio_group) & clk.gpio_bit_mask;
+            gpio_set_direction(clk.gpio_group, clk.gpio_bit_mask, false);
 
-        // Save its GPIO direction bit, then configure it as an input.
-        clk_gpio_ori_val[op_idx] = gpio_direction(clk.gpio_group) & clk.gpio_bit_mask;
-        gpio_set_direction(clk.gpio_group, clk.gpio_bit_mask, false);
+            // Drive the paired SPIM CSOUT GPIO high and configure it as output.
+            gpio_set_output(cs.gpio_group, cs.gpio_bit_mask, true);
 
-        // Drive the paired SPIM CSOUT GPIO high and configure it as output.
-        gpio_set_output(cs.gpio_group, cs.gpio_bit_mask, true);
+            // Change the paired SPIM CSOUT pin to GPIO mode.
+            scu.set_spim_pin_function(cs, false);
 
-        // Change the paired SPIM CSOUT pin to GPIO mode.
-        self.set_spim_pin_function(cs, false);
-
-        pw_log::debug!(
-            "SPIM pre-config: op index {}, saved CLK direction mask 0x{:08x}",
-            op_idx as u32,
-            clk_gpio_ori_val[op_idx] as u32
-        );
-        Some(SpimGpioOriVal { clk_gpio_ori_val })
+            pw_log::debug!(
+                "SPIM pre-config: op index {}, saved CLK direction mask 0x{:08x}",
+                op_idx as u32,
+                clk_gpio_ori_val[op_idx] as u32
+            );
+            Some(SpimGpioOriVal { clk_gpio_ori_val })
+        })
     }
 
     /// Restore AST1060 SPIM proprietary pin state after a transaction.
     pub fn spim_proprietary_post_config(&self, gpio_ori_val: SpimGpioOriVal) {
-        self.unlock_write_protection();
+        self.unlock_and_lock_after(|scu| {
+            let scu0f0 = scu.regs().scu0f0().read().bits();
+            let op_idx = match ast1060_spim_op_idx(scu0f0) {
+                Some(idx) => idx,
+                None => return,
+            };
+            let clk = AST1060_SPIM_CLK_GPIO[op_idx];
+            let cs = AST1060_SPIM_CS_GPIO[op_idx];
+            pw_log::debug!(
+                "SPIM post-config: SCU0F0=0x{:08x}, op index {}, saved CLK direction mask 0x{:08x}",
+                scu0f0 as u32,
+                op_idx as u32,
+                gpio_ori_val.clk_gpio_ori_val[op_idx] as u32
+            );
 
-        let scu0f0 = self.regs().scu0f0().read().bits();
-        let op_idx = match ast1060_spim_op_idx(scu0f0) {
-            Some(idx) => idx,
-            None => return,
-        };
-        let clk = AST1060_SPIM_CLK_GPIO[op_idx];
-        let cs = AST1060_SPIM_CS_GPIO[op_idx];
-        pw_log::debug!(
-            "SPIM post-config: SCU0F0=0x{:08x}, op index {}, saved CLK direction mask 0x{:08x}",
-            scu0f0 as u32,
-            op_idx as u32,
-            gpio_ori_val.clk_gpio_ori_val[op_idx] as u32
-        );
+            // Restore the paired CLKOUT GPIO direction bit.
+            let was_output = gpio_ori_val.clk_gpio_ori_val[op_idx] != 0;
+            gpio_set_direction(clk.gpio_group, clk.gpio_bit_mask, was_output);
 
-        // Restore the paired CLKOUT GPIO direction bit.
-        let was_output = gpio_ori_val.clk_gpio_ori_val[op_idx] != 0;
-        gpio_set_direction(clk.gpio_group, clk.gpio_bit_mask, was_output);
+            // Return paired CLKOUT and CSOUT pins to SPIM mode.
+            self.set_spim_pin_function(clk, true);
+            self.set_spim_pin_function(cs, true);
 
-        // Return paired CLKOUT and CSOUT pins to SPIM mode.
-        self.set_spim_pin_function(clk, true);
-        self.set_spim_pin_function(cs, true);
-
-        pw_log::debug!("SPIM post-config: restore complete");
+            pw_log::debug!("SPIM post-config: restore complete");
+        });
     }
 
     /// Select the external mux signal for a SPI monitor instance. Uses SCU0F0[15:12].
     pub fn set_spim_ext_mux(&self, instance: SpiMonitorInstance, mux: ScuExtMuxSelect) {
-        self.unlock_write_protection();
-        let bit = mux.as_bool();
+        self.unlock_and_lock_after(|scu| {
+            let bit = mux.as_bool();
 
-        self.regs().scu0f0().modify(|_, w| match instance {
-            SpiMonitorInstance::Spim0 => w.ext_mux_select_sig_of_spipf1().bit(bit),
-            SpiMonitorInstance::Spim1 => w.ext_mux_select_sig_of_spipf2().bit(bit),
-            SpiMonitorInstance::Spim2 => w.ext_mux_select_sig_of_spipf3().bit(bit),
-            SpiMonitorInstance::Spim3 => w.ext_mux_select_sig_of_spipf4().bit(bit),
+            scu.regs().scu0f0().modify(|_, w| match instance {
+                SpiMonitorInstance::Spim0 => w.ext_mux_select_sig_of_spipf1().bit(bit),
+                SpiMonitorInstance::Spim1 => w.ext_mux_select_sig_of_spipf2().bit(bit),
+                SpiMonitorInstance::Spim2 => w.ext_mux_select_sig_of_spipf3().bit(bit),
+                SpiMonitorInstance::Spim3 => w.ext_mux_select_sig_of_spipf4().bit(bit),
+            });
         });
     }
 
@@ -380,29 +387,28 @@ impl ScuRegisters {
     /// Enable or disable the SCU-controlled MISO multi-function pin for a SPI
     /// monitor instance.
     pub fn set_spim_miso_multi_func(&self, instance: SpiMonitorInstance, enable: bool) {
-        self.unlock_write_protection();
-        match instance {
+        self.unlock_and_lock_after(|scu| match instance {
             SpiMonitorInstance::Spim0 => {
-                self.regs()
+                scu.regs()
                     .scu690()
                     .modify(|_, w| w.enbl_qspimonitor1misoin_fn_pin().bit(enable));
             }
             SpiMonitorInstance::Spim1 => {
-                self.regs()
+                scu.regs()
                     .scu690()
                     .modify(|_, w| w.enbl_qspimonitor2misoin_fn_pin().bit(enable));
             }
             SpiMonitorInstance::Spim2 => {
-                self.regs()
+                scu.regs()
                     .scu690()
                     .modify(|_, w| w.enbl_qspimonitor3misoin_fn_pin().bit(enable));
             }
             SpiMonitorInstance::Spim3 => {
-                self.regs()
+                scu.regs()
                     .scu694()
                     .modify(|_, w| w.enbl_qspimonitor4misoin_fn_pin().bit(enable));
             }
-        }
+        })
     }
 
     /// Read the raw SPI-monitor routing control register image.

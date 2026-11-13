@@ -21,19 +21,21 @@ impl TargetInterface for Target {
         // global resource and must not be mapped or touched by userspace.
         // SAFETY: kernel main() runs once with exclusive hardware ownership.
         unsafe {
-            let scu = ast10x0_peripherals::scu::ScuRegisters::new_global_unlocked();
-            scu.ungate_clock_mask(ast10x0_peripherals::scu::ClockRegisterHalf::Lower, 1 << 2);
-            scu.assert_reset_mask(ast10x0_peripherals::scu::ScuRegisterHalf::Upper, 1 << 2);
-            // brief settle delay (spin)
-            for _ in 0..10_000u32 {
-                core::hint::spin_loop();
-            }
-            scu.deassert_reset_mask(ast10x0_peripherals::scu::ScuRegisterHalf::Upper, 1 << 2);
-            for _ in 0..10_000u32 {
-                core::hint::spin_loop();
-            }
-            scu.apply_pinctrl_group(pinctrl::PINCTRL_I2C2);
-            i2c::init_i2c_global();
+            let scu = ast10x0_peripherals::scu::ScuRegisters::new_global();
+            scu.unlock_and_lock_after(|scu| {
+                scu.ungate_clock_mask(ast10x0_peripherals::scu::ClockRegisterHalf::Lower, 1 << 2);
+                scu.assert_reset_mask(ast10x0_peripherals::scu::ScuRegisterHalf::Upper, 1 << 2);
+                // brief settle delay (spin)
+                for _ in 0..10_000u32 {
+                    core::hint::spin_loop();
+                }
+                scu.deassert_reset_mask(ast10x0_peripherals::scu::ScuRegisterHalf::Upper, 1 << 2);
+                for _ in 0..10_000u32 {
+                    core::hint::spin_loop();
+                }
+                scu.apply_pinctrl_group(pinctrl::PINCTRL_I2C2);
+                i2c::init_i2c_global();
+            })
         }
 
         codegen::start();

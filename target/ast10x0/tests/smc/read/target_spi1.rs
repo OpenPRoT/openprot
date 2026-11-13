@@ -50,22 +50,24 @@ pub struct Target {}
 /// path as the active master.
 fn config_spi1_master_controller() -> Result<(), SmcError> {
     const SPIM: SpiMonitorInstance = SpiMonitorInstance::Spim0;
-    let scu = unsafe { ScuRegisters::new_global_unlocked() };
+    let scu = unsafe { ScuRegisters::new_global() };
 
-    if !enable_flash_power(&scu) || !release_spi_flash_resets() || !set_bmc_resets(true) {
-        return Err(SmcError::HardwareError);
-    }
+    scu.unlock_and_lock_after(|scu| {
+        if !enable_flash_power(scu) || !release_spi_flash_resets() || !set_bmc_resets(true) {
+            return Err(SmcError::HardwareError);
+        }
 
-    apply_spim_pinctrl(&scu, SPIM);
-    scu.apply_pinctrl_group(PINCTRL_SPI1_QUAD);
-    scu.disable_spim_cs_internal_pull_down(SPIM);
-    scu.set_spim_passthrough(SPIM, SpiMonitorPassthrough::Enabled);
-    apply_spim_external_mux(SPIM, ScuExtMuxSelect::Mux1);
-    scu.set_spim_internal_mux(SpiMonitorSource::Spi1, SPIM as u8 + 1)
-        .map_err(|_| SmcError::HardwareError)?;
+        apply_spim_pinctrl(&scu, SPIM);
+        scu.apply_pinctrl_group(PINCTRL_SPI1_QUAD);
+        scu.disable_spim_cs_internal_pull_down(SPIM);
+        scu.set_spim_passthrough(SPIM, SpiMonitorPassthrough::Enabled);
+        apply_spim_external_mux(SPIM, ScuExtMuxSelect::Mux1);
+        scu.set_spim_internal_mux(SpiMonitorSource::Spi1, SPIM as u8 + 1)
+            .map_err(|_| SmcError::HardwareError)?;
 
-    pw_log::info!("SCU pinmux and SPIM routing configured for SPI1 staging flash");
-    Ok(())
+        pw_log::info!("SCU pinmux and SPIM routing configured for SPI1 staging flash");
+        Ok(())
+    })
 }
 
 fn run_spi1_read_test() -> Result<(), SmcError> {
