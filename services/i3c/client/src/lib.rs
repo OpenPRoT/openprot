@@ -30,6 +30,10 @@ pub enum ClientError {
     /// nothing was staged for this `Send`. Try again later. Only `send` returns
     /// this.
     Busy,
+    /// An earlier staged response was discarded unread, so a message in
+    /// progress has lost a fragment. Nothing was staged for this `Send`; it is
+    /// reported once, and the next `send` is accepted. Only `send` returns this.
+    Discarded,
     /// The server returned a status this call does not treat as success.
     ///
     /// `NoData`, `Unassigned` and `Busy` are *not* reported here — they are expected
@@ -47,6 +51,7 @@ impl core::fmt::Display for ClientError {
         match self {
             Self::Transport(e) => write!(f, "i3c transport error: {e}"),
             Self::Busy => f.write_str("i3c server busy: the previous response is unread"),
+            Self::Discarded => f.write_str("i3c server discarded an unread response"),
             Self::Server(s) => write!(f, "i3c server error: {s:?}"),
             Self::InvalidResponse => f.write_str("malformed i3c response"),
             Self::BufferTooSmall => f.write_str("i3c frame exceeds one round-trip buffer"),
@@ -115,11 +120,14 @@ impl<T: Transport> I3cClient<T> {
     ///
     /// Only one response is staged at a time. While the previous one has not
     /// been read by the controller, nothing is staged and this returns
-    /// `Err(ClientError::Busy)`: retry later.
+    /// `Err(ClientError::Busy)`: retry later. If the server gave up on an
+    /// unread response in the meantime, the next call returns
+    /// `Err(ClientError::Discarded)` once, with nothing staged.
     pub fn send(&mut self, payload: &[u8]) -> Result<(), ClientError> {
         let mut resp = [0u8; MAX_FRAME];
         match self.transact(I3cOp::Send, payload, &mut resp)? {
             (I3cStatus::Ok, _) => Ok(()),
+            (I3cStatus::Discarded, _) => Err(ClientError::Discarded),
             (status, _) => Err(ClientError::Server(status)),
         }
     }

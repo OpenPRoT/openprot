@@ -85,6 +85,8 @@ pub struct Server<T, const RING: usize = RX_RING> {
     /// Number of frames currently queued in the ring.
     rx_count: usize,
     tx_pending: bool,
+    /// A staged response was discarded unread and no `Send` has reported it yet.
+    discarded: bool,
 }
 
 impl<T> Server<T, RX_RING> {
@@ -109,6 +111,7 @@ impl<T, const RING: usize> Server<T, RING> {
             rx_head: 0,
             rx_count: 0,
             tx_pending: false,
+            discarded: false,
         }
     }
 
@@ -155,6 +158,9 @@ impl<T: I3cTarget, const RING: usize> Server<T, RING> {
             return Ok(false);
         }
         self.tx_pending = false;
+        // The message is lost whether or not the target could really discard
+        // it; the next `Send` reports that, once (`I3cStatus::Discarded`).
+        self.discarded = true;
         self.target.cancel_response().map(|()| true)
     }
 
@@ -233,6 +239,13 @@ pub fn dispatch<T: I3cTarget, const RING: usize>(
             // could overrun the target's TX queue. The client retries.
             if srv.tx_pending {
                 return status_only(resp, I3cStatus::Busy);
+            }
+            // A response was discarded unread since the last `Send`. Say so, once,
+            // and stage nothing: a sender part-way through a message has lost a
+            // fragment and must not go on with the rest.
+            if srv.discarded {
+                srv.discarded = false;
+                return status_only(resp, I3cStatus::Discarded);
             }
             match srv.target.send(payload) {
                 Ok(()) => {
@@ -431,8 +444,23 @@ mod tests {
         assert_eq!(s.target.cancels, 1, "the target discarded it");
         assert!(!s.tx_pending());
 
+        // The loss is reported once, with nothing staged, then sends go through.
+        assert_eq!(send(&mut s, b"second"), I3cStatus::Discarded);
+        assert_eq!(s.target.sent_len, 0, "nothing was staged");
+        assert!(!s.tx_pending());
         assert_eq!(send(&mut s, b"second"), I3cStatus::Ok);
         assert_eq!(&s.target.sent[..s.target.sent_len], b"second");
+        s.notify_response_read();
+        assert_eq!(send(&mut s, b"third"), I3cStatus::Ok, "reported once only");
+    }
+
+    #[test]
+    fn a_response_that_was_read_is_never_reported_discarded() {
+        let mut s = srv();
+        assert_eq!(send(&mut s, b"first"), I3cStatus::Ok);
+        s.notify_response_read();
+        assert_eq!(s.cancel_staged(), Ok(false));
+        assert_eq!(send(&mut s, b"second"), I3cStatus::Ok);
     }
 
     #[test]

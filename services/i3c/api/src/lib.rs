@@ -49,8 +49,10 @@ pub const MAX_FRAME: usize = HEADER + MAX_PAYLOAD;
 /// Only one response is staged at a time and a `Send` is `Busy` until it is
 /// read. A controller that never reads would block every later `Send`, so after
 /// this long the server discards the staged response and accepts `Send` again.
-/// The discarded message is lost. A client that retries on `Busy` has to keep
-/// retrying for longer than this to get through after such a stall.
+/// The discarded message is lost, and the next `Send` is answered
+/// [`I3cStatus::Discarded`] once so the client learns of it. A client that
+/// retries on `Busy` has to keep retrying for longer than this to get through
+/// after such a stall.
 ///
 /// It is much longer than a controller takes to read after an IBI, and shorter
 /// than the MCTP reassembly timeout (about 6 s).
@@ -160,6 +162,12 @@ pub enum I3cStatus {
     /// `Send` while the previous staged response has not been read by the
     /// controller yet. Nothing was staged; retry once the controller has read it.
     Busy = 6,
+    /// `Send` refused, with nothing staged, because the server discarded an
+    /// earlier staged response the controller never read (see
+    /// [`STAGED_RESPONSE_TIMEOUT_MS`]). Reported once per discard, to the first
+    /// `Send` after it, so a sender can tell that a message it was still
+    /// sending has lost a fragment. Sending again is accepted.
+    Discarded = 7,
 }
 
 impl I3cStatus {
@@ -173,6 +181,7 @@ impl I3cStatus {
             4 => Some(Self::Internal),
             5 => Some(Self::InvalidOp),
             6 => Some(Self::Busy),
+            7 => Some(Self::Discarded),
             _ => None,
         }
     }
@@ -243,10 +252,11 @@ mod tests {
             I3cStatus::Internal,
             I3cStatus::InvalidOp,
             I3cStatus::Busy,
+            I3cStatus::Discarded,
         ] {
             assert_eq!(I3cStatus::from_u8(st as u8), Some(st));
         }
-        assert_eq!(I3cStatus::from_u8(7), None);
+        assert_eq!(I3cStatus::from_u8(8), None);
     }
 
     #[test]

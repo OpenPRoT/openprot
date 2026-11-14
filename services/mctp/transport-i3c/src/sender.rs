@@ -93,11 +93,26 @@ impl<T: Transport, W: FnMut()> I3cSender<T, W> {
     }
 
     /// Hand one finished frame to the service, waiting out `Busy`.
-    fn send_frame(&mut self, frame: &[u8]) -> Result<()> {
+    ///
+    /// `first` marks the first fragment of a message. A `Discarded` answer to it
+    /// concerns an earlier message, so it is retried once; to any later
+    /// fragment it means this message lost one, and the send fails.
+    fn send_frame(&mut self, frame: &[u8], first: bool) -> Result<()> {
         let mut retries: u16 = 0;
+        let mut stale_discard_seen = false;
         loop {
             match self.client.send(frame) {
                 Ok(()) => return Ok(()),
+                Err(ClientError::Discarded) if first && !stale_discard_seen => {
+                    stale_discard_seen = true;
+                }
+                Err(ClientError::Discarded) => {
+                    pw_log::error!(
+                        "i3c fragment discarded unread; message abandoned: len=0x{:04x}",
+                        frame.len() as u32
+                    );
+                    return Err(mctp::Error::TxFailure);
+                }
                 Err(ClientError::Busy) if retries < MAX_BUSY_RETRIES => {
                     retries += 1;
                     (self.wait)();
@@ -138,6 +153,7 @@ impl<T: Transport, W: FnMut()> mctp_lib::Sender for I3cSender<T, W> {
         // first (signalled by TargetEvent::ResponseRead). `send_frame` waits
         // that out, so this loop cannot outrun the controller and overrun the
         // target TX queue.
+        let mut first = true;
         loop {
             let mut pkt = [0u8; MCTP_I3C_IPC_PACKET];
             match fragmenter.fragment_vectored(payload, &mut pkt) {
@@ -145,7 +161,8 @@ impl<T: Transport, W: FnMut()> mctp_lib::Sender for I3cSender<T, W> {
                     let mut out = [0u8; MCTP_I3C_IPC_FRAME];
                     let n = encoder.encode(p, &mut out)?;
                     let frame = out.get(..n).ok_or(mctp::Error::TxFailure)?;
-                    self.send_frame(frame)?;
+                    self.send_frame(frame, first)?;
+                    first = false;
                 }
                 SendOutput::Complete { tag, .. } => break Ok(tag),
                 SendOutput::Error { err, .. } => break Err(err),
