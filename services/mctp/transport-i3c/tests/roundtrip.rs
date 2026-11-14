@@ -362,6 +362,15 @@ impl Transport for ScriptedTransport {
 /// Send one short message through a sender over `script`; returns the result,
 /// the number of `Send`s the service saw and the number of waits.
 fn send_scripted(script: Vec<I3cStatus>, repeat: I3cStatus) -> (Result<(), ()>, u32, u32) {
+    send_scripted_payload(script, repeat, b"x")
+}
+
+/// [`send_scripted`] with a chosen message payload, to span several fragments.
+fn send_scripted_payload(
+    script: Vec<I3cStatus>,
+    repeat: I3cStatus,
+    payload: &[u8],
+) -> (Result<(), ()>, u32, u32) {
     let sends = Rc::new(Cell::new(0));
     let waits = Rc::new(Cell::new(0u32));
     let client = I3cClient::new(ScriptedTransport {
@@ -377,7 +386,7 @@ fn send_scripted(script: Vec<I3cStatus>, repeat: I3cStatus) -> (Result<(), ()>, 
         Server::new(Eid(OWN_EID), 0, I3cSender::new(client, REMOTE_ADDR, wait));
     let req = srv.req(REMOTE_EID).expect("req");
     let result = srv
-        .send(Some(req), MSG_TYPE, None, None, false, b"x")
+        .send(Some(req), MSG_TYPE, None, None, false, payload)
         .map(|_| ())
         .map_err(|_| ());
     (result, sends.get(), waits.get())
@@ -418,4 +427,39 @@ fn an_error_that_is_not_busy_is_not_retried() {
         assert_eq!(sends, 1, "{status:?}");
         assert_eq!(waits, 0, "{status:?}");
     }
+}
+
+/// A fragment the service discarded unread leaves the message unreassemblable:
+/// the send must fail and the remaining fragments must not go out.
+#[test]
+fn a_discard_mid_message_fails_the_send_and_stops_the_fragments() {
+    let payload = vec![0x5au8; MCTP_I3C_IPC_MAXMTU * 3];
+    // Fragment 1 is accepted; the service then drops it unread and answers the
+    // next `Send` (fragment 2) `Discarded`. Everything after would be `Ok`.
+    let (result, sends, waits) = send_scripted_payload(
+        vec![I3cStatus::Ok, I3cStatus::Discarded],
+        I3cStatus::Ok,
+        &payload,
+    );
+    assert!(result.is_err(), "a message that lost a fragment is not sent");
+    assert_eq!(sends, 2, "no fragment after the discard goes out");
+    assert_eq!(waits, 0);
+}
+
+/// A discard reported to the *first* fragment concerns an earlier message, not
+/// this one: the sender goes on, and resends the fragment once.
+#[test]
+fn a_discard_reported_to_the_first_fragment_is_not_this_messages_loss() {
+    let (result, sends, _) = send_scripted(vec![I3cStatus::Discarded], I3cStatus::Ok);
+    assert!(result.is_ok());
+    assert_eq!(sends, 2, "the refused fragment is sent again");
+}
+
+/// The stale-discard retry is bounded: a service that keeps answering
+/// `Discarded` to the first fragment cannot hold the sender in a loop.
+#[test]
+fn a_service_that_keeps_discarding_fails_the_send() {
+    let (result, sends, _) = send_scripted(Vec::new(), I3cStatus::Discarded);
+    assert!(result.is_err());
+    assert_eq!(sends, 2, "one retry, then the send fails");
 }

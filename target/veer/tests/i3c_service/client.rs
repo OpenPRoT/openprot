@@ -25,7 +25,8 @@
 //! 7. a third `send`, with the second reply left unread: the host does not read
 //!    it. The server gives up on a response that stays unread for
 //!    `STAGED_RESPONSE_TIMEOUT_MS`, discards it, and accepts the send, so the
-//!    client is `Busy` for about a second and then goes through. As in step 6,
+//!    client is `Busy` for about a second, is told once that the reply was
+//!    discarded (`Discarded`, nothing staged), and then goes through. As in step 6,
 //!    the emulator reads the second reply on its own, so there the send is
 //!    accepted at once.
 //!
@@ -85,6 +86,9 @@ macro_rules! send_until_accepted {
                         .unwrap_or(Instant::MAX);
                     let _ = time::sleep_until(deadline);
                 }
+                // The server discarded an earlier unread reply and reports that
+                // once, to this send, with nothing staged: send again.
+                Err(ClientError::Discarded) => pw_log::info!("send refused: reply discarded"),
                 Err(_) => fail!($failed),
             }
         }
