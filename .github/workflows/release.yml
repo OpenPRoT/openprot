@@ -64,6 +64,33 @@ jobs:
             --platforms="${RELEASE_PLATFORM}" \
             ${RELEASE_TARGETS}
 
+    - name: Check release closure is hermetic
+      # The release target must not reach the non-hermetic Earlgrey signing
+      # repos (they read $HOME), the pip repo, the locally built QEMU, or the
+      # HSM/Caliptra repos. Write to a file first so a failing bazel call fails
+      # the step instead of looking like "no matches".
+      run: |
+        BAD='(^|@@?)//target/earlgrey|nonhermetic|openprot_python_deps|qemu_opentitan|cloud_kms|caliptra'
+        bazel --nosystem_rc --nohome_rc cquery \
+            --config=release \
+            --platforms="${RELEASE_PLATFORM}" \
+            --platform_suffix= \
+            --@pigweed//pw_kernel:enable_tests=false \
+            --output=label \
+            "deps(${RELEASE_TARGETS// /+})" > closure-labels.txt
+        if grep -Ei "${BAD}" closure-labels.txt; then
+          echo "::error::Release closure reaches a non-hermetic or out-of-scope repo"
+          exit 1
+        fi
+        # `caliptra_deps+` itself is always present (it is a local_path_override
+        # module in MODULE.bazel), so only match repos its extensions fetch
+        # (`caliptra_deps++...`), not the module's own directory.
+        ls "$(bazel --nosystem_rc --nohome_rc info output_base)/external" > fetched-repos.txt
+        if grep -Ei 'nonhermetic|qemu_opentitan|cloud_kms|openprot_python_deps|caliptra_deps\+\+' fetched-repos.txt; then
+          echo "::error::Release build fetched a non-hermetic or out-of-scope repo"
+          exit 1
+        fi
+
     - name: Collect artifacts
       run: |
         mkdir -p release-artifacts
