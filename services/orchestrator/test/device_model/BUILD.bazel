@@ -1,0 +1,26 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+# A managed device that boots, hangs or dies on a script: a pure state machine
+# with injected time and no dependencies, so it runs on a host and behind any
+# carrier (pins, IPC).
+rust_library(
+    name = "device_model",
+    srcs = [
+        "src/behaviour.rs",
+        "src/lib.rs",
+        "src/model.rs",
+        "src/tests.rs",
+    ],
+    crate_name = "openprot_device_model",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+)
+
+rust_test(
+    name = "device_model_test",
+    crate = ":device_model",
+    edition = "2024",
+)
