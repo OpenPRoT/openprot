@@ -16,7 +16,7 @@
 //!
 //! - **Incoming write** (controller → target): hardware pushes a descriptor
 //!   into `tti_rx_desc_queue_port` then `data_length` words into
-//!   `tti_rx_data_port`.  Poll `rx_pending()` or enable the RX interrupt.
+//!   `tti_rx_data_port`; the RX interrupt (enabled by `enable`) says when.
 //! - **Outgoing read** (target → controller): firmware writes a descriptor
 //!   to `tti_tx_desc_queue_port` then `data_length` words to
 //!   `tti_tx_data_port`.
@@ -31,7 +31,7 @@ use core::mem::offset_of;
 use core::ptr::{with_exposed_provenance, with_exposed_provenance_mut};
 
 use caliptra_ss_registers::i3c;
-use i3c::bits::{InterruptEnable, InterruptStatus, Status, StbyCrDeviceAddr};
+use i3c::bits::{InterruptEnable, InterruptStatus, Status, StbyCrDeviceAddr, TtiResetControl};
 use tock_registers::fields::FieldValue;
 use tock_registers::LocalRegisterCopy;
 // I3C register block base for the selected target type, from upstream
@@ -48,11 +48,15 @@ use openprot_hal_blocking::i3c_hardware::{
 /// 64 DWORDs. Matches caliptra-mcu-sw's `MAX_READ_WRITE_SIZE`.
 pub const MAX_READ_WRITE_SIZE: usize = 256;
 
-/// MIPI DCR value for an MCTP endpoint.
-pub const MCTP_DCR: u8 = 0xCC;
-
-/// Mandatory Data Byte the target raises with a pending-read IBI, matching the
-/// upstream caliptra-mcu-sw runtime driver's MCTP pending-read notification.
+/// Mandatory Data Byte the target raises with a pending-read IBI. This is the
+/// driver's default, and it is the MCTP pending-read value, matching the
+/// upstream caliptra-mcu-sw runtime driver.
+///
+/// The default has a side effect beyond interrupting the controller: after an
+/// IBI with this MDB the hardware models read the staged reply on their own,
+/// the way an MCTP controller would. A consumer that is not MCTP, or that wants
+/// to do the read itself, should choose another value with
+/// [`CaliptraI3cTarget::set_config`].
 pub const MDB_PENDING_READ: u8 = 0xAE;
 
 /// How many times a failed IBI is raised again before giving up. The
@@ -67,6 +71,8 @@ pub enum Reg {
     DeviceAddr,
     /// `tti_status`: last IBI status.
     TtiStatus,
+    /// `tti_tti_reset_control`: software resets of the TTI queues.
+    TtiResetControl,
     /// `tti_desc_queue_depth`: RX descriptor depth in the low byte.
     TtiDescQueueDepth,
     /// `tti_interrupt_status`.
@@ -91,6 +97,7 @@ impl Reg {
         match self {
             Reg::DeviceAddr => offset_of!(i3c::regs::I3c, stdby_ctrl_mode_stby_cr_device_addr),
             Reg::TtiStatus => offset_of!(i3c::regs::I3c, tti_status),
+            Reg::TtiResetControl => offset_of!(i3c::regs::I3c, tti_tti_reset_control),
             Reg::TtiDescQueueDepth => offset_of!(i3c::regs::I3c, tti_desc_queue_depth),
             Reg::TtiInterruptStatus => offset_of!(i3c::regs::I3c, tti_interrupt_status),
             Reg::TtiInterruptEnable => offset_of!(i3c::regs::I3c, tti_interrupt_enable),
@@ -208,7 +215,8 @@ impl<M: Mmio> CaliptraI3cTarget<M> {
 
     /// Apply pre-kernel target configuration.
     ///
-    /// Only the IBI Mandatory Data Byte is consumed here; the static and
+    /// Only the IBI Mandatory Data Byte is consumed here (the default is
+    /// [`MDB_PENDING_READ`]); the static and
     /// dynamic addresses are programmed by the Caliptra ROM before this driver
     /// runs, so `config.static_address` is informational.
     pub fn set_config(&mut self, config: I3cTargetConfig) {
@@ -231,31 +239,12 @@ impl<M: Mmio> CaliptraI3cTarget<M> {
     }
 
     // -------------------------------------------------------------------------
-    // Interrupts
-    // -------------------------------------------------------------------------
-
-    /// Enable the RX descriptor threshold interrupt.
-    pub fn enable_rx_interrupt(&mut self) {
-        self.update_interrupt_enable(InterruptEnable::RxDescStatEn::SET);
-    }
-
-    /// Disable the RX descriptor threshold interrupt.
-    pub fn disable_rx_interrupt(&mut self) {
-        self.update_interrupt_enable(InterruptEnable::RxDescStatEn::CLEAR);
-    }
-
-    // -------------------------------------------------------------------------
     // TTI receive (controller → target private write)
     // -------------------------------------------------------------------------
 
-    /// Return `true` if an RX descriptor is waiting in the TTI queue.
-    pub fn rx_pending(&self) -> bool {
-        self.interrupt_status().is_set(InterruptStatus::RxDescStat)
-    }
-
     /// Drain one incoming write into `buf`.  Returns the number of bytes read,
     /// or `None` if no descriptor was present.
-    pub fn rx_read(&mut self, buf: &mut [u8]) -> Option<usize> {
+    fn rx_read(&mut self, buf: &mut [u8]) -> Option<usize> {
         // `RxDescStat` is not a reliable "queue not empty" flag: on the FPGA it
         // deasserts while one descriptor is still queued (seen after a burst of
         // four frames: depth 1, status 0), which strands the last frame because
@@ -303,7 +292,7 @@ impl<M: Mmio> CaliptraI3cTarget<M> {
     /// (and the emulator model) opens a new TX buffer on the descriptor
     /// write and appends subsequent data-port writes to it, matching the
     /// upstream caliptra-mcu-sw runtime driver.
-    pub fn tx_write(&mut self, data: &[u8]) {
+    fn tx_write(&mut self, data: &[u8]) {
         // Descriptor: data_length in lower 16 bits; saturate rather than truncate.
         let desc = u32::try_from(data.len()).unwrap_or(u16::MAX as u32);
         self.mmio.write(Reg::TtiTxDescPort, desc);
@@ -320,7 +309,7 @@ impl<M: Mmio> CaliptraI3cTarget<M> {
     /// The descriptor word must be written before the payload words: the
     /// hardware (and the emulator model) parses the first word written to
     /// the IBI port as the descriptor and takes the payload length from it.
-    pub fn ibi_raise(&mut self, mdb: u8, payload: &[u8]) {
+    fn ibi_raise(&mut self, mdb: u8, payload: &[u8]) {
         let payload = &payload[..payload.len().min(255)];
         // IBI descriptor: MDB in bits [31:24], payload length in bits [7:0].
         let desc = ((mdb as u32) << 24) | (payload.len() as u32 & 0xff);
@@ -428,6 +417,38 @@ impl<M: Mmio> I3cTarget for CaliptraI3cTarget<M> {
         Ok(())
     }
 
+    fn cancel_response(&mut self) -> Result<(), Self::Error> {
+        // Best effort. The FPGA's controller is the real i3c-core and acts on the
+        // reset below. The Caliptra emulator implements `tti_tti_reset_control`
+        // as a non-functional stub: it takes the writes and ignores them, so
+        // there a staged response stays queued and the controller can still read
+        // it. This does not report that, and cannot detect it. No emulator
+        // scenario leaves a response unread long enough to need this.
+        //
+        // Reset the TX queues and the IBI queue and its retry counter. The RX
+        // queues are left alone: inbound frames must survive. These reset bits
+        // hold the queue in reset until cleared (they are not self-clearing
+        // pulses), so clear them again, or the TX path stays dead.
+        let reset = TtiResetControl::TxDescRst::SET
+            + TtiResetControl::TxDataRst::SET
+            + TtiResetControl::IbiQueueRst::SET
+            + TtiResetControl::IbiRetryCtrRst::SET;
+        self.mmio.write(Reg::TtiResetControl, reset.into());
+        self.mmio.write(Reg::TtiResetControl, 0);
+
+        // Nothing is staged now, so no IBI is outstanding and none may be
+        // retried, and neither a stale "IBI done" nor a stale "transmit
+        // complete" may be reported for the response that is gone. A
+        // `ResponseRead` for it would release the flag for the next `Send`.
+        self.pending_ibi = None;
+        self.ibi_retries = 0;
+        self.mmio.write(
+            Reg::TtiInterruptStatus,
+            (InterruptStatus::TxDescComplete::SET + InterruptStatus::IbiDone::SET).into(),
+        );
+        Ok(())
+    }
+
     fn dynamic_address(&self) -> Option<DynamicAddress> {
         let addr = self.device_addr();
         if addr.read(StbyCrDeviceAddr::DynamicAddrValid) == 1 {
@@ -513,6 +534,7 @@ mod tests {
     fn register_offsets_match_the_hardware_map() {
         assert_eq!(Reg::DeviceAddr.offset(), 0x188);
         assert_eq!(Reg::TtiStatus.offset(), 0x208);
+        assert_eq!(Reg::TtiResetControl.offset(), 0x20c);
         assert_eq!(Reg::TtiDescQueueDepth.offset(), 0x214);
         assert_eq!(Reg::TtiInterruptStatus.offset(), 0x220);
         assert_eq!(Reg::TtiInterruptEnable.offset(), 0x224);
@@ -582,6 +604,55 @@ mod tests {
                 (Reg::TtiIbiPort, 0xAE00_0002),
                 (Reg::TtiIbiPort, 0x0000_0600),
             ]
+        );
+    }
+
+    #[test]
+    fn cancel_response_resets_the_tx_queues_then_releases_them() {
+        let mut d = driver();
+        d.send(&[1, 2, 3]).unwrap();
+        d.mmio.writes.clear();
+
+        d.cancel_response().unwrap();
+
+        let tx = u32::from(
+            TtiResetControl::TxDescRst::SET
+                + TtiResetControl::TxDataRst::SET
+                + TtiResetControl::IbiQueueRst::SET
+                + TtiResetControl::IbiRetryCtrRst::SET,
+        );
+        let resets: Vec<u32> = d
+            .mmio
+            .writes
+            .iter()
+            .filter(|(r, _)| *r == Reg::TtiResetControl)
+            .map(|(_, v)| *v)
+            .collect();
+        // Set, then cleared: the bits hold the queue in reset until cleared.
+        assert_eq!(resets, [tx, 0]);
+        // The receive queues are not touched.
+        let rx = u32::from(TtiResetControl::RxDataRst::SET + TtiResetControl::RxDescRst::SET);
+        assert_eq!(resets[0] & rx, 0, "inbound frames must survive");
+        assert_eq!(d.mmio.read(Reg::TtiResetControl), 0, "left released");
+    }
+
+    #[test]
+    fn cancel_response_forgets_the_ibi_and_its_stale_events() {
+        let mut d = driver();
+        d.send(&[1, 2]).unwrap();
+        d.mmio.writes.clear();
+
+        d.cancel_response().unwrap();
+
+        assert_eq!(d.pending_ibi, None, "no retry of a response that is gone");
+        assert_eq!(d.ibi_retries, 0);
+        // The stale "transmit complete" and "IBI done" are cleared, so the
+        // discarded response cannot be reported as read.
+        let stale = u32::from(InterruptStatus::TxDescComplete::SET + InterruptStatus::IbiDone::SET);
+        assert!(d.mmio.writes.contains(&(Reg::TtiInterruptStatus, stale)));
+        assert!(
+            !d.mmio.writes.iter().any(|(r, _)| *r == Reg::TtiIbiPort),
+            "cancelling raises no IBI"
         );
     }
 

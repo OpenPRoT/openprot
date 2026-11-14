@@ -74,6 +74,11 @@ impl I3cTarget for FakeTarget {
         Ok(())
     }
 
+    fn cancel_response(&mut self) -> Result<(), Self::Error> {
+        self.sent_len = 0;
+        Ok(())
+    }
+
     fn dynamic_address(&self) -> Option<DynamicAddress> {
         self.addr.and_then(|a| DynamicAddress::try_from(a).ok())
     }
@@ -119,7 +124,7 @@ fn second_send_is_busy_until_the_controller_reads_the_first() {
 
     // Only one response is staged at a time. Nothing of the second reaches the
     // target while the first is unread.
-    assert_eq!(c.send(b"second"), Err(ClientError::Server(I3cStatus::Busy)));
+    assert_eq!(c.send(b"second"), Err(ClientError::Busy));
     let target = &c.transport().server().target;
     assert_eq!(&target.sent[..target.sent_len], b"first");
 

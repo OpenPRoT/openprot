@@ -22,6 +22,13 @@
 //!    server's `ResponseRead` release the next send. If the controller read the
 //!    first reply on its own (the emulator does) the second send is accepted at
 //!    once.
+//! 7. a third `send`, with the second reply left unread: the host does not read
+//!    it. The server gives up on a response that stays unread for
+//!    `STAGED_RESPONSE_TIMEOUT_MS`, discards it, and accepts the send, so the
+//!    client is `Busy` for about a second, is told once that the reply was
+//!    discarded (`Discarded`, nothing staged), and then goes through. As in step 6,
+//!    the emulator reads the second reply on its own, so there the send is
+//!    accepted at once.
 //!
 //! Step 3 is also the wake this test exists to exercise: the server raises USER
 //! from inside its I3C interrupt handling, so the process made runnable by that
@@ -31,7 +38,7 @@
 #![no_std]
 
 use client_codegen::handle;
-use i3c_api::{I3cStatus, MAX_PAYLOAD};
+use i3c_api::MAX_PAYLOAD;
 use i3c_client::{ClientError, I3cClient};
 use i3c_client_ipc::IpcTransport;
 use userspace::process_entry;
@@ -47,9 +54,47 @@ const REPLY: &[u8] = &[0xa5, 0x5a, 0xc3, 0x3c];
 /// The second staged payload.
 const REPLY2: &[u8] = &[0x5a, 0xa5, 0x3c, 0xc3];
 
+/// The third staged payload.
+const REPLY3: &[u8] = &[0x3c, 0xc3, 0xa5, 0x5a];
+
 /// How long to wait between retries of a `Busy` send, and how many to make.
 const BUSY_RETRY: Duration = Duration::from_millis(10);
 const BUSY_RETRIES: u32 = 6000;
+
+/// Send `$payload`, retrying while the server answers `Busy`. Logs `$busy` the
+/// first time it is refused. Fails the test with `$stuck` if it is still busy
+/// after `BUSY_RETRIES` tries, or `$failed` on any other error. Evaluates to
+/// whether the send was ever refused.
+macro_rules! send_until_accepted {
+    ($i3c:expr, $payload:expr, $busy:literal, $stuck:literal, $failed:literal) => {{
+        let mut busy = false;
+        let mut tries = 0u32;
+        loop {
+            match $i3c.send($payload) {
+                Ok(()) => break,
+                Err(ClientError::Busy) => {
+                    if !busy {
+                        busy = true;
+                        pw_log::info!($busy);
+                    }
+                    tries += 1;
+                    if tries >= BUSY_RETRIES {
+                        fail!($stuck);
+                    }
+                    let deadline = SystemClock::now()
+                        .checked_add_duration(BUSY_RETRY)
+                        .unwrap_or(Instant::MAX);
+                    let _ = time::sleep_until(deadline);
+                }
+                // The server discarded an earlier unread reply and reports that
+                // once, to this send, with nothing staged: send again.
+                Err(ClientError::Discarded) => pw_log::info!("send refused: reply discarded"),
+                Err(_) => fail!($failed),
+            }
+        }
+        busy
+    }};
+}
 
 macro_rules! fail {
     ($msg:literal) => {{
@@ -142,29 +187,26 @@ fn entry() {
     // 6. The first reply is probably still unread, so this is refused with
     //    `Busy` until the controller reads it: see the module docs.
     pw_log::info!("i3c service: sending second reply");
-    let mut busy = false;
-    let mut tries = 0u32;
-    loop {
-        match i3c.send(REPLY2) {
-            Ok(()) => break,
-            Err(ClientError::Server(I3cStatus::Busy)) => {
-                if !busy {
-                    busy = true;
-                    pw_log::info!("i3c service: second send busy");
-                }
-                tries += 1;
-                if tries >= BUSY_RETRIES {
-                    fail!("second send still busy: the first reply was never read");
-                }
-                let deadline = SystemClock::now()
-                    .checked_add_duration(BUSY_RETRY)
-                    .unwrap_or(Instant::MAX);
-                let _ = time::sleep_until(deadline);
-            }
-            Err(_) => fail!("second send failed"),
-        }
-    }
+    send_until_accepted!(
+        i3c,
+        REPLY2,
+        "second send busy",
+        "second send still busy: the first reply was never read",
+        "second send failed"
+    );
     pw_log::info!("i3c service: second send accepted");
+
+    // 7. Nobody reads the second reply. Once the server's timeout passes it
+    //    discards it and this send goes through: see the module docs.
+    pw_log::info!("i3c service: sending third reply");
+    send_until_accepted!(
+        i3c,
+        REPLY3,
+        "third send busy",
+        "third send still busy: the unread reply was never discarded",
+        "third send failed"
+    );
+    pw_log::info!("i3c service: third send accepted");
 
     let _ = syscall::debug_shutdown(Ok(()));
     loop {}

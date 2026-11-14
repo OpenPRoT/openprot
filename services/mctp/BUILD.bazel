@@ -28,5 +28,7 @@ test_suite(
         "//services/mctp/server:mctp_server_echo_test",
         "//services/mctp/server:mctp_server_integration_test",
         "//services/mctp/server:mctp_server_unit_test",
+        "//services/mctp/transport-i3c:mctp_transport_i3c_roundtrip_test",
+        "//services/mctp/transport-i3c:mctp_transport_i3c_test",
     ],
 )

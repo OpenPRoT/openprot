@@ -33,19 +33,29 @@
 //! controller may write again before it reads. This is also how caliptra-mcu-sw's
 //! I3C driver gates outbound data (`ErrorCode::BUSY`).
 //!
+//! A controller that never reads would leave `Busy` set for good. So the runtime
+//! gives each staged response [`STAGED_RESPONSE_TIMEOUT_MS`](i3c_api::STAGED_RESPONSE_TIMEOUT_MS):
+//! when that passes without a `ResponseRead` it discards the response in the
+//! target ([`Server::cancel_staged`]), logs it, and accepts `Send` again. The
+//! discarded message is lost.
+//!
 //! The **only** kernel-tagged crate in the i3c server path.
 
 #![no_std]
 
-use i3c_api::{decode_request, I3cOp, MAX_FRAME};
+use i3c_api::{decode_request, I3cOp, MAX_FRAME, STAGED_RESPONSE_TIMEOUT_MS};
 use i3c_server::{dispatch, Inbound, Server};
 use openprot_hal_blocking::i3c_hardware::{I3cTarget, TargetEvent};
 use pw_status::Result;
 use userspace::syscall::{self, Signals};
-use userspace::time::Instant;
+use userspace::time::{Clock, Duration, Instant, SystemClock};
 use util_service::{Event, ServiceLoop};
 
 pub use util_service::Channel;
+
+/// How long a staged response may go unread. See
+/// [`STAGED_RESPONSE_TIMEOUT_MS`].
+const STAGED_TIMEOUT: Duration = Duration::from_millis(STAGED_RESPONSE_TIMEOUT_MS as u64);
 
 /// Run the I3C server loop until a fatal error.
 ///
@@ -77,10 +87,21 @@ pub fn run<T: I3cTarget, const RING: usize>(
     let mut request_buf = [0u8; MAX_FRAME];
     let mut response_buf = [0u8; MAX_FRAME];
 
+    // When the staged response, if any, runs out of time to be read.
+    let mut staged_deadline: Option<Instant> = None;
+
     loop {
-        match service.next(Instant::MAX, &mut request_buf)? {
-            // No deadline is ever passed, so this does not happen.
-            Event::Deadline => {}
+        match service.next(staged_deadline.unwrap_or(Instant::MAX), &mut request_buf)? {
+            // The staged response was not read in time: give up on it so the
+            // next `Send` is not refused for good.
+            Event::Deadline => {
+                staged_deadline = None;
+                match srv.cancel_staged() {
+                    Ok(true) => pw_log::error!("i3c staged response not read in time; discarded"),
+                    Ok(false) => {}
+                    Err(_) => pw_log::error!("i3c cancel_response failed"),
+                }
+            }
 
             // ---- I3C hardware IRQ: decode, latch an inbound frame, wake client ----
             Event::Source(_) => {
@@ -112,6 +133,7 @@ pub fn run<T: I3cTarget, const RING: usize>(
                         // The controller read the staged response: the next
                         // `Send` can be staged.
                         srv.notify_response_read();
+                        staged_deadline = None;
                     }
                     Ok(_) => {}
                     Err(_) => pw_log::error!("i3c on_interrupt failed"),
@@ -133,7 +155,16 @@ pub fn run<T: I3cTarget, const RING: usize>(
             Event::Request { channel, len } => {
                 let request = request_buf.get(..len).unwrap_or(&[]);
                 let is_recv = decode_request(request).map(|(op, _)| op) == Some(I3cOp::Recv);
+                let was_pending = srv.tx_pending();
                 let resp_len = dispatch(srv, request, &mut response_buf);
+                if !was_pending && srv.tx_pending() {
+                    // This request staged a response: start its clock.
+                    staged_deadline = Some(
+                        SystemClock::now()
+                            .checked_add_duration(STAGED_TIMEOUT)
+                            .unwrap_or(Instant::MAX),
+                    );
+                }
                 // A Recv pops one frame from the ring. Keep USER asserted while
                 // frames remain so the client drains the rest; clear it only when
                 // the ring is empty (the IRQ path re-raises it when the next frame

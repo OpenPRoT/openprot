@@ -17,7 +17,7 @@
 //! that widens the surface.
 //!
 //! ```text
-//! MCTP transport-i3c            consumer (out of scope here)
+//! consumer (e.g. MCTP)          out of scope here
 //!        │  IPC (send / recv / dynamic_address)
 //! i3c server-runtime            hooks pigweed IRQ + IPC to the facade
 //!        │  I3cTarget
@@ -186,6 +186,22 @@ pub trait I3cTarget {
     /// caller's buffer.
     fn send(&mut self, data: &[u8]) -> Result<(), Self::Error>;
 
+    /// Discard the staged response, and any IBI still being raised for it, so
+    /// the next [`send`](Self::send) starts from an empty transmit queue.
+    ///
+    /// The runtime calls this when a response has been staged for too long and
+    /// the controller has not read it, so one controller that stops reading
+    /// cannot block every later `send`. It must not drop inbound frames, and the
+    /// target must not report [`TargetEvent::ResponseRead`] for the discarded
+    /// response afterwards.
+    ///
+    /// This is best effort. A target, or a hardware model, that cannot discard a
+    /// staged response may do nothing and return `Ok(())`: the controller can
+    /// then still read the old response, and a later one queues behind it. The
+    /// Caliptra emulator is such a model. It accepts the reset writes that the
+    /// real controller acts on and ignores them.
+    fn cancel_response(&mut self) -> Result<(), Self::Error>;
+
     /// The dynamic address currently assigned, or `None` if unassigned.
     ///
     /// A local state read: it cannot fail, so it returns `Option`, not
@@ -286,6 +302,11 @@ mod tests {
 
         fn send(&mut self, _data: &[u8]) -> Result<(), Self::Error> {
             self.sent = true;
+            Ok(())
+        }
+
+        fn cancel_response(&mut self) -> Result<(), Self::Error> {
+            self.sent = false;
             Ok(())
         }
 

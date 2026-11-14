@@ -39,8 +39,8 @@ pub enum Inbound {
     Latched,
     /// Nothing was available to latch (empty or a zero-length descriptor).
     Empty,
-    /// A frame was read but dropped because the ring was full — a lost MCTP
-    /// fragment. [`RX_RING`] is sized so this should not occur in normal flow;
+    /// A frame was read but dropped because the ring was full — a lost frame
+    /// (for a fragmenting consumer, a lost fragment). [`RX_RING`] is sized so this should not occur in normal flow;
     /// the runtime logs it.
     DroppedFull,
 }
@@ -48,8 +48,8 @@ pub enum Inbound {
 /// The I3C target the server owns, plus its IPC channel, IRQ handle, the
 /// inbound frame ring, and the outbound "response staged, awaiting read" flag.
 ///
-/// Inbound frames are queued in a [`RX_RING`]-deep FIFO. MCTP over I3C is
-/// request/response, but the client draining a latched frame spans a
+/// Inbound frames are queued in a [`RX_RING`]-deep FIFO. A consumer is
+/// typically request/response, but the client draining a latched frame spans a
 /// cross-process round-trip, during which the controller can land the next
 /// frame (a resend, or the next fragment); the ring holds those so none is
 /// lost. `latch_inbound` pushes the oldest-first; `Recv` pops it. The ring
@@ -85,6 +85,8 @@ pub struct Server<T, const RING: usize = RX_RING> {
     /// Number of frames currently queued in the ring.
     rx_count: usize,
     tx_pending: bool,
+    /// A staged response was discarded unread and no `Send` has reported it yet.
+    discarded: bool,
 }
 
 impl<T> Server<T, RX_RING> {
@@ -109,6 +111,7 @@ impl<T, const RING: usize> Server<T, RING> {
             rx_head: 0,
             rx_count: 0,
             tx_pending: false,
+            discarded: false,
         }
     }
 
@@ -134,6 +137,33 @@ impl<T, const RING: usize> Server<T, RING> {
 }
 
 impl<T: I3cTarget, const RING: usize> Server<T, RING> {
+    /// Give up on a staged response the controller has not read.
+    ///
+    /// Discards it in the target ([`I3cTarget::cancel_response`]) and releases
+    /// the outbound flag, so the next `Send` is accepted. Returns whether
+    /// anything was cancelled: `false`, with the target untouched, if no
+    /// response was staged. The runtime calls this once a response has waited
+    /// [`STAGED_RESPONSE_TIMEOUT_MS`](i3c_api::STAGED_RESPONSE_TIMEOUT_MS).
+    ///
+    /// The flag is released even if the target could not really discard the
+    /// response (see [`I3cTarget::cancel_response`]), and also if it reports an
+    /// error. Keeping it set would refuse every later `Send` for good, which is
+    /// the failure this exists to end.
+    ///
+    /// # Errors
+    ///
+    /// The target's error from `cancel_response`, after the flag is released.
+    pub fn cancel_staged(&mut self) -> Result<bool, T::Error> {
+        if !self.tx_pending {
+            return Ok(false);
+        }
+        self.tx_pending = false;
+        // The message is lost whether or not the target could really discard
+        // it; the next `Send` reports that, once (`I3cStatus::Discarded`).
+        self.discarded = true;
+        self.target.cancel_response().map(|()| true)
+    }
+
     /// Drain one inbound frame into the ring after a [`TargetEvent::InboundReady`].
     ///
     /// Reads one frame from the target and, if the ring has room, queues it at
@@ -144,7 +174,7 @@ impl<T: I3cTarget, const RING: usize> Server<T, RING> {
     /// A zero-length descriptor is not a real frame: the RX-descriptor interrupt
     /// can fire with no payload (seen on the emulator around the controller's
     /// write/private-read command traffic), and `read_frame` then reports
-    /// `Some(0)`. A zero-length inbound is never a valid MCTP frame, so it is
+    /// `Some(0)`. A zero-length inbound carries nothing for a consumer, so it is
     /// treated as "nothing arrived" ([`Inbound::Empty`]).
     ///
     /// When the ring is full the frame is still read out of the hardware (to
@@ -210,6 +240,13 @@ pub fn dispatch<T: I3cTarget, const RING: usize>(
             if srv.tx_pending {
                 return status_only(resp, I3cStatus::Busy);
             }
+            // A response was discarded unread since the last `Send`. Say so, once,
+            // and stage nothing: a sender part-way through a message has lost a
+            // fragment and must not go on with the rest.
+            if srv.discarded {
+                srv.discarded = false;
+                return status_only(resp, I3cStatus::Discarded);
+            }
             match srv.target.send(payload) {
                 Ok(()) => {
                     // Staged for the controller's next private read; further
@@ -274,6 +311,8 @@ mod tests {
 
     struct FakeTarget {
         addr: Option<u8>,
+        /// How many times `cancel_response` was called.
+        cancels: u32,
         /// Pending inbound frames, oldest first; `read_frame` pops the front.
         frames: [[u8; MAX_PAYLOAD]; FAKE_INBOUND],
         frame_lens: [usize; FAKE_INBOUND],
@@ -293,6 +332,7 @@ mod tests {
         fn default() -> Self {
             Self {
                 addr: None,
+                cancels: 0,
                 frames: [[0u8; MAX_PAYLOAD]; FAKE_INBOUND],
                 frame_lens: [0usize; FAKE_INBOUND],
                 frame_head: 0,
@@ -356,6 +396,11 @@ mod tests {
             self.sent_len = n;
             Ok(())
         }
+        fn cancel_response(&mut self) -> Result<(), Self::Error> {
+            self.cancels += 1;
+            self.sent_len = 0;
+            Ok(())
+        }
         fn dynamic_address(&self) -> Option<DynamicAddress> {
             self.addr.and_then(|a| DynamicAddress::try_from(a).ok())
         }
@@ -387,6 +432,48 @@ mod tests {
         let rn = dispatch(&mut s, &req[..n], &mut resp);
         assert_eq!(decode_response(&resp[..rn]), Some((I3cStatus::Ok, &[][..])));
         assert_eq!(&s.target.sent[..s.target.sent_len], b"pong");
+    }
+
+    #[test]
+    fn cancelling_a_staged_response_accepts_the_next_send() {
+        let mut s = srv();
+        assert_eq!(send(&mut s, b"first"), I3cStatus::Ok);
+        assert_eq!(send(&mut s, b"second"), I3cStatus::Busy, "first is unread");
+
+        assert_eq!(s.cancel_staged(), Ok(true));
+        assert_eq!(s.target.cancels, 1, "the target discarded it");
+        assert!(!s.tx_pending());
+
+        // The loss is reported once, with nothing staged, then sends go through.
+        assert_eq!(send(&mut s, b"second"), I3cStatus::Discarded);
+        assert_eq!(s.target.sent_len, 0, "nothing was staged");
+        assert!(!s.tx_pending());
+        assert_eq!(send(&mut s, b"second"), I3cStatus::Ok);
+        assert_eq!(&s.target.sent[..s.target.sent_len], b"second");
+        s.notify_response_read();
+        assert_eq!(send(&mut s, b"third"), I3cStatus::Ok, "reported once only");
+    }
+
+    #[test]
+    fn a_response_that_was_read_is_never_reported_discarded() {
+        let mut s = srv();
+        assert_eq!(send(&mut s, b"first"), I3cStatus::Ok);
+        s.notify_response_read();
+        assert_eq!(s.cancel_staged(), Ok(false));
+        assert_eq!(send(&mut s, b"second"), I3cStatus::Ok);
+    }
+
+    #[test]
+    fn cancelling_with_nothing_staged_does_not_touch_the_target() {
+        let mut s = srv();
+        assert_eq!(s.cancel_staged(), Ok(false));
+        assert_eq!(s.target.cancels, 0);
+
+        // A response that was read is not staged any more either.
+        assert_eq!(send(&mut s, b"first"), I3cStatus::Ok);
+        s.notify_response_read();
+        assert_eq!(s.cancel_staged(), Ok(false));
+        assert_eq!(s.target.cancels, 0);
     }
 
     #[test]
