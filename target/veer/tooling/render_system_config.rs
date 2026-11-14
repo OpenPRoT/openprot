@@ -46,6 +46,7 @@ fn main() {
     //   @SOC_IFC_BASE@        Caliptra SoC interface registers.
     //   @PRIMARY_FLASH_CTRL@  Registers of the primary flash controller.
     //   @I3C_BASE@            Caliptra-SS I3C register block.
+    //   @HANDOFF_BASE@        Handoff table that the MCU ROM leaves in DCCM.
     let substitutions = [
         // Start of MCU SRAM. MCU ROM will jump here.
         ("@KERNEL_FLASH_START@", map.sram_offset),
@@ -60,6 +61,8 @@ fn main() {
         ("@PRIMARY_FLASH_CTRL@", primary_flash_ctrl),
         // I3C register block base offset
         ("@I3C_BASE@", map.i3c_offset),
+        // Handoff table from the MCU ROM
+        ("@HANDOFF_BASE@", map.handoff_offset),
     ];
 
     let mut rendered =

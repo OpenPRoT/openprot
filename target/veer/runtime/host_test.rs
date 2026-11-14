@@ -1,8 +1,8 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! Boots the runtime image and checks that it has stopped the watchdog that
-//! the MCU ROM starts.
+//! Boots the runtime image and checks that it has read the handoff table of
+//! the MCU ROM and stopped the watchdog that the ROM starts.
 //!
 //! The ROM's watchdog period is 800 million clock cycles, and the test does
 //! not wait for it to pass. `//target/veer/tests/wdt` checks that a stopped
@@ -17,10 +17,14 @@ use test_boot_files::BootFiles;
 /// the hardware.
 const KERNEL_STARTED: &str = "kernel started";
 
+/// Start of the line that `target.rs` logs when it has read a valid handoff
+/// table.
+const HANDOFF_READ: &str = "ROM handoff table 1.";
+
 const TIMEOUT: Duration = Duration::from_secs(120);
 
 #[test]
-fn stops_the_rom_watchdog() {
+fn reads_the_handoff_and_stops_the_rom_watchdog() {
     let files = BootFiles::from_env();
     let mut hw =
         caliptra_mcu_hw_model::new(files.init_params()).expect("hardware model failed to boot");
@@ -34,6 +38,10 @@ fn stops_the_rom_watchdog() {
         log.contains(KERNEL_STARTED) || start.elapsed() > TIMEOUT
     });
     assert!(log.contains(KERNEL_STARTED), "the kernel did not start");
+    assert!(
+        log.contains(HANDOFF_READ),
+        "the image did not read the ROM's handoff table"
+    );
 
     let (enabled, period, t1_timeout, t2_timeout, nmi) = hw.mcu_manager().with_mci(|mci| {
         let period = mci.wdt_timer1_timeout_period();

@@ -29,6 +29,21 @@ rust_test(
 )
 
 rust_library(
+    name = "handoff",
+    srcs = ["handoff.rs"],
+    crate_name = "veer_handoff",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@rust_crates//:bitflags"],
+)
+
+# Host tests of the reader against tables laid out as the ROM writes them.
+rust_test(
+    name = "handoff_test",
+    crate = ":handoff",
+)
+
+rust_library(
     name = "mailbox",
     srcs = ["mailbox.rs"],
     crate_name = "veer_mailbox",
