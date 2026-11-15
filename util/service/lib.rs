@@ -73,6 +73,9 @@ pub struct ServiceLoop<'a> {
     wg: u32,
     channels: &'a mut [Channel],
     signals: Signals,
+    /// Sources added with [`add_source`](Self::add_source). With every
+    /// channel deferred and none of these, the WaitGroup has no members.
+    sources: usize,
 }
 
 impl<'a> ServiceLoop<'a> {
@@ -91,6 +94,7 @@ impl<'a> ServiceLoop<'a> {
             wg,
             channels,
             signals: Signals::READABLE,
+            sources: 0,
         })
     }
 
@@ -109,6 +113,7 @@ impl<'a> ServiceLoop<'a> {
         }
         syscall::wait_group_add(self.wg, handle, signals, handle as usize)?;
         self.signals |= signals;
+        self.sources = self.sources.saturating_add(1);
         Ok(())
     }
 
@@ -117,8 +122,22 @@ impl<'a> ServiceLoop<'a> {
     /// A request is read into `request`. A channel whose read fails is
     /// logged and skipped, so one misbehaving client never stops service to
     /// the others; an error from the WaitGroup itself is returned.
+    ///
+    /// When every channel is deferred and no source was added, nothing in
+    /// the WaitGroup can wake the loop, and the kernel refuses to wait on an
+    /// empty one. Then `next` sleeps until `deadline` and returns
+    /// [`Event::Deadline`], which is when a caller that deferred its only
+    /// channel will `complete` it. With `Instant::MAX` there is nothing to
+    /// wake for, so it fails with `FailedPrecondition` rather than hang.
     pub fn next(&mut self, deadline: Instant, request: &mut [u8]) -> Result<Event> {
         loop {
+            if self.sources == 0 && !channels::any_serving(self.channels) {
+                if deadline == Instant::MAX {
+                    return Err(Error::FailedPrecondition);
+                }
+                self.sleep_until(deadline)?;
+                return Ok(Event::Deadline);
+            }
             let woken = match syscall::object_wait(self.wg, self.signals, deadline) {
                 Ok(ev) => ev.user_data as u32,
                 Err(Error::DeadlineExceeded) => return Ok(Event::Deadline),
@@ -138,6 +157,24 @@ impl<'a> ServiceLoop<'a> {
                 }
                 Err(_) => pw_log::error!("service: channel_read failed"),
             }
+        }
+    }
+
+    /// Wait for `deadline` with nothing in the WaitGroup.
+    ///
+    /// `userspace::time::sleep_until` waits on handle 0 and assumes that is
+    /// the process, but in an app handle 0 is its first declared object, so
+    /// it cannot be relied on here. Every channel is deferred and so out of
+    /// the WaitGroup, which makes its handle free to wait on directly.
+    /// `ERROR` is never raised on a handler, so the wait ends only at the
+    /// deadline; if it does return early, report that instead of waking the
+    /// caller for a deadline that has not passed.
+    fn sleep_until(&self, deadline: Instant) -> Result<()> {
+        let ch = self.channels.first().ok_or(Error::FailedPrecondition)?;
+        match syscall::object_wait(ch.handle(), Signals::ERROR, deadline) {
+            Err(Error::DeadlineExceeded) => Ok(()),
+            Ok(_) => Err(Error::Cancelled),
+            Err(e) => Err(e),
         }
     }
 
