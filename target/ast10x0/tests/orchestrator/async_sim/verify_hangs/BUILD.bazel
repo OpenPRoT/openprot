@@ -1,0 +1,19 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# C2's first verify outlives the orchestrator's deadline. Passes when the
+# executor cancels it and reports a failed verification, the verifier's late
+# reply is dropped, and the re-walk ends in Ready.
+#
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/orchestrator/async_sim/verify_hangs:verify_hangs_qemu_test
+
+load("//target/ast10x0/tests/orchestrator/async_sim:apps.bzl", "APPS", "SYSTEM_CONFIG", "TARGET_SRC")
+load("//target/ast10x0/tests/orchestrator/async_sim:scenario.bzl", "qemu_scenario")
+
+qemu_scenario(
+    name = "verify_hangs_qemu",
+    apps = APPS,
+    cfgs = ["verify_hangs"],
+    system_config = SYSTEM_CONFIG,
+    target_src = TARGET_SRC,
+)
