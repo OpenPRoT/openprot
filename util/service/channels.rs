@@ -57,6 +57,12 @@ pub(crate) fn position_parked(channels: &[Channel], key: u32) -> Option<usize> {
     channels.iter().position(|c| c.parked == Some(key))
 }
 
+/// Whether any channel is in the WaitGroup, that is, not holding a deferred
+/// reply.
+pub(crate) fn any_serving(channels: &[Channel]) -> bool {
+    channels.iter().any(|c| c.parked.is_none())
+}
+
 /// Whether every channel has a different handle.
 pub(crate) fn distinct(channels: &[Channel]) -> bool {
     channels
@@ -108,6 +114,21 @@ mod tests {
         assert_eq!(position_parked(&chs, 12), None);
         chs[2].unpark();
         assert_eq!(position_parked(&chs, 5), None);
+    }
+
+    #[test]
+    fn any_serving_is_false_only_when_every_channel_is_parked() {
+        let mut chs = three();
+        assert!(any_serving(&chs));
+        chs[0].park(1).unwrap();
+        chs[1].park(2).unwrap();
+        assert!(any_serving(&chs));
+        chs[2].park(3).unwrap();
+        assert!(!any_serving(&chs));
+        chs[1].unpark();
+        assert!(any_serving(&chs));
+        // No channels at all: nothing is serving.
+        assert!(!any_serving(&[]));
     }
 
     #[test]

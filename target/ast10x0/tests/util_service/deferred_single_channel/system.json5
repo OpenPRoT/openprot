@@ -1,0 +1,66 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 util/service regression test: a server whose only channel is
+// deferred must still wait for its own deadline.
+//
+//   client — makes two blocking calls and checks each reply arrives, after the
+//            server's delay. Reports through debug_shutdown(Ok|Err).
+//   server — a util_service::ServiceLoop with ONE channel. It defers each
+//            request and completes it from the loop's deadline. While the
+//            reply is parked the WaitGroup has no members.
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,
+    },
+    kernel: {
+        flash_start_address: 0x00000500,
+        flash_size_bytes: 129792,
+        ram_start_address: 0x00060000,
+        ram_size_bytes: 131072,
+    },
+    apps: [
+        {
+            name: "client",
+            flash_size_bytes: 65536,
+            processes: [
+                {
+                    name: "client_process",
+                    ram_size_bytes: 32768,
+                    objects: [
+                        {
+                            name: "svc",
+                            type: "channel_initiator",
+                            handler_process: "server_process",
+                            handler_object_name: "svc",
+                        },
+                        {
+                            type: "thread",
+                            name: "client_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },],
+                },
+            ],
+        },
+        {
+            name: "server",
+            flash_size_bytes: 65536,
+            processes: [
+                {
+                    name: "server_process",
+                    ram_size_bytes: 32768,
+                    objects: [
+                        { name: "wg", type: "wait_group" },
+                        { name: "svc", type: "channel_handler" },
+                        {
+                            type: "thread",
+                            name: "server_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },],
+                },
+            ],
+        },
+    ],
+}
