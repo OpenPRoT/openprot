@@ -53,9 +53,15 @@ across events and is visible to every handler. States are a plain `State` enum
 |---|---|---|
 | `chain` | `Vec<(ComponentId, ComponentAttrs), N>` | Ordered trust chain, supplied by the platform driver at construction time. Never mutated after build. |
 | `cursor` | `u8` | Index of the component currently under verification. Reset to 0 on every `PreSupervision` entry. Advances on each `VerificationPassed`, and past any component marked `Isolated` in `statuses` (skipped without verification), via `Outcome::Handled`. |
-| `statuses` | `Vec<ComponentStatus, N>` | One record per chain component, parallel by index. Each `ComponentStatus` is `{ lifecycle: ComponentLifecycle, retry: u8 }`. `lifecycle` (`Nominal` / `Isolated`) marks whether the component has been gated out of service — an `Isolated` component is held in reset and skipped on every walk. `retry` is its consecutive failed-restore count, kept per component so interleaved recoveries never share a budget. Durable across a return to `Ready` (only `retry` is cleared there; `Isolated` persists); reset only by a fresh `Rot` on `PowerOnReset`. |
+| `statuses` | `Vec<ComponentStatus, N>` | One record per chain component, parallel by index. Each `ComponentStatus` is `{ lifecycle: ComponentLifecycle, retry: u8 }`. `lifecycle` (`Nominal` / `Isolated`) marks whether the component has been gated out of service — an `Isolated` component is held in reset and skipped on every walk. `retry` is its consecutive failed-restore count, kept per component so interleaved recoveries never share a budget. Durable across a return to `Ready` (nothing is cleared there). `retry` ends on a confirmed boot report (`Booted` or `ComponentReady` for a component awaiting boot) or when the component is gated, and not on a passing verification; `Isolated` persists; the whole record resets only with a fresh `Rot` on `PowerOnReset`. |
 | `max_retry` | `u8` | Ceiling for a component's `retry`, chosen by the platform driver. When `statuses[i].retry >= max_retry` recovery is **exhausted** and the failed component's recovery-failure policy (`Isolable`/`Cascading`/`Required`) is applied. |
 | `_effect_cap` | `PhantomData<[u8; E]>` | Zero-sized; ties the effect-buffer size `E` to the type so the `E >= 2 * N + 2` bound is enforced at construction. |
+
+A recovery *episode* is one recovery cycle for one component: it starts when the
+machine enters `Recovering` and emits `RecoverComponent`, and it ends when the
+restored component boots or recovery is exhausted. A later failure can displace
+an episode that is still in progress; events that belong to the displaced
+episode are stale and dropped.
 
 Two pieces of per-episode data are **not** stored on `Rot`: the component whose
 recovery is in progress and the `Active` component whose readiness is
@@ -173,8 +179,11 @@ Normal operational state: the full chain has been verified, all required
 components are released, and the machine handles attestation, update requests,
 and corruption events.
 
-**Entry action**: reset every component's `retry` to 0 (makes the cap count
-*consecutive* failures — INV7). The `Isolated` marks are **not** cleared — a
+**Entry action**: none. Reaching `Ready` means every
+component was *released*, not that any *booted*: a passive chain gets here before
+a single boot report arrives. A count ends on a confirmed boot, so a component
+that verifies and never boots keeps its count across the re-walk and exhausts
+its retries (INV7). The `Isolated` marks are **not** cleared either — a
 component isolated by exhausted recovery stays held across a return to `Ready`;
 only a fresh `Rot` on `PowerOnReset` releases it.
 
@@ -242,6 +251,19 @@ entire region is affected (not the whole chain — INV5).
 | anything else | — | — | `Outcome::Super` → `SupervisingPlatform` |
 
 ("cap reached" = `retry + 1 >= max_retry`.)
+
+**When a component's `retry` ends.** `retry` counts *consecutive* failures, and
+only a confirmed boot ends the streak: a `Booted` (passive) or `ComponentReady`
+(active) report for a component that is awaiting boot. Two things that look like
+recovery do not end it. A passing verification says the image is authentic, not
+that it runs. Reaching `Ready` says every component was released, not that any
+booted. A component that verifies and then never boots is therefore restored,
+re-walked and timed out again with its count climbing, until the cap is reached
+and the recovery-failure policy applies. A boot report for a component that is
+not awaiting boot (never released, under recovery, or already reported) is stale
+or spurious and changes nothing, so it cannot reset the `retry` count. The `attempt`
+carried on `RecoverComponent` is this count, so a platform that tries a different
+recovery source per attempt sees it advance across re-walks.
 
 **`RecoveryUnavailable` is the platform's own exhaustion signal.** Where
 `Restored` past the retry cap means "the machine gave up after counting failed
@@ -364,7 +386,7 @@ the named test(s).
 | INV4 | A rejected update rolls back via `DiscardStaged` and **never** enters `Recovering` — update failure is not corruption. | `update_rollback_is_not_recovery` |
 | INV5 | Runtime corruption targets the **named** component and re-walks the chain from the top after restore. | `runtime_corruption_targets_component_and_rewalks` |
 | INV6 | `AttestationChallenge` is answerable from **every** `SupervisingPlatform` state, with no transition. | `attestation_shared_across_supervising_platform_states` |
-| INV7 | Recovery retries count **consecutive** failures only; after `MAX_RETRY` restores the core self-emits `RecoveryFailed` and latches `Locked`; a successful recovery resets the count. | `retry_cap_self_latches_via_emit`, `retry_count_resets_after_successful_recovery` |
+| INV7 | Recovery retries count **consecutive** failures only; after `MAX_RETRY` restores the core self-emits `RecoveryFailed` and latches `Locked`; a confirmed boot report (not a passing verification, and not reaching `Ready`) resets the count. | `retry_cap_self_latches_via_emit`, `retry_count_resets_once_the_component_boots`, `a_component_that_verifies_but_never_boots_exhausts_its_retries`, `the_recovery_attempt_counts_up_across_rewalks`, `a_passing_verification_does_not_end_the_streak`, `reaching_ready_does_not_end_the_streak`, `a_boot_report_ends_the_streak`, `a_spurious_boot_report_does_not_end_the_streak`, `a_component_ready_report_ends_the_streak`, `booted_during_the_walk_ends_the_streak`, `component_ready_during_the_walk_ends_the_streak` |
 | INV8 | Verify-before-release (whole-input-space): across arbitrary event sequences, a component is released only if it was verified since its most recent hold — never on a verification from before it was last taken down. This is the fuzz-checked form of "recovery is a re-boot". | `property_verify_before_release_holds_under_random_sequences` |
 | INV9 | A `ComponentReady` for a component other than the awaited one is silently ignored. | `spurious_component_ready_is_ignored` |
 | INV10 | An `Active` component **gates** the chain walk — the cursor does not advance past it until its `ComponentReady` arrives. | `active_component_gates_on_component_ready` |
