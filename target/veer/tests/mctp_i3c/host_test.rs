@@ -439,14 +439,7 @@ fn target_requests(
 ) {
     exchange(hw, stream, log, target_addr, INITIATE, tag, frames);
     for len in TARGET_REQUEST_SIZES {
-        serve_request(
-            hw,
-            stream,
-            log,
-            target_addr,
-            &target_payload(len),
-            frames,
-        );
+        serve_request(hw, stream, log, target_addr, &target_payload(len), frames);
     }
 }
 
@@ -559,7 +552,10 @@ fn mctp_i3c_echo_host_test() {
 fn mctp_i3c_soak_host_test() {
     let mut plan = Vec::new();
     for n in 0..SOAK_REQUESTS {
-        plan.push(Step::Echo(soak_payload(n, SOAK_SIZES[n % SOAK_SIZES.len()])));
+        plan.push(Step::Echo(soak_payload(
+            n,
+            SOAK_SIZES[n % SOAK_SIZES.len()],
+        )));
         if (n + 1) % SOAK_TARGET_EVERY == 0 {
             plan.push(Step::TargetRequests);
         }

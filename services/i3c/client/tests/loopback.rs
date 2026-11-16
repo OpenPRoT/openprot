@@ -256,7 +256,11 @@ fn send_for_is_staged_when_the_address_matches() {
     let mut c = client(Some(0x08));
     c.send_for(0x08, b"framed").expect("send_for");
     let target = &c.transport().server().target;
-    assert_eq!(&target.sent[..target.sent_len], b"framed", "no address byte leaks through");
+    assert_eq!(
+        &target.sent[..target.sent_len],
+        b"framed",
+        "no address byte leaks through"
+    );
 }
 
 #[test]

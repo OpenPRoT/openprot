@@ -611,10 +611,18 @@ mod tests {
         s.target.addr = Some(0x1d);
         assert_eq!(send(&mut s, b"second"), I3cStatus::Busy, "not discarded");
         assert_eq!(s.target.cancels, 0);
-        assert_eq!(s.address_changed(), Ok(false), "nothing address-bound staged");
+        assert_eq!(
+            s.address_changed(),
+            Ok(false),
+            "nothing address-bound staged"
+        );
         s.notify_response_read();
         s.target.addr = None;
-        assert_eq!(send(&mut s, b"third"), I3cStatus::Ok, "not even with no address");
+        assert_eq!(
+            send(&mut s, b"third"),
+            I3cStatus::Ok,
+            "not even with no address"
+        );
     }
 
     #[test]
@@ -632,7 +640,10 @@ mod tests {
         let mut s = srv();
         let mut resp = [0u8; MAX_FRAME];
         let rn = dispatch(&mut s, &[I3cOp::Send as u8], &mut resp);
-        assert_eq!(decode_response(&resp[..rn]).unwrap().0, I3cStatus::InvalidOp);
+        assert_eq!(
+            decode_response(&resp[..rn]).unwrap().0,
+            I3cStatus::InvalidOp
+        );
         assert_eq!(send_for(&mut s, 0x80, b"x"), I3cStatus::InvalidOp);
         assert_eq!(s.target.sent_len, 0);
     }
@@ -761,7 +772,6 @@ mod tests {
         let mut s = srv();
         assert_eq!(send(&mut s, &[0xa5u8; MAX_SEND]), I3cStatus::Ok);
         assert_eq!(s.target.sent_len, MAX_SEND);
-
     }
 
     fn device_info(s: &mut Server<FakeTarget>) -> DeviceInfo {
