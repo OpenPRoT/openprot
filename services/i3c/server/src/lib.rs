@@ -227,8 +227,13 @@ pub fn dispatch<T: I3cTarget, const RING: usize>(
             }
             let head = srv.rx_head;
             let cap = resp.len().saturating_sub(HEADER);
-            let n = srv.rx_len[head].min(cap);
-            let out = encode_response(I3cStatus::Ok, srv.rx[head].get(..n).unwrap_or(&[]), resp);
+            let frame = srv
+                .rx
+                .get(head)
+                .zip(srv.rx_len.get(head))
+                .and_then(|(frame, &len)| frame.get(..len.min(cap)))
+                .unwrap_or(&[]);
+            let out = encode_response(I3cStatus::Ok, frame, resp);
             // Pop the oldest frame whether or not the encode succeeded: a
             // response buffer too small to hold it would otherwise wedge the
             // ring on the same frame forever.

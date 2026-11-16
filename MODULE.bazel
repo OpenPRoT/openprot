@@ -28,6 +28,9 @@ local_path_override(
 # caliptra-mcu-sw's VeeR kernel reads MEIHAP directly.
 # rules_rust_0_75.patch backports Pigweed's rules_rust 0.75.0 compatibility
 # updates until Pigweed rolls rules_rust upstream (pwrev/445972).
+# multi_process_app_entry.patch looks up the process entry point with `get`
+# in the entry point generated for a `multi_process_app`, so the app has no
+# panic path.
 git_override(
     module_name = "pigweed",
     commit = "e21bf7763475a456efdcc49dafb651ef952b3be1",
@@ -36,6 +39,7 @@ git_override(
         "//third_party/pigweed:veer_pic_gateways.patch",
         "//third_party/pigweed:veer_pic_claim.patch",
         "//third_party/pigweed:rules_rust_0_75.patch",
+        "//third_party/pigweed:multi_process_app_entry.patch",
     ],
     remote = "https://pigweed.googlesource.com/pigweed/pigweed",
 )

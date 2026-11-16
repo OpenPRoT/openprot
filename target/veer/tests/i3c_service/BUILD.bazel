@@ -7,6 +7,7 @@ load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//target:app_no_panics_test.bzl", "app_no_panics_test")
 load("//target/veer:defs.bzl", "TARGET_COMPATIBLE_WITH", "veer_system_config", "veer_system_image")
 load("//target/veer/tooling:caliptra_runner.bzl", "caliptra_test")
 
@@ -109,9 +110,11 @@ rust_binary_no_panics_test(
     tags = ["kernel"],
 )
 
-# No `app_no_panics_test`: the app can panic. The entry point Pigweed generates
-# for a `multi_process_app` asserts on the process index, and
-# `i3c_server::dispatch` indexes its receive ring.
+app_no_panics_test(
+    name = "app_no_panics_test",
+    image = ":i3c_service_image",
+    tags = ["kernel"],
+)
 
 # The host side drives the firmware through caliptra_mcu_hw_model, following
 # caliptra-mcu-sw's own test_i3c_services: a private write over the I3C socket

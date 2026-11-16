@@ -92,11 +92,12 @@ impl<T: Transport> I3cClient<T> {
         resp: &'r mut [u8; MAX_FRAME],
     ) -> Result<(I3cStatus, &'r [u8]), ClientError> {
         let mut req = [0u8; MAX_FRAME];
-        // `encode_request` returns `Some` only when the frame fits `req`, so
-        // `req_len <= MAX_FRAME` and the slice below is always in bounds.
         let req_len = encode_request(op, payload, &mut req).ok_or(ClientError::BufferTooSmall)?;
-        let resp_len = self.transport.transact(&req[..req_len], resp)?;
-        decode_response(&resp[..resp_len]).ok_or(ClientError::InvalidResponse)
+        let req = req.get(..req_len).ok_or(ClientError::BufferTooSmall)?;
+        let resp_len = self.transport.transact(req, resp)?;
+        resp.get(..resp_len)
+            .and_then(decode_response)
+            .ok_or(ClientError::InvalidResponse)
     }
 
     /// Stage `payload` for transmission to the controller.
