@@ -56,6 +56,19 @@ rust_library(
 )
 
 rust_library(
+    name = "rng",
+    srcs = ["rng.rs"],
+    crate_name = "veer_rng",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":mailbox",
+        "//hal/blocking",
+        "@rust_caliptra_crates//:caliptra-api",
+    ],
+)
+
+rust_library(
     name = "sha",
     srcs = ["sha.rs"],
     crate_name = "veer_sha",
