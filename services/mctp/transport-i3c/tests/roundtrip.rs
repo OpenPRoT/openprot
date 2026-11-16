@@ -658,24 +658,29 @@ fn limited_sender(
     (I3cSender::new(client, REMOTE_ADDR, || {}), limit, frames)
 }
 
-/// The MTU follows what the target says it can send, so a message is
-/// fragmented to fit: no frame is longer than the target's limit.
+/// Whatever a target can send, the MTU is the baseline, so a message is cut into
+/// packets of at most that, and no frame is longer than the packet plus its PEC.
 #[test]
-fn the_mtu_follows_the_targets_send_limit_and_every_frame_fits() {
+fn the_mtu_is_the_baseline_and_every_frame_fits() {
     use mctp_lib::Sender as _;
-    let (mut sender, _limit, frames) = limited_sender(100);
+    let (mut sender, _limit, frames) = limited_sender(256);
     assert_eq!(sender.get_mtu(), MCTP_I3C_IPC_MAXMTU, "the ceiling until read");
-    assert_eq!(sender.refresh_limits().expect("limits"), 99);
-    assert_eq!(sender.get_mtu(), 99, "one byte less than the limit, for the PEC");
+    assert_eq!(sender.refresh_limits().expect("limits"), MCTP_I3C_MINMTU);
+    assert_eq!(sender.get_mtu(), MCTP_I3C_MINMTU, "a target that can send more is not used");
 
     let mut srv: Server<_, 16> = Server::new(Eid(OWN_EID), 0, sender);
     let req = srv.req(REMOTE_EID).expect("req");
     srv.send(Some(req), MSG_TYPE, None, None, false, &vec![0x5au8; 600])
         .expect("send");
 
+    // The type byte and 600 payload bytes, 64 to a packet.
     let frames = frames.borrow();
-    assert!(frames.len() > 6, "600 bytes at 99 should take many packets");
-    assert!(frames.iter().all(|f| f.len() <= 100), "no frame over the limit");
+    assert_eq!(frames.len(), 601usize.div_ceil(MCTP_I3C_MINMTU - MCTP_HEADER_LEN));
+    assert!(
+        frames.iter().all(|f| f.len() <= MCTP_I3C_MINMTU + 1),
+        "no frame over the baseline packet and its PEC"
+    );
+    assert_eq!(frames[0].len(), MCTP_I3C_MINMTU + 1, "the first one is a full packet");
 }
 
 /// A target that cannot send even the baseline packet cannot carry MCTP: the
@@ -704,31 +709,27 @@ fn a_target_below_the_baseline_fails_the_send_and_sends_nothing() {
     assert!(frames.borrow().is_empty(), "nothing was staged");
 }
 
-/// The controller can lower the limit (SETMRL) after the stack has chosen the
-/// MTU for a message. Packets built for the old MTU are not sent over the new
-/// limit: the message is abandoned, and the next one is built for the new MTU.
+/// The controller can lower the limit (SETMRL) after startup. Below the baseline
+/// the target cannot carry MCTP: that send fails and stages nothing, and the next
+/// one works again once the limit is back.
 #[test]
-fn a_limit_lowered_after_the_mtu_was_chosen_abandons_that_message_only() {
+fn a_limit_lowered_below_the_baseline_fails_that_send_only() {
     let (sender, limit, frames) = limited_sender(256);
     let mut srv: Server<_, 16> = Server::new(Eid(OWN_EID), 0, sender);
 
-    limit.set(100); // lowered; the sender has not read it yet
+    limit.set(MCTP_I3C_MINMTU); // no room for the PEC next to a baseline packet
     let req = srv.req(REMOTE_EID).expect("req");
     let payload = vec![0x5au8; 300];
-    assert!(
-        srv.send(Some(req), MSG_TYPE, None, None, false, &payload)
-            .is_err(),
-        "built for the old MTU, over the new limit"
-    );
-    assert!(frames.borrow().iter().all(|f| f.len() <= 100), "nothing over the limit");
+    assert!(srv
+        .send(Some(req), MSG_TYPE, None, None, false, &payload)
+        .is_err());
+    assert!(frames.borrow().is_empty(), "nothing was staged");
 
-    // The sender read the new limit during that send, so the next message
-    // is fragmented for it.
-    let sent_before = frames.borrow().len();
+    limit.set(256);
     let req = srv.req(REMOTE_EID).expect("req");
     srv.send(Some(req), MSG_TYPE, None, None, false, &payload)
         .expect("send");
     let frames = frames.borrow();
-    assert!(frames.len() > sent_before);
-    assert!(frames.iter().all(|f| f.len() <= 100));
+    assert_eq!(frames.len(), 301usize.div_ceil(MCTP_I3C_MINMTU - MCTP_HEADER_LEN));
+    assert!(frames.iter().all(|f| f.len() <= MCTP_I3C_MINMTU + 1));
 }

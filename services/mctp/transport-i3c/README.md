@@ -76,35 +76,34 @@ The two are deliberately shaped alike, but three things are forced by I3C:
 
 ## MTU
 
-`get_mtu()` follows what the target can send. `I3cSender::refresh_limits` reads
-the service's `DeviceInfo` and sets the MTU to one byte less than its
-`max_send_len` (the frame is the packet plus the PEC), within two bounds:
+`get_mtu()` is the MCTP baseline: **68 bytes** (`MCTP_I3C_MINMTU`), a 64-byte payload
+and the 4-byte header, for any target that can carry it. `I3cSender::refresh_limits`
+reads the service's `DeviceInfo` and checks that the target can send a frame of at
+least 69 bytes (the packet plus the PEC). Below that it fails, and so does every send.
+The controller can lower the limit (SETMRL), so every send checks it again, and
+`refresh_limits` should be called once at startup (the stack asks for the MTU before
+a send).
 
-- **At most `MCTP_I3C_IPC_MAXMTU` (254).** The service carries one framed packet
-  per `I3cOp::Send`, at most `i3c_api::MAX_SEND` (255: the 256-byte TTI FIFO less
-  the address byte that leads a `Send` payload). `mctp-estack`'s `Fragmenter`
-  treats the MTU as the largest whole packet, header included, and the frame is
-  the packet plus the PEC, so the packet is one byte shorter than the frame. This
-  is caliptra-mcu-sw's rule (`max_read_len - 1`) for our frame.
+The ceiling (`MCTP_I3C_IPC_MAXMTU`) is the baseline, and not the largest packet a
+frame can hold (254 bytes), because of how fast the target can read frames out:
 
-- **At least `MCTP_I3C_MINMTU` (68): the MCTP header plus the 64-byte baseline
-  payload of DSP0236.** A target that cannot send that much cannot carry MCTP:
-  `refresh_limits` fails, and so does every send.
+- The core's RX data queue is 64 words (256 bytes), so a 255-byte frame fills it. A
+  frame needs the queue empty when it starts.
+- Reading it out costs about 180 microseconds a word on the FPGA (measured in the
+  firmware), so a full frame takes about 12 ms.
+- Writes reach the target closer together than a host spaces them: the FPGA model
+  queues them and runs them with only a 5 ms pause. A second full frame that arrives
+  during the read-out is cut short, and the core flags it with error 1 in the RX
+  descriptor (`rx_byte_err_i` in `descriptor_rx.sv`: the queue was full while bytes
+  were still arriving). Bytes past the room left are dropped silently.
+- A 68-byte packet and its PEC are 18 words, about 3 ms to read out, and the queue
+  holds three.
 
-The controller can lower the limit (SETMRL), so every send reads it again. The
-stack chooses a message's MTU *before* calling the sender, though, so call
-`refresh_limits` once at startup, or the first message is built for the ceiling.
-A packet that is over the limit read at the start of a send abandons that
-message (`TxFailure`, nothing sent past it), and the next one is built for the
-new MTU.
-
-This follows caliptra-mcu-sw's binding, which derives its MTU from the target's
-device info and floors it at the same value. It reads the limits once, at setup.
-
-Whether to send packets larger than the baseline to a peer that has not said it
-accepts them is not settled here. DSP0236 only guarantees the baseline, and
-neither this crate nor caliptra-mcu-sw negotiates it. Lower `MCTP_I3C_IPC_MAXMTU`
-to the baseline to be strictly conservative.
+The baseline is also what DSP0236 guarantees every endpoint accepts, and the default of
+caliptra-mcu-sw's own host helper. This limits what the *peer* may send as well as what
+this crate sends: nothing in the hardware refuses a larger write, so a controller that
+sends full-size packets back to back can overflow the queue. Until the read-out is
+faster, a controller should be held to the baseline.
 
 ## Testing
 
