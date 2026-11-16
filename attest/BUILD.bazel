@@ -1,0 +1,13 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+package(default_visibility = ["//visibility:public"])
+
+# Host-side verifier library and CLI tool.
+filegroup(
+    name = "attest_verifier_all",
+    srcs = [
+        "//attest/verifier:attest_verifier",
+        "//attest/verifier:openprot_verify",
+    ],
+)
