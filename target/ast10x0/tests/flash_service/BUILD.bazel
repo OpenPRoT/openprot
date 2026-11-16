@@ -62,6 +62,7 @@ rust_app(
         "//services/flash/server:flash_server_lib",
         "//services/flash/server-runtime:flash_server_runtime",
         "//target/ast10x0/backend/flash:flash_backend_ast10x0",
+        "//target/ast10x0/peripherals",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
@@ -116,8 +117,7 @@ system_image_test(
 
 # QEMU variant: the runner seeds 64 MiB erased images on both FMC chip selects
 # (if=mtd), emulating the EVB where CS0 boot flash and the external W25Q512 on
-# CS1 are both present. The flash service binds CS1, so program/erase/read-back
-# runs there under emulation; CS0 is attached but untouched.
+# CS1 are both present. The flash service serves both, one per channel.
 #   bazelisk test --config=virt_ast10x0 //target/ast10x0/tests/flash_service:flash_qemu_test
 flash_system_image_test(
     name = "flash_qemu_test",

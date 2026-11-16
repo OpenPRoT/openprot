@@ -41,8 +41,12 @@
                             type: "wait_group",
                         },
                         {
-                            name: "flash",
-                            type: "channel_handler",  // Server side of client→server channel
+                            name: "flash_cs0",
+                            type: "channel_handler",  // Server side of the CS0 channel
+                        },
+                        {
+                            name: "flash_cs1",
+                            type: "channel_handler",  // Server side of the CS1 channel
                         },
                         {
                             type: "thread",
@@ -60,11 +64,14 @@
                             size_bytes: 0x1000,
                         },
                         {
-                            // FMC CS0 memory-mapped flash read window (8 MiB).
+                            // FMC CS0 memory-mapped flash read window (64 MiB,
+                            // the size QEMU models; the EVB boot flash is
+                            // smaller, and the test reads only inside its SFDP
+                            // capacity).
                             name: "fmc_cs0_window",
                             type: "device",
                             start_address: 0x80000000,
-                            size_bytes: 0x800000,
+                            size_bytes: 0x04000000,
                         },
                         {
                             // FMC CS1 memory-mapped flash read window (64 MiB).
@@ -89,10 +96,16 @@
                     ram_size_bytes: 32768,        // 32KB RAM
                     objects: [
                         {
-                            name: "flash",
+                            name: "flash_cs0",
                             type: "channel_initiator",
                             handler_process: "flash_server_process",
-                            handler_object_name: "flash",
+                            handler_object_name: "flash_cs0",
+                        },
+                        {
+                            name: "flash_cs1",
+                            type: "channel_initiator",
+                            handler_process: "flash_server_process",
+                            handler_object_name: "flash_cs1",
                         },
                         {
                             type: "thread",
