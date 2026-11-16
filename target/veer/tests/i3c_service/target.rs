@@ -11,6 +11,7 @@ use arch_riscv::Arch;
 use console_backend as _;
 use entry::exit;
 use target_common::{declare_target, TargetInterface};
+use veer_wdt::Wdt;
 
 pub struct Target {}
 
@@ -18,6 +19,14 @@ impl TargetInterface for Target {
     const NAME: &'static str = "Caliptra I3C Userspace IRQ Test";
 
     fn main() -> ! {
+        // The ROM leaves the MCU watchdog running with a period of 800 million
+        // clock cycles, and nothing here restarts it. A test that hangs would
+        // otherwise be reset mid-run, and the kernel's warm re-entry then trips
+        // a scheduler assertion that hides the real failure.
+        //
+        // SAFETY: this code runs in the kernel, which can access the MCI
+        // registers, and no other code in this image uses the watchdog.
+        unsafe { Wdt::new(kernel_config::MCI_BASE) }.stop();
         codegen::start();
         // The bootstrap thread has nothing left to do. Sleep rather than spin: a
         // spinning thread at the same priority as the app threads takes a time

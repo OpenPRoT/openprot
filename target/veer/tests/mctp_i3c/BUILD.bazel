@@ -39,7 +39,9 @@ rust_binary(
     deps = [
         ":codegen",
         ":linker_script",
+        "//target/veer:config",
         "//target/veer:entry",
+        "//target/veer/peripherals:wdt",
         "@pigweed//pw_kernel/arch/riscv:arch_riscv",
         "@pigweed//pw_kernel/kernel",
         "@pigweed//pw_kernel/subsys/console:console_backend",
