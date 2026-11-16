@@ -183,6 +183,9 @@ pub struct CaliptraI3cTarget<M: Mmio = MmioBlock> {
     pending_ibi: Option<[u8; 2]>,
     // Retries of `pending_ibi` so far.
     ibi_retries: u8,
+    // The descriptor of the last frame whose error field was set, until
+    // `take_rx_error` takes it.
+    rx_error: Option<u32>,
     // !Send + !Sync: exclusive ownership of one physical peripheral
     _not_send_sync: PhantomData<*mut ()>,
 }
@@ -209,6 +212,7 @@ impl<M: Mmio> CaliptraI3cTarget<M> {
             ibi_mdb: MDB_PENDING_READ,
             pending_ibi: None,
             ibi_retries: 0,
+            rx_error: None,
             _not_send_sync: PhantomData,
         }
     }
@@ -242,6 +246,12 @@ impl<M: Mmio> CaliptraI3cTarget<M> {
     // TTI receive (controller → target private write)
     // -------------------------------------------------------------------------
 
+    /// Whether the RX descriptor queue holds a descriptor (low byte of
+    /// `tti_desc_queue_depth`), whatever `RxDescStat` says.
+    fn rx_queued(&self) -> bool {
+        self.mmio.read(Reg::TtiDescQueueDepth) & 0xff != 0
+    }
+
     /// Drain one incoming write into `buf`.  Returns the number of bytes read,
     /// or `None` if no descriptor was present.
     fn rx_read(&mut self, buf: &mut [u8]) -> Option<usize> {
@@ -253,12 +263,19 @@ impl<M: Mmio> CaliptraI3cTarget<M> {
         // as a trigger so a model that does not implement the depth register
         // keeps working.
         let status_set = self.interrupt_status().is_set(InterruptStatus::RxDescStat);
-        let queued = self.mmio.read(Reg::TtiDescQueueDepth) & 0xff != 0;
-        if !status_set && !queued {
+        if !status_set && !self.rx_queued() {
             return None;
         }
 
         let desc = self.mmio.read(Reg::TtiRxDescPort);
+        // The top four bits are an error field. The core sets it to 1 when its RX
+        // data queue ran out of room during the write and dropped the rest (see
+        // `descriptor_rx.sv` in i3c-core), so the length below is only what fit.
+        // Keep the descriptor for `take_rx_error`; nothing is logged here, as
+        // logging in the drain path would slow the very thing being watched.
+        if desc >> 28 != 0 {
+            self.rx_error = Some(desc);
+        }
         // Lower 16 bits of descriptor carry the data length in bytes.
         let len = (desc & 0xffff) as usize;
         if len == 0 {
@@ -393,7 +410,12 @@ impl<M: Mmio> I3cTarget for CaliptraI3cTarget<M> {
         if response_read {
             return Ok(TargetEvent::ResponseRead);
         }
-        if status.is_set(InterruptStatus::RxDescStat) {
+        // `RxDescStat` can read clear while a descriptor is still queued (see
+        // `rx_read`), and no further interrupt arrives for that frame: it would
+        // sit in the 256 byte FIFO until the next write overran it, and that write
+        // would arrive cut short. So the queue depth counts too, and every
+        // wake-up, a timer one included, finds the frame.
+        if status.is_set(InterruptStatus::RxDescStat) || self.rx_queued() {
             // An inbound write is queued; the runtime drains it with
             // `read_frame`.
             return Ok(TargetEvent::InboundReady);
@@ -403,6 +425,10 @@ impl<M: Mmio> I3cTarget for CaliptraI3cTarget<M> {
 
     fn read_frame(&mut self, buf: &mut [u8]) -> Result<Option<usize>, Self::Error> {
         Ok(self.rx_read(buf))
+    }
+
+    fn take_rx_error(&mut self) -> Option<u32> {
+        self.rx_error.take()
     }
 
     fn send(&mut self, data: &[u8]) -> Result<(), Self::Error> {
@@ -699,6 +725,33 @@ mod tests {
 
         d.mmio.set(Reg::TtiInterruptStatus, 0);
         assert_eq!(d.on_interrupt().unwrap(), TargetEvent::None);
+    }
+
+    #[test]
+    fn a_descriptor_with_the_error_field_set_is_reported_once() {
+        let mut d = driver();
+        // Depth 1: one frame queued, 8 bytes read, error nibble 1.
+        d.mmio.set(Reg::TtiDescQueueDepth, 1);
+        d.mmio.set(Reg::TtiRxDescPort, 0x1000_0008);
+        d.mmio.set(Reg::TtiRxDataPort, 0x0403_0201);
+        let mut buf = [0u8; 16];
+        assert_eq!(d.read_frame(&mut buf).unwrap(), Some(8));
+        assert_eq!(d.take_rx_error(), Some(0x1000_0008));
+        assert_eq!(d.take_rx_error(), None, "taken once");
+
+        // A clean frame leaves nothing to take.
+        d.mmio.set(Reg::TtiRxDescPort, 0x0000_0004);
+        assert_eq!(d.read_frame(&mut buf).unwrap(), Some(4));
+        assert_eq!(d.take_rx_error(), None);
+    }
+
+    #[test]
+    fn a_queued_descriptor_is_reported_although_rx_desc_stat_dropped() {
+        let mut d = driver();
+        assert_eq!(d.on_interrupt().unwrap(), TargetEvent::None);
+        // Depth 1, status clear: the frame must still be found.
+        d.mmio.set(Reg::TtiDescQueueDepth, 1);
+        assert_eq!(d.on_interrupt().unwrap(), TargetEvent::InboundReady);
     }
 
     #[test]

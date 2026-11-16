@@ -126,6 +126,16 @@ impl<T, const RING: usize> Server<T, RING> {
         self.rx_count > 0
     }
 
+    /// The length of the frame most recently latched into the ring, or 0 if the
+    /// ring is empty.
+    pub fn newest_frame_len(&self) -> usize {
+        if self.rx_count == 0 {
+            return 0;
+        }
+        let newest = (self.rx_head + self.rx_count - 1) % RING;
+        self.rx_len.get(newest).copied().unwrap_or(0)
+    }
+
     /// Whether a staged transmit is still awaiting the controller's private
     /// read. A further `Send` is answered `Busy` while this is set.
     pub fn tx_pending(&self) -> bool {
