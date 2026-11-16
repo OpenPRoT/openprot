@@ -86,12 +86,12 @@ impl Error for CaliptraShaError {
 }
 
 /// SHA-2 driver that uses the Caliptra core through its mailbox.
-pub struct CaliptraSha {
-    mailbox: Mailbox,
+pub struct CaliptraSha<'m> {
+    mailbox: &'m Mailbox,
 }
 
-impl CaliptraSha {
-    pub fn new(mailbox: Mailbox) -> Self {
+impl<'m> CaliptraSha<'m> {
+    pub fn new(mailbox: &'m Mailbox) -> Self {
         Self { mailbox }
     }
 
@@ -170,11 +170,11 @@ impl CaliptraSha {
     }
 }
 
-impl ErrorType for CaliptraSha {
+impl ErrorType for CaliptraSha<'_> {
     type Error = CaliptraShaError;
 }
 
-impl scoped::DigestCtrlReset for CaliptraSha {
+impl scoped::DigestCtrlReset for CaliptraSha<'_> {
     fn reset(&mut self) -> Result<(), Self::Error> {
         // Caliptra keeps no state for a SHA computation between commands,
         // so there is nothing to reset.
@@ -183,16 +183,16 @@ impl scoped::DigestCtrlReset for CaliptraSha {
 }
 
 /// A SHA-2 computation with an `N`-word digest that borrows the driver.
-pub struct Sha2Op<'a, const N: usize> {
-    sha: &'a mut CaliptraSha,
+pub struct Sha2Op<'a, 'm, const N: usize> {
+    sha: &'a mut CaliptraSha<'m>,
     state: State,
 }
 
-impl<const N: usize> ErrorType for Sha2Op<'_, N> {
+impl<const N: usize> ErrorType for Sha2Op<'_, '_, N> {
     type Error = CaliptraShaError;
 }
 
-impl<const N: usize> scoped::DigestOp for Sha2Op<'_, N> {
+impl<const N: usize> scoped::DigestOp for Sha2Op<'_, '_, N> {
     type Output = Digest<N>;
 
     fn update(&mut self, input: &[u8]) -> Result<(), Self::Error> {
@@ -205,18 +205,18 @@ impl<const N: usize> scoped::DigestOp for Sha2Op<'_, N> {
 }
 
 /// A SHA-2 computation with an `N`-word digest that owns the driver.
-pub struct OwnedSha2Op<const N: usize> {
-    sha: CaliptraSha,
+pub struct OwnedSha2Op<'m, const N: usize> {
+    sha: CaliptraSha<'m>,
     state: State,
 }
 
-impl<const N: usize> ErrorType for OwnedSha2Op<N> {
+impl<const N: usize> ErrorType for OwnedSha2Op<'_, N> {
     type Error = CaliptraShaError;
 }
 
-impl<const N: usize> owned::DigestOp for OwnedSha2Op<N> {
+impl<'m, const N: usize> owned::DigestOp for OwnedSha2Op<'m, N> {
     type Output = Digest<N>;
-    type Controller = CaliptraSha;
+    type Controller = CaliptraSha<'m>;
 
     fn update(mut self, data: &[u8]) -> Result<Self, Self::Error> {
         self.sha.update(&mut self.state, data)?;
@@ -235,9 +235,9 @@ impl<const N: usize> owned::DigestOp for OwnedSha2Op<N> {
 
 macro_rules! impl_sha2 {
     ($algorithm:ty, $code:expr, $words:literal) => {
-        impl scoped::DigestInit<$algorithm> for CaliptraSha {
+        impl<'m> scoped::DigestInit<$algorithm> for CaliptraSha<'m> {
             type OpContext<'a>
-                = Sha2Op<'a, $words>
+                = Sha2Op<'a, 'm, $words>
             where
                 Self: 'a;
 
@@ -247,8 +247,8 @@ macro_rules! impl_sha2 {
             }
         }
 
-        impl owned::DigestInit<$algorithm> for CaliptraSha {
-            type Context = OwnedSha2Op<$words>;
+        impl<'m> owned::DigestInit<$algorithm> for CaliptraSha<'m> {
+            type Context = OwnedSha2Op<'m, $words>;
 
             fn init(mut self, _: $algorithm) -> Result<Self::Context, Self::Error> {
                 let state = self.start($code)?;
