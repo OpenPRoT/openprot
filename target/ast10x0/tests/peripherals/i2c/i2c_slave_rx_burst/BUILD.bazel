@@ -41,11 +41,13 @@ rust_binary(
     srcs = ["master_target.rs"],
     aliases = {":master_codegen": "codegen"},
     edition = "2024",
+    link_deps = [
+        ":master_linker_script",
+    ],
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
         ":master_codegen",
-        ":master_linker_script",
         "//target/ast10x0:entry",
         "//target/ast10x0/peripherals",
         "@ast1060_pac",
@@ -132,11 +134,13 @@ rust_binary(
     name = "target",
     srcs = ["target.rs"],
     edition = "2024",
+    link_deps = [
+        ":linker_script",
+    ],
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
         ":codegen",
-        ":linker_script",
         "//target/ast10x0:entry",
         "//target/ast10x0/peripherals",
         "@ast1060_pac",

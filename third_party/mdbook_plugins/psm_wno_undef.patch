@@ -1,0 +1,12 @@
+--- a/private/3rdparty/crates/BUILD.psm-0.1.24.bazel
++++ b/private/3rdparty/crates/BUILD.psm-0.1.24.bazel
+@@ -123,6 +123,9 @@ cargo_build_script(
+         include = ["**/*.rs"],
+         allow_empty = True,
+     ),
++    build_script_env = {
++        "CFLAGS": "-Wno-undef",
++    },
+     build_script_env_files = [
+         ":cargo_toml_env_vars",
+     ],

@@ -35,11 +35,13 @@ rust_binary(
         "//target/ast10x0/tests/smc:target_debug.rs",
     ],
     edition = "2024",
+    link_deps = [
+        ":linker_script",
+    ],
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
         ":codegen",
-        ":linker_script",
         "//target/ast10x0:entry",
         "//target/ast10x0/peripherals",
         "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",

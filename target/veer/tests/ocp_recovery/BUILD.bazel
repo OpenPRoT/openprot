@@ -48,11 +48,13 @@ rust_binary(
     name = "target",
     srcs = ["target.rs"],
     edition = "2024",
+    link_deps = [
+        ":linker_script",
+    ],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
         ":codegen",
         ":image",
-        ":linker_script",
         "//hal/blocking/ocp_recovery",
         "//target/veer:config",
         "//target/veer:entry",
