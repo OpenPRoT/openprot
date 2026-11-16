@@ -29,6 +29,8 @@ pub mod i2c_hardware;
 pub mod i3c_hardware;
 /// Message Authentication Code (MAC) traits and implementations
 pub mod mac;
+/// Random number generator traits
+pub mod rng;
 /// Reset and clocking traits for OpenPRoT HAL
 pub mod system_control;
 
