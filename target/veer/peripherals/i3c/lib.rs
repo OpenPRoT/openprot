@@ -64,6 +64,10 @@ pub const MDB_PENDING_READ: u8 = 0xAE;
 /// that never acknowledges the IBI from making this driver spin forever.
 const IBI_MAX_RETRIES: u8 = 16;
 
+/// RX descriptor error field (bits 31:28) value 1: the core's RX data queue ran out
+/// of room during the write. The only error `descriptor_rx.sv` produces.
+const RX_DESC_ERROR_OVERFLOW: u32 = 1 << 28;
+
 /// The TTI and standby-controller registers this driver uses.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Reg {
@@ -271,9 +275,12 @@ impl<M: Mmio> CaliptraI3cTarget<M> {
         // The top four bits are an error field. The core sets it to 1 when its RX
         // data queue ran out of room during the write and dropped the rest (see
         // `descriptor_rx.sv` in i3c-core), so the length below is only what fit.
+        // Only that bit is an error: the core never sets the others, but the
+        // emulator ORs the command's read/write bit into bit 29 of the descriptor it
+        // queues for a controller read (0x2000_0000, length 0), which is not one.
         // Keep the descriptor for `take_rx_error`; nothing is logged here, as
         // logging in the drain path would slow the very thing being watched.
-        if desc >> 28 != 0 {
+        if desc & RX_DESC_ERROR_OVERFLOW != 0 {
             self.rx_error = Some(desc);
         }
         // Lower 16 bits of descriptor carry the data length in bytes.
@@ -741,6 +748,23 @@ mod tests {
 
         // A clean frame leaves nothing to take.
         d.mmio.set(Reg::TtiRxDescPort, 0x0000_0004);
+        assert_eq!(d.read_frame(&mut buf).unwrap(), Some(4));
+        assert_eq!(d.take_rx_error(), None);
+    }
+
+    #[test]
+    fn the_emulators_read_flag_in_a_descriptor_is_not_an_error() {
+        let mut d = driver();
+        d.mmio.set(Reg::TtiDescQueueDepth, 1);
+        // Bit 29 with length 0, as the emulator queues for a controller read.
+        d.mmio.set(Reg::TtiRxDescPort, 0x2000_0000);
+        let mut buf = [0u8; 16];
+        assert_eq!(d.read_frame(&mut buf).unwrap(), None);
+        assert_eq!(d.take_rx_error(), None);
+
+        // The same bit on a frame that arrived whole is not an error either.
+        d.mmio.set(Reg::TtiRxDescPort, 0x2000_0004);
+        d.mmio.set(Reg::TtiRxDataPort, 0x0403_0201);
         assert_eq!(d.read_frame(&mut buf).unwrap(), Some(4));
         assert_eq!(d.take_rx_error(), None);
     }
