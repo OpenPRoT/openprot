@@ -52,9 +52,15 @@ The two are deliberately shaped alike, but three things are forced by I3C:
   nothing is trimmed here.
 - **The address is runtime state.** I3C dynamic addresses are assigned by
   ENTDAA. The PEC covers the address byte, so a wrong address makes every frame
-  fail its PEC. `I3cSender` reads the address back per message rather than
-  taking it at construction (sending before enumeration is `Unreachable`);
-  `MctpI3cReceiver` caches it and re-reads it only when a PEC check fails.
+  fail its PEC. `I3cSender` reads the address back per fragment rather than
+  taking it at construction (sending before enumeration is `Unreachable`), and
+  names it in the `Send` (`send_for`). The service stages the frame only if the
+  target still has that address, so ENTDAA cannot slip in between the read and
+  the staging: it answers `AddressChanged`, and the sender rebuilds the frame and
+  retries (`MAX_ADDRESS_RETRIES`). A frame already staged when the address moves
+  is discarded, and the next `Send` reports it (`Discarded`), which fails the
+  message. `MctpI3cReceiver` caches the address and re-reads it only when a PEC
+  check fails.
 - **The PEC is mandatory.** DSP0233 requires it, so every frame carries one and
   every inbound frame is checked; there is no switch to turn it off.
 - **One response is staged at a time.** The service answers a second `Send`
@@ -70,19 +76,35 @@ The two are deliberately shaped alike, but three things are forced by I3C:
 
 ## MTU
 
-`get_mtu()` reports `MCTP_I3C_IPC_MAXMTU` (251). The i3c service carries one
-framed packet per `I3cOp::Send`, capped at `i3c_api::MAX_PAYLOAD` (256 — the
-TTI FIFO size). `mctp-estack`'s `Fragmenter` treats the MTU as the largest whole
-packet, header included, so a frame (packet plus PEC) is never larger than
-`MTU + 1`:
+`get_mtu()` follows what the target can send. `I3cSender::refresh_limits` reads
+the service's `DeviceInfo` and sets the MTU to one byte less than its
+`max_send_len` (the frame is the packet plus the PEC), within two bounds:
 
-```text
-packet <= MTU (251)   =>   frame <= 252 <= 256
-```
+- **At most `MCTP_I3C_IPC_MAXMTU` (254).** The service carries one framed packet
+  per `I3cOp::Send`, at most `i3c_api::MAX_SEND` (255: the 256-byte TTI FIFO less
+  the address byte that leads a `Send` payload). `mctp-estack`'s `Fragmenter`
+  treats the MTU as the largest whole packet, header included, and the frame is
+  the packet plus the PEC, so the packet is one byte shorter than the frame. This
+  is caliptra-mcu-sw's rule (`max_read_len - 1`) for our frame.
 
-251 leaves 4 bytes of the frame unused; `MAX_PAYLOAD - 1` (255) would use them.
-The derivation (`MAX_PAYLOAD - header - PEC`) is the bench branch's, which ran at
-245 when the service limit was 250; 251 has not been run on the board yet.
+- **At least `MCTP_I3C_MINMTU` (68): the MCTP header plus the 64-byte baseline
+  payload of DSP0236.** A target that cannot send that much cannot carry MCTP:
+  `refresh_limits` fails, and so does every send.
+
+The controller can lower the limit (SETMRL), so every send reads it again. The
+stack chooses a message's MTU *before* calling the sender, though, so call
+`refresh_limits` once at startup, or the first message is built for the ceiling.
+A packet that is over the limit read at the start of a send abandons that
+message (`TxFailure`, nothing sent past it), and the next one is built for the
+new MTU.
+
+This follows caliptra-mcu-sw's binding, which derives its MTU from the target's
+device info and floors it at the same value. It reads the limits once, at setup.
+
+Whether to send packets larger than the baseline to a peer that has not said it
+accepts them is not settled here. DSP0236 only guarantees the baseline, and
+neither this crate nor caliptra-mcu-sw negotiates it. Lower `MCTP_I3C_IPC_MAXMTU`
+to the baseline to be strictly conservative.
 
 ## Testing
 

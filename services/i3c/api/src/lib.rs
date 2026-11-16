@@ -37,6 +37,10 @@ pub use util_transport::{Transport, TransportError};
 /// `dispatch` enforces, and an inbound frame must never exceed this ceiling.
 pub const MAX_PAYLOAD: usize = 256;
 
+/// Largest frame one `Send` can carry: [`MAX_PAYLOAD`] less the address byte that
+/// leads a `Send` payload (see [`I3cOp::Send`]).
+pub const MAX_SEND: usize = MAX_PAYLOAD - 1;
+
 /// Size of the one-byte opcode/status header on each frame.
 pub const HEADER: usize = 1;
 
@@ -62,9 +66,18 @@ pub const STAGED_RESPONSE_TIMEOUT_MS: u32 = 1000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum I3cOp {
-    /// Transmit `payload` to the controller (staged TX + IBI). At most one
+    /// Transmit a frame to the controller (staged TX + IBI). At most one
     /// response is staged at a time: a `Send` while one is still unread by the
     /// controller is answered with [`I3cStatus::Busy`].
+    ///
+    /// The payload is `[framed_for: u8][frame...]`, the frame at most
+    /// [`MAX_SEND`] bytes. `framed_for` is the 7-bit dynamic address the client
+    /// built the frame for, or 0 if the frame does not depend on the address
+    /// (0x00 is reserved on an I3C bus). A frame whose check covers the address
+    /// byte, as an MCTP-over-I3C PEC does, is wrong once the address moves, so
+    /// the server stages it only if the target still has that address and
+    /// answers [`I3cStatus::AddressChanged`] if not. It also discards the staged
+    /// response if the address moves before the controller reads it.
     Send = 0,
     /// Return the latched inbound frame, or `NoData` if none is pending.
     Recv = 1,
@@ -153,7 +166,7 @@ pub enum I3cStatus {
     NoData = 1,
     /// `DynamicAddress` before the controller has assigned one.
     Unassigned = 2,
-    /// `Send` payload exceeded [`MAX_PAYLOAD`].
+    /// A `Send` frame exceeded [`MAX_SEND`], or what the target can stage.
     TooLong = 3,
     /// The facade reported a hardware error.
     Internal = 4,
@@ -168,6 +181,10 @@ pub enum I3cStatus {
     /// `Send` after it, so a sender can tell that a message it was still
     /// sending has lost a fragment. Sending again is accepted.
     Discarded = 7,
+    /// `Send` named a `framed_for` address the target no longer has (the
+    /// controller re-ran ENTDAA, or revoked it). Nothing was staged. The client
+    /// reads the address again, builds the frame for it, and sends again.
+    AddressChanged = 8,
 }
 
 impl I3cStatus {
@@ -182,6 +199,7 @@ impl I3cStatus {
             5 => Some(Self::InvalidOp),
             6 => Some(Self::Busy),
             7 => Some(Self::Discarded),
+            8 => Some(Self::AddressChanged),
             _ => None,
         }
     }
@@ -253,10 +271,11 @@ mod tests {
             I3cStatus::InvalidOp,
             I3cStatus::Busy,
             I3cStatus::Discarded,
+            I3cStatus::AddressChanged,
         ] {
             assert_eq!(I3cStatus::from_u8(st as u8), Some(st));
         }
-        assert_eq!(I3cStatus::from_u8(8), None);
+        assert_eq!(I3cStatus::from_u8(9), None);
     }
 
     #[test]

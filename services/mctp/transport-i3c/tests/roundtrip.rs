@@ -21,7 +21,8 @@ use openprot_hal_blocking::i3c_hardware::{DynamicAddress, I3cTarget, TargetEvent
 use openprot_mctp_api::MCTP_HEADER_LEN;
 use openprot_mctp_server::Server;
 use openprot_mctp_transport_i3c::{
-    transfer_pec, I3cSender, MctpI3cReceiver, MAX_BUSY_RETRIES, MCTP_I3C_IPC_MAXMTU,
+    transfer_pec, I3cSender, MctpI3cReceiver, MAX_ADDRESS_RETRIES, MAX_BUSY_RETRIES,
+    MCTP_I3C_IPC_MAXMTU, MCTP_I3C_MINMTU,
 };
 
 const OWN_ADDR: u8 = 0x08;
@@ -336,15 +337,44 @@ struct ScriptedTransport {
     script: Vec<I3cStatus>,
     repeat: I3cStatus,
     sends: Rc<Cell<u32>>,
+    /// Addresses to answer successive `DynamicAddress` requests with; the last
+    /// one repeats.
+    addrs: Vec<u8>,
+    /// Every frame handed to `Send`, in order.
+    frames: Rc<RefCell<Vec<Vec<u8>>>>,
+    /// The `max_send_len` that `DeviceInfo` reports; a test can change it.
+    limit: Rc<Cell<usize>>,
 }
 
 impl Transport for ScriptedTransport {
     fn transact(&mut self, req: &[u8], resp: &mut [u8]) -> Result<usize, TransportError> {
-        let (op, _) = decode_request(req).expect("request");
+        let (op, frame) = decode_request(req).expect("request");
+        let mut addr_body = [OWN_ADDR];
+        let mut info_body = [0u8; i3c_api::DEVICE_INFO_LEN];
         let (status, payload): (I3cStatus, &[u8]) = match op {
-            I3cOp::DynamicAddress => (I3cStatus::Ok, &[OWN_ADDR]),
+            I3cOp::DynamicAddress => {
+                addr_body[0] = if self.addrs.len() > 1 {
+                    self.addrs.remove(0)
+                } else {
+                    self.addrs.first().copied().unwrap_or(OWN_ADDR)
+                };
+                (I3cStatus::Ok, &addr_body[..])
+            }
+            I3cOp::DeviceInfo => {
+                let info = i3c_api::DeviceInfo {
+                    dynamic_address: Some(OWN_ADDR),
+                    static_address: None,
+                    max_send_len: self.limit.get() as u16,
+                    max_recv_len: 256,
+                };
+                info.encode(&mut info_body).expect("device info");
+                (I3cStatus::Ok, &info_body[..])
+            }
             I3cOp::Send => {
                 self.sends.set(self.sends.get() + 1);
+                // `[framed_for][frame...]`; keep the frame.
+                let (_, body) = frame.split_first().expect("a framed_for byte");
+                self.frames.borrow_mut().push(body.to_vec());
                 let status = if self.script.is_empty() {
                     self.repeat
                 } else {
@@ -371,12 +401,29 @@ fn send_scripted_payload(
     repeat: I3cStatus,
     payload: &[u8],
 ) -> (Result<(), ()>, u32, u32) {
+    let (result, sends, waits, _) = send_scripted_addrs(script, repeat, vec![OWN_ADDR], payload);
+    (result, sends, waits)
+}
+
+/// [`send_scripted_payload`] with the dynamic address the service reports per
+/// `DynamicAddress` request (the last repeats), also returning every frame the
+/// service was handed.
+fn send_scripted_addrs(
+    script: Vec<I3cStatus>,
+    repeat: I3cStatus,
+    addrs: Vec<u8>,
+    payload: &[u8],
+) -> (Result<(), ()>, u32, u32, Vec<Vec<u8>>) {
     let sends = Rc::new(Cell::new(0));
     let waits = Rc::new(Cell::new(0u32));
+    let frames = Rc::new(RefCell::new(Vec::new()));
     let client = I3cClient::new(ScriptedTransport {
         script,
         repeat,
         sends: sends.clone(),
+        addrs,
+        frames: frames.clone(),
+        limit: Rc::new(Cell::new(i3c_api::MAX_SEND)),
     });
     let wait = {
         let waits = waits.clone();
@@ -389,7 +436,8 @@ fn send_scripted_payload(
         .send(Some(req), MSG_TYPE, None, None, false, payload)
         .map(|_| ())
         .map_err(|_| ());
-    (result, sends.get(), waits.get())
+    let frames = frames.borrow().clone();
+    (result, sends.get(), waits.get(), frames)
 }
 
 #[test]
@@ -462,4 +510,225 @@ fn a_service_that_keeps_discarding_fails_the_send() {
     let (result, sends, _) = send_scripted(Vec::new(), I3cStatus::Discarded);
     assert!(result.is_err());
     assert_eq!(sends, 2, "one retry, then the send fails");
+}
+
+/// The address can change between two fragments of one message (ENTDAA re-run).
+/// Each fragment's PEC covers the address in force when it was framed, so the
+/// sender must read the address again for every fragment.
+#[test]
+fn each_fragment_is_framed_for_the_address_in_force_when_it_is_sent() {
+    let payload = vec![0x5au8; MCTP_I3C_IPC_MAXMTU * 2];
+    // One address read per fragment: 0x08, then 0x1d for every later one.
+    let (result, sends, _, frames) =
+        send_scripted_addrs(Vec::new(), I3cStatus::Ok, vec![OWN_ADDR, REMOTE_ADDR], &payload);
+    assert!(result.is_ok());
+    assert!(sends >= 3, "the message should span several fragments");
+
+    for (i, frame) in frames.iter().enumerate() {
+        let want = if i == 0 { OWN_ADDR } else { REMOTE_ADDR };
+        // `controller_read_decode` asserts the PEC against `want`.
+        controller_read_decode(want, frame);
+    }
+}
+
+/// A send before the controller assigns an address, or after it revokes it,
+/// stages nothing.
+#[test]
+fn a_fragment_after_the_address_is_gone_is_not_sent() {
+    // The service reports the address once, then `Unassigned`.
+    struct LosesAddress {
+        reads: u32,
+        sends: Rc<Cell<u32>>,
+    }
+    impl Transport for LosesAddress {
+        fn transact(&mut self, req: &[u8], resp: &mut [u8]) -> Result<usize, TransportError> {
+            let (op, _) = decode_request(req).expect("request");
+            let n = match op {
+                I3cOp::DynamicAddress => {
+                    self.reads += 1;
+                    if self.reads == 1 {
+                        encode_response(I3cStatus::Ok, &[OWN_ADDR], resp)
+                    } else {
+                        encode_response(I3cStatus::Unassigned, &[], resp)
+                    }
+                }
+                I3cOp::Send => {
+                    self.sends.set(self.sends.get() + 1);
+                    encode_response(I3cStatus::Ok, &[], resp)
+                }
+                I3cOp::DeviceInfo => {
+                    let mut body = [0u8; i3c_api::DEVICE_INFO_LEN];
+                    i3c_api::DeviceInfo {
+                        dynamic_address: Some(OWN_ADDR),
+                        static_address: None,
+                        max_send_len: i3c_api::MAX_SEND as u16,
+                        max_recv_len: 256,
+                    }
+                    .encode(&mut body)
+                    .expect("device info");
+                    encode_response(I3cStatus::Ok, &body, resp)
+                }
+                _ => encode_response(I3cStatus::InvalidOp, &[], resp),
+            };
+            Ok(n.expect("response"))
+        }
+    }
+
+    let sends = Rc::new(Cell::new(0));
+    let client = I3cClient::new(LosesAddress {
+        reads: 0,
+        sends: sends.clone(),
+    });
+    let mut srv: Server<_, 16> =
+        Server::new(Eid(OWN_EID), 0, I3cSender::new(client, REMOTE_ADDR, || {}));
+    let req = srv.req(REMOTE_EID).expect("req");
+    let payload = vec![0x5au8; MCTP_I3C_IPC_MAXMTU * 2];
+    assert!(srv
+        .send(Some(req), MSG_TYPE, None, None, false, &payload)
+        .is_err());
+    assert_eq!(sends.get(), 1, "only the fragment framed under a valid address");
+}
+
+/// The address moved between the sender reading it and the service staging the
+/// frame: the service answers `AddressChanged`, and the sender rebuilds the
+/// frame for the address it reads next.
+#[test]
+fn a_frame_built_for_a_stale_address_is_rebuilt_for_the_new_one() {
+    let (result, sends, _, frames) = send_scripted_addrs(
+        vec![I3cStatus::AddressChanged],
+        I3cStatus::Ok,
+        vec![OWN_ADDR, REMOTE_ADDR],
+        b"x",
+    );
+    assert!(result.is_ok());
+    assert_eq!(sends, 2, "refused once, then staged");
+    // Both attempts were handed over; the second carries the new address's PEC.
+    controller_read_decode(OWN_ADDR, &frames[0]);
+    controller_read_decode(REMOTE_ADDR, &frames[1]);
+}
+
+/// The rebuild is bounded: a service that keeps reporting the address moved
+/// cannot hold the sender in a loop.
+#[test]
+fn a_service_that_keeps_reporting_a_moved_address_fails_the_send() {
+    let (result, sends, waits, _) = send_scripted_addrs(
+        Vec::new(),
+        I3cStatus::AddressChanged,
+        vec![OWN_ADDR],
+        b"x",
+    );
+    assert!(result.is_err());
+    assert_eq!(sends, u32::from(MAX_ADDRESS_RETRIES) + 1);
+    assert_eq!(waits, 0, "an address change is not waited out like Busy");
+}
+
+/// End to end through the real service: the address the sender framed for is the
+/// one the target has, so the frame is staged, and its PEC is for that address.
+#[test]
+fn the_real_service_stages_a_frame_for_the_current_address() {
+    let sends = RefCell::new(Vec::new());
+    let mut srv = server(&sends, Some(OWN_ADDR));
+    let req = srv.req(REMOTE_EID).expect("req");
+    srv.send(Some(req), MSG_TYPE, None, None, false, b"hello")
+        .expect("send");
+    let frames = sends.borrow();
+    assert_eq!(frames.len(), 1);
+    controller_read_decode(OWN_ADDR, &frames[0]);
+}
+
+/// A sender over a scripted service that reports `limit` as its send limit, plus
+/// the limit (to change later) and every frame the service is handed.
+fn limited_sender(
+    limit: usize,
+) -> (
+    I3cSender<ScriptedTransport, impl FnMut()>,
+    Rc<Cell<usize>>,
+    Rc<RefCell<Vec<Vec<u8>>>>,
+) {
+    let limit = Rc::new(Cell::new(limit));
+    let frames = Rc::new(RefCell::new(Vec::new()));
+    let client = I3cClient::new(ScriptedTransport {
+        script: Vec::new(),
+        repeat: I3cStatus::Ok,
+        sends: Rc::new(Cell::new(0)),
+        addrs: vec![OWN_ADDR],
+        frames: frames.clone(),
+        limit: limit.clone(),
+    });
+    (I3cSender::new(client, REMOTE_ADDR, || {}), limit, frames)
+}
+
+/// The MTU follows what the target says it can send, so a message is
+/// fragmented to fit: no frame is longer than the target's limit.
+#[test]
+fn the_mtu_follows_the_targets_send_limit_and_every_frame_fits() {
+    use mctp_lib::Sender as _;
+    let (mut sender, _limit, frames) = limited_sender(100);
+    assert_eq!(sender.get_mtu(), MCTP_I3C_IPC_MAXMTU, "the ceiling until read");
+    assert_eq!(sender.refresh_limits().expect("limits"), 99);
+    assert_eq!(sender.get_mtu(), 99, "one byte less than the limit, for the PEC");
+
+    let mut srv: Server<_, 16> = Server::new(Eid(OWN_EID), 0, sender);
+    let req = srv.req(REMOTE_EID).expect("req");
+    srv.send(Some(req), MSG_TYPE, None, None, false, &vec![0x5au8; 600])
+        .expect("send");
+
+    let frames = frames.borrow();
+    assert!(frames.len() > 6, "600 bytes at 99 should take many packets");
+    assert!(frames.iter().all(|f| f.len() <= 100), "no frame over the limit");
+}
+
+/// A target that cannot send even the baseline packet cannot carry MCTP: the
+/// MTU is not lowered below the baseline, and nothing is sent.
+#[test]
+fn a_target_below_the_baseline_fails_the_send_and_sends_nothing() {
+    use mctp_lib::Sender as _;
+    // The frame has to hold the baseline packet and its PEC.
+    let (mut sender, limit, frames) = limited_sender(MCTP_I3C_MINMTU);
+    assert!(sender.refresh_limits().is_err());
+    assert_eq!(sender.get_mtu(), MCTP_I3C_IPC_MAXMTU, "left as it was");
+
+    limit.set(MCTP_I3C_MINMTU + 1);
+    assert_eq!(
+        sender.refresh_limits().expect("limits"),
+        MCTP_I3C_MINMTU,
+        "exactly the floor"
+    );
+
+    limit.set(MCTP_I3C_MINMTU);
+    let mut srv: Server<_, 16> = Server::new(Eid(OWN_EID), 0, sender);
+    let req = srv.req(REMOTE_EID).expect("req");
+    assert!(srv
+        .send(Some(req), MSG_TYPE, None, None, false, b"x")
+        .is_err());
+    assert!(frames.borrow().is_empty(), "nothing was staged");
+}
+
+/// The controller can lower the limit (SETMRL) after the stack has chosen the
+/// MTU for a message. Packets built for the old MTU are not sent over the new
+/// limit: the message is abandoned, and the next one is built for the new MTU.
+#[test]
+fn a_limit_lowered_after_the_mtu_was_chosen_abandons_that_message_only() {
+    let (sender, limit, frames) = limited_sender(256);
+    let mut srv: Server<_, 16> = Server::new(Eid(OWN_EID), 0, sender);
+
+    limit.set(100); // lowered; the sender has not read it yet
+    let req = srv.req(REMOTE_EID).expect("req");
+    let payload = vec![0x5au8; 300];
+    assert!(
+        srv.send(Some(req), MSG_TYPE, None, None, false, &payload)
+            .is_err(),
+        "built for the old MTU, over the new limit"
+    );
+    assert!(frames.borrow().iter().all(|f| f.len() <= 100), "nothing over the limit");
+
+    // The sender read the new limit during that send, so the next message
+    // is fragmented for it.
+    let sent_before = frames.borrow().len();
+    let req = srv.req(REMOTE_EID).expect("req");
+    srv.send(Some(req), MSG_TYPE, None, None, false, &payload)
+        .expect("send");
+    let frames = frames.borrow();
+    assert!(frames.len() > sent_before);
+    assert!(frames.iter().all(|f| f.len() <= 100));
 }

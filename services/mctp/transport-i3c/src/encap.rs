@@ -104,31 +104,59 @@ const fn addr_byte(addr: u8, rnw: u8) -> u8 {
     (addr << 1) | rnw
 }
 
-/// The MTU `I3cSender::get_mtu` reports (251).
+/// The largest MTU this crate uses (254): the ceiling on what `I3cSender::get_mtu`
+/// reports. The MTU follows the target's live send limit (see [`mtu_for_limit`])
+/// and never exceeds this.
 ///
-/// The i3c service carries one framed packet per `I3cOp::Send`, capped at
-/// `i3c_api::MAX_PAYLOAD` (the TTI FIFO size). `mctp-estack`'s `Fragmenter`
-/// treats its MTU as the largest whole packet, transport header included, so
-/// the MTU is what is left of the frame after the PEC:
+/// The i3c service carries one framed packet per `I3cOp::Send`, at most
+/// `i3c_api::MAX_SEND` (255): the 256-byte TTI FIFO less the address byte that
+/// leads a `Send` payload. `mctp-estack`'s `Fragmenter` treats its MTU as the
+/// largest whole packet, transport header included, and the frame is the packet
+/// plus its PEC, so the largest packet is one byte less than the frame:
 ///
 /// ```text
-/// packet + pec <= 256   =>   packet <= 255
+/// packet + pec <= MAX_SEND (255)   =>   packet <= 254
 /// ```
 ///
-/// This reports 4 bytes (the MCTP header) fewer than that, so a frame has room
-/// to spare; raising it to `MAX_PAYLOAD - 1` would use them. The derivation is
-/// the bench branch's, which ran at 245 when the service limit was 250.
+/// This is caliptra-mcu-sw's rule (`max_read_len - 1`, the PEC excluded) applied
+/// to our frame. The board has run it in both directions.
 ///
-/// Derived from `i3c_api::MAX_PAYLOAD` rather than a literal so it tracks the
+/// Derived from `i3c_api::MAX_SEND` rather than a literal so it tracks the
 /// service limit.
-pub const MCTP_I3C_IPC_MAXMTU: usize = i3c_api::MAX_PAYLOAD - MCTP_HEADER_LEN - 1;
+pub const MCTP_I3C_IPC_MAXMTU: usize = i3c_api::MAX_SEND - 1;
+
+/// The MCTP baseline transmission unit (DSP0236): the packet payload size that
+/// every endpoint accepts, header excluded.
+pub const MCTP_BASELINE_PAYLOAD: usize = 64;
+
+/// The smallest MTU this binding works with: the MCTP header plus the baseline
+/// payload, as a whole packet (the same unit as [`MCTP_I3C_IPC_MAXMTU`]). A
+/// target that cannot send a packet this large cannot carry MCTP.
+pub const MCTP_I3C_MINMTU: usize = MCTP_HEADER_LEN + MCTP_BASELINE_PAYLOAD;
+
+/// The MTU for a target that can stage a frame of at most `max_send_len` bytes
+/// (`i3c_api::DeviceInfo::max_send_len`), or `None` if that is too little for
+/// [`MCTP_I3C_MINMTU`].
+///
+/// The frame carries the PEC after the packet, so the packet is one byte
+/// shorter than the frame. The result never exceeds [`MCTP_I3C_IPC_MAXMTU`]. The
+/// controller can change the limit (SETMRL), so ask again when it matters.
+pub fn mtu_for_limit(max_send_len: usize) -> Option<usize> {
+    let mtu = max_send_len.checked_sub(1)?.min(MCTP_I3C_IPC_MAXMTU);
+    (mtu >= MCTP_I3C_MINMTU).then_some(mtu)
+}
 
 /// Buffer size for `Fragmenter::fragment_vectored`, which refuses to emit into
 /// anything smaller than its MTU.
 pub const MCTP_I3C_IPC_PACKET: usize = MCTP_I3C_IPC_MAXMTU + MCTP_HEADER_LEN;
 
-/// Largest whole framed packet the transport ever hands to `I3cOp::Send`.
-pub const MCTP_I3C_IPC_FRAME: usize = i3c_api::MAX_PAYLOAD;
+/// Largest whole framed packet the transport ever hands to `I3cOp::Send`: what a
+/// `Send` can carry next to the address byte that leads its payload
+/// ([`i3c_api::MAX_SEND`]).
+pub const MCTP_I3C_IPC_FRAME: usize = i3c_api::MAX_SEND;
+
+// The MTU's whole packet plus its PEC must fit one `Send`.
+const _: () = assert!(MCTP_I3C_IPC_MAXMTU + 1 <= MCTP_I3C_IPC_FRAME);
 
 /// Strip the PEC from an inbound private write and return the MCTP packet.
 ///

@@ -41,7 +41,15 @@ const MCTP_HEADER_LEN: usize = 4;
 
 /// Largest packet the host writes, header included. The target's receive limit
 /// is 256 bytes including the PEC.
-const MAX_PACKET: usize = 251;
+///
+/// A packet and its PEC are 255 bytes, one under the receive FIFO, and the same
+/// size the target sends. (caliptra-mcu-sw's own host helper writes 64-byte
+/// payloads.)
+const MAX_PACKET: usize = 254;
+
+/// Largest packet the target sends, header included: its MTU
+/// (`MCTP_I3C_IPC_MAXMTU`).
+const MAX_REPLY_PACKET: usize = 254;
 
 /// Logged by `echo.rs` once its listener is armed.
 const READY: &str = "mctp echo: waiting for request";
@@ -190,15 +198,19 @@ fn echo(
     let mut body = Vec::new();
     let mut count = 0usize;
     let mut first_seq = 0u8;
+    let mut first_len = 0usize;
     loop {
         let packet = read_packet(hw, stream, log, target_addr);
+        if count == 0 {
+            first_len = packet.len();
+        }
         // [ver][dest = host][src = target][flags][body...]
         assert!(
             packet.len() > MCTP_HEADER_LEN,
             "reply packet too short: {packet:02x?}"
         );
         assert!(
-            packet.len() <= MAX_PACKET,
+            packet.len() <= MAX_REPLY_PACKET,
             "reply packet of {} bytes is over the MTU",
             packet.len()
         );
@@ -225,6 +237,15 @@ fn echo(
         if flags & 0x40 != 0 {
             break;
         }
+    }
+    // A message of more than one packet starts with a packet of the target's
+    // whole MTU, so this is what shows the target sends the size it reports,
+    // and not just a size under the bound.
+    if count > 1 {
+        assert_eq!(
+            first_len, MAX_REPLY_PACKET,
+            "the first packet of a long reply should fill the MTU"
+        );
     }
     (body, count)
 }

@@ -37,7 +37,13 @@
 //! gives each staged response [`STAGED_RESPONSE_TIMEOUT_MS`](i3c_api::STAGED_RESPONSE_TIMEOUT_MS):
 //! when that passes without a `ResponseRead` it discards the response in the
 //! target ([`Server::cancel_staged`]), logs it, and accepts `Send` again. The
-//! discarded message is lost.
+//! discarded message is lost, and the next `Send` is answered `Discarded` so the
+//! client learns of it.
+//!
+//! A staged response is also discarded when the dynamic address changes, since
+//! the client framed it (its PEC) for the old one: on an `AddressAssigned` or
+//! `AddressLost` event here, and in `dispatch` for a target that never reports
+//! them ([`Server::discard_if_address_moved`]).
 //!
 //! The **only** kernel-tagged crate in the i3c server path.
 
@@ -152,6 +158,19 @@ pub fn run<T: I3cTarget, const RING: usize>(
                         // `Send` can be staged.
                         srv.notify_response_read();
                         staged_deadline = None;
+                    }
+                    // A response framed for the old address would fail the
+                    // controller's PEC check, so drop it. The next `Send` is
+                    // told (`Discarded`).
+                    Ok(TargetEvent::AddressAssigned(_) | TargetEvent::AddressLost) => {
+                        match srv.address_changed() {
+                            Ok(true) => {
+                                pw_log::error!("i3c address changed; staged response discarded");
+                                staged_deadline = None;
+                            }
+                            Ok(false) => {}
+                            Err(_) => pw_log::error!("i3c cancel_response failed"),
+                        }
                     }
                     Ok(_) => {}
                     Err(_) => pw_log::error!("i3c on_interrupt failed"),

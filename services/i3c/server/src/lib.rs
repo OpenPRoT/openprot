@@ -16,7 +16,7 @@ pub use loopback::LoopbackTransport;
 
 use i3c_api::{
     decode_request, encode_response, DeviceInfo, I3cOp, I3cStatus, DEVICE_INFO_LEN, HEADER,
-    MAX_PAYLOAD,
+    MAX_PAYLOAD, MAX_SEND,
 };
 use openprot_hal_blocking::i3c_hardware::I3cTarget;
 
@@ -87,6 +87,11 @@ pub struct Server<T, const RING: usize = RX_RING> {
     tx_pending: bool,
     /// A staged response was discarded unread and no `Send` has reported it yet.
     discarded: bool,
+    /// The dynamic address the staged response was framed for, or `None` if it
+    /// does not depend on one. A frame whose check covers the address byte (an
+    /// MCTP-over-I3C PEC) is wrong whenever the controller reads it once the
+    /// address has moved.
+    staged_addr: Option<u8>,
 }
 
 impl<T> Server<T, RX_RING> {
@@ -112,6 +117,7 @@ impl<T, const RING: usize> Server<T, RING> {
             rx_count: 0,
             tx_pending: false,
             discarded: false,
+            staged_addr: None,
         }
     }
 
@@ -162,6 +168,53 @@ impl<T: I3cTarget, const RING: usize> Server<T, RING> {
         // it; the next `Send` reports that, once (`I3cStatus::Discarded`).
         self.discarded = true;
         self.target.cancel_response().map(|()| true)
+    }
+
+    /// The target's dynamic address, if it has one.
+    fn current_addr(&self) -> Option<u8> {
+        self.target.dynamic_address().map(u8::from)
+    }
+
+    /// Give up on the staged response if it was framed for an address the target
+    /// no longer has.
+    ///
+    /// The controller can re-run ENTDAA or send RSTDAA at any time. A response
+    /// framed for the old address (its PEC covers the address byte) would fail
+    /// the controller's check, so it is discarded the same way a response left
+    /// unread is, and the next `Send` reports it as [`I3cStatus::Discarded`]. A
+    /// response that does not depend on an address is left alone.
+    ///
+    /// Reads the address from the target rather than waiting for an event: a
+    /// target whose address is assigned outside the driver (the Caliptra ROM does
+    /// it) never reports `AddressAssigned` or `AddressLost`.
+    ///
+    /// Returns whether a response was discarded.
+    ///
+    /// # Errors
+    ///
+    /// The target's error from `cancel_response`, after the flag is released.
+    pub fn discard_if_address_moved(&mut self) -> Result<bool, T::Error> {
+        match self.staged_addr {
+            Some(framed_for) if self.tx_pending && self.current_addr() != Some(framed_for) => {
+                self.cancel_staged()
+            }
+            _ => Ok(false),
+        }
+    }
+
+    /// The runtime saw the address change (`AddressAssigned` or `AddressLost`):
+    /// discard the staged response if it was framed for an address.
+    ///
+    /// Returns whether a response was discarded.
+    ///
+    /// # Errors
+    ///
+    /// The target's error from `cancel_response`, after the flag is released.
+    pub fn address_changed(&mut self) -> Result<bool, T::Error> {
+        if self.tx_pending && self.staged_addr.is_some() {
+            return self.cancel_staged();
+        }
+        Ok(false)
     }
 
     /// Drain one inbound frame into the ring after a [`TargetEvent::InboundReady`].
@@ -230,11 +283,24 @@ pub fn dispatch<T: I3cTarget, const RING: usize>(
     };
     match op {
         I3cOp::Send => {
+            // `[framed_for][frame...]`: see `I3cOp::Send`.
+            let Some((&framed_for, frame)) = payload.split_first() else {
+                return status_only(resp, I3cStatus::InvalidOp);
+            };
+            if framed_for > 0x7f {
+                return status_only(resp, I3cStatus::InvalidOp);
+            }
+            // 0 = not tied to an address.
+            let framed_for = (framed_for != 0).then_some(framed_for);
             // Too long for the protocol, or for what this target can stage in one
             // response.
-            if payload.len() > MAX_PAYLOAD || payload.len() > srv.target.max_send_len() {
+            if frame.len() > MAX_SEND || frame.len() > srv.target.max_send_len() {
                 return status_only(resp, I3cStatus::TooLong);
             }
+            // A response framed for an address that has since changed is wrong
+            // for the controller whenever it reads it: discard it now. The flag
+            // is released even if the target reports an error.
+            let _ = srv.discard_if_address_moved();
             // One staged response at a time: staging another over an unread one
             // could overrun the target's TX queue. The client retries.
             if srv.tx_pending {
@@ -247,12 +313,22 @@ pub fn dispatch<T: I3cTarget, const RING: usize>(
                 srv.discarded = false;
                 return status_only(resp, I3cStatus::Discarded);
             }
-            match srv.target.send(payload) {
+            // The frame was built for an address this target no longer has: stage
+            // nothing, so the client can rebuild it. Checked here, against the
+            // live address, so no change can slip in between the client reading
+            // the address and the frame being staged.
+            if let Some(addr) = framed_for {
+                if srv.current_addr() != Some(addr) {
+                    return status_only(resp, I3cStatus::AddressChanged);
+                }
+            }
+            match srv.target.send(frame) {
                 Ok(()) => {
                     // Staged for the controller's next private read; further
                     // sends are `Busy` until it has been read (cleared by the
                     // runtime on ResponseRead).
                     srv.tx_pending = true;
+                    srv.staged_addr = framed_for;
                     status_only(resp, I3cStatus::Ok)
                 }
                 Err(_) => status_only(resp, I3cStatus::Internal),
@@ -283,10 +359,11 @@ pub fn dispatch<T: I3cTarget, const RING: usize>(
             // Report what a client can use: never more than the ring slots and
             // the wire frame hold, whatever the target says.
             let clamp = |n: usize| n.min(MAX_PAYLOAD) as u16;
+            let clamp_send = |n: usize| n.min(MAX_SEND) as u16;
             let wire = DeviceInfo {
                 dynamic_address: info.dynamic_address.map(u8::from),
                 static_address: info.static_address.map(u8::from),
-                max_send_len: clamp(info.max_send_len),
+                max_send_len: clamp_send(info.max_send_len),
                 max_recv_len: clamp(info.max_recv_len),
             };
             let mut body = [0u8; DEVICE_INFO_LEN];
@@ -431,11 +508,7 @@ mod tests {
     #[test]
     fn send_dispatches_to_target() {
         let mut s = srv();
-        let mut req = [0u8; MAX_FRAME];
-        let mut resp = [0u8; MAX_FRAME];
-        let n = encode_request(I3cOp::Send, b"pong", &mut req).unwrap();
-        let rn = dispatch(&mut s, &req[..n], &mut resp);
-        assert_eq!(decode_response(&resp[..rn]), Some((I3cStatus::Ok, &[][..])));
+        assert_eq!(send(&mut s, b"pong"), I3cStatus::Ok);
         assert_eq!(&s.target.sent[..s.target.sent_len], b"pong");
     }
 
@@ -457,6 +530,101 @@ mod tests {
         assert_eq!(&s.target.sent[..s.target.sent_len], b"second");
         s.notify_response_read();
         assert_eq!(send(&mut s, b"third"), I3cStatus::Ok, "reported once only");
+    }
+
+    #[test]
+    fn an_address_change_discards_the_unread_response_and_reports_it() {
+        let mut s = srv();
+        s.target.addr = Some(0x08);
+        assert_eq!(send_for(&mut s, 0x08, b"first"), I3cStatus::Ok);
+
+        // The controller re-ran ENTDAA while the response was unread.
+        s.target.addr = Some(0x1d);
+        assert_eq!(send_for(&mut s, 0x1d, b"second"), I3cStatus::Discarded);
+        assert_eq!(s.target.cancels, 1, "the stale response was cancelled");
+        assert!(!s.tx_pending());
+
+        // Reported once; the next Send is staged under the new address.
+        assert_eq!(send_for(&mut s, 0x1d, b"second"), I3cStatus::Ok);
+        assert_eq!(&s.target.sent[..s.target.sent_len], b"second");
+        assert_eq!(
+            send_for(&mut s, 0x1d, b"third"),
+            I3cStatus::Busy,
+            "unread, address steady"
+        );
+    }
+
+    #[test]
+    fn losing_the_address_discards_the_unread_response() {
+        let mut s = srv();
+        s.target.addr = Some(0x08);
+        assert_eq!(send_for(&mut s, 0x08, b"first"), I3cStatus::Ok);
+        s.target.addr = None; // RSTDAA
+        assert_eq!(send_for(&mut s, 0x08, b"second"), I3cStatus::Discarded);
+    }
+
+    #[test]
+    fn an_address_change_after_the_response_was_read_is_not_a_discard() {
+        let mut s = srv();
+        s.target.addr = Some(0x08);
+        assert_eq!(send_for(&mut s, 0x08, b"first"), I3cStatus::Ok);
+        s.notify_response_read();
+        s.target.addr = Some(0x1d);
+        assert_eq!(send_for(&mut s, 0x1d, b"second"), I3cStatus::Ok);
+        assert_eq!(s.target.cancels, 0);
+    }
+
+    #[test]
+    fn a_frame_built_for_an_address_the_target_no_longer_has_is_not_staged() {
+        let mut s = srv();
+        s.target.addr = Some(0x1d);
+        // The client framed it for 0x08, read a moment earlier.
+        assert_eq!(send_for(&mut s, 0x08, b"stale"), I3cStatus::AddressChanged);
+        assert_eq!(s.target.sent_len, 0, "nothing was staged");
+        assert!(!s.tx_pending());
+        assert_eq!(s.target.cancels, 0, "there was nothing to cancel");
+
+        // Rebuilt for the current address, it goes through.
+        assert_eq!(send_for(&mut s, 0x1d, b"fresh"), I3cStatus::Ok);
+
+        // With no address at all, no frame can be right.
+        s.notify_response_read();
+        s.target.addr = None;
+        assert_eq!(send_for(&mut s, 0x1d, b"x"), I3cStatus::AddressChanged);
+    }
+
+    #[test]
+    fn a_frame_not_tied_to_an_address_is_unaffected_by_address_changes() {
+        let mut s = srv();
+        s.target.addr = Some(0x08);
+        assert_eq!(send(&mut s, b"first"), I3cStatus::Ok);
+        s.target.addr = Some(0x1d);
+        assert_eq!(send(&mut s, b"second"), I3cStatus::Busy, "not discarded");
+        assert_eq!(s.target.cancels, 0);
+        assert_eq!(s.address_changed(), Ok(false), "nothing address-bound staged");
+        s.notify_response_read();
+        s.target.addr = None;
+        assert_eq!(send(&mut s, b"third"), I3cStatus::Ok, "not even with no address");
+    }
+
+    #[test]
+    fn the_address_changed_event_discards_a_response_framed_for_an_address() {
+        let mut s = srv();
+        s.target.addr = Some(0x08);
+        assert_eq!(send_for(&mut s, 0x08, b"first"), I3cStatus::Ok);
+        assert_eq!(s.address_changed(), Ok(true));
+        assert_eq!(s.target.cancels, 1);
+        assert_eq!(send_for(&mut s, 0x08, b"second"), I3cStatus::Discarded);
+    }
+
+    #[test]
+    fn a_send_with_no_address_byte_or_a_reserved_one_is_invalid() {
+        let mut s = srv();
+        let mut resp = [0u8; MAX_FRAME];
+        let rn = dispatch(&mut s, &[I3cOp::Send as u8], &mut resp);
+        assert_eq!(decode_response(&resp[..rn]).unwrap().0, I3cStatus::InvalidOp);
+        assert_eq!(send_for(&mut s, 0x80, b"x"), I3cStatus::InvalidOp);
+        assert_eq!(s.target.sent_len, 0);
     }
 
     #[test]
@@ -484,13 +652,9 @@ mod tests {
     #[test]
     fn send_sets_tx_pending_until_response_read() {
         let mut s = srv();
-        let mut req = [0u8; MAX_FRAME];
-        let mut resp = [0u8; MAX_FRAME];
         assert!(!s.tx_pending(), "nothing staged yet");
 
-        let n = encode_request(I3cOp::Send, b"pong", &mut req).unwrap();
-        let rn = dispatch(&mut s, &req[..n], &mut resp);
-        assert_eq!(decode_response(&resp[..rn]), Some((I3cStatus::Ok, &[][..])));
+        assert_eq!(send(&mut s, b"pong"), I3cStatus::Ok);
         assert!(s.tx_pending(), "a staged response is awaiting the read");
 
         // The controller reads it; the runtime clears the flag.
@@ -498,12 +662,21 @@ mod tests {
         assert!(!s.tx_pending(), "back-pressure released after the read");
     }
 
-    fn send(s: &mut Server<FakeTarget>, payload: &[u8]) -> I3cStatus {
-        let mut req = [0u8; MAX_FRAME];
+    /// `Send` a frame framed for `addr` (0: not tied to an address).
+    fn send_for(s: &mut Server<FakeTarget>, addr: u8, frame: &[u8]) -> I3cStatus {
+        let mut payload = [0u8; MAX_PAYLOAD + 1];
+        payload[0] = addr;
+        payload[1..=frame.len()].copy_from_slice(frame);
+        let mut req = [0u8; MAX_FRAME + 1];
         let mut resp = [0u8; MAX_FRAME];
-        let n = encode_request(I3cOp::Send, payload, &mut req).unwrap();
+        let n = encode_request(I3cOp::Send, &payload[..=frame.len()], &mut req).unwrap();
         let rn = dispatch(s, &req[..n], &mut resp);
         decode_response(&resp[..rn]).unwrap().0
+    }
+
+    /// `Send` a frame that does not depend on the target's address.
+    fn send(s: &mut Server<FakeTarget>, frame: &[u8]) -> I3cStatus {
+        send_for(s, 0, frame)
     }
 
     #[test]
@@ -576,8 +749,9 @@ mod tests {
     #[test]
     fn a_frame_of_the_protocol_ceiling_is_accepted_when_the_target_allows_it() {
         let mut s = srv();
-        assert_eq!(send(&mut s, &[0xa5u8; MAX_PAYLOAD]), I3cStatus::Ok);
-        assert_eq!(s.target.sent_len, MAX_PAYLOAD);
+        assert_eq!(send(&mut s, &[0xa5u8; MAX_SEND]), I3cStatus::Ok);
+        assert_eq!(s.target.sent_len, MAX_SEND);
+
     }
 
     fn device_info(s: &mut Server<FakeTarget>) -> DeviceInfo {
@@ -623,7 +797,7 @@ mod tests {
         s.target.send_limit = MAX_PAYLOAD + 100;
         s.target.recv_limit = usize::MAX;
         let info = device_info(&mut s);
-        assert_eq!(info.max_send_len as usize, MAX_PAYLOAD);
+        assert_eq!(info.max_send_len as usize, MAX_SEND);
         assert_eq!(info.max_recv_len as usize, MAX_PAYLOAD);
     }
 

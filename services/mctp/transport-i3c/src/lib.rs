@@ -15,11 +15,11 @@ mod receiver;
 mod sender;
 
 pub use encap::{
-    decode_write, transfer_pec, MctpI3cEncap, MCTP_I3C_IPC_FRAME, MCTP_I3C_IPC_MAXMTU,
-    MCTP_I3C_IPC_PACKET,
+    decode_write, mtu_for_limit, transfer_pec, MctpI3cEncap, MCTP_BASELINE_PAYLOAD,
+    MCTP_I3C_IPC_FRAME, MCTP_I3C_IPC_MAXMTU, MCTP_I3C_IPC_PACKET, MCTP_I3C_MINMTU,
 };
 pub use receiver::MctpI3cReceiver;
-pub use sender::{I3cSender, MAX_BUSY_RETRIES};
+pub use sender::{I3cSender, MAX_ADDRESS_RETRIES, MAX_BUSY_RETRIES};
 
 #[cfg(test)]
 mod tests {
@@ -143,15 +143,30 @@ mod tests {
 
     #[test]
     fn mtu_accounts_for_pec_and_the_mctp_header() {
-        assert_eq!(
-            MCTP_I3C_IPC_MAXMTU,
-            i3c_api::MAX_PAYLOAD - MCTP_HEADER_LEN - 1
-        );
-        // A maximum-size packet plus its PEC exactly fills the i3c frame.
-        assert_eq!(
-            MCTP_I3C_IPC_MAXMTU + MCTP_HEADER_LEN + 1,
-            MCTP_I3C_IPC_FRAME
-        );
+        // The whole packet plus its PEC fills a `Send`.
+        assert_eq!(MCTP_I3C_IPC_MAXMTU + 1, i3c_api::MAX_SEND);
+        // A maximum-size packet plus its PEC fits one `Send`, which carries one
+        // byte less than the service frame (the address byte leads it).
+        assert!(MCTP_I3C_IPC_MAXMTU + 1 <= MCTP_I3C_IPC_FRAME);
+        assert_eq!(MCTP_I3C_IPC_FRAME, i3c_api::MAX_SEND);
+    }
+
+    #[test]
+    fn the_mtu_follows_the_targets_send_limit() {
+        // A frame is the packet plus the PEC.
+        assert_eq!(mtu_for_limit(100), Some(99));
+        assert_eq!(mtu_for_limit(MCTP_I3C_MINMTU + 1), Some(MCTP_I3C_MINMTU));
+        // It never exceeds the ceiling, however much the target allows.
+        assert_eq!(mtu_for_limit(i3c_api::MAX_SEND), Some(MCTP_I3C_IPC_MAXMTU));
+        assert_eq!(mtu_for_limit(usize::MAX), Some(MCTP_I3C_IPC_MAXMTU));
+    }
+
+    #[test]
+    fn a_target_that_cannot_carry_the_baseline_has_no_mtu() {
+        assert_eq!(MCTP_I3C_MINMTU, MCTP_HEADER_LEN + 64);
+        assert_eq!(mtu_for_limit(MCTP_I3C_MINMTU), None, "no room for the PEC");
+        assert_eq!(mtu_for_limit(1), None);
+        assert_eq!(mtu_for_limit(0), None);
     }
 
     #[test]
