@@ -69,6 +69,13 @@ const TIMEOUT_SECS: u64 = 120;
 /// own packetized write leaves the same gap).
 const WRITE_GAP: Duration = Duration::from_millis(50);
 
+/// The least the target's clock must advance during a gap. The emulator runs in
+/// wall-clock time, so on a busy machine 50 ms gives the firmware far fewer
+/// cycles than it needs to drain a packet (about 37,000 on an idle one), and the
+/// next write overruns the FIFO. The cycle count does not depend on the load. On
+/// the FPGA the wall clock is the longer of the two.
+const MIN_GAP_CYCLES: u64 = 150_000;
+
 /// The payload of the request that ends the run (the firmware's `DONE`).
 const DONE: &[u8] = b"mctp-i3c-done";
 
@@ -197,17 +204,20 @@ fn wait_for_log(hw: &mut impl McuHwModel, log: &mut String, term: &str) {
     );
 }
 
-/// Step the model for about `gap` of wall-clock time.
+/// Step the model for at least `gap` of wall-clock time and `MIN_GAP_CYCLES` cycles.
 fn step_for(hw: &mut impl McuHwModel, log: &mut String, gap: Duration) {
     let start = Instant::now();
+    let c0 = hw.cycle_count();
     hw.step_until(|m| {
         let out = m.output().take(usize::MAX);
         if !out.is_empty() {
             print!("{out}");
             log.push_str(&out);
         }
-        start.elapsed() >= gap || m.mci_fw_fatal_error().is_some()
+        (start.elapsed() >= gap && m.cycle_count() - c0 >= MIN_GAP_CYCLES)
+            || m.mci_fw_fatal_error().is_some()
     });
+
     assert_eq!(hw.mci_fw_fatal_error(), None, "firmware hit a fatal error");
 }
 
