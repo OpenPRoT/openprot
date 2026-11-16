@@ -157,7 +157,9 @@ impl<T: Transport> I3cClient<T> {
             return Err(ClientError::BufferTooSmall);
         }
         let mut payload = [0u8; MAX_PAYLOAD];
-        let (head, body) = payload.split_first_mut().ok_or(ClientError::BufferTooSmall)?;
+        let (head, body) = payload
+            .split_first_mut()
+            .ok_or(ClientError::BufferTooSmall)?;
         *head = addr;
         body.get_mut(..frame.len())
             .ok_or(ClientError::BufferTooSmall)?

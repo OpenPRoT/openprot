@@ -489,7 +489,10 @@ fn a_discard_mid_message_fails_the_send_and_stops_the_fragments() {
         I3cStatus::Ok,
         &payload,
     );
-    assert!(result.is_err(), "a message that lost a fragment is not sent");
+    assert!(
+        result.is_err(),
+        "a message that lost a fragment is not sent"
+    );
     assert_eq!(sends, 2, "no fragment after the discard goes out");
     assert_eq!(waits, 0);
 }
@@ -519,8 +522,12 @@ fn a_service_that_keeps_discarding_fails_the_send() {
 fn each_fragment_is_framed_for_the_address_in_force_when_it_is_sent() {
     let payload = vec![0x5au8; MCTP_I3C_IPC_MAXMTU * 2];
     // One address read per fragment: 0x08, then 0x1d for every later one.
-    let (result, sends, _, frames) =
-        send_scripted_addrs(Vec::new(), I3cStatus::Ok, vec![OWN_ADDR, REMOTE_ADDR], &payload);
+    let (result, sends, _, frames) = send_scripted_addrs(
+        Vec::new(),
+        I3cStatus::Ok,
+        vec![OWN_ADDR, REMOTE_ADDR],
+        &payload,
+    );
     assert!(result.is_ok());
     assert!(sends >= 3, "the message should span several fragments");
 
@@ -586,7 +593,11 @@ fn a_fragment_after_the_address_is_gone_is_not_sent() {
     assert!(srv
         .send(Some(req), MSG_TYPE, None, None, false, &payload)
         .is_err());
-    assert_eq!(sends.get(), 1, "only the fragment framed under a valid address");
+    assert_eq!(
+        sends.get(),
+        1,
+        "only the fragment framed under a valid address"
+    );
 }
 
 /// The address moved between the sender reading it and the service staging the
@@ -611,12 +622,8 @@ fn a_frame_built_for_a_stale_address_is_rebuilt_for_the_new_one() {
 /// cannot hold the sender in a loop.
 #[test]
 fn a_service_that_keeps_reporting_a_moved_address_fails_the_send() {
-    let (result, sends, waits, _) = send_scripted_addrs(
-        Vec::new(),
-        I3cStatus::AddressChanged,
-        vec![OWN_ADDR],
-        b"x",
-    );
+    let (result, sends, waits, _) =
+        send_scripted_addrs(Vec::new(), I3cStatus::AddressChanged, vec![OWN_ADDR], b"x");
     assert!(result.is_err());
     assert_eq!(sends, u32::from(MAX_ADDRESS_RETRIES) + 1);
     assert_eq!(waits, 0, "an address change is not waited out like Busy");
@@ -664,9 +671,17 @@ fn limited_sender(
 fn the_mtu_follows_the_targets_send_limit_and_every_frame_fits() {
     use mctp_lib::Sender as _;
     let (mut sender, _limit, frames) = limited_sender(100);
-    assert_eq!(sender.get_mtu(), MCTP_I3C_IPC_MAXMTU, "the ceiling until read");
+    assert_eq!(
+        sender.get_mtu(),
+        MCTP_I3C_IPC_MAXMTU,
+        "the ceiling until read"
+    );
     assert_eq!(sender.refresh_limits().expect("limits"), 99);
-    assert_eq!(sender.get_mtu(), 99, "one byte less than the limit, for the PEC");
+    assert_eq!(
+        sender.get_mtu(),
+        99,
+        "one byte less than the limit, for the PEC"
+    );
 
     let mut srv: Server<_, 16> = Server::new(Eid(OWN_EID), 0, sender);
     let req = srv.req(REMOTE_EID).expect("req");
@@ -675,7 +690,10 @@ fn the_mtu_follows_the_targets_send_limit_and_every_frame_fits() {
 
     let frames = frames.borrow();
     assert!(frames.len() > 6, "600 bytes at 99 should take many packets");
-    assert!(frames.iter().all(|f| f.len() <= 100), "no frame over the limit");
+    assert!(
+        frames.iter().all(|f| f.len() <= 100),
+        "no frame over the limit"
+    );
 }
 
 /// A target that cannot send even the baseline packet cannot carry MCTP: the
@@ -720,7 +738,10 @@ fn a_limit_lowered_after_the_mtu_was_chosen_abandons_that_message_only() {
             .is_err(),
         "built for the old MTU, over the new limit"
     );
-    assert!(frames.borrow().iter().all(|f| f.len() <= 100), "nothing over the limit");
+    assert!(
+        frames.borrow().iter().all(|f| f.len() <= 100),
+        "nothing over the limit"
+    );
 
     // The sender read the new limit during that send, so the next message
     // is fragmented for it.

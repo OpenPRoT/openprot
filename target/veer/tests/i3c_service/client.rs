@@ -138,9 +138,7 @@ fn entry() {
             }
             // A `Send` carries one byte less than a received frame: its payload
             // leads with the address byte.
-            if info.max_send_len as usize != MAX_SEND
-                || info.max_recv_len as usize != MAX_PAYLOAD
-            {
+            if info.max_send_len as usize != MAX_SEND || info.max_recv_len as usize != MAX_PAYLOAD {
                 fail!("unexpected device limits");
             }
         }
