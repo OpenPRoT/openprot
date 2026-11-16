@@ -109,6 +109,10 @@ rust_binary_no_panics_test(
     tags = ["kernel"],
 )
 
+# No `app_no_panics_test`: the app can panic. The entry point Pigweed generates
+# for a `multi_process_app` asserts on the process index, and
+# `i3c_server::dispatch` indexes its receive ring.
+
 # The host side drives the firmware through caliptra_mcu_hw_model, following
 # caliptra-mcu-sw's own test_i3c_services: a private write over the I3C socket
 # the model provides. On the emulator the model is the emulator; on the VCK190
