@@ -643,6 +643,9 @@ fn the_real_service_stages_a_frame_for_the_current_address() {
     controller_read_decode(OWN_ADDR, &frames[0]);
 }
 
+/// Every frame the scripted service is handed.
+type Frames = Rc<RefCell<Vec<Vec<u8>>>>;
+
 /// A sender over a scripted service that reports `limit` as its send limit, plus
 /// the limit (to change later) and every frame the service is handed.
 fn limited_sender(
@@ -650,7 +653,7 @@ fn limited_sender(
 ) -> (
     I3cSender<ScriptedTransport, impl FnMut()>,
     Rc<Cell<usize>>,
-    Rc<RefCell<Vec<Vec<u8>>>>,
+    Frames,
 ) {
     let limit = Rc::new(Cell::new(limit));
     let frames = Rc::new(RefCell::new(Vec::new()));

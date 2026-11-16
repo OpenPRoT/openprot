@@ -327,10 +327,10 @@ pub fn dispatch<T: I3cTarget, const RING: usize>(
             // nothing, so the client can rebuild it. Checked here, against the
             // live address, so no change can slip in between the client reading
             // the address and the frame being staged.
-            if let Some(addr) = framed_for {
-                if srv.current_addr() != Some(addr) {
-                    return status_only(resp, I3cStatus::AddressChanged);
-                }
+            if let Some(addr) = framed_for
+                && srv.current_addr() != Some(addr)
+            {
+                return status_only(resp, I3cStatus::AddressChanged);
             }
             match srv.target.send(frame) {
                 Ok(()) => {

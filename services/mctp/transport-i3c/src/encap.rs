@@ -160,7 +160,7 @@ pub const MCTP_I3C_IPC_PACKET: usize = MCTP_I3C_IPC_MAXMTU + MCTP_HEADER_LEN;
 pub const MCTP_I3C_IPC_FRAME: usize = i3c_api::MAX_SEND;
 
 // The MTU's whole packet plus its PEC must fit one `Send`.
-const _: () = assert!(MCTP_I3C_IPC_MAXMTU + 1 <= MCTP_I3C_IPC_FRAME);
+const _: () = assert!(MCTP_I3C_IPC_MAXMTU < MCTP_I3C_IPC_FRAME);
 
 /// Strip the PEC from an inbound private write and return the MCTP packet.
 ///

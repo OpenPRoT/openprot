@@ -143,9 +143,9 @@ mod tests {
 
     #[test]
     fn mtu_accounts_for_pec_and_the_mctp_header() {
-        // The whole packet plus its PEC fills a `Send`.
+        // The whole packet plus its PEC fills a `Send`. (That the packet fits the
+        // frame is checked when the crate is compiled, in `encap`.)
         assert_eq!(MCTP_I3C_IPC_MAXMTU + 1, i3c_api::MAX_SEND);
-        assert!(MCTP_I3C_IPC_MAXMTU + 1 <= MCTP_I3C_IPC_FRAME);
         assert_eq!(MCTP_I3C_IPC_FRAME, i3c_api::MAX_SEND);
     }
 
