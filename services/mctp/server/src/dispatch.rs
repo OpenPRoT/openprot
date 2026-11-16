@@ -9,7 +9,7 @@
 use openprot_mctp_api::wire::{self, flags, MctpOp, MctpRequestHeader};
 use openprot_mctp_api::{Handle, RecvMetadata, ResponseCode};
 
-use crate::{RecvResult, Sender, Server};
+use crate::{RecvResult, Sender, Server, MAX_RECV_ANY};
 
 /// Outcome of [`dispatch_mctp_op`].
 pub enum DispatchOutcome {
@@ -100,6 +100,25 @@ pub fn dispatch_mctp_op<S: Sender, const N: usize>(
             }
         }
 
+        MctpOp::RecvAny => {
+            let Some(args) = wire::decode_recv_any(request) else {
+                return DispatchOutcome::Reply(encode_error(response, ResponseCode::BadArgument));
+            };
+            let mut handles = [Handle(0); MAX_RECV_ANY];
+            for (slot, raw) in handles.iter_mut().zip(args.handles()) {
+                *slot = Handle(*raw);
+            }
+            let handles = &handles[..args.handles().len()];
+
+            match server.try_recv_any(handles, recv_buf) {
+                Some((fired, meta)) => encode_recv_on(response, recv_buf, fired, &meta),
+                None => match server.register_recv_any(handles, args.timeout_millis, now_millis) {
+                    Ok(key) => return DispatchOutcome::Pending { handle: key },
+                    Err(e) => encode_error(response, e.code),
+                },
+            }
+        }
+
         MctpOp::Send => {
             let handle = if header.flags & flags::HAS_HANDLE != 0 {
                 Some(Handle(header.handle))
@@ -165,6 +184,9 @@ pub fn drive_pending<S: Sender, const N: usize>(
     server.update(now_millis, recv_buf, |handle, result, payload| {
         let len = match result {
             RecvResult::Message(meta) => encode_recv(response, payload, &meta),
+            RecvResult::MessageOn { handle, meta } => {
+                encode_recv_on(response, payload, handle, &meta)
+            }
             RecvResult::TimedOut => encode_error(response, ResponseCode::TimedOut),
         };
         on_ready(handle, response.get(..len).unwrap_or(&[]));
@@ -181,6 +203,29 @@ fn encode_recv(response: &mut [u8], recv_buf: &[u8], meta: &RecvMetadata) -> usi
     };
     wire::encode_recv_response(
         response,
+        meta.msg_type,
+        meta.msg_ic,
+        meta.remote_eid,
+        meta.msg_tag,
+        payload,
+    )
+    .unwrap_or_else(|_| encode_error(response, ResponseCode::InternalError))
+}
+
+/// Like [`encode_recv`], but reports in the response header which handle the
+/// message arrived on (a `RecvAny` reply).
+fn encode_recv_on(
+    response: &mut [u8],
+    recv_buf: &[u8],
+    handle: Handle,
+    meta: &RecvMetadata,
+) -> usize {
+    let Some(payload) = recv_buf.get(..meta.payload_size) else {
+        return encode_error(response, ResponseCode::NoSpace);
+    };
+    wire::encode_recv_any_response(
+        response,
+        handle.0,
         meta.msg_type,
         meta.msg_ic,
         meta.remote_eid,

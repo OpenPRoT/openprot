@@ -635,3 +635,140 @@ fn response_to_a_request_sent_after_a_quiet_period_is_delivered() {
         b"pong"
     );
 }
+
+// ---------------------------------------------------------------------------
+// MctpOp::RecvAny — one receive on whichever of several handles gets a message
+// ---------------------------------------------------------------------------
+
+/// A `RecvAny` with nothing waiting is `Pending` under the first handle, and
+/// when a message arrives on the *second* one, `drive_pending` replies under
+/// the first handle (the reply key) with the second named in the header.
+#[test]
+fn dispatch_recv_any_pending_then_resolved_on_the_second_handle() {
+    let buf_a = RefCell::new(Vec::new());
+    let mut server_a: Server<_, 16> = Server::new(Eid(8), 0, BufferSender { packets: &buf_a });
+    let first = listener(&mut server_a, 4);
+    let second = listener(&mut server_a, 3); // `deliver_early` sends type 3
+
+    let mut req = [0u8; 128];
+    let mut resp = [0u8; 128];
+    let mut recv_buf = [0u8; 255];
+
+    let req_len = wire::encode_recv_any(&mut req, &[first.0, second.0], 1000).unwrap();
+    let outcome = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server_a, &mut recv_buf, 0);
+    let key = match outcome {
+        DispatchOutcome::Pending { handle } => handle,
+        DispatchOutcome::Reply(_) => panic!("nothing was waiting: expected Pending"),
+    };
+    assert_eq!(key, first);
+
+    deliver_early(&mut server_a);
+
+    let mut fired: Option<(Handle, usize)> = None;
+    drive_pending(&mut server_a, 5, &mut recv_buf, &mut resp, |h, bytes| {
+        fired = Some((h, bytes.len()));
+    });
+    let (fired_key, len) = fired.expect("drive_pending should reply");
+    assert_eq!(fired_key, first);
+    let header = wire::decode_response_header(&resp[..len]).unwrap();
+    assert!(header.is_success());
+    assert_eq!(
+        header.handle, second.0,
+        "header names the handle that fired"
+    );
+    assert_eq!(header.msg_type, 3);
+    assert_eq!(header.eid, 42);
+    assert_eq!(
+        wire::get_response_payload(&resp[..len], &header).unwrap(),
+        b"early"
+    );
+}
+
+/// A message already waiting is answered at once, with the handle it arrived on.
+#[test]
+fn dispatch_recv_any_immediate_if_message_waiting() {
+    let buf_a = RefCell::new(Vec::new());
+    let mut server_a: Server<_, 16> = Server::new(Eid(8), 0, BufferSender { packets: &buf_a });
+    let first = listener(&mut server_a, 4);
+    let second = listener(&mut server_a, 3);
+    deliver_early(&mut server_a);
+
+    let mut req = [0u8; 128];
+    let mut resp = [0u8; 128];
+    let mut recv_buf = [0u8; 255];
+    let req_len = wire::encode_recv_any(&mut req, &[first.0, second.0], 1000).unwrap();
+    let n = dispatch_reply(&req[..req_len], &mut resp, &mut server_a, &mut recv_buf);
+    let header = wire::decode_response_header(&resp[..n]).unwrap();
+    assert!(header.is_success());
+    assert_eq!(header.handle, second.0);
+    assert_eq!(
+        wire::get_response_payload(&resp[..n], &header).unwrap(),
+        b"early"
+    );
+}
+
+/// A `RecvAny` that times out answers `TimedOut` under the first handle.
+#[test]
+fn dispatch_recv_any_times_out() {
+    let sent = RefCell::new(Vec::new());
+    let mut server_a: Server<_, 16> = Server::new(Eid(8), 0, BufferSender { packets: &sent });
+    let first = listener(&mut server_a, 4);
+    let second = listener(&mut server_a, 3);
+
+    let mut req = [0u8; 128];
+    let mut resp = [0u8; 128];
+    let mut recv_buf = [0u8; 255];
+    let req_len = wire::encode_recv_any(&mut req, &[first.0, second.0], 100).unwrap();
+    let outcome = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server_a, &mut recv_buf, 0);
+    assert!(matches!(outcome, DispatchOutcome::Pending { .. }));
+
+    let mut fired: Option<(Handle, usize)> = None;
+    drive_pending(&mut server_a, 100, &mut recv_buf, &mut resp, |h, bytes| {
+        fired = Some((h, bytes.len()));
+    });
+    let (key, len) = fired.expect("the deadline should fire");
+    assert_eq!(key, first);
+    let header = wire::decode_response_header(&resp[..len]).unwrap();
+    assert_eq!(
+        header.response_code(),
+        openprot_mctp_api::ResponseCode::TimedOut
+    );
+}
+
+/// Malformed `RecvAny` requests and bad handle lists are answered, not left pending.
+#[test]
+fn dispatch_recv_any_rejects_bad_requests() {
+    let sent = RefCell::new(Vec::new());
+    let mut server_a: Server<_, 16> = Server::new(Eid(8), 0, BufferSender { packets: &sent });
+    let first = listener(&mut server_a, 4);
+
+    let mut req = [0u8; 128];
+    let mut resp = [0u8; 128];
+    let mut recv_buf = [0u8; 255];
+
+    // Truncated: a header with no payload.
+    let req_len = wire::encode_recv_any(&mut req, &[first.0], 100).unwrap();
+    let n = dispatch_reply(
+        &req[..wire::MctpRequestHeader::SIZE],
+        &mut resp,
+        &mut server_a,
+        &mut recv_buf,
+    );
+    assert_eq!(
+        wire::decode_response_header(&resp[..n])
+            .unwrap()
+            .response_code(),
+        openprot_mctp_api::ResponseCode::BadArgument
+    );
+
+    // A repeated handle.
+    let req_len2 = wire::encode_recv_any(&mut req, &[first.0, first.0], 100).unwrap();
+    let n = dispatch_reply(&req[..req_len2], &mut resp, &mut server_a, &mut recv_buf);
+    assert_eq!(
+        wire::decode_response_header(&resp[..n])
+            .unwrap()
+            .response_code(),
+        openprot_mctp_api::ResponseCode::BadArgument
+    );
+    let _ = req_len;
+}

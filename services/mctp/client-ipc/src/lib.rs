@@ -93,17 +93,17 @@ impl IpcMctpClient {
         if req_len > MAX_REQUEST_SIZE {
             return Err(MctpError::from_code(ResponseCode::InternalError));
         }
-        let req_copy = {
-            let inner = self.inner.borrow();
-            let mut buf = [0u8; MAX_REQUEST_SIZE];
-            buf[..req_len].copy_from_slice(&inner.request_buf[..req_len]);
-            buf
-        };
-        let mut inner = self.inner.borrow_mut();
+        // Borrow the two buffers as disjoint fields: the request is sent straight
+        // from `request_buf`, with no per-call copy into a fresh zeroed array.
+        let mut guard = self.inner.borrow_mut();
+        let ClientBuffers {
+            request_buf,
+            response_buf,
+        } = &mut *guard;
         userspace::syscall::channel_transact(
             self.handle,
-            &req_copy[..req_len],
-            &mut inner.response_buf,
+            &request_buf[..req_len],
+            response_buf,
             userspace::time::Instant::MAX,
         )
         .map_err(|_| MctpError::from_code(ResponseCode::InternalError))
@@ -182,6 +182,49 @@ impl MctpClient for IpcMctpClient {
             remote_eid: header.eid,
             payload_size: payload.len(),
         })
+    }
+
+    fn recv_any(
+        &self,
+        handles: &[Handle],
+        timeout_millis: u32,
+        buf: &mut [u8],
+    ) -> Result<(Handle, RecvMetadata), MctpError> {
+        let mut raw = [0u32; wire::MAX_RECV_ANY_HANDLES];
+        if handles.len() > raw.len() {
+            return Err(MctpError::from_code(ResponseCode::BadArgument));
+        }
+        for (slot, handle) in raw.iter_mut().zip(handles) {
+            *slot = handle.0;
+        }
+        let req_len = {
+            let mut inner = self.inner.borrow_mut();
+            wire::encode_recv_any(
+                &mut inner.request_buf,
+                &raw[..handles.len()],
+                timeout_millis,
+            )
+            .map_err(|_| MctpError::from_code(ResponseCode::BadArgument))?
+        };
+        let (header, resp_len) = self.transact(req_len)?;
+
+        let inner = self.inner.borrow();
+        let payload = wire::get_response_payload(&inner.response_buf[..resp_len], &header)
+            .map_err(|_| MctpError::from_code(ResponseCode::InternalError))?;
+
+        let copy_len = core::cmp::min(payload.len(), buf.len());
+        buf[..copy_len].copy_from_slice(&payload[..copy_len]);
+
+        Ok((
+            Handle(header.handle),
+            RecvMetadata {
+                msg_type: header.msg_type,
+                msg_ic: header.flags & wire::flags::IC != 0,
+                msg_tag: header.tag,
+                remote_eid: header.eid,
+                payload_size: payload.len(),
+            },
+        ))
     }
 
     fn send(

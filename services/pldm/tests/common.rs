@@ -146,6 +146,20 @@ impl<S: Sender, const N: usize, F: FnMut()> MctpClient for DirectClientWithPump<
             .ok_or(MctpError::from_code(ResponseCode::TimedOut))
     }
 
+    fn recv_any(
+        &self,
+        handles: &[Handle],
+        _timeout_millis: u32,
+        buf: &mut [u8],
+    ) -> Result<(Handle, RecvMetadata), MctpError> {
+        (self.pre_recv_pump.borrow_mut())();
+
+        self.server
+            .borrow_mut()
+            .try_recv_any(handles, buf)
+            .ok_or(MctpError::from_code(ResponseCode::TimedOut))
+    }
+
     fn send(
         &self,
         handle: Option<Handle>,

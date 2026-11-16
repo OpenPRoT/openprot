@@ -29,6 +29,8 @@
 //! let (meta, response) = req.recv(&mut buf).unwrap();
 //! ```
 
+use core::cell::Cell;
+
 use crate::traits::{MctpListener, MctpReqChannel, MctpRespChannel};
 use crate::{Handle, MctpClient, MctpError, RecvMetadata, ResponseCode};
 
@@ -44,12 +46,19 @@ use crate::{Handle, MctpClient, MctpError, RecvMetadata, ResponseCode};
 /// the underlying stack implementation and OS transport are invisible.
 pub struct Stack<C: MctpClient> {
     client: C,
+    /// A request handle kept between [`Stack::req_reusable`] channels, so a
+    /// caller that sends many requests to one EID does not allocate and unbind
+    /// a handle (two IPC round trips) per request.
+    cached_req: Cell<Option<(u8, Handle)>>,
 }
 
 impl<C: MctpClient> Stack<C> {
     /// Create a new stack backed by the given `MctpClient`.
     pub fn new(client: C) -> Self {
-        Stack { client }
+        Stack {
+            client,
+            cached_req: Cell::new(None),
+        }
     }
 
     /// Get the local endpoint ID.
@@ -73,6 +82,41 @@ impl<C: MctpClient> Stack<C> {
             eid,
             sent_tag: None,
             timeout: timeout_millis,
+            reuse: false,
+            healthy: true,
+        })
+    }
+
+    /// Like [`req`](Self::req), but the request handle is kept for the next
+    /// call instead of being released when the channel is dropped.
+    ///
+    /// The handle is only kept if the channel completed cleanly: every `send`
+    /// was answered by a `recv` and neither returned an error. After an error
+    /// (for example a receive timeout, which can leave a receive pending in the
+    /// server) the handle is released as with [`req`](Self::req). A cached
+    /// handle for a different `eid` is released and replaced.
+    pub fn req_reusable(
+        &self,
+        eid: u8,
+        timeout_millis: u32,
+    ) -> Result<StackReqChannel<'_, C>, MctpError> {
+        let handle = match self.cached_req.take() {
+            Some((cached_eid, handle)) if cached_eid == eid => handle,
+            stale => {
+                if let Some((_, handle)) = stale {
+                    self.client.drop_handle(handle);
+                }
+                self.client.req(eid)?
+            }
+        };
+        Ok(StackReqChannel {
+            stack: self,
+            handle,
+            eid,
+            sent_tag: None,
+            timeout: timeout_millis,
+            reuse: true,
+            healthy: true,
         })
     }
 
@@ -107,17 +151,23 @@ pub struct StackReqChannel<'s, C: MctpClient> {
     /// Tag captured after the first `send`; required before `recv` may be called.
     sent_tag: Option<u8>,
     timeout: u32,
+    /// Hand the handle back to the stack on drop instead of releasing it.
+    reuse: bool,
+    /// Cleared by any error, so a possibly-pending handle is never reused.
+    healthy: bool,
 }
 
 impl<C: MctpClient> MctpReqChannel for StackReqChannel<'_, C> {
     fn send(&mut self, msg_type: u8, buf: &[u8]) -> Result<(), MctpError> {
         if self.sent_tag.is_some() {
+            self.healthy = false;
             return Err(MctpError::from_code(ResponseCode::BadArgument));
         }
         let tag = self
             .stack
             .client
-            .send(Some(self.handle), msg_type, None, None, false, buf)?;
+            .send(Some(self.handle), msg_type, None, None, false, buf)
+            .inspect_err(|_| self.healthy = false)?;
         self.sent_tag = Some(tag);
         Ok(())
     }
@@ -126,7 +176,11 @@ impl<C: MctpClient> MctpReqChannel for StackReqChannel<'_, C> {
         if self.sent_tag.is_none() {
             return Err(MctpError::from_code(ResponseCode::BadArgument));
         }
-        let meta = self.stack.client.recv(self.handle, self.timeout, buf)?;
+        let meta = self
+            .stack
+            .client
+            .recv(self.handle, self.timeout, buf)
+            .inspect_err(|_| self.healthy = false)?;
         let len = meta.payload_size;
         // Clear sent_tag after receiving response, allowing another send/recv cycle
         self.sent_tag = None;
@@ -138,9 +192,90 @@ impl<C: MctpClient> MctpReqChannel for StackReqChannel<'_, C> {
     }
 }
 
+/// What ended a [`StackReqChannel::recv_or_command`] wait.
+pub enum ReqEvent<'f, 'l, C: MctpClient> {
+    /// The response to the request sent on the channel.
+    Response(RecvMetadata, &'f mut [u8]),
+    /// A message arrived on the listener first: a command to answer. The
+    /// request's response is still outstanding.
+    Command(RecvMetadata, &'f mut [u8], StackRespChannel<'l, C>),
+}
+
+impl<C: MctpClient> StackReqChannel<'_, C> {
+    /// Wait for the response to the request already sent on this channel
+    /// *or* for a message on `listener`, whichever comes first.
+    ///
+    /// This is how one thread serves both roles without polling: it sends a
+    /// request, then blocks here, and wakes as soon as either the response
+    /// arrives or a peer sends a command. If both are waiting, the response is
+    /// returned first and the command stays queued for the next wait. After a
+    /// [`ReqEvent::Command`] the request is still outstanding; answer the
+    /// command, then call this again.
+    ///
+    /// The channel's timeout bounds the whole wait. `buf` receives whichever
+    /// message arrives; it is the caller's to move out of before the next
+    /// call. The listener may belong to a different [`Stack`], but its client
+    /// must talk to the same MCTP server as this channel's.
+    ///
+    /// # Errors
+    ///
+    /// `BadArgument` if no request has been sent or the client cannot wait on
+    /// several handles, `TimedOut` on timeout, and whatever the client
+    /// reports. Any error stops the channel's handle from being reused by
+    /// [`Stack::req_reusable`].
+    pub fn recv_or_command<'f, 'l, Cl: MctpClient>(
+        &mut self,
+        listener: &StackListener<'l, Cl>,
+        buf: &'f mut [u8],
+    ) -> Result<ReqEvent<'f, 'l, Cl>, MctpError> {
+        if self.sent_tag.is_none() {
+            self.healthy = false;
+            return Err(MctpError::from_code(ResponseCode::BadArgument));
+        }
+        let (fired, meta) = self
+            .stack
+            .client
+            .recv_any(&[self.handle, listener.handle], self.timeout, buf)
+            .inspect_err(|_| self.healthy = false)?;
+        let len = meta.payload_size.min(buf.len());
+        if fired == self.handle {
+            // The response: the request is complete, another may be sent.
+            self.sent_tag = None;
+            Ok(ReqEvent::Response(meta, &mut buf[..len]))
+        } else if fired == listener.handle {
+            let resp = StackRespChannel {
+                stack: listener.stack,
+                eid: meta.remote_eid,
+                msg_type: meta.msg_type,
+                tag: meta.msg_tag,
+            };
+            Ok(ReqEvent::Command(meta, &mut buf[..len], resp))
+        } else {
+            self.healthy = false;
+            Err(MctpError::from_code(ResponseCode::InternalError))
+        }
+    }
+}
+
 impl<C: MctpClient> Drop for StackReqChannel<'_, C> {
     fn drop(&mut self) {
-        self.stack.client.drop_handle(self.handle);
+        if self.reuse && self.healthy && self.sent_tag.is_none() {
+            if let Some((_, previous)) =
+                self.stack.cached_req.replace(Some((self.eid, self.handle)))
+            {
+                self.stack.client.drop_handle(previous);
+            }
+        } else {
+            self.stack.client.drop_handle(self.handle);
+        }
+    }
+}
+
+impl<C: MctpClient> Drop for Stack<C> {
+    fn drop(&mut self) {
+        if let Some((_, handle)) = self.cached_req.take() {
+            self.client.drop_handle(handle);
+        }
     }
 }
 
@@ -259,6 +394,10 @@ mod tests {
         /// If set, all operations return this error.
         force_error: Option<ResponseCode>,
         drop_count: Cell<u32>,
+        /// Which handle `recv_any` reports as having fired (default: the first).
+        any_fires: Cell<Option<Handle>>,
+        /// If set, `recv_any` fails with this code.
+        any_error: Cell<Option<ResponseCode>>,
     }
 
     impl MockClient {
@@ -277,6 +416,8 @@ mod tests {
                 send_tag: 3,
                 force_error: None,
                 drop_count: Cell::new(0),
+                any_fires: Cell::new(None),
+                any_error: Cell::new(None),
             }
         }
 
@@ -288,6 +429,21 @@ mod tests {
     }
 
     impl MctpClient for MockClient {
+        fn recv_any(
+            &self,
+            handles: &[Handle],
+            _timeout_millis: u32,
+            buf: &mut [u8],
+        ) -> Result<(Handle, RecvMetadata), MctpError> {
+            if let Some(e) = self.force_error.or(self.any_error.get()) {
+                return Err(MctpError::from_code(e));
+            }
+            let fired = self.any_fires.get().unwrap_or(handles[0]);
+            assert!(handles.contains(&fired));
+            buf[..self.recv_payload.len()].copy_from_slice(self.recv_payload);
+            Ok((fired, self.recv_meta))
+        }
+
         fn req(&self, _eid: u8) -> Result<Handle, MctpError> {
             if let Some(e) = self.force_error {
                 return Err(MctpError::from_code(e));
@@ -413,6 +569,180 @@ mod tests {
         let ch = stack.req(10, 0).unwrap();
         drop(ch);
         assert_eq!(stack.client.drop_count.get(), 1);
+    }
+
+    #[test]
+    fn reusable_req_keeps_the_handle_between_channels() {
+        let stack = Stack::new(MockClient::new());
+        let mut buf = [0u8; 32];
+        for _ in 0..3 {
+            let mut ch = stack.req_reusable(42, 0).unwrap();
+            ch.send(1, b"ping").unwrap();
+            ch.recv(&mut buf).unwrap();
+        }
+        // One handle allocated, none released yet.
+        assert_eq!(stack.client.next_handle.get(), 2);
+        assert_eq!(stack.client.drop_count.get(), 0);
+    }
+
+    /// Client that only counts released handles, into a counter that outlives
+    /// the stack.
+    struct CountingClient<'a>(&'a Cell<u32>);
+
+    impl MctpClient for CountingClient<'_> {
+        fn req(&self, _eid: u8) -> Result<Handle, MctpError> {
+            Ok(Handle(1))
+        }
+        fn listener(&self, _msg_type: u8) -> Result<Handle, MctpError> {
+            Ok(Handle(2))
+        }
+        fn get_eid(&self) -> u8 {
+            0
+        }
+        fn set_eid(&self, _eid: u8) -> Result<(), MctpError> {
+            Ok(())
+        }
+        fn recv(
+            &self,
+            _handle: Handle,
+            _timeout_millis: u32,
+            _buf: &mut [u8],
+        ) -> Result<RecvMetadata, MctpError> {
+            Err(MctpError::from_code(ResponseCode::InternalError))
+        }
+        fn send(
+            &self,
+            _handle: Option<Handle>,
+            _msg_type: u8,
+            _eid: Option<u8>,
+            _tag: Option<u8>,
+            _integrity_check: bool,
+            _buf: &[u8],
+        ) -> Result<u8, MctpError> {
+            Ok(0)
+        }
+        fn drop_handle(&self, _handle: Handle) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+
+    #[test]
+    fn reusable_req_releases_cached_handle_on_stack_drop() {
+        let drops = Cell::new(0u32);
+        {
+            let stack = Stack::new(CountingClient(&drops));
+            let ch = stack.req_reusable(42, 0).unwrap();
+            drop(ch);
+            assert_eq!(drops.get(), 0);
+        }
+        assert_eq!(drops.get(), 1);
+    }
+
+    #[test]
+    fn reusable_req_for_another_eid_replaces_the_cached_handle() {
+        let stack = Stack::new(MockClient::new());
+        drop(stack.req_reusable(42, 0).unwrap());
+        let ch = stack.req_reusable(43, 0).unwrap();
+        assert_eq!(stack.client.next_handle.get(), 3);
+        assert_eq!(stack.client.drop_count.get(), 1);
+        drop(ch);
+    }
+
+    #[test]
+    fn reusable_req_is_released_after_an_unanswered_send() {
+        let stack = Stack::new(MockClient::new());
+        let mut ch = stack.req_reusable(42, 0).unwrap();
+        ch.send(1, b"ping").unwrap();
+        drop(ch);
+        // No response was received: the handle must not be reused.
+        assert_eq!(stack.client.drop_count.get(), 1);
+        let _next = stack.req_reusable(42, 0).unwrap();
+        assert_eq!(stack.client.next_handle.get(), 3);
+    }
+
+    #[test]
+    fn recv_or_command_returns_the_response_when_it_arrives_first() {
+        let stack = Stack::new(MockClient::new());
+        let listener = stack.listener(1, 0).unwrap();
+        let mut ch = stack.req(42, 0).unwrap();
+        ch.send(1, b"ping").unwrap();
+
+        let mut buf = [0u8; 32];
+        match ch.recv_or_command(&listener, &mut buf).unwrap() {
+            ReqEvent::Response(meta, payload) => {
+                assert_eq!(meta.remote_eid, 42);
+                assert_eq!(payload, b"hello");
+            }
+            ReqEvent::Command(..) => panic!("expected the response"),
+        }
+        // The request is complete: a second send is allowed again.
+        ch.send(1, b"again").unwrap();
+    }
+
+    #[test]
+    fn recv_or_command_returns_a_command_and_keeps_the_request_outstanding() {
+        let stack = Stack::new(MockClient::new());
+        let listener = stack.listener(1, 0).unwrap();
+        let listener_handle = listener.handle;
+        stack.client.any_fires.set(Some(listener_handle));
+        let mut ch = stack.req(42, 0).unwrap();
+        ch.send(1, b"ping").unwrap();
+
+        let mut buf = [0u8; 32];
+        match ch.recv_or_command(&listener, &mut buf).unwrap() {
+            ReqEvent::Command(meta, payload, mut resp) => {
+                assert_eq!(meta.remote_eid, 42);
+                assert_eq!(payload, b"hello");
+                assert_eq!(resp.remote_eid(), 42);
+                resp.send(b"ok").unwrap();
+            }
+            ReqEvent::Response(..) => panic!("expected a command"),
+        }
+        // Still waiting for the response: another send is refused...
+        assert_eq!(
+            ch.send(1, b"x").unwrap_err().code,
+            ResponseCode::BadArgument
+        );
+        // ...and the response can still be collected.
+        stack.client.any_fires.set(None);
+        assert!(matches!(
+            ch.recv_or_command(&listener, &mut buf).unwrap(),
+            ReqEvent::Response(..)
+        ));
+    }
+
+    #[test]
+    fn recv_or_command_before_send_is_an_error() {
+        let stack = Stack::new(MockClient::new());
+        let listener = stack.listener(1, 0).unwrap();
+        let mut ch = stack.req(42, 0).unwrap();
+        let mut buf = [0u8; 32];
+        let err = ch.recv_or_command(&listener, &mut buf).err().unwrap();
+        assert_eq!(err.code, ResponseCode::BadArgument);
+    }
+
+    #[test]
+    fn recv_or_command_error_stops_handle_reuse() {
+        let stack = Stack::new(MockClient::new());
+        let listener = stack.listener(1, 0).unwrap();
+        let mut ch = stack.req_reusable(42, 0).unwrap();
+        ch.send(1, b"ping").unwrap();
+        // The wait times out: a receive may still be pending in the server, so
+        // the handle must be released, not cached for reuse.
+        stack.client.any_error.set(Some(ResponseCode::TimedOut));
+        let mut buf = [0u8; 32];
+        let err = ch.recv_or_command(&listener, &mut buf).err().unwrap();
+        assert_eq!(err.code, ResponseCode::TimedOut);
+        drop(ch);
+        assert_eq!(stack.client.drop_count.get(), 1);
+    }
+
+    #[test]
+    fn recv_any_defaults_to_an_error_for_clients_without_it() {
+        let drops = Cell::new(0u32);
+        let client = CountingClient(&drops);
+        let err = client.recv_any(&[Handle(1)], 0, &mut [0u8; 4]).unwrap_err();
+        assert_eq!(err.code, ResponseCode::BadArgument);
     }
 
     #[test]

@@ -32,4 +32,4 @@ pub mod dispatch;
 mod server;
 
 pub use mctp_lib::Sender;
-pub use server::{RecvResult, Server, ServerConfig};
+pub use server::{RecvResult, Server, ServerConfig, MAX_RECV_ANY};
