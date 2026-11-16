@@ -32,6 +32,15 @@
     ram_start_address: @KERNEL_RAM_START@,
     ram_size_bytes: 0x8000,
   },
+  // Thread priorities follow the Hubris convention: a server outranks the tasks
+  // that call it, so IPC goes "uphill" (pw_kernel: a higher level is more
+  // important, and the default is Level15).
+  //
+  //   i3c_server   Level20  serves the MCTP server, and handles the I3C IRQ that
+  //                         drains the RX FIFO, so it must run as soon as it is
+  //                         ready
+  //   mctp_server  Level15  serves the echo app, calls the i3c server
+  //   mctp_echo    Level10  the application
   apps: [
     {
       name: "mctp_i3c",
@@ -52,6 +61,7 @@
               type: "thread",
               name: "i3c_server_thread",
               kernel_stack_size_bytes: 2048,
+              priority: "Level20",
             },
           ],
           memory_mappings: [
@@ -79,6 +89,7 @@
               type: "thread",
               name: "mctp_server_thread",
               kernel_stack_size_bytes: 4096,
+              priority: "Level15",
             },
           ],
         },
@@ -96,6 +107,7 @@
               type: "thread",
               name: "mctp_echo_thread",
               kernel_stack_size_bytes: 2048,
+              priority: "Level10",
             },
           ],
         },
