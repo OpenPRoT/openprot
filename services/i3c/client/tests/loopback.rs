@@ -7,7 +7,7 @@
 //! the same encoders, the same `dispatch`, and the same latch semantics the
 //! on-target build uses — the point of the transport seam.
 
-use i3c_api::{I3cStatus, MAX_PAYLOAD};
+use i3c_api::{I3cStatus, MAX_PAYLOAD, MAX_SEND};
 use i3c_client::{ClientError, I3cClient};
 use i3c_server::{Inbound, LoopbackTransport, Server};
 use openprot_hal_blocking::i3c_hardware::{DynamicAddress, I3cTarget, TargetEvent};
@@ -141,7 +141,7 @@ fn device_info_reports_the_target() {
     let info = c.device_info().expect("device_info");
     assert_eq!(info.dynamic_address, Some(0x08));
     assert_eq!(info.static_address, None);
-    assert_eq!(info.max_send_len as usize, MAX_PAYLOAD);
+    assert_eq!(info.max_send_len as usize, MAX_SEND);
     assert_eq!(info.max_recv_len as usize, MAX_PAYLOAD);
 }
 
@@ -194,7 +194,7 @@ fn dynamic_address_before_entdaa_is_none() {
 #[test]
 fn oversize_send_is_rejected_client_side() {
     let mut c = client(Some(0x08));
-    let big = [0u8; MAX_PAYLOAD + 1];
+    let big = [0u8; MAX_SEND + 1];
     assert_eq!(c.send(&big), Err(ClientError::BufferTooSmall));
 
     // Rejected before the transport ran, so the target saw nothing.
@@ -223,12 +223,12 @@ fn recv_into_a_short_buffer_is_rejected_without_losing_the_frame() {
 #[test]
 fn a_full_payload_round_trips() {
     let mut c = client(Some(0x08));
-    let payload = [0x5au8; MAX_PAYLOAD];
+    let payload = [0x5au8; MAX_SEND];
 
     c.send(&payload).expect("send");
     let target = &c.transport().server().target;
-    assert_eq!(target.sent_len, MAX_PAYLOAD);
-    assert_eq!(&target.sent[..], &payload[..]);
+    assert_eq!(target.sent_len, MAX_SEND);
+    assert_eq!(&target.sent[..target.sent_len], &payload[..]);
 }
 
 #[test]
@@ -249,4 +249,31 @@ fn server_status_surfaces_as_an_error() {
 
     let mut c = I3cClient::new(BadOp);
     assert_eq!(c.send(b"x"), Err(ClientError::Server(I3cStatus::Internal)));
+}
+
+#[test]
+fn send_for_is_staged_when_the_address_matches() {
+    let mut c = client(Some(0x08));
+    c.send_for(0x08, b"framed").expect("send_for");
+    let target = &c.transport().server().target;
+    assert_eq!(&target.sent[..target.sent_len], b"framed", "no address byte leaks through");
+}
+
+#[test]
+fn send_for_a_stale_address_is_refused_and_stages_nothing() {
+    let mut c = client(Some(0x1d));
+    assert_eq!(c.send_for(0x08, b"stale"), Err(ClientError::AddressChanged));
+    assert_eq!(c.transport().server().target.sent_len, 0);
+    // Rebuilt for the current address, it goes through.
+    c.send_for(0x1d, b"fresh").expect("send_for");
+}
+
+#[test]
+fn send_for_cannot_name_the_no_address_value() {
+    let mut c = client(Some(0x08));
+    assert_eq!(
+        c.send_for(0, b"x"),
+        Err(ClientError::Server(I3cStatus::InvalidOp))
+    );
+    assert_eq!(c.transport().server().target.sent_len, 0);
 }

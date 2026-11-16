@@ -18,7 +18,7 @@
 
 use i3c_api::{
     decode_response, encode_request, DeviceInfo, I3cOp, I3cStatus, Transport, TransportError,
-    MAX_FRAME, MAX_PAYLOAD,
+    MAX_FRAME, MAX_PAYLOAD, MAX_SEND,
 };
 
 /// Why a client call failed.
@@ -34,6 +34,10 @@ pub enum ClientError {
     /// progress has lost a fragment. Nothing was staged for this `Send`; it is
     /// reported once, and the next `send` is accepted. Only `send` returns this.
     Discarded,
+    /// The target no longer has the address the frame was built for, so nothing
+    /// was staged: read the address again, rebuild the frame, send again. Only
+    /// `send_for` returns this.
+    AddressChanged,
     /// The server returned a status this call does not treat as success.
     ///
     /// `NoData`, `Unassigned` and `Busy` are *not* reported here — they are expected
@@ -52,6 +56,7 @@ impl core::fmt::Display for ClientError {
             Self::Transport(e) => write!(f, "i3c transport error: {e}"),
             Self::Busy => f.write_str("i3c server busy: the previous response is unread"),
             Self::Discarded => f.write_str("i3c server discarded an unread response"),
+            Self::AddressChanged => f.write_str("i3c address changed since the frame was built"),
             Self::Server(s) => write!(f, "i3c server error: {s:?}"),
             Self::InvalidResponse => f.write_str("malformed i3c response"),
             Self::BufferTooSmall => f.write_str("i3c frame exceeds one round-trip buffer"),
@@ -115,22 +120,56 @@ impl<T: Transport> I3cClient<T> {
         }
     }
 
-    /// Stage `payload` for transmission to the controller.
+    /// Stage a frame that does not depend on the target's address.
+    ///
+    /// See [`send_for`](Self::send_for), which this is with no address.
+    pub fn send(&mut self, frame: &[u8]) -> Result<(), ClientError> {
+        self.send_with(0, frame)
+    }
+
+    /// Stage a frame built for the dynamic address `addr`.
+    ///
+    /// For a frame whose check covers the address byte, as an MCTP-over-I3C PEC
+    /// does. The server stages it only if the target still has `addr`, and
+    /// discards it if the address moves before the controller reads it. If the
+    /// address has already moved this returns `Err(ClientError::AddressChanged)`
+    /// with nothing staged: read the address again and rebuild the frame.
     ///
     /// The target cannot initiate a transfer, so this stages a TX and raises an
-    /// IBI; the controller collects it with a private read. A payload over
-    /// [`MAX_PAYLOAD`] cannot be framed and returns [`ClientError::BufferTooSmall`].
+    /// IBI; the controller collects it with a private read. A frame over
+    /// [`MAX_SEND`] cannot be sent and returns [`ClientError::BufferTooSmall`].
     ///
     /// Only one response is staged at a time. While the previous one has not
     /// been read by the controller, nothing is staged and this returns
-    /// `Err(ClientError::Busy)`: retry later. If the server gave up on an
-    /// unread response in the meantime, the next call returns
+    /// `Err(ClientError::Busy)`: retry later. If the server gave up on an unread
+    /// response in the meantime, the next call returns
     /// `Err(ClientError::Discarded)` once, with nothing staged.
-    pub fn send(&mut self, payload: &[u8]) -> Result<(), ClientError> {
+    pub fn send_for(&mut self, addr: u8, frame: &[u8]) -> Result<(), ClientError> {
+        if addr == 0 {
+            // 0 means "no address" on the wire, so it cannot name one.
+            return Err(ClientError::Server(I3cStatus::InvalidOp));
+        }
+        self.send_with(addr, frame)
+    }
+
+    fn send_with(&mut self, addr: u8, frame: &[u8]) -> Result<(), ClientError> {
+        if frame.len() > MAX_SEND {
+            return Err(ClientError::BufferTooSmall);
+        }
+        let mut payload = [0u8; MAX_PAYLOAD];
+        let (head, body) = payload.split_first_mut().ok_or(ClientError::BufferTooSmall)?;
+        *head = addr;
+        body.get_mut(..frame.len())
+            .ok_or(ClientError::BufferTooSmall)?
+            .copy_from_slice(frame);
+        let len = 1 + frame.len();
+
         let mut resp = [0u8; MAX_FRAME];
-        match self.transact(I3cOp::Send, payload, &mut resp)? {
+        let sent = payload.get(..len).ok_or(ClientError::BufferTooSmall)?;
+        match self.transact(I3cOp::Send, sent, &mut resp)? {
             (I3cStatus::Ok, _) => Ok(()),
             (I3cStatus::Discarded, _) => Err(ClientError::Discarded),
+            (I3cStatus::AddressChanged, _) => Err(ClientError::AddressChanged),
             (status, _) => Err(ClientError::Server(status)),
         }
     }

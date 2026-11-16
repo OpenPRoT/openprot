@@ -57,11 +57,17 @@ fn wait_for_controller() {
 fn mctp_server_loop() -> Result<()> {
     pw_log::info!("MCTP-over-I3C server starting");
 
-    let sender = I3cSender::new(
+    let mut sender = I3cSender::new(
         I3cClient::new(IpcTransport::new(handle::I3C)),
         REMOTE_I3C_ADDR,
         wait_for_controller,
     );
+    // The stack asks for the MTU before each send, so read the target's limits
+    // now. Until then the MTU is the ceiling. Not fatal: every send reads them
+    // again, and fails if the target cannot carry MCTP.
+    if sender.refresh_limits().is_err() {
+        pw_log::error!("i3c limits unavailable at startup");
+    }
     // A second client on the same i3c channel, used to collect inbound frames.
     let mut i3c_rx_client = I3cClient::new(IpcTransport::new(handle::I3C));
     let mut i3c_receiver = MctpI3cReceiver::new();
