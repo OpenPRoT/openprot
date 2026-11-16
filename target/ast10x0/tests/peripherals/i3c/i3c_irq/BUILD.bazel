@@ -52,11 +52,13 @@ rust_binary(
     name = "target",
     srcs = ["target.rs"],
     edition = "2024",
+    link_deps = [
+        ":linker_script",
+    ],
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
         ":codegen",
-        ":linker_script",
     ] + COMMON_DEPS,
 )
 
@@ -115,11 +117,13 @@ rust_binary(
     name = "slave_target",
     srcs = ["slave_target.rs"],
     edition = "2024",
+    link_deps = [
+        ":slave_linker_script",
+    ],
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
         ":slave_codegen",
-        ":slave_linker_script",
     ] + COMMON_DEPS,
 )
 
