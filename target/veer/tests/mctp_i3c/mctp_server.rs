@@ -97,7 +97,19 @@ fn mctp_server_loop() -> Result<()> {
                     if let Some(Ok(pkt)) = decoded {
                         let _ = server.inbound(pkt);
                     } else {
-                        pw_log::error!("i3c frame decode failed");
+                        // Say what arrived: a frame cut short by the controller
+                        // and one with a bad PEC look alike otherwise.
+                        let frame = i3c_rx_buf.get(..n).unwrap_or(&[]);
+                        let byte = |i: usize| u32::from(frame.get(i).copied().unwrap_or(0));
+                        pw_log::error!(
+                            "i3c frame decode failed: len=0x{:04x} head={:02x}{:02x}{:02x}{:02x} tail=0x{:02x}",
+                            n as u32,
+                            byte(0),
+                            byte(1),
+                            byte(2),
+                            byte(3),
+                            byte(n.wrapping_sub(1))
+                        );
                     }
                 }
                 Ok(None) => {}
