@@ -63,6 +63,89 @@ pub use util_service::Channel;
 /// [`STAGED_RESPONSE_TIMEOUT_MS`].
 const STAGED_TIMEOUT: Duration = Duration::from_millis(STAGED_RESPONSE_TIMEOUT_MS as u64);
 
+/// What one entry of the [`Trace`] records.
+mod kind {
+    /// The interrupt object woke the loop.
+    pub const IRQ: u8 = 1;
+    /// `on_interrupt` reported an inbound frame.
+    pub const INBOUND_READY: u8 = 2;
+    /// `on_interrupt` reported that the controller read the staged response.
+    pub const RESPONSE_READ: u8 = 3;
+    /// `on_interrupt` reported anything else.
+    pub const OTHER_EVENT: u8 = 4;
+    /// A frame was drained from the hardware into the ring; the argument is its length.
+    pub const LATCHED: u8 = 5;
+    /// A frame was drained and dropped because the ring was full.
+    pub const DROPPED: u8 = 6;
+    /// A client `Send` request; the argument is the request length.
+    pub const SEND: u8 = 7;
+    /// A client `Recv` request.
+    pub const RECV: u8 = 8;
+    /// Any other client request.
+    pub const OTHER_REQUEST: u8 = 9;
+    /// The staged-response deadline woke the loop.
+    pub const DEADLINE: u8 = 10;
+}
+
+/// How many events the [`Trace`] keeps.
+const TRACE_LEN: usize = 24;
+
+/// The last few things the server did, with the time of each, kept in memory and
+/// printed only when the hardware reports a damaged frame.
+///
+/// A frame the core could not fit arrives cut short, and the question is when the
+/// frame before it was drained. Logging each event as it happens would slow the
+/// drain path being watched, so the events wait here until there is something to
+/// explain.
+struct Trace {
+    /// (clock ticks, kind, argument), as a ring.
+    events: [(u64, u8, u16); TRACE_LEN],
+    /// Where the next event goes.
+    next: usize,
+    /// How many of `events` are in use.
+    count: usize,
+}
+
+impl Trace {
+    const fn new() -> Self {
+        Self {
+            events: [(0, 0, 0); TRACE_LEN],
+            next: 0,
+            count: 0,
+        }
+    }
+
+    fn record(&mut self, kind: u8, arg: usize) {
+        let now = SystemClock::now().ticks();
+        if let Some(slot) = self.events.get_mut(self.next) {
+            *slot = (now, kind, u16::try_from(arg).unwrap_or(u16::MAX));
+        }
+        self.next = (self.next + 1) % TRACE_LEN;
+        self.count = (self.count + 1).min(TRACE_LEN);
+    }
+
+    /// Print the events, oldest first, each as clock ticks before now (20 ticks
+    /// are a microsecond on the FPGA), with the damaged frame's descriptor.
+    fn dump(&self, desc: u32) {
+        let now = SystemClock::now().ticks();
+        pw_log::error!(
+            "i3c rx error: desc=0x{:08x}; events, ticks before now, kind, arg;",
+            desc as u32
+        );
+        let start = (self.next + TRACE_LEN - self.count) % TRACE_LEN;
+        for i in 0..self.count {
+            if let Some(&(at, kind, arg)) = self.events.get((start + i) % TRACE_LEN) {
+                pw_log::error!(
+                    "  -{} k={} a={};",
+                    now.wrapping_sub(at) as u32,
+                    kind as u32,
+                    arg as u32
+                );
+            }
+        }
+    }
+}
+
 /// Discard the staged response if its time is up. `deadline` is when the staged
 /// response runs out of time to be read, and is cleared when it does.
 fn discard_if_expired<T: I3cTarget, const RING: usize>(
@@ -113,6 +196,7 @@ pub fn run<T: I3cTarget, const RING: usize>(
 
     // When the staged response, if any, runs out of time to be read.
     let mut staged_deadline: Option<Instant> = None;
+    let mut trace = Trace::new();
 
     loop {
         // Check the clock here and not only through `next`'s deadline: `next`
@@ -125,20 +209,32 @@ pub fn run<T: I3cTarget, const RING: usize>(
         match service.next(staged_deadline.unwrap_or(Instant::MAX), &mut request_buf)? {
             // The staged response was not read in time: give up on it so the
             // next `Send` is not refused for good.
-            Event::Deadline => discard_if_expired(srv, &mut staged_deadline),
+            Event::Deadline => {
+                trace.record(kind::DEADLINE, 0);
+                discard_if_expired(srv, &mut staged_deadline);
+            }
 
             // ---- I3C hardware IRQ: decode, latch an inbound frame, wake client ----
             Event::Source(_) => {
+                trace.record(kind::IRQ, 0);
                 match srv.target.on_interrupt() {
                     Ok(TargetEvent::InboundReady) => {
+                        trace.record(kind::INBOUND_READY, 0);
                         // Drain every frame the IRQ covers into the ring; a single
                         // RX-descriptor interrupt can stand for more than one
                         // hardware frame. Stop on Empty.
                         let mut dropped = false;
                         loop {
                             match srv.latch_inbound() {
-                                Ok(Inbound::Latched) => continue,
+                                Ok(Inbound::Latched) => {
+                                    trace.record(kind::LATCHED, srv.newest_frame_len());
+                                    if let Some(desc) = srv.target.take_rx_error() {
+                                        trace.dump(desc);
+                                    }
+                                    continue;
+                                }
                                 Ok(Inbound::DroppedFull) => {
+                                    trace.record(kind::DROPPED, 0);
                                     dropped = true;
                                     continue;
                                 }
@@ -154,6 +250,7 @@ pub fn run<T: I3cTarget, const RING: usize>(
                         }
                     }
                     Ok(TargetEvent::ResponseRead) => {
+                        trace.record(kind::RESPONSE_READ, 0);
                         // The controller read the staged response: the next
                         // `Send` can be staged.
                         srv.notify_response_read();
@@ -172,7 +269,7 @@ pub fn run<T: I3cTarget, const RING: usize>(
                             Err(_) => pw_log::error!("i3c cancel_response failed"),
                         }
                     }
-                    Ok(_) => {}
+                    Ok(_) => trace.record(kind::OTHER_EVENT, 0),
                     Err(_) => pw_log::error!("i3c on_interrupt failed"),
                 }
                 // The loop does not acknowledge a source, and the IRQ is level
@@ -191,7 +288,16 @@ pub fn run<T: I3cTarget, const RING: usize>(
             // ---- client IPC request ----
             Event::Request { channel, len } => {
                 let request = request_buf.get(..len).unwrap_or(&[]);
-                let is_recv = decode_request(request).map(|(op, _)| op) == Some(I3cOp::Recv);
+                let op = decode_request(request).map(|(op, _)| op);
+                let is_recv = op == Some(I3cOp::Recv);
+                trace.record(
+                    match op {
+                        Some(I3cOp::Send) => kind::SEND,
+                        Some(I3cOp::Recv) => kind::RECV,
+                        _ => kind::OTHER_REQUEST,
+                    },
+                    len,
+                );
                 let was_pending = srv.tx_pending();
                 let resp_len = dispatch(srv, request, &mut response_buf);
                 if !was_pending && srv.tx_pending() {

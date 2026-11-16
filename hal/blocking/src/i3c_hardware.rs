@@ -177,6 +177,18 @@ pub trait I3cTarget {
     /// until it returns `None`.
     fn read_frame(&mut self, buf: &mut [u8]) -> Result<Option<usize>, Self::Error>;
 
+    /// The hardware's report that a frame it received was damaged, and which
+    /// frame: the descriptor word of the last frame [`read_frame`](Self::read_frame)
+    /// returned whose error field was set. Taking it clears it, so each bad frame
+    /// is reported once. `None` if the last frames were clean, or the hardware has
+    /// no such report.
+    ///
+    /// A frame that arrives with an error is cut short, so what `read_frame` gave
+    /// the caller is not the whole write. The default reports nothing.
+    fn take_rx_error(&mut self) -> Option<u32> {
+        None
+    }
+
     /// Send a message to the controller.
     ///
     /// Stages `data` as the response to the controller's next private read and
