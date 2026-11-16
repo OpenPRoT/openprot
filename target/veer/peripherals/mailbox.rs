@@ -61,6 +61,11 @@ pub enum MailboxError {
 }
 
 /// The Caliptra mailbox.
+///
+/// The methods take `&self`, so several drivers can hold a reference to one
+/// `Mailbox`. Only one command can be in progress: [`send`](Self::send)
+/// returns [`MailboxError::Busy`] until the response to the previous command
+/// has been received.
 pub struct Mailbox {
     mbox: &'static Mbox,
     soc: &'static Soc,
@@ -90,7 +95,7 @@ impl Mailbox {
     /// Sends command `cmd` and waits for its response. See [`send`](Self::send)
     /// and [`receive`](Self::receive).
     pub fn execute(
-        &mut self,
+        &self,
         cmd: u32,
         body: impl Iterator<Item = u32> + Clone,
         response: &mut [u32],
@@ -114,7 +119,7 @@ impl Mailbox {
     /// On success the mailbox stays locked until [`receive`](Self::receive)
     /// is called.
     pub fn send(
-        &mut self,
+        &self,
         cmd: u32,
         body: impl Iterator<Item = u32> + Clone,
     ) -> Result<(), MailboxError> {
@@ -155,7 +160,7 @@ impl Mailbox {
     ///
     /// Returns the length of the response in bytes, which can be more than
     /// `response` holds.
-    pub fn receive(&mut self, response: &mut [u32]) -> Result<usize, MailboxError> {
+    pub fn receive(&self, response: &mut [u32]) -> Result<usize, MailboxError> {
         let result = self.read_response(response);
         // Clearing the execute register ends the command and releases the
         // lock. This is also done after an error so that the next command can
@@ -165,7 +170,7 @@ impl Mailbox {
     }
 
     /// Waits for Caliptra to finish the command, then reads the response.
-    fn read_response(&mut self, response: &mut [u32]) -> Result<usize, MailboxError> {
+    fn read_response(&self, response: &mut [u32]) -> Result<usize, MailboxError> {
         use MboxStatus::Status::Value;
         match self.wait()? {
             Some(Value::DataReady) => {}

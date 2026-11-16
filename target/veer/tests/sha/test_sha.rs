@@ -35,15 +35,15 @@ fn check(algorithm: &str, case: &str, digest: &[u8], expected: &[u8]) -> Result<
 /// Hashes `message` with the scoped digest API. If `pieces` is set, the
 /// message is written in pieces of 1 to 13 bytes, so that most commands end
 /// with a partial word.
-fn hash<A>(
-    sha: &mut CaliptraSha,
+fn hash<'m, A>(
+    sha: &mut CaliptraSha<'m>,
     algorithm: A,
     message: &[u8],
     pieces: bool,
 ) -> Result<A::Digest, &'static str>
 where
     A: DigestAlgorithm,
-    CaliptraSha: openprot_hal_blocking::digest::scoped::DigestInit<A>,
+    CaliptraSha<'m>: openprot_hal_blocking::digest::scoped::DigestInit<A>,
 {
     use openprot_hal_blocking::digest::scoped::{DigestInit, DigestOp};
 
@@ -66,10 +66,10 @@ where
 }
 
 /// Starts a computation with the scoped digest API and drops it.
-fn start_and_drop<A>(sha: &mut CaliptraSha, algorithm: A) -> Result<(), &'static str>
+fn start_and_drop<'m, A>(sha: &mut CaliptraSha<'m>, algorithm: A) -> Result<(), &'static str>
 where
     A: DigestAlgorithm,
-    CaliptraSha: openprot_hal_blocking::digest::scoped::DigestInit<A>,
+    CaliptraSha<'m>: openprot_hal_blocking::digest::scoped::DigestInit<A>,
 {
     use openprot_hal_blocking::digest::scoped::{DigestInit, DigestOp};
 
@@ -78,8 +78,8 @@ where
 }
 
 /// Tests the scoped digest API for one algorithm.
-fn test_scoped<A, const L: usize>(
-    sha: &mut CaliptraSha,
+fn test_scoped<'m, A, const L: usize>(
+    sha: &mut CaliptraSha<'m>,
     algorithm: A,
     name: &str,
     digests: &Digests<L>,
@@ -87,7 +87,7 @@ fn test_scoped<A, const L: usize>(
 where
     A: DigestAlgorithm,
     A::Digest: AsRef<[u8]>,
-    CaliptraSha: openprot_hal_blocking::digest::scoped::DigestInit<A>,
+    CaliptraSha<'m>: openprot_hal_blocking::digest::scoped::DigestInit<A>,
 {
     use openprot_hal_blocking::digest::scoped::DigestCtrlReset;
 
@@ -115,10 +115,13 @@ where
 }
 
 /// Hashes "abc" in two parts with the owned digest API.
-fn hash_owned<A>(sha: CaliptraSha, algorithm: A) -> Result<(A::Digest, CaliptraSha), &'static str>
+fn hash_owned<'m, A>(
+    sha: CaliptraSha<'m>,
+    algorithm: A,
+) -> Result<(A::Digest, CaliptraSha<'m>), &'static str>
 where
     A: DigestAlgorithm,
-    CaliptraSha: openprot_hal_blocking::digest::owned::DigestInit<A>,
+    CaliptraSha<'m>: openprot_hal_blocking::digest::owned::DigestInit<A>,
 {
     use openprot_hal_blocking::digest::owned::{DigestInit, DigestOp};
 
@@ -129,7 +132,7 @@ where
 }
 
 /// Starts a computation with the owned digest API and cancels it.
-fn start_and_cancel(sha: CaliptraSha) -> Result<CaliptraSha, &'static str> {
+fn start_and_cancel(sha: CaliptraSha<'_>) -> Result<CaliptraSha<'_>, &'static str> {
     use openprot_hal_blocking::digest::owned::{DigestInit, DigestOp};
 
     let op = sha.init(Sha2_384).map_err(|_| "init failed")?;
@@ -138,7 +141,7 @@ fn start_and_cancel(sha: CaliptraSha) -> Result<CaliptraSha, &'static str> {
 }
 
 /// Tests the owned digest API.
-fn test_owned(sha: CaliptraSha) -> Result<(), &'static str> {
+fn test_owned(sha: CaliptraSha<'_>) -> Result<(), &'static str> {
     let (digest, sha) = hash_owned(sha, Sha2_384)?;
     let [_, abc, ..] = &vectors::SHA384.messages;
     check("owned sha384", "abc", digest.as_ref(), abc)?;
@@ -149,7 +152,7 @@ fn test_owned(sha: CaliptraSha) -> Result<(), &'static str> {
     check("owned sha512", "after cancel", digest.as_ref(), abc)
 }
 
-fn run(mut sha: CaliptraSha) -> Result<(), &'static str> {
+fn run(mut sha: CaliptraSha<'_>) -> Result<(), &'static str> {
     test_scoped(&mut sha, Sha2_384, "sha384", &vectors::SHA384)?;
     test_scoped(&mut sha, Sha2_512, "sha512", &vectors::SHA512)?;
     test_owned(sha)
@@ -160,7 +163,7 @@ fn entry() -> pw_status::Result<()> {
     // SAFETY: the system config maps the registers for this process, and
     // this image has no other user of the mailbox.
     let mailbox = unsafe { Mailbox::new(MBOX_BASE, SOC_IFC_BASE) };
-    let result = run(CaliptraSha::new(mailbox)).map_err(|reason| {
+    let result = run(CaliptraSha::new(&mailbox)).map_err(|reason| {
         pw_log::error!("SHA test failed: {}", reason as &str);
         Error::Internal
     });
