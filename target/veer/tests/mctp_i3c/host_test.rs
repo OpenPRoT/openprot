@@ -50,13 +50,14 @@ const MCTP_HEADER_LEN: usize = 4;
 /// Largest packet the host writes, header included: the MCTP baseline, a 64-byte
 /// payload and the header. A full frame fills the target's 64-word RX FIFO and takes
 /// about 12 ms to read out, and the writes reach the target as little as a few
-/// milliseconds apart, so larger packets were cut short (see `MCTP_I3C_IPC_MAXMTU`).
+/// milliseconds apart, so larger writes were cut short (see the README). This bounds
+/// what the *target receives*; what it sends is `MAX_REPLY_PACKET`.
 /// caliptra-mcu-sw's own host helper writes 64-byte payloads too.
 const MAX_PACKET: usize = MCTP_HEADER_LEN + 64;
 
 /// Largest packet the target sends, header included: its MTU
-/// (`MCTP_I3C_IPC_MAXMTU`).
-const MAX_REPLY_PACKET: usize = MAX_PACKET;
+/// (`MCTP_I3C_IPC_MAXMTU`), which follows the target's send limit.
+const MAX_REPLY_PACKET: usize = 254;
 
 /// Logged by `echo.rs` once its listener is armed.
 const READY: &str = "mctp echo: waiting for request";
@@ -108,13 +109,13 @@ const SOAK_REQUESTS: usize = 60;
 /// The soak asks for the target-initiated requests after every this many echoes.
 const SOAK_TARGET_EVERY: usize = 25;
 
-/// Payload sizes the soak cycles through. With 68-byte packets (64 body bytes
-/// after the header) they give 1 to 17 packets each way. The body is the type byte
-/// and the payload, so 63 bytes fill one packet exactly and 64 spill into a second;
-/// 255, 511 and so on are the same edge at each size. 249 and 250 are the old
-/// 254-byte packet edge, and 1000 and 1024 are the sizes of caliptra-mcu-sw's own
-/// loopback tests. The largest is within what the stack accepts and the firmware's
-/// echo buffer holds (1032).
+/// Payload sizes the soak cycles through. The host writes 68-byte packets (64 body
+/// bytes after the header), so a request takes 1 to 17 packets; the target replies
+/// in 254-byte packets (250 body bytes), 1 to 5. The body is the type byte and the
+/// payload, so 63 bytes fill one inbound packet exactly and 64 spill into a second,
+/// and 249 and 250 are the same edge for a reply. 1000 and 1024 are the sizes of
+/// caliptra-mcu-sw's own loopback tests. The largest is within what the stack
+/// accepts and the firmware's echo buffer holds (1032).
 const SOAK_SIZES: [usize; 12] = [8, 63, 64, 120, 249, 250, 256, 499, 600, 749, 1000, 1024];
 
 /// A payload of `len` bytes that differs from one request to the next, so that a

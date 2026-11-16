@@ -143,20 +143,20 @@ mod tests {
 
     #[test]
     fn mtu_accounts_for_pec_and_the_mctp_header() {
-        // The ceiling is the baseline.
-        assert_eq!(MCTP_I3C_IPC_MAXMTU, MCTP_I3C_MINMTU);
+        // The whole packet plus its PEC fills a `Send`.
+        assert_eq!(MCTP_I3C_IPC_MAXMTU + 1, i3c_api::MAX_SEND);
         assert!(MCTP_I3C_IPC_MAXMTU + 1 <= MCTP_I3C_IPC_FRAME);
         assert_eq!(MCTP_I3C_IPC_FRAME, i3c_api::MAX_SEND);
     }
 
     #[test]
-    fn the_mtu_is_the_baseline_for_any_target_that_can_carry_it() {
-        // A frame is the packet plus the PEC: 69 bytes is the least that works.
+    fn the_mtu_follows_the_targets_send_limit() {
+        // A frame is the packet plus the PEC.
+        assert_eq!(mtu_for_limit(100), Some(99));
         assert_eq!(mtu_for_limit(MCTP_I3C_MINMTU + 1), Some(MCTP_I3C_MINMTU));
-        // A target that can send more is still sent the baseline.
-        assert_eq!(mtu_for_limit(100), Some(MCTP_I3C_MINMTU));
-        assert_eq!(mtu_for_limit(i3c_api::MAX_SEND), Some(MCTP_I3C_MINMTU));
-        assert_eq!(mtu_for_limit(usize::MAX), Some(MCTP_I3C_MINMTU));
+        // It never exceeds the ceiling, however much the target allows.
+        assert_eq!(mtu_for_limit(i3c_api::MAX_SEND), Some(MCTP_I3C_IPC_MAXMTU));
+        assert_eq!(mtu_for_limit(usize::MAX), Some(MCTP_I3C_IPC_MAXMTU));
     }
 
     #[test]

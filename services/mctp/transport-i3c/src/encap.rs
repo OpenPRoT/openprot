@@ -104,23 +104,30 @@ const fn addr_byte(addr: u8, rnw: u8) -> u8 {
     (addr << 1) | rnw
 }
 
-/// The largest MTU this crate uses: the MCTP baseline, a 64-byte payload plus the
-/// 4-byte header ([`MCTP_I3C_MINMTU`]). It is what `I3cSender::get_mtu` reports
-/// for any target that can carry it (see [`mtu_for_limit`]).
+/// The largest MTU this crate uses (254): the ceiling on what `I3cSender::get_mtu`
+/// reports. The MTU follows the target's live send limit (see [`mtu_for_limit`])
+/// and never exceeds this.
 ///
-/// It is the baseline, and not the largest packet a frame can hold (254 bytes),
-/// because of how fast the target can read a frame out of the core. The I3C
-/// core's RX data queue is 64 words (256 bytes), so a 255-byte frame fills it, and
-/// the MCU reads it out at about 180 microseconds a word, which is about 12 ms a
-/// frame. A second full frame that arrives before that is cut short, with the RX
-/// descriptor's error field set (see `descriptor_rx.sv` in i3c-core). The
-/// controller's writes reach the target 1 to 8 ms apart whatever gap the host
-/// intends, so full-size inbound frames were lost on the board. A 68-byte packet
-/// and its PEC are 18 words, about 3 ms to read out, and the queue holds three.
+/// The i3c service carries one framed packet per `I3cOp::Send`, at most
+/// `i3c_api::MAX_SEND` (255): the 256-byte TTI FIFO less the address byte that
+/// leads a `Send` payload. `mctp-estack`'s `Fragmenter` treats its MTU as the
+/// largest whole packet, transport header included, and the frame is the packet
+/// plus its PEC, so the largest packet is one byte less than the frame:
 ///
-/// Sending the baseline also matches DSP0236: it is the size every endpoint
-/// accepts, and the default of caliptra-mcu-sw's own host helper.
-pub const MCTP_I3C_IPC_MAXMTU: usize = MCTP_I3C_MINMTU;
+/// ```text
+/// packet + pec <= MAX_SEND (255)   =>   packet <= 254
+/// ```
+///
+/// This is caliptra-mcu-sw's rule (`max_read_len - 1`, the PEC excluded) applied
+/// to our frame. What the target *sends* is not limited by the receive-side
+/// problem below, and ran 40 of 40 on the board at this size.
+///
+/// What a peer *sends us* is different, and nothing here bounds it. The core's RX
+/// data queue is 64 words, so a full frame fills it, and the MCU reads a word out
+/// in about 180 microseconds, so a full frame takes about 12 ms to drain. A second
+/// full frame that arrives before then is cut short and flagged in the RX
+/// descriptor's error field. See the README.
+pub const MCTP_I3C_IPC_MAXMTU: usize = i3c_api::MAX_SEND - 1;
 
 /// The MCTP baseline transmission unit (DSP0236): the packet payload size that
 /// every endpoint accepts, header excluded.
