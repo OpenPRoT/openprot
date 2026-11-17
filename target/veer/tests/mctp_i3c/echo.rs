@@ -22,6 +22,7 @@
 #![no_std]
 
 use mctp_echo_codegen::handle;
+use mctp_i3c_ids::HOST_EID;
 use openprot_mctp_api::{MctpListener, MctpReqChannel, MctpRespChannel, Stack};
 use openprot_mctp_client_ipc::IpcMctpClient;
 use openprot_mctp_echo::{prepare_listener, ECHO_MSG_TYPE};
@@ -33,9 +34,6 @@ const DONE: &[u8] = b"mctp-i3c-done";
 
 /// The payload of the request that makes the app send requests of its own.
 const INITIATE: &[u8] = b"mctp-i3c-initiate";
-
-/// The host's EID (`HOST_EID` in `host_test.rs`), where the app sends its requests.
-const HOST_EID: u8 = 9;
 
 /// Payload sizes of the requests the app sends, in order (`host_test.rs` expects
 /// the same). They are the sizes of caliptra-mcu-sw's own loopback test: the
