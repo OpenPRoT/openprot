@@ -20,7 +20,6 @@
 #![no_std]
 
 use app_test_runtime::{constants, handle, signals};
-use util_millis_epoch::Epoch;
 use openprot_orchestrator_server::BootWatchdogs;
 use openprot_orchestrator_sm::{
     BootFailureKind, Chain, ComponentAttrs, ComponentId, Effect, EffectError, Event, Orchestrator,
@@ -32,6 +31,7 @@ use orchestrator_config::{BootCheckpoint, DeviceConfig};
 use pw_status::{Error, Result};
 use userspace::time::Duration;
 use userspace::{entry, syscall};
+use util_millis_epoch::Epoch;
 
 /// The components this test supervises.
 const C0: ComponentId = ComponentId::new(0);

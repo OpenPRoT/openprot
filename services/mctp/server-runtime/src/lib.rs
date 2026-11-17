@@ -24,9 +24,9 @@ use openprot_mctp_api::wire::{self, MctpRequestHeader, MctpResponseHeader};
 use openprot_mctp_api::ResponseCode;
 use openprot_mctp_server::dispatch::{self, DispatchOutcome};
 use openprot_mctp_server::{Sender, Server};
-use util_millis_epoch::Epoch;
 use pw_status::Result;
 use userspace::syscall::Signals;
+use util_millis_epoch::Epoch;
 use util_service::{ChannelId, Event, ServiceLoop};
 
 pub use util_service::Channel;
