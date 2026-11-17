@@ -30,7 +30,7 @@
                     // actually drives it.
                     type: "string",
                     name: "pin_claims_gpio_irq_process",
-                    value: "scu410_0",
+                    value: "scu410_0:gpio",
                 },
             ],
             processes: [

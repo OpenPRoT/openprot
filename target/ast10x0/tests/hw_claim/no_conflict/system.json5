@@ -13,7 +13,7 @@
                 {
                     type: "string",
                     name: "pin_claims_claim_a_process",
-                    value: "pin_a",
+                    value: "pin_a:gpio",
                 },
             ],
             processes: [
@@ -36,7 +36,7 @@
                 {
                     type: "string",
                     name: "pin_claims_claim_b_process",
-                    value: "pin_b",
+                    value: "pin_b:gpio",
                 },
             ],
             processes: [

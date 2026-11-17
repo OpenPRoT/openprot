@@ -30,7 +30,7 @@
                     // one that actually drives them.
                     type: "string",
                     name: "pin_claims_gpioh_loopback_process",
-                    value: "scu414_28,scu414_29",
+                    value: "scu414_28:gpio,scu414_29:gpio",
                 },
             ],
             processes: [

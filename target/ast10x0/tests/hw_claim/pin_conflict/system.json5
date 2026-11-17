@@ -12,7 +12,7 @@
                 {
                     type: "string",
                     name: "pin_claims_claim_pin_a_process",
-                    value: "shared_pin",
+                    value: "shared_pin:gpio",
                 },
             ],
         },
@@ -22,7 +22,7 @@
                 {
                     type: "string",
                     name: "pin_claims_claim_pin_b_process",
-                    value: "shared_pin",
+                    value: "shared_pin:gpio",
                 },
             ],
         },
