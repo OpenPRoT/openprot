@@ -6,6 +6,8 @@
 pub mod cache;
 pub mod clock;
 pub mod pinctrl;
+pub mod pinmux;
+pub mod pins;
 pub mod registers;
 pub mod reset;
 pub mod routing;
@@ -13,6 +15,7 @@ pub mod status;
 pub mod types;
 
 pub use pinctrl::PinctrlPin;
+pub use pinmux::route;
 pub use registers::ScuRegisters;
 pub use routing::SpimGpioOriVal;
 pub use types::{

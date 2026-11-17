@@ -3,10 +3,17 @@
 
 //! AST10x0 SCU low-level register access.
 
+use super::pins::ScuBlock;
 use ast1060_pac as device;
 use core::marker::PhantomData;
 
 const SCU_UNLOCK_KEY: u32 = 0x1688_A8A8;
+
+/// Write-enable the SCU's protected registers, through the confined `Mmio` accessor. The key stays
+/// private here; the pin-mux route path calls this before applying a pin's coalesced mux writes.
+pub(crate) fn unlock_scu_writes(mmio: &crate::Mmio<ScuBlock>) {
+    mmio.write_reg(0x000, SCU_UNLOCK_KEY);
+}
 
 /// Safe wrapper around the AST10x0 SCU register block.
 pub struct ScuRegisters {
@@ -47,6 +54,13 @@ impl ScuRegisters {
     ///
     /// Follows the aspeed-rust pattern: unlock once, then perform all
     /// register writes in sequence without re-locking between operations.
+    ///
+    /// Unlike a pin driven through
+    /// [`GpioPin::into_output`](crate::gpio::GpioPin::into_output)/
+    /// [`into_input`](crate::gpio::GpioPin::into_input), which only compiles for a process the
+    /// manifest's `pin_claims_<process>` list actually names, this has no equivalent gate: it is
+    /// not bound to any manifest declaration, and not gated by a `Region` the way `GpioBlock::new`
+    /// gates GPIO access. Closing that is tracked as follow-up work, not done here.
     ///
     /// # Safety
     /// Caller must ensure access to the singleton SCU is coordinated.

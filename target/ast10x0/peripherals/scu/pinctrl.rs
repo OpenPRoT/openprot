@@ -5,6 +5,13 @@
 //!
 //! Provides register-level access to configure AST1060 pins for different
 //! functions (I2C, I3C, GPIO, etc.) via SCU multiplex registers.
+//!
+//! Superseded, for GPIO, by `scu::pins`'s `pins!`-generated tokens (`Routes<Gpio>`'s `ROUTE`
+//! names the exact same mux bits this module names by hand). Not marked `#[deprecated]`: this
+//! module still has ~27 real callers across i2c/i3c/smc/sgpiom/mctp/spdm and board wiring that
+//! haven't moved to the token model yet, and the lint is promoted to a build-breaking error
+//! here, so that would fail every one of those targets instead of just flagging intent. New
+//! peripheral code should use the token model; this module stays until the rest migrate.
 
 use super::ScuRegisters;
 use paste::paste;
