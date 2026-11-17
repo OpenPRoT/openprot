@@ -5,6 +5,9 @@
 #![feature(associated_type_defaults)]
 #![feature(adt_const_params)]
 
+/// The HAL's confined MMIO applier, re-exported so `crate::Mmio` resolves target-wide.
+pub use openprot_hal::field_mux::Mmio;
+
 pub mod gpio;
 pub mod hace;
 pub mod i2c;
