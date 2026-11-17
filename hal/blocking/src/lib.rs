@@ -17,6 +17,8 @@
 
 /// Cryptographic digest operations (hashing)
 pub mod digest;
+/// DICE Protection Environment (DPE) client traits
+pub mod dpe;
 /// ECDSA digital signature operations
 pub mod ecdsa;
 /// Gpio port module
