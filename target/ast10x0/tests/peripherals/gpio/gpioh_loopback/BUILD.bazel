@@ -1,0 +1,141 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app")
+load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
+load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH", "system_image_test")
+load("//target/ast10x0/pins:defs.bzl", "app_pin_claims", "kernel_pin_routes")
+load("//util/hw_claim:defs.bzl", "manifest_hw_claim_test")
+load("//util/region:defs.bzl", "app_regions")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "system_config",
+    srcs = ["system.json5"],
+)
+
+target_codegen(
+    name = "codegen",
+    arch = "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+    system_config = ":system_config",
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    template = "//target/ast10x0:linker_script_template",
+)
+
+kernel_pin_routes(
+    name = "kernel_pin_routes",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+rust_binary(
+    name = "target",
+    srcs = ["target.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":codegen",
+        ":kernel_pin_routes",
+        ":linker_script",
+        "//hal",
+        "//target/ast10x0:entry",
+        "//target/ast10x0/peripherals",
+        "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/subsys/console:console_backend",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_kernel/userspace",
+    ],
+)
+
+app_regions(
+    name = "app_gpioh_loopback_app_regions",
+    edition = "2024",
+    process_name = "gpioh_loopback_process",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+app_pin_claims(
+    name = "app_gpioh_loopback_app_pin_claims",
+    edition = "2024",
+    process_name = "gpioh_loopback_process",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+rust_app(
+    name = "gpioh_loopback_app",
+    srcs = ["gpioh_loopback_app_main.rs"],
+    codegen_crate_name = "app_gpioh_loopback_app",
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":app_gpioh_loopback_app_pin_claims",
+        ":app_gpioh_loopback_app_regions",
+        "//target/ast10x0/peripherals",
+        "//util/region",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
+system_image(
+    name = "gpioh_loopback",
+    apps = [
+        ":gpioh_loopback_app",
+    ],
+    kernel = ":target",
+    platform = "//target/ast10x0",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+)
+
+system_image_test(
+    name = "gpioh_loopback_test",
+    image = ":gpioh_loopback",
+    tags = ["manual"],  # This test requires jumper wires to be connected between GPIOH pin 4 and 5.
+    target_compatible_with = select({
+        "//target/ast10x0:qemu_enabled": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:public"],
+)
+
+rust_binary_no_panics_test(
+    name = "no_panics_test",
+    binary = ":gpioh_loopback",
+    tags = ["kernel"],
+)
+
+# Catches an app-vs-app pin_claims_<process> conflict straight out of the manifest, before anything
+# in this file builds. Only one app exists here today, so this has nothing to conflict with yet.
+manifest_hw_claim_test(
+    name = "manifest_hw_claim_test",
+    system_config = ":system_config",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)

@@ -7,12 +7,12 @@
 #![no_std]
 
 use app_gpio_irq_server::{handle, signals};
-use ast10x0_peripherals::gpio::{gpioa, GpioExt, InterruptMode};
+use app_gpio_irq_server_pin_claims::take_pin_claims;
+use app_gpio_irq_server_regions::take_mmaps;
+use ast10x0_peripherals::gpio::{bind_gpio, GpioBlock, IntTrigger};
 use pw_status::Error;
 use userspace::entry;
 use userspace::syscall;
-
-const GPIOA0_MASK: u32 = 1;
 
 macro_rules! fail {
     ($($arg:tt)*) => {{
@@ -25,10 +25,14 @@ macro_rules! fail {
 
 #[entry]
 fn entry() {
-    // SAFETY: this process exclusively owns the GPIO device mapping declared
-    // in system.json5.
-    let gpioa = unsafe { gpioa::GPIOA::new_global().split() };
-    let mut pa0 = gpioa.pa0.into_pull_down_input();
+    // The kernel side routed this pin at the SCU before starting us; userspace has no SCU grant, so
+    // we bind the already-routed pin rather than re-muxing it.
+    // SAFETY: mints this process's claimed pins once, at its entry point.
+    let pins = unsafe { take_pin_claims() };
+    // SAFETY: mints this process's mappings once, at its entry point.
+    let mmaps = unsafe { take_mmaps() };
+    let gpio = GpioBlock::new(mmaps.gpio_regs);
+    let a0 = bind_gpio(pins.scu410_0, &gpio).into_input();
 
     if syscall::wait_group_add(
         handle::WG,
@@ -41,37 +45,29 @@ fn entry() {
         fail!("wait_group_add failed");
     }
 
-    pa0.clear_interrupt();
-    pa0.set_interrupt_mode(InterruptMode::EdgeBoth);
+    a0.clear_int();
+    a0.enable_interrupt(IntTrigger::Both);
 
     if syscall::interrupt_ack(handle::GPIO_IRQ, signals::GPIO).is_err() {
         fail!("initial interrupt_ack failed");
     }
 
-    // SAFETY: the GPIO register block is mapped exclusively into this process.
-    let registers = unsafe { &*ast1060_pac::Gpio::ptr() };
-    let int_en = registers.gpio008().read().bits();
-    let sensitivity2 = registers.gpio014().read().bits();
-    let int_status = registers.gpio018().read().bits();
+    let int_en = a0.int_enabled();
+    let both_edge = a0.sense_both();
+    let pending = a0.int_pending();
 
     pw_log::info!(
-        "GPIO IRQ state: int_en=0x{:08x} sensitivity2=0x{:08x} status=0x{:08x}",
+        "GPIO IRQ state: int_en={} sensitivity2={} status={}",
         int_en as u32,
-        sensitivity2 as u32,
-        int_status as u32,
+        both_edge as u32,
+        pending as u32,
     );
 
-    if int_en & GPIOA0_MASK != GPIOA0_MASK {
-        fail!(
-            "GPIOA0 interrupt not enabled: int_en=0x{:08x}",
-            int_en as u32
-        );
+    if !int_en {
+        fail!("GPIOA0 interrupt not enabled");
     }
-    if sensitivity2 & GPIOA0_MASK != GPIOA0_MASK {
-        fail!(
-            "GPIOA0 both-edge sensitivity not configured: sensitivity2=0x{:08x}",
-            sensitivity2 as u32
-        );
+    if !both_edge {
+        fail!("GPIOA0 both-edge sensitivity not configured");
     }
 
     pw_log::info!("PASS: GPIO IRQ configuration verified");
