@@ -1,0 +1,43 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// Deliberately broken manifest: two processes are granted the same FMC
+// register block. manifest_check reads this directly — a granted device
+// range is the claim for MMIO, so no separate annotation is needed; no
+// kernel, no apps, no compile needed to catch it.
+{
+    apps: [
+        {
+            name: "claim_a",
+            processes: [
+                {
+                    name: "claim_a_process",
+                    memory_mappings: [
+                        {
+                            name: "fmc_regs",
+                            type: "device",
+                            start_address: 0x7e620000,
+                            size_bytes: 0x1000,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            name: "claim_b",
+            processes: [
+                {
+                    name: "claim_b_process",
+                    memory_mappings: [
+                        {
+                            name: "fmc_regs",
+                            type: "device",
+                            start_address: 0x7e620000,
+                            size_bytes: 0x1000,
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}
