@@ -51,13 +51,14 @@ rust_binary(
     ],
 )
 
-# End-to-end MCTP over I3C: i3c server + MCTP router + echo app.
+# End-to-end MCTP over I3C: i3c server + MCTP router + echo app + control responder.
 multi_process_app(
     name = "mctp_i3c",
     processes = [
         ":i3c_server",
         ":mctp_server",
         ":mctp_echo",
+        ":mctp_control",
     ],
     tags = ["kernel"],
 )
@@ -110,6 +111,22 @@ rust_process(
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
+rust_process(
+    name = "mctp_control",
+    srcs = ["control.rs"],
+    codegen_crate_name = "mctp_control_codegen",
+    edition = "2024",
+    tags = ["kernel"],
+    deps = [
+        "//services/mctp/api:mctp_api",
+        "//services/mctp/client-ipc:mctp_client_ipc",
+        "//services/mctp/control:mctp_control",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@rust_crates//:mctp-lib",
     ],
 )
 
