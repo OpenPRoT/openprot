@@ -10,6 +10,7 @@ use openprot_orchestrator_sm::{
 
 use crate::board::{
     Board, BoardCapabilities, ImageSource, Report, ReportSink, SvnFloorBinding, Verdict, Verifier,
+    VerifyStatus,
 };
 use orchestrator_capabilities::{BootControl, BootWatch, FailureCause, Svn, SvnFloor, WalkVerdict};
 
@@ -56,6 +57,12 @@ pub struct PlatformDriver<B: BoardCapabilities, const N: usize> {
     board: Board<B, N>,
     /// Component whose image is staged (source opened) for verification.
     staged: Option<ComponentId>,
+    /// Component whose verification is outstanding with the verifier. At most
+    /// one: a new start or a re-stage cancels the old one, so its answer can
+    /// never be taken for the current image's.
+    verifying: Option<ComponentId>,
+    /// When the outstanding check will give up, as of the last `poll_verify`.
+    verify_deadline: Option<u64>,
     /// `watching[i]`: `ComponentId(i)` is out of reset with a walk in
     /// flight. Set on `ReleaseReset`, cleared on `AssertReset` and on a
     /// terminal verdict. Only watched walks are polled, so a finished or
@@ -74,6 +81,8 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         Self {
             board,
             staged: None,
+            verifying: None,
+            verify_deadline: None,
             watching: [false; N],
             verified_svn: [None; N],
         }
@@ -97,40 +106,124 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     }
 
     /// Stage `id`'s image: open its source so
-    /// [`verify_firmware`](Self::verify_firmware) can read it.
+    /// [`start_verify`](Self::start_verify) can read it.
+    ///
+    /// # Errors
+    ///
+    /// [`DriverError::UnknownComponent`] for an id the driver has no device
+    /// for, [`DriverError::ImageUnavailable`] when the image cannot be
+    /// opened, and [`DriverError::VerifierFault`] when cancelling a check
+    /// still outstanding fails.
     pub fn stage_firmware(&mut self, id: ComponentId) -> Result<(), DriverError> {
         self.staged = None;
+        // A new staging replaces the image an outstanding check was verifying.
+        self.cancel_verify()?;
         let source = Self::source(&mut self.board.images, id)?;
         source.open().map_err(|_| DriverError::ImageUnavailable)?;
         self.staged = Some(id);
         Ok(())
     }
 
-    /// Judge the staged image via the [`Verifier`] and return the verdict:
+    /// Abandon the outstanding verification, if any. Its answer is discarded.
+    fn cancel_verify(&mut self) -> Result<(), DriverError> {
+        self.verify_deadline = None;
+        if self.verifying.take().is_some() {
+            self.board
+                .verifier
+                .cancel()
+                .map_err(|_| DriverError::VerifierFault)?;
+        }
+        Ok(())
+    }
+
+    /// Begin verifying the staged image. Returns at once; the verdict arrives
+    /// from [`poll`](Self::poll) as
     /// `Event::VerificationPassed(id)` or `Event::VerificationFailed(id)`.
-    pub fn verify_firmware(&mut self, id: ComponentId) -> Result<Event, DriverError> {
+    ///
+    /// Starting supersedes any check still outstanding, and voids `id`'s
+    /// recorded SVN: until this check answers, no earlier authenticated
+    /// reading may reach the anti-rollback commit.
+    ///
+    /// # Errors
+    ///
+    /// [`DriverError::UnknownComponent`] for an id the driver has no device
+    /// for, [`DriverError::NotStaged`] when `id`'s image was not staged, and
+    /// [`DriverError::VerifierFault`] when the verifier could not cancel the
+    /// old check or start the new one. Either way the recorded SVN is already
+    /// void.
+    pub fn start_verify(&mut self, id: ComponentId) -> Result<(), DriverError> {
         // Id validity first: an unknown component is UnknownComponent even
         // though it can never be staged.
-        let source = Self::source(&mut self.board.images, id)?;
+        Self::source(&mut self.board.images, id)?;
         if self.staged != Some(id) {
             return Err(DriverError::NotStaged);
         }
-        let verdict = self
-            .board
+        self.cancel_verify()?;
+        // Void the recorded SVN before the verifier is asked, so it is gone
+        // even if the verifier cannot start: no earlier reading may reach the
+        // anti-rollback commit until a new check answers.
+        self.verified_svn[id.get() as usize] = None;
+        let source = Self::source(&mut self.board.images, id)?;
+        self.board
             .verifier
-            .verify(id, source)
+            .start(id, source)
             .map_err(|_| DriverError::VerifierFault)?;
+        self.verifying = Some(id);
+        Ok(())
+    }
+
+    /// Collect the outstanding verification's outcome, if it has one. Never
+    /// waits. A run loop calls [`poll`](Self::poll), which includes this and
+    /// the boot walks; call this directly only to poll the verification alone.
+    ///
+    /// A passed check records the image's SVN for the floor commit; a
+    /// rejection or a timeout clears it and reports
+    /// `Event::VerificationFailed(id)`. A check that is still pending
+    /// refreshes the deadline [`next_verify_deadline`](Self::next_verify_deadline)
+    /// returns, so poll once after [`start_verify`](Self::start_verify)
+    /// before relying on it.
+    ///
+    /// An error means the check could not be carried through. It ends the
+    /// check, and the run loop should dispatch `Event::EffectFailed`, the same
+    /// fail-closed answer an executor error gets.
+    pub fn poll_verify(&mut self, now_millis: u64) -> Result<Option<Event>, DriverError> {
+        let Some(id) = self.verifying else {
+            return Ok(None);
+        };
         let idx = id.get() as usize;
-        Ok(match verdict {
-            Verdict::Authenticated { svn } => {
+        match self.board.verifier.poll(now_millis) {
+            Err(_) => {
+                self.verifying = None;
+                self.verify_deadline = None;
+                Err(DriverError::VerifierFault)
+            }
+            Ok(VerifyStatus::Pending { deadline_millis }) => {
+                self.verify_deadline = deadline_millis;
+                Ok(None)
+            }
+            Ok(VerifyStatus::Done(Verdict::Authenticated { svn })) => {
+                self.verifying = None;
+                self.verify_deadline = None;
                 self.verified_svn[idx] = Some(svn);
-                Event::VerificationPassed(id)
+                Ok(Some(Event::VerificationPassed(id)))
             }
-            Verdict::Rejected => {
+            Ok(VerifyStatus::Done(Verdict::Rejected) | VerifyStatus::TimedOut) => {
+                self.verifying = None;
+                self.verify_deadline = None;
                 self.verified_svn[idx] = None;
-                Event::VerificationFailed(id)
+                Ok(Some(Event::VerificationFailed(id)))
             }
-        })
+        }
+    }
+
+    /// When the outstanding verification will give up, as of the last
+    /// [`poll_verify`](Self::poll_verify), or `None` if none is outstanding or
+    /// it has no deadline. The run loop must wake no later than this and poll
+    /// again: a verifier that has stopped answering signals nothing, so the
+    /// deadline is the only wake-up that turns its silence into a failed
+    /// verification.
+    pub fn next_verify_deadline(&self) -> Option<u64> {
+        self.verify_deadline
     }
 
     /// Advance `id`'s anti-rollback floor to its verified image's SVN.
@@ -246,6 +339,37 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
         }
     }
 
+    /// One round of everything the run loop must poll: the verification, then
+    /// the boot walks. Returns [`DriverPoll::Event`] at the first event, so
+    /// dispatch it and call again. When nothing is ready it returns
+    /// [`DriverPoll::Idle`] with the earliest deadline among the outstanding
+    /// verification and the waiting walks: the loop sleeps until then or until
+    /// a service signals, and polls again.
+    ///
+    /// Calling this after every dispatch, and sleeping only on `Idle`, is what
+    /// keeps the loop from sleeping on a check it has not polled yet: a new
+    /// check's deadline is learnt only from its first poll.
+    ///
+    /// # Errors
+    ///
+    /// [`DriverError::VerifierFault`] when the verification could not be
+    /// carried through. Dispatch `Event::EffectFailed`, as for an executor
+    /// error.
+    pub fn poll(&mut self, now_millis: u64) -> Result<DriverPoll, DriverError> {
+        if let Some(event) = self.poll_verify(now_millis)? {
+            return Ok(DriverPoll::Event(event));
+        }
+        let walks = self.poll_boot_walks(now_millis);
+        if let Some(event) = walks.event {
+            return Ok(DriverPoll::Event(event));
+        }
+        let next_wake_millis = match (walks.next_deadline_millis, self.verify_deadline) {
+            (Some(walk), Some(verify)) => Some(walk.min(verify)),
+            (walk, verify) => walk.or(verify),
+        };
+        Ok(DriverPoll::Idle { next_wake_millis })
+    }
+
     /// Hands one report to the board's sink. Cannot fail, so reporting stays
     /// off the fail-closed path; reports arrive in the order the SM emitted
     /// them.
@@ -254,7 +378,23 @@ impl<B: BoardCapabilities, const N: usize> PlatformDriver<B, N> {
     }
 }
 
-/// One [`PlatformDriver::poll_boot_walks`] round.
+/// One [`PlatformDriver::poll`] round. Dropping it loses an event the driver
+/// has already marked as delivered.
+#[must_use]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DriverPoll {
+    /// The first event from the verification or a boot walk. Dispatch it, then
+    /// poll again.
+    Event(Event),
+    /// Nothing is ready. Sleep until a service signals or `next_wake_millis`
+    /// (the earliest deadline among the outstanding verification and the
+    /// waiting walks, `None` if there is none), then poll again.
+    Idle { next_wake_millis: Option<u64> },
+}
+
+/// One [`PlatformDriver::poll_boot_walks`] round. Dropping it loses an event
+/// the driver has already marked as delivered.
+#[must_use]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct BootWalkPoll {
     /// The first terminal verdict's event; `None` when every watched walk
@@ -268,14 +408,15 @@ pub struct BootWalkPoll {
 
 impl<B: BoardCapabilities, const N: usize> Platform for PlatformDriver<B, N> {
     /// Routes each effect to its executor. Exhaustive: a new [`Effect`]
-    /// variant must get an executor before this compiles. Synchronous
-    /// results (the verification verdict) come back as the returned event;
-    /// every executor error reports as [`EffectError`] — the SM treats all
-    /// actuation failures the same, fail-closed.
+    /// variant must get an executor before this compiles. Nothing here waits
+    /// on a slow service: the verification verdict, for one, arrives later
+    /// from [`poll`](PlatformDriver::poll). Every executor
+    /// error reports as [`EffectError`] — the SM treats all actuation
+    /// failures the same, fail-closed.
     fn execute(&mut self, effect: Effect) -> Result<Option<Event>, EffectError> {
         match effect {
             Effect::ReadFirmware(id) => self.stage_firmware(id).map(|_| None),
-            Effect::VerifyFirmware(id) => self.verify_firmware(id).map(Some),
+            Effect::VerifyFirmware(id) => self.start_verify(id).map(|_| None),
             Effect::ReleaseReset(id) => self.release_reset(id).map(|_| None),
             Effect::AssertReset(id) => self.assert_reset(id).map(|_| None),
             Effect::CommitSvnFloor(id) => self.commit_svn_floor(id).map(|_| None),

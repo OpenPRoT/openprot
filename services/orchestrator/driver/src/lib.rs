@@ -10,20 +10,24 @@
 //! capability is not composed yet fail closed in `execute`; the driver grows
 //! an executor only when the capability it delegates to exists.
 //!
-//! Synchronous results (the verification verdict) return through `execute`;
-//! the SM queues and settles them within the same dispatch run. There is no
-//! driver-side event queue.
+//! Nothing the driver executes waits on a slow service. `VerifyFirmware`
+//! starts a check and returns; the verdict comes back later from
+//! [`PlatformDriver::poll`] as an event for the run loop to dispatch.
+//! There is no driver-side event queue: the run loop polls. Short local calls
+//! (reset lines, the SVN floor, reports) still complete inside `execute`.
 //!
 //! Everything device-specific arrives through the seams in [`board`]:
-//! image access ([`ImageSource`]), image judgment ([`Verifier`]), reset
-//! actuation ([`orchestrator_capabilities::BootControl`]), boot
+//! image access ([`ImageSource`]), image verification ([`Verifier`], start and
+//! poll), reset actuation ([`orchestrator_capabilities::BootControl`]), boot
 //! supervision ([`orchestrator_capabilities::BootWatch`]) and the
 //! anti-rollback floor ([`orchestrator_capabilities::SvnFloor`]), bundled
 //! in one [`Board`] built by the board's composition crate.
 //!
-//! Boot-walk verdicts are the one asynchronous read: the run loop calls
-//! [`PlatformDriver::poll_boot_walks`] and dispatches the returned events
-//! (`ComponentReady`/`Booted`/`BootFailed`) into the SM.
+//! Verification verdicts and boot-walk verdicts are the asynchronous reads:
+//! the run loop calls [`PlatformDriver::poll`], which covers both, and
+//! dispatches the returned events
+//! (`VerificationPassed`/`VerificationFailed`, `ComponentReady`/`Booted`/
+//! `BootFailed`) into the SM.
 //!
 //! [`Platform`]: openprot_orchestrator_sm::Platform
 
@@ -37,5 +41,6 @@ mod tests;
 
 pub use board::{
     Board, BoardCapabilities, ImageSource, Report, ReportSink, SvnFloorBinding, Verdict, Verifier,
+    VerifyStatus,
 };
-pub use driver::{BootWalkPoll, DriverError, PlatformDriver};
+pub use driver::{BootWalkPoll, DriverError, DriverPoll, PlatformDriver};

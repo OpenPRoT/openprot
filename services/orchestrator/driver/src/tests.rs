@@ -94,7 +94,7 @@ impl ImageSource for MemImage {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct VerifierError;
 
 impl core::fmt::Display for VerifierError {
@@ -104,6 +104,56 @@ impl core::fmt::Display for VerifierError {
 }
 
 impl core::error::Error for VerifierError {}
+
+/// A check that runs to completion in one call, as the test fakes below do.
+trait SyncCheck {
+    type Error: core::error::Error;
+
+    fn verify(
+        &mut self,
+        id: ComponentId,
+        image: &mut impl ImageSource,
+    ) -> Result<Verdict, Self::Error>;
+}
+
+/// Runs a [`SyncCheck`] as a [`Verifier`]: the check happens inside `start`
+/// and the first `poll` returns the verdict. A real verifier that is fast and
+/// local is written the same way.
+struct Immediate<V: SyncCheck> {
+    inner: V,
+    done: Option<Verdict>,
+}
+
+impl<V: SyncCheck> Immediate<V> {
+    fn new(inner: V) -> Self {
+        Self { inner, done: None }
+    }
+}
+
+impl<V: SyncCheck> Verifier for Immediate<V> {
+    type Error = V::Error;
+
+    fn start(&mut self, id: ComponentId, image: &mut impl ImageSource) -> Result<(), Self::Error> {
+        self.done = None;
+        let verdict = self.inner.verify(id, image)?;
+        self.done = Some(verdict);
+        Ok(())
+    }
+
+    fn poll(&mut self, _now_millis: u64) -> Result<VerifyStatus, Self::Error> {
+        Ok(match self.done.take() {
+            Some(verdict) => VerifyStatus::Done(verdict),
+            None => VerifyStatus::Pending {
+                deadline_millis: None,
+            },
+        })
+    }
+
+    fn cancel(&mut self) -> Result<(), Self::Error> {
+        self.done = None;
+        Ok(())
+    }
+}
 
 /// The magic + XOR-zero check as a board-supplied verifier, reading in
 /// chunks.
@@ -115,7 +165,7 @@ struct XorVerifier {
     svn: u32,
 }
 
-impl Verifier for XorVerifier {
+impl SyncCheck for XorVerifier {
     type Error = VerifierError;
 
     fn verify(
@@ -297,7 +347,7 @@ struct MockBoard;
 
 impl BoardCapabilities for MockBoard {
     type Image = MemImage;
-    type Verifier = XorVerifier;
+    type Verifier = Immediate<XorVerifier>;
     type BootControl = MockReset;
     type BootWatch = MockWalk;
     type SvnFloor = MockFloor;
@@ -313,10 +363,10 @@ const MOCK_SVN: u32 = 5;
 fn mock_board<const N: usize>() -> Board<MockBoard, N> {
     Board {
         images: core::array::from_fn(|_| MemImage::holding(valid_image())),
-        verifier: XorVerifier {
+        verifier: Immediate::new(XorVerifier {
             fault: false,
             svn: MOCK_SVN,
-        },
+        }),
         boot_controls: core::array::from_fn(|_| MockReset::new()),
         boot_watches: core::array::from_fn(|_| MockWalk::idle()),
         component_kinds: core::array::from_fn(|_| ComponentKind::Passive),
@@ -340,15 +390,51 @@ fn orchestrator() -> Orchestrator<1, 4> {
     Orchestrator::new(chain.try_into().unwrap(), 3)
 }
 
+/// Start the check and collect its verdict, for a verifier that answers on the
+/// first poll (`Immediate`).
+fn verify_now<B: BoardCapabilities, const N: usize>(
+    driver: &mut PlatformDriver<B, N>,
+    id: ComponentId,
+) -> Result<Event, DriverError> {
+    driver.start_verify(id)?;
+    Ok(driver
+        .poll_verify(0)?
+        .expect("an immediate verifier answers on the first poll"))
+}
+
+/// Dispatch `event`, then deliver verification verdicts as the run loop does
+/// until none is left. A poll error is dispatched as `EffectFailed`.
+fn dispatch_settled<B: BoardCapabilities, const N: usize, const E: usize>(
+    orch: &mut Orchestrator<N, E>,
+    driver: &mut PlatformDriver<B, N>,
+    event: Event,
+) {
+    orch.dispatch(driver, event);
+    loop {
+        match driver.poll_verify(0) {
+            Ok(Some(ev)) => orch.dispatch(driver, ev),
+            Ok(None) => break,
+            Err(_) => {
+                orch.dispatch(driver, Event::EffectFailed);
+                break;
+            }
+        }
+    }
+}
+
 // PowerGood drives ReadFirmware + VerifyFirmware into the driver; the
-// verdict returns through execute and the SM settles it in the same
-// dispatch run, carrying a passive component all the way to Ready.
+// verdict is polled back and dispatched, carrying a passive component all
+// the way to Ready.
 #[test]
 fn boot_verifies_the_first_component() {
     let mut orch = orchestrator();
     let mut driver = driver([MemImage::holding(valid_image())]);
 
-    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    dispatch_settled(
+        &mut orch,
+        &mut driver,
+        Event::PowerGood(PowerOnResult::Provisioned),
+    );
 
     assert_eq!(orch.state(), State::Ready);
 }
@@ -362,7 +448,7 @@ fn corrupt_image_fails_verification() {
     driver.stage_firmware(C0).unwrap();
 
     assert_eq!(
-        driver.verify_firmware(C0),
+        verify_now(&mut driver, C0),
         Ok(Event::VerificationFailed(C0))
     );
 }
@@ -371,7 +457,7 @@ fn corrupt_image_fails_verification() {
 fn verify_without_read_is_refused() {
     let mut driver = driver([MemImage::holding(valid_image())]);
 
-    assert_eq!(driver.verify_firmware(C0), Err(DriverError::NotStaged));
+    assert_eq!(verify_now(&mut driver, C0), Err(DriverError::NotStaged));
 }
 
 // An unopenable source is a failed actuation, not a verdict: the SM
@@ -383,7 +469,11 @@ fn unopenable_source_fails_closed() {
     image.fail_open = true;
     let mut driver = driver([image]);
 
-    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    dispatch_settled(
+        &mut orch,
+        &mut driver,
+        Event::PowerGood(PowerOnResult::Provisioned),
+    );
 
     assert_eq!(orch.state(), State::Locked);
 }
@@ -397,7 +487,11 @@ fn unreadable_source_fails_closed() {
     image.fail_read = true;
     let mut driver = driver([image]);
 
-    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    dispatch_settled(
+        &mut orch,
+        &mut driver,
+        Event::PowerGood(PowerOnResult::Provisioned),
+    );
 
     assert_eq!(orch.state(), State::Locked);
 }
@@ -407,14 +501,18 @@ fn unreadable_source_fails_closed() {
 fn verifier_fault_fails_closed() {
     let mut orch = orchestrator();
     let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
-        verifier: XorVerifier {
+        verifier: Immediate::new(XorVerifier {
             fault: true,
             svn: MOCK_SVN,
-        },
+        }),
         ..mock_board()
     });
 
-    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    dispatch_settled(
+        &mut orch,
+        &mut driver,
+        Event::PowerGood(PowerOnResult::Provisioned),
+    );
 
     assert_eq!(orch.state(), State::Locked);
 }
@@ -427,7 +525,7 @@ fn verify_for_a_different_component_is_refused() {
 
     driver.stage_firmware(C0).unwrap();
 
-    assert_eq!(driver.verify_firmware(C1), Err(DriverError::NotStaged));
+    assert_eq!(verify_now(&mut driver, C1), Err(DriverError::NotStaged));
 }
 
 #[test]
@@ -446,7 +544,7 @@ fn verify_of_unknown_component_is_refused() {
     let mut driver = driver([MemImage::holding(valid_image())]);
 
     assert_eq!(
-        driver.verify_firmware(ComponentId::new(9)),
+        verify_now(&mut driver, ComponentId::new(9)),
         Err(DriverError::UnknownComponent)
     );
 }
@@ -503,18 +601,22 @@ fn emit_is_refused() {
     );
 }
 
-// The verdict is the returned event of the VerifyFirmware effect.
+// VerifyFirmware only starts the check: execute returns at once with no event,
+// and the verdict is collected from poll_verify.
 #[test]
-fn execute_returns_the_verdict_event() {
+fn execute_starts_the_check_and_the_verdict_is_polled() {
     use openprot_orchestrator_sm::{Effect, Platform};
 
     let mut driver = driver([MemImage::holding(valid_image())]);
 
     assert_eq!(driver.execute(Effect::ReadFirmware(C0)), Ok(None));
+    assert_eq!(driver.execute(Effect::VerifyFirmware(C0)), Ok(None));
     assert_eq!(
-        driver.execute(Effect::VerifyFirmware(C0)),
+        driver.poll_verify(0),
         Ok(Some(Event::VerificationPassed(C0)))
     );
+    // Delivered once.
+    assert_eq!(driver.poll_verify(0), Ok(None));
 }
 
 /// Wraps [`XorVerifier`] and snapshots the reset line as the check runs,
@@ -525,7 +627,7 @@ struct LineWatchingVerifier {
     held_during_verify: std::rc::Rc<core::cell::Cell<bool>>,
 }
 
-impl Verifier for LineWatchingVerifier {
+impl SyncCheck for LineWatchingVerifier {
     type Error = VerifierError;
 
     fn verify(
@@ -542,7 +644,7 @@ struct WatchBoard;
 
 impl BoardCapabilities for WatchBoard {
     type Image = MemImage;
-    type Verifier = LineWatchingVerifier;
+    type Verifier = Immediate<LineWatchingVerifier>;
     type BootControl = MockReset;
     type BootWatch = MockWalk;
     type SvnFloor = MockFloor;
@@ -559,14 +661,14 @@ fn release_follows_verification() {
     let held_during_verify = std::rc::Rc::new(core::cell::Cell::new(false));
     let mut driver = PlatformDriver::<WatchBoard, 1>::new(Board {
         images: [MemImage::holding(valid_image())],
-        verifier: LineWatchingVerifier {
+        verifier: Immediate::new(LineWatchingVerifier {
             inner: XorVerifier {
                 fault: false,
                 svn: MOCK_SVN,
             },
             line: held.clone(),
             held_during_verify: held_during_verify.clone(),
-        },
+        }),
         boot_controls: [control],
         boot_watches: [MockWalk::idle()],
         component_kinds: [ComponentKind::Passive],
@@ -575,7 +677,11 @@ fn release_follows_verification() {
     });
     let mut orch = orchestrator();
 
-    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    dispatch_settled(
+        &mut orch,
+        &mut driver,
+        Event::PowerGood(PowerOnResult::Provisioned),
+    );
 
     assert_eq!(orch.state(), State::Ready);
     assert!(
@@ -598,7 +704,11 @@ fn failed_release_fails_closed() {
     });
     let mut orch = orchestrator();
 
-    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    dispatch_settled(
+        &mut orch,
+        &mut driver,
+        Event::PowerGood(PowerOnResult::Provisioned),
+    );
 
     assert_eq!(orch.state(), State::Locked);
     assert!(held.get(), "never left reset");
@@ -823,7 +933,11 @@ fn booted_walk_settles_in_ready() {
         ..mock_board()
     });
 
-    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    dispatch_settled(
+        &mut orch,
+        &mut driver,
+        Event::PowerGood(PowerOnResult::Provisioned),
+    );
     assert_eq!(orch.state(), State::Ready);
 
     let event = driver.poll_boot_walks(0).event.expect("walk completed");
@@ -847,7 +961,11 @@ fn boot_failure_fails_closed_without_recovery() {
         ..mock_board()
     });
 
-    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    dispatch_settled(
+        &mut orch,
+        &mut driver,
+        Event::PowerGood(PowerOnResult::Provisioned),
+    );
     assert_eq!(orch.state(), State::Ready);
 
     let event = driver.poll_boot_walks(0).event.expect("walk failed");
@@ -935,6 +1053,7 @@ fn commit_advances_the_floor_to_the_verified_svn() {
     driver
         .execute(Effect::VerifyFirmware(C0))
         .expect("verify failed");
+    driver.poll_verify(0).expect("poll failed");
 
     assert_eq!(driver.execute(Effect::CommitSvnFloor(C0)), Ok(None));
     // Read back through the capability's own seam.
@@ -984,7 +1103,7 @@ fn rejected_image_clears_the_verified_svn() {
 
     driver.stage_firmware(C0).expect("stage failed");
     assert_eq!(
-        driver.verify_firmware(C0),
+        verify_now(&mut driver, C0),
         Ok(Event::VerificationPassed(C0))
     );
 
@@ -992,7 +1111,7 @@ fn rejected_image_clears_the_verified_svn() {
     // the cached SVN with it.
     driver.stage_firmware(C0).expect("re-stage failed");
     assert_eq!(
-        driver.verify_firmware(C0),
+        verify_now(&mut driver, C0),
         Ok(Event::VerificationFailed(C0))
     );
 
@@ -1012,7 +1131,7 @@ fn floor_fault_is_reported() {
     });
 
     driver.stage_firmware(C0).expect("stage failed");
-    driver.verify_firmware(C0).expect("verify failed");
+    verify_now(&mut driver, C0).expect("verify failed");
 
     assert_eq!(driver.commit_svn_floor(C0), Err(DriverError::SvnFloorFault));
 }
@@ -1022,10 +1141,10 @@ fn floor_fault_is_reported() {
 #[test]
 fn reports_reach_the_board_sink() {
     let mut driver = PlatformDriver::<MockBoard, 1>::new(Board {
-        verifier: XorVerifier {
+        verifier: Immediate::new(XorVerifier {
             fault: false,
             svn: 0,
-        },
+        }),
         ..mock_board()
     });
 
@@ -1052,10 +1171,10 @@ fn reports_reach_the_board_sink() {
 #[test]
 fn reporting_an_isolated_component_does_not_lock_the_platform() {
     let mut driver = PlatformDriver::<MockBoard, 2>::new(Board {
-        verifier: XorVerifier {
+        verifier: Immediate::new(XorVerifier {
             fault: false,
             svn: 0,
-        },
+        }),
         ..mock_board()
     });
     let mut chain = heapless::Vec::<_, 2>::new();
@@ -1067,11 +1186,487 @@ fn reporting_an_isolated_component_does_not_lock_the_platform() {
         .unwrap();
     let mut orch = Orchestrator::<2, 6>::new(chain.try_into().unwrap(), 3);
 
-    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    dispatch_settled(
+        &mut orch,
+        &mut driver,
+        Event::PowerGood(PowerOnResult::Provisioned),
+    );
     assert_eq!(orch.state(), State::Ready, "both components verified");
 
     orch.dispatch(&mut driver, Event::CorruptionDetected(C1));
 
     assert_eq!(orch.state(), State::Ready, "contained, not locked");
     assert_eq!(driver.board().report_sink.seen, [Report::Isolated(C1)]);
+}
+
+// ---------------------------------------------------------------------------
+// Asynchronous verification.
+// ---------------------------------------------------------------------------
+
+/// What a [`ScriptedVerifier`] answers once its pending polls run out.
+#[derive(Clone, Copy)]
+enum Scripted {
+    Done(Verdict),
+    TimedOut,
+    Fault,
+}
+
+/// An [`Verifier`] the test drives: `Pending` for a set number of polls,
+/// then the scripted outcome. Records starts and cancels.
+struct ScriptedVerifier {
+    pending: u32,
+    outcome: Scripted,
+    running: bool,
+    starts: u32,
+    cancels: u32,
+    /// When a check that is still pending gives up, in milliseconds.
+    deadline: Option<u64>,
+    /// Starts after this many have been made fail.
+    fail_after: Option<u32>,
+}
+
+impl ScriptedVerifier {
+    fn new(pending: u32, outcome: Scripted) -> Self {
+        Self {
+            pending,
+            outcome,
+            running: false,
+            starts: 0,
+            cancels: 0,
+            deadline: None,
+            fail_after: None,
+        }
+    }
+}
+
+impl Verifier for ScriptedVerifier {
+    type Error = VerifierError;
+
+    fn start(
+        &mut self,
+        _id: ComponentId,
+        _image: &mut impl ImageSource,
+    ) -> Result<(), VerifierError> {
+        self.starts += 1;
+        if self.fail_after.is_some_and(|n| self.starts > n) {
+            return Err(VerifierError);
+        }
+        self.running = true;
+        Ok(())
+    }
+
+    fn poll(&mut self, now_millis: u64) -> Result<VerifyStatus, VerifierError> {
+        let pending = VerifyStatus::Pending {
+            deadline_millis: self.deadline,
+        };
+        if !self.running {
+            return Ok(pending);
+        }
+        if self.deadline.is_some_and(|at| now_millis >= at) {
+            self.running = false;
+            return Ok(VerifyStatus::TimedOut);
+        }
+        if self.pending > 0 {
+            self.pending -= 1;
+            return Ok(pending);
+        }
+        self.running = false;
+        match self.outcome {
+            Scripted::Done(verdict) => Ok(VerifyStatus::Done(verdict)),
+            Scripted::TimedOut => Ok(VerifyStatus::TimedOut),
+            Scripted::Fault => Err(VerifierError),
+        }
+    }
+
+    fn cancel(&mut self) -> Result<(), VerifierError> {
+        self.cancels += 1;
+        self.running = false;
+        Ok(())
+    }
+}
+
+struct ScriptedBoard;
+
+impl BoardCapabilities for ScriptedBoard {
+    type Image = MemImage;
+    type Verifier = ScriptedVerifier;
+    type BootControl = MockReset;
+    type BootWatch = MockWalk;
+    type SvnFloor = MockFloor;
+    type ReportSink = RecordingSink;
+}
+
+fn scripted_driver(pending: u32, outcome: Scripted) -> PlatformDriver<ScriptedBoard, 1> {
+    scripted_driver_with_deadline(pending, outcome, None)
+}
+
+fn scripted_driver_with_deadline(
+    pending: u32,
+    outcome: Scripted,
+    deadline: Option<u64>,
+) -> PlatformDriver<ScriptedBoard, 1> {
+    scripted_driver_with_walk(pending, outcome, deadline, MockWalk::idle())
+}
+
+fn scripted_driver_with_walk(
+    pending: u32,
+    outcome: Scripted,
+    deadline: Option<u64>,
+    walk: MockWalk,
+) -> PlatformDriver<ScriptedBoard, 1> {
+    let mut verifier = ScriptedVerifier::new(pending, outcome);
+    verifier.deadline = deadline;
+    PlatformDriver::new(Board {
+        images: [MemImage::holding(valid_image())],
+        verifier,
+        boot_controls: [MockReset::new()],
+        boot_watches: [walk],
+        component_kinds: [ComponentKind::Passive],
+        svn_floors: [SvnFloorBinding::Erot(MockFloor::new())],
+        report_sink: RecordingSink::new(),
+    })
+}
+
+const AUTHENTICATED: Verdict = Verdict::Authenticated { svn: Svn(MOCK_SVN) };
+
+// A slow verifier holds the verdict back without holding the driver: starting
+// returns at once, polling says nothing until the check answers, and the
+// verdict is delivered once.
+#[test]
+fn a_pending_check_holds_back_the_verdict() {
+    let mut driver = scripted_driver(2, Scripted::Done(AUTHENTICATED));
+    driver.stage_firmware(C0).unwrap();
+
+    assert_eq!(driver.start_verify(C0), Ok(()));
+    assert_eq!(driver.poll_verify(0), Ok(None));
+    assert_eq!(driver.poll_verify(0), Ok(None));
+    assert_eq!(
+        driver.poll_verify(0),
+        Ok(Some(Event::VerificationPassed(C0)))
+    );
+    assert_eq!(driver.poll_verify(0), Ok(None));
+    assert_eq!(driver.board().verifier.starts, 1);
+}
+
+// A check that ran past its deadline is a failed verification, not a verdict
+// and not a lock: the machine recovers the component. No verification completed, so
+// no SVN is recorded for the commit.
+#[test]
+fn a_timed_out_check_reports_failure_and_records_no_svn() {
+    let mut driver = scripted_driver(0, Scripted::TimedOut);
+    driver.stage_firmware(C0).unwrap();
+    driver.start_verify(C0).unwrap();
+
+    assert_eq!(
+        driver.poll_verify(0),
+        Ok(Some(Event::VerificationFailed(C0)))
+    );
+    assert_eq!(
+        driver.commit_svn_floor(C0),
+        Err(DriverError::NoVerifiedImage)
+    );
+}
+
+// A verifier that cannot carry the check through is a fault, which ends the
+// check; the run loop answers it with EffectFailed.
+#[test]
+fn a_failed_poll_ends_the_check_with_a_fault() {
+    let mut driver = scripted_driver(0, Scripted::Fault);
+    driver.stage_firmware(C0).unwrap();
+    driver.start_verify(C0).unwrap();
+
+    assert_eq!(driver.poll_verify(0), Err(DriverError::VerifierFault));
+    assert_eq!(driver.poll_verify(0), Ok(None), "nothing left outstanding");
+}
+
+// Re-staging replaces the image the outstanding check is verifying, so the check
+// is cancelled and its answer never reaches the machine.
+#[test]
+fn restaging_cancels_the_outstanding_check() {
+    let mut driver = scripted_driver(5, Scripted::Done(AUTHENTICATED));
+    driver.stage_firmware(C0).unwrap();
+    driver.start_verify(C0).unwrap();
+
+    driver.stage_firmware(C0).unwrap();
+
+    assert_eq!(driver.board().verifier.cancels, 1);
+    assert_eq!(driver.poll_verify(0), Ok(None), "the old check is gone");
+}
+
+// Starting a second check cancels the first, so only one is ever outstanding.
+#[test]
+fn starting_again_cancels_the_first_check() {
+    let mut driver = scripted_driver(1, Scripted::Done(AUTHENTICATED));
+    driver.stage_firmware(C0).unwrap();
+    driver.start_verify(C0).unwrap();
+
+    driver.start_verify(C0).unwrap();
+
+    assert_eq!(driver.board().verifier.cancels, 1);
+    assert_eq!(driver.board().verifier.starts, 2);
+    assert_eq!(driver.poll_verify(0), Ok(None));
+    assert_eq!(
+        driver.poll_verify(0),
+        Ok(Some(Event::VerificationPassed(C0)))
+    );
+}
+
+// Until a new check answers, the earlier authenticated reading must not reach
+// the irreversible floor commit.
+#[test]
+fn starting_a_check_voids_the_earlier_svn() {
+    let mut driver = scripted_driver(0, Scripted::Done(AUTHENTICATED));
+    driver.stage_firmware(C0).unwrap();
+    driver.start_verify(C0).unwrap();
+    assert_eq!(
+        driver.poll_verify(0),
+        Ok(Some(Event::VerificationPassed(C0)))
+    );
+    assert_eq!(driver.commit_svn_floor(C0), Ok(()));
+
+    driver.start_verify(C0).unwrap();
+
+    assert_eq!(
+        driver.commit_svn_floor(C0),
+        Err(DriverError::NoVerifiedImage)
+    );
+}
+
+// The full path through the machine with a slow verifier: PowerGood starts
+// the check and the machine waits in PreSupervision; only the polled verdict
+// carries it to Ready.
+#[test]
+fn the_machine_waits_for_a_slow_verdict() {
+    let mut orch = orchestrator();
+    let mut driver = scripted_driver(2, Scripted::Done(AUTHENTICATED));
+
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    assert_eq!(orch.state(), State::PreSupervision, "verdict not in yet");
+
+    assert_eq!(driver.poll_verify(0), Ok(None));
+    assert_eq!(driver.poll_verify(0), Ok(None));
+    let verdict = driver.poll_verify(0).unwrap().expect("verdict");
+    orch.dispatch(&mut driver, verdict);
+
+    assert_eq!(orch.state(), State::Ready);
+}
+
+/// Delegates to the driver and records the effects the machine emitted.
+struct Recording<'a, P: Platform> {
+    inner: &'a mut P,
+    effects: std::vec::Vec<Effect>,
+}
+
+impl<P: Platform> Platform for Recording<'_, P> {
+    fn execute(
+        &mut self,
+        effect: Effect,
+    ) -> Result<Option<Event>, openprot_orchestrator_sm::EffectError> {
+        self.effects.push(effect);
+        self.inner.execute(effect)
+    }
+}
+
+// A timeout reaches the machine as a failed verification, so it asks for the
+// component to be recovered. It does not report a fault, which would lock the
+// platform. (The driver has no recovery executor yet, so the request itself
+// still fails closed; that gap is separate from this one.)
+#[test]
+fn a_timeout_asks_the_machine_to_recover_the_component() {
+    let mut orch = orchestrator();
+    let mut driver = scripted_driver(0, Scripted::TimedOut);
+
+    orch.dispatch(&mut driver, Event::PowerGood(PowerOnResult::Provisioned));
+    let verdict = driver.poll_verify(0).unwrap().expect("a timeout answers");
+    assert_eq!(verdict, Event::VerificationFailed(C0));
+
+    let mut recording = Recording {
+        inner: &mut driver,
+        effects: std::vec::Vec::new(),
+    };
+    orch.dispatch(&mut recording, verdict);
+
+    assert!(
+        recording
+            .effects
+            .contains(&Effect::RecoverComponent { id: C0, attempt: 0 }),
+        "the machine asked for recovery: {:?}",
+        recording.effects
+    );
+}
+
+// The run loop sleeps until the verifier's deadline, because a verifier that
+// has stopped answering sends no signal. The deadline arrives with the first
+// poll after start, and is gone once the check ends.
+#[test]
+fn the_driver_reports_the_verifiers_deadline_only_while_a_check_is_outstanding() {
+    let mut driver = scripted_driver_with_deadline(1, Scripted::Done(AUTHENTICATED), Some(100));
+    driver.stage_firmware(C0).unwrap();
+    assert_eq!(driver.next_verify_deadline(), None, "nothing started yet");
+
+    driver.start_verify(C0).unwrap();
+    assert_eq!(
+        driver.next_verify_deadline(),
+        None,
+        "not learnt until a poll"
+    );
+
+    assert_eq!(driver.poll_verify(10), Ok(None));
+    assert_eq!(driver.next_verify_deadline(), Some(100));
+    assert_eq!(
+        driver.poll_verify(20),
+        Ok(Some(Event::VerificationPassed(C0)))
+    );
+    assert_eq!(driver.next_verify_deadline(), None, "the check ended");
+}
+
+// A verifier that never answers: still pending before its deadline, a failed
+// verification at it, so the machine recovers the component.
+#[test]
+fn a_silent_verifier_times_out_when_polled_at_its_deadline() {
+    let mut driver =
+        scripted_driver_with_deadline(u32::MAX, Scripted::Done(AUTHENTICATED), Some(100));
+    driver.stage_firmware(C0).unwrap();
+    driver.start_verify(C0).unwrap();
+
+    assert_eq!(driver.poll_verify(99), Ok(None));
+    assert_eq!(driver.next_verify_deadline(), Some(100));
+    assert_eq!(
+        driver.poll_verify(100),
+        Ok(Some(Event::VerificationFailed(C0)))
+    );
+    assert_eq!(driver.next_verify_deadline(), None);
+    assert_eq!(
+        driver.commit_svn_floor(C0),
+        Err(DriverError::NoVerifiedImage)
+    );
+}
+
+// A check that finishes inside start has no deadline for the loop to wake for.
+#[test]
+fn a_verifier_that_finishes_inside_start_has_no_deadline() {
+    let mut driver = driver([MemImage::holding(valid_image())]);
+    driver.stage_firmware(C0).unwrap();
+    driver.start_verify(C0).unwrap();
+    driver.poll_verify(0).unwrap();
+
+    assert_eq!(driver.next_verify_deadline(), None);
+}
+
+// An earlier authenticated reading must not survive a new check, even one the
+// verifier cannot start: the SVN is voided before the verifier is asked.
+#[test]
+fn a_check_that_cannot_start_still_voids_the_recorded_svn() {
+    let mut verifier = ScriptedVerifier::new(0, Scripted::Done(AUTHENTICATED));
+    verifier.fail_after = Some(1);
+    let mut driver = PlatformDriver::<ScriptedBoard, 1>::new(Board {
+        images: [MemImage::holding(valid_image())],
+        verifier,
+        boot_controls: [MockReset::new()],
+        boot_watches: [MockWalk::idle()],
+        component_kinds: [ComponentKind::Passive],
+        svn_floors: [SvnFloorBinding::Erot(MockFloor::new())],
+        report_sink: RecordingSink::new(),
+    });
+    driver.stage_firmware(C0).unwrap();
+    driver.start_verify(C0).unwrap();
+    assert_eq!(
+        driver.poll_verify(0),
+        Ok(Some(Event::VerificationPassed(C0)))
+    );
+
+    assert_eq!(driver.start_verify(C0), Err(DriverError::VerifierFault));
+
+    assert_eq!(
+        driver.commit_svn_floor(C0),
+        Err(DriverError::NoVerifiedImage),
+        "the earlier reading must be gone"
+    );
+}
+
+// poll: the one call a run loop makes. It polls the verification and the boot
+// walks and reports the earliest wake-up, so the loop cannot sleep without
+// the deadline of a check it has just started.
+#[test]
+fn poll_learns_a_new_checks_deadline_in_one_call() {
+    let mut driver =
+        scripted_driver_with_deadline(u32::MAX, Scripted::Done(AUTHENTICATED), Some(100));
+    driver.stage_firmware(C0).unwrap();
+    driver.start_verify(C0).unwrap();
+
+    assert_eq!(
+        driver.poll(0),
+        Ok(DriverPoll::Idle {
+            next_wake_millis: Some(100)
+        })
+    );
+}
+
+#[test]
+fn poll_reports_the_earliest_of_the_verifier_and_the_walks() {
+    for (walk_at, verify_at, expected) in [(50, 100, 50), (500, 100, 100)] {
+        let walk = MockWalk::scripted(std::vec![WalkVerdict::Waiting {
+            deadline_millis: walk_at,
+        }]);
+        let mut driver = scripted_driver_with_walk(
+            u32::MAX,
+            Scripted::Done(AUTHENTICATED),
+            Some(verify_at),
+            walk,
+        );
+        driver.stage_firmware(C0).unwrap();
+        driver.start_verify(C0).unwrap();
+        driver.release_reset(C0).unwrap();
+
+        assert_eq!(
+            driver.poll(0),
+            Ok(DriverPoll::Idle {
+                next_wake_millis: Some(expected)
+            }),
+            "walk at {walk_at}, verifier at {verify_at}"
+        );
+    }
+}
+
+#[test]
+fn poll_returns_the_verification_before_the_walks() {
+    let walk = MockWalk::scripted(std::vec![WalkVerdict::Complete]);
+    let mut driver = scripted_driver_with_walk(0, Scripted::Done(AUTHENTICATED), None, walk);
+    driver.stage_firmware(C0).unwrap();
+    driver.start_verify(C0).unwrap();
+    driver.release_reset(C0).unwrap();
+
+    assert_eq!(
+        driver.poll(0),
+        Ok(DriverPoll::Event(Event::VerificationPassed(C0)))
+    );
+    assert_eq!(driver.poll(0), Ok(DriverPoll::Event(Event::Booted(C0))));
+    assert_eq!(
+        driver.poll(0),
+        Ok(DriverPoll::Idle {
+            next_wake_millis: None
+        }),
+        "each event is delivered once, then the loop is quiet"
+    );
+}
+
+#[test]
+fn poll_with_nothing_outstanding_is_quiet() {
+    let mut driver = scripted_driver(0, Scripted::Done(AUTHENTICATED));
+
+    assert_eq!(
+        driver.poll(0),
+        Ok(DriverPoll::Idle {
+            next_wake_millis: None
+        })
+    );
+}
+
+#[test]
+fn poll_passes_a_verifier_fault_through() {
+    let mut driver = scripted_driver(0, Scripted::Fault);
+    driver.stage_firmware(C0).unwrap();
+    driver.start_verify(C0).unwrap();
+
+    assert_eq!(driver.poll(0), Err(DriverError::VerifierFault));
 }
