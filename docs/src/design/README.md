@@ -14,6 +14,9 @@ of the project.
     objects to communicate between two `pw_kernel` userspace processes.
     Worked example lives at
     [`target/veer/ipc/`](https://github.com/OpenPRoT/openprot/tree/main/target/veer/ipc).
+-   [**Thread priorities**](./thread-priorities.md): How `pw_kernel` schedules
+    threads (strict priority, no inheritance) and the scheme servers and
+    clients follow, so that a server never ranks below its clients.
 -   [**Orchestrator**](./orchestrator/orchestrator-overview.md): The eRoT boot-sequence state
     machine (`services/orchestrator/sm`). Covers the two-tier firmware
     verification model (`ComponentAttrs`, eRoT gate, iRoT gate), the
