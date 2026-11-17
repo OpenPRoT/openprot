@@ -15,6 +15,14 @@ pub(crate) fn unlock_scu_writes(mmio: &crate::Mmio<ScuBlock>) {
     mmio.write_reg(0x000, SCU_UNLOCK_KEY);
 }
 
+/// Write-protect the SCU's protected registers again: any value other than [`SCU_UNLOCK_KEY`]
+/// re-asserts protection, per the standard Aspeed SCU protection-key convention (same key across
+/// their SCU family). The pin-mux route path calls this once it's done applying a boot-time mux —
+/// nothing after boot has a legitimate reason to need the SCU open for writes.
+pub(crate) fn lock_scu_writes(mmio: &crate::Mmio<ScuBlock>) {
+    mmio.write_reg(0x000, 0);
+}
+
 /// Safe wrapper around the AST10x0 SCU register block.
 pub struct ScuRegisters {
     base: *const device::scu::RegisterBlock,

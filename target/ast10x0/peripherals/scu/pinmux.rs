@@ -11,7 +11,7 @@
 //! work, not done here.
 
 use super::pins::ScuBlock;
-use super::registers::unlock_scu_writes;
+use super::registers::{lock_scu_writes, unlock_scu_writes};
 use crate::Mmio;
 use openprot_hal::field_mux::MuxRoutes;
 
@@ -21,4 +21,5 @@ pub fn route<H: MuxRoutes>(_handle: H) {
     unlock_scu_writes(&scu);
     // HACK: full MAX_REGS-wide COALESCED lands in rodata; exact-N trim dropped to shed generic_const_exprs.
     openprot_hal::field_mux::apply(&scu, const { &H::COALESCED }.as_slice());
+    lock_scu_writes(&scu);
 }
