@@ -71,6 +71,25 @@ rust_library(
 )
 
 rust_library(
+    name = "mci",
+    srcs = ["mci.rs"],
+    crate_name = "veer_mci",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//target/veer/registers",
+        "//third_party/caliptra:crate_tock-registers",
+        "@rust_crates//:bitflags",
+    ],
+)
+
+# Host tests of the driver against the registers as memory.
+rust_test(
+    name = "mci_test",
+    crate = ":mci",
+)
+
+rust_library(
     name = "rng",
     srcs = ["rng.rs"],
     crate_name = "veer_rng",
