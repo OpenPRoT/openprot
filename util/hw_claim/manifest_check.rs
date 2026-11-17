@@ -7,11 +7,13 @@
 //!
 //! Reads `system.json5` directly — not an assembled image — before anything
 //! compiles. A pin conflict is read from two `pin_claims_<process>` manifest
-//! constants (comma-separated pin names); an MMIO conflict is read straight
-//! from each process's own `memory_mappings` (`type: "device"`) — a granted
-//! device range *is* the claim for MMIO, unlike a pin, where holding a
-//! register-block grant doesn't say which bit within it is actually driven.
-//! No separate "mmio claims" constant is needed.
+//! constants (comma-separated `pin:capability` pairs, e.g. `scu410_0:gpio` —
+//! the capability tag picks which `Routes<C>` impl the kernel's boot-time
+//! routing flushes for that pin; see `kernel_pin_routes.rs.jinja`); an MMIO
+//! conflict is read straight from each process's own `memory_mappings`
+//! (`type: "device"`) — a granted device range *is* the claim for MMIO,
+//! unlike a pin, where holding a register-block grant doesn't say which bit
+//! within it is actually driven. No separate "mmio claims" constant is needed.
 
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -72,6 +74,28 @@ enum ConstConfig {
     String { name: String, value: String },
 }
 
+/// Capability tags a `pin_claims_<process>` entry may declare after its `:` — must match the
+/// branches `kernel_pin_routes.rs.jinja` picks a `Routes<C>` impl from, so the two can only drift
+/// by someone forgetting to update both when a new capability is added.
+const VALID_CAPABILITY_TAGS: &[&str] = &["gpio"];
+
+/// Split one `pin_claims_<process>` entry (`pin:capability`) and check the tag is one
+/// `kernel_pin_routes.rs.jinja` knows how to route. `Ok` carries just the pin name — the
+/// capability tag has done its job once it's validated.
+fn parse_pin_claim(claim: &str) -> Result<&str, String> {
+    let Some((pin, capability)) = claim.split_once(':') else {
+        return Err(format!(
+            "pin claim '{claim}' is missing a ':<capability>' tag"
+        ));
+    };
+    if !VALID_CAPABILITY_TAGS.contains(&capability) {
+        return Err(format!(
+            "pin claim '{claim}' names unknown capability '{capability}'"
+        ));
+    }
+    Ok(pin)
+}
+
 struct MmioClaim {
     label: String,
     start: u64,
@@ -128,8 +152,16 @@ fn main() {
                 continue;
             };
             let label = format!("{}: {process}", app.name);
-            for pin in value.split(',').map(str::trim).filter(|p| !p.is_empty()) {
+            for claim in value.split(',').map(str::trim).filter(|p| !p.is_empty()) {
                 pins_checked += 1;
+                let pin = match parse_pin_claim(claim) {
+                    Ok(pin) => pin,
+                    Err(e) => {
+                        eprintln!("{label}: {e}");
+                        conflicts += 1;
+                        continue;
+                    }
+                };
                 if let Some(prior) = claimed_pins.insert(pin.to_string(), label.clone()) {
                     eprintln!("pin {pin} is driven by both {prior} and {label}");
                     conflicts += 1;
@@ -173,6 +205,21 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_pin_claim_accepts_a_known_capability() {
+        assert_eq!(parse_pin_claim("scu410_0:gpio"), Ok("scu410_0"));
+    }
+
+    #[test]
+    fn parse_pin_claim_rejects_a_missing_tag() {
+        assert!(parse_pin_claim("scu410_0").is_err());
+    }
+
+    #[test]
+    fn parse_pin_claim_rejects_an_unknown_capability() {
+        assert!(parse_pin_claim("scu410_0:not_a_real_capability").is_err());
+    }
 
     fn claim(label: &str, start: u64, end: u64) -> MmioClaim {
         MmioClaim {

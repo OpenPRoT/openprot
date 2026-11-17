@@ -10,6 +10,12 @@
 /// hand-restated: a pin an app claims to drive is routed by construction, so this list can never
 /// drift from the manifest the way a kernel-side copy of the same names could.
 ///
+/// Each entry is a `pin:capability` pair (e.g. `scu410_0:gpio`); the capability tag picks which
+/// `Routes<C>` impl this flushes for that pin — a pin can carry more than one capability (e.g. a
+/// pin muxable as either GPIO or an I2C role), so the manifest has to say which one the claiming
+/// process means. Add a tag by adding another template branch below with the capability's real
+/// type path.
+///
 /// All of them route through one call, as a single tuple: `scu::route` folds every handle's
 /// `MuxRoutes::COALESCED` together at compile time, so pins sharing an SCU register cost one RMW
 /// instead of one each, and two pins that contradict each other on a shared bit fail to compile
@@ -20,7 +26,7 @@
 /// that claims one of these pins to drive it has started.
 pub unsafe fn route_claimed_pins() {
     ast10x0_peripherals::scu::route((
-{% for app in apps %}{% for process in app.processes %}{% for c in app.constants %}{% if c.type == "string" and c.name == "pin_claims_" ~ process.name %}{% for raw in c.value | split(",") %}{% set pin = raw | trim %}{% if pin %}        openprot_hal::field_mux::Route::<ast10x0_peripherals::gpio::Gpio, _>::new(unsafe {
+{% for app in apps %}{% for process in app.processes %}{% for c in app.constants %}{% if c.type == "string" and c.name == "pin_claims_" ~ process.name %}{% for raw in c.value | split(",") %}{% set claim = raw | trim %}{% if claim %}{% set parts = claim | split(":") %}{% set pin = parts[0] | trim %}{% set cap = parts[1] | trim %}        openprot_hal::field_mux::Route::<{% if cap == "gpio" %}ast10x0_peripherals::gpio::Gpio{% else %}compile_error_unknown_pin_capability_tag_{{cap}}{% endif %}, _>::new(unsafe {
             ast10x0_peripherals::scu::pins::{{pin}}::take()
         }),
 {% endif %}{% endfor %}{% endif %}{% endfor %}{% endfor %}{% endfor %}    ));

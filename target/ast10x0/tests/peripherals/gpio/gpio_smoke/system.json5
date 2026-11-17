@@ -29,7 +29,7 @@
                     // one that actually drives them.
                     type: "string",
                     name: "pin_claims_gpio_smoke_process",
-                    value: "scu410_0,scu410_1,scu410_3,scu410_4",
+                    value: "scu410_0:gpio,scu410_1:gpio,scu410_3:gpio,scu410_4:gpio",
                 },
             ],
             processes: [

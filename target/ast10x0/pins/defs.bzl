@@ -5,11 +5,14 @@
 
 A `pin_claims_<process_name>` string constant in the manifest's `apps[].constants` (the same
 `AppConfig.constants` Pigweed already renders into Rust, no schema patch needed) names the pins
-that process may drive, comma-separated. `app_pin_claims` turns that one list into a `PinClaims`
-struct and a `take_pin_claims()` mint, handing back exactly those pins as real, driveable
-`ast10x0_peripherals::scu::pins` tokens — holding one is the only authority `into_output`/
-`into_input` require. `//util/hw_claim:manifest_check` reads the same manifest constant
-independently to check for cross-app conflicts — no build-time record is needed for that.
+that process may drive, comma-separated `pin:capability` pairs (e.g. `scu410_0:gpio`). The
+capability tag only matters to the kernel's own boot-time routing (see
+`//target/ast10x0/pins:kernel_pin_routes.rs.jinja`) — it picks which `Routes<C>` impl to flush for
+a pin that could carry more than one capability; `app_pin_claims` drops the tag and turns the pin
+names alone into a `PinClaims` struct and a `take_pin_claims()` mint, handing back exactly those
+pins as real, driveable `ast10x0_peripherals::scu::pins` tokens — holding one is the only authority
+`into_output`/`into_input` require. `//util/hw_claim:manifest_check` reads the same manifest
+constant independently to check for cross-app conflicts — no build-time record is needed for that.
 """
 
 load("@rules_rust//rust:defs.bzl", "rust_library")
