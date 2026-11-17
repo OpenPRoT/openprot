@@ -38,6 +38,7 @@ string_flag(
         "silicon",
         "fpga",
         "emulator",
+        "ast1080",
     ],
 )
 
@@ -64,6 +65,12 @@ config_setting(
     visibility = ["//util:__subpackages__"],
 )
 
+# ASPEED AST1080 Caliptra-SS MCU.
+config_setting(
+    name = "ast1080",
+    flag_values = {":target_type": "ast1080"},
+)
+
 constraint_value(
     name = "target_veer",
     constraint_setting = "@pigweed//pw_kernel/target:target",
@@ -82,6 +89,7 @@ rust_library(
         ":emulator": ["emulator"],
         ":fpga": ["fpga"],
         ":silicon": ["silicon"],
+        ":ast1080": ["ast1080"],
         "//conditions:default": [],
     }),
     edition = "2024",
@@ -104,6 +112,7 @@ rust_library(
         ":emulator": ["emulator"],
         ":fpga": ["fpga"],
         ":silicon": ["silicon"],
+        ":ast1080": ["ast1080"],
         "//conditions:default": [],
     }),
     crate_name = "console_backend",
@@ -124,6 +133,7 @@ rust_library(
         ":emulator": ["emulator"],
         ":fpga": ["fpga"],
         ":silicon": ["silicon"],
+        ":ast1080": ["ast1080"],
         "//conditions:default": [],
     }),
     crate_name = "kernel_config",
@@ -133,9 +143,30 @@ rust_library(
     deps = [
         "@pigweed//pw_kernel/config:kernel_config_interface",
         "@pigweed//pw_kernel/lib/memory_config",
+        ":ast1080_memory_map",
         "@rust_caliptra_crates//:caliptra-mcu-config-emulator",
         "@rust_caliptra_crates//:caliptra-mcu-config-fpga",
     ],
+)
+
+# Single AST1080 memory map, used by :config (MCU) and the host-side
+# render_system_config tool. The two sides get caliptra-mcu-config from
+# different crate repos, so pick the one matching the build platform.
+rust_library(
+    name = "ast1080_memory_map",
+    srcs = ["ast1080_memory_map.rs"],
+    edition = "2024",
+    visibility = [":__subpackages__"],
+    deps = select({
+        "@platforms//os:none": [
+            "@rust_caliptra_crates//:caliptra-mcu-config",
+            "@rust_caliptra_crates//:caliptra-mcu-config-emulator",
+        ],
+        "//conditions:default": [
+            "@rust_caliptra_crates_host//:caliptra-mcu-config",
+            "@rust_caliptra_crates_host//:caliptra-mcu-config-emulator",
+        ],
+    }),
 )
 
 filegroup(
