@@ -13,6 +13,7 @@
 use arch_riscv::Arch;
 use target_common::{declare_target, TargetInterface};
 use veer_handoff::Handoff;
+use veer_mci::{Mci, Milestones};
 use veer_wdt::Wdt;
 use {codegen as _, console_backend as _, entry as _};
 
@@ -53,6 +54,17 @@ fn log_handoff() {
     );
 }
 
+/// Logs why the MCU was reset and records in the MCI that the kernel has
+/// started.
+fn record_boot() {
+    // SAFETY: this code runs in the kernel, which can access the MCI
+    // registers, and no other code in this image writes the registers that
+    // the driver uses.
+    let mut mci = unsafe { Mci::new(kernel_config::MCI_BASE) };
+    pw_log::info!("MCU reset reason: {}", mci.reset_reason().name() as &str);
+    mci.set_milestones(Milestones::FIRMWARE_OS_INITIALIZED);
+}
+
 pub struct Target {}
 
 impl TargetInterface for Target {
@@ -61,6 +73,7 @@ impl TargetInterface for Target {
     fn main() -> ! {
         init_hardware();
         log_handoff();
+        record_boot();
         pw_log::info!("OpenPRoT Caliptra MCU runtime: kernel started");
         // The bootstrap thread has nothing left to do.
         loop {

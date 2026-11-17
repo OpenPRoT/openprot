@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Boots the runtime image and checks that it has read the handoff table of
-//! the MCU ROM and stopped the watchdog that the ROM starts.
+//! the MCU ROM, read the reset reason, recorded its milestone in the MCI and
+//! stopped the watchdog that the ROM starts.
 //!
 //! The ROM's watchdog period is 800 million clock cycles, and the test does
 //! not wait for it to pass. `//target/veer/tests/wdt` checks that a stopped
@@ -20,6 +21,14 @@ const KERNEL_STARTED: &str = "kernel started";
 /// Start of the line that `target.rs` logs when it has read a valid handoff
 /// table.
 const HANDOFF_READ: &str = "ROM handoff table 1.";
+
+/// The line that `target.rs` logs for the reset reason. The ROM starts the
+/// first image after a power-on with this reason.
+const RESET_REASON: &str = "MCU reset reason: firmware boot";
+
+/// `FIRMWARE_OS_INITIALIZED` in the milestone half of the MCI's firmware flow
+/// status.
+const OS_INITIALIZED: u32 = 1 << 24;
 
 const TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -41,6 +50,15 @@ fn reads_the_handoff_and_stops_the_rom_watchdog() {
     assert!(
         log.contains(HANDOFF_READ),
         "the image did not read the ROM's handoff table"
+    );
+    assert!(
+        log.contains(RESET_REASON),
+        "the image did not log a firmware boot as the reset reason"
+    );
+    assert_ne!(
+        hw.mci_flow_status() & OS_INITIALIZED,
+        0,
+        "the image did not record that the kernel started"
     );
 
     let (enabled, period, t1_timeout, t2_timeout, nmi) = hw.mcu_manager().with_mci(|mci| {

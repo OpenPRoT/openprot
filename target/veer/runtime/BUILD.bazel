@@ -49,6 +49,7 @@ rust_binary(
         "//target/veer:config",
         "//target/veer:entry",
         "//target/veer/peripherals:handoff",
+        "//target/veer/peripherals:mci",
         "//target/veer/peripherals:wdt",
         "@pigweed//pw_kernel/arch/riscv:arch_riscv",
         "@pigweed//pw_kernel/kernel",
