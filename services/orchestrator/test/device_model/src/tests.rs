@@ -106,12 +106,12 @@ fn a_reset_mid_boot_restarts_the_delay() {
     assert_eq!(d.poll(60), Phase::Held);
     assert!(!d.ready());
 
-    d.set_reset(false, 40);
+    d.set_reset(false, 70);
     assert_eq!(d.releases(), 2);
-    assert_eq!(d.poll(89), Phase::Booting);
-    assert_eq!(d.poll(90), Phase::Ready);
+    assert_eq!(d.poll(119), Phase::Booting);
+    assert_eq!(d.poll(120), Phase::Ready);
     // The first attempt never reported, so there is exactly one rise.
-    assert_eq!(d.take_transition(), Some(up(90)));
+    assert_eq!(d.take_transition(), Some(up(120)));
     assert_eq!(d.take_transition(), None);
 }
 

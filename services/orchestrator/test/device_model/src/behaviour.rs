@@ -7,8 +7,7 @@
 /// of reset; the last entry repeats once the script runs out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Behaviour {
-    /// Never raises ready. The orchestrator finds out by its deadline
-    /// expiring, which is the only way it ever finds out.
+    /// Never raises ready.
     Hang,
     /// Raises ready `after_millis` after the release and stays up. A boot
     /// that is late rather than healthy is this variant with a delay past
