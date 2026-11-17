@@ -23,7 +23,7 @@
 #![no_std]
 #![warn(missing_docs)]
 
-use core::cell::RefCell;
+use core::cell::{Ref, RefCell, RefMut};
 
 use mctp_lib::config;
 use openprot_mctp_api::wire::{self, MctpRequestHeader, MctpResponseHeader};
@@ -50,6 +50,24 @@ pub struct IpcMctpClient {
     inner: RefCell<ClientBuffers>,
 }
 
+/// The error for a failure of the client itself: a request that does not fit its
+/// buffer, or a use of the buffers while they are already in use.
+fn internal_error() -> MctpError {
+    MctpError::from_code(ResponseCode::InternalError)
+}
+
+/// Copy as much of `src` as fits in `dst`. Returns the number of bytes copied.
+///
+/// The copy has no length check that can panic, unlike `copy_from_slice`.
+fn copy_prefix(dst: &mut [u8], src: &[u8]) -> usize {
+    let mut copied = 0;
+    for (d, s) in dst.iter_mut().zip(src) {
+        *d = *s;
+        copied += 1;
+    }
+    copied
+}
+
 impl IpcMctpClient {
     /// Create a new IPC MCTP client bound to the given channel handle.
     ///
@@ -70,17 +88,32 @@ impl IpcMctpClient {
         self.handle
     }
 
+    /// Borrow the buffers for writing. The buffers are in use only within one
+    /// call, so this fails only if a call re-enters the client, and it then
+    /// returns an error instead of panicking.
+    fn buffers_mut(&self) -> Result<RefMut<'_, ClientBuffers>, MctpError> {
+        self.inner.try_borrow_mut().map_err(|_| internal_error())
+    }
+
+    /// Borrow the buffers for reading; fails as [`Self::buffers_mut`] does.
+    fn buffers(&self) -> Result<Ref<'_, ClientBuffers>, MctpError> {
+        self.inner.try_borrow().map_err(|_| internal_error())
+    }
+
     /// Encode, send, and decode a transaction.
     fn transact(&self, req_len: usize) -> Result<(MctpResponseHeader, usize), MctpError> {
         let resp_len = self.send_recv(req_len)?;
-        let inner = self.inner.borrow();
+        let inner = self.buffers()?;
 
-        if resp_len < MctpResponseHeader::SIZE || resp_len > MAX_RESPONSE_SIZE {
-            return Err(MctpError::from_code(ResponseCode::InternalError));
+        if resp_len < MctpResponseHeader::SIZE {
+            return Err(internal_error());
         }
+        let response = inner
+            .response_buf
+            .get(..resp_len)
+            .ok_or_else(internal_error)?;
 
-        let header = wire::decode_response_header(&inner.response_buf[..resp_len])
-            .map_err(|_| MctpError::from_code(ResponseCode::InternalError))?;
+        let header = wire::decode_response_header(response).map_err(|_| internal_error())?;
 
         if !header.is_success() {
             return Err(MctpError::from_code(header.response_code()));
@@ -90,30 +123,28 @@ impl IpcMctpClient {
     }
 
     fn send_recv(&self, req_len: usize) -> Result<usize, MctpError> {
-        if req_len > MAX_REQUEST_SIZE {
-            return Err(MctpError::from_code(ResponseCode::InternalError));
-        }
-        let req_copy = {
-            let inner = self.inner.borrow();
-            let mut buf = [0u8; MAX_REQUEST_SIZE];
-            buf[..req_len].copy_from_slice(&inner.request_buf[..req_len]);
-            buf
-        };
-        let mut inner = self.inner.borrow_mut();
+        let mut inner = self.buffers_mut()?;
+        // The request and the response are separate fields, so both can be
+        // borrowed at once, one shared and one mutable.
+        let ClientBuffers {
+            request_buf,
+            response_buf,
+        } = &mut *inner;
+        let request = request_buf.get(..req_len).ok_or_else(internal_error)?;
         userspace::syscall::channel_transact(
             self.handle,
-            &req_copy[..req_len],
-            &mut inner.response_buf,
+            request,
+            response_buf,
             userspace::time::Instant::MAX,
         )
-        .map_err(|_| MctpError::from_code(ResponseCode::InternalError))
+        .map_err(|_| internal_error())
     }
 }
 
 impl MctpClient for IpcMctpClient {
     fn req(&self, eid: u8) -> Result<Handle, MctpError> {
         let req_len = {
-            let mut inner = self.inner.borrow_mut();
+            let mut inner = self.buffers_mut()?;
             wire::encode_req(&mut inner.request_buf, eid)
                 .map_err(|_| MctpError::from_code(ResponseCode::InternalError))?
         };
@@ -123,7 +154,7 @@ impl MctpClient for IpcMctpClient {
 
     fn listener(&self, msg_type: u8) -> Result<Handle, MctpError> {
         let req_len = {
-            let mut inner = self.inner.borrow_mut();
+            let mut inner = self.buffers_mut()?;
             wire::encode_listener(&mut inner.request_buf, msg_type)
                 .map_err(|_| MctpError::from_code(ResponseCode::InternalError))?
         };
@@ -133,7 +164,9 @@ impl MctpClient for IpcMctpClient {
 
     fn get_eid(&self) -> u8 {
         let req_len = {
-            let mut inner = self.inner.borrow_mut();
+            let Ok(mut inner) = self.buffers_mut() else {
+                return 0;
+            };
             match wire::encode_get_eid(&mut inner.request_buf) {
                 Ok(len) => len,
                 Err(_) => return 0,
@@ -147,7 +180,7 @@ impl MctpClient for IpcMctpClient {
 
     fn set_eid(&self, eid: u8) -> Result<(), MctpError> {
         let req_len = {
-            let mut inner = self.inner.borrow_mut();
+            let mut inner = self.buffers_mut()?;
             wire::encode_set_eid(&mut inner.request_buf, eid)
                 .map_err(|_| MctpError::from_code(ResponseCode::InternalError))?
         };
@@ -162,18 +195,23 @@ impl MctpClient for IpcMctpClient {
         buf: &mut [u8],
     ) -> Result<RecvMetadata, MctpError> {
         let req_len = {
-            let mut inner = self.inner.borrow_mut();
+            let mut inner = self.buffers_mut()?;
             wire::encode_recv(&mut inner.request_buf, handle.0, timeout_millis)
                 .map_err(|_| MctpError::from_code(ResponseCode::InternalError))?
         };
         let (header, resp_len) = self.transact(req_len)?;
 
-        let inner = self.inner.borrow();
-        let payload = wire::get_response_payload(&inner.response_buf[..resp_len], &header)
-            .map_err(|_| MctpError::from_code(ResponseCode::InternalError))?;
+        let inner = self.buffers()?;
+        let response = inner
+            .response_buf
+            .get(..resp_len)
+            .ok_or_else(internal_error)?;
+        let payload =
+            wire::get_response_payload(response, &header).map_err(|_| internal_error())?;
 
-        let copy_len = core::cmp::min(payload.len(), buf.len());
-        buf[..copy_len].copy_from_slice(&payload[..copy_len]);
+        // A payload longer than `buf` is cut to fit; `payload_size` below still
+        // reports its full length.
+        copy_prefix(buf, payload);
 
         Ok(RecvMetadata {
             msg_type: header.msg_type,
@@ -194,7 +232,7 @@ impl MctpClient for IpcMctpClient {
         buf: &[u8],
     ) -> Result<u8, MctpError> {
         let req_len = {
-            let mut inner = self.inner.borrow_mut();
+            let mut inner = self.buffers_mut()?;
             wire::encode_send(
                 &mut inner.request_buf,
                 handle.map(|h| h.0),
@@ -212,7 +250,9 @@ impl MctpClient for IpcMctpClient {
 
     fn drop_handle(&self, handle: Handle) {
         let req_len = {
-            let mut inner = self.inner.borrow_mut();
+            let Ok(mut inner) = self.buffers_mut() else {
+                return;
+            };
             match wire::encode_unbind(&mut inner.request_buf, handle.0) {
                 Ok(len) => len,
                 Err(_) => return,
