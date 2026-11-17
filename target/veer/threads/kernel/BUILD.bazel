@@ -43,12 +43,10 @@ rust_binary(
         "target.rs",
     ],
     edition = "2024",
-    link_deps = [
-        ":linker_script",
-    ],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
         ":codegen",
+        ":linker_script",
         "//target/veer:entry",
         "@pigweed//pw_kernel/arch/riscv:arch_riscv",
         "@pigweed//pw_kernel/kernel",

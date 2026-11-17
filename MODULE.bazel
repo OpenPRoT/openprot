@@ -6,13 +6,13 @@ module(
     version = "0.0.1",
 )
 
-bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "bazel_skylib", version = "1.8.2")
 bazel_dep(name = "pigweed")
-bazel_dep(name = "platforms", version = "1.1.0")
-bazel_dep(name = "rules_rust", version = "0.75.0")
-bazel_dep(name = "rules_rust_mdbook", version = "0.75.0")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_rust", version = "0.70.0")
+bazel_dep(name = "rules_rust_mdbook", version = "0.70.0")
 bazel_dep(name = "rules_platform", version = "0.1.0")
-bazel_dep(name = "rules_python", version = "1.9.1")
+bazel_dep(name = "rules_python", version = "1.8.3")
 bazel_dep(name = "ureg")
 bazel_dep(name = "caliptra_deps", version = "0.0.0")
 local_path_override(
@@ -26,8 +26,6 @@ local_path_override(
 # veer_pic_claim.patch drops the MEICPCT write from the external-interrupt
 # claim, which traps as an illegal instruction on the Caliptra FPGA's VeeR core;
 # caliptra-mcu-sw's VeeR kernel reads MEIHAP directly.
-# rules_rust_0_75.patch backports Pigweed's rules_rust 0.75.0 compatibility
-# updates until Pigweed rolls rules_rust upstream (pwrev/445972).
 # multi_process_app_entry.patch looks up the process entry point with `get`
 # in the entry point generated for a `multi_process_app`, so the app has no
 # panic path.
@@ -38,35 +36,9 @@ git_override(
     patches = [
         "//third_party/pigweed:veer_pic_gateways.patch",
         "//third_party/pigweed:veer_pic_claim.patch",
-        "//third_party/pigweed:rules_rust_0_75.patch",
         "//third_party/pigweed:multi_process_app_entry.patch",
     ],
     remote = "https://pigweed.googlesource.com/pigweed/pigweed",
-)
-
-# protobuf 36.2 (pulled in by @pigweed) declares its Rust test crate_universe
-# extension without `dev_dependency = True` or a lockfile, which rules_rust
-# >= 0.71.1 rejects in non-root modules. Keep protobuf at 36.2 and mark that
-# extension dev-only until @pigweed rolls to protobuf >= 37.0.
-single_version_override(
-    module_name = "protobuf",
-    patch_strip = 1,
-    patches = [
-        "//third_party/pigweed:protobuf_crate_dev_dep.patch",
-    ],
-    version = "36.2",
-)
-
-# rules_rust 0.75.0 forwards the host C toolchain's CFLAGS (`-Wundef -Werror` in
-# Pigweed's clang toolchain) into cargo_build_script actions, which trips on
-# undefined CFG_TARGET_OS_* `#if` checks in psm's assembly inside
-# rules_rust_mdbook's vendored dependency graph.
-single_version_override(
-    module_name = "rules_rust_mdbook",
-    patch_strip = 1,
-    patches = [
-        "//third_party/mdbook_plugins:psm_wno_undef.patch",
-    ],
 )
 
 git_override(
@@ -87,7 +59,7 @@ register_toolchains(
     "@pw_rust_toolchains//:all",
 )
 
-crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
+crate = use_extension("@rules_rust//crate_universe:extension.bzl", "crate")
 crate.from_cargo(
     name = "rust_crates",
     cargo_lockfile = "//third_party/crates_io:Cargo.lock",
