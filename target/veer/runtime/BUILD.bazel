@@ -41,13 +41,11 @@ rust_binary(
     name = "target",
     srcs = ["target.rs"],
     edition = "2024",
-    link_deps = [
-        ":linker_script",
-    ],
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
         ":codegen",
+        ":linker_script",
         "//target/veer:config",
         "//target/veer:entry",
         "//target/veer/peripherals:handoff",

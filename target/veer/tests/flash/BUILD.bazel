@@ -40,12 +40,10 @@ rust_binary(
         "//conditions:default": [],
     }),
     edition = "2024",
-    link_deps = [
-        ":linker_script",
-    ],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
         ":codegen",
+        ":linker_script",
         "//hal/blocking/flash",
         "//target/veer:entry",
         "//target/veer/peripherals:flash",
