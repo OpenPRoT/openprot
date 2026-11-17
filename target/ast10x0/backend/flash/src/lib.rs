@@ -50,17 +50,14 @@ fn map_smc_error(e: SmcError) -> ErrorCode {
     }
 }
 
-/// `Blocking` impl paired with this driver.
+/// No-op `Blocking` impl paired with this driver.
 ///
-/// No completion interrupt exists; this just paces `BlockingFlash`'s `is_busy` poll loop.
+/// No completion interrupt exists; `is_busy` itself issues a status-register read each
+/// poll, so there is nothing to wait on between polls.
 pub struct NoWaitBlocking;
 
 impl Blocking for NoWaitBlocking {
-    fn wait_for_notification(&self) {
-        for _ in 0..64 {
-            core::hint::spin_loop();
-        }
-    }
+    fn wait_for_notification(&self) {}
 }
 
 /// The FMC controller, shared by the per-chip-select flash drivers.
