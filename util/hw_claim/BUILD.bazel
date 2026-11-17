@@ -1,0 +1,21 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_binary(
+    name = "manifest_check",
+    srcs = ["manifest_check.rs"],
+    edition = "2024",
+    deps = [
+        "@rust_crates//:serde",
+        "@rust_crates//:serde_json5",
+    ],
+)
+
+rust_test(
+    name = "manifest_check_test",
+    crate = ":manifest_check",
+)

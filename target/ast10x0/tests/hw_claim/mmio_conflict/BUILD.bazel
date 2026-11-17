@@ -1,0 +1,16 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("//util/hw_claim:defs.bzl", "manifest_hw_claim_test")
+
+# Passes only if the check rejects the manifest: two processes are both
+# granted 0x7e620000.
+manifest_hw_claim_test(
+    name = "conflict_detected_test",
+    expect_conflict = True,
+    system_config = "system.json5",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+)
