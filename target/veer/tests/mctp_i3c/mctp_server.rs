@@ -74,7 +74,10 @@ fn mctp_server_loop() -> Result<()> {
 
     let mut server = Server::<_, 16>::new(mctp::Eid(OWN_EID), 0, sender);
     let mut i3c_rx_buf = [0u8; I3C_RX_MAX];
-    let mut channels = [Channel::new(handle::MCTP)];
+    let mut channels = [
+        Channel::new(handle::MCTP),
+        Channel::new(handle::MCTP_CONTROL),
+    ];
 
     mctp_server_runtime::run(
         handle::WG,
