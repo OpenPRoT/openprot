@@ -98,6 +98,8 @@ fn count_mmio_overlaps(claims: &[MmioClaim]) -> usize {
 }
 
 fn main() {
+    // Plain CLI flag/path parsing, not a security decision trusting argv[0].
+    // nosemgrep
     let args: Vec<String> = std::env::args().skip(1).collect();
     let expect_conflict = args.iter().any(|a| a == "--expect-conflict");
     let path = args
