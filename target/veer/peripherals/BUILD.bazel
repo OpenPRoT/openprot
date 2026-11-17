@@ -4,6 +4,21 @@
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
 
 rust_library(
+    name = "dpe",
+    srcs = ["dpe.rs"],
+    crate_name = "veer_dpe",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":mailbox",
+        "//hal/blocking",
+        "@rust_caliptra_crates//:caliptra-api",
+        "@rust_caliptra_crates//:caliptra-dpe",
+        "@rust_caliptra_crates//:zerocopy",
+    ],
+)
+
+rust_library(
     name = "flash",
     srcs = [
         "flash.rs",
