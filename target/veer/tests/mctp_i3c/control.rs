@@ -112,8 +112,14 @@ fn entry() {
         };
 
         // The channel fills in the message type, the destination EID and the
-        // request's tag, so this passes the reply bytes alone.
-        if let Err(e) = reply.send(&response_buf[..len]) {
+        // request's tag, so this passes the reply bytes alone. `handle` wrote
+        // `len` bytes into `response_buf`, so the slice exists; `get` keeps a
+        // slice failure from being a panic path.
+        let Some(response) = response_buf.get(..len) else {
+            pw_log::error!("control response longer than its buffer");
+            continue;
+        };
+        if let Err(e) = reply.send(response) {
             pw_log::error!("control reply failed: code={}", e.code as u32);
         }
     }
