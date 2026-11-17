@@ -80,6 +80,25 @@ use crate::ecdsa::P384Signature;
 ///
 /// A common set of DPE errors. Generic code can act on these kinds without
 /// knowing the error type of an implementation.
+///
+/// The kind tells the caller whether the DPE may have replaced the handle
+/// that the command took:
+///
+/// - [`Busy`](Self::Busy) and [`NotDelivered`](Self::NotDelivered): the
+///   command did not reach the DPE, which has not replaced the handle.
+/// - [`InvalidHandle`](Self::InvalidHandle),
+///   [`InvalidLocality`](Self::InvalidLocality),
+///   [`InvalidArgument`](Self::InvalidArgument),
+///   [`NotSupported`](Self::NotSupported) and [`Internal`](Self::Internal):
+///   the DPE reported an error and has not replaced the handle.
+/// - [`Timeout`](Self::Timeout), [`ResponseLost`](Self::ResponseLost) and
+///   [`InvalidResponse`](Self::InvalidResponse): the DPE may have executed
+///   the command and replaced the handle. If it did, the new handle was in
+///   the response, which the caller does not have.
+///
+/// An implementation returns a kind from the first two groups only when it
+/// knows that the DPE has not replaced the handle. Otherwise it returns a
+/// kind from the third group.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 #[non_exhaustive]
 pub enum ErrorKind {
@@ -98,11 +117,15 @@ pub enum ErrorKind {
     /// The DPE is in use and cannot serve the command.
     Busy,
 
+    /// The command did not reach the DPE.
+    NotDelivered,
+
     /// The DPE did not respond in time.
     Timeout,
 
-    /// The command did not reach the DPE, or its response could not be read.
-    Transport,
+    /// The command was sent. Its response did not arrive or could not be
+    /// read.
+    ResponseLost,
 
     /// The response of the DPE is malformed.
     InvalidResponse,
@@ -119,8 +142,9 @@ impl fmt::Display for ErrorKind {
             Self::InvalidArgument => write!(f, "invalid DPE command argument"),
             Self::NotSupported => write!(f, "DPE command not supported"),
             Self::Busy => write!(f, "DPE is busy"),
+            Self::NotDelivered => write!(f, "DPE command not delivered"),
             Self::Timeout => write!(f, "DPE timed out"),
-            Self::Transport => write!(f, "DPE transport failure"),
+            Self::ResponseLost => write!(f, "DPE response lost"),
             Self::InvalidResponse => write!(f, "malformed DPE response"),
             Self::Internal => write!(f, "DPE internal error"),
         }
@@ -203,8 +227,14 @@ pub trait Sign<P: Profile>: ErrorType {
     ///
     /// # Errors
     ///
-    /// When the response is lost, the caller cannot tell whether the DPE
-    /// replaced `handle`.
+    /// After [`ErrorKind::Timeout`], [`ErrorKind::ResponseLost`] or
+    /// [`ErrorKind::InvalidResponse`], the DPE may have signed and replaced
+    /// `handle`. The caller can sign again with `handle`, because the command
+    /// changes nothing in the DPE except the handle. If the DPE replaced
+    /// `handle`, the second command fails with [`ErrorKind::InvalidHandle`],
+    /// and the caller can no longer use the context.
+    ///
+    /// After any other error, the DPE has not replaced `handle`.
     ///
     /// After an error, the content of `signature` is unspecified.
     fn sign(

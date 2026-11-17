@@ -17,6 +17,26 @@
 //! Caliptra takes the locality of a command from the AXI user of the
 //! mailbox request. When a command succeeds, its DPE returns the default
 //! handle unchanged and replaces any other handle.
+//!
+//! # Errors and the handle
+//!
+//! `Sign` in the `caliptra-dpe` crate stores the new handle as its last step,
+//! after every step that can fail. A response with an error status means that
+//! the DPE has not replaced the handle.
+//!
+//! The mailbox driver does not send the request when it reports
+//! `MailboxError::Busy`, `RequestTooLarge` or `Unreadable`, so the DPE has
+//! not run.
+//!
+//! After every other mailbox error, and after
+//! `CaliptraDpeError::InvalidResponse`, the DPE may have replaced a handle
+//! that is not the default handle. This includes `CommandFailed`. Caliptra
+//! fails the mailbox command in two cases: it rejects the request before the
+//! DPE runs, or it has a fatal error, possibly while the DPE runs. The error
+//! does not say which.
+//!
+//! `Sign` does not replace the default handle, so a caller that signs with
+//! the default handle can sign again after any error.
 
 #![no_std]
 
@@ -101,7 +121,15 @@ impl Error for CaliptraDpeError {
         match *self {
             Self::Mailbox(MailboxError::Busy) => ErrorKind::Busy,
             Self::Mailbox(MailboxError::Timeout) => ErrorKind::Timeout,
-            Self::Mailbox(_) => ErrorKind::Transport,
+            Self::Mailbox(MailboxError::RequestTooLarge | MailboxError::Unreadable) => {
+                ErrorKind::NotDelivered
+            }
+            Self::Mailbox(
+                MailboxError::CommandFailed(_)
+                | MailboxError::NoResponse
+                | MailboxError::UnknownStatus(_)
+                | MailboxError::InvalidChecksum,
+            ) => ErrorKind::ResponseLost,
             Self::InvalidResponse => ErrorKind::InvalidResponse,
             Self::Dpe(status::INVALID_HANDLE) => ErrorKind::InvalidHandle,
             Self::Dpe(status::INVALID_LOCALITY) => ErrorKind::InvalidLocality,
