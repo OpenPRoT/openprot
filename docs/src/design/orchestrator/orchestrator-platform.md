@@ -25,9 +25,10 @@ inside the orchestrator process:
   (hold a device in reset / release it). HAL bindings live in
   `services/orchestrator/adapters/hal`.
 - **Board device table** (`services/orchestrator/config`, schema; values in
-  `target/<board>/devices.rs`) — declares the managed devices: reset signal,
-  boot checkpoints and windows, commit policy. Validated at compile time, so
-  a malformed table is a build error.
+  the board crate, see [Platform Driver and Board](./platform-driver.md)) —
+  declares the managed devices: reset signal, boot checkpoints and windows,
+  commit policy. Validated at compile time, so a malformed table is a build
+  error.
 
 ## Responsibility Scope
 
@@ -50,13 +51,13 @@ Two rules follow:
 
 ```mermaid
 flowchart TB
-    TABLE["Board device table<br/>target/&lt;board&gt;/devices.rs<br/>(pure data, board-owned)"]
+    TABLE["Board device table<br/>target/&lt;chip&gt;/board<br/>(pure data, board-owned)"]
     BMC["Platform management<br/>(BMC / host)"]
 
     subgraph ORCH["Orchestrator&nbsp;(one&nbsp;process)"]
         SM["Boot state machine<br/>verify / release / supervise /<br/>recover / update / lock"]
         MOD["Update, recovery,<br/>anti-rollback modules<br/>(libraries, not services)"]
-        CAP["Device capabilities<br/>BootControl and peers —<br/>IPC clients, marshalling only<br/>(+ HAL adapters)"]
+        CAP["Device capabilities<br/>BootControl and peers:<br/>HAL adapters or IPC clients"]
     end
 
     NET["MCTP / PLDM / SPDM<br/>services/mctp · services/spdm<br/>(transport task, protocols as libs;<br/>carries data, holds no authority —<br/>SPDM responder decisions: orchestrator)"]
@@ -81,12 +82,12 @@ flowchart TB
     BMC <-->|"PLDM update / status"| NET
     NET -->|"candidate<br/>staged"| ORCH
 
-    %% commands (down, fire-and-forget) and events (up) — replies are queued events, the orchestrator never blocks
-    ORCH -->|"read /<br/>restore image"| SPI
-    ORCH -->|"hash, verify sig,<br/>sign attestation"| CRYPTO
+    %% commands (down) and events (up): long work replies as a queued event, a short call waits within the IPC deadline
+    ORCH -->|"restore image"| SPI
+    ORCH -->|"check image (flash region),<br/>sign attestation"| CRYPTO
     ORCH -->|"persist / resume scan<br/>(sole write capability)"| STORE
     ORCH -->|"assert / release"| RST
-    CRYPTO -->|"pass / fail<br/>verdict"| ORCH
+    CRYPTO -->|"verdict, SVN,<br/>hash and digest"| ORCH
     STORE -->|"ack /<br/>resume state"| ORCH
     RST -->|"restart<br/>notice"| ORCH
     SPI -->|"fact: write<br/>blocked"| ORCH
@@ -103,9 +104,12 @@ flowchart TB
     subgraph IPCL["IPC seam — every blue arrow is one of these round trips (syscall-like)"]
         direction LR
         CL["client: the orchestrator,<br/>via the service's client crate<br/>(services/*/client, marshalling)"] -->|"IPC call over kernel channel<br/>(client-ipc)"| SV["server: the platform service task,<br/>does the hardware I/O<br/>on the caller's behalf<br/>(services/*/server)"]
-        SV -.->|"data back via IPC,<br/>queued as event"| CL
+        SV -.->|"reply via IPC:<br/>long work as a queued event,<br/>a short call waits"| CL
     end
     DEV ~~~ IPCL
+
+    %% added after every indexed link, so the linkStyle indices below stay valid
+    CRYPTO -->|"read image"| SPI
     style IPCL fill:#fafafa,stroke:#999,stroke-dasharray:4 3
 
     %% IPC edges in blue; indices count every link above in source order, invisible ~~~ links included
@@ -134,9 +138,10 @@ pattern as they land. Five rules govern how the orchestrator relies on them:
   monitor a blocked write, the transport a missed heartbeat — never what
   it means. "Corruption" is a verdict, and verdicts are made in one
   place only: the state machine.
-- **Never block.** Commands are fire-and-forget; every reply (a crypto
-  verdict, a storage ack) returns as a queued event, so a long image hash
-  cannot delay the judgment of a boot window elsewhere.
+- **Never block on long work.** An image check or a restore returns its
+  result as a queued event, so a long image hash cannot delay the judgment
+  of a boot window elsewhere. A short call, such as a reset command or a
+  storage write, waits for its reply within the IPC deadline.
 - **Exclusive security state.** Only the orchestrator holds the write
   capability for the lockdown latch, retry counts, and pending-update
   record; a persist with unknown outcome counts as failed and latches the

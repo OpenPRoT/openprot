@@ -28,6 +28,9 @@ avoid the two drifting apart.
 - [**Platform Architecture**](./orchestrator-platform.md): The platform half around
   the core — surrounding services, capability contracts, the board device table,
   and the fail-safe rules at the responsibility boundary.
+- [**Platform Driver and Board**](./platform-driver.md): How the
+  `PlatformDriver` turns each effect into a capability call, and what a board
+  supplies to `bring_up`: the device table, `BoardCapabilities` and `Board`.
 
 ## Design Principles
 
@@ -35,7 +38,7 @@ avoid the two drifting apart.
 `ctx.emit(Effect::…)` to describe what should happen, and receive every piece of
 outside information in event payloads — the core never reads flash, drives a
 GPIO, opens a channel, or touches a provisioning store. The full core/platform
-split is the [Platform Boundary](./orchestrator-model.md#5-the-platform-boundary)
+split is the [Platform Boundary](./orchestrator-model.md#6-the-platform-boundary)
 in the Verification Model.
 
 **Feedback as data.** Internal follow-up signals (e.g. the retry-cap lockdown
