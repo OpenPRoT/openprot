@@ -31,6 +31,7 @@ def veer_system_config(name, src, **kwargs):
         outs = [name + ".json5"],
         cmd = select({
             "//target/veer:fpga": cmd.format("fpga"),
+            "//target/veer:ast1080": cmd.format("ast1080"),
             "//conditions:default": cmd.format("emulator"),
         }),
         tools = [tool],

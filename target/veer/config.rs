@@ -22,10 +22,12 @@ pub use kernel_config::{
 //const PLIC_SIZE: usize = 0x0000_5400;
 
 // MCU memory map for the selected target type, taken from upstream caliptra-mcu-sw
-#[cfg(not(feature = "fpga"))]
+#[cfg(not(any(feature = "fpga", feature = "ast1080")))]
 use caliptra_mcu_config_emulator::EMULATOR_MEMORY_MAP as MCU_MEMORY_MAP;
 #[cfg(feature = "fpga")]
 use caliptra_mcu_config_fpga::FPGA_MEMORY_MAP as MCU_MEMORY_MAP;
+#[cfg(feature = "ast1080")]
+use ast1080_memory_map::AST1080_MEMORY_MAP as MCU_MEMORY_MAP;
 
 /// Base of the MCI register block (MCU timer, device mappings).
 pub const MCI_BASE: usize = MCU_MEMORY_MAP.mci_offset as usize;
@@ -57,6 +59,9 @@ impl KernelConfigInterface for KernelConfig {
     const SYSTEM_CLOCK_HZ: u64 = 20_000_000;
     #[cfg(feature = "emulator")]
     const SYSTEM_CLOCK_HZ: u64 = 1_000_000;
+    // TIMER_FREQUENCY_HZ in ASPEED's platforms/ast1040/runtime/src/main.rs.
+    #[cfg(feature = "ast1080")]
+    const SYSTEM_CLOCK_HZ: u64 = 400_000_000;
 }
 
 impl RiscVKernelConfigInterface for KernelConfig {

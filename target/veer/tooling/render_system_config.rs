@@ -4,8 +4,9 @@
 //! Renders a VeeR pw_kernel system config template for one platform, filling
 //! in addresses from upstream caliptra-mcu-sw's memory maps.
 //!
-//! Usage: render_system_config <emulator|fpga> <template> <output>
+//! Usage: render_system_config <emulator|fpga|ast1080> <template> <output>
 
+use ast1080_memory_map::{AST1080_FMC_CTRL_ADDR, AST1080_MEMORY_MAP};
 use caliptra_mcu_config::McuMemoryMap;
 use caliptra_mcu_config_emulator::EMULATOR_MEMORY_MAP;
 use caliptra_mcu_config_fpga::FPGA_MEMORY_MAP;
@@ -19,7 +20,7 @@ const KERNEL_RAM_OFFSET: u32 = 0x4_0000;
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let [_, platform, template, output] = args.as_slice() else {
-        panic!("usage: render_system_config <emulator|fpga> <template> <output>");
+        panic!("usage: render_system_config <emulator|fpga|ast1080> <template> <output>");
     };
 
     // The memory maps do not include the flash controllers, so their
@@ -27,7 +28,8 @@ fn main() {
     let (map, primary_flash_ctrl): (&McuMemoryMap, u32) = match platform.as_str() {
         "emulator" => (&EMULATOR_MEMORY_MAP, PRIMARY_FLASH_CTRL_ADDR),
         "fpga" => (&FPGA_MEMORY_MAP, FPGA_PRIMARY_FLASH_CTRL_ADDR as u32),
-        other => panic!("unknown platform {other:?}; expected emulator or fpga"),
+        "ast1080" => (&AST1080_MEMORY_MAP, AST1080_FMC_CTRL_ADDR),
+        other => panic!("unknown platform {other:?}; expected emulator, fpga or ast1080"),
     };
     assert!(
         KERNEL_RAM_OFFSET < map.sram_size,
