@@ -1,0 +1,31 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "hal",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "openprot_hal",
+    edition = "2024",
+    deps = [
+        "//util/region",
+        "@rust_crates//:embedded-hal",
+    ],
+)
+
+rust_test(
+    name = "hal_test",
+    crate = ":hal",
+    rustc_flags = [
+        "-C",
+        "debug-assertions",
+    ],
+)
+
+rust_doc(
+    name = "openprot_hal_doc",
+    crate = ":hal",
+)
