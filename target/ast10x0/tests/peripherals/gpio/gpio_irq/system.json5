@@ -22,6 +22,17 @@
         {
             name: "gpio_irq_server",
             flash_size_bytes: 32768,
+            constants: [
+                {
+                    // Pins this app's `gpio_irq_process` is authorized to drive (switch direction
+                    // on, read, write) — see `//target/ast10x0/pins:app_pin_claims`. The kernel
+                    // only routes `scu410_0` (see `target.rs`); this process is the one that
+                    // actually drives it.
+                    type: "string",
+                    name: "pin_claims_gpio_irq_process",
+                    value: "scu410_0",
+                },
+            ],
             processes: [
                 {
                     name: "gpio_irq_process",
