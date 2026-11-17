@@ -13,6 +13,7 @@
 #![no_std]
 
 use mctp_control_codegen::handle;
+use mctp_i3c_ids::OWN_EID;
 use mctp_lib::config;
 use openprot_mctp_api::{MctpListener, MctpRespChannel, Stack};
 use openprot_mctp_client_ipc::IpcMctpClient;
@@ -31,10 +32,9 @@ static SUPPORTED_MSG_TYPES: [MsgTypeVersions<'static>; 0] = [];
 /// A listener timeout of 0 blocks until a message arrives.
 const NO_TIMEOUT: u32 = 0;
 
-/// The EID this endpoint reports, the `OWN_EID` of `mctp_server.rs`. The server
-/// runs its stack at this EID, so a dynamic endpoint would report one that no bus
-/// owner assigned.
-const CONFIGURED_EID: u8 = 8;
+/// The EID this endpoint reports: the one the MCTP server runs its stack at. A
+/// dynamic endpoint would report one that no bus owner assigned.
+const CONFIGURED_EID: u8 = OWN_EID;
 
 #[process_entry("mctp_control")]
 fn entry() {
@@ -106,10 +106,7 @@ fn entry() {
                 continue;
             }
             Err(e) => {
-                pw_log::error!(
-                    "control request failed: code=0x{:08x}",
-                    u32::from(e) as u32
-                );
+                pw_log::error!("control request failed: code=0x{:08x}", u32::from(e) as u32);
                 continue;
             }
         };

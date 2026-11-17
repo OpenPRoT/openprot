@@ -34,12 +34,12 @@
 
 use caliptra_mcu_hw_model::McuHwModel;
 use caliptra_mcu_testing_common::i3c_socket::BufferedStream;
+use mctp_i3c_ids::{HOST_EID, OWN_EID};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::time::{Duration, Instant};
 use test_boot_files::BootFiles;
 
-const TARGET_EID: u8 = 8;
-const HOST_EID: u8 = 9;
+const TARGET_EID: u8 = OWN_EID;
 /// The message type the echo app listens for (`ECHO_MSG_TYPE` in `//services/mctp/echo`).
 const ECHO_MSG_TYPE: u8 = 1;
 
@@ -61,6 +61,10 @@ const MAX_REPLY_PACKET: usize = 254;
 
 /// Logged by `echo.rs` once its listener is armed.
 const READY: &str = "mctp echo: waiting for request";
+
+/// Logged by `control.rs` once its listener for control requests is armed. A
+/// control request sent before it would find no listener.
+const CONTROL_READY: &str = "mctp control: responder ready";
 
 const TIMEOUT_SECS: u64 = 120;
 
@@ -483,6 +487,7 @@ fn run(plan: &[Step]) {
 
     // The listener must be armed before the request arrives.
     wait_for_log(&mut hw, &mut log, READY);
+    wait_for_log(&mut hw, &mut log, CONTROL_READY);
 
     let mut frames = Frames::default();
     let mut n = 0usize;

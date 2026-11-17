@@ -22,6 +22,7 @@
 
 use i3c_client::I3cClient;
 use i3c_client_ipc::IpcTransport;
+use mctp_i3c_ids::OWN_EID;
 use mctp_server_codegen::handle;
 use mctp_server_runtime::Channel;
 use openprot_mctp_server::Server;
@@ -31,7 +32,6 @@ use userspace::process_entry;
 use userspace::syscall::{self, Signals};
 use userspace::time::{self, Clock, Duration, Instant, SystemClock};
 
-const OWN_EID: u8 = 8;
 /// The controller's 7-bit I3C address. DSP0233 carries no destination, so it is
 /// not on the wire; the sender keeps it for diagnostics.
 const REMOTE_I3C_ADDR: u8 = 0x0a;
