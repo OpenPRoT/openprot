@@ -409,8 +409,16 @@ pub fn encode_send(
         handle: handle.unwrap_or(NO_HANDLE),
         tag: tag.unwrap_or(0),
     };
-    buf[..MctpRequestHeader::SIZE].copy_from_slice(&header.to_bytes());
-    buf[MctpRequestHeader::SIZE..total].copy_from_slice(payload);
+    let (head, body) = buf
+        .get_mut(..total)
+        .and_then(|msg| msg.split_at_mut_checked(MctpRequestHeader::SIZE))
+        .ok_or(WireError::BufferTooSmall)?;
+    for (d, s) in head.iter_mut().zip(header.to_bytes()) {
+        *d = s;
+    }
+    for (d, s) in body.iter_mut().zip(payload) {
+        *d = *s;
+    }
     Ok(total)
 }
 

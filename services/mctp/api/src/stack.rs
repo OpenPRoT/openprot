@@ -127,10 +127,15 @@ impl<C: MctpClient> MctpReqChannel for StackReqChannel<'_, C> {
             return Err(MctpError::from_code(ResponseCode::BadArgument));
         }
         let meta = self.stack.client.recv(self.handle, self.timeout, buf)?;
-        let len = meta.payload_size;
+        // `payload_size` is the full length of the message, which can be more than
+        // `buf` holds: the client copies only what fits.
+        let len = meta.payload_size.min(buf.len());
         // Clear sent_tag after receiving response, allowing another send/recv cycle
         self.sent_tag = None;
-        Ok((meta, &mut buf[..len]))
+        let payload = buf
+            .get_mut(..len)
+            .ok_or(MctpError::from_code(ResponseCode::InternalError))?;
+        Ok((meta, payload))
     }
 
     fn remote_eid(&self) -> u8 {
@@ -180,14 +185,18 @@ impl<'s, C: MctpClient> MctpListener for StackListener<'s, C> {
         buf: &'f mut [u8],
     ) -> Result<(RecvMetadata, &'f mut [u8], Self::RespChannel<'_>), MctpError> {
         let meta = self.stack.client.recv(self.handle, self.timeout, buf)?;
-        let len = meta.payload_size;
+        // As in `StackReqChannel::recv`: cut to what `buf` holds.
+        let len = meta.payload_size.min(buf.len());
         let resp = StackRespChannel {
             stack: self.stack,
             eid: meta.remote_eid,
             msg_type: meta.msg_type,
             tag: meta.msg_tag,
         };
-        Ok((meta, &mut buf[..len], resp))
+        let payload = buf
+            .get_mut(..len)
+            .ok_or(MctpError::from_code(ResponseCode::InternalError))?;
+        Ok((meta, payload, resp))
     }
 }
 
@@ -327,8 +336,10 @@ mod tests {
             if let Some(e) = self.force_error {
                 return Err(MctpError::from_code(e));
             }
-            let len = self.recv_payload.len();
-            buf[..len].copy_from_slice(self.recv_payload);
+            // Like the real client: copy what fits, and report the full size.
+            for (d, s) in buf.iter_mut().zip(self.recv_payload) {
+                *d = *s;
+            }
             Ok(self.recv_meta)
         }
 
@@ -390,6 +401,19 @@ mod tests {
     }
 
     #[test]
+    fn req_channel_recv_cuts_a_message_longer_than_the_buffer() {
+        let stack = Stack::new(MockClient::new());
+        let mut ch = stack.req(42, 0).unwrap();
+        ch.send(1, b"ping").unwrap();
+
+        // The message is 5 bytes; the buffer holds 3.
+        let mut buf = [0u8; 3];
+        let (meta, payload) = ch.recv(&mut buf).unwrap();
+        assert_eq!(payload, b"hel");
+        assert_eq!(meta.payload_size, 5, "the full length is still reported");
+    }
+
+    #[test]
     fn req_channel_recv_before_send_is_error() {
         let stack = Stack::new(MockClient::new());
         let mut ch = stack.req(42, 0).unwrap();
@@ -437,6 +461,18 @@ mod tests {
         assert_eq!(meta.remote_eid, 42);
         assert_eq!(payload, b"hello");
         assert_eq!(resp.remote_eid(), 42);
+    }
+
+    #[test]
+    fn listener_recv_cuts_a_message_longer_than_the_buffer() {
+        let stack = Stack::new(MockClient::new());
+        let mut listener = stack.listener(1, 0).unwrap();
+
+        // The message is 5 bytes; the buffer holds 3.
+        let mut buf = [0u8; 3];
+        let (meta, payload, _resp) = listener.recv(&mut buf).unwrap();
+        assert_eq!(payload, b"hel");
+        assert_eq!(meta.payload_size, 5, "the full length is still reported");
     }
 
     #[test]
