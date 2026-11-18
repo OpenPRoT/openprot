@@ -19,6 +19,21 @@ rust_library(
 )
 
 rust_library(
+    name = "ecdsa",
+    srcs = ["ecdsa.rs"],
+    crate_name = "veer_ecdsa",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":mailbox",
+        "//hal/blocking",
+        "@rust_caliptra_crates//:caliptra-api",
+        "@rust_caliptra_crates//:caliptra-error",
+        "@rust_caliptra_crates//:zerocopy",
+    ],
+)
+
+rust_library(
     name = "flash",
     srcs = [
         "flash.rs",
