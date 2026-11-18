@@ -14,9 +14,12 @@ use openprot_hal::gpio::{Gpio, GpioData};
 /// Block-identity marker for the AST10x0 SCU singleton register block (see `Mmio<B>` in `field_mux`).
 pub struct ScuBlock;
 
-// SAFETY: `Scu::ptr()` is the valid, aligned, `'static` SCU base, usable for `u32` MMIO at every offset its driver touches.
+// SAFETY: `Scu::ptr()` is the valid, aligned, `'static` SCU base, usable for `u32` MMIO at every
+// offset less than `SIZE`; `SIZE` is the real SCU register block's byte extent, straight from the
+// PAC's own generated layout — not a guessed constant.
 unsafe impl Block for ScuBlock {
     const BASE: *const u8 = ast1060_pac::Scu::ptr().cast();
+    const SIZE: usize = core::mem::size_of::<ast1060_pac::scu::RegisterBlock>();
 }
 
 /// Recover a peripheral's base address as an integer. svd2rust already carries it as the `usize`

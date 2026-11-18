@@ -4,8 +4,8 @@
 //! GPIO pin capability: the [`Gpio`] role tag, its per-pin [`GpioData`] datum, the target's
 //! [`GpioMap`] register-table, and the confined [`GpioPin`] accessor bound from a pin token.
 
-use crate::field_mux::{coalesce_routes, Mmio, MuxRoutes, RegBatch, MAX_REGS};
-use crate::resource::{field, Capability, Pin, Routes};
+use crate::field_mux::{coalesce_routes, Block, Mmio, MuxRoutes, RegBatch, MAX_REGS};
+use crate::resource::{field, Capability, FieldWrite, Pin, Routes};
 use core::marker::PhantomData;
 use util_region::{covers, Mmap, Region};
 
@@ -68,15 +68,28 @@ impl RegOp {
     }
 }
 
-/// A checked read handle over an absolute register offset; `W1C` marks a write-1-to-clear (status) register.
-#[derive(Clone, Copy)]
-pub struct Reg<const W1C: bool>(u32);
+/// Marks a [`Reg`] as a plain register — writing doesn't clear any bit the way [`W1C`] does.
+pub struct NoW1C;
 
-impl<const W1C: bool> Reg<W1C> {
-    /// Wrap a register offset; `W1C` marks a write-1-to-clear (interrupt-status) register.
+/// Marks a [`Reg`] as write-1-to-clear (an interrupt-status register: writing 1 to a bit clears it).
+pub struct W1C;
+
+/// A checked read handle over an absolute register offset; [`W1C`]/[`NoW1C`] marks whether writing
+/// 1 to a bit clears it (a status register) or not.
+pub struct Reg<Kind>(u32, PhantomData<Kind>);
+
+impl<Kind> Clone for Reg<Kind> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<Kind> Copy for Reg<Kind> {}
+
+impl<Kind> Reg<Kind> {
+    /// Wrap a register offset; `Kind` is [`W1C`] or [`NoW1C`].
     #[must_use]
     pub const fn new(offset: u32) -> Self {
-        Self(offset)
+        Self(offset, PhantomData)
     }
 
     /// The wrapped register offset — needed outside this crate by anything that has to name the
@@ -140,19 +153,19 @@ pub struct GpioMap {
     /// Field ops to disable interrupt.
     pub disable_int: &'static [RegOp],
     /// Read handle for the sampled input-level register — bit=1 reads high.
-    pub in_level: Reg<false>,
+    pub in_level: Reg<NoW1C>,
     /// Read handle for the output-latch register — bit=1 latched high.
-    pub out_level: Reg<false>,
+    pub out_level: Reg<NoW1C>,
     /// Read handle for the interrupt-enable register.
-    pub int_enable: Reg<false>,
+    pub int_enable: Reg<NoW1C>,
     /// Read/write-1-to-clear handle for the interrupt-status register.
-    pub int_status: Reg<true>,
+    pub int_status: Reg<W1C>,
     /// Read handle for the both-edge sensitivity register — the IRQ verify read.
-    pub sense_both: Reg<false>,
+    pub sense_both: Reg<NoW1C>,
     /// Read handle for the direction register — bit=1 configured as output. Open-drain's
     /// `is_set_high`/`is_set_low` read this instead of the data latch, since open-drain drives by
     /// toggling direction, never the data register, once configured.
-    pub dir_level: Reg<false>,
+    pub dir_level: Reg<NoW1C>,
 }
 
 impl GpioMap {
@@ -175,13 +188,31 @@ impl GpioMap {
 }
 
 /// Fold a role_cfg's field writes at ordinal 0 — const-panics on any set/clear contradiction.
+/// Block-agnostic by design: this only checks a role_cfg's writes for internal consistency, never
+/// touches real hardware, so it doesn't go through `RegBatch`'s block-extent-bound-checked `push`.
 const fn role_cfg_ok(role_cfg: &[RegOp]) {
-    let mut folded = RegBatch::new();
+    let mut folded = [FieldWrite {
+        offset: 0,
+        set: 0,
+        clr: 0,
+    }; MAX_REGS];
+    let mut len = 0;
     let mut i = 0;
     while i < role_cfg.len() {
         let op = role_cfg[i];
         let mask = (1u32 << op.width) - 1;
-        folded.append(&[field(op.offset, 0, mask, op.value)]);
+        let w = field(op.offset, 0, mask, op.value);
+        let mut j = 0;
+        while j < len && folded[j].offset != w.offset {
+            j += 1;
+        }
+        if j == len {
+            assert!(len < MAX_REGS, "MAX_REGS too small");
+            folded[len] = w;
+            len += 1;
+        } else {
+            folded[j].coalesce(w);
+        }
         i += 1;
     }
 }
@@ -457,13 +488,22 @@ impl<P: Routes<Gpio>, R: Mmap, D> GpioPin<P, R, D> {
         let block = self.mmio();
         for op in map.role(role) {
             let mask = (1u32 << op.width) - 1;
-            let fw = field(op.offset, bit * op.width, mask, op.value);
+            // Only `set`/`clr` are kept — `offset` is discarded unbound here (`..`) rather than
+            // named, so the only offset this loop ever touches is `op.offset`/`read_offset`, read
+            // straight off this pin's static `GpioMap`, never copied into a local first.
+            let FieldWrite { set, clr, .. } = field(op.offset, bit * op.width, mask, op.value);
             let read_offset = if op.offset == map.in_level.0 {
                 map.out_level.0
             } else {
                 op.offset
             };
-            block.write_reg(fw.offset, (block.read_reg(read_offset) & !fw.clr) | fw.set);
+            // SAFETY: `op.offset` and `read_offset` both come from this pin's own `GpioMap`, whose
+            // extent `GpioPin::new` already proved fits the granted region (`AssertGpioGrant::COVERS`,
+            // over `map_extent`, which covers every offset this map can ever name).
+            #[allow(unsafe_code)]
+            unsafe {
+                block.write_reg(op.offset, (block.read_reg(read_offset) & !clr) | set);
+            }
         }
     }
 
@@ -474,14 +514,24 @@ impl<P: Routes<Gpio>, R: Mmap, D> GpioPin<P, R, D> {
     /// wrong register) and compile cleanly. The named accessors below only ever pass this pin's
     /// own `map()`, so that mix-up isn't expressible from outside this file.
     #[must_use]
-    fn read<const W1C: bool>(&self, reg: Reg<W1C>) -> bool {
-        self.mmio().read_reg(reg.0) & (1 << <P as Routes<Gpio>>::DATA.bit) != 0
+    fn read<Kind>(&self, reg: Reg<Kind>) -> bool {
+        // SAFETY: `reg.0` comes from this pin's own `GpioMap`, whose extent `GpioPin::new` already
+        // proved fits the granted region (`AssertGpioGrant::COVERS`, over `map_extent`).
+        #[allow(unsafe_code)]
+        unsafe {
+            self.mmio().read_reg(reg.0) & (1 << <P as Routes<Gpio>>::DATA.bit) != 0
+        }
     }
 
     /// Write-1-to-clear this pin's bit in the w1c register `reg` (typed `W1C`, so only status registers).
-    fn ack(&self, reg: Reg<true>) {
-        self.mmio()
-            .write_reg(reg.0, 1 << <P as Routes<Gpio>>::DATA.bit);
+    fn ack(&self, reg: Reg<W1C>) {
+        // SAFETY: `reg.0` comes from this pin's own `GpioMap`, whose extent `GpioPin::new` already
+        // proved fits the granted region (`AssertGpioGrant::COVERS`, over `map_extent`).
+        #[allow(unsafe_code)]
+        unsafe {
+            self.mmio()
+                .write_reg(reg.0, 1 << <P as Routes<Gpio>>::DATA.bit);
+        }
     }
 
     /// Switch the pin to output, carrying the direction in its type from here on.
@@ -647,9 +697,12 @@ pub fn bind_gpio<P: Routes<Gpio> + Pin, R: Mmap>(pin: P, block: &GpioBlock<R>) -
     GpioPin::new(pin, block)
 }
 
-/// A GPIO handle carries its pin's SCU route at the type level, folded to one RMW per register at compile time.
-impl<P: Routes<Gpio>, R: Mmap, D> MuxRoutes for GpioPin<P, R, D> {
-    const COALESCED: RegBatch = coalesce_routes(&[<P as Routes<Gpio>>::ROUTE]);
+/// A GPIO handle carries its pin's SCU route at the type level, folded to one RMW per register at
+/// compile time. Generic over `B`: GPIO's own HAL layer doesn't name a concrete SCU block (that's
+/// target-specific), so `B` is whatever block the caller routes this handle through, same as
+/// `Route<C, P, B>`.
+impl<B: Block, P: Routes<Gpio>, R: Mmap, D> MuxRoutes<B> for GpioPin<P, R, D> {
+    const COALESCED: RegBatch<B> = coalesce_routes(&[<P as Routes<Gpio>>::ROUTE]);
 }
 
 /// Const-panics if two slots in `slots` share a `(register-group offset, bit)` pair.
