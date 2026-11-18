@@ -38,13 +38,19 @@ fn crc8_step(clmul: impl Fn(u32, u32) -> u32, crc: u8, data: u8) -> u8 {
 }
 
 /// The `clmul` instruction.
+///
+/// `target_feature` makes the assembler accept the instruction in whichever
+/// crate this ends up in. It is `#[inline]` into [`update_zbc`], which has the
+/// same feature; without the attribute, inlining `ZbcPec::update` into a crate
+/// built without `+zbc` fails to assemble.
 #[cfg(all(target_arch = "riscv32", target_feature = "zbc"))]
-#[inline(always)]
+#[target_feature(enable = "zbc")]
+#[inline]
 fn clmul(a: u32, b: u32) -> u32 {
     let r: u32;
     // SAFETY: `clmul` reads two registers and writes one. It touches no memory,
-    // has no side effects and cannot trap. This function only exists when the
-    // build enables `zbc`, so the core is known to implement it.
+    // has no side effects and cannot trap, and this function is compiled with
+    // `zbc` enabled.
     unsafe {
         core::arch::asm!(
             "clmul {r}, {a}, {b}",
@@ -57,6 +63,14 @@ fn clmul(a: u32, b: u32) -> u32 {
     r
 }
 
+/// The whole CRC loop with `zbc` enabled, so the `clmul`s inline into it.
+#[cfg(all(target_arch = "riscv32", target_feature = "zbc"))]
+#[target_feature(enable = "zbc")]
+fn update_zbc(crc: u8, data: &[u8]) -> u8 {
+    data.iter()
+        .fold(crc, |crc, &b| crc8_step(|a, m| clmul(a, m), crc, b))
+}
+
 /// Computes the PEC with the `Zbc` `clmul` instruction.
 #[cfg(all(target_arch = "riscv32", target_feature = "zbc"))]
 #[derive(Debug, Clone, Copy, Default)]
@@ -64,9 +78,10 @@ pub struct ZbcPec;
 
 #[cfg(all(target_arch = "riscv32", target_feature = "zbc"))]
 impl Pec for ZbcPec {
-    #[inline]
     fn update(&self, crc: u8, data: &[u8]) -> u8 {
-        data.iter().fold(crc, |crc, &b| crc8_step(clmul, crc, b))
+        // SAFETY: this impl only exists when the build enables `zbc`, so the core
+        // is known to implement the extension that `update_zbc` requires.
+        unsafe { update_zbc(crc, data) }
     }
 }
 
@@ -91,7 +106,11 @@ mod tests {
     fn crc8_bitwise(mut crc: u8, data: u8) -> u8 {
         crc ^= data;
         for _ in 0..8 {
-            crc = if crc & 0x80 != 0 { (crc << 1) ^ 0x07 } else { crc << 1 };
+            crc = if crc & 0x80 != 0 {
+                (crc << 1) ^ 0x07
+            } else {
+                crc << 1
+            };
         }
         crc
     }
