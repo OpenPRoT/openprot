@@ -14,6 +14,10 @@ of the project.
     objects to communicate between two `pw_kernel` userspace processes.
     Worked example lives at
     [`target/veer/ipc/`](https://github.com/OpenPRoT/openprot/tree/main/target/veer/ipc).
+-   [**OCP Recovery Streaming Boot**](./ocp-recovery.md): The eRoT as the
+    Device of the OCP Recovery interface, with the BMC as the Recovery
+    Agent. Covers the streaming sequence, where the pushed bytes land, who
+    verifies and boots the image, and which image serves the registers.
 -   [**Orchestrator**](./orchestrator/orchestrator-overview.md): The eRoT boot-sequence state
     machine (`services/orchestrator/sm`). Covers the two-tier firmware
     verification model (`ComponentAttrs`, eRoT gate, iRoT gate), the

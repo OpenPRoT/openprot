@@ -33,6 +33,7 @@
 * [Design](./design/README.md)
   * [Pigweed Integration Overview](./design/pigweed-overview.md)
   * [pw_kernel IPC](./design/pw-kernel-ipc.md)
+  * [OCP Recovery Streaming Boot](./design/ocp-recovery.md)
   * [Orchestrator](./design/orchestrator/orchestrator-overview.md)
     * [Verification Model](./design/orchestrator/orchestrator-model.md)
     * [State Machine](./design/orchestrator/orchestrator-machine.md)
