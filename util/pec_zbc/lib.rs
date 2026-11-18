@@ -51,6 +51,7 @@ fn clmul(a: u32, b: u32) -> u32 {
     // SAFETY: `clmul` reads two registers and writes one. It touches no memory,
     // has no side effects and cannot trap, and this function is compiled with
     // `zbc` enabled.
+    // nosemgrep
     unsafe {
         core::arch::asm!(
             "clmul {r}, {a}, {b}",
@@ -81,6 +82,7 @@ impl Pec for ZbcPec {
     fn update(&self, crc: u8, data: &[u8]) -> u8 {
         // SAFETY: this impl only exists when the build enables `zbc`, so the core
         // is known to implement the extension that `update_zbc` requires.
+        // nosemgrep
         unsafe { update_zbc(crc, data) }
     }
 }
