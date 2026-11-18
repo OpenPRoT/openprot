@@ -278,6 +278,9 @@ impl<TDriver: DeferredErase, TBlocking: Blocking> Flash for DeferredFlash<TDrive
         if self.0.driver.is_busy() {
             return Ok(OpPoll::Busy);
         }
+        // The erase is done, so its completion notification has fired. Consume it here so it
+        // isn't left pending to cut short the next blocking wait.
+        self.0.blocking.wait_for_notification();
         self.0.driver.complete_op()?;
         Ok(OpPoll::Done)
     }
@@ -301,6 +304,15 @@ mod test {
     pub struct FakeBlocking();
     impl Blocking for FakeBlocking {
         fn wait_for_notification(&self) {}
+    }
+
+    /// Counts `wait_for_notification` calls.
+    #[derive(Default)]
+    pub struct CountingBlocking(core::cell::Cell<u32>);
+    impl Blocking for CountingBlocking {
+        fn wait_for_notification(&self) {
+            self.0.set(self.0.get() + 1);
+        }
     }
 
     #[derive(Debug, Clone, Copy)]
@@ -463,6 +475,30 @@ mod test {
         assert_eq!(flash.poll_erase().unwrap(), OpPoll::Busy);
         assert_eq!(flash.poll_erase().unwrap(), OpPoll::Busy);
         assert_eq!(flash.poll_erase().unwrap(), OpPoll::Done);
+    }
+
+    /// A deferred erase consumes its completion notification exactly once, on the `Done`
+    /// transition and never while `Busy`, so it isn't left pending for the next blocking wait.
+    #[test]
+    pub fn test_deferred_erase_drains_notification_once_on_done() {
+        let mut driver = FakeFlashDriver::new(vec![0x42; 0x4000]);
+        driver.nowait_busy_polls = 2;
+        let mut flash = DeferredFlash(BlockingFlash {
+            driver,
+            blocking: CountingBlocking::default(),
+        });
+        Flash::start_erase(
+            &mut flash,
+            FlashAddress::new(0x0800),
+            PowerOf2Usize::new(2048).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(flash.0.blocking.0.get(), 0, "start must not wait");
+        assert_eq!(flash.poll_erase().unwrap(), OpPoll::Busy);
+        assert_eq!(flash.poll_erase().unwrap(), OpPoll::Busy);
+        assert_eq!(flash.0.blocking.0.get(), 0, "Busy polls must not wait");
+        assert_eq!(flash.poll_erase().unwrap(), OpPoll::Done);
+        assert_eq!(flash.0.blocking.0.get(), 1, "Done drains exactly once");
     }
 
     /// An error from `complete_op` is reported once the driver is idle.
