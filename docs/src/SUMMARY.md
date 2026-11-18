@@ -37,3 +37,4 @@
     * [Verification Model](./design/orchestrator/orchestrator-model.md)
     * [State Machine](./design/orchestrator/orchestrator-machine.md)
     * [Platform Architecture](./design/orchestrator/orchestrator-platform.md)
+    * [Platform Driver and Board](./design/orchestrator/platform-driver.md)
