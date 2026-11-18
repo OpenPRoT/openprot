@@ -15,26 +15,31 @@ Pigweed's behaviour, read from `pw_kernel/kernel/scheduler/` and
   A thread that was woken goes to the back. The tick is
   `KernelConfigInterface::SCHEDULER_TICK_HZ`, 100 Hz (10 ms) unless a target
   overrides it.
-- **A wake preempts only a lower level.** Waking a thread reschedules at once,
-  but the woken thread runs only if its level is strictly higher than the running
-  thread's. At the same or a lower level the running thread keeps going until it
-  blocks or the next tick rotates it out.
+- **A wake preempts only a lower level.** An interrupt wake preempts a
+  lower-level running thread at once, and `channel_transact` switches at once
+  because the caller blocks. Non-blocking syscalls (`channel_async_transact`,
+  `channel_respond`, `object_set_peer_user_signal`, `thread_start`,
+  `process_start`) do not reschedule until the caller blocks or the next
+  interrupt or tick. At the same or a lower level the running thread keeps going
+  until it blocks or the next tick rotates it out.
 - **No priority inheritance.** Nothing raises a thread's level while it holds up
   a higher one.
 - **Channels do not change priorities.** A transaction raises `READABLE` on the
-  handler and blocks the initiator, and the reply wakes the initiator. See
+  handler. `channel_transact` blocks the initiator and the reply wakes it;
+  `channel_async_transact` does not block. See
   [`pw_kernel` IPC](./pw-kernel-ipc.md).
 
 ## Why it matters
 
 1. **Latency of interrupt-driven servers.** If an interrupt wakes a server that
-   shares a level with the running thread, the server waits for that thread to
-   block or for the next tick, up to 10 ms at the default. A server that drains a
+   shares a level with the running thread, the server waits behind the running
+   thread and any queued threads at that level until each blocks or uses its
+   tick, up to 10 ms per runnable thread at the 10 ms default. A server that drains a
    hardware FIFO, such as the I3C server (256-byte TTI receive FIFO), can lose
    data in that time. At a higher level the wake preempts at once.
 2. **Unbounded priority inversion.** A client blocked on a server whose level is
    below another runnable thread's can be starved by a thread whose level lies
-   between the two, and nothing boosts the server. A server at or above the
+   between the two, and nothing boosts the server. A server above the
    level of every client rules that out.
 3. **Deadlock is a property of the call graph.** A cycle of blocking calls
    deadlocks at any priority. The images avoid cycles by using a signal where a
@@ -44,13 +49,18 @@ Pigweed's behaviour, read from `pw_kernel/kernel/scheduler/` and
 
 ## The scheme
 
-- A server's level is at or above the level of each of its clients. Levels
+- A server's level is above the level of each of its clients. Levels
   increase along every IPC path, from application to service to hardware server.
 - A server that an interrupt wakes, and that must run promptly, takes the
   highest level of the image.
 - Applications take the lowest.
 - Do not use `Level0`; it is the idle level.
 - Break a call cycle with a signal, not with a call.
+- A signal or async call is not a prompt wake. A server woken by
+  `channel_async_transact`, `channel_respond` or `object_set_peer_user_signal`
+  runs only when the caller blocks or the next interrupt or tick arrives, even
+  at a higher level. A path with a deadline needs an interrupt or a blocking
+  `channel_transact`.
 
 ## Example: MCTP over I3C
 
@@ -77,7 +87,7 @@ I3C server). The priority is a property of the thread object:
 ## When it can be left at the default
 
 Where only one thread is runnable at a time, a plain call chain works at any
-level: a client blocks as it calls its server, so the server runs next. Simple
+level above `Level0`: a client blocks as it calls its server, so the server runs next. Simple
 single-client test images are typically like that. Set the levels anyway when you add a
 second runnable thread, an interrupt-driven server, or a service shared by
 several clients.
