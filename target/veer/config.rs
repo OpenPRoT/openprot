@@ -23,9 +23,17 @@ pub use kernel_config::{
 
 // MCU memory map for the selected target type, taken from upstream caliptra-mcu-sw
 #[cfg(not(feature = "fpga"))]
-use caliptra_mcu_config_emulator::EMULATOR_MEMORY_MAP as MCU_MEMORY_MAP;
+use caliptra_mcu_config_emulator::{
+    EMULATOR_MCU_STRAPS as MCU_STRAPS, EMULATOR_MEMORY_MAP as MCU_MEMORY_MAP,
+};
 #[cfg(feature = "fpga")]
-use caliptra_mcu_config_fpga::FPGA_MEMORY_MAP as MCU_MEMORY_MAP;
+use caliptra_mcu_config_fpga::{FPGA_MCU_STRAPS as MCU_STRAPS, FPGA_MEMORY_MAP as MCU_MEMORY_MAP};
+
+/// Whether the second I3C core (i3c1) is the one the platform straps select for
+/// MCTP. The MCU ROM and runtime read the same strap, `active_i3c`, so this
+/// follows what they set up. Only 1 selects i3c1; any other value is core 0, as
+/// the ROM treats it.
+const ACTIVE_I3C1: bool = MCU_STRAPS.active_i3c == 1;
 
 /// Base of the MCI register block (MCU timer, device mappings).
 pub const MCI_BASE: usize = MCU_MEMORY_MAP.mci_offset as usize;
@@ -36,8 +44,17 @@ pub const MBOX_BASE: usize = MCU_MEMORY_MAP.mbox_offset as usize;
 /// Base of the Caliptra SoC interface registers.
 pub const SOC_IFC_BASE: usize = MCU_MEMORY_MAP.soc_offset as usize;
 
-/// Base of the I3C core 0 register block.
-pub const I3C_BASE: usize = MCU_MEMORY_MAP.i3c_offset as usize;
+/// Base of the active I3C core's register block: core 0, or core 1 when the
+/// platform straps select it.
+pub const I3C_BASE: usize = if ACTIVE_I3C1 {
+    MCU_MEMORY_MAP.i3c1_offset
+} else {
+    MCU_MEMORY_MAP.i3c_offset
+} as usize;
+
+/// PIC interrupt number of the active I3C core (core 0 is 2, core 1 is 3, as in
+/// caliptra-mcu-sw's `I3C_IRQ` and `I3C1_IRQ`).
+pub const I3C_IRQ: u32 = if ACTIVE_I3C1 { 3 } else { 2 };
 
 /// Base of the region in DCCM where the MCU ROM leaves its handoff table.
 pub const HANDOFF_BASE: usize = MCU_MEMORY_MAP.handoff_offset as usize;

@@ -23,7 +23,8 @@
 // caliptra-mcu-sw's memory maps by `veer_system_config`:
 //   @KERNEL_FLASH_START@  MCU SRAM start (code + data execute here)
 //   @KERNEL_RAM_START@    app data, 0x40000 into MCU SRAM
-//   @I3C_BASE@            I3C register block (device-mapped into i3c_server)
+//   @I3C_BASE@            Active I3C core's register block (device-mapped into i3c_server)
+//   @I3C_IRQ@             PIC interrupt number of that core
 {
   arch: {
     type: "riscv",
@@ -57,7 +58,7 @@
             {
               name: "i3c_irq",
               type: "interrupt",
-              irqs: [{ name: "i3c", number: 2 }],
+              irqs: [{ name: "i3c", number: @I3C_IRQ@ }],
             },
             { name: "channel", type: "channel_handler" },
             {
