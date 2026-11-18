@@ -5,9 +5,15 @@
 //!
 //! The driver covers the reason for the last MCU reset, the request for an
 //! MCU reset, the firmware flow status, the firmware error registers, the
-//! security state, the hardware revision and configuration, and the generic
-//! wires. The watchdog registers have their own driver, `veer_wdt`. The
-//! driver does not use the interrupt registers.
+//! security state, the hardware revision and configuration, the generic
+//! wires, and the interrupt for the events of the MCI. The watchdog registers
+//! have their own driver, `veer_wdt`.
+//!
+//! The MCI has one interrupt to the MCU. An event sets its bit in a status
+//! register, and the interrupt is asserted while a pending event has its
+//! interrupt enable set. [`ErrorEvents`] and [`Notifications`] are two of the
+//! MCI's four groups of events. The other two groups are for the aggregated
+//! error inputs from the SoC, and the driver keeps their interrupts disabled.
 //!
 //! Register offsets and bit fields come from the register definitions that
 //! caliptra-mcu-sw generates (`caliptra_ss_registers::mci`).
@@ -24,7 +30,9 @@ use core::mem::offset_of;
 use core::ptr::{with_exposed_provenance, with_exposed_provenance_mut};
 
 use caliptra_ss_registers::mci;
-use mci::bits::{HwConfig0, HwConfig1, HwRevId, ResetRequest};
+use mci::bits::{
+    Error0IntrT, GlobalIntrEnT, HwConfig0, HwConfig1, HwRevId, Notif0IntrT, ResetRequest,
+};
 use tock_registers::LocalRegisterCopy;
 
 /// Number of words in `FW_EXTENDED_ERROR_INFO`.
@@ -61,6 +69,30 @@ pub enum Reg {
     GenericOutputWiresLow,
     /// `GENERIC_OUTPUT_WIRES[1]`: wires 32 to 63.
     GenericOutputWiresHigh,
+    /// `global_intr_en_r`: one interrupt enable for all error events and one
+    /// for all notifications.
+    GlobalInterruptEnable,
+    /// `error0_intr_en_r`: interrupt enables of [`ErrorEvents`].
+    ErrorEnable,
+    /// `error1_intr_en_r`: interrupt enables of the aggregated fatal errors.
+    AggregateFatalEnable,
+    /// `notif0_intr_en_r`: interrupt enables of [`Notifications`].
+    NotificationEnable,
+    /// `notif1_intr_en_r`: interrupt enables of the aggregated non-fatal
+    /// errors.
+    AggregateNonFatalEnable,
+    /// `error0_internal_intr_r`: write-one-to-clear status of
+    /// [`ErrorEvents`].
+    ErrorStatus,
+    /// `notif0_internal_intr_r`: write-one-to-clear status of
+    /// [`Notifications`].
+    NotificationStatus,
+    /// `error0_intr_trig_r`: writing 1 to a bit sets the bit in the error
+    /// status.
+    ErrorTrigger,
+    /// `notif0_intr_trig_r`: writing 1 to a bit sets the bit in the
+    /// notification status.
+    NotificationTrigger,
 }
 
 impl Reg {
@@ -90,6 +122,25 @@ impl Reg {
             Reg::GenericOutputWiresHigh => {
                 offset_of!(mci::regs::Mci, mci_reg_generic_output_wires) + 4
             }
+            Reg::GlobalInterruptEnable => {
+                offset_of!(mci::regs::Mci, intr_block_rf_global_intr_en_r)
+            }
+            Reg::ErrorEnable => offset_of!(mci::regs::Mci, intr_block_rf_error0_intr_en_r),
+            Reg::AggregateFatalEnable => {
+                offset_of!(mci::regs::Mci, intr_block_rf_error1_intr_en_r)
+            }
+            Reg::NotificationEnable => offset_of!(mci::regs::Mci, intr_block_rf_notif0_intr_en_r),
+            Reg::AggregateNonFatalEnable => {
+                offset_of!(mci::regs::Mci, intr_block_rf_notif1_intr_en_r)
+            }
+            Reg::ErrorStatus => offset_of!(mci::regs::Mci, intr_block_rf_error0_internal_intr_r),
+            Reg::NotificationStatus => {
+                offset_of!(mci::regs::Mci, intr_block_rf_notif0_internal_intr_r)
+            }
+            Reg::ErrorTrigger => offset_of!(mci::regs::Mci, intr_block_rf_error0_intr_trig_r),
+            Reg::NotificationTrigger => {
+                offset_of!(mci::regs::Mci, intr_block_rf_notif0_intr_trig_r)
+            }
         }
     }
 }
@@ -111,7 +162,9 @@ impl MmioBlock {
     ///
     /// `base` must be the address of the MCI register block. The block must be
     /// mapped for the caller, and no other code may write the registers in
-    /// [`Reg`].
+    /// [`Reg`], except that `veer_wdt` may clear the watchdog bits of the error
+    /// status. A write to a status register changes only the bits that are
+    /// written as 1.
     pub const unsafe fn new(base: usize) -> Self {
         Self { base }
     }
@@ -216,6 +269,64 @@ bitflags::bitflags! {
     }
 }
 
+bitflags::bitflags! {
+    /// The error events of the MCI, as bits of `error0_internal_intr_r`.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct ErrorEvents: u32 {
+        /// An AXI access and a debug access to MCU SRAM collided.
+        const MCU_SRAM_DMI_AXI_COLLISION = Error0IntrT::ErrorMcuSramDmiAxiCollisionSts::SET.value;
+        /// An internal error of the MCI.
+        const INTERNAL = Error0IntrT::ErrorInternalSts::SET.value;
+        /// The SRAM of MCU mailbox 0 had an ECC error that was not corrected.
+        const MBOX0_ECC_UNCORRECTED = Error0IntrT::ErrorMbox0EccUncSts::SET.value;
+        /// The SRAM of MCU mailbox 1 had an ECC error that was not corrected.
+        const MBOX1_ECC_UNCORRECTED = Error0IntrT::ErrorMbox1EccUncSts::SET.value;
+        /// Watchdog timer 1 timed out. Clearing the event restarts the
+        /// watchdog; see `veer_wdt`.
+        const WDT_TIMER1_TIMEOUT = Error0IntrT::ErrorWdtTimer1TimeoutSts::SET.value;
+        /// Watchdog timer 2 timed out.
+        const WDT_TIMER2_TIMEOUT = Error0IntrT::ErrorWdtTimer2TimeoutSts::SET.value;
+    }
+}
+
+bitflags::bitflags! {
+    /// The notifications of the MCI, as bits of `notif0_internal_intr_r`.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct Notifications: u32 {
+        /// MCU SRAM had an ECC error that was corrected.
+        const MCU_SRAM_ECC_CORRECTED = Notif0IntrT::NotifMcuSramEccCorSts::SET.value;
+        /// Caliptra requests an MCU reset. The MCU then asks the MCI for the
+        /// reset with [`Mci::request_mcu_reset`].
+        const CPTRA_MCU_RESET_REQUEST = Notif0IntrT::NotifCptraMcuResetReqSts::SET.value;
+        /// A generic input wire changed.
+        const GENERIC_INPUT_TOGGLE = Notif0IntrT::NotifGenInToggleSts::SET.value;
+        /// The target of MCU mailbox 0 is done and its status is available.
+        const MBOX0_TARGET_DONE = Notif0IntrT::NotifMbox0TargetDoneSts::SET.value;
+        /// The target of MCU mailbox 1 is done and its status is available.
+        const MBOX1_TARGET_DONE = Notif0IntrT::NotifMbox1TargetDoneSts::SET.value;
+        /// MCU mailbox 0 holds a command for the MCU.
+        const MBOX0_COMMAND_AVAILABLE = Notif0IntrT::NotifMbox0CmdAvailSts::SET.value;
+        /// MCU mailbox 1 holds a command for the MCU.
+        const MBOX1_COMMAND_AVAILABLE = Notif0IntrT::NotifMbox1CmdAvailSts::SET.value;
+        /// The Caliptra mailbox holds a command for the MCU.
+        const CPTRA_MBOX_COMMAND_AVAILABLE = Notif0IntrT::NotifCptraMboxCmdAvailSts::SET.value;
+        /// The SRAM of MCU mailbox 0 had an ECC error that was corrected.
+        const MBOX0_ECC_CORRECTED = Notif0IntrT::NotifMbox0EccCorSts::SET.value;
+        /// The SRAM of MCU mailbox 1 had an ECC error that was corrected.
+        const MBOX1_ECC_CORRECTED = Notif0IntrT::NotifMbox1EccCorSts::SET.value;
+        /// The debug-locked bit of the security state changed.
+        const DEBUG_LOCKED = Notif0IntrT::NotifDebugLockedSts::SET.value;
+        /// The subsystem entered scan mode.
+        const SCAN_MODE = Notif0IntrT::NotifScanModeSts::SET.value;
+        /// The SoC asked for MCU mailbox 0 while the MCU held its lock.
+        const MBOX0_SOC_REQUESTED_LOCK = Notif0IntrT::NotifMbox0SocReqLockSts::SET.value;
+        /// The SoC asked for MCU mailbox 1 while the MCU held its lock.
+        const MBOX1_SOC_REQUESTED_LOCK = Notif0IntrT::NotifMbox1SocReqLockSts::SET.value;
+        /// An operation of the OTP controller is done.
+        const OTP_OPERATION_DONE = Notif0IntrT::NotifOtpOperationDoneSts::SET.value;
+    }
+}
+
 /// The lifecycle state of the device.
 pub type Lifecycle = mci::bits::SecurityState::DeviceLifecycle::Value;
 
@@ -265,7 +376,8 @@ impl Mci<MmioBlock> {
     /// # Safety
     ///
     /// The MCI register block must be at `mci_base` and stay mapped for the
-    /// caller, and no other code may write the registers in [`Reg`].
+    /// caller, and no other code may write the registers in [`Reg`], except
+    /// that `veer_wdt` may clear the watchdog bits of the error status.
     pub const unsafe fn new(mci_base: usize) -> Self {
         // SAFETY: the caller guarantees that the block is mapped and that
         // nothing else writes these registers.
@@ -411,6 +523,63 @@ impl<M: Mmio> Mci<M> {
             .write(Reg::GenericOutputWiresHigh, (wires >> 32) as u32);
     }
 
+    /// Enables the MCI interrupt for the events in `errors` and
+    /// `notifications`, and disables it for every other event of the MCI.
+    ///
+    /// An event that is already pending asserts the interrupt as soon as its
+    /// interrupt is enabled.
+    pub fn enable_interrupts(&mut self, errors: ErrorEvents, notifications: Notifications) {
+        // The interrupt is off while the enables change.
+        self.mmio.write(Reg::GlobalInterruptEnable, 0);
+        self.mmio.write(Reg::ErrorEnable, errors.bits());
+        self.mmio.write(Reg::AggregateFatalEnable, 0);
+        self.mmio
+            .write(Reg::NotificationEnable, notifications.bits());
+        self.mmio.write(Reg::AggregateNonFatalEnable, 0);
+        self.mmio.write(
+            Reg::GlobalInterruptEnable,
+            GlobalIntrEnT::ErrorEn::SET.value | GlobalIntrEnT::NotifEn::SET.value,
+        );
+    }
+
+    /// The error events that have happened and are not acknowledged. The set
+    /// includes events whose interrupt is not enabled.
+    pub fn pending_errors(&self) -> ErrorEvents {
+        ErrorEvents::from_bits_retain(self.mmio.read(Reg::ErrorStatus))
+    }
+
+    /// The notifications that have happened and are not acknowledged. The
+    /// set includes notifications whose interrupt is not enabled.
+    pub fn pending_notifications(&self) -> Notifications {
+        Notifications::from_bits_retain(self.mmio.read(Reg::NotificationStatus))
+    }
+
+    /// Clears `errors` from the pending error events. Other pending events
+    /// stay pending.
+    pub fn acknowledge_errors(&mut self, errors: ErrorEvents) {
+        self.mmio.write(Reg::ErrorStatus, errors.bits());
+    }
+
+    /// Clears `notifications` from the pending notifications. Other pending
+    /// notifications stay pending.
+    pub fn acknowledge_notifications(&mut self, notifications: Notifications) {
+        self.mmio
+            .write(Reg::NotificationStatus, notifications.bits());
+    }
+
+    /// Makes `errors` pending, as if the events had happened. For tests of
+    /// interrupt handling.
+    pub fn trigger_errors(&mut self, errors: ErrorEvents) {
+        self.mmio.write(Reg::ErrorTrigger, errors.bits());
+    }
+
+    /// Makes `notifications` pending, as if they had happened. For tests of
+    /// interrupt handling.
+    pub fn trigger_notifications(&mut self, notifications: Notifications) {
+        self.mmio
+            .write(Reg::NotificationTrigger, notifications.bits());
+    }
+
     fn hw_config0(&self) -> LocalRegisterCopy<u32, HwConfig0::Register> {
         LocalRegisterCopy::new(self.mmio.read(Reg::HwConfig0))
     }
@@ -425,7 +594,9 @@ mod tests {
     use super::*;
 
     /// The MCI registers in [`Reg`] as memory, with the access rules of
-    /// `mci_reg.rdl`: writes to a read-only register have no effect.
+    /// `mci_reg.rdl`: writes to a read-only register have no effect, a write
+    /// to a status register clears the bits that are written as 1, and a
+    /// write to a trigger register sets those bits in the status register.
     #[derive(Default)]
     struct FakeMci {
         hw_rev_id: u32,
@@ -440,6 +611,25 @@ mod tests {
         reset_request: u32,
         generic_input_wires: [u32; 2],
         generic_output_wires: [u32; 2],
+        global_interrupt_enable: u32,
+        error_enable: u32,
+        aggregate_fatal_enable: u32,
+        notification_enable: u32,
+        aggregate_non_fatal_enable: u32,
+        error_status: u32,
+        notification_status: u32,
+    }
+
+    impl FakeMci {
+        /// The level of the interrupt to the MCU for the two groups of
+        /// events that the driver enables.
+        fn interrupt(&self) -> bool {
+            let errors = self.global_interrupt_enable & 0b01 != 0
+                && self.error_status & self.error_enable != 0;
+            let notifications = self.global_interrupt_enable & 0b10 != 0
+                && self.notification_status & self.notification_enable != 0;
+            errors || notifications
+        }
     }
 
     impl Mmio for FakeMci {
@@ -459,6 +649,14 @@ mod tests {
                 Reg::GenericInputWiresHigh => self.generic_input_wires[1],
                 Reg::GenericOutputWiresLow => self.generic_output_wires[0],
                 Reg::GenericOutputWiresHigh => self.generic_output_wires[1],
+                Reg::GlobalInterruptEnable => self.global_interrupt_enable,
+                Reg::ErrorEnable => self.error_enable,
+                Reg::AggregateFatalEnable => self.aggregate_fatal_enable,
+                Reg::NotificationEnable => self.notification_enable,
+                Reg::AggregateNonFatalEnable => self.aggregate_non_fatal_enable,
+                Reg::ErrorStatus => self.error_status,
+                Reg::NotificationStatus => self.notification_status,
+                Reg::ErrorTrigger | Reg::NotificationTrigger => 0,
             }
         }
 
@@ -480,6 +678,15 @@ mod tests {
                 Reg::ResetRequest => self.reset_request = value,
                 Reg::GenericOutputWiresLow => self.generic_output_wires[0] = value,
                 Reg::GenericOutputWiresHigh => self.generic_output_wires[1] = value,
+                Reg::GlobalInterruptEnable => self.global_interrupt_enable = value,
+                Reg::ErrorEnable => self.error_enable = value,
+                Reg::AggregateFatalEnable => self.aggregate_fatal_enable = value,
+                Reg::NotificationEnable => self.notification_enable = value,
+                Reg::AggregateNonFatalEnable => self.aggregate_non_fatal_enable = value,
+                Reg::ErrorStatus => self.error_status &= !value,
+                Reg::NotificationStatus => self.notification_status &= !value,
+                Reg::ErrorTrigger => self.error_status |= value,
+                Reg::NotificationTrigger => self.notification_status |= value,
             }
         }
     }
@@ -505,6 +712,15 @@ mod tests {
         assert_eq!(Reg::GenericInputWiresHigh.offset(), 0x404);
         assert_eq!(Reg::GenericOutputWiresLow.offset(), 0x408);
         assert_eq!(Reg::GenericOutputWiresHigh.offset(), 0x40c);
+        assert_eq!(Reg::GlobalInterruptEnable.offset(), 0x1000);
+        assert_eq!(Reg::ErrorEnable.offset(), 0x1004);
+        assert_eq!(Reg::AggregateFatalEnable.offset(), 0x1008);
+        assert_eq!(Reg::NotificationEnable.offset(), 0x100c);
+        assert_eq!(Reg::AggregateNonFatalEnable.offset(), 0x1010);
+        assert_eq!(Reg::ErrorStatus.offset(), 0x101c);
+        assert_eq!(Reg::NotificationStatus.offset(), 0x1024);
+        assert_eq!(Reg::ErrorTrigger.offset(), 0x102c);
+        assert_eq!(Reg::NotificationTrigger.offset(), 0x1034);
     }
 
     #[test]
@@ -673,5 +889,230 @@ mod tests {
         mci.set_generic_output_wires(0x8000_0000_0000_0002);
         assert_eq!(mci.mmio.generic_output_wires, [0x0000_0002, 0x8000_0000]);
         assert_eq!(mci.generic_output_wires(), 0x8000_0000_0000_0002);
+    }
+
+    #[test]
+    fn events_have_the_same_bits_in_the_enable_and_trigger_registers() {
+        use mci::bits::{Error0IntrEnT, Error0IntrTrigT, Notif0IntrEnT, Notif0IntrTrigT};
+
+        let errors = [
+            (
+                ErrorEvents::MCU_SRAM_DMI_AXI_COLLISION,
+                Error0IntrEnT::ErrorMcuSramDmiAxiCollisionEn::SET.value,
+                Error0IntrTrigT::ErrorMcuSramDmiAxiCollisionTrig::SET.value,
+            ),
+            (
+                ErrorEvents::INTERNAL,
+                Error0IntrEnT::ErrorInternalEn::SET.value,
+                Error0IntrTrigT::ErrorInternalTrig::SET.value,
+            ),
+            (
+                ErrorEvents::MBOX0_ECC_UNCORRECTED,
+                Error0IntrEnT::ErrorMbox0EccUncEn::SET.value,
+                Error0IntrTrigT::ErrorMbox0EccUncTrig::SET.value,
+            ),
+            (
+                ErrorEvents::MBOX1_ECC_UNCORRECTED,
+                Error0IntrEnT::ErrorMbox1EccUncEn::SET.value,
+                Error0IntrTrigT::ErrorMbox1EccUncTrig::SET.value,
+            ),
+            (
+                ErrorEvents::WDT_TIMER1_TIMEOUT,
+                Error0IntrEnT::ErrorWdtTimer1TimeoutEn::SET.value,
+                Error0IntrTrigT::ErrorWdtTimer1TimeoutTrig::SET.value,
+            ),
+            (
+                ErrorEvents::WDT_TIMER2_TIMEOUT,
+                Error0IntrEnT::ErrorWdtTimer2TimeoutEn::SET.value,
+                Error0IntrTrigT::ErrorWdtTimer2TimeoutTrig::SET.value,
+            ),
+        ];
+        for (event, enable, trigger) in errors {
+            assert_eq!(event.bits(), enable, "{event:?}");
+            assert_eq!(event.bits(), trigger, "{event:?}");
+        }
+        assert_eq!(ErrorEvents::all().bits(), 0x3f);
+
+        let notifications = [
+            (
+                Notifications::MCU_SRAM_ECC_CORRECTED,
+                Notif0IntrEnT::NotifMcuSramEccCorEn::SET.value,
+                Notif0IntrTrigT::NotifMcuSramEccCorTrig::SET.value,
+            ),
+            (
+                Notifications::CPTRA_MCU_RESET_REQUEST,
+                Notif0IntrEnT::NotifCptraMcuResetReqEn::SET.value,
+                Notif0IntrTrigT::NotifCptraMcuResetReqTrig::SET.value,
+            ),
+            (
+                Notifications::GENERIC_INPUT_TOGGLE,
+                Notif0IntrEnT::NotifGenInToggleEn::SET.value,
+                Notif0IntrTrigT::NotifGenInToggleTrig::SET.value,
+            ),
+            (
+                Notifications::MBOX0_TARGET_DONE,
+                Notif0IntrEnT::NotifMbox0TargetDoneEn::SET.value,
+                Notif0IntrTrigT::NotifMbox0TargetDoneTrig::SET.value,
+            ),
+            (
+                Notifications::MBOX1_TARGET_DONE,
+                Notif0IntrEnT::NotifMbox1TargetDoneEn::SET.value,
+                Notif0IntrTrigT::NotifMbox1TargetDoneTrig::SET.value,
+            ),
+            (
+                Notifications::MBOX0_COMMAND_AVAILABLE,
+                Notif0IntrEnT::NotifMbox0CmdAvailEn::SET.value,
+                Notif0IntrTrigT::NotifMbox0CmdAvailTrig::SET.value,
+            ),
+            (
+                Notifications::MBOX1_COMMAND_AVAILABLE,
+                Notif0IntrEnT::NotifMbox1CmdAvailEn::SET.value,
+                Notif0IntrTrigT::NotifMbox1CmdAvailTrig::SET.value,
+            ),
+            (
+                Notifications::CPTRA_MBOX_COMMAND_AVAILABLE,
+                Notif0IntrEnT::NotifCptraMboxCmdAvailEn::SET.value,
+                Notif0IntrTrigT::NotifCptraMboxCmdAvailTrig::SET.value,
+            ),
+            (
+                Notifications::MBOX0_ECC_CORRECTED,
+                Notif0IntrEnT::NotifMbox0EccCorEn::SET.value,
+                Notif0IntrTrigT::NotifMbox0EccCorTrig::SET.value,
+            ),
+            (
+                Notifications::MBOX1_ECC_CORRECTED,
+                Notif0IntrEnT::NotifMbox1EccCorEn::SET.value,
+                Notif0IntrTrigT::NotifMbox1EccCorTrig::SET.value,
+            ),
+            (
+                Notifications::DEBUG_LOCKED,
+                Notif0IntrEnT::NotifDebugLockedEn::SET.value,
+                Notif0IntrTrigT::NotifDebugLockedTrig::SET.value,
+            ),
+            (
+                Notifications::SCAN_MODE,
+                Notif0IntrEnT::NotifScanModeEn::SET.value,
+                Notif0IntrTrigT::NotifScanModeTrig::SET.value,
+            ),
+            (
+                Notifications::MBOX0_SOC_REQUESTED_LOCK,
+                Notif0IntrEnT::NotifMbox0SocReqLockEn::SET.value,
+                Notif0IntrTrigT::NotifMbox0SocReqLockTrig::SET.value,
+            ),
+            (
+                Notifications::MBOX1_SOC_REQUESTED_LOCK,
+                Notif0IntrEnT::NotifMbox1SocReqLockEn::SET.value,
+                Notif0IntrTrigT::NotifMbox1SocReqLockTrig::SET.value,
+            ),
+            (
+                Notifications::OTP_OPERATION_DONE,
+                Notif0IntrEnT::NotifOtpOperationDoneEn::SET.value,
+                Notif0IntrTrigT::NotifOtpOperationDoneTrig::SET.value,
+            ),
+        ];
+        for (notification, enable, trigger) in notifications {
+            assert_eq!(notification.bits(), enable, "{notification:?}");
+            assert_eq!(notification.bits(), trigger, "{notification:?}");
+        }
+        assert_eq!(Notifications::all().bits(), 0x7fff);
+    }
+
+    #[test]
+    fn enable_interrupts_enables_only_the_given_events() {
+        // Interrupt enables that an earlier stage left set.
+        let mut mci = mci(FakeMci {
+            global_interrupt_enable: 0b10,
+            error_enable: 0x3f,
+            aggregate_fatal_enable: 0xffff_ffff,
+            notification_enable: 0x7fff,
+            aggregate_non_fatal_enable: 0xffff_ffff,
+            ..Default::default()
+        });
+        mci.enable_interrupts(
+            ErrorEvents::MBOX0_ECC_UNCORRECTED,
+            Notifications::CPTRA_MCU_RESET_REQUEST | Notifications::MBOX0_COMMAND_AVAILABLE,
+        );
+        assert_eq!(mci.mmio.global_interrupt_enable, 0b11);
+        assert_eq!(mci.mmio.error_enable, 1 << 2);
+        assert_eq!(mci.mmio.aggregate_fatal_enable, 0);
+        assert_eq!(mci.mmio.notification_enable, (1 << 1) | (1 << 5));
+        assert_eq!(mci.mmio.aggregate_non_fatal_enable, 0);
+
+        mci.enable_interrupts(ErrorEvents::empty(), Notifications::empty());
+        assert_eq!(mci.mmio.error_enable, 0);
+        assert_eq!(mci.mmio.notification_enable, 0);
+    }
+
+    #[test]
+    fn only_enabled_pending_events_assert_the_interrupt() {
+        let mut mci = mci(FakeMci::default());
+        mci.enable_interrupts(ErrorEvents::INTERNAL, Notifications::GENERIC_INPUT_TOGGLE);
+        assert!(!mci.mmio.interrupt());
+
+        mci.trigger_errors(ErrorEvents::WDT_TIMER2_TIMEOUT);
+        mci.trigger_notifications(Notifications::SCAN_MODE);
+        assert!(!mci.mmio.interrupt());
+        assert_eq!(mci.pending_errors(), ErrorEvents::WDT_TIMER2_TIMEOUT);
+        assert_eq!(mci.pending_notifications(), Notifications::SCAN_MODE);
+
+        mci.trigger_notifications(Notifications::GENERIC_INPUT_TOGGLE);
+        assert!(mci.mmio.interrupt());
+        mci.acknowledge_notifications(Notifications::GENERIC_INPUT_TOGGLE);
+        assert!(!mci.mmio.interrupt());
+
+        mci.trigger_errors(ErrorEvents::INTERNAL);
+        assert!(mci.mmio.interrupt());
+        mci.acknowledge_errors(ErrorEvents::INTERNAL);
+        assert!(!mci.mmio.interrupt());
+    }
+
+    #[test]
+    fn a_pending_event_asserts_the_interrupt_when_it_is_enabled() {
+        let mut mci = mci(FakeMci::default());
+        mci.trigger_notifications(Notifications::CPTRA_MCU_RESET_REQUEST);
+        assert!(!mci.mmio.interrupt());
+        mci.enable_interrupts(ErrorEvents::empty(), Notifications::CPTRA_MCU_RESET_REQUEST);
+        assert!(mci.mmio.interrupt());
+    }
+
+    #[test]
+    fn acknowledge_clears_only_the_given_events() {
+        let mut mci = mci(FakeMci {
+            error_status: 0b11_0100,
+            notification_status: 0b0100_0010_0010,
+            ..Default::default()
+        });
+        assert_eq!(
+            mci.pending_errors(),
+            ErrorEvents::MBOX0_ECC_UNCORRECTED
+                | ErrorEvents::WDT_TIMER1_TIMEOUT
+                | ErrorEvents::WDT_TIMER2_TIMEOUT
+        );
+        assert_eq!(
+            mci.pending_notifications(),
+            Notifications::CPTRA_MCU_RESET_REQUEST
+                | Notifications::MBOX0_COMMAND_AVAILABLE
+                | Notifications::DEBUG_LOCKED
+        );
+
+        mci.acknowledge_errors(ErrorEvents::MBOX0_ECC_UNCORRECTED);
+        assert_eq!(mci.mmio.error_status, 0b11_0000);
+        mci.acknowledge_notifications(Notifications::CPTRA_MCU_RESET_REQUEST);
+        assert_eq!(mci.mmio.notification_status, 0b0100_0010_0000);
+
+        // An event that is not pending.
+        mci.acknowledge_notifications(Notifications::SCAN_MODE);
+        assert_eq!(mci.mmio.notification_status, 0b0100_0010_0000);
+    }
+
+    #[test]
+    fn pending_keeps_bits_it_has_no_name_for() {
+        let mci = mci(FakeMci {
+            error_status: 1 << 31,
+            notification_status: 1 << 31,
+            ..Default::default()
+        });
+        assert_eq!(mci.pending_errors().bits(), 1 << 31);
+        assert_eq!(mci.pending_notifications().bits(), 1 << 31);
     }
 }

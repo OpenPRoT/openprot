@@ -43,6 +43,7 @@ rust_binary(
         "//target/veer:config",
         "//target/veer:entry",
         "//target/veer/peripherals:mci",
+        "@pigweed//pw_kernel/arch/riscv:arch_riscv",
         "@pigweed//pw_kernel/kernel",
         "@pigweed//pw_kernel/subsys/console:console_backend",
         "@pigweed//pw_kernel/target:target_common",

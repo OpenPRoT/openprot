@@ -8,6 +8,10 @@
 //! The ROM's watchdog period is 800 million clock cycles, and the test does
 //! not wait for it to pass. `//target/veer/tests/wdt` checks that a stopped
 //! watchdog does not time out.
+//!
+//! The test then makes Caliptra's request for an MCU reset pending through
+//! the MCI's trigger register and checks that the image resets the MCU: the
+//! ROM runs again.
 
 use std::time::{Duration, Instant};
 
@@ -30,10 +34,13 @@ const RESET_REASON: &str = "MCU reset reason: firmware boot";
 /// status.
 const OS_INITIALIZED: u32 = 1 << 24;
 
+/// Start of every line that the ROM logs.
+const ROM_LOG: &str = "[mcu-rom]";
+
 const TIMEOUT: Duration = Duration::from_secs(120);
 
 #[test]
-fn reads_the_handoff_and_stops_the_rom_watchdog() {
+fn sets_up_the_hardware_and_answers_a_reset_request() {
     let files = BootFiles::from_env();
     let mut hw =
         caliptra_mcu_hw_model::new(files.init_params()).expect("hardware model failed to boot");
@@ -81,4 +88,29 @@ fn reads_the_handoff_and_stops_the_rom_watchdog() {
     assert!(!t2_timeout, "watchdog timer 2 timed out");
     assert!(!nmi, "the watchdog raised an NMI");
     assert_eq!(hw.mci_fw_fatal_error(), None, "firmware hit a fatal error");
+
+    hw.mcu_manager().with_mci(|mci| {
+        mci.intr_block_rf()
+            .notif0_intr_trig_r()
+            .write(|w| w.notif_cptra_mcu_reset_req_trig(true));
+    });
+    let start = Instant::now();
+    let mut log = String::new();
+    hw.step_until(|m| {
+        let out = m.output().take(usize::MAX);
+        print!("{out}");
+        log.push_str(&out);
+        log.contains(ROM_LOG) || start.elapsed() > TIMEOUT
+    });
+    assert!(
+        log.contains(ROM_LOG),
+        "the image did not reset the MCU at Caliptra's request"
+    );
+    let pending = hw.mcu_manager().with_mci(|mci| {
+        mci.intr_block_rf()
+            .notif0_internal_intr_r()
+            .read()
+            .notif_cptra_mcu_reset_req_sts()
+    });
+    assert!(!pending, "the image did not acknowledge Caliptra's request");
 }
