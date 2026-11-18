@@ -12,6 +12,9 @@
 //! The test then makes Caliptra's request for an MCU reset pending through
 //! the MCI's trigger register and checks that the image resets the MCU: the
 //! ROM runs again.
+//!
+//! A second test makes an error event of the MCI pending in the same way and
+//! checks that the image reports a fatal firmware error and stops.
 
 use std::time::{Duration, Instant};
 
@@ -37,7 +40,30 @@ const OS_INITIALIZED: u32 = 1 << 24;
 /// Start of every line that the ROM logs.
 const ROM_LOG: &str = "[mcu-rom]";
 
+/// `FATAL_HARDWARE_ERROR` in `target.rs`.
+const FATAL_HARDWARE_ERROR: u32 = 0xf000_0001;
+
+/// The internal error event of the MCI in `error0_internal_intr_r`.
+const INTERNAL_ERROR: u32 = 1 << 1;
+
 const TIMEOUT: Duration = Duration::from_secs(120);
+
+/// How long the second test lets a stopped image run.
+const STOPPED_TIME: Duration = Duration::from_secs(2);
+
+/// Runs the model until `done` returns true or [`TIMEOUT`] passes, and
+/// returns what the MCU logged.
+fn run_until<M: McuHwModel>(hw: &mut M, mut done: impl FnMut(&mut M, &str) -> bool) -> String {
+    let start = Instant::now();
+    let mut log = String::new();
+    hw.step_until(|m| {
+        let out = m.output().take(usize::MAX);
+        print!("{out}");
+        log.push_str(&out);
+        done(m, &log) || start.elapsed() > TIMEOUT
+    });
+    log
+}
 
 #[test]
 fn sets_up_the_hardware_and_answers_a_reset_request() {
@@ -45,14 +71,7 @@ fn sets_up_the_hardware_and_answers_a_reset_request() {
     let mut hw =
         caliptra_mcu_hw_model::new(files.init_params()).expect("hardware model failed to boot");
 
-    let start = Instant::now();
-    let mut log = String::new();
-    hw.step_until(|m| {
-        let out = m.output().take(usize::MAX);
-        print!("{out}");
-        log.push_str(&out);
-        log.contains(KERNEL_STARTED) || start.elapsed() > TIMEOUT
-    });
+    let log = run_until(&mut hw, |_, log| log.contains(KERNEL_STARTED));
     assert!(log.contains(KERNEL_STARTED), "the kernel did not start");
     assert!(
         log.contains(HANDOFF_READ),
@@ -94,14 +113,7 @@ fn sets_up_the_hardware_and_answers_a_reset_request() {
             .notif0_intr_trig_r()
             .write(|w| w.notif_cptra_mcu_reset_req_trig(true));
     });
-    let start = Instant::now();
-    let mut log = String::new();
-    hw.step_until(|m| {
-        let out = m.output().take(usize::MAX);
-        print!("{out}");
-        log.push_str(&out);
-        log.contains(ROM_LOG) || start.elapsed() > TIMEOUT
-    });
+    let log = run_until(&mut hw, |_, log| log.contains(ROM_LOG));
     assert!(
         log.contains(ROM_LOG),
         "the image did not reset the MCU at Caliptra's request"
@@ -113,4 +125,50 @@ fn sets_up_the_hardware_and_answers_a_reset_request() {
             .notif_cptra_mcu_reset_req_sts()
     });
     assert!(!pending, "the image did not acknowledge Caliptra's request");
+}
+
+#[test]
+fn reports_a_fatal_hardware_error_and_stops() {
+    let files = BootFiles::from_env();
+    let mut hw =
+        caliptra_mcu_hw_model::new(files.init_params()).expect("hardware model failed to boot");
+
+    let log = run_until(&mut hw, |_, log| log.contains(KERNEL_STARTED));
+    assert!(log.contains(KERNEL_STARTED), "the kernel did not start");
+    assert_eq!(hw.mci_fw_fatal_error(), None, "firmware hit a fatal error");
+
+    hw.mcu_manager().with_mci(|mci| {
+        mci.intr_block_rf()
+            .error0_intr_trig_r()
+            .write(|w| w.error_internal_trig(true));
+    });
+    run_until(&mut hw, |m, _| m.mci_fw_fatal_error().is_some());
+    assert_eq!(
+        hw.mci_fw_fatal_error(),
+        Some(FATAL_HARDWARE_ERROR),
+        "the image did not report the fatal hardware error"
+    );
+    let (errors, aggregated) = hw.mcu_manager().with_mci(|mci| {
+        let info = mci.fw_extended_error_info();
+        (info.at(0).read(), info.at(1).read())
+    });
+    assert_eq!(errors, INTERNAL_ERROR, "the image reported other errors");
+    assert_eq!(aggregated, 0, "the image reported aggregated errors");
+
+    // A stopped image does not answer Caliptra's request for an MCU reset.
+    hw.mcu_manager().with_mci(|mci| {
+        mci.intr_block_rf()
+            .notif0_intr_trig_r()
+            .write(|w| w.notif_cptra_mcu_reset_req_trig(true));
+    });
+    let start = Instant::now();
+    let log = run_until(&mut hw, |_, _| start.elapsed() > STOPPED_TIME);
+    assert!(!log.contains(ROM_LOG), "the image reset the MCU");
+    let pending = hw.mcu_manager().with_mci(|mci| {
+        mci.intr_block_rf()
+            .notif0_internal_intr_r()
+            .read()
+            .notif_cptra_mcu_reset_req_sts()
+    });
+    assert!(pending, "the image handled an event after it stopped");
 }

@@ -18,3 +18,6 @@ of the project.
     machine (`services/orchestrator/sm`). Covers the two-tier firmware
     verification model (`ComponentAttrs`, eRoT gate, iRoT gate), the
     verification boundary, and the full state/transition table.
+-   [**Caliptra MCU**](./caliptra-mcu/README.md): The products that run on the
+    MCU of a Caliptra Subsystem (`target/veer/`), with the events and errors
+    that the MCI block reports and what the runtime image does about them.
