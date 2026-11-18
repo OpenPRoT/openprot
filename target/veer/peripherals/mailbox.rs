@@ -104,6 +104,18 @@ impl Mailbox {
         self.receive(response)
     }
 
+    /// Sends command `cmd` and waits for its response. See [`send`](Self::send)
+    /// and [`receive_with`](Self::receive_with).
+    pub fn execute_with(
+        &self,
+        cmd: u32,
+        body: impl Iterator<Item = u32> + Clone,
+        sink: impl FnMut(usize, u32),
+    ) -> Result<usize, MailboxError> {
+        self.send(cmd, body)?;
+        self.receive_with(sink)
+    }
+
     /// Sends command `cmd` without waiting for its response.
     ///
     /// `body` is the request without its first word. The first word is the
@@ -117,7 +129,7 @@ impl Mailbox {
     /// unless that length is a multiple of 4.
     ///
     /// On success the mailbox stays locked until [`receive`](Self::receive)
-    /// is called.
+    /// or [`receive_with`](Self::receive_with) is called.
     pub fn send(
         &self,
         cmd: u32,
@@ -161,7 +173,28 @@ impl Mailbox {
     /// Returns the length of the response in bytes, which can be more than
     /// `response` holds.
     pub fn receive(&self, response: &mut [u32]) -> Result<usize, MailboxError> {
-        let result = self.read_response(response);
+        self.receive_with(|index, word| {
+            if let Some(slot) = response.get_mut(index) {
+                *slot = word;
+            }
+        })
+    }
+
+    /// Waits for the response to the command that was sent, then releases the
+    /// mailbox.
+    ///
+    /// Calls `sink` with the index and the value of each word of the
+    /// response, in order. The words include the checksum and FIPS status
+    /// words. A caller can use `sink` to store a long response in more than
+    /// one buffer.
+    ///
+    /// `sink` receives each word before the checksum is checked, including
+    /// the words of a response that fails with
+    /// [`MailboxError::InvalidChecksum`].
+    ///
+    /// Returns the length of the response in bytes.
+    pub fn receive_with(&self, sink: impl FnMut(usize, u32)) -> Result<usize, MailboxError> {
+        let result = self.read_response(sink);
         // Clearing the execute register ends the command and releases the
         // lock. This is also done after an error so that the next command can
         // take the lock.
@@ -170,7 +203,7 @@ impl Mailbox {
     }
 
     /// Waits for Caliptra to finish the command, then reads the response.
-    fn read_response(&self, response: &mut [u32]) -> Result<usize, MailboxError> {
+    fn read_response(&self, mut sink: impl FnMut(usize, u32)) -> Result<usize, MailboxError> {
         use MboxStatus::Status::Value;
         match self.wait()? {
             Some(Value::DataReady) => {}
@@ -202,9 +235,7 @@ impl Mailbox {
                 word = u32::from_le_bytes(bytes);
                 sum = sum.wrapping_add(byte_sum(word));
             }
-            if let Some(slot) = response.get_mut(i) {
-                *slot = word;
-            }
+            sink(i, word);
         }
         if checksum != 0u32.wrapping_sub(sum) {
             return Err(MailboxError::InvalidChecksum);
