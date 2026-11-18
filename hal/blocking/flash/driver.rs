@@ -127,9 +127,15 @@ pub trait FlashDriver {
 /// non-blocking start; the blocking `Flash::erase` keeps using `start_erase` plus `Blocking`.
 ///
 /// # Contract
-/// After `start_erase_nowait` returns `Ok`, `is_busy` must report the real state of the
-/// operation until `complete_op` has been called, and completion is observed through
-/// `is_busy`/`complete_op` only, never through `Blocking`.
+/// After `start_erase_nowait` returns `Ok`:
+/// - `is_busy` must report the real state of the operation until `complete_op` has been
+///   called. Completion is detected by polling `is_busy`; `Blocking` is not used to wait.
+/// - `is_busy` must not return `false` until the operation's completion notification (for
+///   an interrupt-backed driver, its interrupt) has been raised. `DeferredFlash` consumes
+///   that notification once, when the erase turns from busy to done, by calling
+///   `Blocking::wait_for_notification`. That call returns promptly, because the operation
+///   has finished, and it keeps the notification from being left pending to cut short the
+///   next blocking wait. It is a no-op for a driver with no notification.
 pub trait DeferredErase: FlashDriver {
     /// Starts an erase and returns immediately. Same argument rules as
     /// [`FlashDriver::start_erase`].

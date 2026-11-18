@@ -240,8 +240,10 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
 /// Requires a driver that implements [`DeferredErase`]. Everything else, including the
 /// blocking [`Flash::erase`], is the wrapped `BlockingFlash`: `erase` still does
 /// `start_erase`, `Blocking::wait_for_notification`, `complete_op`, and does not depend on
-/// `is_busy`. Only the deferred pair below consults `is_busy`, and it does not use
-/// `Blocking`; the caller does its own waiting between polls.
+/// `is_busy`. Only the deferred pair below consults `is_busy`. The caller does its own
+/// waiting between polls, so `Blocking` is not used while an erase is busy. It is used once,
+/// when the erase is done, to consume the completion notification (see the contract on
+/// [`DeferredErase`]).
 pub struct DeferredFlash<TDriver: DeferredErase, TBlocking: Blocking>(
     pub BlockingFlash<TDriver, TBlocking>,
 );
@@ -278,8 +280,7 @@ impl<TDriver: DeferredErase, TBlocking: Blocking> Flash for DeferredFlash<TDrive
         if self.0.driver.is_busy() {
             return Ok(OpPoll::Busy);
         }
-        // The erase is done, so its completion notification has fired. Consume it here so it
-        // isn't left pending to cut short the next blocking wait.
+        // Consume the completion notification; see the contract on `DeferredErase`.
         self.0.blocking.wait_for_notification();
         self.0.driver.complete_op()?;
         Ok(OpPoll::Done)
