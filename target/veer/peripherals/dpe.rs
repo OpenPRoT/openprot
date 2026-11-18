@@ -25,9 +25,7 @@ use caliptra_dpe::commands::{Command, CommandHdr, SignFlags, SignP384Cmd};
 use caliptra_dpe::response::{ResponseHdr, SignP384Resp};
 use caliptra_dpe::DpeProfile;
 use openprot_hal_blocking::digest::Digest;
-use openprot_hal_blocking::dpe::{
-    ContextHandle, Error, ErrorKind, ErrorType, P384Sha384, Sign, SignOutput,
-};
+use openprot_hal_blocking::dpe::{ContextHandle, Error, ErrorKind, ErrorType, P384Sha384, Sign};
 use openprot_hal_blocking::ecdsa::P384Signature;
 use veer_mailbox::{Mailbox, MailboxError};
 use zerocopy::{Immutable, IntoBytes, TryFromBytes};
@@ -137,7 +135,8 @@ impl Sign<P384Sha384> for CaliptraDpe<'_> {
         handle: &ContextHandle,
         label: &[u8; 48],
         digest: &Digest<12>,
-    ) -> Result<SignOutput<P384Signature>, Self::Error> {
+        signature: &mut P384Signature,
+    ) -> Result<ContextHandle, Self::Error> {
         let request = SignRequest {
             data_size: SIGN_COMMAND_BYTES as u32,
             header: CommandHdr::new(DpeProfile::P384Sha384, Command::SIGN),
@@ -175,9 +174,7 @@ impl Sign<P384Sha384> for CaliptraDpe<'_> {
         {
             return Err(CaliptraDpeError::InvalidResponse);
         }
-        Ok(SignOutput {
-            signature: P384Signature::new(sig_r, sig_s),
-            handle: ContextHandle(new_context_handle.0),
-        })
+        *signature = P384Signature::new(sig_r, sig_s);
+        Ok(ContextHandle(new_context_handle.0))
     }
 }

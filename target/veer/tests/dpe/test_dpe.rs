@@ -89,8 +89,9 @@ fn sign(
     label: &[u8; 48],
     digest: &Digest<12>,
 ) -> Result<(P384Signature, ContextHandle), &'static str> {
-    match dpe.sign(handle, label, digest) {
-        Ok(output) => Ok((output.signature, output.handle)),
+    let mut signature = P384Signature::new([0; 48], [0; 48]);
+    match dpe.sign(handle, label, digest, &mut signature) {
+        Ok(handle) => Ok((signature, handle)),
         Err(CaliptraDpeError::Dpe(status)) => {
             pw_log::error!("Sign: DPE status {:#x}", status as u32);
             Err("Sign failed in the DPE")
@@ -195,7 +196,8 @@ fn run(mailbox: &Mailbox) -> Result<(), &'static str> {
     pw_log::info!("other label: ok");
 
     let unknown = ContextHandle([0xa5; 16]);
-    match dpe.sign(&unknown, &LABEL, &digest) {
+    let mut unused = P384Signature::new([0; 48], [0; 48]);
+    match dpe.sign(&unknown, &LABEL, &digest, &mut unused) {
         Err(error) if error.kind() == ErrorKind::InvalidHandle => {}
         Err(_) => return Err("unknown handle gives the wrong error"),
         Ok(_) => return Err("unknown handle signs"),
