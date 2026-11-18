@@ -1104,26 +1104,28 @@ impl ScuRegisters {
     /// # }
     /// ```
     pub fn apply_pinctrl_group(&self, pins: &[PinctrlPin]) {
-        let regs = self.regs();
-        for pin in pins {
-            match pin.offset {
-                0x410 => modify_reg!(regs.scu410(), pin.bit, pin.clear),
-                0x414 => modify_reg!(regs.scu414(), pin.bit, pin.clear),
-                0x418 => modify_reg!(regs.scu418(), pin.bit, pin.clear),
-                0x41C => modify_reg!(regs.scu41c(), pin.bit, pin.clear),
-                0x430 => modify_reg!(regs.scu430(), pin.bit, pin.clear),
-                0x434 => modify_reg!(regs.scu434(), pin.bit, pin.clear),
-                0x4B0 => modify_reg!(regs.scu4b0(), pin.bit, pin.clear),
-                0x4B4 => modify_reg!(regs.scu4b4(), pin.bit, pin.clear),
-                0x4B8 => modify_reg!(regs.scu4b8(), pin.bit, pin.clear),
-                0x4BC => modify_reg!(regs.scu4bc(), pin.bit, pin.clear),
-                0x690 => modify_reg!(regs.scu690(), pin.bit, pin.clear),
-                0x694 => modify_reg!(regs.scu694(), pin.bit, pin.clear),
-                0x698 => modify_reg!(regs.scu698(), pin.bit, pin.clear),
-                0x69C => modify_reg!(regs.scu69c(), pin.bit, pin.clear),
-                0x6B0 => modify_reg!(regs.scu6b0(), pin.bit, pin.clear),
-                _ => {} // Unknown offset, silently ignore
+        self.unlock_and_lock_after(|scu| {
+            let regs = scu.regs();
+            for pin in pins {
+                match pin.offset {
+                    0x410 => modify_reg!(regs.scu410(), pin.bit, pin.clear),
+                    0x414 => modify_reg!(regs.scu414(), pin.bit, pin.clear),
+                    0x418 => modify_reg!(regs.scu418(), pin.bit, pin.clear),
+                    0x41C => modify_reg!(regs.scu41c(), pin.bit, pin.clear),
+                    0x430 => modify_reg!(regs.scu430(), pin.bit, pin.clear),
+                    0x434 => modify_reg!(regs.scu434(), pin.bit, pin.clear),
+                    0x4B0 => modify_reg!(regs.scu4b0(), pin.bit, pin.clear),
+                    0x4B4 => modify_reg!(regs.scu4b4(), pin.bit, pin.clear),
+                    0x4B8 => modify_reg!(regs.scu4b8(), pin.bit, pin.clear),
+                    0x4BC => modify_reg!(regs.scu4bc(), pin.bit, pin.clear),
+                    0x690 => modify_reg!(regs.scu690(), pin.bit, pin.clear),
+                    0x694 => modify_reg!(regs.scu694(), pin.bit, pin.clear),
+                    0x698 => modify_reg!(regs.scu698(), pin.bit, pin.clear),
+                    0x69C => modify_reg!(regs.scu69c(), pin.bit, pin.clear),
+                    0x6B0 => modify_reg!(regs.scu6b0(), pin.bit, pin.clear),
+                    _ => {} // Unknown offset, silently ignore
+                }
             }
-        }
+        });
     }
 }

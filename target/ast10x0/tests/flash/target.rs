@@ -222,7 +222,7 @@ fn run_with_backup(
 fn run_flash_test() -> Result<(), &'static str> {
     // SAFETY: kernel main() runs once, single-threaded, with exclusive
     // hardware ownership.
-    let scu = unsafe { ScuRegisters::new_global_unlocked() };
+    let scu = unsafe { ScuRegisters::new_global() };
     scu.apply_pinctrl_group(PINCTRL_FMC_QUAD);
 
     // SAFETY: this image has no other user of the FMC, and this runs once.

@@ -85,6 +85,10 @@ unsafe fn pre_init() {
 
     // SAFETY: SCU is unlocked above; pre-init has exclusive ownership.
     unsafe { init_cache() };
+
+    // Re-lock the SCU. Later users unlock it only for the duration of their
+    // writes, via `ScuRegisters::unlock_and_lock_after`.
+    scu.scu000().write(|w| unsafe { w.bits(0) });
 }
 
 #[unsafe(no_mangle)]

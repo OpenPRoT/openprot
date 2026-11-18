@@ -26,7 +26,7 @@ impl TargetInterface for Target {
         // shared pinctrl registers).
         // SAFETY: kernel main() runs once, single-threaded, with exclusive
         // hardware ownership.
-        let scu = unsafe { ScuRegisters::new_global_unlocked() };
+        let scu = unsafe { ScuRegisters::new_global() };
         scu.apply_pinctrl_group(PINCTRL_FMC_QUAD);
 
         codegen::start();
