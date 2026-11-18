@@ -6,16 +6,8 @@
 use crate::resource::{Capability, FieldWrite, Pin, Routes};
 use core::marker::PhantomData;
 
-/// Max distinct register offsets [`RegBatch`] can hold after coalescing (merging per-pin writes
-/// that land on the same register into one). Backs a fixed-size array; `[..len]` of it is live,
-/// the rest is zeroed padding — 16 is arbitrary, just comfortably above any real board's count.
-// TODO: the dead slots are not trimmed. `as_slice()` runs at runtime against a const-promoted
-// `RegBatch`, so the backing allocation is always MAX_REGS wide (196 bytes on thumbv7m) with the
-// unused entries zeroed. Whether they reach the binary is the optimizer's call: at -O1/-O3 the
-// apply loop folds to immediate instructions and nothing lands, but at opt-level=0 — Bazel's
-// default fastbuild, which `--config=k_ast1060_evb` builds with — the whole table lands plus a
-// runtime loop. Trimming it structurally needs `generic_const_exprs`, dropped deliberately; the
-// waste is bounded at one `scu::route` monomorphization per image until that comes back.
+/// The size of the compile-time coalescing scratch [`RegBatch`] backs its `ops` array with — 16
+/// is arbitrary, just comfortably above any real board's count.
 pub(crate) const MAX_REGS: usize = 16;
 
 /// Central batch of register writes, coalesced to one op per distinct offset: `[..len]` of `ops`
@@ -23,7 +15,16 @@ pub(crate) const MAX_REGS: usize = 16;
 /// never checks `B::SIZE`; that proof lives in [`ProvenInBounds`], not here (see its doc for why).
 #[derive(Clone, Copy)]
 pub struct RegBatch<B> {
-    /// Register ops, one per distinct offset; only `[..len]` are valid.
+    /// The compile-time coalescing scratch: one op per distinct register offset, merging per-pin
+    /// writes that land on the same register into one. Only `[..len]` of it is ever live, the
+    /// rest is zeroed padding.
+    // TODO: the dead slots are not trimmed. `as_slice()` runs at runtime against a const-promoted
+    // `RegBatch`, so the backing allocation is always MAX_REGS wide (196 bytes on thumbv7m) with the
+    // unused entries zeroed. Whether they reach the binary is the optimizer's call: at -O1/-O3 the
+    // apply loop folds to immediate instructions and nothing lands, but at opt-level=0 — Bazel's
+    // default fastbuild, which `--config=k_ast1060_evb` builds with — the whole table lands plus a
+    // runtime loop. Trimming it structurally needs `generic_const_exprs`, dropped deliberately; the
+    // waste is bounded at one `scu::route` monomorphization per image until that comes back.
     ops: [FieldWrite; MAX_REGS],
     /// Number of live ops.
     len: usize,
