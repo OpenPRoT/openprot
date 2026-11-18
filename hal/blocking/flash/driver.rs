@@ -120,6 +120,26 @@ pub trait FlashDriver {
     fn complete_op(&mut self) -> Result<(), Self::Error>;
 }
 
+/// Capability: the driver can start an erase and return without waiting for it.
+///
+/// Opt-in, for use with `hal_flash::DeferredFlash`. A driver whose `start_erase` already
+/// blocks internally (so that `Blocking` has nothing to wait for) implements this with a
+/// non-blocking start; the blocking `Flash::erase` keeps using `start_erase` plus `Blocking`.
+///
+/// # Contract
+/// After `start_erase_nowait` returns `Ok`, `is_busy` must report the real state of the
+/// operation until `complete_op` has been called, and completion is observed through
+/// `is_busy`/`complete_op` only, never through `Blocking`.
+pub trait DeferredErase: FlashDriver {
+    /// Starts an erase and returns immediately. Same argument rules as
+    /// [`FlashDriver::start_erase`].
+    fn start_erase_nowait(
+        &mut self,
+        start_addr: FlashAddress,
+        size: PowerOf2Usize,
+    ) -> Result<(), Self::Error>;
+}
+
 /// Represents an address in flash memory.
 ///
 /// A flash address consists of an offset within the flash address space.
