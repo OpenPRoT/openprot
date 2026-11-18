@@ -41,6 +41,21 @@ phase and is not part of the data, but it is covered by the PEC:
 | controller write to this target (inbound) | `(own_addr << 1) \| 0`, then the packet |
 | controller read of this target (outbound) | `(own_addr << 1) \| 1`, then the packet |
 
+### The PEC engine
+
+The crate does not decide how the CRC is computed. `MctpI3cEncap`,
+`MctpI3cReceiver` and `I3cSender` take a `Pec` engine (from `//util/pec`, re-exported
+here) and default to `SoftwarePec`, a 256-byte lookup table that works on every
+target. A target that can do better passes its own engine through `with_pec`:
+
+- `//util/pec_zbc` has `ZbcPec` for RISC-V cores with the `Zbc` carryless
+  multiply: two `clmul`s, a shift and an xor per byte, no table. It is a separate
+  crate because the `clmul` wrapper needs one `unsafe` block, and this crate has
+  none. The VeeR build turns `Zbc` on; other cores, ARM and the host get an empty
+  crate and the table.
+- An engine only *computes* the CRC. A controller that generates and checks the
+  PEC itself needs the byte left out of the frame, which an engine cannot say.
+
 ## How it differs from the I2C binding
 
 The two are deliberately shaped alike, but three things are forced by I3C:
@@ -140,6 +155,7 @@ bazel test //services/mctp/transport-i3c/...
 ## Dependencies
 
 - `i3c_api`, `i3c_client` — the i3c target service seam and client
+- `util_pec` — the `Pec` trait and the default table engine
 - `mctp-lib` — `Sender` trait, fragmentation
 - `mctp` — core MCTP types
 - `pw_log` — logging

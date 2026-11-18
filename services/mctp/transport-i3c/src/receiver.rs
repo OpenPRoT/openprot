@@ -7,7 +7,8 @@
 //! for `Server::inbound()`. The counterpart to
 //! `services/mctp/transport-i2c`'s `MctpI2cReceiver`.
 
-use crate::encap::decode_write;
+use crate::encap::decode_write_with;
+use util_pec::{Pec, SoftwarePec};
 
 /// Decodes inbound I3C private writes into raw MCTP packets.
 ///
@@ -18,16 +19,29 @@ use crate::encap::decode_write;
 /// round-trip, so the receiver caches it and asks again only when a PEC check
 /// fails -- the one case where the controller may have re-run ENTDAA and moved
 /// the address.
-pub struct MctpI3cReceiver {
+pub struct MctpI3cReceiver<P = SoftwarePec> {
     own_addr: Option<u8>,
+    pec: P,
 }
 
 impl MctpI3cReceiver {
-    /// Create a receiver.
+    /// Create a receiver that checks the PEC in software.
     pub const fn new() -> Self {
-        Self { own_addr: None }
+        Self::with_pec(SoftwarePec)
     }
+}
 
+impl<P> MctpI3cReceiver<P> {
+    /// Create a receiver that checks the PEC with `pec`.
+    pub const fn with_pec(pec: P) -> Self {
+        Self {
+            own_addr: None,
+            pec,
+        }
+    }
+}
+
+impl<P: Pec> MctpI3cReceiver<P> {
     /// Decode one inbound frame into a raw MCTP packet.
     ///
     /// Verifies and strips the trailing PEC and returns the MCTP packet.
@@ -49,7 +63,7 @@ impl MctpI3cReceiver {
             }
         };
 
-        match decode_write(cached, data) {
+        match decode_write_with(&self.pec, cached, data) {
             Ok(packet) => Ok(packet),
             Err(err) => {
                 // A bad PEC may just mean the address moved. Re-read once and
@@ -57,7 +71,7 @@ impl MctpI3cReceiver {
                 match read_addr() {
                     Some(addr) if addr != cached => {
                         self.own_addr = Some(addr);
-                        decode_write(addr, data)
+                        decode_write_with(&self.pec, addr, data)
                     }
                     _ => Err(err),
                 }

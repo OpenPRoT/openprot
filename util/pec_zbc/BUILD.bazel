@@ -1,0 +1,29 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+# Enables the Zbc carryless multiply for the crates that ask for it. Only the
+# VeeR platform sets the constraint: other RISC-V cores, ARM and the host keep
+# the transport's table engine, and this crate is empty for them.
+_ZBC_FLAGS = select({
+    "//target/veer:zbc_enabled": ["-Ctarget-feature=+zbc"],
+    "//conditions:default": [],
+})
+
+rust_library(
+    name = "pec_zbc",
+    srcs = ["lib.rs"],
+    crate_name = "util_pec_zbc",
+    edition = "2024",
+    rustc_flags = _ZBC_FLAGS,
+    visibility = ["//visibility:public"],
+    deps = ["//util/pec"],
+)
+
+# Runs the clmul arithmetic on the host against the bitwise definition.
+rust_test(
+    name = "pec_zbc_test",
+    crate = ":pec_zbc",
+    edition = "2024",
+)

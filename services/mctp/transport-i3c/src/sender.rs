@@ -30,6 +30,7 @@ use mctp_lib::fragment::SendOutput;
 use crate::encap::{
     mtu_for_limit, MctpI3cEncap, MCTP_I3C_IPC_FRAME, MCTP_I3C_IPC_MAXMTU, MCTP_I3C_IPC_PACKET,
 };
+use util_pec::{Pec, SoftwarePec};
 
 /// How many times one frame is retried while the i3c service reports `Busy`
 /// before the send fails.
@@ -62,7 +63,7 @@ enum Staged {
 /// `W` is the wait hook, called between attempts while the service is `Busy`.
 /// The crate is kernel-free, so the caller supplies it: a sleep on target, a
 /// no-op or a counter in host tests.
-pub struct I3cSender<T, W> {
+pub struct I3cSender<T, W, P = SoftwarePec> {
     client: I3cClient<T>,
     /// The controller's dynamic address. DSP0233 has no destination or source
     /// field, so it is not carried on the wire (an I3C target always sends to the
@@ -74,20 +75,31 @@ pub struct I3cSender<T, W> {
     /// The MTU `get_mtu` reports: what the target could send when the limits
     /// were last read (see [`refresh_limits`](Self::refresh_limits)).
     mtu: Cell<usize>,
+    /// Computes the PEC of every outbound frame.
+    pec: P,
 }
 
 impl<T: Transport, W: FnMut()> I3cSender<T, W> {
-    /// Create a sender over an i3c client.
+    /// Create a sender over an i3c client, computing the PEC in software.
     ///
     /// * `client` — the i3c target service client
     /// * `remote_addr` — the controller's 7-bit dynamic address
     /// * `wait` — called between retries while the service is `Busy`
     pub const fn new(client: I3cClient<T>, remote_addr: u8, wait: W) -> Self {
+        Self::with_pec(client, remote_addr, wait, SoftwarePec)
+    }
+}
+
+impl<T: Transport, W: FnMut(), P: Pec + Copy> I3cSender<T, W, P> {
+    /// Create a sender that computes the PEC with `pec`, as [`new`](Self::new)
+    /// otherwise.
+    pub const fn with_pec(client: I3cClient<T>, remote_addr: u8, wait: W, pec: P) -> Self {
         Self {
             client,
             remote_addr,
             wait,
             mtu: Cell::new(MCTP_I3C_IPC_MAXMTU),
+            pec,
         }
     }
 
@@ -198,7 +210,7 @@ impl<T: Transport, W: FnMut()> I3cSender<T, W> {
     }
 }
 
-impl<T: Transport, W: FnMut()> mctp_lib::Sender for I3cSender<T, W> {
+impl<T: Transport, W: FnMut(), P: Pec + Copy> mctp_lib::Sender for I3cSender<T, W, P> {
     fn send_vectored(
         &mut self,
         // DSP0233 has no destination field and a target always sends to the
@@ -238,7 +250,7 @@ impl<T: Transport, W: FnMut()> mctp_lib::Sender for I3cSender<T, W> {
                     let mut staged = false;
                     for _ in 0..=MAX_ADDRESS_RETRIES {
                         let addr = self.own_addr()?;
-                        let encoder = MctpI3cEncap::new(addr);
+                        let encoder = MctpI3cEncap::with_pec(addr, self.pec);
                         let mut out = [0u8; MCTP_I3C_IPC_FRAME];
                         let n = encoder.encode(p, &mut out)?;
                         let frame = out.get(..n).ok_or(mctp::Error::TxFailure)?;
