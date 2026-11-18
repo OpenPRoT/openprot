@@ -1,13 +1,12 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 
-//! Checks the Caliptra DPE driver. The driver uses the mailbox to ask the DPE
-//! of the Caliptra core for a signature.
+//! Checks the Caliptra DPE driver. The driver uses the mailbox to send
+//! commands to the DPE of the Caliptra core.
 //!
-//! The test signs a digest with the default context and checks the signature
-//! with Caliptra's `ECDSA384_SIGNATURE_VERIFY` command. It gets the public
-//! key from the DPE `CertifyKey` command. The driver has neither command, so
-//! the test sends them itself.
+//! The test certifies a key, signs a digest with it and checks the signature
+//! with Caliptra's `ECDSA384_SIGNATURE_VERIFY` command, which the test sends
+//! itself. It also reads the certificate chain.
 //!
 //! The test is a userspace app because the stack of the kernel's bootstrap
 //! thread is too small for it.
@@ -15,23 +14,19 @@
 #![no_std]
 #![no_main]
 
-use caliptra_api::mailbox::MailboxRespHeaderVarSize;
 use caliptra_api::mailbox::{CommandId, EcdsaVerifyReq, MailboxReqHeader, MailboxRespHeader};
-use caliptra_dpe::commands::{CertifyKeyCommand, CertifyKeyFlags, CertifyKeyP384Cmd};
-use caliptra_dpe::commands::{Command, CommandHdr};
-use caliptra_dpe::response::{CertifyKeyP384RespHdr, ResponseHdr};
-use caliptra_dpe::DpeProfile;
 use kernel_config::{MBOX_BASE, SOC_IFC_BASE};
 use openprot_hal_blocking::digest::scoped::{DigestInit, DigestOp};
 use openprot_hal_blocking::digest::{Digest, Sha2_384};
-use openprot_hal_blocking::dpe::{ContextHandle, Error as _, ErrorKind, Sign};
-use openprot_hal_blocking::ecdsa::{P384Signature, Signature};
+use openprot_hal_blocking::dpe::{
+    CertificateFormat, CertifyKey, ContextHandle, Error as _, ErrorKind, GetCertificateChain, Sign,
+};
+use openprot_hal_blocking::ecdsa::{P384PublicKey, P384Signature, PublicKey, Signature};
 use pw_status::Error;
 use userspace::{entry, syscall};
 use veer_dpe::{CaliptraDpe, CaliptraDpeError};
 use veer_mailbox::{Mailbox, MailboxError};
 use veer_sha::CaliptraSha;
-use zerocopy::{Immutable, IntoBytes, TryFromBytes};
 
 /// Selects the key that signs. caliptra-mcu-sw uses the same label for the
 /// key of its SPDM responder (`DPE_LEAF_LABEL`).
@@ -48,27 +43,9 @@ const LABEL: [u8; 48] = {
 /// Selects another key of the same context.
 const OTHER_LABEL: [u8; 48] = [0x5a; 48];
 
-/// A point on P-384: its x and y coordinates.
-type PublicKey = ([u8; 48], [u8; 48]);
-
-/// The body of an `INVOKE_DPE_ECC384` request that holds a `CertifyKey`
-/// command.
-#[repr(C)]
-#[derive(IntoBytes, Immutable)]
-struct CertifyKeyRequest {
-    data_size: u32,
-    header: CommandHdr,
-    command: CertifyKeyP384Cmd,
-}
-
-/// The start of the response to a [`CertifyKeyRequest`]. The certificate
-/// follows it.
-#[repr(C)]
-#[derive(TryFromBytes)]
-struct CertifyKeyResponse {
-    header: MailboxRespHeaderVarSize,
-    dpe: CertifyKeyP384RespHdr,
-}
+/// The number of certificates in the certificate chain of Caliptra's DPE:
+/// LDevID, FMC alias and runtime alias.
+const CHAIN_CERTIFICATES: usize = 3;
 
 const _: () = assert!(
     size_of::<EcdsaVerifyReq>() == size_of::<MailboxReqHeader>() + size_of::<[[u8; 48]; 5]>()
@@ -82,6 +59,20 @@ fn sha384(mailbox: &Mailbox, message: &[u8]) -> Result<Digest<12>, &'static str>
     op.finalize().map_err(|_| "SHA finalize failed")
 }
 
+/// Logs `error` and returns the failure message of the test.
+fn failed(command: &'static str, error: CaliptraDpeError) -> &'static str {
+    match error {
+        CaliptraDpeError::Dpe(status) => {
+            pw_log::error!("{}: DPE status {:#x}", command as &str, status as u32);
+        }
+        CaliptraDpeError::Mailbox(MailboxError::CommandFailed(code)) => {
+            pw_log::error!("{}: Caliptra error {:#x}", command as &str, code as u32);
+        }
+        _ => pw_log::error!("{}: failed", command as &str),
+    }
+    "DPE command failed"
+}
+
 /// Signs `digest` and logs the error if the command fails.
 fn sign(
     dpe: &mut CaliptraDpe<'_>,
@@ -90,65 +81,118 @@ fn sign(
     digest: &Digest<12>,
 ) -> Result<(P384Signature, ContextHandle), &'static str> {
     let mut signature = P384Signature::new([0; 48], [0; 48]);
-    match dpe.sign(handle, label, digest, &mut signature) {
-        Ok(handle) => Ok((signature, handle)),
-        Err(CaliptraDpeError::Dpe(status)) => {
-            pw_log::error!("Sign: DPE status {:#x}", status as u32);
-            Err("Sign failed in the DPE")
+    let handle = dpe
+        .sign(handle, label, digest, &mut signature)
+        .map_err(|error| failed("Sign", error))?;
+    Ok((signature, handle))
+}
+
+/// Returns the total length, header included, of the DER element at the
+/// start of `der`, if it is a SEQUENCE with a two-byte long-form length
+/// (`30 82 hh ll`).
+fn der_sequence_len(der: &[u8]) -> Option<usize> {
+    match der {
+        [0x30, 0x82, high, low, ..] => {
+            Some(usize::from(u16::from_be_bytes([*high, *low])).saturating_add(4))
         }
-        Err(CaliptraDpeError::Mailbox(MailboxError::CommandFailed(code))) => {
-            pw_log::error!("Sign: Caliptra error {:#x}", code as u32);
-            Err("Sign failed in Caliptra")
-        }
-        Err(_) => Err("Sign failed"),
+        _ => None,
     }
 }
 
-/// Uses the DPE `CertifyKey` command to return the public key that the
-/// default context derives for `label`.
-fn public_key(mailbox: &Mailbox, label: &[u8; 48]) -> Result<PublicKey, &'static str> {
-    let request = CertifyKeyRequest {
-        data_size: (size_of::<CommandHdr>() + size_of::<CertifyKeyP384Cmd>()) as u32,
-        header: CommandHdr::new(DpeProfile::P384Sha384, Command::CERTIFY_KEY),
-        command: CertifyKeyP384Cmd {
-            handle: caliptra_dpe::context::ContextHandle::default(),
-            flags: CertifyKeyFlags(0),
-            format: CertifyKeyCommand::FORMAT_X509,
-            label: *label,
-        },
-    };
-    let request: [u32; size_of::<CertifyKeyRequest>() / 4] = zerocopy::transmute!(request);
-    // The buffer has no room for the certificate, so the mailbox driver
-    // discards it.
-    let mut response = [0u32; size_of::<CertifyKeyResponse>() / 4];
-    let len = mailbox
-        .execute(
-            CommandId::INVOKE_DPE_ECC384.0,
-            request.into_iter(),
-            &mut response,
+/// Returns the x and y coordinates of `key`.
+fn coordinates(key: &P384PublicKey) -> ([u8; 48], [u8; 48]) {
+    let mut x = [0; 48];
+    let mut y = [0; 48];
+    key.coordinates(&mut x, &mut y);
+    (x, y)
+}
+
+/// Certifies the key that the default context derives for `label`, checks
+/// the length of the certificate and returns the public key.
+fn certify(dpe: &mut CaliptraDpe<'_>, label: &[u8; 48]) -> Result<P384PublicKey, &'static str> {
+    let mut key = P384PublicKey::new([0; 48], [0; 48]);
+    // The buffer holds only the start of the certificate.
+    let mut certificate = [0; 64];
+    let output = dpe
+        .certify_key(
+            &ContextHandle::DEFAULT,
+            label,
+            CertificateFormat::X509,
+            &mut key,
+            &mut certificate,
         )
-        .map_err(|_| "CertifyKey failed in Caliptra")?;
-    let response: CertifyKeyResponse =
-        zerocopy::try_transmute!(response).map_err(|_| "CertifyKey response is malformed")?;
-    let header = response.dpe.resp_hdr;
-    if header.magic != ResponseHdr::DPE_RESPONSE_MAGIC {
-        return Err("CertifyKey response has the wrong magic");
+        .map_err(|error| failed("CertifyKey", error))?;
+    if output.handle != ContextHandle::DEFAULT {
+        return Err("CertifyKey replaced the default handle");
     }
-    if header.status != 0 {
-        pw_log::error!("CertifyKey: DPE status {:#x}", header.status as u32);
-        return Err("CertifyKey failed in the DPE");
+    if der_sequence_len(&certificate) != Some(output.certificate_len) {
+        return Err("certificate is not one DER sequence");
     }
-    if len < size_of::<CertifyKeyResponse>() {
-        return Err("CertifyKey response is too short");
+
+    // The command gives the same key and length when the buffer is empty.
+    let mut same_key = P384PublicKey::new([0; 48], [0; 48]);
+    let same = dpe
+        .certify_key(
+            &ContextHandle::DEFAULT,
+            label,
+            CertificateFormat::X509,
+            &mut same_key,
+            &mut [],
+        )
+        .map_err(|error| failed("CertifyKey", error))?;
+    if same != output || coordinates(&same_key) != coordinates(&key) {
+        return Err("CertifyKey gives another result for an empty buffer");
     }
-    Ok((response.dpe.derived_pubkey_x, response.dpe.derived_pubkey_y))
+    Ok(key)
+}
+
+/// Reads the certificate chain and checks that it holds the expected number
+/// of DER certificates.
+fn check_chain(dpe: &mut CaliptraDpe<'_>) -> Result<(), &'static str> {
+    let mut read = |offset: usize, chain: &mut [u8]| {
+        dpe.get_certificate_chain(offset, chain)
+            .map_err(|error| failed("GetCertificateChain", error))
+    };
+
+    // Each certificate starts where the previous one ends.
+    let mut end = 0usize;
+    for _ in 0..CHAIN_CERTIFICATES {
+        let mut start = [0; 4];
+        if read(end, &mut start)? != start.len() {
+            return Err("chain ends before its last certificate");
+        }
+        let len = der_sequence_len(&start).ok_or("chain does not hold a DER sequence")?;
+        end = end.saturating_add(len);
+    }
+    if read(end, &mut [0; 4])? != 0 {
+        return Err("chain has data after its last certificate");
+    }
+
+    // A read that starts 10 bytes before the end of the chain returns 10
+    // bytes.
+    let mut tail = [0; 64];
+    if read(end.saturating_sub(10), &mut tail)? != 10 {
+        return Err("read at the end of the chain has the wrong length");
+    }
+
+    // Two reads of the same bytes agree. The lengths are not multiples of 4,
+    // so each read ends inside a mailbox word.
+    let mut first = [0; 101];
+    let mut second = [0; 37];
+    if read(0, &mut first)? != first.len() || read(64, &mut second)? != second.len() {
+        return Err("read of the chain is short");
+    }
+    if first.get(64..) != Some(second.as_slice()) {
+        return Err("two reads of the chain differ");
+    }
+    Ok(())
 }
 
 /// Uses Caliptra's `ECDSA384_SIGNATURE_VERIFY` command to check whether
 /// `signature` is a signature of `digest` by `key`.
 fn verify(
     mailbox: &Mailbox,
-    key: &PublicKey,
+    key: &P384PublicKey,
     signature: &P384Signature,
     digest: &Digest<12>,
 ) -> Result<bool, &'static str> {
@@ -156,8 +200,8 @@ fn verify(
     let mut s = [0; 48];
     signature.coordinates(&mut r, &mut s);
     let hash: [u8; 48] = zerocopy::transmute!(digest.value);
-    let request: [u32; size_of::<[[u8; 48]; 5]>() / 4] =
-        zerocopy::transmute!([key.0, key.1, r, s, hash]);
+    let (x, y) = coordinates(key);
+    let request: [u32; size_of::<[[u8; 48]; 5]>() / 4] = zerocopy::transmute!([x, y, r, s, hash]);
     let mut response = [0u32; size_of::<MailboxRespHeader>() / 4];
     match mailbox.execute(
         CommandId::ECDSA384_SIGNATURE_VERIFY.0,
@@ -174,7 +218,8 @@ fn verify(
 fn run(mailbox: &Mailbox) -> Result<(), &'static str> {
     let mut dpe = CaliptraDpe::new(mailbox);
     let digest = sha384(mailbox, b"abc")?;
-    let key = public_key(mailbox, &LABEL)?;
+    let key = certify(&mut dpe, &LABEL)?;
+    pw_log::info!("certify key: ok");
 
     let (signature, handle) = sign(&mut dpe, &ContextHandle::DEFAULT, &LABEL, &digest)?;
     if !verify(mailbox, &key, &signature, &digest)? {
@@ -210,6 +255,9 @@ fn run(mailbox: &Mailbox) -> Result<(), &'static str> {
         return Err("signature after an error does not verify");
     }
     pw_log::info!("sign after error: ok");
+
+    check_chain(&mut dpe)?;
+    pw_log::info!("certificate chain: ok");
     Ok(())
 }
 

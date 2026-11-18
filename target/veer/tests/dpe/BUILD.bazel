@@ -27,7 +27,6 @@ rust_app(
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
         "@rust_caliptra_crates//:caliptra-api",
-        "@rust_caliptra_crates//:caliptra-dpe",
         "@rust_caliptra_crates//:zerocopy",
     ],
 )
