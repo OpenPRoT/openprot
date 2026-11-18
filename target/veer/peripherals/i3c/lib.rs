@@ -37,9 +37,11 @@ use tock_registers::LocalRegisterCopy;
 // I3C register block base for the selected target type, from upstream
 // caliptra-mcu-sw's memory maps (same selection as target/veer's kernel config).
 #[cfg(not(feature = "fpga"))]
-use caliptra_mcu_config_emulator::EMULATOR_MEMORY_MAP as MCU_MEMORY_MAP;
+use caliptra_mcu_config_emulator::{
+    EMULATOR_MCU_STRAPS as MCU_STRAPS, EMULATOR_MEMORY_MAP as MCU_MEMORY_MAP,
+};
 #[cfg(feature = "fpga")]
-use caliptra_mcu_config_fpga::FPGA_MEMORY_MAP as MCU_MEMORY_MAP;
+use caliptra_mcu_config_fpga::{FPGA_MCU_STRAPS as MCU_STRAPS, FPGA_MEMORY_MAP as MCU_MEMORY_MAP};
 use openprot_hal_blocking::i3c_hardware::{
     DynamicAddress, I3cTarget, I3cTargetConfig, TargetEvent,
 };
@@ -194,17 +196,31 @@ pub struct CaliptraI3cTarget<M: Mmio = MmioBlock> {
     _not_send_sync: PhantomData<*mut ()>,
 }
 
+/// The register block base of the I3C core the straps select: `i3c1` when
+/// `active_i3c` is 1, otherwise `i3c0`. This is how the MCU ROM reads the strap,
+/// so an out-of-range value is core 0.
+const fn core_base(i3c0: u32, i3c1: u32, active_i3c: u8) -> usize {
+    (if active_i3c == 1 { i3c1 } else { i3c0 }) as usize
+}
+
 impl CaliptraI3cTarget<MmioBlock> {
-    /// Construct the driver over the Caliptra-SS I3C peripheral.
+    /// Construct the driver over the Caliptra-SS I3C core that the platform
+    /// straps select for MCTP (`active_i3c`): core 0, or core 1.
     ///
     /// # Safety
     ///
     /// Caller must ensure exclusive access to the I3C peripheral for the
     /// lifetime of this value.
     pub const unsafe fn new() -> Self {
-        // SAFETY: the caller guarantees exclusive access; the base is the I3C
-        // block of the selected memory map.
-        Self::with_mmio(unsafe { MmioBlock::new(MCU_MEMORY_MAP.i3c_offset as usize) })
+        // SAFETY: the caller guarantees exclusive access; the base is the active
+        // core's I3C block in the selected memory map.
+        Self::with_mmio(unsafe {
+            MmioBlock::new(core_base(
+                MCU_MEMORY_MAP.i3c_offset,
+                MCU_MEMORY_MAP.i3c1_offset,
+                MCU_STRAPS.active_i3c,
+            ))
+        })
     }
 }
 
@@ -518,6 +534,18 @@ impl<M: Mmio> I3cTarget for CaliptraI3cTarget<M> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn core_base_follows_the_strap() {
+        assert_eq!(core_base(0x1000, 0x2000, 0), 0x1000);
+        assert_eq!(core_base(0x1000, 0x2000, 1), 0x2000);
+    }
+
+    #[test]
+    fn core_base_falls_back_to_core_0_for_a_bad_strap() {
+        assert_eq!(core_base(0x1000, 0x2000, 2), 0x1000);
+        assert_eq!(core_base(0x1000, 0x2000, 0xff), 0x1000);
+    }
+
     extern crate std;
 
     use std::collections::HashMap;
