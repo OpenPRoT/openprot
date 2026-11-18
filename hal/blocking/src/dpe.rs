@@ -13,11 +13,13 @@
 //! - `P384Sha384` - The profile that uses ECDSA P-384 and SHA-384
 //! - `ContextHandle` - Names a context of the DPE
 //! - `Sign` - Trait for the DPE `Sign` command
+//! - `CertifyKey` - Trait for the DPE `CertifyKey` command
+//! - `GetCertificateChain` - Trait for the DPE `GetCertificateChain` command
 //!
 //! ## Scope
 //!
-//! The module has a trait for the `Sign` command. The other DPE commands have
-//! no trait.
+//! The module has a trait for each of the `Sign`, `CertifyKey` and
+//! `GetCertificateChain` commands. The other DPE commands have no trait.
 //!
 //! A driver implements a command trait once for each profile that its DPE
 //! supports. The driver decides how a command reaches the DPE. The DPE can be
@@ -74,7 +76,7 @@
 use core::fmt;
 
 use crate::digest::{DigestAlgorithm, Sha2_384};
-use crate::ecdsa::P384Signature;
+use crate::ecdsa::{P384PublicKey, P384Signature};
 
 /// Error kind.
 ///
@@ -179,10 +181,13 @@ impl<T: ErrorType + ?Sized> ErrorType for &mut T {
 /// The types that a DPE profile defines.
 ///
 /// A profile selects the algorithms of a DPE, and with them the sizes of
-/// labels, digests and signatures.
+/// labels, digests, signatures and public keys.
 pub trait Profile {
     /// A label, which selects one of the keys of a context.
     type Label;
+
+    /// The public key that [`CertifyKey`] returns.
+    type PublicKey;
 
     /// The digest that [`Sign`] signs.
     type Digest;
@@ -197,6 +202,7 @@ pub struct P384Sha384;
 
 impl Profile for P384Sha384 {
     type Label = [u8; 48];
+    type PublicKey = P384PublicKey;
     type Digest = <Sha2_384 as DigestAlgorithm>::Digest;
     type Signature = P384Signature;
 }
@@ -255,5 +261,112 @@ impl<P: Profile, T: Sign<P> + ?Sized> Sign<P> for &mut T {
         signature: &mut P::Signature,
     ) -> Result<ContextHandle, Self::Error> {
         T::sign(self, handle, label, digest, signature)
+    }
+}
+
+/// The format of the certificate that [`CertifyKey`] returns.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum CertificateFormat {
+    /// An X.509 certificate, which the DPE signs.
+    X509,
+
+    /// A certificate signing request (CSR).
+    Csr,
+}
+
+/// The result of [`CertifyKey::certify_key`].
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct CertifyKeyOutput {
+    /// The handle to use for the context in the next command.
+    pub handle: ContextHandle,
+
+    /// The length of the certificate in bytes.
+    pub certificate_len: usize,
+}
+
+/// The DPE `CertifyKey` command for profile `P`.
+pub trait CertifyKey<P: Profile>: ErrorType {
+    /// Certifies a key of the context that `handle` names.
+    ///
+    /// The key is the one that [`Sign::sign`] uses for the same context and
+    /// `label`. The command stores the public key of that key in
+    /// `public_key`, and a DER-encoded certificate or certificate signing
+    /// request, as `format` selects, in `certificate`.
+    ///
+    /// `certificate_len` is the length of the whole certificate. When it is
+    /// more than `certificate` holds, the bytes that do not fit are
+    /// discarded. The content of `certificate` after the certificate is
+    /// unspecified.
+    ///
+    /// # Errors
+    ///
+    /// After [`ErrorKind::Timeout`], [`ErrorKind::ResponseLost`] or
+    /// [`ErrorKind::InvalidResponse`], the DPE may have replaced `handle`.
+    /// The caller can send the command again with `handle`, because the
+    /// command changes nothing in the DPE except the handle. If the DPE
+    /// replaced `handle`, the second command fails with
+    /// [`ErrorKind::InvalidHandle`], and the caller can no longer use the
+    /// context.
+    ///
+    /// After any other error, the DPE has not replaced `handle`.
+    ///
+    /// After an error, the content of `public_key` and `certificate` is
+    /// unspecified.
+    fn certify_key(
+        &mut self,
+        handle: &ContextHandle,
+        label: &P::Label,
+        format: CertificateFormat,
+        public_key: &mut P::PublicKey,
+        certificate: &mut [u8],
+    ) -> Result<CertifyKeyOutput, Self::Error>;
+}
+
+impl<P: Profile, T: CertifyKey<P> + ?Sized> CertifyKey<P> for &mut T {
+    fn certify_key(
+        &mut self,
+        handle: &ContextHandle,
+        label: &P::Label,
+        format: CertificateFormat,
+        public_key: &mut P::PublicKey,
+        certificate: &mut [u8],
+    ) -> Result<CertifyKeyOutput, Self::Error> {
+        T::certify_key(self, handle, label, format, public_key, certificate)
+    }
+}
+
+/// The DPE `GetCertificateChain` command for profile `P`.
+pub trait GetCertificateChain<P: Profile>: ErrorType {
+    /// Reads a part of the certificate chain of the DPE.
+    ///
+    /// The chain is a concatenation of DER-encoded certificates. Its last
+    /// certificate is for the key that signs the certificates that
+    /// [`CertifyKey`] returns. The command copies the chain, from byte
+    /// `offset` of the chain, into `chain`.
+    ///
+    /// Returns the number of bytes stored, which can be less than `chain`
+    /// holds even before the end of the chain. It is 0 only when `offset` is
+    /// at or after the end of the chain, or when `chain` is empty. The
+    /// content of `chain` after the stored bytes is unspecified.
+    ///
+    /// # Errors
+    ///
+    /// The command takes no handle and changes nothing in the DPE, so the
+    /// caller can send it again after any error. After an error, the content
+    /// of `chain` is unspecified.
+    fn get_certificate_chain(
+        &mut self,
+        offset: usize,
+        chain: &mut [u8],
+    ) -> Result<usize, Self::Error>;
+}
+
+impl<P: Profile, T: GetCertificateChain<P> + ?Sized> GetCertificateChain<P> for &mut T {
+    fn get_certificate_chain(
+        &mut self,
+        offset: usize,
+        chain: &mut [u8],
+    ) -> Result<usize, Self::Error> {
+        T::get_certificate_chain(self, offset, chain)
     }
 }
