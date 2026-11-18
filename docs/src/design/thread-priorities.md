@@ -1,6 +1,6 @@
 # Thread priorities
 
-How `pw_kernel` schedules threads, and the priority scheme OpenPRoT images
+How `pw_kernel` schedules threads, and the priority rules OpenPRoT images
 should follow for servers and their clients. This page describes the pinned
 Pigweed's behaviour, read from `pw_kernel/kernel/scheduler/` and
 `pw_kernel/kernel/object/channel.rs`; check it again when the pin moves.
@@ -19,9 +19,10 @@ Pigweed's behaviour, read from `pw_kernel/kernel/scheduler/` and
   lower-level running thread at once, and `channel_transact` switches at once
   because the caller blocks. Non-blocking syscalls (`channel_async_transact`,
   `channel_respond`, `object_set_peer_user_signal`, `thread_start`,
-  `process_start`) do not reschedule until the caller blocks or the next
-  interrupt or tick. At the same or a lower level the running thread keeps going
-  until it blocks or the next tick rotates it out.
+  `process_start`) do not reschedule: the woken thread runs only once the
+  calling thread blocks or yields, or the next interrupt or tick preempts it.
+  At the same or a lower level the running thread keeps going until it blocks
+  or the next tick rotates it out.
 - **No priority inheritance.** Nothing raises a thread's level while it holds up
   a higher one.
 - **Channels do not change priorities.** A transaction raises `READABLE` on the
@@ -34,9 +35,9 @@ Pigweed's behaviour, read from `pw_kernel/kernel/scheduler/` and
 1. **Latency of interrupt-driven servers.** If an interrupt wakes a server that
    shares a level with the running thread, the server waits behind the running
    thread and any queued threads at that level until each blocks or uses its
-   tick, up to 10 ms per runnable thread at the 10 ms default. A server that drains a
-   hardware FIFO, such as the I3C server (256-byte TTI receive FIFO), can lose
-   data in that time. At a higher level the wake preempts at once.
+   tick, up to 10 ms per runnable thread at the 10 ms default. A server that
+   drains a hardware FIFO, such as the I3C server (256-byte TTI receive FIFO),
+   can lose data in that time. At a higher level the wake preempts at once.
 2. **Unbounded priority inversion.** A client blocked on a server whose level is
    below another runnable thread's can be starved by a thread whose level lies
    between the two, and nothing boosts the server. A server above the
@@ -47,20 +48,22 @@ Pigweed's behaviour, read from `pw_kernel/kernel/scheduler/` and
    and does not call it. Levels that rise along every IPC path make the absence
    of a cycle easy to check.
 
-## The scheme
+## The rules
 
-- A server's level is above the level of each of its clients. Levels
-  increase along every IPC path, from application to service to hardware server.
-- A server that an interrupt wakes, and that must run promptly, takes the
+- Give every server a level above each of its clients, so levels rise along
+  every IPC path: application, then service, then hardware server.
+- Give a server that an interrupt wakes, and that must run promptly, the
   highest level of the image.
-- Applications take the lowest.
-- Do not use `Level0`; it is the idle level.
+- Give applications the lowest level.
+- Never use `Level0`; it is the idle level.
 - Break a call cycle with a signal, not with a call.
-- A signal or async call is not a prompt wake. A server woken by
-  `channel_async_transact`, `channel_respond` or `object_set_peer_user_signal`
-  runs only when the caller blocks or the next interrupt or tick arrives, even
-  at a higher level. A path with a deadline needs an interrupt or a blocking
-  `channel_transact`.
+- Put a deadline-critical hop behind an interrupt or a blocking
+  `channel_transact`. A server woken by `channel_async_transact`,
+  `channel_respond` or `object_set_peer_user_signal` does not run until the
+  calling thread blocks or yields, or the next interrupt or tick preempts it,
+  even at a higher level. If the caller keeps running, that is up to 10 ms.
+  This is fine for work with no deadline, such as the I3C server's `USER`
+  signal to the MCTP server after the FIFO is drained.
 
 ## Example: MCTP over I3C
 
