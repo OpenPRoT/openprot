@@ -48,11 +48,14 @@ const ECHO_MSG_TYPE: u8 = 1;
 const MCTP_HEADER_LEN: usize = 4;
 
 /// Largest packet the host writes, header included: the MCTP baseline, a 64-byte
-/// payload and the header. A full frame fills the target's 64-word RX FIFO and takes
-/// about 12 ms to read out, and the writes reach the target as little as a few
-/// milliseconds apart, so larger writes were cut short (see the README). This bounds
-/// what the *target receives*; what it sends is `MAX_REPLY_PACKET`.
-/// caliptra-mcu-sw's own host helper writes 64-byte payloads too.
+/// payload and the header. Larger writes overflowed the target's 64-word RX FIFO:
+/// with 254-byte packets (a 255-byte frame that fills it) the VCK190 cut a frame
+/// short, with error 1 in its RX descriptor, in 2 of 10 runs of this test, although
+/// the driver alone drains such a frame in under a millisecond (see `rx_timing`).
+/// The service does more per frame than the driver (the ring copy, the interrupt,
+/// the client wakeup). This bounds what the *target receives*; what it sends is
+/// `MAX_REPLY_PACKET`. caliptra-mcu-sw's own host helper writes 64-byte payloads
+/// too.
 const MAX_PACKET: usize = MCTP_HEADER_LEN + 64;
 
 /// Largest packet the target sends, header included: its MTU
