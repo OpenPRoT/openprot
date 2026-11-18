@@ -33,8 +33,17 @@ use openprot_hal_blocking::i3c_hardware::I3cTarget;
 use target_common::{declare_target, TargetInterface};
 use {codegen as _, console_backend as _};
 
-/// Frames to receive. The host sends this many (`FRAMES` in `host_test.rs`).
-const FRAMES: u32 = 18;
+/// Frames to receive one at a time. The host sends this many (`FRAMES` in
+/// `host_test.rs`).
+const FRAMES: u32 = 24;
+
+/// Then bursts: the host sends `BURST_LEN` full-size frames with no pause between
+/// them, and this drains them back to back without logging in between, as the
+/// i3c service does. A second frame that arrives while the first is being read
+/// out finds the RX queue still full, and the core cuts it short and flags it.
+/// (`BURSTS` and `BURST_LEN` in `host_test.rs`.)
+const BURSTS: u32 = 5;
+const BURST_LEN: usize = 4;
 
 /// The 64-bit `mcycle` counter, read so that a carry between `mcycleh` and
 /// `mcycle` cannot tear it.
@@ -63,22 +72,24 @@ fn read(reg: Reg) -> u32 {
     unsafe { addr.read_volatile() }
 }
 
-/// Drain one frame with the driver. Returns the frame length and the cycles the
-/// call that found it took.
-fn drain_driver(target: &mut CaliptraI3cTarget, buf: &mut [u8; 256]) -> (usize, u64) {
+/// Drain one frame with the driver. Returns the frame length, the cycles the
+/// call that found it took, and the error field of its RX descriptor (0 for a
+/// frame that arrived whole, 1 when the core's RX queue ran out of room).
+fn drain_driver(target: &mut CaliptraI3cTarget, buf: &mut [u8; 256]) -> (usize, u64, u32) {
     loop {
         let start = mcycle();
         let frame = target.read_frame(buf);
         let cycles = mcycle() - start;
         if let Ok(Some(len)) = frame {
-            return (len, cycles);
+            let err = target.take_rx_error().map_or(0, |desc| desc >> 28);
+            return (len, cycles, err);
         }
     }
 }
 
 /// Drain one frame with register reads only: the descriptor, then one pop of the
 /// data port per word, discarding the words.
-fn drain_raw() -> (usize, u64) {
+fn drain_raw() -> (usize, u64, u32) {
     // A frame is there when the descriptor queue has an entry or the interrupt
     // status says so. The driver accepts either, because the emulator model has
     // no depth register and the FPGA's status bit can drop while a descriptor is
@@ -95,7 +106,7 @@ fn drain_raw() -> (usize, u64) {
     }
     let cycles = mcycle() - start;
     black_box(sink);
-    (len, cycles)
+    (len, cycles, desc >> 28)
 }
 
 pub struct Target {}
@@ -111,21 +122,41 @@ impl TargetInterface for Target {
 
         for i in 0..FRAMES {
             pw_log::info!("rx_timing: ready #{};", i as u32);
-            let (mode, (len, cycles)) = if i % 2 == 0 {
+            let (mode, (len, cycles, err)) = if i % 2 == 0 {
                 ("driver", drain_driver(&mut target, &mut buf))
             } else {
                 ("raw", drain_raw())
             };
             let words = len.div_ceil(4);
             pw_log::info!(
-                "rx_timing: frame {} {} len {} words {} cycles {} cycles-per-word {}",
+                "rx_timing: frame {} {} len {} words {} cycles {} cycles-per-word {} err {}",
                 i as u32,
                 mode as &str,
                 len as u32,
                 words as u32,
                 cycles as u64,
-                (cycles / words.max(1) as u64) as u64
+                (cycles / words.max(1) as u64) as u64,
+                err as u32
             );
+        }
+
+        for burst in 0..BURSTS {
+            pw_log::info!("rx_timing: burst ready #{};", burst as u32);
+            let mut results = [(0usize, 0u64, 0u32); BURST_LEN];
+            // No logging until every frame is drained.
+            for result in results.iter_mut() {
+                *result = drain_driver(&mut target, &mut buf);
+            }
+            for (n, (len, cycles, err)) in results.iter().enumerate() {
+                pw_log::info!(
+                    "rx_timing: burst {} frame {} len {} cycles {} err {}",
+                    burst as u32,
+                    n as u32,
+                    *len as u32,
+                    *cycles as u64,
+                    *err as u32
+                );
+            }
         }
 
         pw_log::info!("PASS");
