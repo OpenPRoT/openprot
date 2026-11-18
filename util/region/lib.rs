@@ -24,6 +24,14 @@ pub const fn covers<T: Mmap>(start: usize, len: usize) -> bool {
     start >= T::START && T::LEN >= len && start - T::START <= T::LEN - len
 }
 
+/// Proof the implementing type is authorized to mint region `T` — i.e. the only thing
+/// [`Region::new`] will accept as evidence. Generated code is the only intended source of impls:
+/// each process's generated mapping table (`regions.rs.jinja`) emits one zero-sized `Authority`
+/// type with an impl per mapping that process's own manifest entry declares. A mapping outside
+/// that process's own generated crate has no matching impl reachable from it, so minting it fails
+/// to compile — not a runtime check to bypass, code that was never generated to call.
+pub trait AuthorizesRegion<T> {}
+
 /// Exclusive ownership of the region described by `T`.
 ///
 /// Move-only, so handing it to a driver transfers sole access and a second
@@ -31,11 +39,17 @@ pub const fn covers<T: Mmap>(start: usize, len: usize) -> bool {
 pub struct Region<T: Mmap>(PhantomData<T>);
 
 impl<T: Mmap> Region<T> {
+    /// Mint exclusive ownership of `T`'s address range.
+    ///
+    /// Requires `auth: A` proving the caller is [`AuthorizesRegion`] for this exact mapping —
+    /// generated code is the only intended source of such an `A`, scoped to exactly the mappings
+    /// the manifest grants it.
+    ///
     /// # Safety
-    /// Mints ownership of `T`'s address range from nothing. Only the generated
-    /// per-process mapping table may call this, and only once.
+    /// Caller must ensure this exact region is minted at most once within whichever protection
+    /// domain calls it.
     #[doc(hidden)]
-    pub const unsafe fn new() -> Self {
+    pub const unsafe fn new<A: AuthorizesRegion<T>>(_auth: &A) -> Self {
         Self(PhantomData)
     }
 }
