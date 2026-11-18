@@ -287,10 +287,14 @@ impl<B> Mmio<B> {
     /// # Safety
     /// `offset` must be a valid, in-bounds byte offset for this register block — this fn only
     /// knows `base` is valid (promised by `from_raw`/[`block`](Self::block)),
-    /// not that `offset` lands inside it; that's on the caller.
+    /// not that `offset` lands inside it; that's on the caller. Crate-private: the only callers
+    /// are [`apply`] (proven via [`ProvenInBounds`]) and `gpio`'s accessors (proven via
+    /// `AssertGpioGrant`/`map_extent`) — both already discharge this obligation some other way
+    /// before calling in. Anything outside this crate can only reach
+    /// [`read_reg_at`](Self::read_reg_at) below, which can't be called with an unvetted offset.
     #[must_use]
     #[allow(unsafe_code)]
-    pub unsafe fn read_reg(&self, offset: u32) -> u32 {
+    pub(crate) unsafe fn read_reg(&self, offset: u32) -> u32 {
         // SAFETY: caller ensures `offset` is in-bounds for this block, per this fn's own doc.
         #[allow(unsafe_code)]
         // nosemgrep
@@ -301,11 +305,9 @@ impl<B> Mmio<B> {
 
     /// Write `val` to the 32-bit register at byte `offset`.
     /// # Safety
-    /// `offset` must be a valid, in-bounds byte offset for this register block — this fn only
-    /// knows `base` is valid (promised by `from_raw`/[`block`](Self::block)),
-    /// not that `offset` lands inside it; that's on the caller.
+    /// Same contract as [`read_reg`](Self::read_reg); same restricted callers.
     #[allow(unsafe_code)]
-    pub unsafe fn write_reg(&self, offset: u32, val: u32) {
+    pub(crate) unsafe fn write_reg(&self, offset: u32, val: u32) {
         // SAFETY: caller ensures `offset` is in-bounds for this block, per this fn's own doc.
         #[allow(unsafe_code)]
         // nosemgrep
@@ -320,6 +322,41 @@ impl<B: Block> Mmio<B> {
     #[must_use]
     pub const fn block() -> Self {
         Self::from_raw(B::BASE)
+    }
+
+    /// Read the 32-bit register at byte offset `OFFSET`. Safe: `OFFSET` is a const generic, not a
+    /// runtime value, so the bounds check below is forced at compile time the same way
+    /// [`ProvenInBounds`] is — there is no way to call this with an offset that wasn't just
+    /// checked against `B::SIZE`, because there's no way to name the offset except as this literal.
+    #[must_use]
+    pub fn read_reg_at<const OFFSET: u32>(&self) -> u32 {
+        const {
+            assert!(
+                (OFFSET as usize) + 4 <= B::SIZE,
+                "register offset reaches past this block's real extent"
+            )
+        };
+        // SAFETY: OFFSET's bound was just checked above, at compile time, for this exact B.
+        #[allow(unsafe_code)]
+        unsafe {
+            self.read_reg(OFFSET)
+        }
+    }
+
+    /// Write `val` to the 32-bit register at byte offset `OFFSET`. Safe for the same reason
+    /// [`read_reg_at`](Self::read_reg_at) is.
+    pub fn write_reg_at<const OFFSET: u32>(&self, val: u32) {
+        const {
+            assert!(
+                (OFFSET as usize) + 4 <= B::SIZE,
+                "register offset reaches past this block's real extent"
+            )
+        };
+        // SAFETY: OFFSET's bound was just checked above, at compile time, for this exact B.
+        #[allow(unsafe_code)]
+        unsafe {
+            self.write_reg(OFFSET, val)
+        }
     }
 }
 
