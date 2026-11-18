@@ -31,6 +31,7 @@ use pw_status::Result;
 use userspace::process_entry;
 use userspace::syscall::{self, Signals};
 use userspace::time::{self, Clock, Duration, Instant, SystemClock};
+use util_pec_zbc::ZbcPec;
 
 /// The controller's 7-bit I3C address. DSP0233 carries no destination, so it is
 /// not on the wire; the sender keeps it for diagnostics.
@@ -57,10 +58,12 @@ fn wait_for_controller() {
 fn mctp_server_loop() -> Result<()> {
     pw_log::info!("MCTP-over-I3C server starting");
 
-    let mut sender = I3cSender::new(
+    // The VeeR core has Zbc, so the PEC is two clmuls per byte instead of a table.
+    let mut sender = I3cSender::with_pec(
         I3cClient::new(IpcTransport::new(handle::I3C)),
         REMOTE_I3C_ADDR,
         wait_for_controller,
+        ZbcPec,
     );
     // The stack asks for the MTU before each send, so read the target's limits
     // now. Until then the MTU is the ceiling. Not fatal: every send reads them
@@ -70,7 +73,7 @@ fn mctp_server_loop() -> Result<()> {
     }
     // A second client on the same i3c channel, used to collect inbound frames.
     let mut i3c_rx_client = I3cClient::new(IpcTransport::new(handle::I3C));
-    let mut i3c_receiver = MctpI3cReceiver::new();
+    let mut i3c_receiver = MctpI3cReceiver::with_pec(ZbcPec);
 
     let mut server = Server::<_, 16>::new(mctp::Eid(OWN_EID), 0, sender);
     let mut i3c_rx_buf = [0u8; I3C_RX_MAX];
