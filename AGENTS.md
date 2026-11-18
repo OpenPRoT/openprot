@@ -28,5 +28,6 @@ Wildcard builds need the tag filters: `//...` includes hardware-only and verilat
 - Pigweed integration: `docs/src/design/pigweed-overview.md`.
 - `pw_kernel` IPC: `docs/src/design/pw-kernel-ipc.md`; example in `target/veer/ipc/`.
 - Orchestrator state machine and platform contracts: `docs/src/design/orchestrator/`.
+- Caliptra MCU (`target/veer/`) products, MCI events and errors: `docs/src/design/caliptra-mcu/`.
 - Specification: `docs/src/specification/`.
 - Other `./pw` groups, direct Bazel usage and clippy: `docs/src/usage.md`. Docs build, watch and serve: `docs/src/getting-started.md`.

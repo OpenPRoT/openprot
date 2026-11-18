@@ -4,6 +4,9 @@
 //! Reads and writes the MCI registers of the emulator or the FPGA with the
 //! MCI driver, and takes the MCI interrupt for events that the test triggers.
 //!
+//! The emulator does not model the aggregated errors, so the test triggers
+//! them only on the FPGA.
+//!
 //! Two instances of the driver must not exist at once. The thread constructs
 //! one only while the MCI interrupt is disabled in the PIC, and the interrupt
 //! handler constructs its own.
@@ -22,7 +25,9 @@ use entry::exit;
 use kernel::interrupt_controller::InterruptController as _;
 use kernel_config::MCI_BASE;
 use target_common::{declare_target, TargetInterface};
-use veer_mci::{ErrorEvents, Mci, Milestones, Notifications, ResetReason};
+use veer_mci::{
+    AggregatedErrors, ErrorEvents, Events, Mci, Milestones, Notifications, ResetReason,
+};
 use {codegen as _, console_backend as _};
 
 type Pic = <Arch as kernel::Arch>::InterruptController;
@@ -33,14 +38,26 @@ const OUTPUT_WIRES: u64 = 0x8000_0001_4000_0002;
 /// The PIC interrupt of the MCI. `system.json5.tmpl` has the same number.
 const MCI_IRQ: u32 = 1;
 
+/// Whether the aggregated errors work on the platform. The emulator does not
+/// model them: <https://github.com/chipsalliance/caliptra-mcu-sw/issues/2378>.
+const HAS_AGGREGATED_ERRORS: bool = cfg!(feature = "fpga");
+
 /// The events whose interrupt the test enables. The handler acknowledges
-/// them.
-const ENABLED_ERROR: ErrorEvents = ErrorEvents::INTERNAL;
-const ENABLED_NOTIFICATION: Notifications = Notifications::MBOX0_ECC_CORRECTED;
+/// them. Its aggregated errors are inputs that the subsystem ties to 0.
+const ENABLED: Events = Events {
+    errors: ErrorEvents::INTERNAL,
+    notifications: Notifications::MBOX0_ECC_CORRECTED,
+    aggregated_fatal: AggregatedErrors::from_bits_retain(1 << 30),
+    aggregated_non_fatal: AggregatedErrors::from_bits_retain(1 << 30),
+};
 
 /// The events that the test makes pending with their interrupt disabled.
-const MASKED_ERROR: ErrorEvents = ErrorEvents::MBOX1_ECC_UNCORRECTED;
-const MASKED_NOTIFICATION: Notifications = Notifications::MBOX1_ECC_CORRECTED;
+const MASKED: Events = Events {
+    errors: ErrorEvents::MBOX1_ECC_UNCORRECTED,
+    notifications: Notifications::MBOX1_ECC_CORRECTED,
+    aggregated_fatal: AggregatedErrors::from_bits_retain(1 << 31),
+    aggregated_non_fatal: AggregatedErrors::from_bits_retain(1 << 31),
+};
 
 /// The number of iterations that the test spins to let a pending interrupt
 /// be taken.
@@ -52,32 +69,89 @@ const SPIN_ITERATIONS: u32 = 10_000;
 static HANDLER_RUNS: AtomicU32 = AtomicU32::new(0);
 static HANDLED_ERRORS: AtomicU32 = AtomicU32::new(0);
 static HANDLED_NOTIFICATIONS: AtomicU32 = AtomicU32::new(0);
+static HANDLED_AGGREGATED_FATAL: AtomicU32 = AtomicU32::new(0);
+static HANDLED_AGGREGATED_NON_FATAL: AtomicU32 = AtomicU32::new(0);
 static NOTHING_TO_HANDLE: AtomicBool = AtomicBool::new(false);
+
+/// The pending events of every group that are also in `of`.
+fn pending(mci: &Mci, of: Events) -> Events {
+    Events {
+        errors: mci.pending_errors() & of.errors,
+        notifications: mci.pending_notifications() & of.notifications,
+        aggregated_fatal: mci.pending_aggregated_fatal_errors() & of.aggregated_fatal,
+        aggregated_non_fatal: mci.pending_aggregated_non_fatal_errors() & of.aggregated_non_fatal,
+    }
+}
+
+fn acknowledge(mci: &mut Mci, events: Events) {
+    mci.acknowledge_errors(events.errors);
+    mci.acknowledge_notifications(events.notifications);
+    mci.acknowledge_aggregated_fatal_errors(events.aggregated_fatal);
+    mci.acknowledge_aggregated_non_fatal_errors(events.aggregated_non_fatal);
+}
+
+fn trigger(mci: &mut Mci, events: Events) {
+    mci.trigger_errors(events.errors);
+    mci.trigger_notifications(events.notifications);
+    mci.trigger_aggregated_fatal_errors(events.aggregated_fatal);
+    mci.trigger_aggregated_non_fatal_errors(events.aggregated_non_fatal);
+}
+
+/// `events`, without the aggregated errors on a platform where they do not
+/// work.
+fn on_this_platform(events: Events) -> Events {
+    if HAS_AGGREGATED_ERRORS {
+        events
+    } else {
+        Events {
+            errors: events.errors,
+            notifications: events.notifications,
+            ..Events::empty()
+        }
+    }
+}
+
+fn accumulate(handled: &AtomicU32, bits: u32) {
+    handled.store(handled.load(Ordering::SeqCst) | bits, Ordering::SeqCst);
+}
+
+/// The events that the handler has acknowledged since the image started.
+fn handled() -> Events {
+    Events {
+        errors: ErrorEvents::from_bits_retain(HANDLED_ERRORS.load(Ordering::SeqCst)),
+        notifications: Notifications::from_bits_retain(
+            HANDLED_NOTIFICATIONS.load(Ordering::SeqCst),
+        ),
+        aggregated_fatal: AggregatedErrors::from_bits_retain(
+            HANDLED_AGGREGATED_FATAL.load(Ordering::SeqCst),
+        ),
+        aggregated_non_fatal: AggregatedErrors::from_bits_retain(
+            HANDLED_AGGREGATED_NON_FATAL.load(Ordering::SeqCst),
+        ),
+    }
+}
 
 pub fn mci_interrupt_handler<K: kernel::Kernel>(_kernel: K) {
     // SAFETY: this code runs in the kernel, which can access the MCI
     // registers. The thread has no driver while this interrupt is enabled in
     // the PIC.
     let mut mci = unsafe { Mci::new(MCI_BASE) };
-    let errors = mci.pending_errors() & ENABLED_ERROR;
-    let notifications = mci.pending_notifications() & ENABLED_NOTIFICATION;
-    if errors.is_empty() && notifications.is_empty() {
+    let events = pending(&mci, ENABLED);
+    if events == Events::empty() {
         // No event that the test enables is pending, so the handler has
         // nothing to acknowledge and the interrupt would stay asserted. It
         // disables the interrupt for every event so that the thread runs and
         // reports the failure.
-        mci.enable_interrupts(ErrorEvents::empty(), Notifications::empty());
+        mci.enable_interrupts(Events::empty());
         NOTHING_TO_HANDLE.store(true, Ordering::SeqCst);
     }
-    mci.acknowledge_errors(errors);
-    mci.acknowledge_notifications(notifications);
-    HANDLED_ERRORS.store(
-        HANDLED_ERRORS.load(Ordering::SeqCst) | errors.bits(),
-        Ordering::SeqCst,
-    );
-    HANDLED_NOTIFICATIONS.store(
-        HANDLED_NOTIFICATIONS.load(Ordering::SeqCst) | notifications.bits(),
-        Ordering::SeqCst,
+    acknowledge(&mut mci, events);
+    accumulate(&HANDLED_ERRORS, events.errors.bits());
+    accumulate(&HANDLED_NOTIFICATIONS, events.notifications.bits());
+    accumulate(&HANDLED_AGGREGATED_FATAL, events.aggregated_fatal.bits());
+    accumulate(
+        &HANDLED_AGGREGATED_NON_FATAL,
+        events.aggregated_non_fatal.bits(),
     );
     HANDLER_RUNS.store(HANDLER_RUNS.load(Ordering::SeqCst) + 1, Ordering::SeqCst);
 }
@@ -98,6 +172,13 @@ fn log_state(mci: &Mci) {
         mci.mcu_sram_size_kib() as u32,
         mci.mbox0_sram_size_kib() as u32,
         mci.mbox1_sram_size_kib() as u32,
+    );
+    pw_log::info!(
+        "Recorded errors: hardware fatal {:#x}, non-fatal {:#x}, aggregated fatal {:#x}, non-fatal {:#x}",
+        mci.recorded_hw_fatal_errors().bits() as u32,
+        mci.recorded_hw_non_fatal_errors().bits() as u32,
+        mci.recorded_aggregated_fatal_errors().bits() as u32,
+        mci.recorded_aggregated_non_fatal_errors().bits() as u32,
     );
 }
 
@@ -182,12 +263,33 @@ fn take_interrupts(runs: u32) {
     Pic::disable_interrupt(MCI_IRQ);
 }
 
+/// Makes `events` pending, then checks that the handler has run `runs` times
+/// in total, one more than before, and has acknowledged `expected` in total.
+fn check_interrupt(
+    events: Events,
+    runs: u32,
+    expected: Events,
+    failure: &'static str,
+) -> Result<(), &'static str> {
+    with_mci(|mci| trigger(mci, events));
+    take_interrupts(runs);
+    if HANDLER_RUNS.load(Ordering::SeqCst) != runs || handled() != expected {
+        return Err(failure);
+    }
+    Ok(())
+}
+
 fn check_interrupts() -> Result<(), &'static str> {
+    let enabled = on_this_platform(ENABLED);
+    let masked = on_this_platform(MASKED);
+
     with_mci(|mci| {
         pw_log::info!(
-            "Pending at start: errors {:#x}, notifications {:#x}",
+            "Pending at start: errors {:#x}, notifications {:#x}, aggregated fatal {:#x}, non-fatal {:#x}",
             mci.pending_errors().bits() as u32,
             mci.pending_notifications().bits() as u32,
+            mci.pending_aggregated_fatal_errors().bits() as u32,
+            mci.pending_aggregated_non_fatal_errors().bits() as u32,
         );
         if mci
             .pending_notifications()
@@ -196,14 +298,11 @@ fn check_interrupts() -> Result<(), &'static str> {
             return Err("the ROM left Caliptra's request for an MCU reset pending");
         }
 
-        mci.acknowledge_errors(ENABLED_ERROR | MASKED_ERROR);
-        mci.acknowledge_notifications(ENABLED_NOTIFICATION | MASKED_NOTIFICATION);
-        mci.enable_interrupts(ENABLED_ERROR, ENABLED_NOTIFICATION);
-        mci.trigger_errors(MASKED_ERROR);
-        mci.trigger_notifications(MASKED_NOTIFICATION);
-        if !mci.pending_errors().contains(MASKED_ERROR)
-            || !mci.pending_notifications().contains(MASKED_NOTIFICATION)
-        {
+        acknowledge(mci, ENABLED);
+        acknowledge(mci, MASKED);
+        mci.enable_interrupts(ENABLED);
+        trigger(mci, masked);
+        if pending(mci, MASKED) != masked {
             return Err("the triggered events are not pending");
         }
         Ok(())
@@ -216,29 +315,55 @@ fn check_interrupts() -> Result<(), &'static str> {
         return Err("events with a disabled interrupt interrupted the MCU");
     }
 
-    with_mci(|mci| mci.trigger_notifications(ENABLED_NOTIFICATION));
-    take_interrupts(1);
-    if HANDLER_RUNS.load(Ordering::SeqCst) != 1 {
-        return Err("the notification did not interrupt the MCU exactly once");
-    }
-    if HANDLED_NOTIFICATIONS.load(Ordering::SeqCst) != ENABLED_NOTIFICATION.bits()
-        || HANDLED_ERRORS.load(Ordering::SeqCst) != 0
-    {
-        return Err("the handler saw something other than the notification alone");
-    }
-
-    with_mci(|mci| mci.trigger_errors(ENABLED_ERROR));
-    take_interrupts(2);
-    if HANDLER_RUNS.load(Ordering::SeqCst) != 2 {
-        return Err("the error event did not interrupt the MCU exactly once");
-    }
-    if HANDLED_ERRORS.load(Ordering::SeqCst) != ENABLED_ERROR.bits() {
-        return Err("the handler did not see the error event");
+    let mut expected = Events::empty();
+    expected.notifications = enabled.notifications;
+    check_interrupt(
+        Events {
+            notifications: enabled.notifications,
+            ..Events::empty()
+        },
+        1,
+        expected,
+        "the handler did not run exactly once for the notification alone",
+    )?;
+    expected.errors = enabled.errors;
+    check_interrupt(
+        Events {
+            errors: enabled.errors,
+            ..Events::empty()
+        },
+        2,
+        expected,
+        "the handler did not run exactly once for the error event alone",
+    )?;
+    let mut runs = 2;
+    if HAS_AGGREGATED_ERRORS {
+        expected.aggregated_fatal = enabled.aggregated_fatal;
+        check_interrupt(
+            Events {
+                aggregated_fatal: enabled.aggregated_fatal,
+                ..Events::empty()
+            },
+            3,
+            expected,
+            "the handler did not run exactly once for the aggregated fatal error alone",
+        )?;
+        expected.aggregated_non_fatal = enabled.aggregated_non_fatal;
+        check_interrupt(
+            Events {
+                aggregated_non_fatal: enabled.aggregated_non_fatal,
+                ..Events::empty()
+            },
+            4,
+            expected,
+            "the handler did not run exactly once for the aggregated non-fatal error alone",
+        )?;
+        runs = 4;
     }
 
     // The handler acknowledged the events, so the interrupt is not asserted.
     take_interrupts(u32::MAX);
-    if HANDLER_RUNS.load(Ordering::SeqCst) != 2 {
+    if HANDLER_RUNS.load(Ordering::SeqCst) != runs {
         return Err("the interrupt stayed asserted after the handler ran");
     }
     if NOTHING_TO_HANDLE.load(Ordering::SeqCst) {
@@ -247,18 +372,12 @@ fn check_interrupts() -> Result<(), &'static str> {
 
     with_mci(|mci| {
         // Acknowledging one event leaves the others pending.
-        if mci.pending_errors() & (ENABLED_ERROR | MASKED_ERROR) != MASKED_ERROR
-            || mci.pending_notifications() & (ENABLED_NOTIFICATION | MASKED_NOTIFICATION)
-                != MASKED_NOTIFICATION
-        {
+        if pending(mci, ENABLED) != Events::empty() || pending(mci, MASKED) != masked {
             return Err("the handler's acknowledgement changed other pending events");
         }
-        mci.acknowledge_errors(MASKED_ERROR);
-        mci.acknowledge_notifications(MASKED_NOTIFICATION);
-        mci.enable_interrupts(ErrorEvents::empty(), Notifications::empty());
-        if mci.pending_errors().intersects(MASKED_ERROR)
-            || mci.pending_notifications().intersects(MASKED_NOTIFICATION)
-        {
+        acknowledge(mci, MASKED);
+        mci.enable_interrupts(Events::empty());
+        if pending(mci, MASKED) != Events::empty() {
             return Err("the events are pending after they were acknowledged");
         }
         Ok(())

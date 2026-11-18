@@ -5,15 +5,16 @@
 //!
 //! The driver covers the reason for the last MCU reset, the request for an
 //! MCU reset, the firmware flow status, the firmware error registers, the
-//! security state, the hardware revision and configuration, the generic
-//! wires, and the interrupt for the events of the MCI. The watchdog registers
-//! have their own driver, `veer_wdt`.
+//! errors that the hardware has recorded, the security state, the hardware
+//! revision and configuration, the generic wires, and the interrupt for the
+//! events of the MCI. The watchdog registers have their own driver,
+//! `veer_wdt`.
 //!
 //! The MCI has one interrupt to the MCU. An event sets its bit in a status
 //! register, and the interrupt is asserted while a pending event has its
-//! interrupt enable set. [`ErrorEvents`] and [`Notifications`] are two of the
-//! MCI's four groups of events. The other two groups are for the aggregated
-//! error inputs from the SoC, and the driver keeps their interrupts disabled.
+//! interrupt enable set. The MCI has four groups of events, which [`Events`]
+//! holds: [`ErrorEvents`], [`Notifications`], and the fatal and the non-fatal
+//! [`AggregatedErrors`] from the SoC.
 //!
 //! Register offsets and bit fields come from the register definitions that
 //! caliptra-mcu-sw generates (`caliptra_ss_registers::mci`).
@@ -31,7 +32,8 @@ use core::ptr::{with_exposed_provenance, with_exposed_provenance_mut};
 
 use caliptra_ss_registers::mci;
 use mci::bits::{
-    Error0IntrT, GlobalIntrEnT, HwConfig0, HwConfig1, HwRevId, Notif0IntrT, ResetRequest,
+    Error0IntrT, GlobalIntrEnT, HwConfig0, HwConfig1, HwErrorFatal, HwErrorNonFatal, HwRevId,
+    Notif0IntrT, ResetRequest,
 };
 use tock_registers::LocalRegisterCopy;
 
@@ -53,6 +55,17 @@ pub enum Reg {
     ResetReason,
     /// `SECURITY_STATE`.
     SecurityState,
+    /// `HW_ERROR_FATAL`: write-one-to-clear record of [`HwFatalErrors`].
+    HwErrorFatal,
+    /// `AGG_ERROR_FATAL`: write-one-to-clear record of the aggregated fatal
+    /// errors.
+    AggErrorFatal,
+    /// `HW_ERROR_NON_FATAL`: write-one-to-clear record of
+    /// [`HwNonFatalErrors`].
+    HwErrorNonFatal,
+    /// `AGG_ERROR_NON_FATAL`: write-one-to-clear record of the aggregated
+    /// non-fatal errors.
+    AggErrorNonFatal,
     /// `FW_ERROR_FATAL`.
     FwErrorFatal,
     /// `FW_ERROR_NON_FATAL`.
@@ -87,12 +100,24 @@ pub enum Reg {
     /// `notif0_internal_intr_r`: write-one-to-clear status of
     /// [`Notifications`].
     NotificationStatus,
+    /// `error1_internal_intr_r`: write-one-to-clear status of the aggregated
+    /// fatal errors.
+    AggregateFatalStatus,
+    /// `notif1_internal_intr_r`: write-one-to-clear status of the aggregated
+    /// non-fatal errors.
+    AggregateNonFatalStatus,
     /// `error0_intr_trig_r`: writing 1 to a bit sets the bit in the error
     /// status.
     ErrorTrigger,
     /// `notif0_intr_trig_r`: writing 1 to a bit sets the bit in the
     /// notification status.
     NotificationTrigger,
+    /// `error1_intr_trig_r`: writing 1 to a bit sets the bit in the status of
+    /// the aggregated fatal errors.
+    AggregateFatalTrigger,
+    /// `notif1_intr_trig_r`: writing 1 to a bit sets the bit in the status of
+    /// the aggregated non-fatal errors.
+    AggregateNonFatalTrigger,
 }
 
 impl Reg {
@@ -105,6 +130,10 @@ impl Reg {
             Reg::FwFlowStatus => offset_of!(mci::regs::Mci, mci_reg_fw_flow_status),
             Reg::ResetReason => offset_of!(mci::regs::Mci, mci_reg_reset_reason),
             Reg::SecurityState => offset_of!(mci::regs::Mci, mci_reg_security_state),
+            Reg::HwErrorFatal => offset_of!(mci::regs::Mci, mci_reg_hw_error_fatal),
+            Reg::AggErrorFatal => offset_of!(mci::regs::Mci, mci_reg_agg_error_fatal),
+            Reg::HwErrorNonFatal => offset_of!(mci::regs::Mci, mci_reg_hw_error_non_fatal),
+            Reg::AggErrorNonFatal => offset_of!(mci::regs::Mci, mci_reg_agg_error_non_fatal),
             Reg::FwErrorFatal => offset_of!(mci::regs::Mci, mci_reg_fw_error_fatal),
             Reg::FwErrorNonFatal => offset_of!(mci::regs::Mci, mci_reg_fw_error_non_fatal),
             Reg::FwExtendedErrorInfo(index) => {
@@ -137,9 +166,21 @@ impl Reg {
             Reg::NotificationStatus => {
                 offset_of!(mci::regs::Mci, intr_block_rf_notif0_internal_intr_r)
             }
+            Reg::AggregateFatalStatus => {
+                offset_of!(mci::regs::Mci, intr_block_rf_error1_internal_intr_r)
+            }
+            Reg::AggregateNonFatalStatus => {
+                offset_of!(mci::regs::Mci, intr_block_rf_notif1_internal_intr_r)
+            }
             Reg::ErrorTrigger => offset_of!(mci::regs::Mci, intr_block_rf_error0_intr_trig_r),
             Reg::NotificationTrigger => {
                 offset_of!(mci::regs::Mci, intr_block_rf_notif0_intr_trig_r)
+            }
+            Reg::AggregateFatalTrigger => {
+                offset_of!(mci::regs::Mci, intr_block_rf_error1_intr_trig_r)
+            }
+            Reg::AggregateNonFatalTrigger => {
+                offset_of!(mci::regs::Mci, intr_block_rf_notif1_intr_trig_r)
             }
         }
     }
@@ -327,6 +368,79 @@ bitflags::bitflags! {
     }
 }
 
+bitflags::bitflags! {
+    /// The aggregated error inputs of the MCI, which come from the other
+    /// blocks of the SoC. Bit `n` is input `n`. The MCI has one set of inputs
+    /// for fatal errors and one for non-fatal errors.
+    ///
+    /// Each named set holds the inputs that `caliptra_ss_top.sv` connects to
+    /// one source. The fatal and the non-fatal inputs are connected the same
+    /// way.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct AggregatedErrors: u32 {
+        /// Errors of the Caliptra core.
+        const CALIPTRA = 0x0000_003f;
+        /// ECC errors in the MCU's DCCM: uncorrected ones are fatal and
+        /// corrected ones are non-fatal.
+        const MCU = 0x0000_0fc0;
+        /// Alerts of the lifecycle controller.
+        const LIFECYCLE_CONTROLLER = 0x0003_f000;
+        /// Alerts of the fuse controller.
+        const FUSE_CONTROLLER = 0x00fc_0000;
+        /// The peripheral reset and the escalated reset of the I3C core.
+        const I3C = 0x3f00_0000;
+        /// Inputs that the subsystem ties to 0.
+        const SPARE = 0xc000_0000;
+    }
+}
+
+bitflags::bitflags! {
+    /// The fatal errors that the MCI's own hardware records in
+    /// `HW_ERROR_FATAL`.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct HwFatalErrors: u32 {
+        /// MCU SRAM had an ECC error that was not corrected.
+        const MCU_SRAM_ECC_UNCORRECTED = HwErrorFatal::McuSramEccUnc::SET.value;
+        /// The watchdog raised the MCU's non-maskable interrupt.
+        const NMI = HwErrorFatal::NmiPin::SET.value;
+        /// An AXI access and a debug access to MCU SRAM collided.
+        const MCU_SRAM_DMI_AXI_COLLISION = HwErrorFatal::McuSramDmiAxiCollision::SET.value;
+    }
+}
+
+bitflags::bitflags! {
+    /// The non-fatal errors that the MCI's own hardware records in
+    /// `HW_ERROR_NON_FATAL`.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct HwNonFatalErrors: u32 {
+        /// The SRAM of MCU mailbox 0 had an ECC error that was not corrected.
+        const MBOX0_ECC_UNCORRECTED = HwErrorNonFatal::Mbox0EccUnc::SET.value;
+        /// The SRAM of MCU mailbox 1 had an ECC error that was not corrected.
+        const MBOX1_ECC_UNCORRECTED = HwErrorNonFatal::Mbox1EccUnc::SET.value;
+    }
+}
+
+/// A set of events from each of the four groups of the MCI.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Events {
+    pub errors: ErrorEvents,
+    pub notifications: Notifications,
+    pub aggregated_fatal: AggregatedErrors,
+    pub aggregated_non_fatal: AggregatedErrors,
+}
+
+impl Events {
+    /// No event of any group.
+    pub const fn empty() -> Self {
+        Self {
+            errors: ErrorEvents::empty(),
+            notifications: Notifications::empty(),
+            aggregated_fatal: AggregatedErrors::empty(),
+            aggregated_non_fatal: AggregatedErrors::empty(),
+        }
+    }
+}
+
 /// The lifecycle state of the device.
 pub type Lifecycle = mci::bits::SecurityState::DeviceLifecycle::Value;
 
@@ -453,6 +567,30 @@ impl<M: Mmio> Mci<M> {
         self.mmio.write(Reg::FwErrorNonFatal, code);
     }
 
+    /// The fatal errors of the MCI's own hardware that are in its record. The
+    /// record stays through a warm reset.
+    pub fn recorded_hw_fatal_errors(&self) -> HwFatalErrors {
+        HwFatalErrors::from_bits_retain(self.mmio.read(Reg::HwErrorFatal))
+    }
+
+    /// The non-fatal errors of the MCI's own hardware that are in its record.
+    /// The record stays through a warm reset.
+    pub fn recorded_hw_non_fatal_errors(&self) -> HwNonFatalErrors {
+        HwNonFatalErrors::from_bits_retain(self.mmio.read(Reg::HwErrorNonFatal))
+    }
+
+    /// The aggregated fatal errors that are in the MCI's record. The record
+    /// stays through a warm reset.
+    pub fn recorded_aggregated_fatal_errors(&self) -> AggregatedErrors {
+        AggregatedErrors::from_bits_retain(self.mmio.read(Reg::AggErrorFatal))
+    }
+
+    /// The aggregated non-fatal errors that are in the MCI's record. The
+    /// record stays through a warm reset.
+    pub fn recorded_aggregated_non_fatal_errors(&self) -> AggregatedErrors {
+        AggregatedErrors::from_bits_retain(self.mmio.read(Reg::AggErrorNonFatal))
+    }
+
     /// The details that firmware stored about an error.
     pub fn fw_extended_error_info(&self) -> [u32; EXTENDED_ERROR_INFO_WORDS] {
         let mut info = [0; EXTENDED_ERROR_INFO_WORDS];
@@ -523,19 +661,23 @@ impl<M: Mmio> Mci<M> {
             .write(Reg::GenericOutputWiresHigh, (wires >> 32) as u32);
     }
 
-    /// Enables the MCI interrupt for the events in `errors` and
-    /// `notifications`, and disables it for every other event of the MCI.
+    /// Enables the MCI interrupt for `events` and disables it for every other
+    /// event of the MCI.
     ///
     /// An event that is already pending asserts the interrupt as soon as its
     /// interrupt is enabled.
-    pub fn enable_interrupts(&mut self, errors: ErrorEvents, notifications: Notifications) {
+    pub fn enable_interrupts(&mut self, events: Events) {
         // The interrupt is off while the enables change.
         self.mmio.write(Reg::GlobalInterruptEnable, 0);
-        self.mmio.write(Reg::ErrorEnable, errors.bits());
-        self.mmio.write(Reg::AggregateFatalEnable, 0);
+        self.mmio.write(Reg::ErrorEnable, events.errors.bits());
         self.mmio
-            .write(Reg::NotificationEnable, notifications.bits());
-        self.mmio.write(Reg::AggregateNonFatalEnable, 0);
+            .write(Reg::AggregateFatalEnable, events.aggregated_fatal.bits());
+        self.mmio
+            .write(Reg::NotificationEnable, events.notifications.bits());
+        self.mmio.write(
+            Reg::AggregateNonFatalEnable,
+            events.aggregated_non_fatal.bits(),
+        );
         self.mmio.write(
             Reg::GlobalInterruptEnable,
             GlobalIntrEnT::ErrorEn::SET.value | GlobalIntrEnT::NotifEn::SET.value,
@@ -554,6 +696,18 @@ impl<M: Mmio> Mci<M> {
         Notifications::from_bits_retain(self.mmio.read(Reg::NotificationStatus))
     }
 
+    /// The aggregated fatal errors that have happened and are not
+    /// acknowledged. The set includes errors whose interrupt is not enabled.
+    pub fn pending_aggregated_fatal_errors(&self) -> AggregatedErrors {
+        AggregatedErrors::from_bits_retain(self.mmio.read(Reg::AggregateFatalStatus))
+    }
+
+    /// The aggregated non-fatal errors that have happened and are not
+    /// acknowledged. The set includes errors whose interrupt is not enabled.
+    pub fn pending_aggregated_non_fatal_errors(&self) -> AggregatedErrors {
+        AggregatedErrors::from_bits_retain(self.mmio.read(Reg::AggregateNonFatalStatus))
+    }
+
     /// Clears `errors` from the pending error events. Other pending events
     /// stay pending.
     pub fn acknowledge_errors(&mut self, errors: ErrorEvents) {
@@ -567,6 +721,20 @@ impl<M: Mmio> Mci<M> {
             .write(Reg::NotificationStatus, notifications.bits());
     }
 
+    /// Clears `errors` from the pending aggregated fatal errors. Other
+    /// pending errors stay pending. An error whose input is still asserted
+    /// becomes pending again.
+    pub fn acknowledge_aggregated_fatal_errors(&mut self, errors: AggregatedErrors) {
+        self.mmio.write(Reg::AggregateFatalStatus, errors.bits());
+    }
+
+    /// Clears `errors` from the pending aggregated non-fatal errors. Other
+    /// pending errors stay pending. An error whose input is still asserted
+    /// becomes pending again.
+    pub fn acknowledge_aggregated_non_fatal_errors(&mut self, errors: AggregatedErrors) {
+        self.mmio.write(Reg::AggregateNonFatalStatus, errors.bits());
+    }
+
     /// Makes `errors` pending, as if the events had happened. For tests of
     /// interrupt handling.
     pub fn trigger_errors(&mut self, errors: ErrorEvents) {
@@ -578,6 +746,19 @@ impl<M: Mmio> Mci<M> {
     pub fn trigger_notifications(&mut self, notifications: Notifications) {
         self.mmio
             .write(Reg::NotificationTrigger, notifications.bits());
+    }
+
+    /// Makes `errors` pending as aggregated fatal errors, as if their inputs
+    /// had been asserted. For tests of interrupt handling.
+    pub fn trigger_aggregated_fatal_errors(&mut self, errors: AggregatedErrors) {
+        self.mmio.write(Reg::AggregateFatalTrigger, errors.bits());
+    }
+
+    /// Makes `errors` pending as aggregated non-fatal errors, as if their
+    /// inputs had been asserted. For tests of interrupt handling.
+    pub fn trigger_aggregated_non_fatal_errors(&mut self, errors: AggregatedErrors) {
+        self.mmio
+            .write(Reg::AggregateNonFatalTrigger, errors.bits());
     }
 
     fn hw_config0(&self) -> LocalRegisterCopy<u32, HwConfig0::Register> {
@@ -605,6 +786,10 @@ mod tests {
         fw_flow_status: u32,
         reset_reason: u32,
         security_state: u32,
+        hw_error_fatal: u32,
+        agg_error_fatal: u32,
+        hw_error_non_fatal: u32,
+        agg_error_non_fatal: u32,
         fw_error_fatal: u32,
         fw_error_non_fatal: u32,
         fw_extended_error_info: [u32; EXTENDED_ERROR_INFO_WORDS],
@@ -618,16 +803,19 @@ mod tests {
         aggregate_non_fatal_enable: u32,
         error_status: u32,
         notification_status: u32,
+        aggregate_fatal_status: u32,
+        aggregate_non_fatal_status: u32,
     }
 
     impl FakeMci {
-        /// The level of the interrupt to the MCU for the two groups of
-        /// events that the driver enables.
+        /// Whether the MCI asserts its interrupt to the MCU.
         fn interrupt(&self) -> bool {
             let errors = self.global_interrupt_enable & 0b01 != 0
-                && self.error_status & self.error_enable != 0;
+                && (self.error_status & self.error_enable != 0
+                    || self.aggregate_fatal_status & self.aggregate_fatal_enable != 0);
             let notifications = self.global_interrupt_enable & 0b10 != 0
-                && self.notification_status & self.notification_enable != 0;
+                && (self.notification_status & self.notification_enable != 0
+                    || self.aggregate_non_fatal_status & self.aggregate_non_fatal_enable != 0);
             errors || notifications
         }
     }
@@ -641,6 +829,10 @@ mod tests {
                 Reg::FwFlowStatus => self.fw_flow_status,
                 Reg::ResetReason => self.reset_reason,
                 Reg::SecurityState => self.security_state,
+                Reg::HwErrorFatal => self.hw_error_fatal,
+                Reg::AggErrorFatal => self.agg_error_fatal,
+                Reg::HwErrorNonFatal => self.hw_error_non_fatal,
+                Reg::AggErrorNonFatal => self.agg_error_non_fatal,
                 Reg::FwErrorFatal => self.fw_error_fatal,
                 Reg::FwErrorNonFatal => self.fw_error_non_fatal,
                 Reg::FwExtendedErrorInfo(index) => self.fw_extended_error_info[usize::from(index)],
@@ -656,7 +848,12 @@ mod tests {
                 Reg::AggregateNonFatalEnable => self.aggregate_non_fatal_enable,
                 Reg::ErrorStatus => self.error_status,
                 Reg::NotificationStatus => self.notification_status,
-                Reg::ErrorTrigger | Reg::NotificationTrigger => 0,
+                Reg::AggregateFatalStatus => self.aggregate_fatal_status,
+                Reg::AggregateNonFatalStatus => self.aggregate_non_fatal_status,
+                Reg::ErrorTrigger
+                | Reg::NotificationTrigger
+                | Reg::AggregateFatalTrigger
+                | Reg::AggregateNonFatalTrigger => 0,
             }
         }
 
@@ -668,6 +865,10 @@ mod tests {
                 | Reg::SecurityState
                 | Reg::GenericInputWiresLow
                 | Reg::GenericInputWiresHigh => {}
+                Reg::HwErrorFatal => self.hw_error_fatal &= !value,
+                Reg::AggErrorFatal => self.agg_error_fatal &= !value,
+                Reg::HwErrorNonFatal => self.hw_error_non_fatal &= !value,
+                Reg::AggErrorNonFatal => self.agg_error_non_fatal &= !value,
                 Reg::FwFlowStatus => self.fw_flow_status = value,
                 Reg::ResetReason => self.reset_reason = value,
                 Reg::FwErrorFatal => self.fw_error_fatal = value,
@@ -685,8 +886,12 @@ mod tests {
                 Reg::AggregateNonFatalEnable => self.aggregate_non_fatal_enable = value,
                 Reg::ErrorStatus => self.error_status &= !value,
                 Reg::NotificationStatus => self.notification_status &= !value,
+                Reg::AggregateFatalStatus => self.aggregate_fatal_status &= !value,
+                Reg::AggregateNonFatalStatus => self.aggregate_non_fatal_status &= !value,
                 Reg::ErrorTrigger => self.error_status |= value,
                 Reg::NotificationTrigger => self.notification_status |= value,
+                Reg::AggregateFatalTrigger => self.aggregate_fatal_status |= value,
+                Reg::AggregateNonFatalTrigger => self.aggregate_non_fatal_status |= value,
             }
         }
     }
@@ -703,6 +908,10 @@ mod tests {
         assert_eq!(Reg::FwFlowStatus.offset(), 0x30);
         assert_eq!(Reg::ResetReason.offset(), 0x38);
         assert_eq!(Reg::SecurityState.offset(), 0x40);
+        assert_eq!(Reg::HwErrorFatal.offset(), 0x50);
+        assert_eq!(Reg::AggErrorFatal.offset(), 0x54);
+        assert_eq!(Reg::HwErrorNonFatal.offset(), 0x58);
+        assert_eq!(Reg::AggErrorNonFatal.offset(), 0x5c);
         assert_eq!(Reg::FwErrorFatal.offset(), 0x60);
         assert_eq!(Reg::FwErrorNonFatal.offset(), 0x64);
         assert_eq!(Reg::FwExtendedErrorInfo(0).offset(), 0x70);
@@ -718,9 +927,13 @@ mod tests {
         assert_eq!(Reg::NotificationEnable.offset(), 0x100c);
         assert_eq!(Reg::AggregateNonFatalEnable.offset(), 0x1010);
         assert_eq!(Reg::ErrorStatus.offset(), 0x101c);
+        assert_eq!(Reg::AggregateFatalStatus.offset(), 0x1020);
         assert_eq!(Reg::NotificationStatus.offset(), 0x1024);
+        assert_eq!(Reg::AggregateNonFatalStatus.offset(), 0x1028);
         assert_eq!(Reg::ErrorTrigger.offset(), 0x102c);
+        assert_eq!(Reg::AggregateFatalTrigger.offset(), 0x1030);
         assert_eq!(Reg::NotificationTrigger.offset(), 0x1034);
+        assert_eq!(Reg::AggregateNonFatalTrigger.offset(), 0x1038);
     }
 
     #[test]
@@ -1028,25 +1241,126 @@ mod tests {
             aggregate_non_fatal_enable: 0xffff_ffff,
             ..Default::default()
         });
-        mci.enable_interrupts(
-            ErrorEvents::MBOX0_ECC_UNCORRECTED,
-            Notifications::CPTRA_MCU_RESET_REQUEST | Notifications::MBOX0_COMMAND_AVAILABLE,
-        );
+        mci.enable_interrupts(Events {
+            errors: ErrorEvents::MBOX0_ECC_UNCORRECTED,
+            notifications: Notifications::CPTRA_MCU_RESET_REQUEST
+                | Notifications::MBOX0_COMMAND_AVAILABLE,
+            ..Events::empty()
+        });
         assert_eq!(mci.mmio.global_interrupt_enable, 0b11);
         assert_eq!(mci.mmio.error_enable, 1 << 2);
         assert_eq!(mci.mmio.aggregate_fatal_enable, 0);
         assert_eq!(mci.mmio.notification_enable, (1 << 1) | (1 << 5));
         assert_eq!(mci.mmio.aggregate_non_fatal_enable, 0);
 
-        mci.enable_interrupts(ErrorEvents::empty(), Notifications::empty());
+        mci.enable_interrupts(Events {
+            aggregated_fatal: AggregatedErrors::CALIPTRA | AggregatedErrors::MCU,
+            aggregated_non_fatal: AggregatedErrors::I3C,
+            ..Events::empty()
+        });
         assert_eq!(mci.mmio.error_enable, 0);
+        assert_eq!(mci.mmio.aggregate_fatal_enable, 0xfff);
         assert_eq!(mci.mmio.notification_enable, 0);
+        assert_eq!(mci.mmio.aggregate_non_fatal_enable, 0x3f00_0000);
+
+        mci.enable_interrupts(Events::empty());
+        assert_eq!(mci.mmio.aggregate_fatal_enable, 0);
+        assert_eq!(mci.mmio.aggregate_non_fatal_enable, 0);
+    }
+
+    #[test]
+    fn the_sources_of_aggregated_errors_cover_every_input_once() {
+        let sources = [
+            AggregatedErrors::CALIPTRA,
+            AggregatedErrors::MCU,
+            AggregatedErrors::LIFECYCLE_CONTROLLER,
+            AggregatedErrors::FUSE_CONTROLLER,
+            AggregatedErrors::I3C,
+            AggregatedErrors::SPARE,
+        ];
+        let mut seen = AggregatedErrors::empty();
+        for source in sources {
+            assert!(!seen.intersects(source), "{source:?}");
+            seen |= source;
+        }
+        assert_eq!(seen.bits(), u32::MAX);
+        // The first input of each source in `caliptra_ss_top.sv`.
+        assert!(AggregatedErrors::CALIPTRA.bits() & (1 << 0) != 0);
+        assert!(AggregatedErrors::MCU.bits() & (1 << 6) != 0);
+        assert!(AggregatedErrors::LIFECYCLE_CONTROLLER.bits() & (1 << 12) != 0);
+        assert!(AggregatedErrors::FUSE_CONTROLLER.bits() & (1 << 18) != 0);
+        assert!(AggregatedErrors::I3C.bits() & (1 << 24) != 0);
+    }
+
+    #[test]
+    fn aggregated_errors_assert_the_interrupt_with_their_group_enable() {
+        let spare = AggregatedErrors::from_bits_retain(1 << 30);
+        let mut mci = mci(FakeMci::default());
+        mci.enable_interrupts(Events {
+            aggregated_fatal: spare,
+            aggregated_non_fatal: spare,
+            ..Events::empty()
+        });
+        mci.trigger_aggregated_fatal_errors(AggregatedErrors::CALIPTRA);
+        mci.trigger_aggregated_non_fatal_errors(AggregatedErrors::MCU);
+        assert!(!mci.mmio.interrupt());
+        assert_eq!(
+            mci.pending_aggregated_fatal_errors(),
+            AggregatedErrors::CALIPTRA
+        );
+        assert_eq!(
+            mci.pending_aggregated_non_fatal_errors(),
+            AggregatedErrors::MCU
+        );
+
+        mci.trigger_aggregated_fatal_errors(spare);
+        assert!(mci.mmio.interrupt());
+        mci.acknowledge_aggregated_fatal_errors(spare);
+        assert!(!mci.mmio.interrupt());
+        assert_eq!(
+            mci.pending_aggregated_fatal_errors(),
+            AggregatedErrors::CALIPTRA
+        );
+
+        mci.trigger_aggregated_non_fatal_errors(spare);
+        assert!(mci.mmio.interrupt());
+        mci.acknowledge_aggregated_non_fatal_errors(spare);
+        assert!(!mci.mmio.interrupt());
+        assert_eq!(
+            mci.pending_aggregated_non_fatal_errors(),
+            AggregatedErrors::MCU
+        );
+    }
+
+    #[test]
+    fn reads_the_recorded_errors() {
+        let mci = mci(FakeMci {
+            hw_error_fatal: 0b110,
+            agg_error_fatal: 1 << 12,
+            hw_error_non_fatal: 0b01,
+            agg_error_non_fatal: 1 << 24,
+            ..Default::default()
+        });
+        assert_eq!(
+            mci.recorded_hw_fatal_errors(),
+            HwFatalErrors::NMI | HwFatalErrors::MCU_SRAM_DMI_AXI_COLLISION
+        );
+        assert_eq!(
+            mci.recorded_hw_non_fatal_errors(),
+            HwNonFatalErrors::MBOX0_ECC_UNCORRECTED
+        );
+        assert_eq!(mci.recorded_aggregated_fatal_errors().bits(), 1 << 12);
+        assert_eq!(mci.recorded_aggregated_non_fatal_errors().bits(), 1 << 24);
     }
 
     #[test]
     fn only_enabled_pending_events_assert_the_interrupt() {
         let mut mci = mci(FakeMci::default());
-        mci.enable_interrupts(ErrorEvents::INTERNAL, Notifications::GENERIC_INPUT_TOGGLE);
+        mci.enable_interrupts(Events {
+            errors: ErrorEvents::INTERNAL,
+            notifications: Notifications::GENERIC_INPUT_TOGGLE,
+            ..Events::empty()
+        });
         assert!(!mci.mmio.interrupt());
 
         mci.trigger_errors(ErrorEvents::WDT_TIMER2_TIMEOUT);
@@ -1071,7 +1385,10 @@ mod tests {
         let mut mci = mci(FakeMci::default());
         mci.trigger_notifications(Notifications::CPTRA_MCU_RESET_REQUEST);
         assert!(!mci.mmio.interrupt());
-        mci.enable_interrupts(ErrorEvents::empty(), Notifications::CPTRA_MCU_RESET_REQUEST);
+        mci.enable_interrupts(Events {
+            notifications: Notifications::CPTRA_MCU_RESET_REQUEST,
+            ..Events::empty()
+        });
         assert!(mci.mmio.interrupt());
     }
 
