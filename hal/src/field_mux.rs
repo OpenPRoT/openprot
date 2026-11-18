@@ -31,9 +31,13 @@ pub struct RegBatch<B> {
 }
 
 impl<B: Block> RegBatch<B> {
-    /// An empty accumulator.
+    /// An empty accumulator. Crate-private: with [`coalesce_routes`] and [`append`](Self::append)
+    /// (also crate-private), this is the only way to put anything into a `RegBatch` — nothing
+    /// outside this crate can construct one with any op in it, which is what keeps every
+    /// `MuxRoutes` impl's `COALESCED` traceable back to a real pin's own [`Routes`] impl, not a
+    /// hand-picked offset. No sealed-trait machinery needed for that; it falls out of visibility.
     #[must_use]
-    pub const fn new() -> Self {
+    pub(crate) const fn new() -> Self {
         Self {
             ops: [FieldWrite {
                 offset: 0,
@@ -164,9 +168,10 @@ impl<B: Block, H: MuxRoutes<B>> ProvenInBounds<B> for H {
     };
 }
 
-/// Coalesce a list of per-pin routes into one batch (one RMW per register) — the compile-time fold.
+/// Coalesce a list of per-pin routes into one batch (one RMW per register) — the compile-time
+/// fold. Crate-private along with [`RegBatch::new`] — see that doc for why.
 #[must_use]
-pub const fn coalesce_routes<B: Block>(routes: &[&[FieldWrite]]) -> RegBatch<B> {
+pub(crate) const fn coalesce_routes<B: Block>(routes: &[&[FieldWrite]]) -> RegBatch<B> {
     let mut b = RegBatch::new();
     let mut i = 0;
     while i < routes.len() {
@@ -178,7 +183,9 @@ pub const fn coalesce_routes<B: Block>(routes: &[&[FieldWrite]]) -> RegBatch<B> 
 
 /// A bound handle (or tuple of handles) whose mux routes target block `B`, folded to one RMW per
 /// register at compile time in [`COALESCED`](MuxRoutes::COALESCED); the applier just flushes that
-/// const.
+/// const. Anyone can implement this trait, but `coalesce_routes` and `RegBatch::new` being
+/// crate-private means no implementor outside this crate can give `COALESCED` any op that didn't
+/// already come from a real pin's own [`Routes`] impl — see those docs for why.
 pub trait MuxRoutes<B: Block> {
     /// This handle's routes, coalesced to one op per register — folded per monomorphization at compile time.
     const COALESCED: RegBatch<B>;
