@@ -122,22 +122,32 @@ refuse a large write:
 
 - The core's RX data queue is 64 words (256 bytes), so a 255-byte frame fills it. A
   frame needs the queue empty when it starts.
-- Reading it out costs about 180 microseconds a word on the FPGA (measured in the
-  firmware), so a full frame takes about 12 ms.
+- Reading it out was slow. `rx_timing` times it on the VCK190 in CPU cycles (the
+  `mcycle` counter). The register pops alone take about 115 cycles a word, about
+  7,400 cycles (0.4 ms at 20 MHz) for a full 64-word frame. The driver used to take
+  about 2,300 to 2,600 cycles a word, about 150,000 to 240,000 cycles (8 to 12 ms)
+  a frame, because it stored each word one byte at a time and every instruction
+  costs about 25 cycles on that core. It now copies a word in one step, and a full
+  frame takes about 12,400 cycles (0.6 ms) with the bus idle, or about 29,500 (1.5
+  ms) while more frames arrive.
 - Writes reach the target closer together than a host spaces them: the FPGA model
   queues them and runs them with only a 5 ms pause. A second full frame that arrives
   during the read-out is cut short, and the core flags it with error 1 in the RX
   descriptor (`rx_byte_err_i` in `descriptor_rx.sv`: the queue was full while bytes
-  were still arriving). Bytes past the room left are dropped silently.
+  were still arriving). Bytes past the room left are dropped silently. With the old
+  driver, `rx_timing` saw this in every burst of four full-size frames; with the new
+  one it saw none in 20 frames.
 - A 68-byte packet and its PEC are 18 words, about 3 ms to read out, and the queue
   holds three.
 
 So a peer should send the baseline, a 64-byte payload, which is what DSP0236 has every
 endpoint use unless it knows more, and what caliptra-mcu-sw's own host helper does. The
 host tests write 68-byte packets for this reason. A controller that sends full-size
-packets back to back can still overflow the queue, until the read-out is faster or the
-spacing is guaranteed. The driver reports a damaged frame (`take_rx_error`) so that it
-is visible.
+packets back to back can still overflow the queue: the standalone drain is fast now, but
+the service does more per frame than `read_frame` (the ring copy, the interrupt, waking
+the client), and with the host test writing 254-byte packets the whole path overflowed
+in 2 of 10 runs on the VCK190, as a frame cut short with error 1. The driver reports a
+damaged frame (`take_rx_error`) so that it is visible.
 
 ## Testing
 

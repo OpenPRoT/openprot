@@ -89,10 +89,11 @@ const fn addr_byte(addr: u8, rnw: u8) -> u8 {
 /// problem below, and ran 40 of 40 on the board at this size.
 ///
 /// What a peer *sends us* is different, and nothing here bounds it. The core's RX
-/// data queue is 64 words, so a full frame fills it, and the MCU reads a word out
-/// in about 180 microseconds, so a full frame takes about 12 ms to drain. A second
-/// full frame that arrives before then is cut short and flagged in the RX
-/// descriptor's error field. See the README.
+/// data queue is 64 words, so a full frame fills it. A second full frame that
+/// arrives before the first is read out is cut short and flagged in the RX
+/// descriptor's error field. The driver drains a frame in about 0.6 ms with the
+/// bus idle, but the whole service still overflowed in 2 of 10 runs of the board
+/// test with 254-byte writes. See the README.
 pub const MCTP_I3C_IPC_MAXMTU: usize = i3c_api::MAX_SEND - 1;
 
 /// The MCTP baseline transmission unit (DSP0236): the packet payload size that
