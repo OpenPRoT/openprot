@@ -12,10 +12,7 @@ const SCU_UNLOCK_KEY: u32 = 0x1688_A8A8;
 /// Write-enable the SCU's protected registers, through the confined `Mmio` accessor. The key stays
 /// private here; the pin-mux route path calls this before applying a pin's coalesced mux writes.
 pub(crate) fn unlock_scu_writes(mmio: &crate::Mmio<ScuBlock>) {
-    // SAFETY: 0x000 is a hardcoded, known-valid SCU register offset — never caller-supplied.
-    unsafe {
-        mmio.write_reg(0x000, SCU_UNLOCK_KEY);
-    }
+    mmio.write_reg_at::<0x000>(SCU_UNLOCK_KEY);
 }
 
 /// Write-protect the SCU's protected registers again: any value other than [`SCU_UNLOCK_KEY`]
@@ -23,10 +20,7 @@ pub(crate) fn unlock_scu_writes(mmio: &crate::Mmio<ScuBlock>) {
 /// their SCU family). The pin-mux route path calls this once it's done applying a boot-time mux —
 /// nothing after boot has a legitimate reason to need the SCU open for writes.
 pub(crate) fn lock_scu_writes(mmio: &crate::Mmio<ScuBlock>) {
-    // SAFETY: 0x000 is a hardcoded, known-valid SCU register offset — never caller-supplied.
-    unsafe {
-        mmio.write_reg(0x000, 0);
-    }
+    mmio.write_reg_at::<0x000>(0);
 }
 
 /// Safe wrapper around the AST10x0 SCU register block.
