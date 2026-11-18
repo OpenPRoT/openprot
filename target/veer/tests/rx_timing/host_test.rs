@@ -5,7 +5,8 @@
 //! for each frame waits until the firmware logs that it is ready, then sends one
 //! private write. The firmware (`target.rs`) times draining each frame and logs
 //! the result; this test checks nothing about the numbers, only that all frames
-//! were received and the firmware exited PASS. Run it with
+//! were received and the firmware exited PASS. After the one-at-a-time frames it
+//! sends bursts of full-size frames with no pause between them. Run it with
 //! `--test_output=streamed` to see them.
 
 use caliptra_mcu_hw_model::McuHwModel;
@@ -17,11 +18,21 @@ use test_boot_files::BootFiles;
 /// Frames to send: the firmware's `FRAMES`. The firmware drains even-numbered
 /// frames with the driver and odd-numbered ones with raw register reads, so each
 /// size is sent twice in a row, then the next.
-const FRAMES: usize = 18;
+const FRAMES: usize = 24;
 
 /// Payload sizes. The host's PEC adds a byte, and the core's RX data queue holds
-/// 64 words (256 bytes), so the largest fits one frame.
-const SIZES: [usize; 3] = [4, 64, 252];
+/// 64 words (256 bytes). 254 is the largest MCTP packet this binding uses
+/// (`MCTP_I3C_IPC_MAXMTU`), so its frame, 255 bytes with the PEC, is the largest
+/// frame and just fits.
+const SIZES: [usize; 4] = [4, 64, 252, 254];
+
+/// Bursts of full-size frames sent with no pause between them (`BURSTS` and
+/// `BURST_LEN` in `target.rs`). The firmware drains each burst without logging.
+const BURSTS: usize = 5;
+const BURST_LEN: usize = 4;
+
+/// The largest payload: 254 bytes, 255 with the PEC.
+const BURST_PAYLOAD: usize = 254;
 
 const TIMEOUT_SECS: u64 = 120;
 
@@ -74,6 +85,24 @@ fn rx_timing_host_test() {
             stream.send_private_write(target_addr, payload),
             "I3C socket closed before frame {i}"
         );
+    }
+
+    // Bursts. The model's forwarder spaces the writes out (about 1 to 8 ms), and
+    // the firmware has a frame to drain each time, or the previous one is still
+    // draining when the next arrives.
+    for burst in 0..BURSTS {
+        wait_for_log(
+            &mut hw,
+            &mut log,
+            &format!("rx_timing: burst ready #{burst};"),
+        );
+        for n in 0..BURST_LEN {
+            let payload: Vec<u8> = (0..BURST_PAYLOAD).map(|b| (b + n) as u8).collect();
+            assert!(
+                stream.send_private_write(target_addr, payload),
+                "I3C socket closed in burst {burst}"
+            );
+        }
     }
 
     hw.step_until_exit_success()
