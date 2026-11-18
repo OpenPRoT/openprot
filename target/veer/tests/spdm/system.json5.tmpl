@@ -1,0 +1,143 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// VeeR on-target test for an SPDM responder over MCTP over I3C.
+//
+// The app has four processes. The first three are the processes of
+// tests/mctp_i3c:
+//
+//   i3c_server     -- owns the I3C peripheral and its interrupt.
+//   mctp_server    -- runs the MCTP router over the i3c server and serves MCTP
+//                     clients on the channel handlers "mctp" and
+//                     "mctp_control".
+//   mctp_control   -- answers MCTP control requests.
+//   spdm_responder -- an MCTP client (initiator "mctp" -> mctp_server "mctp")
+//                     that answers SPDM requests. Its hash and random number
+//                     generator use the Caliptra mailbox.
+//
+// Addresses are rendered per platform (emulator or FPGA) from upstream
+// caliptra-mcu-sw's memory maps by `veer_system_config`:
+//   @KERNEL_FLASH_START@  MCU SRAM start (code + data execute here)
+//   @KERNEL_RAM_START@    app data, 0x40000 into MCU SRAM
+//   @I3C_BASE@            Active I3C core's register block (device-mapped into i3c_server)
+//   @I3C_IRQ@             PIC interrupt number of that core
+//   @MBOX_BASE@           Caliptra mailbox registers (device-mapped into spdm_responder)
+//   @SOC_IFC_BASE@        Caliptra SoC interface registers (device-mapped into spdm_responder)
+{
+  arch: {
+    type: "riscv",
+  },
+  kernel: {
+    flash_start_address: @KERNEL_FLASH_START@,
+    flash_size_bytes: 0x12000,
+    ram_start_address: @KERNEL_RAM_START@,
+    ram_size_bytes: 0x8000,
+  },
+  // A server has a higher priority than the processes that call it.
+  apps: [
+    {
+      name: "spdm",
+      flash_size_bytes: 0x30000,
+      processes: [
+        {
+          name: "i3c_server",
+          ram_size_bytes: 0x4000,
+          objects: [
+            { name: "wg", type: "wait_group" },
+            {
+              name: "i3c_irq",
+              type: "interrupt",
+              irqs: [{ name: "i3c", number: @I3C_IRQ@ }],
+            },
+            { name: "channel", type: "channel_handler" },
+            {
+              type: "thread",
+              name: "i3c_server_thread",
+              kernel_stack_size_bytes: 2048,
+              priority: "Level20",
+            },
+          ],
+          memory_mappings: [
+            {
+              name: "i3c_regs",
+              type: "device",
+              start_address: @I3C_BASE@,
+              size_bytes: 0x1000,
+            },
+          ],
+        },
+        {
+          name: "mctp_server",
+          ram_size_bytes: 0x10000,
+          objects: [
+            { name: "wg", type: "wait_group" },
+            { name: "mctp", type: "channel_handler" },
+            { name: "mctp_control", type: "channel_handler" },
+            {
+              name: "i3c",
+              type: "channel_initiator",
+              handler_process: "i3c_server",
+              handler_object_name: "channel",
+            },
+            {
+              type: "thread",
+              name: "mctp_server_thread",
+              kernel_stack_size_bytes: 4096,
+              priority: "Level15",
+            },
+          ],
+        },
+        {
+          name: "spdm_responder",
+          ram_size_bytes: 0x8000,
+          objects: [
+            {
+              name: "mctp",
+              type: "channel_initiator",
+              handler_process: "mctp_server",
+              handler_object_name: "mctp",
+            },
+            {
+              type: "thread",
+              name: "spdm_responder_thread",
+              kernel_stack_size_bytes: 2048,
+              priority: "Level10",
+            },
+          ],
+          memory_mappings: [
+            {
+              name: "mbox",
+              type: "device",
+              start_address: @MBOX_BASE@,
+              size_bytes: 0x1000,
+            },
+            {
+              name: "soc_ifc",
+              type: "device",
+              start_address: @SOC_IFC_BASE@,
+              size_bytes: 0x1000,
+            },
+          ],
+        },
+        {
+          name: "mctp_control",
+          ram_size_bytes: 0x4000,
+          objects: [
+            {
+              name: "mctp",
+              type: "channel_initiator",
+              handler_process: "mctp_server",
+              handler_object_name: "mctp_control",
+            },
+            {
+              type: "thread",
+              name: "mctp_control_thread",
+              kernel_stack_size_bytes: 2048,
+              priority: "Level10",
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}
