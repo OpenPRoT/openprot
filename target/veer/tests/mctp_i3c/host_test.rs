@@ -52,8 +52,8 @@ const MCTP_HEADER_LEN: usize = 4;
 /// with 254-byte packets (a 255-byte frame that fills it) the VCK190 cut a frame
 /// short, with error 1 in its RX descriptor, in 2 of 10 runs of this test, although
 /// the driver alone drains such a frame in under a millisecond (see `rx_timing`).
-/// The service does more per frame than the driver (the ring copy, the interrupt,
-/// the client wakeup). This bounds what the *target receives*; what it sends is
+/// The service does more per frame than the driver (the interrupt handling, the
+/// latch, the client wakeup). This bounds what the *target receives*; what it sends is
 /// `MAX_REPLY_PACKET`. caliptra-mcu-sw's own host helper writes 64-byte payloads
 /// too.
 const MAX_PACKET: usize = MCTP_HEADER_LEN + 64;
