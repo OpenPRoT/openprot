@@ -144,8 +144,8 @@ So a peer should send the baseline, a 64-byte payload, which is what DSP0236 has
 endpoint use unless it knows more, and what caliptra-mcu-sw's own host helper does. The
 host tests write 68-byte packets for this reason. A controller that sends full-size
 packets back to back can still overflow the queue: the standalone drain is fast now, but
-the service does more per frame than `read_frame` (the ring copy, the interrupt, waking
-the client), and with the host test writing 254-byte packets the whole path overflowed
+the service does more per frame than `read_frame` (the interrupt handling, the latch,
+waking the client), and with the host test writing 254-byte packets the whole path overflowed
 in 2 of 10 runs on the VCK190, as a frame cut short with error 1. The driver reports a
 damaged frame (`take_rx_error`) so that it is visible.
 
