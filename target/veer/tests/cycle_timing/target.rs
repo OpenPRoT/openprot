@@ -114,8 +114,7 @@ impl TargetInterface for Target {
 
         // The register the I3C driver polls for a queued frame. Reading it has no
         // side effect, unlike popping a FIFO port.
-        let i3c_status =
-            with_exposed_provenance::<u32>(I3C_BASE + Reg::TtiDescQueueDepth.offset());
+        let i3c_status = with_exposed_provenance::<u32>(I3C_BASE + Reg::TtiDescQueueDepth.offset());
         // SAFETY (each read below): the address is a readable register in the
         // I3C block, and this code runs in the kernel.
         time_reads("i3c tti_desc_queue_depth", || unsafe {
