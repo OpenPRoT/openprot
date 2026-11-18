@@ -6,7 +6,9 @@
 use crate::resource::{Capability, FieldWrite, Pin, Routes};
 use core::marker::PhantomData;
 
-/// Fixed-size compile-time coalescing scratch; only `[..len]` of it is ever live.
+/// Max distinct register offsets [`RegBatch`] can hold after coalescing (merging per-pin writes
+/// that land on the same register into one). Backs a fixed-size array; `[..len]` of it is live,
+/// the rest is zeroed padding — 16 is arbitrary, just comfortably above any real board's count.
 // TODO: the dead slots are not trimmed. `as_slice()` runs at runtime against a const-promoted
 // `RegBatch`, so the backing allocation is always MAX_REGS wide (196 bytes on thumbv7m) with the
 // unused entries zeroed. Whether they reach the binary is the optimizer's call: at -O1/-O3 the
@@ -16,16 +18,19 @@ use core::marker::PhantomData;
 // waste is bounded at one `scu::route` monomorphization per image until that comes back.
 pub(crate) const MAX_REGS: usize = 16;
 
-/// Central batch of register writes, coalesced to one op per distinct offset: `[..len]` of `ops` live.
+/// Central batch of register writes, coalesced to one op per distinct offset: `[..len]` of `ops`
+/// live. Block-typed, so one block's batch can't be applied to another's — but coalescing itself
+/// never checks `B::SIZE`; that proof lives in [`ProvenInBounds`], not here (see its doc for why).
 #[derive(Clone, Copy)]
-pub struct RegBatch {
+pub struct RegBatch<B> {
     /// Register ops, one per distinct offset; only `[..len]` are valid.
     ops: [FieldWrite; MAX_REGS],
     /// Number of live ops.
     len: usize,
+    _block: PhantomData<B>,
 }
 
-impl RegBatch {
+impl<B: Block> RegBatch<B> {
     /// An empty accumulator.
     #[must_use]
     pub const fn new() -> Self {
@@ -36,10 +41,17 @@ impl RegBatch {
                 clr: 0,
             }; MAX_REGS],
             len: 0,
+            _block: PhantomData,
         }
     }
 
     /// Coalesce one write into the batch, grouped by register offset via [`find`](Self::find).
+    /// Does not check `w.offset` against `B::SIZE` — intentionally: this is a plain `const fn`,
+    /// callable from both compile-time and ordinary runtime code, and whether its `assert!`s would
+    /// ever run at runtime depends on the caller, not on this fn. [`ProvenInBounds`] carries the
+    /// bounds proof instead, specifically because it's an associated const: evaluating one is
+    /// always the compiler's job, with no runtime-reachable call path, regardless of where it's
+    /// referenced from.
     const fn push(&mut self, w: FieldWrite) {
         let j = self.find(w.offset);
         if j == self.len {
@@ -61,7 +73,7 @@ impl RegBatch {
     }
 
     /// Merge another batch's live ops in, coalescing per register — the tuple/handle-list fold step.
-    pub(crate) const fn append_batch(&mut self, other: &RegBatch) {
+    pub(crate) const fn append_batch(&mut self, other: &RegBatch<B>) {
         let mut i = 0;
         while i < other.len {
             self.push(other.ops[i]);
@@ -100,31 +112,61 @@ impl RegBatch {
     }
 }
 
-impl Default for RegBatch {
+impl<B: Block> Default for RegBatch<B> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// A register block a coalesced mux batch can be applied to: one read + one write per offset.
-/// A target impls these two methods once; `apply` replaces a per-offset match in the applier.
-pub trait RegBlock {
-    /// Read the 32-bit register at `offset`.
-    fn read_reg(&self, offset: u32) -> u32;
-    /// Write `val` to the 32-bit register at `offset`.
-    fn write_reg(&self, offset: u32, val: u32);
+/// Apply handle `H`'s coalesced routes to its block: one RMW (`reg = (reg & !clr) | set`) per
+/// register. Panic-free, at compile time *and* at runtime: referencing `ProvenInBounds::PROVEN`
+/// below evaluates its bounds check purely at compile time (see that trait's own doc for why),
+/// and the loop itself is a flat walk over an already-built tight slice, no indexing, no asserts
+/// of its own. Safe: `PROVEN` having been referenced at all is what proves every offset in
+/// `H::COALESCED` fits `B::SIZE` — not a trust-me comment, a proof the caller couldn't skip.
+pub fn apply<B: Block, H: MuxRoutes<B>>(block: &Mmio<B>, _handle: &H) {
+    let () = <H as ProvenInBounds<B>>::PROVEN;
+    for op in H::COALESCED.as_slice() {
+        // SAFETY: `ProvenInBounds::PROVEN` above proves every offset in `H::COALESCED` is
+        // in-bounds for `B`.
+        #[allow(unsafe_code)]
+        unsafe {
+            block.write_reg(op.offset, (block.read_reg(op.offset) & !op.clr) | op.set);
+        }
+    }
 }
 
-/// Apply an exact-N mux batch to a block: one RMW (`reg = (reg & !clr) | set`) per register. Panic-free — a flat walk over the tight slice, no indexing.
-pub fn apply(block: &impl RegBlock, batch: &[FieldWrite]) {
-    for op in batch {
-        block.write_reg(op.offset, (block.read_reg(op.offset) & !op.clr) | op.set);
-    }
+/// Proof that every offset in `H::COALESCED` fits inside block `B`'s real extent — split out from
+/// `RegBatch::push` specifically so the check can only ever run at compile time.
+///
+/// `push` is a plain `const fn`: whether a given call to it runs at compile time or at runtime is
+/// decided by its caller, not by `push` itself — a `const fn` called from ordinary runtime code
+/// runs (and can panic) at runtime, same as any other function. An associated const has no such
+/// ambiguity: the compiler evaluates `PROVEN`'s initializer to produce its value regardless of
+/// where or how it's referenced, even from inside an otherwise-ordinary runtime function body (see
+/// [`apply`]). That's what makes this trait, not a check inside `push`, the place this proof lives.
+pub trait ProvenInBounds<B: Block>: MuxRoutes<B> {
+    /// Evaluating this forces the bounds check; referencing it is what makes it run.
+    const PROVEN: ();
+}
+
+impl<B: Block, H: MuxRoutes<B>> ProvenInBounds<B> for H {
+    const PROVEN: () = {
+        let ops = H::COALESCED.as_slice();
+        let mut i = 0;
+        while i < ops.len() {
+            assert!(
+                (ops[i].offset as usize) + 4 <= B::SIZE,
+                "register offset reaches past this block's real extent"
+            );
+            i += 1;
+        }
+    };
 }
 
 /// Coalesce a list of per-pin routes into one batch (one RMW per register) — the compile-time fold.
 #[must_use]
-pub const fn coalesce_routes(routes: &[&[FieldWrite]]) -> RegBatch {
+pub const fn coalesce_routes<B: Block>(routes: &[&[FieldWrite]]) -> RegBatch<B> {
     let mut b = RegBatch::new();
     let mut i = 0;
     while i < routes.len() {
@@ -134,25 +176,27 @@ pub const fn coalesce_routes(routes: &[&[FieldWrite]]) -> RegBatch {
     b
 }
 
-/// A bound handle (or tuple of handles) whose SCU mux routes are folded to one RMW per register at
-/// compile time in [`COALESCED`](MuxRoutes::COALESCED); the applier just flushes that const.
-pub trait MuxRoutes {
+/// A bound handle (or tuple of handles) whose mux routes target block `B`, folded to one RMW per
+/// register at compile time in [`COALESCED`](MuxRoutes::COALESCED); the applier just flushes that
+/// const.
+pub trait MuxRoutes<B: Block> {
     /// This handle's routes, coalesced to one op per register — folded per monomorphization at compile time.
-    const COALESCED: RegBatch;
+    const COALESCED: RegBatch<B>;
 }
 
 /// Route a handle through a shared reference: the applier reads only the type, so a borrow folds identically — non-Copy owners route without being consumed.
-impl<H: MuxRoutes> MuxRoutes for &H {
-    const COALESCED: RegBatch = H::COALESCED;
+impl<B: Block, H: MuxRoutes<B>> MuxRoutes<B> for &H {
+    const COALESCED: RegBatch<B> = H::COALESCED;
 }
 
 /// Impl [`MuxRoutes`] for every tuple arity by folding each member's `COALESCED` into one batch at
 /// compile time; recurses on the tail, so one invocation covers all arities down to the 1-tuple.
+/// Tuple positions are named `P0..` (not `A..`) so they don't collide with the block parameter `B`.
 macro_rules! impl_muxroutes_tuple {
     () => {};
     ($head:ident $(, $tail:ident)*) => {
-        impl<$head: MuxRoutes $(, $tail: MuxRoutes)*> MuxRoutes for ($head, $($tail,)*) {
-            const COALESCED: RegBatch = {
+        impl<B: Block, $head: MuxRoutes<B> $(, $tail: MuxRoutes<B>)*> MuxRoutes<B> for ($head, $($tail,)*) {
+            const COALESCED: RegBatch<B> = {
                 let mut out = RegBatch::new();
                 out.append_batch(&$head::COALESCED);
                 $( out.append_batch(&$tail::COALESCED); )*
@@ -166,40 +210,47 @@ macro_rules! impl_muxroutes_tuple {
 // This list caps flat-tuple arity, not the real limit: the impl is generic over any MuxRoutes
 // member, so a group past this count nests, e.g. `((a, b, c), (d, e, f), ...)`, rather than
 // needing the list widened.
-impl_muxroutes_tuple!(A, B, C, D, E, F, G, H, I, J, K, L);
+impl_muxroutes_tuple!(P0, P1, P2, P3, P4, P5, P6, P7, P8, P9, P10, P11);
 
 /// A pin consumed purely to route it — routing only ever flushes the SCU's mux-select bits, never
 /// a capability's own registers, so there is nothing to grant access to and no block to bind
 /// through. This is the kernel's routing-only alternative to binding a full capability handle
 /// (e.g. `GpioBlock`/`GpioPin`) just to reach [`MuxRoutes`].
-pub struct Route<C, P> {
+pub struct Route<C, P, B> {
     _cap: PhantomData<C>,
     _pin: PhantomData<P>,
+    _block: PhantomData<B>,
 }
 
-impl<C: Capability, P: Routes<C> + Pin> Route<C, P> {
+impl<C: Capability, P: Routes<C> + Pin, B> Route<C, P, B> {
     /// Consume a pin token purely to route it.
     #[must_use]
     pub fn new(_pin: P) -> Self {
         Self {
             _cap: PhantomData,
             _pin: PhantomData,
+            _block: PhantomData,
         }
     }
 }
 
-impl<C: Capability, P: Routes<C>> MuxRoutes for Route<C, P> {
-    const COALESCED: RegBatch = coalesce_routes(&[<P as Routes<C>>::ROUTE]);
+impl<C: Capability, P: Routes<C>, B: Block> MuxRoutes<B> for Route<C, P, B> {
+    const COALESCED: RegBatch<B> = coalesce_routes(&[<P as Routes<C>>::ROUTE]);
 }
 
 /// A silicon-fixed singleton register block (e.g. the SCU): `BASE` names it, no pin token carries it.
 ///
 /// # Safety
-/// `BASE` must name a valid, `'static`, aligned register block usable for `u32` volatile access at every offset its driver touches.
+/// `BASE` must name a valid, `'static`, aligned register block usable for `u32` volatile access at
+/// every offset less than `SIZE`; `SIZE` must be the real byte extent of that register block (e.g.
+/// `size_of::<ast1060_pac::scu::RegisterBlock>()`), not an approximation — it's what an offset gets
+/// checked against before the block is ever touched.
 #[allow(unsafe_code)]
 pub unsafe trait Block {
     /// The silicon-fixed base of this singleton register block.
     const BASE: *const u8;
+    /// The real byte extent of this register block — an offset at or past this is out of bounds.
+    const SIZE: usize;
 }
 
 /// Confined MMIO applier over block `B`, phantom-typed so one block's applier can't stand in for another's.
@@ -226,9 +277,14 @@ impl<B> Mmio<B> {
     }
 
     /// Read the 32-bit register at byte `offset`.
+    /// # Safety
+    /// `offset` must be a valid, in-bounds byte offset for this register block — this fn only
+    /// knows `base` is valid (promised by `from_raw`/[`block`](Self::block)),
+    /// not that `offset` lands inside it; that's on the caller.
     #[must_use]
-    pub fn read_reg(&self, offset: u32) -> u32 {
-        // SAFETY: `base` names a valid register block sized for `u32` access at every offset used.
+    #[allow(unsafe_code)]
+    pub unsafe fn read_reg(&self, offset: u32) -> u32 {
+        // SAFETY: caller ensures `offset` is in-bounds for this block, per this fn's own doc.
         #[allow(unsafe_code)]
         // nosemgrep
         unsafe {
@@ -237,8 +293,13 @@ impl<B> Mmio<B> {
     }
 
     /// Write `val` to the 32-bit register at byte `offset`.
-    pub fn write_reg(&self, offset: u32, val: u32) {
-        // SAFETY: `base` names a valid register block sized for `u32` access at every offset used.
+    /// # Safety
+    /// `offset` must be a valid, in-bounds byte offset for this register block — this fn only
+    /// knows `base` is valid (promised by `from_raw`/[`block`](Self::block)),
+    /// not that `offset` lands inside it; that's on the caller.
+    #[allow(unsafe_code)]
+    pub unsafe fn write_reg(&self, offset: u32, val: u32) {
+        // SAFETY: caller ensures `offset` is in-bounds for this block, per this fn's own doc.
         #[allow(unsafe_code)]
         // nosemgrep
         unsafe {
@@ -255,23 +316,21 @@ impl<B: Block> Mmio<B> {
     }
 }
 
-impl<B> RegBlock for Mmio<B> {
-    fn read_reg(&self, offset: u32) -> u32 {
-        Mmio::read_reg(self, offset)
-    }
-    fn write_reg(&self, offset: u32, val: u32) {
-        Mmio::write_reg(self, offset, val)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::resource::{clear, set};
 
+    struct TestBlock;
+    #[allow(unsafe_code)]
+    unsafe impl Block for TestBlock {
+        const BASE: *const u8 = core::ptr::null();
+        const SIZE: usize = 0x100;
+    }
+
     #[test]
     fn append_merges_same_offset() {
-        let mut batch = RegBatch::new();
+        let mut batch = RegBatch::<TestBlock>::new();
         batch.append(&[set(0x10, 0), set(0x10, 1)]);
         assert_eq!(batch.len(), 1);
         assert_eq!(batch.as_slice()[0].offset, 0x10);
@@ -280,23 +339,23 @@ mod tests {
 
     #[test]
     fn append_keeps_distinct_offsets_separate() {
-        let mut batch = RegBatch::new();
+        let mut batch = RegBatch::<TestBlock>::new();
         batch.append(&[set(0x10, 0), clear(0x14, 0)]);
         assert_eq!(batch.len(), 2);
     }
 
     #[test]
     fn new_batch_is_empty() {
-        let batch = RegBatch::new();
+        let batch = RegBatch::<TestBlock>::new();
         assert!(batch.is_empty());
         assert_eq!(batch.len(), 0);
     }
 
     #[test]
     fn append_batch_folds_in_another_batchs_ops() {
-        let mut a = RegBatch::new();
+        let mut a = RegBatch::<TestBlock>::new();
         a.append(&[set(0x10, 0)]);
-        let mut b = RegBatch::new();
+        let mut b = RegBatch::<TestBlock>::new();
         b.append(&[set(0x10, 1), clear(0x14, 0)]);
 
         a.append_batch(&b);
@@ -314,7 +373,7 @@ mod tests {
         let a: &[FieldWrite] = &[set(0x10, 0)];
         let b: &[FieldWrite] = &[set(0x10, 1), clear(0x14, 2)];
 
-        let batch = coalesce_routes(&[a, b]);
+        let batch: RegBatch<TestBlock> = coalesce_routes(&[a, b]);
         assert_eq!(batch.len(), 2);
     }
 
@@ -332,8 +391,18 @@ mod tests {
 
     #[test]
     fn route_coalesces_straight_off_the_pins_route_with_no_grant_needed() {
-        let route = Route::<TestCap, TestPin>::new(TestPin);
-        assert_eq!(Route::<TestCap, TestPin>::COALESCED.len(), 2);
+        let route = Route::<TestCap, TestPin, TestBlock>::new(TestPin);
+        assert_eq!(Route::<TestCap, TestPin, TestBlock>::COALESCED.len(), 2);
         let _ = route; // consumed purely to prove `new` takes the pin by value
+    }
+
+    // `ProvenInBounds::PROVEN`'s failure case (an offset past `B::SIZE`) is a compile error, not a
+    // runtime panic, so it can't be exercised with `#[should_panic]` the way `push`'s old in-fn
+    // assert could. This only proves the mechanism itself evaluates cleanly for a route that's
+    // actually in bounds; the rejecting case was confirmed by hand (a temporary out-of-range
+    // `ROUTE` entry on `TestPin` fails the build, as expected) rather than left unverified.
+    #[test]
+    fn proven_in_bounds_accepts_a_route_within_the_block() {
+        let () = <Route<TestCap, TestPin, TestBlock> as ProvenInBounds<TestBlock>>::PROVEN;
     }
 }
