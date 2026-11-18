@@ -18,6 +18,7 @@
 use core::marker::PhantomData;
 
 use super::constants::MAX_BUSES;
+use crate::scu::ScuRegisters;
 
 // -----------------------------------------------------------------------------
 // Per-bus register dispatch (private)
@@ -194,57 +195,61 @@ impl I3cRegisters {
     // SCU: per-bus reset and clock
     // -------------------------------------------------------------------------
 
+    /// Run `f` on the SCU register block with write protection lifted.
+    ///
+    /// SCU reset and clock registers are write-protected. The lock is taken
+    /// only around `f` (see [`ScuRegisters::unlock_and_lock_after`]), so writes
+    /// made outside it are silently dropped.
+    #[inline]
+    fn with_scu_unlocked<R>(&self, f: impl FnOnce(&ast1060_pac::scu::RegisterBlock) -> R) -> R {
+        // SAFETY: the SCU is the global singleton; this façade's contract
+        // already serializes SCU access with the owning thread.
+        let scu = unsafe { ScuRegisters::new_global() };
+        scu.unlock_and_lock_after(|scu| f(scu.regs()))
+    }
+
     /// SCU050: assert this bus's controller reset.
     pub(crate) fn core_reset_assert(&self) {
-        match self.bus {
-            0 => self
-                .scu()
-                .scu050()
-                .modify(|_, w| w.rst_i3c0ctrl().set_bit()),
-            1 => self
-                .scu()
-                .scu050()
-                .modify(|_, w| w.rst_i3c1ctrl().set_bit()),
-            2 => self
-                .scu()
-                .scu050()
-                .modify(|_, w| w.rst_i3c2ctrl().set_bit()),
-            _ => self
-                .scu()
-                .scu050()
-                .modify(|_, w| w.rst_i3c3ctrl().set_bit()),
-        };
+        self.with_scu_unlocked(|scu| match self.bus {
+            0 => scu.scu050().modify(|_, w| w.rst_i3c0ctrl().set_bit()),
+            1 => scu.scu050().modify(|_, w| w.rst_i3c1ctrl().set_bit()),
+            2 => scu.scu050().modify(|_, w| w.rst_i3c2ctrl().set_bit()),
+            _ => scu.scu050().modify(|_, w| w.rst_i3c3ctrl().set_bit()),
+        });
     }
 
     /// SCU054: deassert this bus's controller reset (write-1-to-clear).
     pub(crate) fn core_reset_deassert(&self) {
         let mask = 1u32 << (8 + u32::from(self.bus));
-        self.scu()
-            .scu054()
-            .modify(|_, w| unsafe { w.scu050sys_rst_ctrl_clear_reg2().bits(mask) });
+        self.with_scu_unlocked(|scu| {
+            scu.scu054()
+                .modify(|_, w| unsafe { w.scu050sys_rst_ctrl_clear_reg2().bits(mask) });
+        });
     }
 
     /// SCU050: assert the shared I3C register/DMA reset.
     #[allow(dead_code)]
     pub(crate) fn global_reset_assert(&self) {
-        self.scu()
-            .scu050()
-            .modify(|_, w| w.rst_i3cregdmactrl().set_bit());
+        self.with_scu_unlocked(|scu| {
+            scu.scu050().modify(|_, w| w.rst_i3cregdmactrl().set_bit());
+        });
     }
 
     /// SCU054: deassert the shared I3C register/DMA reset (write-1-to-clear).
     pub(crate) fn global_reset_deassert(&self, mask: u32) {
-        self.scu()
-            .scu054()
-            .modify(|_, w| unsafe { w.scu050sys_rst_ctrl_clear_reg2().bits(mask) });
+        self.with_scu_unlocked(|scu| {
+            scu.scu054()
+                .modify(|_, w| unsafe { w.scu050sys_rst_ctrl_clear_reg2().bits(mask) });
+        });
     }
 
     /// SCU094: ungate this bus's clock (write-1-to-clear stop bit).
     pub(crate) fn clock_on(&self) {
         let mask = 1u32 << (8 + u32::from(self.bus));
-        self.scu()
-            .scu094()
-            .modify(|_, w| unsafe { w.scu090clk_stop_ctrl_clear_reg_set2().bits(mask) });
+        self.with_scu_unlocked(|scu| {
+            scu.scu094()
+                .modify(|_, w| unsafe { w.scu090clk_stop_ctrl_clear_reg_set2().bits(mask) });
+        });
     }
 
     /// SCU004: hardware revision ID.

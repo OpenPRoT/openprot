@@ -6,6 +6,7 @@
 use super::pins::ScuBlock;
 use ast1060_pac as device;
 use core::marker::PhantomData;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 const SCU_UNLOCK_KEY: u32 = 0x1688_A8A8;
 
@@ -22,6 +23,10 @@ pub(crate) fn unlock_scu_writes(mmio: &crate::Mmio<ScuBlock>) {
 pub(crate) fn lock_scu_writes(mmio: &crate::Mmio<ScuBlock>) {
     mmio.write_reg_at::<0x000>(0);
 }
+
+/// Nesting depth of [`ScuRegisters::unlock_and_lock_after`]; the SCU is
+/// unlocked while this is non-zero.
+static UNLOCK_DEPTH: AtomicU32 = AtomicU32::new(0);
 
 /// Safe wrapper around the AST10x0 SCU register block.
 pub struct ScuRegisters {
@@ -64,9 +69,6 @@ impl ScuRegisters {
     }
 
     /// Unlock SCU write-protected registers for subsequent write operations.
-    ///
-    /// Call this once before a sequence of SCU writes, following the aspeed-rust
-    /// pattern of a single unlock per batch of register operations.
     #[inline]
     fn unlock_write_protection(&self) {
         self.regs()
@@ -74,20 +76,30 @@ impl ScuRegisters {
             .write(|w| unsafe { w.bits(SCU_UNLOCK_KEY) });
     }
 
-    /// Lock SCU write-protected registers after a sequence of write operations.
+    /// Lock SCU write-protected registers.
     #[inline]
     fn lock_write_protection(&self) {
         self.regs().scu000().write(|w| unsafe { w.bits(0) });
     }
 
-    /// Lock SCU write-protected registers after a sequence of write operations.
-    /// ## Example
+    /// Run `f` with the SCU write-protected registers unlocked, then re-lock.
+    ///
+    /// Calls may be nested: only the outermost call unlocks and only the
+    /// outermost call re-locks, so a setter that takes the lock itself can be
+    /// invoked from inside another `unlock_and_lock_after` closure without
+    /// re-locking the SCU under the caller.
+    ///
+    /// The SCU is not re-locked if `f` panics.
+    ///
+    /// # Example
     /// ```rust,no_run
-    /// let scu = ScuRegisters::new_global();
+    /// # use ast10x0_peripherals::scu::ScuRegisters;
+    /// // SAFETY: example only; the caller owns the singleton SCU.
+    /// let scu = unsafe { ScuRegisters::new_global() };
     /// scu.unlock_and_lock_after(|scu| {
-    ///   let mut bits = scu.regs().scu0f0().read().bits();
-    ///   bits &= !0xF;
-    ///   scu.regs().scu0f0().write(|w| unsafe { w.bits(bits) });
+    ///     let mut bits = scu.regs().scu0f0().read().bits();
+    ///     bits &= !0xF;
+    ///     scu.regs().scu0f0().write(|w| unsafe { w.bits(bits) });
     /// });
     /// ```
     #[inline]
@@ -95,9 +107,13 @@ impl ScuRegisters {
     where
         F: FnOnce(&ScuRegisters) -> R,
     {
-        self.unlock_write_protection();
+        if UNLOCK_DEPTH.fetch_add(1, Ordering::AcqRel) == 0 {
+            self.unlock_write_protection();
+        }
         let result = f(self);
-        self.lock_write_protection();
+        if UNLOCK_DEPTH.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.lock_write_protection();
+        }
         result
     }
 }

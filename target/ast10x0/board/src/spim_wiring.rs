@@ -96,6 +96,24 @@ impl From<SpiMonitorError> for SpimWiringError {
     }
 }
 
+/// Route the SGPIOM clock, load, data-out and data-in signals to their pins.
+fn enable_sgpiom_pins() {
+    // SAFETY: SCU access is coordinated by the board layer.
+    let scu = unsafe { ScuRegisters::new_global() };
+    scu.unlock_and_lock_after(|scu| {
+        scu.regs().scu41c().modify(|_, w| {
+            w.enbl_sgpiomaster_ckfn_pin()
+                .set_bit()
+                .enbl_sgpiomaster_ldfn_pin()
+                .set_bit()
+                .enbl_sgpiomaster_dofn_pin()
+                .set_bit()
+                .enbl_sgpiomaster_difn_pin()
+                .set_bit()
+        });
+    });
+}
+
 /// Apply the default SCU pinctrl group for a SPI monitor instance.
 ///
 /// The instance numbering follows the hardware SPIPF blocks: `Spim0` uses
@@ -126,17 +144,7 @@ pub fn apply_spim_external_mux(instance: SpiMonitorInstance, mux: ScuExtMuxSelec
     };
 
     let gpio = unsafe { &*device::Gpio::ptr() };
-    let scu = unsafe { &*device::Scu::ptr() };
-    scu.scu41c().modify(|_, w| {
-        w.enbl_sgpiomaster_ckfn_pin()
-            .set_bit()
-            .enbl_sgpiomaster_ldfn_pin()
-            .set_bit()
-            .enbl_sgpiomaster_dofn_pin()
-            .set_bit()
-            .enbl_sgpiomaster_difn_pin()
-            .set_bit()
-    });
+    enable_sgpiom_pins();
     match gpio_group {
         ExternalMuxGpioGroup::Abcd => {
             gpio.gpio000()
@@ -290,17 +298,7 @@ pub fn set_bmc_resets(asserted: bool) -> bool {
     const BMC_SRST_MASK: u32 = 1 << 8;
     const BMC_EXTRST_MASK: u32 = 1 << 9;
 
-    let scu = unsafe { &*device::Scu::ptr() };
-    scu.scu41c().modify(|_, w| {
-        w.enbl_sgpiomaster_ckfn_pin()
-            .set_bit()
-            .enbl_sgpiomaster_ldfn_pin()
-            .set_bit()
-            .enbl_sgpiomaster_dofn_pin()
-            .set_bit()
-            .enbl_sgpiomaster_difn_pin()
-            .set_bit()
-    });
+    enable_sgpiom_pins();
 
     let sgpio = unsafe { &*device::Sgpiom::ptr() };
     sgpio.gpio554().modify(|_, w| unsafe {
