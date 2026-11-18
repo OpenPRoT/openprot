@@ -27,6 +27,7 @@ Wildcard builds need the tag filters: `//...` includes hardware-only and verilat
 - Contribution process, RFCs, and CLA: `docs/src/contributing.md` and `docs/src/development-process.md`.
 - Pigweed integration: `docs/src/design/pigweed-overview.md`.
 - `pw_kernel` IPC: `docs/src/design/pw-kernel-ipc.md`; example in `target/veer/ipc/`.
+- Thread priorities for servers and their clients: `docs/src/design/thread-priorities.md`.
 - Orchestrator state machine and platform contracts: `docs/src/design/orchestrator/`.
 - Specification: `docs/src/specification/`.
 - Other `./pw` groups, direct Bazel usage and clippy: `docs/src/usage.md`. Docs build, watch and serve: `docs/src/getting-started.md`.
