@@ -15,11 +15,13 @@ mod receiver;
 mod sender;
 
 pub use encap::{
-    decode_write, mtu_for_limit, transfer_pec, MctpI3cEncap, MCTP_BASELINE_PAYLOAD,
-    MCTP_I3C_IPC_FRAME, MCTP_I3C_IPC_MAXMTU, MCTP_I3C_IPC_PACKET, MCTP_I3C_MINMTU,
+    decode_write, decode_write_with, mtu_for_limit, transfer_pec, transfer_pec_with, MctpI3cEncap,
+    MCTP_BASELINE_PAYLOAD, MCTP_I3C_IPC_FRAME, MCTP_I3C_IPC_MAXMTU, MCTP_I3C_IPC_PACKET,
+    MCTP_I3C_MINMTU,
 };
 pub use receiver::MctpI3cReceiver;
 pub use sender::{I3cSender, MAX_ADDRESS_RETRIES, MAX_BUSY_RETRIES};
+pub use util_pec::{Pec, SoftwarePec};
 
 #[cfg(test)]
 mod tests {
@@ -42,6 +44,51 @@ mod tests {
     fn pec_matches_known_answer() {
         // CRC-8, polynomial 0x07: the SMBus PEC.
         assert_eq!(encap::smbus_pec(&[0x10, 0x01, 0x02, 0x03, 0x04]), 0xd1);
+    }
+
+    /// An engine that is not CRC-8: it XORs the bytes. If the transport used the
+    /// default software CRC instead of the engine it was given, these tests fail.
+    #[derive(Clone, Copy)]
+    struct XorPec;
+
+    impl Pec for XorPec {
+        fn update(&self, crc: u8, data: &[u8]) -> u8 {
+            data.iter().fold(crc, |acc, b| acc ^ b)
+        }
+    }
+
+    #[test]
+    fn encap_computes_the_pec_with_the_engine_it_was_given() {
+        let packet = [0xde, 0xad, 0xbe, 0xef];
+        let mut out = [0u8; 16];
+        let n = MctpI3cEncap::with_pec(OWN, XorPec)
+            .encode(&packet, &mut out)
+            .expect("encode");
+        let expected = XorPec.update(0, &[(OWN << 1) | 1]) ^ XorPec.update(0, &packet);
+        assert_eq!(out[n - 1], expected);
+        assert_ne!(
+            out[n - 1],
+            encap::smbus_pec(&[(OWN << 1) | 1, 0xde, 0xad, 0xbe, 0xef])
+        );
+    }
+
+    #[test]
+    fn decode_checks_the_pec_with_the_engine_it_was_given() {
+        let packet = [0x01, 0x02, 0x03, 0x04];
+        let mut frame = packet.to_vec();
+        frame.push(transfer_pec_with(&XorPec, OWN << 1, &packet));
+
+        // The engine that built the frame accepts it, the default CRC rejects it.
+        assert_eq!(
+            MctpI3cEncap::with_pec(OWN, XorPec)
+                .decode(&frame)
+                .expect("decode"),
+            &packet
+        );
+        assert!(MctpI3cEncap::new(OWN).decode(&frame).is_err());
+
+        let mut rx = MctpI3cReceiver::with_pec(XorPec);
+        assert_eq!(rx.decode(&frame, || Some(OWN)).expect("decode"), &packet);
     }
 
     #[test]

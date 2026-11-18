@@ -35,68 +35,34 @@
 use mctp::{Error, Result};
 use openprot_mctp_api::MCTP_HEADER_LEN;
 
+use util_pec::{Pec, SoftwarePec};
+
 /// R/W# bit of the address byte for a controller write (to this target).
 const WRITE: u8 = 0;
 /// R/W# bit of the address byte for a controller read (of this target).
 const READ: u8 = 1;
 
-/// Bitwise SMBus CRC-8 step: polynomial 0x07, no reflection. Only used to build
-/// [`CRC8_TABLE`] at compile time.
-const fn crc8_step_bitwise(mut crc: u8, value: u8) -> u8 {
-    crc ^= value;
-    let mut i = 0;
-    while i < 8 {
-        crc = if crc & 0x80 != 0 {
-            (crc << 1) ^ 0x07
-        } else {
-            crc << 1
-        };
-        i += 1;
-    }
-    crc
-}
-
-/// CRC-8 (poly 0x07) of every single byte value, so a step is one lookup. The
-/// bitwise loop costs ~60-90 instructions per byte, which dominated frame
-/// decode on the slow core.
-static CRC8_TABLE: [u8; 256] = {
-    let mut table = [0u8; 256];
-    let mut i = 0;
-    while i < 256 {
-        table[i] = crc8_step_bitwise(0, i as u8);
-        i += 1;
-    }
-    table
-};
-
-/// One SMBus CRC-8 step.
-#[inline(always)]
-fn crc8_step(crc: u8, value: u8) -> u8 {
-    CRC8_TABLE[(crc ^ value) as usize]
-}
-
-/// SMBus PEC: CRC-8 with polynomial 0x07, zero seed, no reflection.
+/// SMBus PEC: CRC-8 with polynomial 0x07, zero seed, no reflection, by the
+/// default [`SoftwarePec`] engine.
 ///
 /// Inlined rather than pulled from `smbus-pec`, which is only a transitive
 /// dependency here. A known-answer test in this crate pins it.
 pub fn smbus_pec(data: &[u8]) -> u8 {
-    let mut crc: u8 = 0;
-    for &value in data {
-        crc = crc8_step(crc, value);
-    }
-    crc
+    SoftwarePec.update(0, data)
 }
 
-/// PEC of one I3C transfer: CRC-8 over the address byte, then the packet.
+/// PEC of one I3C transfer: CRC-8 over the address byte, then the packet, by the
+/// default [`SoftwarePec`] engine.
 ///
 /// `addr_byte` is the 7-bit target address shifted left once with the transfer's
 /// R/W# bit in bit 0 (see [`addr_byte`]).
 pub fn transfer_pec(addr_byte: u8, packet: &[u8]) -> u8 {
-    let mut crc = crc8_step(0, addr_byte);
-    for &value in packet {
-        crc = crc8_step(crc, value);
-    }
-    crc
+    transfer_pec_with(&SoftwarePec, addr_byte, packet)
+}
+
+/// [`transfer_pec`] with the CRC computed by `pec`.
+pub fn transfer_pec_with(pec: &impl Pec, addr_byte: u8, packet: &[u8]) -> u8 {
+    pec.update(pec.update(0, &[addr_byte]), packet)
 }
 
 /// The address byte of a transfer: 7-bit address plus the R/W# bit.
@@ -171,6 +137,11 @@ const _: () = assert!(MCTP_I3C_IPC_MAXMTU < MCTP_I3C_IPC_FRAME);
 /// Fails if the frame is empty, the PEC is wrong, or nothing is left after the
 /// PEC is removed.
 pub fn decode_write(own_addr: u8, frame: &[u8]) -> Result<&[u8]> {
+    decode_write_with(&SoftwarePec, own_addr, frame)
+}
+
+/// [`decode_write`] with the PEC checked by `pec`.
+pub fn decode_write_with<'f>(pec: &impl Pec, own_addr: u8, frame: &'f [u8]) -> Result<&'f [u8]> {
     if frame.is_empty() {
         return Err(Error::InvalidInput);
     }
@@ -179,7 +150,8 @@ pub fn decode_write(own_addr: u8, frame: &[u8]) -> Result<&[u8]> {
     }
 
     let (received, packet) = frame.split_last().ok_or(Error::InvalidInput)?;
-    if packet.is_empty() || transfer_pec(addr_byte(own_addr, WRITE), packet) != *received {
+    if packet.is_empty() || transfer_pec_with(pec, addr_byte(own_addr, WRITE), packet) != *received
+    {
         return Err(Error::InvalidInput);
     }
     Ok(packet)
@@ -190,15 +162,25 @@ pub fn decode_write(own_addr: u8, frame: &[u8]) -> Result<&[u8]> {
 /// `own_addr` is this target's I3C dynamic address. It is not known until the
 /// controller has run ENTDAA, so construct this after the address has been read
 /// back from the hardware.
+///
+/// `P` computes the PEC and defaults to [`SoftwarePec`].
 #[derive(Debug, Clone)]
-pub struct MctpI3cEncap {
+pub struct MctpI3cEncap<P = SoftwarePec> {
     own_addr: u8,
+    pec: P,
 }
 
 impl MctpI3cEncap {
-    /// Bind to a dynamic address.
+    /// Bind to a dynamic address, computing the PEC in software.
     pub fn new(own_addr: u8) -> Self {
-        Self { own_addr }
+        Self::with_pec(own_addr, SoftwarePec)
+    }
+}
+
+impl<P: Pec> MctpI3cEncap<P> {
+    /// Bind to a dynamic address, computing the PEC with `pec`.
+    pub fn with_pec(own_addr: u8, pec: P) -> Self {
+        Self { own_addr, pec }
     }
 
     /// This target's dynamic address.
@@ -208,7 +190,7 @@ impl MctpI3cEncap {
 
     /// Strip the PEC from an inbound private write (see [`decode_write`]).
     pub fn decode<'f>(&self, frame: &'f [u8]) -> Result<&'f [u8]> {
-        decode_write(self.own_addr, frame)
+        decode_write_with(&self.pec, self.own_addr, frame)
     }
 
     /// Frame one MCTP packet for an outbound transfer, which the controller
@@ -235,7 +217,7 @@ impl MctpI3cEncap {
             .ok_or(Error::NoSpace)?
             .copy_from_slice(packet);
 
-        let crc = transfer_pec(addr_byte(self.own_addr, READ), packet);
+        let crc = transfer_pec_with(&self.pec, addr_byte(self.own_addr, READ), packet);
         *out.get_mut(packet.len()).ok_or(Error::NoSpace)? = crc;
 
         Ok(framed)
@@ -245,15 +227,6 @@ impl MctpI3cEncap {
 #[cfg(test)]
 mod crc_tests {
     use super::*;
-
-    #[test]
-    fn table_matches_bitwise_for_all_inputs() {
-        for crc in 0..=255u8 {
-            for value in 0..=255u8 {
-                assert_eq!(crc8_step(crc, value), crc8_step_bitwise(crc, value));
-            }
-        }
-    }
 
     #[test]
     fn smbus_pec_check_value() {

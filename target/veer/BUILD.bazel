@@ -56,6 +56,14 @@ config_setting(
     flag_values = {":target_type": "emulator"},
 )
 
+# Builds for a VeeR target. The VeeR core implements the Zbc carryless multiply
+# (caliptra-mcu-sw uses `clmul` on it), so crates select on this to turn it on.
+config_setting(
+    name = "zbc_enabled",
+    constraint_values = [":target_veer"],
+    visibility = ["//util:__subpackages__"],
+)
+
 constraint_value(
     name = "target_veer",
     constraint_setting = "@pigweed//pw_kernel/target:target",

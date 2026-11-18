@@ -15,6 +15,7 @@ rust_library(
         "//services/i3c/api:i3c_api",
         "//services/i3c/client:i3c_client",
         "//services/mctp/api:mctp_api",
+        "//util/pec",
         "@pigweed//pw_log/rust:pw_log",
         "@rust_crates//:mctp",
         "@rust_crates//:mctp-lib",
