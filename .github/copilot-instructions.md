@@ -14,6 +14,7 @@
 - [ ] Stack usage is bounded and reasonable for embedded targets
 - [ ] Shared/reused scratch buffers are not aliased across multiple batched results — each consumer's data is copied or encoded before the buffer is overwritten for the next one
 - [ ] Untrusted IPC input is validated in the server, not in the hardware driver. Client-controlled address, size, and length meet the driver's documented preconditions (supported size, alignment, in-bounds range) before the handler calls into the HAL or driver
+- [ ] A new or changed image with a server and clients sets thread `priority` in `system.json5` per `docs/src/design/thread-priorities.md`: servers strictly above their clients, an interrupt-driven server highest, no `Level0`
 
 ## Quick Reference: Forbidden Patterns
 
