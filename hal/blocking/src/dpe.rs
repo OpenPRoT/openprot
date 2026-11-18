@@ -40,17 +40,18 @@
 //! fn sign_twice<D: Sign<P384Sha384>>(
 //!     dpe: &mut D,
 //!     digest: &Digest<12>,
-//! ) -> Result<[P384Signature; 2], ErrorKind> {
-//!     let first = dpe
-//!         .sign(&ContextHandle::DEFAULT, &LABEL, digest)
+//!     signatures: &mut [P384Signature; 2],
+//! ) -> Result<(), ErrorKind> {
+//!     let [first, second] = signatures;
+//!     let handle = dpe
+//!         .sign(&ContextHandle::DEFAULT, &LABEL, digest, first)
 //!         .map_err(|error| error.kind())?;
 //!     // The second command uses the handle that the first one returned.
-//!     let second = dpe
-//!         .sign(&first.handle, &LABEL, digest)
+//!     dpe.sign(&handle, &LABEL, digest, second)
 //!         .map_err(|error| error.kind())?;
-//!     Ok([first.signature, second.signature])
+//!     Ok(())
 //! }
-//! # use openprot_hal_blocking::dpe::{ErrorType, SignOutput};
+//! # use openprot_hal_blocking::dpe::ErrorType;
 //! # struct Fake;
 //! # impl ErrorType for Fake { type Error = core::convert::Infallible; }
 //! # impl Sign<P384Sha384> for Fake {
@@ -59,11 +60,15 @@
 //! #         handle: &ContextHandle,
 //! #         _label: &[u8; 48],
 //! #         _digest: &Digest<12>,
-//! #     ) -> Result<SignOutput<P384Signature>, Self::Error> {
-//! #         Ok(SignOutput { signature: P384Signature::new([2; 48], [3; 48]), handle: *handle })
+//! #         signature: &mut P384Signature,
+//! #     ) -> Result<ContextHandle, Self::Error> {
+//! #         *signature = P384Signature::new([2; 48], [3; 48]);
+//! #         Ok(*handle)
 //! #     }
 //! # }
-//! # assert!(sign_twice(&mut Fake, &Digest::new([0; 12])).is_ok());
+//! # let empty = || P384Signature::new([0; 48], [0; 48]);
+//! # let mut signatures = [empty(), empty()];
+//! # assert!(sign_twice(&mut Fake, &Digest::new([0; 12]), &mut signatures).is_ok());
 //! ```
 
 use core::fmt;
@@ -185,19 +190,12 @@ impl ContextHandle {
     pub const DEFAULT: Self = Self([0; 16]);
 }
 
-/// The result of [`Sign::sign`].
-#[derive(Debug, Clone)]
-pub struct SignOutput<S> {
-    /// The signature.
-    pub signature: S,
-
-    /// The handle to use for the context in the next command.
-    pub handle: ContextHandle,
-}
-
 /// The DPE `Sign` command for profile `P`.
 pub trait Sign<P: Profile>: ErrorType {
-    /// Signs `digest` with a key of the context that `handle` names.
+    /// Signs `digest` with a key of the context that `handle` names and
+    /// stores the signature in `signature`.
+    ///
+    /// Returns the handle to use for the context in the next command.
     ///
     /// The DPE derives the key from the measurements of the context and from
     /// `label`, so the same context and label give the same key until a
@@ -207,12 +205,15 @@ pub trait Sign<P: Profile>: ErrorType {
     ///
     /// When the response is lost, the caller cannot tell whether the DPE
     /// replaced `handle`.
+    ///
+    /// After an error, the content of `signature` is unspecified.
     fn sign(
         &mut self,
         handle: &ContextHandle,
         label: &P::Label,
         digest: &P::Digest,
-    ) -> Result<SignOutput<P::Signature>, Self::Error>;
+        signature: &mut P::Signature,
+    ) -> Result<ContextHandle, Self::Error>;
 }
 
 impl<P: Profile, T: Sign<P> + ?Sized> Sign<P> for &mut T {
@@ -221,7 +222,8 @@ impl<P: Profile, T: Sign<P> + ?Sized> Sign<P> for &mut T {
         handle: &ContextHandle,
         label: &P::Label,
         digest: &P::Digest,
-    ) -> Result<SignOutput<P::Signature>, Self::Error> {
-        T::sign(self, handle, label, digest)
+        signature: &mut P::Signature,
+    ) -> Result<ContextHandle, Self::Error> {
+        T::sign(self, handle, label, digest, signature)
     }
 }
