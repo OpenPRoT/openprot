@@ -15,6 +15,8 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+/// Certificate chain storage traits
+pub mod certificate;
 /// Cryptographic digest operations (hashing)
 pub mod digest;
 /// DICE Protection Environment (DPE) client traits
