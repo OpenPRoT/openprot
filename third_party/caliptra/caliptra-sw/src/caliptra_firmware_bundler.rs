@@ -30,6 +30,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use anyhow::{anyhow, bail, Context, Result};
+use caliptra_builder_version::{get_fmc_version, get_runtime_version};
 use caliptra_image_crypto::RustCrypto as Crypto;
 use caliptra_image_fake_keys::{OWNER_CONFIG, VENDOR_CONFIG_KEY_0};
 use caliptra_image_gen::{ImageGenerator, ImageGeneratorConfig, ImageGeneratorExecutable};
@@ -162,9 +163,11 @@ fn main() -> Result<()> {
     let runtime_bytes = fs::read(&args.runtime)
         .with_context(|| format!("failed to read Runtime ELF {:?}", args.runtime))?;
 
-    let fmc = ElfExecutable::from_bytes(&fmc_bytes, 0, rev).context("failed to pack FMC ELF")?;
-    let runtime =
-        ElfExecutable::from_bytes(&runtime_bytes, 0, rev).context("failed to pack Runtime ELF")?;
+    // Upstream's image_gen passes these versions to build_and_sign_image().
+    let fmc = ElfExecutable::from_bytes(&fmc_bytes, get_fmc_version().into(), rev)
+        .context("failed to pack FMC ELF")?;
+    let runtime = ElfExecutable::from_bytes(&runtime_bytes, get_runtime_version(), rev)
+        .context("failed to pack Runtime ELF")?;
 
     let cfg = ImageGeneratorConfig {
         pqc_key_type: FwVerificationPqcKeyType::LMS,

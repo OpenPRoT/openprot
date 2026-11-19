@@ -789,6 +789,16 @@ rust_binary(
     ],
 )
 
+# caliptra-builder's version module, which holds the ROM, FMC and runtime
+# versions of the pinned caliptra-sw. The packaging tools below write these
+# versions into the images.
+rust_library(
+    name = "caliptra_builder_version",
+    srcs = ["@caliptra_sw//:builder/src/version.rs"],
+    crate_name = "caliptra_builder_version",
+    edition = "2021",
+)
+
 # Host tool that reimplements upstream caliptra-sw `elf2rom()`: packs the
 # linked Caliptra ROM ELF into the raw 0x18000-byte image expected by boot,
 # and patches CALIPTRA_ROM_INFO.sha256_digest so the on-chip
@@ -798,6 +808,7 @@ rust_binary(
     srcs = ["src/caliptra_rom_packager.rs"],
     edition = "2021",
     deps = [
+        ":caliptra_builder_version",
         "@rust_caliptra_crates_host//:anyhow",
         "@rust_caliptra_crates_host//:elf",
         "@rust_caliptra_crates_host//:sha2",
@@ -951,6 +962,7 @@ rust_binary(
         "CALIPTRA_IMAGE_NO_GIT_REVISION": "1",
     },
     deps = [
+        ":caliptra_builder_version",
         ":caliptra_image_crypto",
         ":caliptra_image_fake_keys",
         ":caliptra_image_gen",
