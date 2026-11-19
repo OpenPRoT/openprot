@@ -6,8 +6,8 @@
 
 mod map;
 
-pub(crate) use map::{ABCD, EFGH, IJKL};
 use crate::scu::pins::GPIO_BASE;
+pub(crate) use map::{ABCD, EFGH, IJKL};
 use openprot_hal::field_mux::{Offset, RegisterAccess};
 pub use openprot_hal::gpio::{
     bind_gpio, ActiveHigh, ActiveLow, Gpio, Input, InputPin, IntTrigger, OpenDrain, OpenDrainMode,
