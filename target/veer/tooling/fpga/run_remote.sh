@@ -20,7 +20,7 @@ set -euo pipefail
 
 readonly REMOTE_RUNFILES=openprot-fpga/runfiles # Relative to the SSH user's home.
 # Test environment to forward to the board, if set.
-readonly FORWARDED_ENV=(CALIPTRA_BOOT_ENV CPTRA_UIO_NUM RUST_BACKTRACE RUST_LOG RUST_TEST_THREADS)
+readonly FORWARDED_ENV=(CALIPTRA_BOOT_ENV CALIPTRA_INTERFACE CPTRA_UIO_NUM RUST_BACKTRACE RUST_LOG RUST_TEST_THREADS)
 # Share one SSH connection between rsync, ssh, and consecutive tests (kept open
 # for 60s after the last use) instead of paying ~2s of connection setup for
 # each. BatchMode makes ssh fail rather than prompt.
