@@ -12,7 +12,9 @@
 //! driver imports the layouts from those crates.
 //!
 //! The driver implements the `Sign`, `CertifyKey` and `GetCertificateChain`
-//! traits of the DPE HAL for the P-384 profile.
+//! traits of the DPE HAL for the P-384 profile. `CaliptraDpeChain` implements
+//! the `CertificateChain` trait of the certificate HAL for the certificate
+//! chain of the DPE.
 //!
 //! Caliptra takes the locality of a command from the AXI user of the
 //! mailbox request. When a command succeeds, its DPE returns the default
@@ -63,6 +65,7 @@ use caliptra_dpe::response::{
     CertifyKeyP384RespHdr, GetCertificateChainResp, ResponseHdr, SignP384Resp,
 };
 use caliptra_dpe::DpeProfile;
+use openprot_hal_blocking::certificate::{self, CertificateChain};
 use openprot_hal_blocking::digest::Digest;
 use openprot_hal_blocking::dpe::{
     CertificateFormat, CertifyKey, CertifyKeyOutput, ContextHandle, Error, ErrorKind, ErrorType,
@@ -189,6 +192,11 @@ const CHAIN_RESPONSE_WORDS: usize = size_of::<ChainResponse>() / 4;
 const CHAIN_DATA_BYTES: usize =
     size_of::<GetCertificateChainResp>() - size_of::<ResponseHdr>() - size_of::<u32>();
 
+/// The largest number of `GetCertificateChain` commands that
+/// [`CaliptraDpeChain::new`] sends to find the length of the chain. A chain
+/// of 64 KB or longer needs more commands.
+const MAX_CHAIN_PARTS: usize = 32;
+
 /// Errors from the driver.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum CaliptraDpeError {
@@ -232,6 +240,15 @@ impl Error for CaliptraDpeError {
     }
 }
 
+impl certificate::Error for CaliptraDpeError {
+    fn kind(&self) -> certificate::ErrorKind {
+        match *self {
+            Self::Mailbox(MailboxError::Busy) => certificate::ErrorKind::Busy,
+            _ => certificate::ErrorKind::ReadFailed,
+        }
+    }
+}
+
 /// Client that reaches the DPE of the Caliptra core through the mailbox.
 pub struct CaliptraDpe<'m> {
     mailbox: &'m Mailbox,
@@ -270,6 +287,48 @@ impl<'m> CaliptraDpe<'m> {
                 }
             })?;
         Ok(len)
+    }
+
+    /// Asks the DPE for `size` bytes of its certificate chain, from byte
+    /// `offset` of the chain, and stores them in `chain`. Bytes that do not
+    /// fit in `chain` are discarded. `size` is at most [`CHAIN_DATA_BYTES`].
+    ///
+    /// Returns the number of bytes that the DPE returned, which is 0 when
+    /// `offset` is at or after the end of the chain.
+    fn chain_part(
+        &self,
+        offset: u32,
+        size: usize,
+        chain: &mut [u8],
+    ) -> Result<usize, CaliptraDpeError> {
+        let request = ChainRequest {
+            data_size: CHAIN_COMMAND_BYTES as u32,
+            header: CommandHdr::new(DpeProfile::P384Sha384, Command::GET_CERTIFICATE_CHAIN),
+            command: GetCertificateChainCmd {
+                offset,
+                size: size as u32,
+            },
+        };
+        let request: [u32; CHAIN_REQUEST_WORDS] = zerocopy::transmute!(request);
+        let mut head = [0u32; CHAIN_RESPONSE_WORDS];
+        let len = self.invoke(request.into_iter(), &mut head, chain)?;
+        let response: ChainResponse =
+            zerocopy::try_transmute!(head).map_err(|_| CaliptraDpeError::InvalidResponse)?;
+        match check_header(len, &response.resp_hdr) {
+            // Caliptra's DPE reports this status when `offset` is at or after
+            // the end of the chain.
+            Err(CaliptraDpeError::Dpe(status::CERTIFICATE_CHAIN_ERROR)) => return Ok(0),
+            result => result?,
+        }
+        let stored = response.certificate_size as usize;
+        if stored > size
+            || response.header.data_len as usize != size_of::<GetCertificateChainResp>()
+            || len.checked_sub(size_of::<MailboxRespHeaderVarSize>())
+                < Some(size_of::<GetCertificateChainResp>())
+        {
+            return Err(CaliptraDpeError::InvalidResponse);
+        }
+        Ok(stored)
     }
 }
 
@@ -406,32 +465,64 @@ impl GetCertificateChain<P384Sha384> for CaliptraDpe<'_> {
             return Ok(0);
         }
         let size = chain.len().min(CHAIN_DATA_BYTES);
-        let request = ChainRequest {
-            data_size: CHAIN_COMMAND_BYTES as u32,
-            header: CommandHdr::new(DpeProfile::P384Sha384, Command::GET_CERTIFICATE_CHAIN),
-            command: GetCertificateChainCmd {
-                offset,
-                size: size as u32,
-            },
-        };
-        let request: [u32; CHAIN_REQUEST_WORDS] = zerocopy::transmute!(request);
-        let mut head = [0u32; CHAIN_RESPONSE_WORDS];
-        let len = self.invoke(request.into_iter(), &mut head, chain)?;
-        let response: ChainResponse =
-            zerocopy::try_transmute!(head).map_err(|_| CaliptraDpeError::InvalidResponse)?;
-        match check_header(len, &response.resp_hdr) {
-            // Caliptra's DPE reports this status when `offset` is at or after
-            // the end of the chain.
-            Err(CaliptraDpeError::Dpe(status::CERTIFICATE_CHAIN_ERROR)) => return Ok(0),
-            result => result?,
+        self.chain_part(offset, size, chain)
+    }
+}
+
+/// The certificate chain of Caliptra's DPE: the LDevID, FMC alias and
+/// runtime alias certificates.
+///
+/// A read sends `GetCertificateChain` commands until `buf` is full or the
+/// chain ends. The chain is not kept in the memory of the MCU.
+pub struct CaliptraDpeChain<'m> {
+    dpe: CaliptraDpe<'m>,
+    /// Length of the chain in bytes.
+    len: usize,
+}
+
+impl<'m> CaliptraDpeChain<'m> {
+    /// Asks the DPE for the length of its chain, which takes one command for
+    /// each [`CHAIN_DATA_BYTES`] bytes of the chain.
+    ///
+    /// # Errors
+    ///
+    /// `CaliptraDpeError::InvalidResponse` when the chain is 64 KB or
+    /// longer.
+    pub fn new(mailbox: &'m Mailbox) -> Result<Self, CaliptraDpeError> {
+        let dpe = CaliptraDpe::new(mailbox);
+        let mut len = 0usize;
+        for _ in 0..MAX_CHAIN_PARTS {
+            let offset = u32::try_from(len).map_err(|_| CaliptraDpeError::InvalidResponse)?;
+            let part = dpe.chain_part(offset, CHAIN_DATA_BYTES, &mut [])?;
+            len = len.saturating_add(part);
+            if part < CHAIN_DATA_BYTES {
+                return Ok(Self { dpe, len });
+            }
         }
-        let stored = response.certificate_size as usize;
-        if stored > size
-            || response.header.data_len as usize != size_of::<GetCertificateChainResp>()
-            || len.checked_sub(size_of::<MailboxRespHeaderVarSize>())
-                < Some(size_of::<GetCertificateChainResp>())
-        {
-            return Err(CaliptraDpeError::InvalidResponse);
+        Err(CaliptraDpeError::InvalidResponse)
+    }
+}
+
+impl certificate::ErrorType for CaliptraDpeChain<'_> {
+    type Error = CaliptraDpeError;
+}
+
+impl CertificateChain for CaliptraDpeChain<'_> {
+    fn len(&mut self) -> Result<usize, Self::Error> {
+        Ok(self.len)
+    }
+
+    fn read(&mut self, offset: usize, buf: &mut [u8]) -> Result<usize, Self::Error> {
+        let mut stored = 0usize;
+        while let Some(rest) = buf.get_mut(stored..).filter(|rest| !rest.is_empty()) {
+            let Some(part_offset) = offset.checked_add(stored) else {
+                break;
+            };
+            let part = self.dpe.get_certificate_chain(part_offset, rest)?;
+            if part == 0 {
+                break;
+            }
+            stored = stored.saturating_add(part);
         }
         Ok(stored)
     }
