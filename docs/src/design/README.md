@@ -15,9 +15,10 @@ of the project.
     Worked example lives at
     [`target/veer/ipc/`](https://github.com/OpenPRoT/openprot/tree/main/target/veer/ipc).
 -   [**OCP Recovery Streaming Boot**](./ocp-recovery.md): The eRoT as the
-    Device of the OCP Recovery interface, with the BMC as the Recovery
-    Agent. Covers the streaming sequence, where the pushed bytes land, who
-    verifies and boots the image, and which image serves the registers.
+    Device of the OCP Recovery interface, which a Recovery Agent on the
+    platform drives. Covers the streaming sequence, where the pushed bytes
+    land, who verifies and boots the image, and which image serves the
+    registers.
 -   [**OCP Recovery: the eRoT as Recovery Agent**](./ocp-recovery-agent.md):
     The eRoT as Recovery Agent for a downstream device that serves the
     OCP Recovery interface. Covers when the role runs and the Recovery

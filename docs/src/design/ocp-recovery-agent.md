@@ -4,8 +4,8 @@ On this page the eRoT is the Recovery Agent and a downstream device is
 the Device. The downstream device serves the OCP Recovery registers, and
 the eRoT reads the registers, pushes the image and requests the
 activation. [OCP Recovery Streaming Boot](./ocp-recovery.md) describes
-the opposite assignment, where the eRoT serves the registers and the BMC
-is the Recovery Agent.
+the opposite assignment, where the eRoT serves the registers and another
+component on the platform is the Recovery Agent.
 
 The role applies to a downstream device that serves OCP Recovery and
 boots from an image a Recovery Agent streams, for example a downstream

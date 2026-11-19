@@ -1,19 +1,19 @@
 # OCP Recovery Streaming Boot
 
-The eRoT serves the OCP Recovery interface as the Device, and the BMC
-drives it as the Recovery Agent. The Recovery Agent pushes the bytes
-and requests the activation, and the Device verifies the image and boots
-or refuses it.
+The eRoT serves the OCP Recovery interface as the Device, and a
+Recovery Agent on the platform drives it. The Recovery Agent pushes the
+bytes and requests the activation, and the Device verifies the image and
+boots or refuses it.
 [OCP Recovery: the eRoT as Recovery Agent](./ocp-recovery-agent.md)
 describes the second role, where the eRoT is the Recovery Agent for a
 downstream device.
 
-The boot selector in the eRoT walks a ladder of boot sources: the
-active slot with its retries, the other slots, a golden copy where the
-board declares one, then the image the BMC streams. Which rungs exist,
-and their order, is per-board configuration. Below the ladder, a person
-at the board can set the hardware strap, which the chip samples at
-power-on, before the boot selector runs, to pick another boot source.
+The boot selector in the eRoT walks a ladder of boot sources: the active
+slot with its retries, the other slots, a golden copy where the board
+declares one, then the image the Recovery Agent streams. Which rungs
+exist, and their order, is per-board configuration. Below the ladder, a
+person at the board can set the hardware strap, which the chip samples
+at power-on, before the boot selector runs, to pick another boot source.
 The `Recovery` capability is a separate mechanism: the orchestrator
 drives the `Recovery` capability to recover managed devices, and the
 eRoT is not a managed device.
@@ -59,22 +59,24 @@ sees whether a Device that reports the same status is still waiting for
 bytes or has stopped. A board that serves the interface declares its
 heartbeat period in `PROT_CAP` byte 14, and the value has to be
 non-zero, because 0 is the spec value for a Device that sends no
-heartbeat. When the BMC starts polling, how often it polls and how many
-times it streams again are BMC policy, outside this design.
+heartbeat. When the Recovery Agent starts polling, how often it polls
+and how many times it streams again are Recovery Agent policy, outside
+this design.
 
 The serving loop and the main flow of the firmware that serves the
 registers run as separate execution contexts. The interface and the
 `FifoSink` are objects the serving loop writes inside each `dispatch`
-call, so every arrow the BMC starts is work the serving loop does, the
-`begin_image` and `append` calls into the `FifoSink` included. The arrows
-the recovery flow starts run in the main flow, which blocks on
-`take_activation` while the serving loop keeps answering the BMC. The
-BMC polls, so a read that lands before a recovery-flow update returns
-the older value, and the diagram shows the poll that lands after.
+call, so every arrow the Recovery Agent starts is work the serving loop
+does, the `begin_image` and `append` calls into the `FifoSink` included.
+The arrows the recovery flow starts run in the main flow, which blocks
+on `take_activation` while the serving loop keeps answering the Recovery
+Agent. The Recovery Agent polls, so a read that lands before a
+recovery-flow update returns the older value, and the diagram shows the
+poll that lands after.
 
 ```mermaid
 sequenceDiagram
-    participant BMC as BMC (Recovery Agent)
+    participant RA as Recovery Agent
     participant RF as eRoT recovery interface
     participant Staging as FifoSink
     participant Flow as eRoT recovery flow
@@ -82,46 +84,46 @@ sequenceDiagram
     Flow->>RF: set_device_state(RecoveryModeReady, FlashlessStreamingBoot)
     Flow->>RF: set_recovery_status(AwaitingImage, image 0)
 
-    BMC->>RF: read PROT_CAP (0x22)
-    RF-->>BMC: magic, version, capability bits
-    BMC->>RF: read DEVICE_ID (0x23)
-    RF-->>BMC: vendor and device identifiers
-    BMC->>RF: read DEVICE_STATUS (0x24)
-    RF-->>BMC: device state RecoveryModeReady (0x3), reason 0x12
+    RA->>RF: read PROT_CAP (0x22)
+    RF-->>RA: magic, version, capability bits
+    RA->>RF: read DEVICE_ID (0x23)
+    RF-->>RA: vendor and device identifiers
+    RA->>RF: read DEVICE_STATUS (0x24)
+    RF-->>RA: device state RecoveryModeReady (0x3), reason 0x12
 
-    BMC->>RF: write INDIRECT_FIFO_CTRL (0x2d): CMS, reset, image size
+    RA->>RF: write INDIRECT_FIFO_CTRL (0x2d): CMS, reset, image size
     RF->>Staging: begin_image(size_bytes)
-    BMC->>RF: read INDIRECT_FIFO_CTRL (0x2d)
-    RF-->>BMC: reset field zeroed, reset done
-    BMC->>RF: read INDIRECT_FIFO_STATUS (0x2e)
-    RF-->>BMC: region size, max transfer size, EMPTY
+    RA->>RF: read INDIRECT_FIFO_CTRL (0x2d)
+    RF-->>RA: reset field zeroed, reset done
+    RA->>RF: read INDIRECT_FIFO_STATUS (0x2e)
+    RF-->>RA: region size, max transfer size, EMPTY
 
     loop one chunk per write, sized by INDIRECT_FIFO_STATUS
-        BMC->>RF: write INDIRECT_FIFO_DATA (0x2f)
+        RA->>RF: write INDIRECT_FIFO_DATA (0x2f)
         RF->>Staging: append(bytes)
-        BMC->>RF: read INDIRECT_FIFO_STATUS (0x2e)
-        RF-->>BMC: write index, read index, EMPTY
+        RA->>RF: read INDIRECT_FIFO_STATUS (0x2e)
+        RF-->>RA: write index, read index, EMPTY
     end
 
     Flow->>RF: set_device_state(RecoveryPending, FlashlessStreamingBoot)
 
-    BMC->>RF: write RECOVERY_CTRL (0x26): CMS, image selection 0x1 (memory window), activate 0xf
+    RA->>RF: write RECOVERY_CTRL (0x26): CMS, image selection 0x1 (memory window), activate 0xf
     Flow->>RF: take_activation()
     Flow->>RF: set_recovery_status(BootingImage, image 0)
     Flow->>Staging: verify the image through IncrementalVerifier
-    BMC->>RF: read RECOVERY_STATUS (0x27)
-    RF-->>BMC: state BootingImage (0x2), image 0
+    RA->>RF: read RECOVERY_STATUS (0x27)
+    RF-->>RA: state BootingImage (0x2), image 0
 
     Note over RF,Flow: the verify passes, and the flow resets the eRoT through SelfReset
-    Note over BMC,Flow: BMC reads fail during the reset
+    Note over RA,Flow: Recovery Agent reads fail during the reset
     Note over Staging,Flow: the boot path verifies the image again and boots the image
 
     Flow->>RF: set_recovery_status(Successful, image 0)
     Flow->>RF: set_device_state(RunningRecoveryImage, NoFailure)
-    BMC->>RF: read RECOVERY_STATUS (0x27)
-    RF-->>BMC: state Successful (0x3), image 0
-    BMC->>RF: read DEVICE_STATUS (0x24)
-    RF-->>BMC: device state RunningRecoveryImage (0x5)
+    RA->>RF: read RECOVERY_STATUS (0x27)
+    RF-->>RA: state Successful (0x3), image 0
+    RA->>RF: read DEVICE_STATUS (0x24)
+    RF-->>RA: device state RunningRecoveryImage (0x5)
 ```
 
 After the reset, the "eRoT recovery flow" and "eRoT recovery interface"
@@ -161,9 +163,9 @@ the new size.
 
 The Device treats the transport as unauthenticated. I3C, for example,
 authenticates neither side, so the Device cannot tell whether the bytes
-it received came from the BMC. The Device verifies the image after the
-push, executes only bytes that a verify covered, and keeps unverified
-bytes out of executable memory.
+it received came from the Recovery Agent. The Device verifies the image
+after the push, executes only bytes that a verify covered, and keeps
+unverified bytes out of executable memory.
 
 The verify step runs through `IncrementalVerifier`. The flow starts a
 session and polls it over the image as a `ByteSource`, and an
@@ -181,10 +183,11 @@ so the verify at boot covers the bytes the boot runs. Caliptra boots the
 verified image without a reset and keeps no copy of the image across a
 reset.
 
-If the streamed image fails after it boots, the BMC commands a reset
-over `DEVICE_RESET` and streams again. The flow takes that command with
-`take_reset_request` and performs the reset through `SelfReset`, the
-capability that already resets the eRoT when an eRoT update activates.
+If the streamed image fails after it boots, the Recovery Agent commands
+a reset over `DEVICE_RESET` and streams again. The flow takes that
+command with `take_reset_request` and performs the reset through
+`SelfReset`, the capability that already resets the eRoT when an eRoT
+update activates.
 
 Proposed mapping from the verify outcome to `RECOVERY_STATUS` and
 `DEVICE_STATUS`; the spec leaves the reason code to the Device, so the
@@ -241,23 +244,24 @@ stateDiagram-v2
     VerifyingAtBoot --> Failed: the image changed since the first verify
     Booting --> [*]: Successful, then RunningRecoveryImage
     Booting --> Failed: the image does not run
-    Failed --> [*]: terminal, the BMC commands a reset and streams again
+    Failed --> [*]: terminal, the Recovery Agent commands a reset and streams again
 ```
 
 `RECOVERY_STATUS` names none of `Verifying`, `Resetting`,
 `VerifyingAtBoot` and `Booting`. The recovery flow runs `Verifying` and
 `Resetting`, and the boot path runs `VerifyingAtBoot` and `Booting`. The
 flow writes `BootingImage` (0x2) when `take_activation` returns the
-request, so a BMC that polls during the verify before the reset reads
-`BootingImage`. BMC reads fail during the reset, and after the reset the
-image that reports the outcome writes `Successful` or the failure.
+request, so a Recovery Agent that polls during the verify before the
+reset reads `BootingImage`. Recovery Agent reads fail during the reset,
+and after the reset the image that reports the outcome writes
+`Successful` or the failure.
 
 The wire half and the policy half are split, so the recovery flow can
-block without stalling the BMC:
+block without stalling the Recovery Agent:
 
 ```mermaid
 flowchart LR
-    subgraph wire["Serving loop, answers the BMC at once"]
+    subgraph wire["Serving loop, answers the Recovery Agent at once"]
         transport["Transport server"]
         dispatch["dispatch"]
         file["RecoveryInterface"]
@@ -280,14 +284,14 @@ flowchart LR
     report -.->|"set_device_state, set_recovery_status"| file
 ```
 
-The BMC polls `DEVICE_STATUS` and `INDIRECT_FIFO_STATUS` and watches the
-heartbeat for as long as the flow runs, so the wire half must not block
-on the policy half. Caliptra can spin on the same registers in a
-blocking loop because hardware serves them: the I3C core answers the
-BMC whatever the firmware does. On the eRoT the firmware is what
-answers, so the recovery flow cannot spin. It blocks on events while the
-serving loop keeps answering, and `tick_heartbeat` shows the BMC that
-the Device is alive.
+The Recovery Agent polls `DEVICE_STATUS` and `INDIRECT_FIFO_STATUS` and
+watches the heartbeat for as long as the flow runs, so the wire half
+must not block on the policy half. Caliptra can spin on the same
+registers in a blocking loop because hardware serves them: the I3C core
+answers the Recovery Agent whatever the firmware does. On the eRoT the
+firmware is what answers, so the recovery flow cannot spin. It blocks on
+events while the serving loop keeps answering, and `tick_heartbeat`
+shows the Recovery Agent that the Device is alive.
 
 Caliptra behaviours that follow from its silicon do not carry over: the
 DMA shim that moves FIFO bytes, the read from a fixed FIFO address, the
@@ -322,10 +326,10 @@ Each command belongs to a group, and the group sets the states in which
 `RECOVERY_CTRL` and `RECOVERY_STATUS`, are always available, and so is
 `HW_STATUS` (`0x28`) on a board that advertises `PROT_CAP` bit 9.
 `HW_STATUS` carries the composite temperature and the hardware error
-bits, which a BMC reads while the eRoT runs normally, so recovery mode
-does not gate it. The indirect memory window (`0x29` to `0x2b`) and the
-vendor command (`0x2c`) are unsupported in every state, and `dispatch`
-answers them with the unsupported-command error.
+bits, which a Recovery Agent reads while the eRoT runs normally, so
+recovery mode does not gate it. The indirect memory window (`0x29` to
+`0x2b`) and the vendor command (`0x2c`) are unsupported in every state,
+and `dispatch` answers them with the unsupported-command error.
 
 That leaves the FIFO group (`0x2d` to `0x2f`) as the one scoped group.
 It is available while `DEVICE_STATUS` byte 0 reads `RecoveryModeReady`
@@ -421,8 +425,9 @@ Where does the `FifoSink` put the streamed image?
 
 The reset before the boot clears `RecoveryInterface` unless the design
 keeps `RecoveryInterface` in RAM that survives the reset, so the design
-has to name the image that reports the outcome to the BMC after the
-reset. A refusal at the verify at boot needs that report as well.
+has to name the image that reports the outcome to the Recovery Agent
+after the reset. A refusal at the verify at boot needs that report as
+well.
 
 With flash, a failed trial boot puts the eRoT back in recovery mode,
 because the local images failed before the stream. A flash write inside
@@ -430,6 +435,10 @@ because the local images failed before the stream. A flash write inside
 length of the flash write. A flash write deferred out of `dispatch`
 leaves bytes in the FIFO, so the FIFO no longer reads empty after every
 push.
+
+Which component is the Recovery Agent for the eRoT? The eRoT releases
+the BMC from reset, so the BMC does not run while the eRoT is in
+recovery mode and cannot push the image.
 
 What does the OCP push carry: a full image, or a small first image that
 runs PLDM firmware update and loads the rest over PLDM? A small first
@@ -467,7 +476,7 @@ interface, and a technician handles the cases above at the strap.
 
 Either way, the image that serves the interface is the ROM or an image
 the boot path already verified, because the eRoT runs that image before
-the BMC sends any bytes.
+the Recovery Agent sends any bytes.
 
 Smaller questions:
 
@@ -478,23 +487,23 @@ Smaller questions:
   also has to keep the ROM anti-rollback counter at or below the
   revision of the recovery copy, or rewrite the recovery copy before
   advancing the counter.
-- How does the BMC reset the eRoT when the streamed image that booted
-  stops serving the interface? The in-band `DEVICE_RESET` needs a
-  `dispatch` that still runs, so this case needs board wiring, either a
-  BMC-driven pin that fires the boot fallback or a reset line from the
-  BMC to the eRoT. Without that wiring, a technician recovers the eRoT
-  through the strap.
+- How does the Recovery Agent reset the eRoT when the streamed image
+  that booted stops serving the interface? The in-band `DEVICE_RESET`
+  needs a `dispatch` that still runs, so this case needs board wiring,
+  either a pin the Recovery Agent drives that fires the boot fallback or
+  a reset line from the Recovery Agent to the eRoT. Without that wiring,
+  a technician recovers the eRoT through the strap.
 - Does the fallback watchdog keep counting on the ROM failure path, so
   the hardware boot fallback starts the recovery copy after the ROM
   refuses the operational image? A bench test on each board answers the
   question.
 - Where does streaming boot sit in the ladder? This design puts it under
   every local rung and above the strap, which suits a board whose local
-  images are all exhausted before the BMC pushes bytes to the eRoT. A
-  board that trusts the BMC more than a stale golden copy would order
-  them the other way, and the order is per-board configuration either
-  way. Some platforms put streaming boot at the top of the ladder, as
-  the primary boot path.
+  images are all exhausted before the Recovery Agent pushes bytes to the
+  eRoT. A board that trusts the Recovery Agent more than a stale golden
+  copy would order them the other way, and the order is per-board
+  configuration either way. Some platforms put streaming boot at the top
+  of the ladder, as the primary boot path.
 - Which push mechanism does the eRoT serve? This design serves the FIFO
   (`0x2d` to `0x2f`) and refuses the indirect memory window (`0x29` to
   `0x2b`). The OpenBMC Recovery Agent proposed under the
@@ -511,9 +520,9 @@ Smaller questions:
   time decides which transports and image sizes work.
 - What retry count and poll timing must the eRoT tolerate? The verify
   before the reset, the reset, the verify at boot and the boot have to
-  finish inside the time the BMC keeps polling `RECOVERY_STATUS`. BMC
-  reads fail during the reset, and the heartbeat restarts after the
-  reset.
+  finish inside the time the Recovery Agent keeps polling
+  `RECOVERY_STATUS`. Recovery Agent reads fail during the reset, and the
+  heartbeat restarts after the reset.
 - May a platform that has latched `LockdownLatch` serve the interface?
   The latch is one-way and terminal, so a streamed image that runs
   afterwards undoes the safe state the latch put the platform in. Either
