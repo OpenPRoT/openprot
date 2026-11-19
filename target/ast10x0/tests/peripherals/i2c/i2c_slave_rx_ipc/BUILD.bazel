@@ -7,7 +7,7 @@ load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
-load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH", "system_image_test")
+load("//:defs.bzl", "TARGET_COMPATIBLE_WITH", "system_image_test")
 
 # ---------------------------------------------------------------------------
 # Master image (device A) — standalone kernel binary, initiates the write
@@ -30,7 +30,7 @@ target_linker_script(
     system_config = ":master_system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
-    template = "//target/ast10x0:linker_script_template",
+    template = "//:linker_script_template",
 )
 
 rust_binary(
@@ -43,10 +43,10 @@ rust_binary(
     deps = [
         ":master_codegen",
         ":master_linker_script",
-        "//target/ast10x0:config",
-        "//target/ast10x0:entry",
-        "//target/ast10x0/board:ast10x0_board",
-        "//target/ast10x0/peripherals",
+        "//:config",
+        "//:entry",
+        "//board:ast10x0_board",
+        "//peripherals",
         "@ast1060_pac",
         "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
         "@pigweed//pw_kernel/kernel",
@@ -59,7 +59,7 @@ rust_binary(
 system_image(
     name = "master",
     kernel = ":master_target",
-    platform = "//target/ast10x0",
+    platform = "//:ast10x0",
     system_config = ":master_system_config",
     tags = ["kernel"],
     userspace = False,
@@ -86,7 +86,7 @@ target_linker_script(
     system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
-    template = "//target/ast10x0:linker_script_template",
+    template = "//:linker_script_template",
 )
 
 rust_binary(
@@ -98,8 +98,8 @@ rust_binary(
     deps = [
         ":codegen",
         ":linker_script",
-        "//target/ast10x0:entry",
-        "//target/ast10x0/peripherals",
+        "//:entry",
+        "//peripherals",
         "@ast1060_pac",
         "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
         "@pigweed//pw_kernel/kernel",
@@ -118,9 +118,9 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "//services/i2c/server-runtime:i2c_server_runtime",
-        "//target/ast10x0/backend/i2c:i2c_backend_ast10x0",
-        "//target/ast10x0/peripherals",
+        "//backend/i2c:i2c_backend_ast10x0",
+        "//peripherals",
+        "@openprot//services/i2c/server-runtime:i2c_server_runtime",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
     ],
@@ -134,8 +134,8 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "//services/i2c/client:i2c_client",
-        "//services/i2c/client-ipc:i2c_client_ipc",
+        "@openprot//services/i2c/client:i2c_client",
+        "@openprot//services/i2c/client-ipc:i2c_client_ipc",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
@@ -149,7 +149,7 @@ system_image(
         ":i2c_slave_rx",
     ],
     kernel = ":target",
-    platform = "//target/ast10x0",
+    platform = "//:ast10x0",
     system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
@@ -161,7 +161,7 @@ system_image_test(
     slave_image = ":i2c_slave_rx_ipc",
     tags = ["hardware"],
     target_compatible_with = select({
-        "//target/ast10x0:qemu_enabled": ["@platforms//:incompatible"],
+        "//:qemu_enabled": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
 )

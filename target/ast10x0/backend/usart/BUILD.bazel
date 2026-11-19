@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load("@rules_rust//rust:defs.bzl", "rust_library")
-load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//:defs.bzl", "TARGET_COMPATIBLE_WITH")
 
 rust_library(
     name = "usart_backend_ast10x0",
@@ -12,8 +12,8 @@ rust_library(
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//visibility:public"],
     deps = [
-        "//drivers/usart/api:usart_api",
-        "//target/ast10x0/peripherals",
+        "//peripherals",
+        "@openprot//drivers/usart/api:usart_api",
         "@rust_crates//:embedded-io",
     ],
 )

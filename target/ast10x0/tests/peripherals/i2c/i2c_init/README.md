@@ -38,7 +38,7 @@ AST1060_EVB_PI_HOST=<pi-hostname-or-ip> \
     --test_output=streamed \
     --test_timeout=300 \
     --curses=no --noshow_progress \
-    //target/ast10x0/tests/peripherals/i2c/i2c_init:i2c_init_test
+    //tests/peripherals/i2c/i2c_init:i2c_init_test
 ```
 
 Notes:
@@ -48,7 +48,7 @@ Notes:
 - `--curses=no --noshow_progress` keeps streamed UART output from being
   overwritten by bazel's progress UI in some terminals.
 - If streamed output is silent, the full log is still captured at:
-  `bazel-testlogs/target/ast10x0/tests/peripherals/i2c/i2c_init/i2c_init_test/test.log`
+  `bazel-testlogs/tests/peripherals/i2c/i2c_init/i2c_init_test/test.log`
 
 ## Expected output (excerpt)
 

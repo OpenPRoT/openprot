@@ -12,7 +12,7 @@
 # package to the real implementation.
 
 load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_app")
-load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//:defs.bzl", "TARGET_COMPATIBLE_WITH")
 
 rust_app(
     name = "mctp_server",
@@ -21,9 +21,9 @@ rust_app(
     edition = "2024",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
-    visibility = ["//target/ast10x0/tests/spdm:__subpackages__"],
+    visibility = ["//tests/spdm:__subpackages__"],
     deps = [
-        "//services/mctp/api:mctp_api",
+        "@openprot//services/mctp/api:mctp_api",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@rust_crates//:mctp-lib",

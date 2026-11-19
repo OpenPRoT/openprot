@@ -6,7 +6,7 @@ load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
 load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
-load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH", "system_image_test")
+load("//:defs.bzl", "TARGET_COMPATIBLE_WITH", "system_image_test")
 
 filegroup(
     name = "system_config",
@@ -32,7 +32,7 @@ target_linker_script(
     system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
-    template = "//target/ast10x0:linker_script_template",
+    template = "//:linker_script_template",
 )
 
 rust_binary(
@@ -44,9 +44,9 @@ rust_binary(
     deps = [
         ":codegen",
         ":linker_script",
-        "//target/ast10x0:entry",
-        "//target/ast10x0/board:ast10x0_board",
-        "//target/ast10x0/peripherals",
+        "//:entry",
+        "//board:ast10x0_board",
+        "//peripherals",
         "@ast1060_pac",
         "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
         "@pigweed//pw_kernel/kernel",
@@ -64,9 +64,9 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "//services/i2c/server-runtime:i2c_server_runtime",
-        "//target/ast10x0/backend/i2c:i2c_backend_ast10x0",
-        "//target/ast10x0/peripherals",
+        "//backend/i2c:i2c_backend_ast10x0",
+        "//peripherals",
+        "@openprot//services/i2c/server-runtime:i2c_server_runtime",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
     ],
@@ -80,9 +80,9 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "//services/i2c/server-runtime:i2c_server_runtime",
-        "//target/ast10x0/backend/i2c:i2c_backend_ast10x0",
-        "//target/ast10x0/peripherals",
+        "//backend/i2c:i2c_backend_ast10x0",
+        "//peripherals",
+        "@openprot//services/i2c/server-runtime:i2c_server_runtime",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
     ],
@@ -96,13 +96,13 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "//services/i2c/api:i2c_api",
-        "//services/i2c/client:i2c_client",
-        "//services/i2c/client-ipc:i2c_client_ipc",
-        "//services/mctp/api:mctp_api",
-        "//services/mctp/server:mctp_server_lib",
-        "//services/mctp/server-runtime:mctp_server_runtime",
-        "//services/mctp/transport-i2c:mctp_transport_i2c",
+        "@openprot//services/i2c/api:i2c_api",
+        "@openprot//services/i2c/client:i2c_client",
+        "@openprot//services/i2c/client-ipc:i2c_client_ipc",
+        "@openprot//services/mctp/api:mctp_api",
+        "@openprot//services/mctp/server:mctp_server_lib",
+        "@openprot//services/mctp/server-runtime:mctp_server_runtime",
+        "@openprot//services/mctp/transport-i2c:mctp_transport_i2c",
         "@pigweed//pw_kernel/syscall:syscall_user",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
@@ -120,13 +120,13 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "//services/i2c/api:i2c_api",
-        "//services/i2c/client:i2c_client",
-        "//services/i2c/client-ipc:i2c_client_ipc",
-        "//services/mctp/api:mctp_api",
-        "//services/mctp/server:mctp_server_lib",
-        "//services/mctp/server-runtime:mctp_server_runtime",
-        "//services/mctp/transport-i2c:mctp_transport_i2c",
+        "@openprot//services/i2c/api:i2c_api",
+        "@openprot//services/i2c/client:i2c_client",
+        "@openprot//services/i2c/client-ipc:i2c_client_ipc",
+        "@openprot//services/mctp/api:mctp_api",
+        "@openprot//services/mctp/server:mctp_server_lib",
+        "@openprot//services/mctp/server-runtime:mctp_server_runtime",
+        "@openprot//services/mctp/transport-i2c:mctp_transport_i2c",
         "@pigweed//pw_kernel/syscall:syscall_user",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
@@ -149,10 +149,10 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "//services/mctp/api:mctp_api",
-        "//services/mctp/client-ipc:mctp_client_ipc",
-        "//services/spdm/requester:spdm_requester_lib",
-        "//services/spdm/transport-mctp:spdm_transport_mctp",
+        "@openprot//services/mctp/api:mctp_api",
+        "@openprot//services/mctp/client-ipc:mctp_client_ipc",
+        "@openprot//services/spdm/requester:spdm_requester_lib",
+        "@openprot//services/spdm/transport-mctp:spdm_transport_mctp",
         "@pigweed//pw_kernel/syscall:syscall_user",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
@@ -174,10 +174,10 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "//services/mctp/api:mctp_api",
-        "//services/mctp/client-ipc:mctp_client_ipc",
-        "//services/spdm/responder:spdm_responder_lib",
-        "//services/spdm/transport-mctp:spdm_transport_mctp",
+        "@openprot//services/mctp/api:mctp_api",
+        "@openprot//services/mctp/client-ipc:mctp_client_ipc",
+        "@openprot//services/spdm/responder:spdm_responder_lib",
+        "@openprot//services/spdm/transport-mctp:spdm_transport_mctp",
         "@pigweed//pw_kernel/syscall:syscall_user",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
@@ -195,7 +195,7 @@ system_image(
         ":spdm_requester",
     ],
     kernel = ":target",
-    platform = "//target/ast10x0",
+    platform = "//:ast10x0",
     system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
@@ -210,7 +210,7 @@ system_image(
         ":spdm_responder",
     ],
     kernel = ":target",
-    platform = "//target/ast10x0",
+    platform = "//:ast10x0",
     system_config = ":peer_system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
@@ -226,7 +226,7 @@ system_image_test(
         "manual",
     ],
     target_compatible_with = select({
-        "//target/ast10x0:qemu_enabled": ["@platforms//:incompatible"],
+        "//:qemu_enabled": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
 )

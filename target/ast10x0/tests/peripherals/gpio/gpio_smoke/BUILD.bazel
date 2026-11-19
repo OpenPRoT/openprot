@@ -5,7 +5,7 @@ load("@pigweed//pw_kernel/tooling:system_image.bzl", "system_image")
 load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
-load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH", "system_image_test")
+load("//:defs.bzl", "TARGET_COMPATIBLE_WITH", "system_image_test")
 
 filegroup(
     name = "system_config",
@@ -24,7 +24,7 @@ target_linker_script(
     system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
-    template = "//target/ast10x0:linker_script_template",
+    template = "//:linker_script_template",
 )
 
 rust_binary(
@@ -36,8 +36,8 @@ rust_binary(
     deps = [
         ":codegen",
         ":linker_script",
-        "//target/ast10x0:entry",
-        "//target/ast10x0/peripherals",
+        "//:entry",
+        "//peripherals",
         "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
         "@pigweed//pw_kernel/kernel",
         "@pigweed//pw_kernel/subsys/console:console_backend",
@@ -50,7 +50,7 @@ rust_binary(
 system_image(
     name = "gpio_smoke",
     kernel = ":target",
-    platform = "//target/ast10x0",
+    platform = "//:ast10x0",
     system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
@@ -63,7 +63,7 @@ system_image_test(
     image = ":gpio_smoke",
     tags = ["hardware"],
     target_compatible_with = select({
-        "//target/ast10x0:qemu_enabled": ["@platforms//:incompatible"],
+        "//:qemu_enabled": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     visibility = ["//visibility:public"],

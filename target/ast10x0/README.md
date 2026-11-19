@@ -4,16 +4,23 @@ Pigweed kernel target for the AST10x0 platform.
 
 ## Building
 
+This directory is its own Bazel module (`openprot_ast10x0`, see
+`MODULE.bazel`) and depends on the enclosing openprot checkout through a
+`local_path_override`. **Run `bazel` from this directory**, not from the
+openprot root; all labels and `--config`s below are relative to it. To move the
+SoC out of tree, replace that `local_path_override` with a `git_override`
+pinned to an openprot commit.
+
 Build all targets under the AST10x0 tree with:
 
 ```console
-bazel build //target/ast10x0/...
+bazel build //...
 ```
 
 Run the AST10x0 test targets with:
 
 ```console
-bazel test //target/ast10x0/...
+bazel test //...
 ```
 
 This builds the AST10x0 test targets and any required dependencies. Firmware-
@@ -24,7 +31,7 @@ backed tests are skipped unless a runner is configured.
 Run the full AST10x0 test suite under QEMU with:
 
 ```console
-bazel test --config=virt_ast10x0 //target/ast10x0/...
+bazel test --config=virt_ast10x0 //...
 ```
 
 The `virt_ast10x0` config launches images under QEMU (`ast1030-evb` machine)
@@ -35,7 +42,7 @@ writing `TEST_RESULT:PASS` or `TEST_RESULT:FAIL` to UART. See
 For more detailed failures:
 
 ```console
-bazel test --config=virt_ast10x0 --verbose_failures //target/ast10x0/...
+bazel test --config=virt_ast10x0 --verbose_failures //...
 ```
 
 ## Running Tests On Hardware
@@ -44,7 +51,7 @@ Run the AST10x0 tests on a physical AST1060 EVB attached to a Raspberry Pi
 test fixture with:
 
 ```console
-AST1060_EVB_PI_HOST=<user>@<pi-host> bazel test --config=k_ast1060_evb //target/ast10x0/tests/...
+AST1060_EVB_PI_HOST=<user>@<pi-host> bazel test --config=k_ast1060_evb //tests/...
 ```
 
 Key-based SSH auth to the Pi is required. See `target/ast10x0/tests/README.md`
@@ -71,7 +78,7 @@ AST1060_EVB_PI_HOST=<user>@<pi-host> bazel test \
   --keep_going \
   --test_output=errors \
   --config=k_ast1060_evb \
-  //target/ast10x0/tests/...
+  //tests/...
 ```
 
 - `--runs_per_test=3` runs every test thrice (increase for a stricter check).
@@ -83,8 +90,8 @@ AST1060_EVB_PI_HOST=<user>@<pi-host> bazel test \
 
 ## Notes
 
-- `bazel build //target/ast10x0/...` builds all targets under the AST10x0 tree.
-- `bazel test //target/ast10x0/...` builds the AST10x0 test targets and any
+- `bazel build //...` builds all targets under the AST10x0 tree.
+- `bazel test //...` builds the AST10x0 test targets and any
   required dependencies, but skips bare-metal test execution.
-- `bazel test --config=virt_ast10x0 //target/ast10x0/...` executes the AST10x0
+- `bazel test --config=virt_ast10x0 //...` executes the AST10x0
   system-image tests under QEMU.

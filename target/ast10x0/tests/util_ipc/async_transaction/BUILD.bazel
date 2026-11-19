@@ -7,7 +7,7 @@ load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
-load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH")
+load("//:defs.bzl", "TARGET_COMPATIBLE_WITH")
 
 # ── System configuration ───────────────────────────────────────────────────────
 
@@ -30,7 +30,7 @@ target_linker_script(
     system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
-    template = "//target/ast10x0:linker_script_template",
+    template = "//:linker_script_template",
 )
 
 rust_binary(
@@ -42,7 +42,7 @@ rust_binary(
     deps = [
         ":codegen",
         ":linker_script",
-        "//target/ast10x0:entry",
+        "//:entry",
         "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
         "@pigweed//pw_kernel/kernel",
         "@pigweed//pw_kernel/subsys/console:console_backend",
@@ -63,7 +63,7 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "//util/ipc",
+        "@openprot//util/ipc",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_status/rust:pw_status",
     ],
@@ -81,8 +81,8 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "//util/ipc",
-        "//util/transport",
+        "@openprot//util/ipc",
+        "@openprot//util/transport",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
@@ -98,7 +98,7 @@ system_image(
         ":initiator",
     ],
     kernel = ":target",
-    platform = "//target/ast10x0",
+    platform = "//:ast10x0",
     system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
@@ -107,7 +107,7 @@ system_image(
 
 # ── Test target ────────────────────────────────────────────────────────────────
 # Run with:
-#   bazel test --config=virt_ast10x0 //target/ast10x0/tests/util_ipc/async_transaction:async_transaction_qemu_test
+#   bazel test --config=virt_ast10x0 //tests/util_ipc/async_transaction:async_transaction_qemu_test
 
 system_image_test(
     name = "async_transaction_qemu_test",

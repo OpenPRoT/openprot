@@ -7,7 +7,7 @@ load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
 load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
 load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
-load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH", "flash_system_image_test")
+load("//:defs.bzl", "TARGET_COMPATIBLE_WITH", "flash_system_image_test")
 
 filegroup(
     name = "system_config",
@@ -27,7 +27,7 @@ target_linker_script(
     system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
-    template = "//target/ast10x0:linker_script_template",
+    template = "//:linker_script_template",
 )
 
 rust_binary(
@@ -39,8 +39,8 @@ rust_binary(
     deps = [
         ":codegen",
         ":linker_script",
-        "//target/ast10x0:entry",
-        "//target/ast10x0/peripherals",
+        "//:entry",
+        "//peripherals",
         "@pigweed//pw_kernel/arch/arm_cortex_m:arch_arm_cortex_m",
         "@pigweed//pw_kernel/kernel",
         "@pigweed//pw_kernel/subsys/console:console_backend",
@@ -57,12 +57,12 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "//hal/blocking/flash",
-        "//hal/blocking/flash:driver",
-        "//services/flash/server:flash_server_lib",
-        "//services/flash/server-runtime:flash_server_runtime",
-        "//target/ast10x0/backend/flash:flash_backend_ast10x0",
-        "//target/ast10x0/peripherals",
+        "//backend/flash:flash_backend_ast10x0",
+        "//peripherals",
+        "@openprot//hal/blocking/flash",
+        "@openprot//hal/blocking/flash:driver",
+        "@openprot//services/flash/server:flash_server_lib",
+        "@openprot//services/flash/server-runtime:flash_server_runtime",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
@@ -77,10 +77,10 @@ rust_app(
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
-        "//hal/blocking/flash",
-        "//services/flash/client-ipc:flash_client_ipc",
-        "//util/ipc",
-        "//util/types",
+        "@openprot//hal/blocking/flash",
+        "@openprot//services/flash/client-ipc:flash_client_ipc",
+        "@openprot//util/ipc",
+        "@openprot//util/types",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
@@ -94,7 +94,7 @@ system_image(
         ":flash_client_app",
     ],
     kernel = ":target",
-    platform = "//target/ast10x0",
+    platform = "//:ast10x0",
     system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
@@ -103,13 +103,13 @@ system_image(
 
 # Runs on the AST1060 EVB through the Pi fixture, so AST1060_EVB_PI_HOST must
 # name the Pi host:
-#   AST1060_EVB_PI_HOST=<pi_host> bazel test --config=k_ast1060_evb //target/ast10x0/tests/flash_service:flash_evb_test
+#   AST1060_EVB_PI_HOST=<pi_host> bazel test --config=k_ast1060_evb //tests/flash_service:flash_evb_test
 system_image_test(
     name = "flash_evb_test",
     image = ":flash",
     tags = ["hardware"],
     target_compatible_with = select({
-        "//target/ast10x0:qemu_enabled": ["@platforms//:incompatible"],
+        "//:qemu_enabled": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     visibility = ["//visibility:public"],
@@ -118,7 +118,7 @@ system_image_test(
 # QEMU variant: the runner seeds 64 MiB erased images on both FMC chip selects
 # (if=mtd), emulating the EVB where CS0 boot flash and the external W25Q512 on
 # CS1 are both present. The flash service serves both, one per channel.
-#   bazelisk test --config=virt_ast10x0 //target/ast10x0/tests/flash_service:flash_qemu_test
+#   bazelisk test --config=virt_ast10x0 //tests/flash_service:flash_qemu_test
 flash_system_image_test(
     name = "flash_qemu_test",
     cs0_image = "cs0.img",
