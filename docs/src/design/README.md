@@ -18,6 +18,10 @@ of the project.
     Device of the OCP Recovery interface, with the BMC as the Recovery
     Agent. Covers the streaming sequence, where the pushed bytes land, who
     verifies and boots the image, and which image serves the registers.
+-   [**OCP Recovery: the eRoT as Recovery Agent**](./ocp-recovery-agent.md):
+    The eRoT as Recovery Agent for a downstream device that serves the
+    OCP Recovery interface. Covers when the role runs and the Recovery
+    Agent state machine.
 -   [**Orchestrator**](./orchestrator/orchestrator-overview.md): The eRoT boot-sequence state
     machine (`services/orchestrator/sm`). Covers the two-tier firmware
     verification model (`ComponentAttrs`, eRoT gate, iRoT gate), the

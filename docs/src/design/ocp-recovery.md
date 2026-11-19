@@ -4,6 +4,9 @@ The eRoT serves the OCP Recovery interface as the Device, and the BMC
 drives it as the Recovery Agent. The Recovery Agent pushes the bytes
 and requests the activation, and the Device verifies the image and boots
 or refuses it.
+[OCP Recovery: the eRoT as Recovery Agent](./ocp-recovery-agent.md)
+describes the second role, where the eRoT is the Recovery Agent for a
+downstream device.
 
 The boot selector in the eRoT walks a ladder of boot sources: the
 active slot with its retries, the other slots, a golden copy where the
@@ -391,10 +394,11 @@ Also out of scope: the indirect memory window and the vendor command,
 which `dispatch` refuses in every state and `PROT_CAP` does not
 advertise, and the transport binding.
 
-Downstream devices are out of scope. The interface carries images for
-the eRoT only. The eRoT could act as Recovery Agent for a downstream
-device that serves OCP Recovery over I3C or SMBus, and that role is a
-separate design.
+Downstream devices are out of scope on this page. The interface the
+eRoT serves carries images for the eRoT only.
+[OCP Recovery: the eRoT as Recovery Agent](./ocp-recovery-agent.md)
+covers the eRoT as Recovery Agent for a downstream device that serves
+OCP Recovery.
 
 ## Open questions
 
