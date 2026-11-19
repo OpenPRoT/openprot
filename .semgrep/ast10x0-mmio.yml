@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Raw MMIO may appear only in a peripheral's `registers.rs`.
-# Policy and rationale: docs/src/design/mmio.md
+# Policy and rationale: target/ast10x0/MMIO.md
 #
 # Legacy violations exist in the tree, so a plain scan reports them. Gate on
 # what a change introduces by comparing against the base commit:
@@ -23,7 +23,7 @@ rules:
       `Pac::steal()`, `read_volatile`/`write_volatile`, hard-coded address
       casts (`0x... as *const T`), and `pub unsafe fn new*()` constructors
       belong behind the safe typed API of `registers.rs`, and drivers should take
-      ownership of the peripheral instead. See docs/src/design/mmio.md.
+      ownership of the peripheral instead. See target/ast10x0/MMIO.md.
     # The pattern is a regex rather than a Rust pattern so that code inside
     # `macro_rules!` bodies is scanned. `(?:(?!//).)*?` stops the match at a `//`
     # comment, so neither whole-line nor trailing comments are flagged.

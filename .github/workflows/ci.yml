@@ -113,7 +113,7 @@ jobs:
       with:
         config: p/rust
 
-    # Raw MMIO outside registers.rs on AST10x0. See docs/src/design/mmio.md.
+    # Raw MMIO outside registers.rs on AST10x0. See target/ast10x0/MMIO.md.
     # Fails only on violations that the pull request introduces; legacy ones in
     # the base commit are ignored.
     - name: Check AST10x0 MMIO policy
