@@ -109,3 +109,8 @@ jobs:
       uses: returntocorp/semgrep-action@713efdd345f3035192eaa63f56867b88e63e4e5d # v1
       with:
         config: p/rust
+
+    # Raw MMIO outside registers.rs on AST10x0. See docs/src/design/mmio.md.
+    # Fails only on violations outside the baseline in the rule file.
+    - name: Check AST10x0 MMIO policy
+      run: pipx run --spec semgrep==1.186.0 semgrep --config .semgrep/ast10x0-mmio.yml --error --metrics=off target/ast10x0

@@ -1,0 +1,50 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+#
+# Raw MMIO may appear only in a peripheral's `registers.rs`.
+# Policy and rationale: docs/src/design/mmio.md
+#
+# Run:  semgrep --config .semgrep/ast10x0-mmio.yml --error target/ast10x0
+#
+# The `exclude` list below is the BASELINE: files that violate the policy today.
+# It only shrinks. Remove a file from it when you fix the file. Never add one.
+
+rules:
+  - id: ast10x0-raw-mmio-outside-registers
+    languages: [generic]
+    severity: ERROR
+    message: >-
+      Raw MMIO outside a peripheral's `registers.rs`. `Pac::ptr()`, `Pac::PTR`,
+      `Pac::steal()`, `read_volatile`/`write_volatile`, hard-coded address
+      casts (`0x... as *const T`), and `pub unsafe fn new_global()` belong behind the safe typed API of `registers.rs`, and
+      drivers should take ownership of the peripheral instead. See
+      docs/src/design/mmio.md.
+    # Comment lines are skipped by the lookahead. The pattern is a regex rather
+    # than a Rust pattern so that code inside `macro_rules!` bodies is scanned.
+    pattern-regex: >-
+      (?m)^(?!\s*//).*(\b[A-Z][A-Za-z0-9]*::(ptr\(\)|PTR\b|steal\(\))|\b(read|write)_volatile\b|\b0x[0-9a-fA-F_]+(usize|u32)?\s+as\s+\*(const|mut)\b|pub(\([a-z]+\))?\s+(const\s+)?unsafe\s+fn\s+new_global)
+    paths:
+      include:
+        - /target/ast10x0/**/*.rs
+      exclude:
+        # The boundary.
+        - "**/registers.rs"
+        # Baseline: peripheral and board code.
+        - /target/ast10x0/backend/i2c/src/lib.rs
+        - /target/ast10x0/backend/usart/src/lib.rs
+        - /target/ast10x0/console_backend.rs
+        - /target/ast10x0/board/src/spim_wiring.rs
+        - /target/ast10x0/peripherals/gpio/mod.rs
+        - /target/ast10x0/peripherals/hace/device.rs
+        - /target/ast10x0/peripherals/i2c/global.rs
+        - /target/ast10x0/peripherals/i2c/slave.rs
+        - /target/ast10x0/peripherals/i2c/types.rs
+        - /target/ast10x0/peripherals/otp/mod.rs
+        - /target/ast10x0/peripherals/scu/routing.rs
+        - /target/ast10x0/peripherals/smc/controller.rs
+        - /target/ast10x0/peripherals/spimonitor/controller.rs
+        - /target/ast10x0/pfr/swmbx_ctrl.rs
+        # Documented early-boot exception (Scu::steal() before the kernel runs).
+        - /target/ast10x0/entry.rs
+        # Baseline: hardware tests.
+        - /target/ast10x0/tests/
