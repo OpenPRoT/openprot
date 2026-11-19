@@ -310,7 +310,13 @@ impl Attached {
         }
 
         // Remove device and update position mappings
-        self.devices.remove(dev_idx);
+        // `Vec::remove` carries a panic branch the no-panics check can't elide.
+        if let Some(tail) = self.devices.get_mut(dev_idx..)
+            && !tail.is_empty()
+        {
+            tail.rotate_left(1);
+        }
+        self.devices.truncate(self.devices.len().saturating_sub(1));
         for bp in &mut self.by_pos {
             if let Some(idx) = bp {
                 let idx_usize = *idx as usize;
