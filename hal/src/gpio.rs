@@ -4,7 +4,7 @@
 //! GPIO pin capability: the [`Gpio`] role tag, its per-pin [`GpioData`] datum, the target's
 //! [`GpioMap`] register-table, and the confined [`GpioPin`] accessor bound from a pin token.
 
-use crate::field_mux::{coalesce_routes, Block, Mmio, MuxRoutes, RegBatch, MAX_REGS};
+use crate::field_mux::{coalesce_routes, MuxRoutes, Offset, RegBatch, RegisterAccess, MAX_REGS};
 use crate::resource::{field, Capability, FieldWrite, Pin, Routes};
 use core::marker::PhantomData;
 use util_region::{covers, Mmap, Region};
@@ -19,17 +19,12 @@ impl Capability for Gpio {
     type Data = GpioData;
 }
 
-/// Block-identity marker for [`Mmio`]'s GPIO accessor — distinguishes it from any other block's
-/// `Mmio<B>` at the type level, same as [`crate::field_mux::Block`] impls do elsewhere; GPIO's
-/// base rides on a grant-checked map rather than a fixed `Block::BASE`, so it names no `Block`.
-pub struct GpioBlockMarker;
-
 /// One GPIO pin's datum: its bit slot in the GPIO register group.
 #[derive(Clone, Copy)]
 pub struct GpioData {
     /// This pin's bit position within its GPIO register group.
     pub bit: u8,
-    /// This pin's register group as data: base + per-role field ops + read handles at absolute offsets.
+    /// This pin's register group as data: per-role field ops + read handles at absolute offsets.
     pub map: &'static GpioMap,
 }
 
@@ -127,11 +122,9 @@ pub enum GpioRole {
     DisableInt,
 }
 
-/// One GPIO register group as data: base + per-role field ops (absolute offsets) + read handles; a pin carries `&'static`.
+/// One GPIO register group as data: per-role field ops (absolute offsets) + read handles; a pin carries `&'static`.
 #[derive(Clone, Copy)]
 pub struct GpioMap {
-    /// Base of the GPIO register block these offsets are relative to — one per chip, folded at use.
-    pub base: usize,
     /// Field ops to drive as output.
     pub output: &'static [RegOp],
     /// Field ops to switch to input.
@@ -280,7 +273,7 @@ pub const fn role_cfgs_ok(map: &GpioMap) {
     ]);
 }
 
-/// One byte past the last register this map names — the extent a grant must cover.
+/// One byte past the last register this map names — the extent a grant (and an accessor's `SIZE`) must cover.
 const fn map_extent(map: &GpioMap) -> usize {
     const fn top(ops: &[RegOp], max: u32) -> u32 {
         let mut max = max;
@@ -347,37 +340,99 @@ const fn bit_shift_fits(map: &GpioMap, bit: u8) -> bool {
         && check(map.disable_int, bit)
 }
 
-/// Proof that the granted region `R` contains the register group pin `P` lives in, and that the
-/// pin's bit fits every field this map could apply at it. An associated const, not an anonymous
-/// `const {}`, so it evaluates under `generic_const_exprs`.
-trait AssertGpioGrant {
-    /// Evaluating this forces the coverage check; referencing it is what makes it run.
-    const COVERS: ();
+/// A `GpioMap` whose extent has already been proven to fit both the granted region and accessor
+/// `A`'s real size — every offset drawn from it is safe to wrap as an [`Offset<A>`] from here on.
+/// [`role_ops`](Self::role_ops)/[`offset_of`](Self::offset_of) are the only places that happens, and
+/// both read straight off `self.map`'s own fields, never a caller-supplied offset.
+struct CheckedMap<A> {
+    map: &'static GpioMap,
+    _a: PhantomData<A>,
 }
 
-impl<P: Routes<Gpio>, R: Mmap> AssertGpioGrant for (P, R) {
-    const COVERS: () = {
+impl<A: RegisterAccess> CheckedMap<A> {
+    const fn prove(map: &'static GpioMap) -> Self {
+        assert!(
+            map_extent(map) <= A::SIZE,
+            "GPIO register group reaches past this accessor's real extent"
+        );
+        Self {
+            map,
+            _a: PhantomData,
+        }
+    }
+
+    /// This map's own named register handle, already proven in-bounds by [`prove`](Self::prove)'s
+    /// extent check — `reg` must be one of `self.map`'s own fields; the only callers
+    /// (`GpioPin::read`/`ack`) only ever pass their own pin's [`map()`](GpioPin::map).
+    fn offset_of<Kind>(&self, reg: Reg<Kind>) -> Offset<A> {
+        Offset::trusted(reg.offset())
+    }
+
+    /// `role`'s field ops, each already wrapped as proven read/write offsets. The data register's
+    /// read side samples the live pin level (`in_level`), not the output latch, so a read landing
+    /// on `in_level` is swapped to `out_level` — see `GpioPin::apply`'s own doc for why.
+    fn role_ops(&self, role: GpioRole) -> impl Iterator<Item = ProvenGpioOp<A>> + '_ {
+        let map = self.map;
+        map.role(role).iter().map(move |op| {
+            let read_offset = if op.offset == map.in_level.0 {
+                map.out_level.0
+            } else {
+                op.offset
+            };
+            ProvenGpioOp {
+                write: Offset::trusted(op.offset),
+                read: Offset::trusted(read_offset),
+                width: op.width,
+                value: op.value,
+            }
+        })
+    }
+}
+
+/// One proven GPIO field op: `width`/`value` to fold at this pin's bit slot, plus the write offset
+/// and (possibly different) read offset, both already checked against `A::SIZE`.
+struct ProvenGpioOp<A> {
+    write: Offset<A>,
+    read: Offset<A>,
+    width: u8,
+    value: u32,
+}
+
+/// Proof that the granted region `R` contains the register group pin `P` lives in, and that the
+/// pin's bit fits every field this map could apply at it — keyed to accessor `A` so the proven
+/// [`CheckedMap<A>`] it hands back is the one `GpioPin::apply`/`read`/`ack` actually draw offsets
+/// from. An associated const, not an anonymous `const {}`, so it evaluates under `generic_const_exprs`.
+trait AssertGpioGrant<A: RegisterAccess> {
+    /// Evaluating this forces the coverage check; referencing it is what makes it run.
+    const COVERS: CheckedMap<A>;
+}
+
+impl<P: Routes<Gpio>, R: Mmap, A: RegisterAccess> AssertGpioGrant<A> for (P, R, A) {
+    const COVERS: CheckedMap<A> = {
         let map = <P as Routes<Gpio>>::DATA.map;
         assert!(
-            covers::<R>(map.base, map_extent(map)),
+            covers::<R>(A::BASE, map_extent(map)),
             "granted region does not cover this pin's GPIO register group",
         );
         assert!(bit_shift_fits(map, <P as Routes<Gpio>>::DATA.bit));
+        CheckedMap::prove(map)
     };
 }
 
 /// The GPIO register block this process was granted in `system.json5`. Holding one is the authority
 /// to touch GPIO at all; binding a pin through it proves the grant covers that pin's group.
-pub struct GpioBlock<R: Mmap> {
+pub struct GpioBlock<R: Mmap, A: RegisterAccess> {
     _region: PhantomData<R>,
+    _access: PhantomData<A>,
 }
 
-impl<R: Mmap> GpioBlock<R> {
+impl<R: Mmap, A: RegisterAccess> GpioBlock<R, A> {
     /// Consume the granted region — the single gate between an MPU grant and any GPIO access.
     #[must_use]
     pub fn new(_region: Region<R>) -> Self {
         Self {
             _region: PhantomData,
+            _access: PhantomData,
         }
     }
 }
@@ -432,47 +487,50 @@ pub enum IntTrigger {
     Both,
 }
 
-/// One GPIO pin's confined access: just the consumed pin token (a ZST). This pin's base, bit, and
-/// register map all ride in on const `<P as Routes<Gpio>>::DATA`, so every op folds to this pin's own
-/// base and slot — handles for different pins never alias, with no shared block value to carry.
+/// One GPIO pin's confined access: just the consumed pin token (a ZST). This pin's bit and
+/// register map ride in on const `<P as Routes<Gpio>>::DATA`, so every op folds to this pin's own
+/// slot — handles for different pins never alias, with no shared block value to carry.
 ///
-/// `R` is the grant the pin was bound through; `D` is the pin's direction: [`Unset`] until
-/// [`GpioPin::into_output`] or [`GpioPin::into_input`] switches it, after which the level and
-/// interrupt verbs are the ones that direction allows.
-pub struct GpioPin<P, R: Mmap, D = Unset> {
+/// `R` is the grant the pin was bound through; `A` is the accessor that actually performs the
+/// reads/writes (supplied by the target, e.g. `ast10x0_peripherals::gpio::GpioMmio`); `D` is the
+/// pin's direction: [`Unset`] until [`GpioPin::into_output`] or [`GpioPin::into_input`] switches
+/// it, after which the level and interrupt verbs are the ones that direction allows.
+pub struct GpioPin<P, R: Mmap, A: RegisterAccess, D = Unset> {
     /// The pin's type is the authority (consumed at bind); the handle is a move-only ZST that reads no field.
     _pin: PhantomData<(P, D)>,
     /// The grant this pin was bound through, kept so the chain stays visible in the type.
     _region: PhantomData<R>,
+    /// The accessor this pin reads/writes through, kept so the chain stays visible in the type.
+    _access: PhantomData<A>,
 }
 
-impl<P: Routes<Gpio>, R: Mmap> GpioPin<P, R, Unset> {
+impl<P: Routes<Gpio>, R: Mmap, A: RegisterAccess> GpioPin<P, R, A, Unset> {
     /// Bind a (consumed) pin token through a granted block — the token is the authority for the
-    /// pin, the block for the registers; base/bit/map ride in on const DATA.
+    /// pin, the block for the registers; bit/map ride in on const DATA.
     ///
     /// Binds as [`Unset`]: only [`GpioPin::into_output`] and [`GpioPin::into_input`] mint a directed
     /// handle, so a direction in the type always means the direction register was written.
-    pub fn new(_pin: P, _block: &GpioBlock<R>) -> Self {
-        let () = <(P, R) as AssertGpioGrant>::COVERS;
+    pub fn new(_pin: P, _block: &GpioBlock<R, A>) -> Self {
+        let _ = <(P, R, A) as AssertGpioGrant<A>>::COVERS;
         Self {
             _pin: PhantomData,
             _region: PhantomData,
+            _access: PhantomData,
         }
     }
 }
 
-impl<P: Routes<Gpio>, R: Mmap, D> GpioPin<P, R, D> {
+impl<P: Routes<Gpio>, R: Mmap, A: RegisterAccess, D> GpioPin<P, R, A, D> {
     /// This pin's register group map — read handles (`int_enable`, `int_status`, `in_level`) hang off it.
     #[must_use]
     const fn map(&self) -> &'static GpioMap {
         <P as Routes<Gpio>>::DATA.map
     }
 
-    /// A transient MMIO accessor over this pin's GPIO base — a compile-time static carried in its map.
-    fn mmio(&self) -> Mmio<GpioBlockMarker> {
-        // A fixed peripheral address this accessor actually dereferences, not a sentinel that
-        // never gets read — with_exposed_provenance is the strict-provenance escape hatch for that.
-        Mmio::from_raw(core::ptr::with_exposed_provenance(self.map().base))
+    /// This pin's grant proof, re-derived on demand — a compile-time constant, not a runtime
+    /// re-check; see [`AssertGpioGrant`].
+    fn checked(&self) -> CheckedMap<A> {
+        <(P, R, A) as AssertGpioGrant<A>>::COVERS
     }
 
     /// Apply a role at this pin's slot: one panic-free RMW per op; conflicts rejected at compile time by [`role_cfgs_ok`].
@@ -484,26 +542,13 @@ impl<P: Routes<Gpio>, R: Mmap, D> GpioPin<P, R, D> {
     /// sourced from latched state for every bit except the one this op is changing.
     fn apply(&self, role: GpioRole) {
         let bit = <P as Routes<Gpio>>::DATA.bit;
-        let map = self.map();
-        let block = self.mmio();
-        for op in map.role(role) {
+        let acc = A::default();
+        for op in self.checked().role_ops(role) {
             let mask = (1u32 << op.width) - 1;
             // Only `set`/`clr` are kept — `offset` is discarded unbound here (`..`) rather than
-            // named, so the only offset this loop ever touches is `op.offset`/`read_offset`, read
-            // straight off this pin's static `GpioMap`, never copied into a local first.
-            let FieldWrite { set, clr, .. } = field(op.offset, bit * op.width, mask, op.value);
-            let read_offset = if op.offset == map.in_level.0 {
-                map.out_level.0
-            } else {
-                op.offset
-            };
-            // SAFETY: `op.offset` and `read_offset` both come from this pin's own `GpioMap`, whose
-            // extent `GpioPin::new` already proved fits the granted region (`AssertGpioGrant::COVERS`,
-            // over `map_extent`, which covers every offset this map can ever name).
-            #[allow(unsafe_code)]
-            unsafe {
-                block.write_reg(op.offset, (block.read_reg(read_offset) & !clr) | set);
-            }
+            // named, since the real offsets this loop touches are `op.write`/`op.read` above.
+            let FieldWrite { set, clr, .. } = field(0, bit * op.width, mask, op.value);
+            acc.write(op.write, (acc.read(op.read) & !clr) | set);
         }
     }
 
@@ -515,42 +560,38 @@ impl<P: Routes<Gpio>, R: Mmap, D> GpioPin<P, R, D> {
     /// own `map()`, so that mix-up isn't expressible from outside this file.
     #[must_use]
     fn read<Kind>(&self, reg: Reg<Kind>) -> bool {
-        // SAFETY: `reg.0` comes from this pin's own `GpioMap`, whose extent `GpioPin::new` already
-        // proved fits the granted region (`AssertGpioGrant::COVERS`, over `map_extent`).
-        #[allow(unsafe_code)]
-        unsafe {
-            self.mmio().read_reg(reg.0) & (1 << <P as Routes<Gpio>>::DATA.bit) != 0
-        }
+        let acc = A::default();
+        acc.read(self.checked().offset_of(reg)) & (1 << <P as Routes<Gpio>>::DATA.bit) != 0
     }
 
     /// Write-1-to-clear this pin's bit in the w1c register `reg` (typed `W1C`, so only status registers).
     fn ack(&self, reg: Reg<W1C>) {
-        // SAFETY: `reg.0` comes from this pin's own `GpioMap`, whose extent `GpioPin::new` already
-        // proved fits the granted region (`AssertGpioGrant::COVERS`, over `map_extent`).
-        #[allow(unsafe_code)]
-        unsafe {
-            self.mmio()
-                .write_reg(reg.0, 1 << <P as Routes<Gpio>>::DATA.bit);
-        }
+        let acc = A::default();
+        acc.write(
+            self.checked().offset_of(reg),
+            1 << <P as Routes<Gpio>>::DATA.bit,
+        );
     }
 
     /// Switch the pin to output, carrying the direction in its type from here on.
     #[must_use]
-    pub fn into_output(self) -> GpioPin<P, R, Output> {
+    pub fn into_output(self) -> GpioPin<P, R, A, Output> {
         self.apply(GpioRole::Output);
         GpioPin {
             _pin: PhantomData,
             _region: PhantomData,
+            _access: PhantomData,
         }
     }
 
     /// Switch the pin to input, carrying the direction in its type from here on.
     #[must_use]
-    pub fn into_input(self) -> GpioPin<P, R, Input> {
+    pub fn into_input(self) -> GpioPin<P, R, A, Input> {
         self.apply(GpioRole::Input);
         GpioPin {
             _pin: PhantomData,
             _region: PhantomData,
+            _access: PhantomData,
         }
     }
 
@@ -558,7 +599,7 @@ impl<P: Routes<Gpio>, R: Mmap, D> GpioPin<P, R, D> {
     /// once here, to `ODM::ACTIVE_HIGH`'s value, then the pin starts released (direction =
     /// input). From here, `set_high`/`set_low` toggle direction, never data again.
     #[must_use]
-    pub fn into_open_drain_output<ODM: OpenDrainMode>(self) -> GpioPin<P, R, OpenDrain<ODM>> {
+    pub fn into_open_drain_output<ODM: OpenDrainMode>(self) -> GpioPin<P, R, A, OpenDrain<ODM>> {
         self.apply(if ODM::ACTIVE_HIGH {
             GpioRole::SetHigh
         } else {
@@ -568,11 +609,12 @@ impl<P: Routes<Gpio>, R: Mmap, D> GpioPin<P, R, D> {
         GpioPin {
             _pin: PhantomData,
             _region: PhantomData,
+            _access: PhantomData,
         }
     }
 }
 
-impl<P: Routes<Gpio>, R: Mmap> GpioPin<P, R, Input> {
+impl<P: Routes<Gpio>, R: Mmap, A: RegisterAccess> GpioPin<P, R, A, Input> {
     /// Raise this pin's interrupt on `trigger`.
     pub fn enable_interrupt(&self, trigger: IntTrigger) {
         self.apply(match trigger {
@@ -613,11 +655,13 @@ impl<P: Routes<Gpio>, R: Mmap> GpioPin<P, R, Input> {
     }
 }
 
-impl<P, R: Mmap> embedded_hal::digital::ErrorType for GpioPin<P, R, Output> {
+impl<P, R: Mmap, A: RegisterAccess> embedded_hal::digital::ErrorType for GpioPin<P, R, A, Output> {
     type Error = core::convert::Infallible;
 }
 
-impl<P: Routes<Gpio>, R: Mmap> embedded_hal::digital::OutputPin for GpioPin<P, R, Output> {
+impl<P: Routes<Gpio>, R: Mmap, A: RegisterAccess> embedded_hal::digital::OutputPin
+    for GpioPin<P, R, A, Output>
+{
     fn set_high(&mut self) -> Result<(), Self::Error> {
         self.apply(GpioRole::SetHigh);
         Ok(())
@@ -629,7 +673,9 @@ impl<P: Routes<Gpio>, R: Mmap> embedded_hal::digital::OutputPin for GpioPin<P, R
     }
 }
 
-impl<P: Routes<Gpio>, R: Mmap> embedded_hal::digital::StatefulOutputPin for GpioPin<P, R, Output> {
+impl<P: Routes<Gpio>, R: Mmap, A: RegisterAccess> embedded_hal::digital::StatefulOutputPin
+    for GpioPin<P, R, A, Output>
+{
     fn is_set_high(&mut self) -> Result<bool, Self::Error> {
         Ok(self.read(self.map().out_level))
     }
@@ -639,12 +685,14 @@ impl<P: Routes<Gpio>, R: Mmap> embedded_hal::digital::StatefulOutputPin for Gpio
     }
 }
 
-impl<P, R: Mmap, ODM> embedded_hal::digital::ErrorType for GpioPin<P, R, OpenDrain<ODM>> {
+impl<P, R: Mmap, A: RegisterAccess, ODM> embedded_hal::digital::ErrorType
+    for GpioPin<P, R, A, OpenDrain<ODM>>
+{
     type Error = core::convert::Infallible;
 }
 
-impl<P: Routes<Gpio>, R: Mmap, ODM: OpenDrainMode> embedded_hal::digital::OutputPin
-    for GpioPin<P, R, OpenDrain<ODM>>
+impl<P: Routes<Gpio>, R: Mmap, A: RegisterAccess, ODM: OpenDrainMode>
+    embedded_hal::digital::OutputPin for GpioPin<P, R, A, OpenDrain<ODM>>
 {
     fn set_high(&mut self) -> Result<(), Self::Error> {
         self.apply(if ODM::ACTIVE_HIGH {
@@ -665,8 +713,8 @@ impl<P: Routes<Gpio>, R: Mmap, ODM: OpenDrainMode> embedded_hal::digital::Output
     }
 }
 
-impl<P: Routes<Gpio>, R: Mmap, ODM: OpenDrainMode> embedded_hal::digital::StatefulOutputPin
-    for GpioPin<P, R, OpenDrain<ODM>>
+impl<P: Routes<Gpio>, R: Mmap, A: RegisterAccess, ODM: OpenDrainMode>
+    embedded_hal::digital::StatefulOutputPin for GpioPin<P, R, A, OpenDrain<ODM>>
 {
     fn is_set_high(&mut self) -> Result<bool, Self::Error> {
         let is_output = self.read(self.map().dir_level);
@@ -678,11 +726,13 @@ impl<P: Routes<Gpio>, R: Mmap, ODM: OpenDrainMode> embedded_hal::digital::Statef
     }
 }
 
-impl<P, R: Mmap> embedded_hal::digital::ErrorType for GpioPin<P, R, Input> {
+impl<P, R: Mmap, A: RegisterAccess> embedded_hal::digital::ErrorType for GpioPin<P, R, A, Input> {
     type Error = core::convert::Infallible;
 }
 
-impl<P: Routes<Gpio>, R: Mmap> embedded_hal::digital::InputPin for GpioPin<P, R, Input> {
+impl<P: Routes<Gpio>, R: Mmap, A: RegisterAccess> embedded_hal::digital::InputPin
+    for GpioPin<P, R, A, Input>
+{
     fn is_high(&mut self) -> Result<bool, Self::Error> {
         Ok(self.read(self.map().in_level))
     }
@@ -693,7 +743,10 @@ impl<P: Routes<Gpio>, R: Mmap> embedded_hal::digital::InputPin for GpioPin<P, R,
 }
 
 /// Bind a pin already routed to GPIO by privileged init; touches no SCU register — userspace-safe.
-pub fn bind_gpio<P: Routes<Gpio> + Pin, R: Mmap>(pin: P, block: &GpioBlock<R>) -> GpioPin<P, R> {
+pub fn bind_gpio<P: Routes<Gpio> + Pin, R: Mmap, A: RegisterAccess>(
+    pin: P,
+    block: &GpioBlock<R, A>,
+) -> GpioPin<P, R, A> {
     GpioPin::new(pin, block)
 }
 
@@ -701,7 +754,7 @@ pub fn bind_gpio<P: Routes<Gpio> + Pin, R: Mmap>(pin: P, block: &GpioBlock<R>) -
 /// compile time. Generic over `B`: GPIO's own HAL layer doesn't name a concrete SCU block (that's
 /// target-specific), so `B` is whatever block the caller routes this handle through, same as
 /// `Route<C, P, B>`.
-impl<B: Block, P: Routes<Gpio>, R: Mmap, D> MuxRoutes<B> for GpioPin<P, R, D> {
+impl<B, P: Routes<Gpio>, R: Mmap, A: RegisterAccess, D> MuxRoutes<B> for GpioPin<P, R, A, D> {
     const COALESCED: RegBatch<B> = coalesce_routes(&[<P as Routes<Gpio>>::ROUTE]);
 }
 
@@ -745,7 +798,6 @@ mod tests {
     use super::*;
 
     const TEST_MAP: GpioMap = GpioMap {
-        base: 0x1000,
         output: &[RegOp::set(0x04)],
         input: &[RegOp::clear(0x04)],
         set_high: &[RegOp::set(0x00)],

@@ -5,7 +5,7 @@
 //! Unlike the blocking/nb/async crates, nothing here is flavored by an execution mode.
 
 #![cfg_attr(not(test), no_std)]
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
 pub mod field_mux;

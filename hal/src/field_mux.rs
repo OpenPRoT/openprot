@@ -11,8 +11,9 @@ use core::marker::PhantomData;
 pub(crate) const MAX_REGS: usize = 16;
 
 /// Central batch of register writes, coalesced to one op per distinct offset: `[..len]` of `ops`
-/// live. Block-typed, so one block's batch can't be applied to another's — but coalescing itself
-/// never checks `B::SIZE`; that proof lives in [`ProvenInBounds`], not here (see its doc for why).
+/// live. Identity-typed (`B`, e.g. a chip's `ScuBlock`), so one block's batch can't be applied to
+/// another's — but coalescing itself never checks an accessor's `SIZE`; that proof lives in
+/// [`ProvenInBounds`], not here (see its doc for why).
 #[derive(Clone, Copy)]
 pub struct RegBatch<B> {
     /// The compile-time coalescing scratch: one op per distinct register offset, merging per-pin
@@ -31,7 +32,7 @@ pub struct RegBatch<B> {
     _block: PhantomData<B>,
 }
 
-impl<B: Block> RegBatch<B> {
+impl<B> RegBatch<B> {
     /// An empty accumulator. Crate-private: with [`coalesce_routes`] and [`append`](Self::append)
     /// (also crate-private), this is the only way to put anything into a `RegBatch` — nothing
     /// outside this crate can construct one with any op in it, which is what keeps every
@@ -51,12 +52,12 @@ impl<B: Block> RegBatch<B> {
     }
 
     /// Coalesce one write into the batch, grouped by register offset via [`find`](Self::find).
-    /// Does not check `w.offset` against `B::SIZE` — intentionally: this is a plain `const fn`,
-    /// callable from both compile-time and ordinary runtime code, and whether its `assert!`s would
-    /// ever run at runtime depends on the caller, not on this fn. [`ProvenInBounds`] carries the
-    /// bounds proof instead, specifically because it's an associated const: evaluating one is
-    /// always the compiler's job, with no runtime-reachable call path, regardless of where it's
-    /// referenced from.
+    /// Does not check `w.offset` against any accessor's `SIZE` — intentionally: this is a plain
+    /// `const fn`, callable from both compile-time and ordinary runtime code, and whether its
+    /// `assert!`s would ever run at runtime depends on the caller, not on this fn. [`ProvenBatch`]
+    /// carries the bounds proof instead, specifically because it's built inside an associated
+    /// const's initializer: evaluating one is always the compiler's job, with no runtime-reachable
+    /// call path, regardless of where it's referenced from.
     const fn push(&mut self, w: FieldWrite) {
         let j = self.find(w.offset);
         if j == self.len {
@@ -117,62 +118,174 @@ impl<B: Block> RegBatch<B> {
     }
 }
 
-impl<B: Block> Default for RegBatch<B> {
+impl<B> Default for RegBatch<B> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-/// Apply handle `H`'s coalesced routes to its block: one RMW (`reg = (reg & !clr) | set`) per
-/// register. Panic-free, at compile time *and* at runtime: referencing `ProvenInBounds::PROVEN`
-/// below evaluates its bounds check purely at compile time (see that trait's own doc for why),
-/// and the loop itself is a flat walk over an already-built tight slice, no indexing, no asserts
-/// of its own. Safe: `PROVEN` having been referenced at all is what proves every offset in
-/// `H::COALESCED` fits `B::SIZE` — not a trust-me comment, a proof the caller couldn't skip.
-pub fn apply<B: Block, H: MuxRoutes<B>>(block: &Mmio<B>, _handle: &H) {
-    let () = <H as ProvenInBounds<B>>::PROVEN;
-    for op in H::COALESCED.as_slice() {
-        // SAFETY: `ProvenInBounds::PROVEN` above proves every offset in `H::COALESCED` is
-        // in-bounds for `B`.
-        #[allow(unsafe_code)]
-        unsafe {
-            block.write_reg(op.offset, (block.read_reg(op.offset) & !op.clr) | op.set);
+/// A byte offset already proven to lie inside accessor `A`'s real extent. Private field: outside
+/// this crate, an `Offset<A>` cannot be brought into existence, only passed along or built via
+/// [`at`](Self::at)'s compile-time check.
+pub struct Offset<A> {
+    byte: u32,
+    _a: PhantomData<A>,
+}
+
+impl<A> Clone for Offset<A> {
+    fn clone(&self) -> Self {
+        Self {
+            byte: self.byte,
+            _a: PhantomData,
         }
     }
 }
 
-/// Proof that every offset in `H::COALESCED` fits inside block `B`'s real extent — split out from
-/// `RegBatch::push` specifically so the check can only ever run at compile time.
-///
-/// `push` is a plain `const fn`: whether a given call to it runs at compile time or at runtime is
-/// decided by its caller, not by `push` itself — a `const fn` called from ordinary runtime code
-/// runs (and can panic) at runtime, same as any other function. An associated const has no such
-/// ambiguity: the compiler evaluates `PROVEN`'s initializer to produce its value regardless of
-/// where or how it's referenced, even from inside an otherwise-ordinary runtime function body (see
-/// [`apply`]). That's what makes this trait, not a check inside `push`, the place this proof lives.
-pub trait ProvenInBounds<B: Block>: MuxRoutes<B> {
-    /// Evaluating this forces the bounds check; referencing it is what makes it run.
-    const PROVEN: ();
+impl<A: RegisterAccess> Offset<A> {
+    /// Build a proven offset from a const generic — the bound is forced at compile time, the same
+    /// way [`ProvenBatch`] forces it over a whole table: there is no way to name `OFFSET` except as
+    /// this literal, so there is no way to call this with one that wasn't just checked against `A::SIZE`.
+    #[must_use]
+    pub const fn at<const OFFSET: u32>() -> Self {
+        const {
+            assert!(
+                (OFFSET as usize) + 4 <= A::SIZE,
+                "register offset reaches past this block's real extent"
+            );
+        }
+        Self {
+            byte: OFFSET,
+            _a: PhantomData,
+        }
+    }
+
+    /// Mint without a const-generic literal — only for code that already ran the same bounds check
+    /// over data, e.g. [`ProvenBatch::prove`]. Crate-private: this is the one minting surface to audit.
+    #[must_use]
+    pub(crate) const fn trusted(byte: u32) -> Self {
+        Self {
+            byte,
+            _a: PhantomData,
+        }
+    }
+
+    /// The wrapped offset, for the accessor's own `read`/`write` body to add to its base.
+    #[must_use]
+    pub const fn get(&self) -> u32 {
+        self.byte
+    }
 }
 
-impl<B: Block, H: MuxRoutes<B>> ProvenInBounds<B> for H {
-    const PROVEN: () = {
-        let ops = H::COALESCED.as_slice();
+/// Implemented once per target register block — the address and the `unsafe` both live in the
+/// target's impl, never in `hal`. Keyed on `Self` (not a separable identity trait) so a bogus impl
+/// can only ever mint offsets accepted by its own (equally bogus) read/write body: there is no
+/// shared "vend a `BASE`/`SIZE`" trait a forged impl could ride in on.
+pub trait RegisterAccess: Sized + Default {
+    /// Identity marker so routing data (`MuxRoutes`/`RegBatch`) can target "this logical block"
+    /// independent of how it's accessed.
+    type Block;
+    /// This accessor's real physical base address — used by grant checks (`util_region::covers`)
+    /// to prove a manifest region actually contains this block; never turned into a pointer in
+    /// `hal` itself, only compared as a plain integer.
+    const BASE: usize;
+    /// This accessor's real byte extent — an offset at or past this is out of bounds.
+    const SIZE: usize;
+    /// Read the 32-bit register at `offset`.
+    fn read(&self, offset: Offset<Self>) -> u32;
+    /// Write `val` to the 32-bit register at `offset`.
+    fn write(&self, offset: Offset<Self>, val: u32);
+
+    /// Read the 32-bit register at byte offset `OFFSET`. `OFFSET` is a const generic, so the bounds
+    /// check is forced at compile time the same way [`Offset::at`] forces it.
+    #[must_use]
+    fn read_at<const OFFSET: u32>(&self) -> u32 {
+        self.read(Offset::at::<OFFSET>())
+    }
+
+    /// Write `val` to the 32-bit register at byte offset `OFFSET`. Same proof as [`read_at`](Self::read_at).
+    fn write_at<const OFFSET: u32>(&self, val: u32) {
+        self.write(Offset::at::<OFFSET>(), val)
+    }
+}
+
+/// One proven register op: a read offset and a write offset (usually the same one; GPIO's
+/// `in_level`/`out_level` read-swap is why they're kept separate), both already checked in-bounds
+/// for `A`, plus the bits to fold in.
+pub struct ProvenOp<A> {
+    pub(crate) read: Offset<A>,
+    pub(crate) write: Offset<A>,
+    pub(crate) set: u32,
+    pub(crate) clr: u32,
+}
+
+/// A [`RegBatch`] whose every offset has been proven to fit inside accessor `A`'s real extent —
+/// the only way to get one is this crate's own `prove`, which checks every entry once; `ops`
+/// then replays those exact, already-checked offsets as [`Offset<A>`] values. `apply` never mints
+/// an `Offset` of its own, it only ever receives one this type already proved.
+pub struct ProvenBatch<A: RegisterAccess> {
+    batch: RegBatch<A::Block>,
+    _a: PhantomData<A>,
+}
+
+impl<A: RegisterAccess> ProvenBatch<A> {
+    /// Check every offset in `batch` against `A::SIZE` once, so [`ops`](Self::ops) can trust every
+    /// one it ever yields. Split out from `RegBatch::push` specifically so the check can only ever
+    /// run at compile time: `push` is a plain `const fn`, runnable from ordinary runtime code too,
+    /// but this only ever runs from inside an associated const's initializer (see [`ProvenInBounds`]),
+    /// which the compiler evaluates regardless of where it's referenced from.
+    pub(crate) const fn prove(batch: RegBatch<A::Block>) -> Self {
+        let ops = batch.as_slice();
         let mut i = 0;
         while i < ops.len() {
             assert!(
-                (ops[i].offset as usize) + 4 <= B::SIZE,
+                (ops[i].offset as usize) + 4 <= A::SIZE,
                 "register offset reaches past this block's real extent"
             );
             i += 1;
         }
-    };
+        Self {
+            batch,
+            _a: PhantomData,
+        }
+    }
+
+    /// This batch's ops, each already wrapped as a proven [`Offset<A>`] — the read and write side
+    /// are the same offset here (field_mux's RMW never swaps registers the way GPIO's does).
+    pub(crate) fn ops(&self) -> impl Iterator<Item = ProvenOp<A>> + '_ {
+        self.batch.as_slice().iter().map(|op| ProvenOp {
+            read: Offset::trusted(op.offset),
+            write: Offset::trusted(op.offset),
+            set: op.set,
+            clr: op.clr,
+        })
+    }
+}
+
+/// Apply handle `H`'s coalesced routes to accessor `A`: one RMW (`reg = (reg & !clr) | set`) per
+/// register. No `unsafe` here: `A::read`/`A::write` are safe trait methods whose own impl (in the
+/// target crate) holds the `unsafe`; this function never dereferences anything.
+pub fn apply<A: RegisterAccess + 'static, H: MuxRoutes<A::Block>>(acc: &A, _handle: &H) {
+    for op in <H as ProvenInBounds<A>>::PROVEN.ops() {
+        acc.write(op.write, (acc.read(op.read) & !op.clr) | op.set);
+    }
+}
+
+/// Proof that every offset in `H::COALESCED` fits inside accessor `A`'s real extent, carried as a
+/// value (not a bare `()`): the proof and the data it proves things about are the same object, so
+/// `apply` has no way to reach `A::read`/`A::write` with an offset this never checked.
+pub trait ProvenInBounds<A: RegisterAccess + 'static>: MuxRoutes<A::Block> {
+    /// Evaluating this forces the bounds check; referencing it is what makes it run.
+    const PROVEN: &'static ProvenBatch<A>;
+}
+
+impl<A: RegisterAccess + 'static, H: MuxRoutes<A::Block>> ProvenInBounds<A> for H {
+    const PROVEN: &'static ProvenBatch<A> = &ProvenBatch::prove(H::COALESCED);
 }
 
 /// Coalesce a list of per-pin routes into one batch (one RMW per register) — the compile-time
 /// fold. Crate-private along with [`RegBatch::new`] — see that doc for why.
 #[must_use]
-pub(crate) const fn coalesce_routes<B: Block>(routes: &[&[FieldWrite]]) -> RegBatch<B> {
+pub(crate) const fn coalesce_routes<B>(routes: &[&[FieldWrite]]) -> RegBatch<B> {
     let mut b = RegBatch::new();
     let mut i = 0;
     while i < routes.len() {
@@ -187,13 +300,13 @@ pub(crate) const fn coalesce_routes<B: Block>(routes: &[&[FieldWrite]]) -> RegBa
 /// const. Anyone can implement this trait, but `coalesce_routes` and `RegBatch::new` being
 /// crate-private means no implementor outside this crate can give `COALESCED` any op that didn't
 /// already come from a real pin's own [`Routes`] impl — see those docs for why.
-pub trait MuxRoutes<B: Block> {
+pub trait MuxRoutes<B> {
     /// This handle's routes, coalesced to one op per register — folded per monomorphization at compile time.
     const COALESCED: RegBatch<B>;
 }
 
 /// Route a handle through a shared reference: the applier reads only the type, so a borrow folds identically — non-Copy owners route without being consumed.
-impl<B: Block, H: MuxRoutes<B>> MuxRoutes<B> for &H {
+impl<B, H: MuxRoutes<B>> MuxRoutes<B> for &H {
     const COALESCED: RegBatch<B> = H::COALESCED;
 }
 
@@ -203,7 +316,7 @@ impl<B: Block, H: MuxRoutes<B>> MuxRoutes<B> for &H {
 macro_rules! impl_muxroutes_tuple {
     () => {};
     ($head:ident $(, $tail:ident)*) => {
-        impl<B: Block, $head: MuxRoutes<B> $(, $tail: MuxRoutes<B>)*> MuxRoutes<B> for ($head, $($tail,)*) {
+        impl<B, $head: MuxRoutes<B> $(, $tail: MuxRoutes<B>)*> MuxRoutes<B> for ($head, $($tail,)*) {
             const COALESCED: RegBatch<B> = {
                 let mut out = RegBatch::new();
                 out.append_batch(&$head::COALESCED);
@@ -242,135 +355,44 @@ impl<C: Capability, P: Routes<C> + Pin, B> Route<C, P, B> {
     }
 }
 
-impl<C: Capability, P: Routes<C>, B: Block> MuxRoutes<B> for Route<C, P, B> {
+impl<C: Capability, P: Routes<C>, B> MuxRoutes<B> for Route<C, P, B> {
     const COALESCED: RegBatch<B> = coalesce_routes(&[<P as Routes<C>>::ROUTE]);
-}
-
-/// A silicon-fixed singleton register block (e.g. the SCU): `BASE` names it, no pin token carries it.
-///
-/// # Safety
-/// `BASE` must name a valid, `'static`, aligned register block usable for `u32` volatile access at
-/// every offset less than `SIZE`; `SIZE` must be the real byte extent of that register block (e.g.
-/// `size_of::<ast1060_pac::scu::RegisterBlock>()`), not an approximation — it's what an offset gets
-/// checked against before the block is ever touched.
-#[allow(unsafe_code)]
-pub unsafe trait Block {
-    /// The silicon-fixed base of this singleton register block.
-    const BASE: *const u8;
-    /// The real byte extent of this register block — an offset at or past this is out of bounds.
-    const SIZE: usize;
-}
-
-/// Confined MMIO applier over block `B`, phantom-typed so one block's applier can't stand in for another's.
-pub struct Mmio<B> {
-    base: *const u8,
-    _block: PhantomData<B>,
-}
-
-impl<B> Clone for Mmio<B> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-impl<B> Copy for Mmio<B> {}
-
-impl<B> Mmio<B> {
-    /// HAL-internal ctor: base always rides on authored `DATA` or a `Block::BASE`, whose validity was promised upstream.
-    #[must_use]
-    pub(crate) const fn from_raw(base: *const u8) -> Self {
-        Self {
-            base,
-            _block: PhantomData,
-        }
-    }
-
-    /// Read the 32-bit register at byte `offset`.
-    /// # Safety
-    /// `offset` must be a valid, in-bounds byte offset for this register block — this fn only
-    /// knows `base` is valid (promised by `from_raw`/[`block`](Self::block)),
-    /// not that `offset` lands inside it; that's on the caller. Crate-private: the only callers
-    /// are [`apply`] (proven via [`ProvenInBounds`]) and `gpio`'s accessors (proven via
-    /// `AssertGpioGrant`/`map_extent`) — both already discharge this obligation some other way
-    /// before calling in. Anything outside this crate can only reach
-    /// [`read_reg_at`](Self::read_reg_at) below, which can't be called with an unvetted offset.
-    #[must_use]
-    #[allow(unsafe_code)]
-    pub(crate) unsafe fn read_reg(&self, offset: u32) -> u32 {
-        // SAFETY: caller ensures `offset` is in-bounds for this block, per this fn's own doc.
-        #[allow(unsafe_code)]
-        // nosemgrep
-        unsafe {
-            self.base.add(offset as usize).cast::<u32>().read_volatile()
-        }
-    }
-
-    /// Write `val` to the 32-bit register at byte `offset`.
-    /// # Safety
-    /// Same contract as [`read_reg`](Self::read_reg); same restricted callers.
-    #[allow(unsafe_code)]
-    pub(crate) unsafe fn write_reg(&self, offset: u32, val: u32) {
-        // SAFETY: caller ensures `offset` is in-bounds for this block, per this fn's own doc.
-        #[allow(unsafe_code)]
-        // nosemgrep
-        unsafe {
-            (self.base.add(offset as usize) as *mut u32).write_volatile(val)
-        }
-    }
-}
-
-impl<B: Block> Mmio<B> {
-    /// Mint a token-less singleton's applier from its `Block::BASE`; safe, the `unsafe impl Block` made the promise.
-    #[must_use]
-    pub const fn block() -> Self {
-        Self::from_raw(B::BASE)
-    }
-
-    /// Read the 32-bit register at byte offset `OFFSET`. Safe: `OFFSET` is a const generic, not a
-    /// runtime value, so the bounds check below is forced at compile time the same way
-    /// [`ProvenInBounds`] is — there is no way to call this with an offset that wasn't just
-    /// checked against `B::SIZE`, because there's no way to name the offset except as this literal.
-    #[must_use]
-    pub fn read_reg_at<const OFFSET: u32>(&self) -> u32 {
-        const {
-            assert!(
-                (OFFSET as usize) + 4 <= B::SIZE,
-                "register offset reaches past this block's real extent"
-            )
-        };
-        // SAFETY: OFFSET's bound was just checked above, at compile time, for this exact B.
-        #[allow(unsafe_code)]
-        unsafe {
-            self.read_reg(OFFSET)
-        }
-    }
-
-    /// Write `val` to the 32-bit register at byte offset `OFFSET`. Safe for the same reason
-    /// [`read_reg_at`](Self::read_reg_at) is.
-    pub fn write_reg_at<const OFFSET: u32>(&self, val: u32) {
-        const {
-            assert!(
-                (OFFSET as usize) + 4 <= B::SIZE,
-                "register offset reaches past this block's real extent"
-            )
-        };
-        // SAFETY: OFFSET's bound was just checked above, at compile time, for this exact B.
-        #[allow(unsafe_code)]
-        unsafe {
-            self.write_reg(OFFSET, val)
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::resource::{clear, set};
+    use core::cell::Cell;
 
     struct TestBlock;
-    #[allow(unsafe_code)]
-    unsafe impl Block for TestBlock {
-        const BASE: *const u8 = core::ptr::null();
+
+    struct TestAccess {
+        regs: Cell<[u32; 0x100 / 4]>,
+    }
+
+    impl Default for TestAccess {
+        fn default() -> Self {
+            Self {
+                regs: Cell::new([0; 0x100 / 4]),
+            }
+        }
+    }
+
+    impl RegisterAccess for TestAccess {
+        type Block = TestBlock;
+        const BASE: usize = 0;
         const SIZE: usize = 0x100;
+
+        fn read(&self, offset: Offset<Self>) -> u32 {
+            self.regs.get()[(offset.get() / 4) as usize]
+        }
+
+        fn write(&self, offset: Offset<Self>, val: u32) {
+            let mut regs = self.regs.get();
+            regs[(offset.get() / 4) as usize] = val;
+            self.regs.set(regs);
+        }
     }
 
     #[test]
@@ -441,13 +463,22 @@ mod tests {
         let _ = route; // consumed purely to prove `new` takes the pin by value
     }
 
-    // `ProvenInBounds::PROVEN`'s failure case (an offset past `B::SIZE`) is a compile error, not a
+    // `ProvenInBounds::PROVEN`'s failure case (an offset past `A::SIZE`) is a compile error, not a
     // runtime panic, so it can't be exercised with `#[should_panic]` the way `push`'s old in-fn
     // assert could. This only proves the mechanism itself evaluates cleanly for a route that's
     // actually in bounds; the rejecting case was confirmed by hand (a temporary out-of-range
     // `ROUTE` entry on `TestPin` fails the build, as expected) rather than left unverified.
     #[test]
     fn proven_in_bounds_accepts_a_route_within_the_block() {
-        let () = <Route<TestCap, TestPin, TestBlock> as ProvenInBounds<TestBlock>>::PROVEN;
+        let _ = <Route<TestCap, TestPin, TestBlock> as ProvenInBounds<TestAccess>>::PROVEN;
+    }
+
+    #[test]
+    fn apply_performs_a_real_read_modify_write_with_no_unsafe() {
+        let acc = TestAccess::default();
+        let route = Route::<TestCap, TestPin, TestBlock>::new(TestPin);
+        apply(&acc, &route);
+        assert_eq!(acc.read(Offset::trusted(0x10)), 0b1);
+        assert_eq!(acc.read(Offset::trusted(0x14)), 0);
     }
 }
