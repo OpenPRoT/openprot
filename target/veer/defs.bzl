@@ -18,7 +18,10 @@ def veer_system_config(name, src, **kwargs):
 
     `src` is a system config template containing `@KERNEL_FLASH_START@`,
     `@KERNEL_RAM_START@`, `@MCI_BASE@`, `@MBOX_BASE@`, `@SOC_IFC_BASE@`,
-    `@I3C_BASE@`, `@HANDOFF_BASE@` and/or `@PRIMARY_FLASH_CTRL@`. They are
+    `@I3C_BASE@`, `@HANDOFF_BASE@`, `@PRIMARY_FLASH_CTRL@` and/or the
+    placeholders for the MCU mailboxes (`@MCU_MBOX0_BASE@`,
+    `@MCU_MBOX0_CSR_BASE@`, `@MCU_MBOX0_SRAM_SIZE@` and the same for mailbox
+    1). They are
     filled in from upstream caliptra-mcu-sw's EMULATOR_MEMORY_MAP /
     FPGA_MEMORY_MAP and the flash controller addresses by
     //target/veer/tooling:render_system_config. The output is `<name>.json5`.

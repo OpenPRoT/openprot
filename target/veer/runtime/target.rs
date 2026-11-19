@@ -17,8 +17,8 @@
 //!   to the SoC and stops the MCU.
 //!
 //! The image does not enable the interrupt for ECC errors in the MCU
-//! mailboxes or for the watchdog: it has no mailbox driver, and it stops the
-//! watchdog.
+//! mailboxes or for the watchdog: it does not use the mailboxes, and it stops
+//! the watchdog.
 
 #![no_std]
 #![no_main]

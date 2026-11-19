@@ -40,3 +40,4 @@
     * [Platform Architecture](./design/orchestrator/orchestrator-platform.md)
   * [Caliptra MCU](./design/caliptra-mcu/README.md)
     * [MCI Events and Errors](./design/caliptra-mcu/mci-events.md)
+    * [MCU Mailbox](./design/caliptra-mcu/mcu-mailbox.md)

@@ -149,7 +149,7 @@ image leaves the interrupt for the event off.
 
 The image stops on `INTERNAL` because the MCI defines it as an error of the
 MCI itself, although this revision of the hardware never raises it. The
-image does not enable the mailbox errors because it has no driver for the MCU
+image does not enable the mailbox errors because it does not use the MCU
 mailboxes. It does not enable the watchdog events because it disables the
 watchdog that the ROM starts.
 

@@ -11,6 +11,16 @@ use caliptra_mcu_config_emulator::{EMULATOR_MCU_STRAPS, EMULATOR_MEMORY_MAP};
 use caliptra_mcu_config_fpga::{FPGA_MCU_STRAPS, FPGA_MEMORY_MAP};
 use caliptra_ss_registers::primary_flash_ctrl::PRIMARY_FLASH_CTRL_ADDR;
 use veer_flash::FPGA_PRIMARY_FLASH_CTRL_ADDR;
+use veer_mcu_mbox::{CSR_OFFSET, MBOX0_OFFSET, MBOX1_OFFSET};
+
+/// Sizes in bytes of the SRAMs of MCU mailbox 0 and 1 of the emulator
+/// (`MCU_MAILBOX0_SRAM_SIZE` and `MCU_MAILBOX1_SRAM_SIZE` in caliptra-mcu-sw
+/// `emulator/consts`).
+const EMULATOR_MCU_MBOX_SRAM_SIZES: [u32; 2] = [2 * 1024 * 1024; 2];
+
+/// Sizes in bytes of the SRAMs of MCU mailbox 0 and 1 of the VCK190
+/// bitstream, which `HW_CONFIG0` of its MCI reports.
+const FPGA_MCU_MBOX_SRAM_SIZES: [u32; 2] = [16 * 1024; 2];
 
 /// Offset of the kernel's RAM within MCU SRAM. This is OpenPRoT's own layout
 /// choice (code first, data after), not part of the upstream memory map.
@@ -34,21 +44,28 @@ fn main() {
     };
 
     // The memory maps do not include the flash controllers, so their
-    // addresses come from the register definitions and the flash driver.
-    let (map, straps, primary_flash_ctrl): (&McuMemoryMap, &McuStraps, u32) =
-        match platform.as_str() {
-            "emulator" => (
-                &EMULATOR_MEMORY_MAP,
-                &EMULATOR_MCU_STRAPS,
-                PRIMARY_FLASH_CTRL_ADDR,
-            ),
-            "fpga" => (
-                &FPGA_MEMORY_MAP,
-                &FPGA_MCU_STRAPS,
-                FPGA_PRIMARY_FLASH_CTRL_ADDR as u32,
-            ),
-            other => panic!("unknown platform {other:?}; expected emulator or fpga"),
-        };
+    // addresses come from the register definitions and the flash driver. The
+    // maps do not include the sizes of the MCU mailboxes either.
+    let (map, straps, primary_flash_ctrl, mcu_mbox_sram_sizes): (
+        &McuMemoryMap,
+        &McuStraps,
+        u32,
+        [u32; 2],
+    ) = match platform.as_str() {
+        "emulator" => (
+            &EMULATOR_MEMORY_MAP,
+            &EMULATOR_MCU_STRAPS,
+            PRIMARY_FLASH_CTRL_ADDR,
+            EMULATOR_MCU_MBOX_SRAM_SIZES,
+        ),
+        "fpga" => (
+            &FPGA_MEMORY_MAP,
+            &FPGA_MCU_STRAPS,
+            FPGA_PRIMARY_FLASH_CTRL_ADDR as u32,
+            FPGA_MCU_MBOX_SRAM_SIZES,
+        ),
+        other => panic!("unknown platform {other:?}; expected emulator or fpga"),
+    };
     assert!(
         KERNEL_RAM_OFFSET < map.sram_size,
         "KERNEL_RAM_OFFSET is outside MCU SRAM"
@@ -63,6 +80,11 @@ fn main() {
     //                         data: KERNEL_RAM_OFFSET into MCU SRAM.
     //   @MCI_BASE@            MCI register block (timer, device mappings).
     //   @MBOX_BASE@           Caliptra mailbox registers.
+    //   @MCU_MBOX0_BASE@      SRAM of MCU mailbox 0.
+    //   @MCU_MBOX0_CSR_BASE@  Registers of MCU mailbox 0.
+    //   @MCU_MBOX0_SRAM_SIZE@ Size in bytes of the SRAM of MCU mailbox 0.
+    //   @MCU_MBOX1_BASE@, @MCU_MBOX1_CSR_BASE@, @MCU_MBOX1_SRAM_SIZE@
+    //                         The same for MCU mailbox 1.
     //   @SOC_IFC_BASE@        Caliptra SoC interface registers.
     //   @PRIMARY_FLASH_CTRL@  Registers of the primary flash controller.
     //   @I3C_BASE@            Register block of the active Caliptra-SS I3C core.
@@ -78,6 +100,19 @@ fn main() {
         ("@MCI_BASE@", map.mci_offset),
         // Caliptra mailbox registers
         ("@MBOX_BASE@", map.mbox_offset),
+        // The MCU mailboxes, which are inside the MCI block
+        ("@MCU_MBOX0_BASE@", map.mci_offset + MBOX0_OFFSET as u32),
+        (
+            "@MCU_MBOX0_CSR_BASE@",
+            map.mci_offset + (MBOX0_OFFSET + CSR_OFFSET) as u32,
+        ),
+        ("@MCU_MBOX0_SRAM_SIZE@", mcu_mbox_sram_sizes[0]),
+        ("@MCU_MBOX1_BASE@", map.mci_offset + MBOX1_OFFSET as u32),
+        (
+            "@MCU_MBOX1_CSR_BASE@",
+            map.mci_offset + (MBOX1_OFFSET + CSR_OFFSET) as u32,
+        ),
+        ("@MCU_MBOX1_SRAM_SIZE@", mcu_mbox_sram_sizes[1]),
         // Caliptra SoC interface registers
         ("@SOC_IFC_BASE@", map.soc_offset),
         ("@PRIMARY_FLASH_CTRL@", primary_flash_ctrl),

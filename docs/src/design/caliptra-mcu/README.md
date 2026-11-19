@@ -35,3 +35,5 @@ the MCU's control and status registers.
 - [**MCI events and errors**](./mci-events.md): the events and errors that
   the MCI reports, what causes each one, and what the runtime image does
   about it.
+- [**MCU mailbox**](./mcu-mailbox.md): how an agent of the SoC sends a
+  command to the MCU, and what the mailbox driver does.
