@@ -15,7 +15,7 @@ use ast10x0_peripherals::smc::{
     FlashConfig, FlashGeometry, FmcReady, FmcUninit, SmcConfig, SmcController, SmcError,
     SmcInstance, SmcTopology, SpiNorFlash, SpiNorFlashDevice,
 };
-use hal_flash_driver::{FlashAddress, FlashDriver};
+use hal_flash_driver::{DeferredErase, FlashAddress, FlashDriver};
 use util_error::{self as error, ErrorCode};
 use util_types::{Blocking, PowerOf2Usize};
 
@@ -51,8 +51,12 @@ fn map_smc_error(e: SmcError) -> ErrorCode {
 
 /// No-op `Blocking` impl paired with this driver.
 ///
-/// No completion interrupt exists; `is_busy` itself issues a status-register read each
-/// poll, so there is nothing to wait on between polls.
+/// FMC user-mode SPI-NOR commands have no completion interrupt; the peripheral
+/// driver polls the device's WIP status bit to completion inside
+/// `program_page`/`erase_sector`, so `start_erase`/`start_program` below return with the
+/// operation already finished and there is nothing to wait for. Only
+/// `start_erase_nowait` returns early; its caller polls `is_busy` and never uses
+/// `Blocking`.
 pub struct NoWaitBlocking;
 
 impl Blocking for NoWaitBlocking {
@@ -112,6 +116,13 @@ impl Ast10x0FmcFlashDriver {
         let cs = self.fmc.cs1().map_err(map_smc_error)?;
         SpiNorFlash::new(cs).map_err(map_smc_error)
     }
+
+    fn check_erase_size(&self, size: PowerOf2Usize) -> Result<(), ErrorCode> {
+        if size.get() != self.geometry.sector_size as usize {
+            return Err(error::FLASH_GENERIC_ERASE_INVALID_SIZE);
+        }
+        Ok(())
+    }
 }
 
 impl FlashDriver for Ast10x0FmcFlashDriver {
@@ -158,12 +169,10 @@ impl FlashDriver for Ast10x0FmcFlashDriver {
         start_addr: FlashAddress,
         size: PowerOf2Usize,
     ) -> Result<(), Self::Error> {
-        if size.get() != self.geometry.sector_size as usize {
-            return Err(error::FLASH_GENERIC_ERASE_INVALID_SIZE);
-        }
-        // Issues the command without waiting for WIP to clear; poll `is_busy` for completion.
+        self.check_erase_size(size)?;
+        // Blocks until the device's WIP bit clears; see `NoWaitBlocking`.
         self.device()?
-            .start_erase_sector(start_addr.offset())
+            .erase_sector(start_addr.offset())
             .map_err(map_smc_error)
     }
 
@@ -186,5 +195,19 @@ impl FlashDriver for Ast10x0FmcFlashDriver {
 
     fn complete_op(&mut self) -> Result<(), Self::Error> {
         Ok(())
+    }
+}
+
+impl DeferredErase for Ast10x0FmcFlashDriver {
+    fn start_erase_nowait(
+        &mut self,
+        start_addr: FlashAddress,
+        size: PowerOf2Usize,
+    ) -> Result<(), Self::Error> {
+        self.check_erase_size(size)?;
+        // Issues the command without waiting for WIP to clear; poll `is_busy` for completion.
+        self.device()?
+            .start_erase_sector(start_addr.offset())
+            .map_err(map_smc_error)
     }
 }

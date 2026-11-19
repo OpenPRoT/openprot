@@ -10,7 +10,7 @@
 use app_flash_server::handle;
 use flash_backend::{Backend, NoWaitBlocking};
 use flash_server_runtime::Channel;
-use hal_flash::BlockingFlash;
+use hal_flash::{BlockingFlash, DeferredFlash};
 use hal_flash_driver::FlashDriver;
 use openprot_flash_server::Server;
 use pw_status::{Error, Result};
@@ -36,10 +36,11 @@ fn entry() -> Result<()> {
             return Err(Error::Internal);
         }
     };
-    let flash = BlockingFlash {
+    // Deferred: erases return early and the server runtime polls `is_busy` for completion.
+    let flash = DeferredFlash(BlockingFlash {
         driver,
         blocking: NoWaitBlocking,
-    };
+    });
     let mut servers = [Server::new(flash)];
     let mut channels = [Channel::new(handle::FLASH)];
     let mut buf = [0; BUF_SIZE];

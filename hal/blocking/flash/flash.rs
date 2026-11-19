@@ -7,7 +7,7 @@
 
 use core::{cmp::min, num::NonZero};
 pub use hal_flash_driver::FlashAddress;
-use hal_flash_driver::FlashDriver;
+use hal_flash_driver::{DeferredErase, FlashDriver};
 use util_io::RandomRead;
 use util_types::{Blocking, PowerOf2Usize};
 
@@ -149,7 +149,8 @@ pub trait FlashPageSize {
 ///
 /// It also handles address alignment for reads and program window constraints for writes.
 ///
-/// `start_erase`/`poll_erase` bypass `blocking`; a deferring caller does its own waiting.
+/// `start_erase`/`poll_erase` keep the [`Flash`] defaults (a blocking erase, then `Done`).
+/// To defer erases, use [`DeferredFlash`] with a driver that implements [`DeferredErase`].
 pub struct BlockingFlash<TDriver: FlashDriver, TBlocking: Blocking> {
     /// The underlying flash driver.
     pub driver: TDriver,
@@ -205,25 +206,8 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
     /// until the operation completes.
     fn erase(&mut self, start_addr: FlashAddress, size: PowerOf2Usize) -> Result<(), Self::Error> {
         self.driver.start_erase(start_addr, size)?;
-        while self.driver.is_busy() {
-            self.blocking.wait_for_notification();
-        }
+        self.blocking.wait_for_notification();
         self.driver.complete_op()
-    }
-    /// Starts the erase and returns without waiting; `poll_erase` reports its real status.
-    fn start_erase(
-        &mut self,
-        start_addr: FlashAddress,
-        size: PowerOf2Usize,
-    ) -> Result<(), Self::Error> {
-        self.driver.start_erase(start_addr, size)
-    }
-    fn poll_erase(&mut self) -> Result<OpPoll, Self::Error> {
-        if self.driver.is_busy() {
-            return Ok(OpPoll::Busy);
-        }
-        self.driver.complete_op()?;
-        Ok(OpPoll::Done)
     }
     /// Programs data into flash.
     ///
@@ -251,6 +235,58 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
     }
 }
 
+/// A [`BlockingFlash`] whose `start_erase`/`poll_erase` really defer.
+///
+/// Requires a driver that implements [`DeferredErase`]. Everything else, including the
+/// blocking [`Flash::erase`], is the wrapped `BlockingFlash`: `erase` still does
+/// `start_erase`, `Blocking::wait_for_notification`, `complete_op`, and does not depend on
+/// `is_busy`. Only the deferred pair below consults `is_busy`. The caller does its own
+/// waiting between polls, so `Blocking` is not used while an erase is busy. It is used once,
+/// when the erase is done, to consume the completion notification (see the contract on
+/// [`DeferredErase`]).
+pub struct DeferredFlash<TDriver: DeferredErase, TBlocking: Blocking>(
+    pub BlockingFlash<TDriver, TBlocking>,
+);
+
+impl<TDriver: DeferredErase, TBlocking: Blocking> FlashPageSize
+    for DeferredFlash<TDriver, TBlocking>
+{
+    const PAGE_SIZE: usize = TDriver::PAGE_SIZE;
+}
+
+impl<TDriver: DeferredErase, TBlocking: Blocking> Flash for DeferredFlash<TDriver, TBlocking> {
+    type Error = TDriver::Error;
+    fn geometry(&mut self) -> Result<(NonZero<usize>, PowerOf2Usize, u32), Self::Error> {
+        self.0.geometry()
+    }
+    fn read(&mut self, start_addr: FlashAddress, buf: &mut [u8]) -> Result<(), Self::Error> {
+        self.0.read(start_addr, buf)
+    }
+    fn erase(&mut self, start_addr: FlashAddress, size: PowerOf2Usize) -> Result<(), Self::Error> {
+        self.0.erase(start_addr, size)
+    }
+    fn program(&mut self, start_addr: FlashAddress, data: &[u8]) -> Result<(), Self::Error> {
+        self.0.program(start_addr, data)
+    }
+    /// Starts the erase and returns without waiting; `poll_erase` reports its real status.
+    fn start_erase(
+        &mut self,
+        start_addr: FlashAddress,
+        size: PowerOf2Usize,
+    ) -> Result<(), Self::Error> {
+        self.0.driver.start_erase_nowait(start_addr, size)
+    }
+    fn poll_erase(&mut self) -> Result<OpPoll, Self::Error> {
+        if self.0.driver.is_busy() {
+            return Ok(OpPoll::Busy);
+        }
+        // Consume the completion notification; see the contract on `DeferredErase`.
+        self.0.blocking.wait_for_notification();
+        self.0.driver.complete_op()?;
+        Ok(OpPoll::Done)
+    }
+}
+
 struct FlashRandomReader<'a, F: Flash>(&'a mut F);
 impl<F: Flash> RandomRead for FlashRandomReader<'_, F> {
     type Error = F::Error;
@@ -271,18 +307,34 @@ mod test {
         fn wait_for_notification(&self) {}
     }
 
+    /// Counts `wait_for_notification` calls.
+    #[derive(Default)]
+    pub struct CountingBlocking(core::cell::Cell<u32>);
+    impl Blocking for CountingBlocking {
+        fn wait_for_notification(&self) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+
     #[derive(Debug, Clone, Copy)]
     pub struct FakeDriverError;
     #[derive(Clone)]
     pub struct FakeFlashDriver {
         pub data: Vec<u8>,
         pub check_err_result: Result<(), FakeDriverError>,
+        /// How many `is_busy` calls report busy after `start_erase_nowait`.
+        pub nowait_busy_polls: u32,
+        pub nowait_calls: u32,
+        pub is_busy_calls: u32,
     }
     impl FakeFlashDriver {
         pub fn new(data: Vec<u8>) -> Self {
             Self {
                 data,
                 check_err_result: Ok(()),
+                nowait_busy_polls: 0,
+                nowait_calls: 0,
+                is_busy_calls: 0,
             }
         }
     }
@@ -343,11 +395,129 @@ mod test {
             Ok(())
         }
         fn is_busy(&mut self) -> bool {
+            self.is_busy_calls += 1;
+            if self.nowait_busy_polls > 0 {
+                self.nowait_busy_polls -= 1;
+                return true;
+            }
             false
         }
         fn complete_op(&mut self) -> Result<(), Self::Error> {
             self.check_err_result
         }
+    }
+
+    impl DeferredErase for FakeFlashDriver {
+        fn start_erase_nowait(
+            &mut self,
+            start_addr: FlashAddress,
+            size: PowerOf2Usize,
+        ) -> Result<(), Self::Error> {
+            self.nowait_calls += 1;
+            self.start_erase(start_addr, size)
+        }
+    }
+
+    /// The blocking `erase` is the original start / wait / complete sequence, also through
+    /// `DeferredFlash`: it must not consult `is_busy` or the nowait start, even if the driver
+    /// would report busy.
+    #[test]
+    pub fn test_erase_does_not_poll_or_use_nowait() {
+        let mut driver = FakeFlashDriver::new(vec![0x42; 0x4000]);
+        driver.nowait_busy_polls = 1000;
+        let mut flash = DeferredFlash(BlockingFlash {
+            driver,
+            blocking: FakeBlocking(),
+        });
+        flash
+            .erase(FlashAddress::new(0x0800), PowerOf2Usize::new(2048).unwrap())
+            .unwrap();
+        assert_eq!(flash.0.driver.is_busy_calls, 0);
+        assert_eq!(flash.0.driver.nowait_calls, 0);
+        assert_eq!(flash.0.driver.data[0x0800..0x1000], [0xff; 0x0800]);
+    }
+
+    /// Plain `BlockingFlash` keeps the defaults: `start_erase` erases synchronously and
+    /// `poll_erase` is `Done`, without touching `is_busy`.
+    #[test]
+    pub fn test_blocking_flash_start_erase_is_synchronous() {
+        let mut flash = BlockingFlash {
+            driver: FakeFlashDriver::new(vec![0x42; 0x4000]),
+            blocking: FakeBlocking(),
+        };
+        Flash::start_erase(
+            &mut flash,
+            FlashAddress::new(0x0800),
+            PowerOf2Usize::new(2048).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(flash.driver.data[0x0800..0x1000], [0xff; 0x0800]);
+        assert_eq!(flash.poll_erase().unwrap(), OpPoll::Done);
+        assert_eq!(flash.driver.is_busy_calls, 0);
+    }
+
+    /// The deferred path goes through `start_erase_nowait` and reports `Busy` until the
+    /// driver is idle, then `Done`.
+    #[test]
+    pub fn test_deferred_erase_uses_nowait_and_polls() {
+        let mut driver = FakeFlashDriver::new(vec![0x42; 0x4000]);
+        driver.nowait_busy_polls = 2;
+        let mut flash = DeferredFlash(BlockingFlash {
+            driver,
+            blocking: FakeBlocking(),
+        });
+        Flash::start_erase(
+            &mut flash,
+            FlashAddress::new(0x0800),
+            PowerOf2Usize::new(2048).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(flash.0.driver.nowait_calls, 1);
+        assert_eq!(flash.poll_erase().unwrap(), OpPoll::Busy);
+        assert_eq!(flash.poll_erase().unwrap(), OpPoll::Busy);
+        assert_eq!(flash.poll_erase().unwrap(), OpPoll::Done);
+    }
+
+    /// A deferred erase consumes its completion notification exactly once, on the `Done`
+    /// transition and never while `Busy`, so it isn't left pending for the next blocking wait.
+    #[test]
+    pub fn test_deferred_erase_drains_notification_once_on_done() {
+        let mut driver = FakeFlashDriver::new(vec![0x42; 0x4000]);
+        driver.nowait_busy_polls = 2;
+        let mut flash = DeferredFlash(BlockingFlash {
+            driver,
+            blocking: CountingBlocking::default(),
+        });
+        Flash::start_erase(
+            &mut flash,
+            FlashAddress::new(0x0800),
+            PowerOf2Usize::new(2048).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(flash.0.blocking.0.get(), 0, "start must not wait");
+        assert_eq!(flash.poll_erase().unwrap(), OpPoll::Busy);
+        assert_eq!(flash.poll_erase().unwrap(), OpPoll::Busy);
+        assert_eq!(flash.0.blocking.0.get(), 0, "Busy polls must not wait");
+        assert_eq!(flash.poll_erase().unwrap(), OpPoll::Done);
+        assert_eq!(flash.0.blocking.0.get(), 1, "Done drains exactly once");
+    }
+
+    /// An error from `complete_op` is reported once the driver is idle.
+    #[test]
+    pub fn test_deferred_erase_reports_complete_op_error() {
+        let mut driver = FakeFlashDriver::new(vec![0x42; 0x4000]);
+        driver.check_err_result = Err(FakeDriverError);
+        let mut flash = DeferredFlash(BlockingFlash {
+            driver,
+            blocking: FakeBlocking(),
+        });
+        Flash::start_erase(
+            &mut flash,
+            FlashAddress::new(0),
+            PowerOf2Usize::new(2048).unwrap(),
+        )
+        .unwrap();
+        assert!(flash.poll_erase().is_err());
     }
 
     #[test]
