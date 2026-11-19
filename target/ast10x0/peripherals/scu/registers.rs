@@ -4,9 +4,9 @@
 //! AST10x0 SCU low-level register access.
 
 use super::pins::ScuMmio;
+use crate::hal::field_mux::RegisterAccess;
 use ast1060_pac as device;
 use core::marker::PhantomData;
-use openprot_hal::field_mux::RegisterAccess;
 
 const SCU_UNLOCK_KEY: u32 = 0x1688_A8A8;
 

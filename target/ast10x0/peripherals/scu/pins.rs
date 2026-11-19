@@ -8,8 +8,8 @@
 //! why it isn't marked deprecated yet.
 
 use crate::gpio::{ABCD, EFGH, IJKL};
-use openprot_hal::field_mux::{Offset, RegisterAccess};
-use openprot_hal::gpio::{Gpio, GpioData};
+use crate::hal::field_mux::{Offset, RegisterAccess};
+use crate::hal::gpio::{Gpio, GpioData};
 
 /// Block-identity marker for the AST10x0 SCU singleton register block (see [`ScuMmio`], its accessor).
 pub struct ScuBlock;
@@ -54,7 +54,7 @@ impl RegisterAccess for ScuMmio {
     }
 }
 
-openprot_hal::pins! {
+crate::pins! {
     scu414_28 { Gpio: &[clear(0x414, 28), clear(0x4b4, 28), clear(0x694, 28)] => GpioData { bit: 28, map: &EFGH } },
     scu414_29 { Gpio: &[clear(0x414, 29), clear(0x4b4, 29), clear(0x694, 29)] => GpioData { bit: 29, map: &EFGH } },
     scu414_30 { Gpio: &[clear(0x414, 30)] => GpioData { bit: 30, map: &EFGH } },
@@ -82,7 +82,7 @@ openprot_hal::pins! {
 // *different* groups — e.g. `scu410_0` (ABCD bit 0) and `scu418_0` (IJKL bit 0) — onto the same
 // slot and flag them as a collision. `in_level`'s offset is distinct per group (`0x000`/`0x020`/
 // `0x070`), so it's what actually tells two same-numbered bits in different groups apart.
-openprot_hal::gpio_slots!(
+crate::gpio_slots!(
     scu414_28, scu414_29, scu414_30, scu414_31, scu418_0, scu418_1, scu418_8, scu418_13, scu418_16,
     scu418_21, scu410_0, scu410_1, scu410_2, scu410_3, scu410_4, scu410_5, scu410_6, scu410_7,
 );

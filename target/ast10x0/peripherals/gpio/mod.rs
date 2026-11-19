@@ -2,24 +2,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! AST10x0 GPIO peripheral: pin-token-driven, `unsafe`-free access; kernel-side init routes a pin
-//! via `openprot_hal::field_mux::Route`, `bind_gpio` binds it for userspace to drive.
+//! via `crate::hal::field_mux::Route`, `bind_gpio` binds it for userspace to drive.
 
 mod map;
 
-use crate::scu::pins::GPIO_BASE;
-pub(crate) use map::{ABCD, EFGH, IJKL};
-use openprot_hal::field_mux::{Offset, RegisterAccess};
-pub use openprot_hal::gpio::{
+use crate::hal::field_mux::{Offset, RegisterAccess};
+pub use crate::hal::gpio::{
     bind_gpio, ActiveHigh, ActiveLow, Gpio, Input, InputPin, IntTrigger, OpenDrain, OpenDrainMode,
     Output, OutputPin, StatefulOutputPin,
 };
+use crate::scu::pins::GPIO_BASE;
+pub(crate) use map::{ABCD, EFGH, IJKL};
 
 /// Target-side alias so call sites outside `hal` don't spell out the GPIO accessor — `hal`'s
 /// `GpioPin` takes the accessor as a type parameter, this chip has exactly one.
-pub type GpioPin<P, R, D = openprot_hal::gpio::Unset> =
-    openprot_hal::gpio::GpioPin<P, R, GpioMmio, D>;
-/// Target-side alias for [`openprot_hal::gpio::GpioBlock`], pinned to this chip's one GPIO accessor.
-pub type GpioBlock<R> = openprot_hal::gpio::GpioBlock<R, GpioMmio>;
+pub type GpioPin<P, R, D = crate::hal::gpio::Unset> = crate::hal::gpio::GpioPin<P, R, GpioMmio, D>;
+/// Target-side alias for [`crate::hal::gpio::GpioBlock`], pinned to this chip's one GPIO accessor.
+pub type GpioBlock<R> = crate::hal::gpio::GpioBlock<R, GpioMmio>;
 
 /// The AST10x0 GPIO controller's [`RegisterAccess`] — a ZST, since the controller is a
 /// silicon-fixed singleton with no per-instance state. The `unsafe` this chip's MMIO needs lives

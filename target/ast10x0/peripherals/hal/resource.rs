@@ -111,7 +111,7 @@ macro_rules! pins {
                 /// system manifest) call this once per pin a process actually claims; kernel-side
                 /// routing calls it directly for whichever pins it routes.
                 ///
-                /// Requires `auth: A` proving the caller is [`AuthorizesPin`](crate::resource::AuthorizesPin)
+                /// Requires `auth: A` proving the caller is [`AuthorizesPin`](crate::hal::resource::AuthorizesPin)
                 /// for this exact pin — generated code is the only intended source of such an `A`,
                 /// scoped to exactly the pins the manifest grants it.
                 ///
@@ -123,22 +123,22 @@ macro_rules! pins {
                 /// is two domains, not two owners of one. Two mints within the *same* domain is
                 /// the hazard this guards against.
                 #[must_use]
-                pub const unsafe fn take<A: $crate::resource::AuthorizesPin<Self>>(_auth: &A) -> Self {
+                pub const unsafe fn take<A: $crate::hal::resource::AuthorizesPin<Self>>(_auth: &A) -> Self {
                     Self(())
                 }
             }
 
-            impl $crate::resource::Pin for $pin {}
+            impl $crate::hal::resource::Pin for $pin {}
 
             $(
-                impl $crate::resource::Routes<$cap> for $pin {
-                    const ROUTE: &'static [$crate::resource::FieldWrite] = {
+                impl $crate::hal::resource::Routes<$cap> for $pin {
+                    const ROUTE: &'static [$crate::hal::resource::FieldWrite] = {
                         // A route holds only `FieldWrite`s, so its ctors are in scope here
                         #[allow(unused_imports)]
-                        use $crate::resource::{clear, field, set};
+                        use $crate::hal::resource::{clear, field, set};
                         $route
                     };
-                    const DATA: <$cap as $crate::resource::Capability>::Data = $data;
+                    const DATA: <$cap as $crate::hal::resource::Capability>::Data = $data;
                 }
             )+
         )+

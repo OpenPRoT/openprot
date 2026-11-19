@@ -3,7 +3,7 @@
 
 //! Register-field mux mechanism: inline `FieldWrite`s coalesced to one RMW per register at compile time.
 
-use crate::resource::{Capability, FieldWrite, Pin, Routes};
+use crate::hal::resource::{Capability, FieldWrite, Pin, Routes};
 use core::marker::PhantomData;
 
 /// The size of the compile-time coalescing scratch [`RegBatch`] backs its `ops` array with — 16
@@ -362,7 +362,7 @@ impl<C: Capability, P: Routes<C>, B> MuxRoutes<B> for Route<C, P, B> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::resource::{clear, set};
+    use crate::hal::resource::{clear, set};
     use core::cell::Cell;
 
     struct TestBlock;

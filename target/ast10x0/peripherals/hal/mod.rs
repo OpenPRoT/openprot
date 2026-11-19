@@ -3,8 +3,10 @@
 
 //! Mode-agnostic OpenPRoT HAL vocabulary: capability + role traits, and the pin-token generators.
 //! Unlike the blocking/nb/async crates, nothing here is flavored by an execution mode.
+//!
+//! Lives in `target/ast10x0` for the time being, not `//hal`, until a second target needs it —
+//! this keeps the abstraction from claiming a portability it hasn't earned yet.
 
-#![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
