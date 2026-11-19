@@ -12,13 +12,13 @@
 
 use super::pins::{ScuBlock, ScuMmio};
 use super::registers::{lock_scu_writes, unlock_scu_writes};
-use openprot_hal::field_mux::MuxRoutes;
+use crate::hal::field_mux::MuxRoutes;
 
 /// Route the whole board in one call: hand *every* pin handle as a single tuple so all routes fold to one RMW per register at compile time — call this exactly once per board.
 pub fn route<H: MuxRoutes<ScuBlock>>(handle: H) {
     let scu = ScuMmio;
     unlock_scu_writes(&scu);
     // HACK: full MAX_REGS-wide COALESCED lands in rodata; exact-N trim dropped to shed generic_const_exprs.
-    openprot_hal::field_mux::apply(&scu, &handle);
+    crate::hal::field_mux::apply(&scu, &handle);
     lock_scu_writes(&scu);
 }

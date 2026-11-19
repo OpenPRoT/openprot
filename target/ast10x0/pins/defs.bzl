@@ -34,7 +34,6 @@ def app_pin_claims(name, app_name = "", process_name = "", system_config = None,
         codegen_mnemonic = "AppPinClaimsSrc",
         progress_message = "Generating pin claims for %s",
         deps = [
-            "//hal",
             "//target/ast10x0/peripherals",
         ],
         app_name = app_name,
@@ -113,7 +112,6 @@ def kernel_pin_routes(name, system_config, **kwargs):
         name = name,
         srcs = [":{}.src".format(name)],
         deps = [
-            "//hal",
             "//target/ast10x0/peripherals",
         ],
         **kwargs

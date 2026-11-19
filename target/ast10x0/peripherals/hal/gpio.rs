@@ -4,8 +4,10 @@
 //! GPIO pin capability: the [`Gpio`] role tag, its per-pin [`GpioData`] datum, the target's
 //! [`GpioMap`] register-table, and the confined [`GpioPin`] accessor bound from a pin token.
 
-use crate::field_mux::{coalesce_routes, MuxRoutes, Offset, RegBatch, RegisterAccess, MAX_REGS};
-use crate::resource::{field, Capability, FieldWrite, Pin, Routes};
+use crate::hal::field_mux::{
+    coalesce_routes, MuxRoutes, Offset, RegBatch, RegisterAccess, MAX_REGS,
+};
+use crate::hal::resource::{field, Capability, FieldWrite, Pin, Routes};
 use core::marker::PhantomData;
 use util_region::{covers, Mmap, Region};
 
@@ -784,10 +786,10 @@ pub const fn gpio_slots_unique(slots: &[(u32, u8)]) {
 #[macro_export]
 macro_rules! gpio_slots {
     ($($pin:ty),+ $(,)?) => {
-        const _: () = $crate::gpio::gpio_slots_unique(&[
+        const _: () = $crate::hal::gpio::gpio_slots_unique(&[
             $((
-                <$pin as $crate::resource::Routes<$crate::gpio::Gpio>>::DATA.map.in_level.offset(),
-                <$pin as $crate::resource::Routes<$crate::gpio::Gpio>>::DATA.bit,
+                <$pin as $crate::hal::resource::Routes<$crate::hal::gpio::Gpio>>::DATA.map.in_level.offset(),
+                <$pin as $crate::hal::resource::Routes<$crate::hal::gpio::Gpio>>::DATA.bit,
             )),+
         ]);
     };

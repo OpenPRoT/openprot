@@ -7,6 +7,7 @@
 
 pub mod gpio;
 pub mod hace;
+pub mod hal;
 pub mod i2c;
 pub mod i3c;
 pub mod otp;
