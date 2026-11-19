@@ -29,8 +29,8 @@ for the full list.
 - **Checked arithmetic.** Use `checked_*` / `saturating_*` / `wrapping_*` rather
   than bare `+`, `-`, `*` on integers where overflow is possible.
 - **MMIO.** Raw register access is allowed only at a designated boundary and
-  must go through safe typed APIs everywhere else. See the
-  [MMIO policy](./design/mmio.md).
+  must go through safe typed APIs everywhere else. For AST10x0, see the
+  [MMIO policy](https://github.com/OpenPRoT/openprot/blob/main/target/ast10x0/MMIO.md).
 - **`unsafe` blocks require `// SAFETY:` comments** that explain why the
   invariants hold.
 - **Constant-time crypto.** Use [`subtle`] for comparing secrets, and

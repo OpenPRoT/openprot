@@ -5,8 +5,10 @@ hardware registers. It applies to people and to AI coding and review agents.
 Raw MMIO is allowed only at one boundary, under stated invariants. Unsafe MMIO
 that escapes the boundary is a violation.
 
-Scope today is `target/ast10x0/`. The pattern is target-neutral, and
-`target/veer/` and `target/earlgrey/` can adopt it later.
+This policy covers `target/ast10x0/` only. It names AST10x0 crates and paths
+(`ast1060_pac`, `peripherals/<peripheral>/registers.rs`), and the legacy
+examples below come from this tree. Other targets decide their own policy and
+keep it in their own `target/<name>/` directory.
 
 ## Rules in one screen
 
