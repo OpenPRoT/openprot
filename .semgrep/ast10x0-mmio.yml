@@ -4,10 +4,15 @@
 # Raw MMIO may appear only in a peripheral's `registers.rs`.
 # Policy and rationale: docs/src/design/mmio.md
 #
-# Run:  semgrep --config .semgrep/ast10x0-mmio.yml --error target/ast10x0
+# Legacy violations exist in the tree, so a plain scan reports them. Gate on
+# what a change introduces by comparing against the base commit:
 #
-# The `exclude` list below is the BASELINE: files that violate the policy today.
-# It only shrinks. Remove a file from it when you fix the file. Never add one.
+#   semgrep --config .semgrep/ast10x0-mmio.yml --error \
+#     --baseline-commit origin/main target/ast10x0
+#
+# CI does the same for pull requests. Findings are matched by file and code, not
+# by line number, so a violation added to a file that already has one is still
+# reported, and so is a whole new file.
 
 rules:
   - id: ast10x0-raw-mmio-outside-registers
@@ -16,35 +21,22 @@ rules:
     message: >-
       Raw MMIO outside a peripheral's `registers.rs`. `Pac::ptr()`, `Pac::PTR`,
       `Pac::steal()`, `read_volatile`/`write_volatile`, hard-coded address
-      casts (`0x... as *const T`), and `pub unsafe fn new_global()` belong behind the safe typed API of `registers.rs`, and
-      drivers should take ownership of the peripheral instead. See
-      docs/src/design/mmio.md.
-    # Comment lines are skipped by the lookahead. The pattern is a regex rather
-    # than a Rust pattern so that code inside `macro_rules!` bodies is scanned.
+      casts (`0x... as *const T`), and `pub unsafe fn new*()` constructors
+      belong behind the safe typed API of `registers.rs`, and drivers should take
+      ownership of the peripheral instead. See docs/src/design/mmio.md.
+    # The pattern is a regex rather than a Rust pattern so that code inside
+    # `macro_rules!` bodies is scanned. `(?:(?!//).)*?` stops the match at a `//`
+    # comment, so neither whole-line nor trailing comments are flagged.
     pattern-regex: >-
-      (?m)^(?!\s*//).*(\b[A-Z][A-Za-z0-9]*::(ptr\(\)|PTR\b|steal\(\))|\b(read|write)_volatile\b|\b0x[0-9a-fA-F_]+(usize|u32)?\s+as\s+\*(const|mut)\b|pub(\([a-z]+\))?\s+(const\s+)?unsafe\s+fn\s+new_global)
+      (?m)^(?!\s*//)(?:(?!//).)*?(\b[A-Z][A-Za-z0-9]*::(ptr\(\)|PTR\b|steal\(\))|\b(read|write)_volatile\b|\b0x[0-9a-fA-F_]+(usize|u32)?\s+as\s+\*(const|mut)\b|pub(\([a-z]+\))?\s+(const\s+)?unsafe\s+fn\s+new\w*)
     paths:
       include:
         - /target/ast10x0/**/*.rs
       exclude:
         # The boundary.
         - "**/registers.rs"
-        # Baseline: peripheral and board code.
-        - /target/ast10x0/backend/i2c/src/lib.rs
-        - /target/ast10x0/backend/usart/src/lib.rs
-        - /target/ast10x0/console_backend.rs
-        - /target/ast10x0/board/src/spim_wiring.rs
-        - /target/ast10x0/peripherals/gpio/mod.rs
-        - /target/ast10x0/peripherals/hace/device.rs
-        - /target/ast10x0/peripherals/i2c/global.rs
-        - /target/ast10x0/peripherals/i2c/slave.rs
-        - /target/ast10x0/peripherals/i2c/types.rs
-        - /target/ast10x0/peripherals/otp/mod.rs
-        - /target/ast10x0/peripherals/scu/routing.rs
-        - /target/ast10x0/peripherals/smc/controller.rs
-        - /target/ast10x0/peripherals/spimonitor/controller.rs
-        - /target/ast10x0/pfr/swmbx_ctrl.rs
         # Documented early-boot exception (Scu::steal() before the kernel runs).
         - /target/ast10x0/entry.rs
-        # Baseline: hardware tests.
+        # Hardware tests have no sanctioned register accessor yet (the wrappers
+        # are pub(crate)). New tests should still prefer the safe wrappers.
         - /target/ast10x0/tests/
