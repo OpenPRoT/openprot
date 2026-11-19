@@ -86,6 +86,24 @@ rust_library(
 )
 
 rust_library(
+    name = "mcu_mbox",
+    srcs = ["mcu_mbox.rs"],
+    crate_name = "veer_mcu_mbox",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//target/veer/registers",
+        "//third_party/caliptra:crate_tock-registers",
+    ],
+)
+
+# Host tests of the driver against a model of the mailbox.
+rust_test(
+    name = "mcu_mbox_test",
+    crate = ":mcu_mbox",
+)
+
+rust_library(
     name = "mci",
     srcs = ["mci.rs"],
     crate_name = "veer_mci",

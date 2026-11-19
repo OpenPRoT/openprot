@@ -18,6 +18,7 @@ rust_binary(
     visibility = ["//target/veer:__subpackages__"],
     deps = [
         "//target/veer/peripherals:flash",
+        "//target/veer/peripherals:mcu_mbox",
         "//target/veer/registers",
         "@rust_caliptra_crates_host//:caliptra-mcu-config",
         "@rust_caliptra_crates_host//:caliptra-mcu-config-emulator",
