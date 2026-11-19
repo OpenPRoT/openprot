@@ -8,7 +8,7 @@
 - [ ] Tests verify error handling paths, not just happy paths
 - [ ] Unsafe code blocks are documented with safety comments
 - [ ] Hardware register access uses proper volatile operations
-- [ ] In `target/ast10x0/`, raw MMIO (`Pac::ptr()`, `Pac::PTR`, `Pac::steal()`, `read_volatile`/`write_volatile`) appears only in a peripheral's `registers.rs`; drivers use its safe typed methods and take ownership of the peripheral instead of adding `unsafe fn new_global()`. Flag violations and cite `docs/src/design/mmio.md`
+- [ ] In `target/ast10x0/`, raw MMIO (`Pac::ptr()`, `Pac::PTR`, `Pac::steal()`, `read_volatile`/`write_volatile`) appears only in a peripheral's `registers.rs`; drivers use its safe typed methods and take ownership of the peripheral instead of adding `unsafe fn new_global()`. Added lines are held to this even in files that already violate it. Also flag new `pub unsafe fn new*` constructors, register access through a `regs()` accessor outside `registers.rs`, and `unsafe` without a `// SAFETY:` comment directly above it. Cite `docs/src/design/mmio.md`
 - [ ] Cryptographic operations use constant-time implementations where applicable
 - [ ] Code is no_std compatible (no heap allocation: Vec, HashMap, String, etc.)
 - [ ] Fixed-size arrays and heapless collections used instead of dynamic allocation

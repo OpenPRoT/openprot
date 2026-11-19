@@ -15,7 +15,7 @@ Scope today is `target/ast10x0/`. The pattern is target-neutral, and
 2. `registers.rs` exposes safe, typed methods. No PAC types, `ptr()` results,
    or raw pointers cross its public API.
 3. New HALs and drivers receive exclusive ownership of a peripheral by value
-   (an owned token). They do not call `unsafe` constructors or `ptr()`.
+   (an owned token). They do not call `ptr()` or define new `unsafe` constructors.
 4. Every `unsafe` block carries a `// SAFETY:` comment that names the invariant
    it relies on.
 
@@ -32,12 +32,16 @@ each call site. The patterns found, best to worst:
 | 2 | Inline `unsafe { &*Pac::ptr() }` in driver code | `gpio/mod.rs` (about 14 times), `i2c/types.rs`, `i2c/global.rs`, `scu/routing.rs`, `board/src/spim_wiring.rs` | Violation. |
 | 3 | `Pac::steal()` | `entry.rs` (`jtag_init`) | Allowed only as a documented early-boot exception. |
 | 4 | Const pointer such as `&*Secure::PTR` | `otp/mod.rs` | Violation. |
-| 5 | Index-to-`ptr()` table | `backend/i2c/src/lib.rs` | Violation, covered by the baseline. |
+| 5 | Index-to-`ptr()` table | `backend/i2c/src/lib.rs` | Violation, legacy. |
 | 6 | Raw `read_volatile` / `write_volatile` or hard-coded address casts | `smc/controller.rs`, `pfr/swmbx_ctrl.rs`, `console_backend.rs` (`0x7e78_4000 as *const _`), `backend/usart/src/lib.rs` | Violation. |
-| 7 | `ptr()` in tests | `tests/**/target.rs` | Violation, covered by the baseline. |
+| 7 | `ptr()` in tests | `tests/**/target.rs` | Violation, legacy. CI does not scan `tests/`, because no sanctioned accessor is reachable from a test yet. New tests should use the safe wrappers where they can, and reviewers flag new `ptr()` calls. |
 
-Existing violations are listed in `.semgrep/ast10x0-mmio.yml` (the baseline).
-The baseline only shrinks. Do not add files to it.
+Legacy violations are tolerated, but a change must not add to them. CI compares
+a pull request against its base commit, so a new violation is reported even in a
+file that already has some, and so is a rewritten or newly added file at a legacy
+path. Review applies the same rule: **added lines are held to this policy
+wherever they are.** When you fix a legacy violation, nothing else needs to
+change.
 
 ## The canonical pattern
 
@@ -81,9 +85,17 @@ Each peripheral has one owner. The model follows `embassy-stm32`,
   `Gpio::new(p.gpio)`. Exclusivity is then checked by the compiler, and the
   constructor needs no `unsafe`.
 
-Until the token exists in this repo, new code uses the wrapper from pattern 1
-and documents who owns the peripheral. Do not add new `pub unsafe fn
-new_global()` constructors outside the boundary.
+Until the token exists in this repo:
+
+- Calling an existing `unsafe` wrapper constructor (`new_global*()`,
+  `Backend::new()`) is allowed when a `// SAFETY:` comment names who owns the
+  peripheral.
+- Do not define a new `pub unsafe fn new*()` constructor on a HAL or driver
+  outside `registers.rs`, whatever its name.
+- A new `registers.rs` may have one `pub(crate) unsafe` constructor, because it
+  is the only place a pointer can be created. It must not be `pub`, and no
+  raw pointer or PAC type may appear in a public signature.
+- When a token exists for the peripheral, use it instead of the constructor.
 
 ### Shared blocks
 
@@ -108,6 +120,17 @@ the invariants that apply:
    effects (FIFO pop, clear-on-read) are not repeated or elided.
 6. **Hardware protocol.** Sequences such as the SCU unlock key `0x1688_A8A8`
    are honored.
+7. **Aliases.** A second handle to the same block (for example an ISR alias)
+   needs a `// SAFETY:` comment that says why access is serialized. An
+   `unsafe impl Send` on a type that holds an MMIO handle needs the same
+   justification and a reviewer's explicit sign-off.
+
+### Not MMIO
+
+These are not register access, and a review should not flag them as such: DMA
+buffer addresses (`buf.as_ptr() as u32`), static buffers reached through
+`addr_of_mut!`, `NVIC::unmask`, and `#[cfg(test)]` host tests that run a driver
+over a fake register buffer without `ptr()` or `PTR`.
 
 ## Prohibited outside the boundary
 
@@ -115,9 +138,16 @@ the invariants that apply:
 - `Pac::steal()`, except the allowlisted early-boot use in `entry.rs`.
 - `read_volatile`, `write_volatile`, and integer-to-pointer casts used to reach
   registers.
-- `pub unsafe fn new_global()` (or similar) on new HALs.
-- PAC types in the public API of a driver or HAL.
-- `unsafe` without a `// SAFETY:` comment.
+- A new `pub unsafe fn new*()` constructor on a HAL or driver, whatever its
+  name (`new_global`, `new`, `new_with_regions`, ...).
+- Register reads and writes through a PAC block reference outside
+  `registers.rs`, including `regs().xxx().write(|w| unsafe { w.bits(..) })`
+  through a `pub(crate) regs()` accessor. Add a typed method to `registers.rs`
+  instead. Inside `registers.rs`, `bits()` closures are the normal way to write.
+- PAC types or raw pointers in the public API of a driver or HAL.
+- `unsafe` without a `// SAFETY:` comment directly above it that names the
+  invariant. A comment separated from the block by an `if` or other code does
+  not count.
 
 ### Bad and good
 
@@ -149,12 +179,15 @@ let dev = HaceDevice::new(peripherals.hace, |_| core::hint::spin_loop());
 
 | Check | Tool | Catches |
 |-------|------|---------|
-| `ptr()`, `PTR`, `steal()`, volatile, `new_global` outside `registers.rs` | Semgrep, `.semgrep/ast10x0-mmio.yml`, CI | The prohibited patterns above |
-| `unsafe` without `// SAFETY:` | Clippy `undocumented_unsafe_blocks` | Missing justification |
-| Raw volatile in new code | Clippy `disallowed_methods` | Direct `read_volatile` / `write_volatile` |
+| `ptr()`, `PTR`, `steal()`, volatile, address casts, `pub unsafe fn new*` outside `registers.rs` | Semgrep, `.semgrep/ast10x0-mmio.yml`, CI (new violations only) | The mechanical prohibited patterns above |
+| `unsafe` without `// SAFETY:` | Clippy `undocumented_unsafe_blocks` (planned, per crate, not yet enabled) | Missing justification. Until then, review checks it. |
+| Raw volatile in new code | Clippy `disallowed_methods` (planned, not yet enabled) | Covered by Semgrep meanwhile |
 | Does the ownership design make sense? Is the `SAFETY` comment true? | Human and AI review, using `.github/copilot-instructions.md` | What tools cannot decide |
 
-CI fails only on violations outside the baseline. A review agent that sees a
+CI fails only on violations that a pull request introduces. It does not scan
+`tests/`, `entry.rs`, or `registers.rs`. It cannot see `regs()` accessors, calls to
+existing unsafe constructors, aliases, or missing `SAFETY` comments, so review
+checks those. A review agent that sees a
 new violation reports it with a pointer to this document.
 
 ## Adding or changing a peripheral
@@ -164,4 +197,6 @@ new violation reports it with a pointer to this document.
 2. Expose a constructor that takes ownership. Avoid `unsafe fn new_global()`.
 3. Keep drivers and services free of PAC types and `unsafe` register access.
 4. Document who owns the peripheral and how shared blocks (SCU) are borrowed.
-5. Run `./pw presubmit` and the Semgrep rules before pushing.
+5. Run `./pw presubmit`, and check your change with
+   `semgrep --config .semgrep/ast10x0-mmio.yml --baseline-commit origin/main target/ast10x0`
+   before pushing.
