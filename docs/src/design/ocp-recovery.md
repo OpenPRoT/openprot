@@ -452,6 +452,16 @@ sequence diagram and the state diagram report `FlashlessStreamingBoot`
 (0x12), which the doc comment in `services/ocp-recovery/api` describes
 as a Device that boots with no local image. An eRoT whose local images
 failed still holds local images, so which reason fits that eRoT is open.
+On a chip with no OCP Recovery hardware, such as the AST1060, the ROM
+cannot fetch an image over OCP Recovery, so the eRoT boots an image from
+flash before it serves the interface. `FlashlessStreamingBoot` does not
+describe that eRoT either, and the eRoT needs another reason code.
+
+How does the eRoT image arrive on a platform with a Caliptra subsystem?
+Where the eRoT firmware takes the place of the Caliptra MCU runtime,
+Caliptra core downloads the eRoT image as an image the SoC manifest
+lists, and the eRoT serves no registers for that download. Whether the
+eRoT also serves the Device role on that platform is open.
 
 Must streaming boot cover the case where the operational image does not
 run at all, without physical access? Nothing inside that image can
@@ -511,11 +521,14 @@ Smaller questions:
   memory window over SMBus and refuses a Device that advertises only the
   FIFO, so the OpenBMC Recovery Agent cannot stream to the eRoT as
   designed. Either the eRoT serves the memory window as well, or the
-  OpenBMC Recovery Agent adds FIFO support.
+  OpenBMC Recovery Agent adds FIFO support. Caliptra serves the FIFO
+  only. The question applies if the component that becomes the Recovery
+  Agent for the eRoT runs the OpenBMC Recovery Agent.
 - Can firmware answer an I3C block read in time? I3C gives the target
   no way to stall the clock, so a `dispatch` in firmware may miss the
-  response window. The alternatives are a hardware I3C target, SMBus or
-  USB.
+  response window. The alternatives are a hardware I3C target, SMBus,
+  USB, or firmware that stages the answer to each read in the I3C target
+  before the read arrives.
 - What maximum boot time must a streamed image meet? The maximum boot
   time decides which transports and image sizes work.
 - What retry count and poll timing must the eRoT tolerate? The verify
