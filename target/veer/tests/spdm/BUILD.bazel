@@ -79,6 +79,7 @@ rust_process(
         "//services/spdm/responder:spdm_responder_lib",
         "//services/spdm/transport-mctp:spdm_transport_mctp",
         "//target/veer:config",
+        "//target/veer/peripherals:dpe",
         "//target/veer/peripherals:mailbox",
         "//target/veer/peripherals:rng",
         "//target/veer/peripherals:sha",
@@ -119,5 +120,6 @@ caliptra_test(
     deps = [
         "//target/veer/tests/mctp_i3c:mctp_i3c_ids",
         "//third_party/caliptra/caliptra-mcu-sw:mcu_testing_common",
+        "@rust_crates//:sha2",
     ],
 )
