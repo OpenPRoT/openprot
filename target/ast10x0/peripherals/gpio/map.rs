@@ -4,7 +4,6 @@
 //! This SoC's GPIO register groups as data: one `GpioMap` per pin-group (ABCD/EFGH/IJKL), each a
 //! datasheet offset table. Role composition is shared; only the per-group offsets differ.
 
-use crate::scu::pins::GPIO_BASE;
 use openprot_hal::gpio::{role_cfgs_ok, GpioMap, Reg, RegOp};
 
 // Stamp one pin-group's `GpioMap` from its datasheet offsets; role composition is fixed.
@@ -15,7 +14,6 @@ macro_rules! gpio_group {
         int_sts: $int_sts:expr, in_level: $in_level:expr, out_read: $out_read:expr $(,)?
     ) => {
         GpioMap {
-            base: GPIO_BASE,
             output: &[RegOp::set($dir)],
             input: &[RegOp::clear($dir)],
             set_high: &[RegOp::set($dataval)],

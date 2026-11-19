@@ -3,24 +3,25 @@
 
 //! AST10x0 SCU low-level register access.
 
-use super::pins::ScuBlock;
+use super::pins::ScuMmio;
 use ast1060_pac as device;
 use core::marker::PhantomData;
+use openprot_hal::field_mux::RegisterAccess;
 
 const SCU_UNLOCK_KEY: u32 = 0x1688_A8A8;
 
-/// Write-enable the SCU's protected registers, through the confined `Mmio` accessor. The key stays
-/// private here; the pin-mux route path calls this before applying a pin's coalesced mux writes.
-pub(crate) fn unlock_scu_writes(mmio: &crate::Mmio<ScuBlock>) {
-    mmio.write_reg_at::<0x000>(SCU_UNLOCK_KEY);
+/// Write-enable the SCU's protected registers, through the confined `ScuMmio` accessor. The key
+/// stays private here; the pin-mux route path calls this before applying a pin's coalesced mux writes.
+pub(crate) fn unlock_scu_writes(mmio: &ScuMmio) {
+    mmio.write_at::<0x000>(SCU_UNLOCK_KEY);
 }
 
 /// Write-protect the SCU's protected registers again: any value other than [`SCU_UNLOCK_KEY`]
 /// re-asserts protection, per the standard Aspeed SCU protection-key convention (same key across
 /// their SCU family). The pin-mux route path calls this once it's done applying a boot-time mux —
 /// nothing after boot has a legitimate reason to need the SCU open for writes.
-pub(crate) fn lock_scu_writes(mmio: &crate::Mmio<ScuBlock>) {
-    mmio.write_reg_at::<0x000>(0);
+pub(crate) fn lock_scu_writes(mmio: &ScuMmio) {
+    mmio.write_at::<0x000>(0);
 }
 
 /// Safe wrapper around the AST10x0 SCU register block.
