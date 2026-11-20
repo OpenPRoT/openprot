@@ -17,6 +17,9 @@ of the project.
 -   [**Thread priorities**](./thread-priorities.md): How `pw_kernel` schedules
     threads (strict priority, no inheritance) and the scheme servers and
     clients follow, so that a server never ranks below its clients.
+-   [**MMIO Policy**](./mmio.md): Where raw register access is allowed, the
+    ownership and safety invariants at that boundary, prohibited patterns, and
+    how they are enforced. Targets add their own rules in `target/<name>/MMIO.md`.
 -   [**Orchestrator**](./orchestrator/orchestrator-overview.md): The eRoT boot-sequence state
     machine (`services/orchestrator/sm`). Covers the two-tier firmware
     verification model (`ComponentAttrs`, eRoT gate, iRoT gate), the

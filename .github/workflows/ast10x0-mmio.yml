@@ -1,0 +1,36 @@
+# Licensed under the Apache-2.0 license
+
+# Checks the AST10x0 MMIO policy (target/ast10x0/MMIO.md). It is a separate
+# workflow, triggered only by AST10x0 changes, so it can move with the target.
+name: AST10x0 MMIO policy
+
+on:
+  pull_request:
+    branches: [ main, earlgrey-hwe ]
+    paths:
+      - 'target/ast10x0/**'
+      - '.github/workflows/ast10x0-mmio.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  mmio-policy:
+    name: MMIO Policy
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      with:
+        # The check compares against the pull request's base commit.
+        fetch-depth: 0
+
+    # Fails only on violations that the pull request introduces. Legacy ones in
+    # the base commit are ignored. The root .semgrepignore skips target/, so it
+    # is ignored here.
+    - name: Check raw MMIO outside registers.rs
+      run: >-
+        pipx run --spec semgrep==1.186.0 semgrep
+        --config target/ast10x0/mmio.semgrep.yml --error --metrics=off
+        --x-ignore-semgrepignore-files
+        --baseline-commit ${{ github.event.pull_request.base.sha }}
+        target/ast10x0

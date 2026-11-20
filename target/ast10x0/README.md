@@ -19,6 +19,12 @@ bazel test //target/ast10x0/...
 This builds the AST10x0 test targets and any required dependencies. Firmware-
 backed tests are skipped unless a runner is configured.
 
+## MMIO Policy
+
+Raw register access (`Pac::ptr()`, `steal()`, volatile) is allowed only in a
+peripheral's `registers.rs`. See [`MMIO.md`](MMIO.md) for the rules, the safety
+invariants, and how CI checks them.
+
 ## Running Tests Under QEMU
 
 Run the full AST10x0 test suite under QEMU with:

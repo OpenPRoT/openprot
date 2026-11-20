@@ -1,0 +1,45 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+#
+# Raw MMIO may appear only in a peripheral's `registers.rs`.
+# Policy and rationale: MMIO.md (next to this file).
+#
+# Legacy violations exist in the tree, so a plain scan reports them. Gate on
+# what a change introduces by comparing against the base commit. Run from the
+# repository root. The root .semgrepignore skips target/, so ignore it:
+#
+#   semgrep --config target/ast10x0/mmio.semgrep.yml --error \
+#     --x-ignore-semgrepignore-files --baseline-commit origin/main target/ast10x0
+#
+# The .github/workflows/ast10x0-mmio.yml workflow does the same for pull
+# requests. Findings are matched by file and code, not by line number, so a
+# violation added to a file that already has one is still reported, and so is
+# a whole new file.
+
+rules:
+  - id: ast10x0-raw-mmio-outside-registers
+    languages: [generic]
+    severity: ERROR
+    message: >-
+      Raw MMIO outside a peripheral's `registers.rs`. `Pac::ptr()`, `Pac::PTR`,
+      `Pac::steal()`, `read_volatile`/`write_volatile`, hard-coded address
+      casts (`0x... as *const T`), and `pub unsafe fn new*()` constructors
+      belong behind the safe typed API of `registers.rs`, and drivers should take
+      ownership of the peripheral instead. See target/ast10x0/MMIO.md.
+    # The pattern is a regex rather than a Rust pattern so that code inside
+    # `macro_rules!` bodies is scanned. `(?:(?!//).)*?` stops the match at a `//`
+    # comment, so neither whole-line nor trailing comments are flagged.
+    pattern-regex: >-
+      (?m)^(?!\s*//)(?:(?!//).)*?(\b[A-Z][A-Za-z0-9]*::(ptr\(\)|PTR\b|steal\(\))|\b(read|write)_volatile\b|\b0x[0-9a-fA-F_]+(usize|u32)?\s+as\s+\*(const|mut)\b|pub(\([a-z]+\))?\s+(const\s+)?unsafe\s+fn\s+new\w*)
+    # Paths are relative to the repository root, where the scan runs.
+    paths:
+      include:
+        - /target/ast10x0/**/*.rs
+      exclude:
+        # The boundary.
+        - "**/registers.rs"
+        # Documented early-boot exception (Scu::steal() before the kernel runs).
+        - /target/ast10x0/entry.rs
+        # Hardware tests have no sanctioned register accessor yet (the wrappers
+        # are pub(crate)). New tests should still prefer the safe wrappers.
+        - /target/ast10x0/tests/
