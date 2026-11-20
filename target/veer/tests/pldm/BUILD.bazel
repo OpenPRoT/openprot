@@ -1,0 +1,138 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@pigweed//pw_kernel/tooling:multi_process_app.bzl", "multi_process_app")
+load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_process")
+load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_library")
+load("//target/veer:defs.bzl", "TARGET_COMPATIBLE_WITH", "veer_system_config", "veer_system_image")
+load("//target/veer/tooling:caliptra_runner.bzl", "caliptra_test")
+
+veer_system_config(
+    name = "system_config",
+    src = "system.json5.tmpl",
+)
+
+target_codegen(
+    name = "codegen",
+    arch = "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+    system_config = ":system_config",
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    template = "//target/veer:linker_script_template",
+)
+
+rust_binary(
+    name = "target",
+    srcs = ["target.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":codegen",
+        ":linker_script",
+        "//target/veer:config",
+        "//target/veer:entry",
+        "//target/veer/peripherals:wdt",
+        "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/subsys/console:console_backend",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)
+
+# What the firmware device reports about itself, shared by the firmware, the
+# updated image and the host test.
+rust_library(
+    name = "pldm_update_ids",
+    srcs = ["ids.rs"],
+    edition = "2024",
+    visibility = ["//target/veer/tests/pldm:__subpackages__"],
+)
+
+# PLDM over MCTP over I3C. The I3C server, the MCTP server and the MCTP
+# control responder are the processes of //target/veer/tests/mctp_i3c.
+multi_process_app(
+    name = "pldm",
+    processes = [
+        "//target/veer/tests/mctp_i3c:i3c_server",
+        "//target/veer/tests/mctp_i3c:mctp_server",
+        "//target/veer/tests/mctp_i3c:mctp_control",
+        ":pldm_fd",
+    ],
+    tags = ["kernel"],
+)
+
+rust_process(
+    name = "pldm_fd",
+    srcs = [
+        "fd.rs",
+        "update_ops.rs",
+    ],
+    codegen_crate_name = "pldm_fd_codegen",
+    crate_root = "fd.rs",
+    edition = "2024",
+    tags = ["kernel"],
+    deps = [
+        ":pldm_update_ids",
+        "//hal/blocking",
+        "//services/mctp/client-ipc:mctp_client_ipc",
+        "//services/pldm:pldm_service",
+        "//target/veer:config",
+        "//target/veer/peripherals:mailbox",
+        "//target/veer/peripherals:mci",
+        "//target/veer/peripherals:sha",
+        "//target/veer/tests/mctp_i3c:mctp_i3c_ids",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+        "@rust_caliptra_crates//:caliptra-auth-man-types",
+        "@rust_crates//:pldm-common",
+        "@rust_crates//:pldm-interface",
+        "@rust_crates//:zerocopy",
+    ],
+)
+
+veer_system_image(
+    name = "pldm_image",
+    apps = [":pldm"],
+    kernel = ":target",
+    platform = "//target/veer",
+    system_config = ":system_config",
+    tags = ["kernel"],
+)
+
+rust_binary_no_panics_test(
+    name = "no_panics_test",
+    binary = ":pldm_image",
+    tags = ["kernel"],
+)
+
+# The host is the PLDM update agent. It drives the firmware through
+# caliptra_mcu_hw_model, as //target/veer/tests/mctp_i3c does, and sends the
+# image and the SoC manifest of //target/veer/tests/pldm/updated. The
+# firmware stages the update in memory that only the emulator has, so there
+# is no FPGA test.
+caliptra_test(
+    name = "pldm_test",
+    srcs = ["host_test.rs"],
+    data = ["//target/veer/tests/pldm/updated:updated_image_emulator"],
+    env = {
+        "PLDM_UPDATE_BOOT_ENV": "$(rlocationpath //target/veer/tests/pldm/updated:updated_image_emulator)",
+    },
+    interfaces = ["emulator"],
+    mcu_image = ":pldm_image",
+    deps = [
+        ":pldm_update_ids",
+        "//target/veer/tests/mctp_i3c:mctp_i3c_ids",
+        "//third_party/caliptra/caliptra-mcu-sw:mcu_testing_common",
+    ],
+)

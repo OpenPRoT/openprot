@@ -82,6 +82,7 @@ rust_library(
     deps = [
         "//target/veer/registers",
         "//third_party/caliptra:crate_tock-registers",
+        "@rust_caliptra_crates//:caliptra-api",
     ],
 )
 
