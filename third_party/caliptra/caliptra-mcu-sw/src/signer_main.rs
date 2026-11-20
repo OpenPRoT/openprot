@@ -13,7 +13,6 @@ use caliptra_image_crypto::RustCrypto as Crypto;
 use caliptra_image_fake_keys::*;
 use caliptra_image_gen::{from_hw_format, ImageGeneratorCrypto};
 use caliptra_image_types::FwVerificationPqcKeyType;
-use caliptra_mcu_config_emulator::EMULATOR_MEMORY_MAP;
 use caliptra_mcu_config_fpga::FPGA_MEMORY_MAP;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -75,7 +74,22 @@ enum AuthManifestCommands {
 /// `CaliptraBuilder::get_mcu_manifest_metadata` (`builder/src/caliptra.rs`).
 fn default_mcu_image_addrs(platform: &str) -> Result<(u64, u64)> {
     match platform {
-        "emulator" => Ok((EMULATOR_MEMORY_MAP.sram_offset as u64, 0)),
+        "emulator" => {
+            // Both are addresses on Caliptra's AXI bus. MCU SRAM is in the
+            // MCI. The staging address is in the emulator's external test
+            // SRAM, which Caliptra has at 0xB00C_0000 and the MCU at
+            // 0x8000_0000. The staging memory is the upper half of that
+            // SRAM, because the MCU ROM hides the start of the SRAM from the
+            // MCU.
+            const MCI_BASE_AXI_ADDRESS: u64 = 0xA800_0000;
+            const MCU_SRAM_OFFSET: u64 = 0xC0_0000;
+            const EXTERNAL_TEST_SRAM: u64 = 0xB00C_0000;
+            const STAGING_OFFSET: u64 = 0x8_0000;
+            Ok((
+                MCI_BASE_AXI_ADDRESS + MCU_SRAM_OFFSET,
+                EXTERNAL_TEST_SRAM + STAGING_OFFSET,
+            ))
+        }
         "fpga" => {
             // FPGA uses external staging SRAM; mirrors upstream
             // `CaliptraBuilder::get_mcu_manifest_metadata`.

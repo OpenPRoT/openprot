@@ -8,18 +8,29 @@
 //! `romtime/src/soc_manager.rs` (`CaliptraSoC::start_mailbox_req` and
 //! `finish_mailbox_resp`). Like that code, it handles requests and responses
 //! as 32-bit words and polls for the response. It does not support
-//! interrupts, or the external mailbox command, which passes a large request
-//! by address.
+//! interrupts.
 //!
 //! A request is the checksum word followed by the request body. A response is
 //! a checksum word, a FIPS status word and the response body. Both are
 //! described in the Caliptra runtime README and defined in caliptra-sw
 //! `api/src/mailbox.rs`.
+//!
+//! A request that does not fit in the mailbox goes through the external
+//! mailbox command ([`Mailbox::execute_external`]): the request is in memory
+//! that Caliptra reads over AXI, and the mailbox carries its address.
+//!
+//! The driver also has the commands that replace the running MCU image. A
+//! SoC manifest does not fit in the mailbox, so
+//! [`Mailbox::auth_manifest`] takes the address of the request, and
+//! [`auth_manifest_header`] returns the header that the caller stores in
+//! front of the manifest. [`Mailbox::start_mcu_activation`] sends
+//! `ACTIVATE_FIRMWARE` for the MCU image.
 
 #![no_std]
 
 use core::ptr::with_exposed_provenance;
 
+use caliptra_api::mailbox::{ActivateFirmwareReq, CommandId, SetAuthManifestReq};
 use caliptra_ss_registers::mbox::bits::{MboxExecute, MboxLock, MboxStatus};
 use caliptra_ss_registers::mbox::regs::Mbox;
 use caliptra_ss_registers::soc::regs::Soc;
@@ -29,6 +40,17 @@ use tock_registers::interfaces::{Readable, Writeable};
 /// (`MBOX_SIZE_SUBSYSTEM` in caliptra-sw).
 pub const MAILBOX_SIZE: usize = 16 * 1024;
 
+/// Size in bytes of the header of a `VERIFY_AUTH_MANIFEST` or
+/// `SET_AUTH_MANIFEST` request: the checksum and the size of the manifest.
+/// The manifest follows the header.
+pub const AUTH_MANIFEST_HEADER_SIZE: usize = 8;
+
+/// The largest SoC manifest that Caliptra accepts.
+pub const MAX_AUTH_MANIFEST_SIZE: usize = SetAuthManifestReq::MAX_MAN_SIZE;
+
+/// Number of manifest bytes that [`auth_manifest_header`] reads at once.
+const CHECKSUM_PART: usize = 64;
+
 /// Maximum number of status polls for one command. caliptra-mcu-sw uses the
 /// same limit (`CaliptraSoC::MAX_WAIT_CYCLES`).
 const POLL_LIMIT: u32 = 400_000;
@@ -36,7 +58,8 @@ const POLL_LIMIT: u32 = 400_000;
 /// Errors from the mailbox.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum MailboxError {
-    /// The request does not fit in the mailbox.
+    /// The request does not fit in the mailbox, or a manifest is larger
+    /// than [`MAX_AUTH_MANIFEST_SIZE`].
     RequestTooLarge,
     /// The mailbox lock is held, by another user of the mailbox or by a
     /// command that was sent and whose response was not received.
@@ -58,6 +81,102 @@ pub enum MailboxError {
     UnknownStatus(u32),
     /// The checksum of the response is wrong.
     InvalidChecksum,
+}
+
+/// An address on Caliptra's AXI bus.
+///
+/// The MCU cannot use it as a pointer: the MCU has another address for the
+/// same memory, or none.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub struct AxiAddr(u64);
+
+impl AxiAddr {
+    pub const fn new(address: u64) -> Self {
+        Self(address)
+    }
+
+    /// The low 32 bits of the address.
+    pub const fn lo(self) -> u32 {
+        self.0 as u32
+    }
+
+    /// The high 32 bits of the address.
+    pub const fn hi(self) -> u32 {
+        (self.0 >> 32) as u32
+    }
+
+    /// The address `bytes` after this one, or `None` if it does not fit in
+    /// 64 bits.
+    pub const fn checked_add(self, bytes: u64) -> Option<Self> {
+        match self.0.checked_add(bytes) {
+            Some(address) => Some(Self(address)),
+            None => None,
+        }
+    }
+}
+
+/// A command that takes a SoC manifest.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum AuthManifestCommand {
+    /// `VERIFY_AUTH_MANIFEST`: Caliptra checks the signatures of the
+    /// manifest. The manifest that Caliptra uses stays the same.
+    Verify,
+    /// `SET_AUTH_MANIFEST`: Caliptra checks the signatures of the manifest
+    /// and then authorizes images against it.
+    Set,
+}
+
+impl AuthManifestCommand {
+    const fn id(self) -> u32 {
+        match self {
+            Self::Verify => CommandId::VERIFY_AUTH_MANIFEST.0,
+            Self::Set => CommandId::SET_AUTH_MANIFEST.0,
+        }
+    }
+}
+
+/// Returns the header of the request of `command` for a manifest of
+/// `manifest_size` bytes.
+///
+/// `read(offset, buf)` fills `buf` with the bytes of the manifest at
+/// `offset` and returns false if it cannot. The checksum in the header covers
+/// the command and the manifest, so the two commands have different headers
+/// for one manifest.
+///
+/// The request that [`Mailbox::auth_manifest`] sends is this header and then
+/// the manifest. Caliptra reads the request as words: if the size of the
+/// manifest is not a multiple of 4, the bytes after the manifest up to the
+/// next multiple are part of the request and must be 0.
+///
+/// Returns `None` if the manifest is larger than [`MAX_AUTH_MANIFEST_SIZE`]
+/// or `read` fails.
+pub fn auth_manifest_header(
+    command: AuthManifestCommand,
+    manifest_size: usize,
+    mut read: impl FnMut(usize, &mut [u8]) -> bool,
+) -> Option<[u8; AUTH_MANIFEST_HEADER_SIZE]> {
+    if manifest_size > MAX_AUTH_MANIFEST_SIZE {
+        return None;
+    }
+    let size = manifest_size as u32;
+    // The checksum is 0 minus the sum of the bytes of the command and of
+    // the request after its first word.
+    let mut sum = byte_sum(command.id()).wrapping_add(byte_sum(size));
+    let mut buf = [0u8; CHECKSUM_PART];
+    let mut offset = 0;
+    while offset < manifest_size {
+        let part = buf.get_mut(..(manifest_size - offset).min(CHECKSUM_PART))?;
+        if !read(offset, part) {
+            return None;
+        }
+        sum = part
+            .iter()
+            .fold(sum, |sum, &byte| sum.wrapping_add(byte as u32));
+        offset += part.len();
+    }
+    let [c0, c1, c2, c3] = 0u32.wrapping_sub(sum).to_le_bytes();
+    let [s0, s1, s2, s3] = size.to_le_bytes();
+    Some([c0, c1, c2, c3, s0, s1, s2, s3])
 }
 
 /// The Caliptra mailbox.
@@ -114,6 +233,73 @@ impl Mailbox {
     ) -> Result<usize, MailboxError> {
         self.send(cmd, body)?;
         self.receive_with(sink)
+    }
+
+    /// Sends command `cmd`, whose request is in memory that Caliptra reads
+    /// over AXI, and waits for its response. See [`receive`](Self::receive).
+    ///
+    /// `address` is the address of the request, and `size` is its size in
+    /// bytes, a multiple of 4. The request starts with
+    /// its checksum word, as a request in the mailbox does.
+    pub fn execute_external(
+        &self,
+        cmd: u32,
+        address: AxiAddr,
+        size: u32,
+        response: &mut [u32],
+    ) -> Result<usize, MailboxError> {
+        // The body of ExternalMailboxCmdReq: the command, the size of its
+        // request and the address of its request.
+        let body = [cmd, size, address.lo(), address.hi()];
+        self.execute(
+            CommandId::EXTERNAL_MAILBOX_CMD.0,
+            body.into_iter(),
+            response,
+        )
+    }
+
+    /// Sends `command`, whose request is at `address`, and waits until
+    /// Caliptra has completed it.
+    ///
+    /// The request is the header that [`auth_manifest_header`] returns for
+    /// `command`, then the manifest of `manifest_size` bytes.
+    pub fn auth_manifest(
+        &self,
+        command: AuthManifestCommand,
+        address: AxiAddr,
+        manifest_size: usize,
+    ) -> Result<(), MailboxError> {
+        if manifest_size > MAX_AUTH_MANIFEST_SIZE {
+            return Err(MailboxError::RequestTooLarge);
+        }
+        let size = (AUTH_MANIFEST_HEADER_SIZE + manifest_size).next_multiple_of(4);
+        let mut response = [0u32; 2];
+        match self.execute_external(command.id(), address, size as u32, &mut response) {
+            // The commands return no data.
+            Ok(_) | Err(MailboxError::NoResponse) => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
+
+    /// Sends `ACTIVATE_FIRMWARE` for an MCU image of `image_size` bytes,
+    /// without waiting for the response. The image is at the staging
+    /// address that Caliptra's SoC manifest gives for the MCU image.
+    ///
+    /// Caliptra does not complete the command while the MCU runs. It raises
+    /// the reset request of the MCI and waits for the MCU to acknowledge it
+    /// and to ask the MCI for the MCU reset. It then copies the image to MCU
+    /// SRAM, authorizes it against the SoC manifest and releases the MCU.
+    /// The mailbox stays locked through the reset, and the caliptra-mcu-sw
+    /// ROM receives the response.
+    pub fn start_mcu_activation(&self, image_size: u32) -> Result<(), MailboxError> {
+        // The body of ActivateFirmwareReq: the number of image identifiers,
+        // the identifiers, the size of the MCU image and the flags.
+        let ids = core::iter::once(ActivateFirmwareReq::MCU_IMAGE_ID).chain(core::iter::repeat_n(
+            0,
+            ActivateFirmwareReq::MAX_FW_ID_COUNT - 1,
+        ));
+        let body = core::iter::once(1).chain(ids).chain([image_size, 0]);
+        self.send(CommandId::ACTIVATE_FIRMWARE.0, body)
     }
 
     /// Sends command `cmd` without waiting for its response.
