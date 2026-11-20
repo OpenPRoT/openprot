@@ -120,6 +120,8 @@ caliptra_test(
     deps = [
         "//target/veer/tests/mctp_i3c:mctp_i3c_ids",
         "//third_party/caliptra/caliptra-mcu-sw:mcu_testing_common",
+        "@rust_caliptra_crates_host//:x509-cert",
+        "@rust_crates//:p384",
         "@rust_crates//:sha2",
     ],
 )

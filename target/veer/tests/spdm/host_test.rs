@@ -10,12 +10,20 @@
 //! digest of the certificate chain of slot 0 with `GET_DIGESTS` and the chain
 //! itself with `GET_CERTIFICATE`. It checks that the chain holds four
 //! certificates, that its root hash is the hash of the first one, and that
-//! the digest is the hash of the chain. It does not check the signatures of
-//! the certificates.
+//! the digest is the hash of the chain. It checks that each certificate
+//! after the first names the subject of the certificate before it as its
+//! issuer and is signed by that certificate's key. The chain does not hold
+//! the certificate of the key that signed the first certificate, so the
+//! test does not check that signature.
 //!
-//! Last, it sends two requests that the responder answers with an error:
-//! `GET_CERTIFICATE` for a slot that has no chain, and `CHALLENGE`, which the
-//! responder does not support. It checks that the responder still answers
+//! The test then sends `CHALLENGE` and checks that the key of the last
+//! certificate signed `CHALLENGE_AUTH`. The signature covers every request
+//! and response from `GET_VERSION` to `CHALLENGE_AUTH`, without the
+//! signature itself. The test records them.
+//!
+//! Last, it sends two requests for a slot that has no chain,
+//! `GET_CERTIFICATE` and `CHALLENGE`, and checks that the responder answers
+//! each with an error. It checks that the responder still answers
 //! `GET_VERSION`.
 //!
 //! The MCTP and I3C helpers are copies of those in the host test of
@@ -31,10 +39,14 @@
 use caliptra_mcu_hw_model::McuHwModel;
 use caliptra_mcu_testing_common::i3c_socket::BufferedStream;
 use mctp_i3c_ids::{HOST_EID, OWN_EID};
+use p384::ecdsa::signature::hazmat::PrehashVerifier;
+use p384::ecdsa::{Signature, VerifyingKey};
 use sha2::{Digest, Sha384};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::time::{Duration, Instant};
 use test_boot_files::BootFiles;
+use x509_cert::certificate::{CertificateInner, Raw};
+use x509_cert::der::{Decode, Encode};
 
 const TARGET_EID: u8 = OWN_EID;
 
@@ -78,6 +90,7 @@ const GET_CAPABILITIES: u8 = 0xe1;
 const NEGOTIATE_ALGORITHMS: u8 = 0xe3;
 const DIGESTS: u8 = 0x01;
 const CERTIFICATE: u8 = 0x02;
+const CHALLENGE_AUTH: u8 = 0x03;
 const VERSION: u8 = 0x04;
 const CAPABILITIES: u8 = 0x61;
 const ALGORITHMS: u8 = 0x63;
@@ -86,14 +99,29 @@ const ERROR: u8 = 0x7f;
 /// The SPDM error code `InvalidRequest`.
 const INVALID_REQUEST: u8 = 0x01;
 
-/// The SPDM error code `UnsupportedRequest`.
-const UNSUPPORTED_REQUEST: u8 = 0x07;
-
 /// The `CERT_CAP` responder capability flag.
 const CERT_CAP: u32 = 1 << 1;
 
+/// The `CHAL_CAP` responder capability flag.
+const CHAL_CAP: u32 = 1 << 2;
+
 /// Size in bytes of a SHA-384 hash.
 const HASH_LEN: usize = 48;
+
+/// Size in bytes of a nonce.
+const NONCE_LEN: usize = 32;
+
+/// Size in bytes of an ECDSA P-384 signature in SPDM: `r`, then `s`, of 48
+/// bytes each.
+const SIGNATURE_LEN: usize = 96;
+
+/// The version string of SPDM 1.2. The prefix of a message that an SPDM 1.2
+/// endpoint signs starts with four copies of it.
+const SIGNING_VERSION: &[u8; 16] = b"dmtf-spdm-v1.2.*";
+
+/// The end of that prefix for `CHALLENGE_AUTH`, which follows the copies
+/// after four zero bytes.
+const CHALLENGE_AUTH_CONTEXT: &[u8; 32] = b"responder-challenge_auth signing";
 
 /// Size in bytes of the header of an SPDM certificate chain: the length of
 /// the chain (2 bytes) and a reserved field (2 bytes). The root hash follows
@@ -278,10 +306,14 @@ struct Requester<M: McuHwModel> {
     target_addr: u8,
     /// The MCTP tag of the next request.
     tag: u8,
+    /// The requests and responses from the last `GET_VERSION` request on.
+    /// An exchange whose response is an error is left out.
+    transcript: Vec<u8>,
 }
 
 impl<M: McuHwModel> Requester<M> {
-    /// Send one SPDM request and return the SPDM response.
+    /// Send one SPDM request and return the SPDM response. Record both in
+    /// the transcript, unless the response is an error.
     fn exchange(&mut self, request: &[u8]) -> Vec<u8> {
         let tag = self.tag;
         self.tag = (self.tag + 1) & 0x07;
@@ -309,12 +341,18 @@ impl<M: McuHwModel> Requester<M> {
             request,
             &reply[1..]
         );
-        reply[1..].to_vec()
+        let response = reply[1..].to_vec();
+        if response[1] != ERROR {
+            self.transcript.extend_from_slice(request);
+            self.transcript.extend_from_slice(&response);
+        }
+        response
     }
 
     /// Send `GET_VERSION` and return the versions that the responder supports,
     /// each as one byte (major in the high four bits, minor in the low four).
     fn get_version(&mut self) -> Vec<u8> {
+        self.transcript.clear();
         let response = self.exchange(&[SPDM_10, GET_VERSION, 0, 0]);
         assert_eq!(&response[..2], [SPDM_10, VERSION], "VERSION header");
         // [version][code][param1][param2][reserved][count][entries...]
@@ -384,8 +422,29 @@ fn certificates(mut der: &[u8]) -> Vec<&[u8]> {
     certificates
 }
 
+/// An X.509 certificate that encodes to the bytes it was decoded from.
+///
+/// Caliptra encodes validity dates before 2050 as GeneralizedTime. The
+/// default profile of x509-cert encodes them as UTCTime, as RFC 5280
+/// requires, so its encoding of a certificate differs from the bytes that
+/// the issuer signed.
+type Certificate = CertificateInner<Raw>;
+
+/// Return whether `signature` is a valid ECDSA P-384 signature of the
+/// SHA-384 hash of `message` for the public key of `certificate`.
+fn verify(certificate: &Certificate, message: &[u8], signature: &Signature) -> bool {
+    let public_key = certificate
+        .tbs_certificate()
+        .subject_public_key_info()
+        .subject_public_key
+        .raw_bytes();
+    let key = VerifyingKey::from_sec1_bytes(public_key).expect("public key is a P-384 point");
+    key.verify_prehash(&Sha384::digest(message), signature)
+        .is_ok()
+}
+
 #[test]
-fn spdm_certificate_host_test() {
+fn spdm_challenge_host_test() {
     // A free port for the model's I3C socket.
     let i3c_port = TcpListener::bind(("127.0.0.1", 0))
         .unwrap()
@@ -411,6 +470,7 @@ fn spdm_certificate_host_test() {
         log: String::new(),
         target_addr,
         tag: 0,
+        transcript: Vec::new(),
     };
 
     // The listener must be armed before the request arrives.
@@ -434,7 +494,11 @@ fn spdm_certificate_host_test() {
         "CAPABILITIES header"
     );
     assert_eq!(response.len(), 20, "CAPABILITIES length");
-    assert_eq!(u32_at(&response, 8), CERT_CAP, "responder capability flags");
+    assert_eq!(
+        u32_at(&response, 8),
+        CERT_CAP | CHAL_CAP,
+        "responder capability flags"
+    );
     assert_eq!(u32_at(&response, 12), MAX_SPDM_MESSAGE, "DataTransferSize");
     assert_eq!(u32_at(&response, 16), MAX_SPDM_MESSAGE, "MaxSPDMmsgSize");
 
@@ -497,18 +561,103 @@ fn spdm_certificate_host_test() {
         "digest is the hash of the chain"
     );
 
+    // Each certificate after the first names the subject of the certificate
+    // before it as its issuer and is signed by that certificate's key.
+    let certificates: Vec<Certificate> = certificates
+        .iter()
+        .map(|der| Certificate::from_der(der).expect("certificate is X.509"))
+        .collect();
+    for pair in certificates.windows(2) {
+        let (issuer, subject) = (&pair[0], &pair[1]);
+        assert_eq!(
+            subject.tbs_certificate().issuer(),
+            issuer.tbs_certificate().subject(),
+            "issuer is the subject of the certificate before it"
+        );
+        let signed = subject
+            .tbs_certificate()
+            .to_der()
+            .expect("signed part of the certificate encodes");
+        let signature = Signature::from_der(subject.signature().raw_bytes())
+            .expect("certificate has an ECDSA P-384 signature");
+        assert!(
+            verify(issuer, &signed, &signature),
+            "certificate is signed by the key of the certificate before it"
+        );
+    }
+    let leaf = certificates.last().unwrap();
+
+    // CHALLENGE: [version][code][slot][measurement summary hash type]
+    // [nonce x32]. The test does not need a random nonce.
+    let nonce = [0x5a; NONCE_LEN];
+    let mut request = vec![SPDM_12, CHALLENGE, 0, 0];
+    request.extend_from_slice(&nonce);
+    let response = requester.exchange(&request);
+    // CHALLENGE_AUTH: [version][code][param1 = slot][param2 = slot mask]
+    // [CertChainHash x48][Nonce x32][OpaqueDataLength x2][Signature x96].
+    // It has no measurement summary hash, because the request asked for
+    // none.
+    assert_eq!(
+        &response[..2],
+        [SPDM_12, CHALLENGE_AUTH],
+        "CHALLENGE_AUTH header"
+    );
+    assert_eq!(
+        response.len(),
+        4 + HASH_LEN + NONCE_LEN + 2 + SIGNATURE_LEN,
+        "CHALLENGE_AUTH length"
+    );
+    assert_eq!(response[2] & 0x0f, 0, "CHALLENGE_AUTH slot");
+    assert_eq!(response[3], 0x01, "CHALLENGE_AUTH slot mask");
+    assert_eq!(
+        &response[4..4 + HASH_LEN],
+        digest,
+        "CertChainHash is the digest of the chain"
+    );
+    let responder_nonce = &response[4 + HASH_LEN..4 + HASH_LEN + NONCE_LEN];
+    assert_ne!(responder_nonce, [0; NONCE_LEN], "responder nonce");
+    assert_ne!(responder_nonce, nonce, "responder nonce");
+    assert_eq!(
+        u16_at(&response, 4 + HASH_LEN + NONCE_LEN),
+        0,
+        "OpaqueDataLength"
+    );
+    let signature = Signature::from_slice(&response[response.len() - SIGNATURE_LEN..])
+        .expect("CHALLENGE_AUTH has an ECDSA P-384 signature");
+
+    // The responder signs a prefix, then the hash of every request and
+    // response of the connection up to the signature.
+    let signed_len = requester.transcript.len() - SIGNATURE_LEN;
+    let signed_message = |transcript: &[u8]| {
+        let mut message = SIGNING_VERSION.repeat(4);
+        message.extend_from_slice(&[0; 4]);
+        message.extend_from_slice(CHALLENGE_AUTH_CONTEXT);
+        message.extend_from_slice(&Sha384::digest(transcript));
+        message
+    };
+    let message = signed_message(&requester.transcript[..signed_len]);
+    assert!(
+        verify(leaf, &message, &signature),
+        "CHALLENGE_AUTH is signed by the key of the leaf certificate"
+    );
+    // The signature does not verify when the last byte of the transcript
+    // differs.
+    let mut other = requester.transcript[..signed_len].to_vec();
+    other[signed_len - 1] ^= 1;
+    assert!(
+        !verify(leaf, &signed_message(&other), &signature),
+        "signature does not verify for another transcript"
+    );
+
     // Slot 1 has no chain.
     let response = requester.exchange(&[SPDM_12, GET_CERTIFICATE, 1, 0, 0, 0, 0xff, 0xff]);
     assert_eq!(&response[..2], [SPDM_12, ERROR], "ERROR header");
     assert_eq!(response[2], INVALID_REQUEST, "error code");
-
-    // The responder does not sign, so it does not support CHALLENGE:
-    // [version][code][slot][measurement summary hash type][nonce x32]
-    let mut request = vec![SPDM_12, CHALLENGE, 0, 0];
-    request.extend_from_slice(&[0x5a; 32]);
+    let mut request = vec![SPDM_12, CHALLENGE, 1, 0];
+    request.extend_from_slice(&nonce);
     let response = requester.exchange(&request);
     assert_eq!(&response[..2], [SPDM_12, ERROR], "ERROR header");
-    assert_eq!(response[2], UNSUPPORTED_REQUEST, "error code");
+    assert_eq!(response[2], INVALID_REQUEST, "error code");
 
     // The responder still answers after the errors.
     let versions = requester.get_version();
