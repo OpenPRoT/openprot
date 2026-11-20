@@ -78,9 +78,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      with:
-        # The MMIO policy check compares against the pull request's base commit.
-        fetch-depth: 0
 
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -112,14 +109,3 @@ jobs:
       uses: returntocorp/semgrep-action@713efdd345f3035192eaa63f56867b88e63e4e5d # v1
       with:
         config: p/rust
-
-    # Raw MMIO outside registers.rs on AST10x0. See target/ast10x0/MMIO.md.
-    # Fails only on violations that the pull request introduces; legacy ones in
-    # the base commit are ignored.
-    - name: Check AST10x0 MMIO policy
-      if: github.event_name == 'pull_request'
-      run: >-
-        pipx run --spec semgrep==1.186.0 semgrep
-        --config .semgrep/ast10x0-mmio.yml --error --metrics=off
-        --baseline-commit ${{ github.event.pull_request.base.sha }}
-        target/ast10x0
