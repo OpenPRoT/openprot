@@ -4,13 +4,8 @@
 # Ignore xtask development tools - not production code
 xtask/
 
-# Ignore the other per-SoC target trees. target/ast10x0 is scanned for the MMIO
-# policy (.semgrep/ast10x0-mmio.yml, docs/src/design/mmio.md). The directories
-# are listed one by one because re-including a subdirectory of an ignored
-# `target/` does not work.
-/target/veer/
-/target/earlgrey/
-/target/rust-analyzer/
+# Ignore build artifacts
+target/
 
 # Ignore external dependencies and examples
 external/

@@ -8,7 +8,7 @@
 - [ ] Tests verify error handling paths, not just happy paths
 - [ ] Unsafe code blocks are documented with safety comments
 - [ ] Hardware register access uses proper volatile operations
-- [ ] In `target/ast10x0/`, raw MMIO (`Pac::ptr()`, `Pac::PTR`, `Pac::steal()`, `read_volatile`/`write_volatile`) appears only in a peripheral's `registers.rs`; drivers use its safe typed methods and take ownership of the peripheral instead of adding `unsafe fn new_global()`. Added lines are held to this even in files that already violate it. Also flag new `pub unsafe fn new*` constructors, register access through a `regs()` accessor outside `registers.rs`, and `unsafe` without a `// SAFETY:` comment directly above it. Cite `target/ast10x0/MMIO.md`
+- [ ] Raw MMIO stays inside the target's designated boundary module; drivers use its safe typed API and take ownership of the peripheral instead of adding `unsafe` constructors. Added lines are held to this even in files that already violate it. Also flag register access through an accessor outside the boundary and `unsafe` without a `// SAFETY:` comment directly above it. Follow `docs/src/design/mmio.md` and the target's `target/<name>/MMIO.md`
 - [ ] Cryptographic operations use constant-time implementations where applicable
 - [ ] Code is no_std compatible (no heap allocation: Vec, HashMap, String, etc.)
 - [ ] Fixed-size arrays and heapless collections used instead of dynamic allocation
@@ -26,7 +26,7 @@
 | `collection[index]` | `collection.get(index).ok_or(Error::OutOfBounds)?` |
 | `a + b` (integers) | `a.checked_add(b).ok_or(Error::Overflow)?` |
 | `ptr.read()` | `ptr.read_volatile()` (for MMIO) |
-| `unsafe { &*device::Gpio::ptr() }` in a driver (ast10x0) | A safe method on the peripheral's `registers.rs` wrapper (see `target/ast10x0/MMIO.md`) |
+| Raw register pointer access in a driver | A safe method on the target's register boundary (see `docs/src/design/mmio.md`) |
 | `Vec<T>`, `HashMap<K,V>` | Fixed-size arrays `[T; N]`, `heapless::Vec<T, N>` |
 | `String` | Fixed-size string `heapless::String<N>` or `&str` |
 | `Box<T>` | Stack allocation or `&mut T` reference |
@@ -62,7 +62,7 @@ for item in pending {
 - **Timing attacks**: Use constant-time comparisons for secrets (subtle crate)
 - **Zeroization**: Use `zeroize` crate for sensitive data cleanup (keys, passwords, etc.)
 - **Memory safety**: Ensure sensitive data is properly zeroized after use
-- **Hardware abstraction**: All register access must go through HAL traits; on AST10x0, raw MMIO is confined to `registers.rs` (`target/ast10x0/MMIO.md`)
+- **Hardware abstraction**: All register access must go through HAL traits, and raw MMIO is confined to the target's boundary (`docs/src/design/mmio.md`)
 - **Error information**: Don't leak sensitive data in error messages
 - **Buffer aliasing (CWE-488)**: Never collect metadata for multiple pending/ready items against a single shared buffer and process them afterward — the buffer only ever holds the last write. Each item must be fully encoded/consumed before the buffer is reused for the next.
 - **IPC trust boundary**: Do not rely on clients, including third-party code, to send valid addresses, sizes, or lengths. Validate them in the IPC server. The driver assumes they are valid.
