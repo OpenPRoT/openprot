@@ -4,9 +4,10 @@
 //! SPDM responder: answers SPDM requests as a client of the MCTP server.
 //!
 //! The responder runs the `//services/spdm/responder` service over MCTP. It
-//! has one certificate chain and no measurements, and it does not sign. It
-//! supports `GET_VERSION`, `GET_CAPABILITIES`, `NEGOTIATE_ALGORITHMS`,
-//! `GET_DIGESTS` and `GET_CERTIFICATE`. `platform.rs` has the hash, random
+//! has one certificate chain, signs with the key of the chain's leaf
+//! certificate and has no measurements. It supports `GET_VERSION`,
+//! `GET_CAPABILITIES`, `NEGOTIATE_ALGORITHMS`, `GET_DIGESTS`,
+//! `GET_CERTIFICATE` and `CHALLENGE`. `platform.rs` has the hash, random
 //! number generator, certificate store and evidence source that the service
 //! needs.
 
@@ -21,7 +22,7 @@ use openprot_mctp_api::Stack;
 use openprot_mctp_client_ipc::IpcMctpClient;
 use openprot_spdm_responder::{ResponderConfig, SpdmResponder};
 use openprot_spdm_transport_mctp::MctpSpdmTransport;
-use platform::{CaliptraHash, CaliptraRandom, NoEvidence, OneSlot, SpdmCertificates};
+use platform::{CaliptraHash, CaliptraRandom, LeafKey, NoEvidence, OneSlot, SpdmCertificates};
 use spdm_lib::codec::MessageBuf;
 use spdm_lib::error::SpdmError;
 use spdm_lib::platform::transport::SpdmTransport as _;
@@ -64,15 +65,16 @@ fn entry() {
 
     // The chain of slot 0: the chain of Caliptra's DPE, which is read from
     // Caliptra in parts, then the leaf certificate, which is kept in memory.
+    let leaf_key = LeafKey::new(&mailbox);
     let mut leaf = [0u8; LEAF_BUF];
-    let Some(leaf) = platform::certify_leaf(&mailbox, &mut leaf) else {
+    let Some(leaf) = leaf_key.certify(&mut leaf) else {
         fail("no leaf certificate");
     };
     let Ok(dpe_chain) = CaliptraDpeChain::new(&mailbox) else {
         fail("no DPE certificate chain");
     };
     let store = OneSlot::new(Concat::new(dpe_chain, leaf));
-    let Some(mut cert_store) = SpdmCertificates::new(store, &mailbox) else {
+    let Some(mut cert_store) = SpdmCertificates::new(store, leaf_key, &mailbox) else {
         fail("no root certificate hash");
     };
     pw_log::info!(
@@ -87,11 +89,12 @@ fn entry() {
     let mut rng = CaliptraRandom::new(&mailbox);
     let evidence = NoEvidence;
 
-    // The responder has certificates. It does not sign and has no
+    // The responder has certificates and answers challenges. It has no
     // measurements.
     let mut capabilities = ResponderConfig::default_capabilities();
     capabilities.flags = CapabilityFlags::default();
     capabilities.flags.set_cert_cap(1);
+    capabilities.flags.set_chal_cap(1);
     capabilities.data_transfer_size = MAX_SPDM_MESSAGE;
     capabilities.max_spdm_msg_size = MAX_SPDM_MESSAGE;
     let config = ResponderConfig {

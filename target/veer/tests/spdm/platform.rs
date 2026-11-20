@@ -16,18 +16,19 @@
 //! (`set_dpe_only_slot` in
 //! `runtime/userspace/api/spdm-lib/pal/src/cert/store.rs`).
 //!
-//! The store does not sign and the evidence source has no evidence, so the
-//! responder does not advertise challenges or measurements.
+//! The store signs with the key of the leaf certificate, through the `Sign`
+//! command of the DPE. The evidence source has no evidence, so the responder
+//! does not advertise measurements.
 //!
-//! The service needs a random number generator, which is `CaliptraRandom`.
-//! The requests in the test need no random numbers, so the service does not
-//! call it.
+//! The service takes the nonce of `CHALLENGE_AUTH` from `CaliptraRandom`.
+
+use core::cell::Cell;
 
 use openprot_hal_blocking::certificate::{self, CertificateChain, CertificateStore, KeyAlgorithm};
 use openprot_hal_blocking::digest::owned::{DigestInit, DigestOp};
-use openprot_hal_blocking::digest::Sha2_384;
-use openprot_hal_blocking::dpe::{CertificateFormat, CertifyKey, ContextHandle};
-use openprot_hal_blocking::ecdsa::P384PublicKey;
+use openprot_hal_blocking::digest::{Digest, Sha2_384};
+use openprot_hal_blocking::dpe::{CertificateFormat, CertifyKey, ContextHandle, Sign};
+use openprot_hal_blocking::ecdsa::{P384PublicKey, P384Signature};
 use openprot_hal_blocking::rng::CryptoRng;
 use spdm_lib::cert_store::{CertStoreError, CertStoreResult, SpdmCertStore};
 use spdm_lib::platform::evidence::{SpdmEvidence, SpdmEvidenceError, SpdmEvidenceResult};
@@ -148,24 +149,53 @@ const LEAF_LABEL: [u8; 48] = {
     label
 };
 
-/// Asks Caliptra's DPE for an X.509 certificate of the leaf key and stores
-/// the certificate in `buf`. The default context of the DPE derives the leaf
-/// key for [`LEAF_LABEL`].
-///
-/// Returns the certificate, or `None` when the command fails or `buf` is too
-/// small.
-pub fn certify_leaf<'a>(mailbox: &Mailbox, buf: &'a mut [u8]) -> Option<&'a [u8]> {
-    let mut public_key = P384PublicKey::new([0; 48], [0; 48]);
-    let output = CaliptraDpe::new(mailbox)
-        .certify_key(
-            &ContextHandle::DEFAULT,
-            &LEAF_LABEL,
-            CertificateFormat::X509,
-            &mut public_key,
-            buf,
-        )
-        .ok()?;
-    buf.get(..output.certificate_len)
+/// The leaf key: the key that the default context of Caliptra's DPE derives
+/// for [`LEAF_LABEL`].
+pub struct LeafKey<'m> {
+    mailbox: &'m Mailbox,
+    /// The handle of the context for the next command.
+    handle: Cell<ContextHandle>,
+}
+
+impl<'m> LeafKey<'m> {
+    pub fn new(mailbox: &'m Mailbox) -> Self {
+        Self {
+            mailbox,
+            handle: Cell::new(ContextHandle::DEFAULT),
+        }
+    }
+
+    /// Asks the DPE for an X.509 certificate of the key and stores the
+    /// certificate in `buf`.
+    ///
+    /// Returns the certificate, or `None` when the command fails or `buf` is
+    /// too small.
+    pub fn certify<'a>(&self, buf: &'a mut [u8]) -> Option<&'a [u8]> {
+        let mut public_key = P384PublicKey::new([0; 48], [0; 48]);
+        let output = CaliptraDpe::new(self.mailbox)
+            .certify_key(
+                &self.handle.get(),
+                &LEAF_LABEL,
+                CertificateFormat::X509,
+                &mut public_key,
+                buf,
+            )
+            .ok()?;
+        self.handle.set(output.handle);
+        buf.get(..output.certificate_len)
+    }
+
+    /// Signs `hash` with the key. Returns the signature as `r` then `s`, or
+    /// `None` when the command fails.
+    fn sign(&self, hash: &[u8; SHA384_HASH_SIZE]) -> Option<[u8; ECC_P384_SIGNATURE_SIZE]> {
+        let digest = Digest::new(zerocopy::transmute!(*hash));
+        let mut signature = P384Signature::new([0; 48], [0; 48]);
+        let handle = CaliptraDpe::new(self.mailbox)
+            .sign(&self.handle.get(), &LEAF_LABEL, &digest, &mut signature)
+            .ok()?;
+        self.handle.set(handle);
+        Some(zerocopy::transmute!(signature))
+    }
 }
 
 /// Errors from [`OneSlot`].
@@ -303,20 +333,27 @@ fn first_certificate_hash<S: CertificateStore>(
 }
 
 /// The certificate store of the SPDM responder: slot 0 of a HAL certificate
-/// store.
-pub struct SpdmCertificates<S> {
+/// store, and the key of the last certificate of that slot's chain.
+pub struct SpdmCertificates<'m, S> {
     store: S,
+    key: LeafKey<'m>,
     /// SHA-384 hash of the first certificate of the chain.
     root_hash: [u8; SHA384_HASH_SIZE],
 }
 
-impl<S: CertificateStore> SpdmCertificates<S> {
-    /// Hashes the first certificate of the chain with the Caliptra core.
+impl<'m, S: CertificateStore> SpdmCertificates<'m, S> {
+    /// Hashes the first certificate of the chain that slot 0 of `store`
+    /// holds, with the Caliptra core. `key` must be the key of the last
+    /// certificate of that chain.
     ///
     /// Returns `None` when the chain cannot be read or hashed.
-    pub fn new(mut store: S, mailbox: &Mailbox) -> Option<Self> {
+    pub fn new(mut store: S, key: LeafKey<'m>, mailbox: &Mailbox) -> Option<Self> {
         let root_hash = first_certificate_hash(&mut store, mailbox)?;
-        Some(Self { store, root_hash })
+        Some(Self {
+            store,
+            key,
+            root_hash,
+        })
     }
 
     /// Returns the length in bytes of the chain.
@@ -346,7 +383,7 @@ fn store_error<E: certificate::Error>(slot_id: u8, error: E) -> CertStoreError {
     }
 }
 
-impl<S: CertificateStore> SpdmCertStore for SpdmCertificates<S> {
+impl<S: CertificateStore> SpdmCertStore for SpdmCertificates<'_, S> {
     fn slot_count(&self) -> u8 {
         1
     }
@@ -393,15 +430,17 @@ impl<S: CertificateStore> SpdmCertStore for SpdmCertificates<S> {
         Ok(())
     }
 
-    // The responder does not advertise challenges or measurements, so
-    // spdm-lib does not ask for a signature.
     fn sign_hash(
         &self,
-        _slot_id: u8,
-        _hash: &[u8; SHA384_HASH_SIZE],
-        _signature: &mut [u8; ECC_P384_SIGNATURE_SIZE],
+        slot_id: u8,
+        hash: &[u8; SHA384_HASH_SIZE],
+        signature: &mut [u8; ECC_P384_SIGNATURE_SIZE],
     ) -> CertStoreResult<()> {
-        Err(CertStoreError::PlatformError)
+        if slot_id != SLOT {
+            return Err(CertStoreError::InvalidSlotId(slot_id));
+        }
+        *signature = self.key.sign(hash).ok_or(CertStoreError::PlatformError)?;
+        Ok(())
     }
 
     fn key_pair_id(&self, _slot_id: u8) -> Option<u8> {
