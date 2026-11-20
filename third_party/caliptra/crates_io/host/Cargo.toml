@@ -82,6 +82,7 @@ rand = "0.8.5"
 rand_core = { version = "0.9", default-features = false }
 rfc6979 = "0.4.0"
 sha3 = "0.10.8"
+x509-cert = { version = "0.3", default-features = false, features = ["hazmat"] }
 
 # --- Shared crates (also in embedded workspace, needed for type compatibility
 #     when host targets use @rust_caliptra_crates_host) ---
