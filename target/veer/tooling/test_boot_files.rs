@@ -33,9 +33,15 @@ impl BootFiles {
 
     /// Fallible variant of [`Self::from_env`].
     pub fn try_from_env() -> Result<Self, String> {
+        Self::try_from_env_var("CALIPTRA_BOOT_ENV")
+    }
+
+    /// Loads all boot inputs from the `.boot_env` runfile named by the
+    /// environment variable `var`. A test that uses the files of a second
+    /// image names that image's `.boot_env` in a variable of its own.
+    pub fn try_from_env_var(var: &str) -> Result<Self, String> {
         let runfiles = Runfiles::create().map_err(|e| format!("locating runfiles: {e:?}"))?;
-        let boot_env = std::env::var("CALIPTRA_BOOT_ENV")
-            .map_err(|_| "CALIPTRA_BOOT_ENV is not set".to_string())?;
+        let boot_env = std::env::var(var).map_err(|_| format!("{var} is not set"))?;
         Self::load(&boot_env, |path| rlocation!(runfiles, path))
     }
 
