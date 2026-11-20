@@ -26,7 +26,7 @@ Wildcard builds need the tag filters: `//...` includes hardware-only and verilat
 - Review rules and forbidden patterns: `.github/copilot-instructions.md`.
 - Contribution process, RFCs, and CLA: `docs/src/contributing.md` and `docs/src/development-process.md`.
 - Pigweed integration: `docs/src/design/pigweed-overview.md`.
-- AST10x0 MMIO and register access policy: `target/ast10x0/MMIO.md`.
+- MMIO and register access policy: `docs/src/design/mmio.md`, plus `target/<name>/MMIO.md` for target rules.
 - `pw_kernel` IPC: `docs/src/design/pw-kernel-ipc.md`; example in `target/veer/ipc/`.
 - Thread priorities for servers and their clients: `docs/src/design/thread-priorities.md`.
 - Orchestrator state machine and platform contracts: `docs/src/design/orchestrator/`.
