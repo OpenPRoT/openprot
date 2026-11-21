@@ -1,0 +1,115 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 async orchestration simulation (QEMU).
+//
+//   orchestrator — the real orchestrator-sm core driven by an async effect
+//                  executor. One thread, one WaitGroup, three channels, none
+//                  of them used with a blocking transact.
+//   verifier     — ServiceLoop; answers a verify request after a delay the
+//                  request names (defer/complete).
+//   devices      — ServiceLoop with two channels:
+//                    reset:  release / assert / restore, answered at once
+//                    events: a long-poll; one request parked until a
+//                            simulated device boots.
+//
+// Wire frames are private to this test (see the three *_main.rs files).
+//
+// Flash: app images load contiguously from the end of kernel flash
+// (0x20300), and kernel RAM starts at 0x60000. Three 128 KB apps would run
+// into kernel RAM, so each app gets 64 KB.
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,
+    },
+    kernel: {
+        flash_start_address: 0x00000500,
+        flash_size_bytes: 129792,
+        ram_start_address: 0x00060000,
+        ram_size_bytes: 131072,
+    },
+    apps: [
+        {
+            name: "orchestrator",
+            flash_size_bytes: 65536,
+            processes: [
+                {
+                    name: "orchestrator_process",
+                    ram_size_bytes: 65536,
+                    objects: [
+                        { name: "wg", type: "wait_group" },
+                        {
+                            name: "verifier",
+                            type: "channel_initiator",
+                            handler_process: "verifier_process",
+                            handler_object_name: "ipc",
+                        },
+                        {
+                            name: "reset",
+                            type: "channel_initiator",
+                            handler_process: "devices_process",
+                            handler_object_name: "reset",
+                        },
+                        {
+                            name: "events",
+                            type: "channel_initiator",
+                            handler_process: "devices_process",
+                            handler_object_name: "events",
+                        },
+                        {
+                            type: "thread",
+                            name: "orchestrator_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },],
+                },
+            ],
+        },
+        {
+            name: "verifier",
+            flash_size_bytes: 65536,
+            processes: [
+                {
+                    name: "verifier_process",
+                    ram_size_bytes: 32768,
+                    objects: [
+                        { name: "wg", type: "wait_group" },
+                        { name: "ipc", type: "channel_handler" },
+                        {
+                            type: "thread",
+                            name: "verifier_thread",
+                            kernel_stack_size_bytes: 4096,
+                            // Higher than the orchestrator (default, Level15): a
+                            // service runs as soon as a request or its timer is
+                            // ready, instead of waiting out the requester's slice.
+                            priority: "Level20",
+                        },],
+                },
+            ],
+        },
+        {
+            name: "devices",
+            flash_size_bytes: 65536,
+            processes: [
+                {
+                    name: "devices_process",
+                    ram_size_bytes: 32768,
+                    objects: [
+                        { name: "wg", type: "wait_group" },
+                        { name: "reset", type: "channel_handler" },
+                        { name: "events", type: "channel_handler" },
+                        {
+                            type: "thread",
+                            name: "devices_thread",
+                            kernel_stack_size_bytes: 4096,
+                            // Higher than the orchestrator (default, Level15): a
+                            // service runs as soon as a request or its timer is
+                            // ready, instead of waiting out the requester's slice.
+                            priority: "Level20",
+                        },],
+                },
+            ],
+        },
+    ],
+}

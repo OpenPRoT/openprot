@@ -1,0 +1,19 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# C0 does not boot on its first release and C1's verify is slow, so C0's boot
+# watchdog fires while C1 is still verifying. Passes when the core recovers C0,
+# drops C1's late verdict, and the re-walk ends in Ready.
+#
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/orchestrator/async_sim/flaky_boot:flaky_boot_qemu_test
+
+load("//target/ast10x0/tests/orchestrator/async_sim:apps.bzl", "APPS", "SYSTEM_CONFIG", "TARGET_SRC")
+load("//target/ast10x0/tests/orchestrator/async_sim:scenario.bzl", "qemu_scenario")
+
+qemu_scenario(
+    name = "flaky_boot_qemu",
+    apps = APPS,
+    cfgs = ["flaky_boot"],
+    system_config = SYSTEM_CONFIG,
+    target_src = TARGET_SRC,
+)

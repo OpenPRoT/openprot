@@ -1,0 +1,24 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# C0 never boots, on any release. Every attempt verifies, releases and times
+# out. Passes when the machine gives up after its retry limit, reports that
+# recovery is exhausted and locks, instead of recovering forever.
+#
+# This scenario found that the state machine cleared a component's retry count
+# on a passing verification and on entering Ready, so a device that verifies and
+# never boots recovered forever. The count now ends only on a confirmed boot
+# report, and the machine locks after three recoveries.
+#
+# bazel test --config=virt_ast10x0 //target/ast10x0/tests/orchestrator/async_sim/never_boots:never_boots_qemu_test
+
+load("//target/ast10x0/tests/orchestrator/async_sim:apps.bzl", "APPS", "SYSTEM_CONFIG", "TARGET_SRC")
+load("//target/ast10x0/tests/orchestrator/async_sim:scenario.bzl", "qemu_scenario")
+
+qemu_scenario(
+    name = "never_boots_qemu",
+    apps = APPS,
+    cfgs = ["never_boots"],
+    system_config = SYSTEM_CONFIG,
+    target_src = TARGET_SRC,
+)

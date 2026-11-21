@@ -340,10 +340,11 @@ fn retry_cap_self_latches_via_emit() {
     assert_eq!(effects.last(), Some(&Effect::LatchLockdown));
 }
 
-/// INV7: retry count resets after a successful recovery so a later episode
-/// starts from zero.
+/// INV7: the retry count ends when the recovered component confirms its boot,
+/// so a later episode starts from zero. A passing verification and reaching
+/// `Ready` do not end it: see `a_component_that_verifies_but_never_boots_*`.
 #[test]
-fn retry_count_resets_after_successful_recovery() {
+fn retry_count_resets_once_the_component_boots() {
     let mut c = heapless::Vec::<(ComponentId, ComponentAttrs), CAPACITY>::new();
     c.push((C0, ComponentAttrs::passive_required()))
         .expect("fits");
@@ -356,6 +357,8 @@ fn retry_count_resets_after_successful_recovery() {
         Event::CorruptionDetected(C0),
         Event::Restored(C0),
         Event::VerificationPassed(C0),
+        // The recovered component reports in: this is what ends the streak.
+        Event::Booted(C0),
     ] {
         orch.dispatch_with(ev, |e| {
             effects.push(e);
@@ -379,6 +382,191 @@ fn retry_count_resets_after_successful_recovery() {
     assert!(!effects[start..].contains(&Effect::LatchLockdown));
 }
 
+/// Run `script` on `chain` with a board-supplied retry cap, returning every
+/// effect the machine emitted and where it ended up.
+fn drive_with_cap(
+    chain: heapless::Vec<(ComponentId, ComponentAttrs), CAPACITY>,
+    max_retry: u8,
+    script: &[Event],
+) -> (Vec<Effect>, State) {
+    let mut orch =
+        Orchestrator::<CAPACITY, ECAP>::new(chain.try_into().expect("valid chain"), max_retry);
+    let mut platform = Recorder::new();
+    for &event in script {
+        orch.dispatch(&mut platform, event);
+    }
+    (platform.recorded, orch.state())
+}
+
+/// The attempt number on each `RecoverComponent` for `id`, in order.
+fn attempts_for(effects: &[Effect], id: ComponentId) -> Vec<u8> {
+    effects
+        .iter()
+        .filter_map(|e| match e {
+            Effect::RecoverComponent { id: got, attempt } if *got == id => Some(*attempt),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A passive component that verifies every time and never reports a boot: it
+/// is released, its watchdog fires, it is restored, and the walk repeats.
+fn never_boots_script(cycles: usize) -> Vec<Event> {
+    let mut script = std::vec![BOOT, Event::VerificationPassed(C0)];
+    for _ in 0..cycles {
+        script.push(Event::Timeout(C0));
+        script.push(Event::Restored(C0));
+        script.push(Event::VerificationPassed(C0));
+    }
+    script
+}
+
+/// INV7: a component that verifies and never boots exhausts its retries. Each
+/// re-walk passes verification and reaches `Ready`, but neither is a boot, so
+/// the count survives them: after `MAX_RETRY` restores the machine reports the
+/// failure and locks instead of recovering forever.
+#[test]
+fn a_component_that_verifies_but_never_boots_exhausts_its_retries() {
+    let mut script = never_boots_script(MAX_RETRY as usize - 1);
+    script.push(Event::Timeout(C0));
+    script.push(Event::Restored(C0));
+
+    let (effects, state) = drive(passive_required(&[C0]), &script);
+
+    assert_eq!(state, State::Locked);
+    assert!(effects.contains(&Effect::ReportRecoveryFailed(C0)));
+    assert_eq!(effects.last(), Some(&Effect::LatchLockdown));
+}
+
+/// The attempt handed to the platform counts up across re-walks, so it can try
+/// a different recovery source each time (slot A, slot B, golden).
+#[test]
+fn the_recovery_attempt_counts_up_across_rewalks() {
+    let mut script = never_boots_script(MAX_RETRY as usize - 1);
+    script.push(Event::Timeout(C0));
+
+    let (effects, _) = drive(passive_required(&[C0]), &script);
+
+    assert_eq!(attempts_for(&effects, C0), [0, 1, 2]);
+}
+
+/// A passing verification does not end the streak. C0 is restored, verifies
+/// again, and is released; before it can report, C1 fails verification, so the
+/// machine goes to recovery and never reaches `Ready` in between. C0's watchdog
+/// then fires, and the attempt for it must still count the earlier restore.
+#[test]
+fn a_passing_verification_does_not_end_the_streak() {
+    let (effects, _) = drive(
+        passive_required(&[C0, C1]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::VerificationPassed(C1),
+            Event::Timeout(C0),
+            Event::Restored(C0),
+            Event::VerificationPassed(C0),
+            Event::VerificationFailed(C1),
+            Event::Timeout(C0),
+        ],
+    );
+
+    assert_eq!(attempts_for(&effects, C0), [0, 1]);
+}
+
+/// Reaching `Ready` does not end the streak. A passive chain gets there as soon
+/// as its last component is released, before any boot report, so a full re-walk
+/// to `Ready` must leave a component's count where it was.
+#[test]
+fn reaching_ready_does_not_end_the_streak() {
+    let (effects, state) = drive(
+        passive_required(&[C0, C1]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::VerificationPassed(C1),
+            Event::Timeout(C0),
+            Event::Restored(C0),
+            Event::VerificationPassed(C0),
+            Event::VerificationPassed(C1),
+            // Back in Ready, C0 not yet reported.
+            Event::Timeout(C0),
+        ],
+    );
+
+    assert_eq!(state, State::Recovering(C0));
+    assert_eq!(attempts_for(&effects, C0), [0, 1]);
+}
+
+/// A boot report ends the streak: the next failure starts counting from zero,
+/// so a recovered component is not one failure from lockdown forever after.
+#[test]
+fn a_boot_report_ends_the_streak() {
+    let (effects, state) = drive_with_cap(
+        passive_required(&[C0]),
+        2,
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::Timeout(C0),
+            Event::Restored(C0),
+            Event::VerificationPassed(C0),
+            Event::Booted(C0),
+            // A later, unrelated failure opens a fresh episode.
+            Event::CorruptionDetected(C0),
+            Event::Restored(C0),
+        ],
+    );
+
+    assert_ne!(state, State::Locked, "a fresh streak is below the cap of 2");
+    assert_eq!(attempts_for(&effects, C0), [0, 0]);
+}
+
+/// A boot report for a component that is not awaiting boot is spurious and must
+/// not reset the cap, or a stray report could keep a failing component alive.
+/// Here C0 is restored and the machine is about to re-verify it; C0 has not been
+/// released again, so a boot report for it means nothing.
+#[test]
+fn a_spurious_boot_report_does_not_end_the_streak() {
+    let (effects, _) = drive(
+        passive_required(&[C0]),
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::Timeout(C0),
+            Event::Restored(C0),
+            // Spurious: C0 is held, awaiting its re-verify.
+            Event::Booted(C0),
+            Event::VerificationPassed(C0),
+            Event::Timeout(C0),
+        ],
+    );
+
+    assert_eq!(attempts_for(&effects, C0), [0, 1]);
+}
+
+/// The active tier ends the streak the same way: `ComponentReady`, not a
+/// passing verification, is the confirmed boot.
+#[test]
+fn a_component_ready_report_ends_the_streak() {
+    let (effects, state) = drive_with_cap(
+        chain(&[(C0, ComponentAttrs::active_required())]),
+        2,
+        &[
+            BOOT,
+            Event::VerificationPassed(C0),
+            Event::Timeout(C0),
+            Event::Restored(C0),
+            Event::VerificationPassed(C0),
+            Event::ComponentReady(C0),
+            Event::CorruptionDetected(C0),
+            Event::Restored(C0),
+        ],
+    );
+
+    assert_ne!(state, State::Locked, "a fresh streak is below the cap of 2");
+    assert_eq!(attempts_for(&effects, C0), [0, 0]);
+}
+
 /// Retry budgets are **per component**, not a single global counter. Two
 /// required components each fail exactly once (well under `max_retry = 2`)
 /// in an interleaved recovery sequence before the chain finally settles.
@@ -399,7 +587,7 @@ fn retry_budget_is_per_component() {
         BOOT,
         Event::VerificationFailed(C0), // C0 fails once → Recovering
         Event::Restored(C0),           // C0 count = 1 (< 2) → re-walk
-        Event::VerificationPassed(C0), // C0 recovered → its streak clears
+        Event::VerificationPassed(C0), // C0 verifies again (its count stays 1)
         Event::VerificationFailed(C1), // C1 fails once → Recovering
         Event::Restored(C1),           // C1 count = 1 (< 2); global would be 2 → latch
         Event::VerificationPassed(C0), // re-walk restarts at the top
