@@ -11,7 +11,7 @@ from presubmit import memory_layout as layout
 _TARGET = layout.Target(
     name="t", root=Path("target/t"), ram_limit=0xA0000, flash_before_ram=True
 )
-_ARCH = "arch: { type: \"armv7m\", vector_table_start_address: 0x0, vector_table_size_bytes: 1280 },"
+_ARCH = 'arch: { type: "armv7m", vector_table_start_address: 0x0, vector_table_size_bytes: 1280 },'
 
 
 def _config(kernel: str, apps: str = "") -> dict:
@@ -104,9 +104,13 @@ class TargetPolicyTest(unittest.TestCase):
         config = layout.parse_json5(
             "{ arch: { type: 'riscv' }, kernel: { flash_start_address: 0,"
             "flash_size_bytes: 4096, ram_start_address: 0x40000, ram_size_bytes: 4096 },"
-            "apps: [{ flash_size_bytes: 0, processes: [{ name: 'p', ram_size_bytes: 30000 }] }] }".replace("'", '"')
+            "apps: [{ flash_size_bytes: 0, processes: [{ name: 'p', ram_size_bytes: 30000 }] }] }".replace(
+                "'", '"'
+            )
         )
-        self.assertNotIn("pow2", _kinds(config, layout.Target(name="t", root=Path("t"))))
+        self.assertNotIn(
+            "pow2", _kinds(config, layout.Target(name="t", root=Path("t")))
+        )
 
 
 def _with(allowlist: dict) -> layout.Target:

@@ -52,28 +52,81 @@ class Target:
 
 
 _AST10X0_ALLOWLIST: dict[str, frozenset[str]] = {
-    "target/ast10x0/tests/flash_service/system.json5": frozenset(("gap", "tail",)),
+    "target/ast10x0/tests/flash_service/system.json5": frozenset(
+        (
+            "gap",
+            "tail",
+        )
+    ),
     "target/ast10x0/tests/interrupts/user/system.json5": frozenset(("tail",)),
     "target/ast10x0/tests/mctp/control/qemu_system.json5": frozenset(("tail",)),
-    "target/ast10x0/tests/mctp/control/system.json5": frozenset(("gap", "tail",)),
+    "target/ast10x0/tests/mctp/control/system.json5": frozenset(
+        (
+            "gap",
+            "tail",
+        )
+    ),
     "target/ast10x0/tests/mctp/ipc_client/system.json5": frozenset(("padding",)),
     "target/ast10x0/tests/mctp/multi_protocol/system.json5": frozenset(("overflow",)),
-    "target/ast10x0/tests/mctp/server/peer_system.json5": frozenset(("gap", "overflow",)),
-    "target/ast10x0/tests/mctp/server/system.json5": frozenset(("gap", "overflow",)),
-    "target/ast10x0/tests/orchestrator/runtime/system.json5": frozenset(("gap", "tail",)),
-    "target/ast10x0/tests/orchestrator/timer/system.json5": frozenset(("gap", "tail",)),
-    "target/ast10x0/tests/peripherals/gpio/gpio_irq/system.json5": frozenset(("gap", "tail",)),
-    "target/ast10x0/tests/peripherals/i2c/i2c_slave_rx_burst/master_system.json5": frozenset(("tail",)),
-    "target/ast10x0/tests/peripherals/i2c/i2c_slave_rx_burst/system.json5": frozenset(("tail",)),
-    "target/ast10x0/tests/peripherals/i2c/i2c_slave_rx_ipc/system.json5": frozenset(("tail",)),
-    "target/ast10x0/tests/peripherals/sgpiom/sgpiom_irq/system.json5": frozenset(("gap", "tail",)),
+    "target/ast10x0/tests/mctp/server/peer_system.json5": frozenset(
+        (
+            "gap",
+            "overflow",
+        )
+    ),
+    "target/ast10x0/tests/mctp/server/system.json5": frozenset(
+        (
+            "gap",
+            "overflow",
+        )
+    ),
+    "target/ast10x0/tests/orchestrator/runtime/system.json5": frozenset(
+        (
+            "gap",
+            "tail",
+        )
+    ),
+    "target/ast10x0/tests/orchestrator/timer/system.json5": frozenset(
+        (
+            "gap",
+            "tail",
+        )
+    ),
+    "target/ast10x0/tests/peripherals/gpio/gpio_irq/system.json5": frozenset(
+        (
+            "gap",
+            "tail",
+        )
+    ),
+    "target/ast10x0/tests/peripherals/i2c/i2c_slave_rx_burst/master_system.json5": frozenset(
+        ("tail",)
+    ),
+    "target/ast10x0/tests/peripherals/i2c/i2c_slave_rx_burst/system.json5": frozenset(
+        ("tail",)
+    ),
+    "target/ast10x0/tests/peripherals/i2c/i2c_slave_rx_ipc/system.json5": frozenset(
+        ("tail",)
+    ),
+    "target/ast10x0/tests/peripherals/sgpiom/sgpiom_irq/system.json5": frozenset(
+        (
+            "gap",
+            "tail",
+        )
+    ),
     "target/ast10x0/tests/spdm/auth/peer_system.json5": frozenset(("overflow",)),
     "target/ast10x0/tests/spdm/auth/system.json5": frozenset(("overflow",)),
     "target/ast10x0/tests/spdm/responder/system.json5": frozenset(("padding",)),
     "target/ast10x0/tests/spdm/vca/peer_system.json5": frozenset(("overflow",)),
     "target/ast10x0/tests/spdm/vca/system.json5": frozenset(("overflow",)),
-    "target/ast10x0/tests/util_ipc/async_transaction/system.json5": frozenset(("tail",)),
-    "target/ast10x0/tests/util_service/deferred_single_channel/system.json5": frozenset(("gap", "tail",)),
+    "target/ast10x0/tests/util_ipc/async_transaction/system.json5": frozenset(
+        ("tail",)
+    ),
+    "target/ast10x0/tests/util_service/deferred_single_channel/system.json5": frozenset(
+        (
+            "gap",
+            "tail",
+        )
+    ),
 }
 
 TARGETS = (
@@ -117,7 +170,9 @@ def analyze(config: dict, target: Target) -> list[tuple[str, str]]:
     findings = []
 
     if "vector_table_start_address" in arch:
-        vector_end = arch["vector_table_start_address"] + arch["vector_table_size_bytes"]
+        vector_end = (
+            arch["vector_table_start_address"] + arch["vector_table_size_bytes"]
+        )
         if kernel["flash_start_address"] < vector_end:
             findings.append(
                 (
@@ -141,7 +196,10 @@ def analyze(config: dict, target: Target) -> list[tuple[str, str]]:
             if armv7m:
                 if size & (size - 1):
                     findings.append(
-                        ("pow2", f"process {process['name']} RAM {size} is not a power of two")
+                        (
+                            "pow2",
+                            f"process {process['name']} RAM {size} is not a power of two",
+                        )
                     )
                     continue
                 start = _align(cursor, size)
@@ -154,7 +212,10 @@ def analyze(config: dict, target: Target) -> list[tuple[str, str]]:
     if target.flash_before_ram:
         if flash_end > ram_start:
             findings.append(
-                ("overlap", f"flash ends at {flash_end:#x}, past RAM start {ram_start:#x}")
+                (
+                    "overlap",
+                    f"flash ends at {flash_end:#x}, past RAM start {ram_start:#x}",
+                )
             )
         elif flash_end < ram_start:
             findings.append(
@@ -165,12 +226,18 @@ def analyze(config: dict, target: Target) -> list[tuple[str, str]]:
             )
     if target.flash_limit is not None and flash_end > target.flash_limit:
         findings.append(
-            ("overflow", f"flash ends at {flash_end:#x}, past the limit {target.flash_limit:#x}")
+            (
+                "overflow",
+                f"flash ends at {flash_end:#x}, past the limit {target.flash_limit:#x}",
+            )
         )
     if target.ram_limit is not None:
         if ram_end > target.ram_limit:
             findings.append(
-                ("overflow", f"RAM ends at {ram_end:#x}, past the limit {target.ram_limit:#x}")
+                (
+                    "overflow",
+                    f"RAM ends at {ram_end:#x}, past the limit {target.ram_limit:#x}",
+                )
             )
         elif ram_end < target.ram_limit:
             findings.append(
@@ -180,7 +247,9 @@ def analyze(config: dict, target: Target) -> list[tuple[str, str]]:
                 )
             )
     if padding:
-        findings.append(("padding", f"{padding} bytes of process RAM alignment padding"))
+        findings.append(
+            ("padding", f"{padding} bytes of process RAM alignment padding")
+        )
     return findings
 
 
@@ -232,7 +301,9 @@ def main() -> int:
         checked, errors = check(root, target)
         for line in errors:
             print(line, file=sys.stderr)
-        print(f"{target.name}: checked {checked} system configs, {len(errors)} findings")
+        print(
+            f"{target.name}: checked {checked} system configs, {len(errors)} findings"
+        )
         failed |= bool(errors)
     return 1 if failed else 0
 
