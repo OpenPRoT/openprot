@@ -236,6 +236,13 @@
       "type": "ANALYZER"
     },
     {
+      "name": "memory_layout",
+      "description": "Fail if a target system.json5 wastes or overruns memory",
+      "use_config": "bazel_default",
+      "target": "//presubmit:memory_layout",
+      "type": "ANALYZER"
+    },
+    {
       "name": "zero_test_audit",
       "description": "Fail if a rust_test target in ci_tests ran zero tests",
       "build_config": {
@@ -257,6 +264,7 @@
       "analyzers": [
         "format",
         "lockfile_check",
+        "memory_layout",
         "presubmit_checks"
       ],
       "builds": [
