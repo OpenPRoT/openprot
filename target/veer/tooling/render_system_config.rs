@@ -12,7 +12,7 @@ use caliptra_mcu_config_emulator::{EMULATOR_MCU_STRAPS, EMULATOR_MEMORY_MAP};
 use caliptra_mcu_config_fpga::{FPGA_MCU_STRAPS, FPGA_MEMORY_MAP};
 use caliptra_ss_registers::primary_flash_ctrl::PRIMARY_FLASH_CTRL_ADDR;
 use veer_flash::FPGA_PRIMARY_FLASH_CTRL_ADDR;
-use veer_mcu_mbox::{CSR_OFFSET, MBOX0_OFFSET, MBOX1_OFFSET};
+use veer_mcu_mbox::{CSR_OFFSET, MAX_SRAM_SIZE, MBOX0_OFFSET, MBOX1_OFFSET};
 
 /// Sizes in bytes of the SRAMs of MCU mailbox 0 and 1 of the emulator
 /// (`MCU_MAILBOX0_SRAM_SIZE` and `MCU_MAILBOX1_SRAM_SIZE` in caliptra-mcu-sw
@@ -22,6 +22,13 @@ const EMULATOR_MCU_MBOX_SRAM_SIZES: [u32; 2] = [2 * 1024 * 1024; 2];
 /// Sizes in bytes of the SRAMs of MCU mailbox 0 and 1 of the VCK190
 /// bitstream, which `HW_CONFIG0` of its MCI reports.
 const FPGA_MCU_MBOX_SRAM_SIZES: [u32; 2] = [16 * 1024; 2];
+
+/// Sizes in bytes of the SRAMs of MCU mailbox 0 and 1 of the AST1080, from
+/// ASPEED's caliptra-mcu-sw fork (platforms/ast1040). Mailbox 0 uses all the
+/// SRAM address space the MCI reserves for it (its driver clears
+/// `mcu_mbox0_csr_mbox_sram.len() * 4` bytes), and mailbox 1 is the 1 MiB
+/// staging SRAM that `runtime/src/board.rs` maps.
+const AST1080_MCU_MBOX_SRAM_SIZES: [u32; 2] = [MAX_SRAM_SIZE as u32, 1024 * 1024];
 
 /// Offset of the kernel's RAM within MCU SRAM. This is OpenPRoT's own layout
 /// choice (code first, data after), not part of the upstream memory map.
@@ -65,13 +72,11 @@ fn main() {
             FPGA_PRIMARY_FLASH_CTRL_ADDR as u32,
             FPGA_MCU_MBOX_SRAM_SIZES,
         ),
-        // AST1080's memory map is the emulator's with ASPEED overrides, so it
-        // uses the emulator's mailbox SRAM sizes.
         "ast1080" => (
             &AST1080_MEMORY_MAP,
             &AST1080_MCU_STRAPS,
             AST1080_FMC_CTRL_ADDR,
-            EMULATOR_MCU_MBOX_SRAM_SIZES,
+            AST1080_MCU_MBOX_SRAM_SIZES,
         ),
         other => panic!("unknown platform {other:?}; expected emulator, fpga or ast1080"),
     };

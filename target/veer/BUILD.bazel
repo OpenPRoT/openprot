@@ -202,11 +202,9 @@ rust_library(
     deps = select({
         "@platforms//os:none": [
             "@rust_caliptra_crates//:caliptra-mcu-config",
-            "@rust_caliptra_crates//:caliptra-mcu-config-emulator",
         ],
         "//conditions:default": [
             "@rust_caliptra_crates_host//:caliptra-mcu-config",
-            "@rust_caliptra_crates_host//:caliptra-mcu-config-emulator",
         ],
     }),
 )

@@ -3,26 +3,65 @@
 
 //! AST1080 Caliptra-SS MCU memory map. Upstream caliptra-mcu-sw has no
 //! ast1040/ast1080 platform, so the values come from ASPEED's fork
-//! (platforms/ast1040/config/src/lib.rs, AST1040_MEMORY_MAP). Shared by the
+//! (platforms/ast1040/config/src/lib.rs, AST1040_MEMORY_MAP), copied in full so
+//! no emulator value is inherited. Shared by the
 //! kernel config and the host-side render_system_config tool.
 #![no_std]
 
-use caliptra_mcu_config::{McuMemoryMap, McuStraps};
+use caliptra_mcu_config::{McuMemoryMap, McuStraps, MemoryRegionType};
 
 pub const AST1080_MEMORY_MAP: McuMemoryMap = McuMemoryMap {
-    sram_offset: 0x21c0_0000,
-    sram_size: 512 * 1024,
+    rom_offset: 0x0000_0000,
+    rom_size: 96 * 1024,
+    rom_stack_size: 0x2e00,
+    rom_estack_size: 0x200,
+    rom_properties: MemoryRegionType::MEMORY,
+
     dccm_offset: 0x5000_0000,
     dccm_size: 16 * 1024,
+    dccm_properties: MemoryRegionType::MEMORY,
+
+    sram_offset: 0x21c0_0000,
+    sram_size: 512 * 1024,
+    sram_properties: MemoryRegionType::MEMORY,
+
+    storage_size: 0x400,
+
     pic_offset: 0x6000_0000,
-    mci_offset: 0x2100_0000,
-    mbox_offset: 0xa002_0000,
-    soc_offset: 0xa003_0000,
+    pic_properties: MemoryRegionType::MMIO,
+
     i3c_offset: 0x2000_4000,
+    i3c_size: 0x1000,
+    i3c_properties: MemoryRegionType::MMIO,
+
     i3c1_offset: 0x2000_5000,
-    handoff_offset: 0x5000_3c00,
+    i3c1_size: 0x1000,
+    i3c1_properties: MemoryRegionType::MMIO,
+
+    mci_offset: 0x2100_0000,
+    mci_size: 0xe0_0000,
+    mci_properties: MemoryRegionType::MMIO,
+
+    mbox_offset: 0xa002_0000,
+    mbox_size: 0x28,
+    mbox_properties: MemoryRegionType::MMIO,
+
+    soc_offset: 0xa003_0000,
+    soc_size: 0x5e0,
+    soc_properties: MemoryRegionType::MMIO,
+
+    otp_offset: 0x7000_0000,
+    otp_size: 0x140,
+    otp_properties: MemoryRegionType::MMIO,
+
+    lc_offset: 0x7000_0400,
+    lc_size: 0x8c,
+    lc_properties: MemoryRegionType::MMIO,
+    handoff_offset: 0x5000_3C00,
     handoff_size: 1024,
-    ..caliptra_mcu_config_emulator::EMULATOR_MEMORY_MAP
+
+    staging_sram_offset: 0xb00c_0000,
+    staging_sram_size: 1024 * 1024,
 };
 
 /// Straps, from AST1040_MCU_STRAPS in the same fork file. Core 0 is the active
