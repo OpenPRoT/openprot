@@ -10,9 +10,10 @@
 //! Walks the full `dispatch()` surface of `//services/i3c/server`, in order:
 //!
 //! 1. `recv` before any frame has arrived -> `None` (the empty latch).
-//! 2. `dynamic_address` -> the address the Caliptra ROM assigned, then
-//!    `device_info` -> that address and the driver's transfer limits (256 bytes
-//!    each way on the TTI).
+//! 2. `dynamic_address` -> the address the bus controller assigned (ENTDAA or
+//!    SETDASA; `None` until then, in which case the static address the ROM
+//!    programmed is used instead), then `device_info` -> the addresses and the
+//!    driver's transfer limits (256 bytes each way on the TTI).
 //! 3. park in `object_wait(CHANNEL, USER)`, then `recv` -> the host's payload.
 //! 4. a second `recv` -> `None` again, proving `recv` consumed the latch.
 //! 5. `send` -> stages a TX the host collects with a private read.
@@ -120,7 +121,18 @@ fn entry() {
     //    reads it back out of the standby-controller registers.
     match i3c.dynamic_address() {
         Ok(Some(addr)) => pw_log::info!("i3c service: dynamic address {:#04x}", addr as u32),
-        Ok(None) => fail!("dynamic address unassigned"),
+        // The bus controller assigns the dynamic address, and may not have yet.
+        // Fall back to the static address, as caliptra-mcu-sw does.
+        Ok(None) => match i3c.device_info() {
+            Ok(info) => match info.static_address {
+                Some(addr) => pw_log::info!(
+                    "i3c service: no dynamic address, using static {:#04x}",
+                    addr as u32
+                ),
+                None => fail!("no dynamic or static address"),
+            },
+            Err(_) => fail!("device_info failed"),
+        },
         Err(_) => fail!("dynamic_address failed"),
     }
 
@@ -133,8 +145,8 @@ fn entry() {
                 info.max_send_len as u32,
                 info.max_recv_len as u32
             );
-            if info.dynamic_address.is_none() {
-                fail!("device info has no dynamic address");
+            if info.dynamic_address.is_none() && info.static_address.is_none() {
+                fail!("device info has no dynamic or static address");
             }
             // A `Send` carries one byte less than a received frame: its payload
             // leads with the address byte.

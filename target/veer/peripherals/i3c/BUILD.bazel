@@ -9,6 +9,7 @@ rust_library(
     name = "i3c",
     srcs = ["lib.rs"],
     crate_features = select({
+        "//target/veer:ast1080": ["ast1080"],
         "//target/veer:fpga": ["fpga"],
         "//conditions:default": [],
     }),
@@ -16,6 +17,7 @@ rust_library(
     edition = "2024",
     deps = [
         "//hal/blocking",
+        "//target/veer:ast1080_memory_map",
         "//target/veer/registers",
         "//third_party/caliptra:crate_tock-registers",
         "@rust_caliptra_crates//:caliptra-mcu-config-emulator",

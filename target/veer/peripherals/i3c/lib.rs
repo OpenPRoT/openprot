@@ -36,7 +36,9 @@ use tock_registers::fields::FieldValue;
 use tock_registers::LocalRegisterCopy;
 // I3C register block base for the selected target type, from upstream
 // caliptra-mcu-sw's memory maps (same selection as target/veer's kernel config).
-#[cfg(not(feature = "fpga"))]
+#[cfg(feature = "ast1080")]
+use ast1080_memory_map::{AST1080_MCU_STRAPS as MCU_STRAPS, AST1080_MEMORY_MAP as MCU_MEMORY_MAP};
+#[cfg(not(any(feature = "fpga", feature = "ast1080")))]
 use caliptra_mcu_config_emulator::{
     EMULATOR_MCU_STRAPS as MCU_STRAPS, EMULATOR_MEMORY_MAP as MCU_MEMORY_MAP,
 };

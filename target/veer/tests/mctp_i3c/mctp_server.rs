@@ -110,11 +110,11 @@ fn mctp_server_loop() -> Result<()> {
                         pw_log::error!(
                             "i3c frame decode failed: len=0x{:04x} head={:02x}{:02x}{:02x}{:02x} tail=0x{:02x}",
                             n as u32,
-                            byte(0),
-                            byte(1),
-                            byte(2),
-                            byte(3),
-                            byte(n.wrapping_sub(1))
+                            byte(0) as u32,
+                            byte(1) as u32,
+                            byte(2) as u32,
+                            byte(3) as u32,
+                            byte(n.wrapping_sub(1)) as u32
                         );
                     }
                 }

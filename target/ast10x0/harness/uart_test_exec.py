@@ -443,6 +443,9 @@ Examples:
   # Upload-only (no GPIO, no monitoring)
   ./uart_test_exec.py --upload-only /dev/ttyUSB0 firmware.bin
 
+  # Listen only, with detokenization
+  ./uart_test_exec.py --uart-only --elf app.elf /dev/ttyUSB0
+
   # Bazel test mode (exit code indicates pass/fail)
   ./uart_test_exec.py --bazel-test /dev/ttyUSB0 firmware.bin
         """,
@@ -521,6 +524,12 @@ Examples:
         help="Skip GPIO commands, upload firmware only",
     )
     parser.add_argument(
+        "--uart-only",
+        action="store_true",
+        help="Only listen to the UART and print received data (Ctrl-C to stop); "
+        "no GPIO, no upload. Works with --elf for detokenization",
+    )
+    parser.add_argument(
         "--bazel-test",
         action="store_true",
         help="Run in Bazel test mode (structured output)",
@@ -548,7 +557,10 @@ Examples:
         sys.exit(1)
 
     # Validate arguments
-    if args.upload_only:
+    if args.uart_only:
+        if not args.uart_device:
+            parser.error("--uart-only requires UART device")
+    elif args.upload_only:
         if not args.uart_device or not args.firmware:
             parser.error("--upload-only requires UART device and firmware file")
     elif not any(
@@ -579,6 +591,20 @@ Examples:
             state = "dh" if args.manual_fwspick in ["high", "dh"] else "dl"
             executor.toggle_fwspick(state)
             return 0
+
+        # UART-only mode: listen and print until Ctrl-C
+        if args.uart_only:
+            try:
+                if not executor.open_serial():
+                    return 1
+                while True:
+                    data = executor.read_serial_data(0.5)
+                    if data:
+                        executor.print_uart_data(data)
+            except KeyboardInterrupt:
+                return 0
+            finally:
+                executor.cleanup()
 
         # Upload-only mode
         if args.upload_only:
