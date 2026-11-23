@@ -1,0 +1,25 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+# The requester side of a never-blocking client: per-channel command queue,
+# one command in flight, deadline and cancel. The counterpart of
+# //util/service. Nothing kernel-specific, so it builds and tests on a host.
+rust_library(
+    name = "requester",
+    srcs = ["lib.rs"],
+    crate_name = "util_requester",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util/transport",
+        "@rust_crates//:heapless",
+    ],
+)
+
+rust_test(
+    name = "requester_test",
+    crate = ":requester",
+    edition = "2024",
+)
