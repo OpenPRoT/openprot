@@ -47,41 +47,97 @@ impl<S: ImageSource> ImageSource for &mut S {
     }
 }
 
-/// Judges a component's firmware image; board wiring decides what counts
-/// as authenticated.
+/// Verifies a component's firmware image without making the caller wait.
+///
+/// The split mirrors `util_transport::AsyncTransport`: `start` begins a check
+/// and returns, `poll` reports whether it has finished, and `cancel` abandons
+/// it. A board whose check is a request to a crypto service implements this
+/// directly, so the orchestrator keeps serving timers and events while the
+/// image is hashed. A board whose check is fast and local completes it inside
+/// `start` and answers `Done` on the first `poll`.
+///
+/// # How the run loop uses it
+///
+/// One check is outstanding at a time. The driver cancels before starting
+/// another, so an implementation never holds two, and `poll` and `cancel`
+/// name no component: they mean the check in flight.
+///
+/// 1. Call `start`, then call `poll` once straight away. A check that
+///    finished inside `start` sends no signal, and the first `poll` is also
+///    what reports the check's deadline.
+/// 2. Sleep until the verifier signals or that deadline passes, then `poll`
+///    again with the current time. A verifier that has stopped answering
+///    sends no signal, so the deadline is the only thing that turns its
+///    silence into [`VerifyStatus::TimedOut`].
+///
+/// Not object safe by design: `start` is generic over the image source, and a
+/// board names its verifier through [`BoardCapabilities::Verifier`].
 pub trait Verifier {
     /// The error type reported by this verifier.
     type Error: core::error::Error;
 
-    /// Judges `id`'s image, reading it from `image`.
+    /// Begins verifying `id`'s image. An implementation that reaches the image
+    /// itself, such as a service that reads it from the device server, may
+    /// ignore `image`.
     ///
     /// # Errors
     ///
-    /// Only when the check could not be performed (crypto fault, missing
-    /// key, unreadable source). A checked-and-bad image is
-    /// `Ok(Verdict::Rejected)` — an actuation fault must not forge a
-    /// verdict.
-    fn verify(
-        &mut self,
-        id: ComponentId,
-        image: &mut impl ImageSource,
-    ) -> Result<Verdict, Self::Error>;
+    /// Only when the check could not be started. A checked-and-bad image is
+    /// a [`Verdict::Rejected`] from `poll`, not an error here.
+    fn start(&mut self, id: ComponentId, image: &mut impl ImageSource) -> Result<(), Self::Error>;
+
+    /// Reports the outcome of the check in flight. Never waits. `now_millis`
+    /// is the current time, so an implementation with no clock of its own can
+    /// end a check that has run past its deadline with
+    /// [`VerifyStatus::TimedOut`].
+    ///
+    /// # Errors
+    ///
+    /// Only when the check could not be carried through (the service
+    /// failed, the transport broke). That is a fault, not a verdict. An
+    /// error ends the check.
+    fn poll(&mut self, now_millis: u64) -> Result<VerifyStatus, Self::Error>;
+
+    /// Abandons the check in flight. Its answer, if one arrives later, is
+    /// discarded.
+    fn cancel(&mut self) -> Result<(), Self::Error>;
 }
 
 impl<V: Verifier> Verifier for &mut V {
     type Error = V::Error;
 
     #[inline(always)]
-    fn verify(
-        &mut self,
-        id: ComponentId,
-        image: &mut impl ImageSource,
-    ) -> Result<Verdict, Self::Error> {
-        (**self).verify(id, image)
+    fn start(&mut self, id: ComponentId, image: &mut impl ImageSource) -> Result<(), Self::Error> {
+        (**self).start(id, image)
+    }
+
+    #[inline(always)]
+    fn poll(&mut self, now_millis: u64) -> Result<VerifyStatus, Self::Error> {
+        (**self).poll(now_millis)
+    }
+
+    #[inline(always)]
+    fn cancel(&mut self) -> Result<(), Self::Error> {
+        (**self).cancel()
     }
 }
 
-/// A [`Verifier`]'s judgment of one image.
+/// Where an asynchronous check stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VerifyStatus {
+    /// Still running. `deadline_millis` is when the check will give up, on the
+    /// same clock as `poll`'s `now_millis`, or `None` if it has no deadline.
+    /// The run loop wakes then to poll again.
+    Pending { deadline_millis: Option<u64> },
+    /// Finished with a verification result.
+    Done(Verdict),
+    /// Ran past the implementation's deadline with no answer. Not a verdict:
+    /// nothing was verified. The driver reports it as a failed verification, so
+    /// the machine recovers the component instead of trusting or locking.
+    TimedOut,
+}
+
+/// A verifier's result for one image.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verdict {
     /// Reported as `Event::VerificationPassed`. Carries the image's
@@ -164,7 +220,7 @@ impl<S: ReportSink> ReportSink for &mut S {
 pub trait BoardCapabilities {
     /// Image access for the managed components.
     type Image: ImageSource;
-    /// Judges images for every component.
+    /// Verifies images for every component, without making the driver wait.
     type Verifier: Verifier;
     /// Reset actuation for the managed components.
     type BootControl: BootControl;
@@ -199,7 +255,7 @@ pub enum SvnFloorBinding<F: SvnFloor> {
 /// struct Ast1060Board;
 /// impl BoardCapabilities for Ast1060Board {
 ///     type Image = SpiFlashImage;         // interposed flash, offsets from the slot layout
-///     type Verifier = ManifestVerifier;   // signature + SVN via the crypto engine
+///     type Verifier = ManifestVerifier;    // signature + SVN via the crypto engine
 ///     type BootControl = ExtrstGpio;      // per-component reset line
 ///     type BootWatch = CheckpointWalk;    // GPIO checkpoint walk over the boot window
 ///     type SvnFloor = OtpSvnFloor;        // fuse-backed anti-rollback floor
@@ -219,7 +275,7 @@ pub struct Board<B: BoardCapabilities, const N: usize> {
     /// `images[i]` belongs to `ComponentId(i)` — device index = chain
     /// position = table declaration order.
     pub images: [B::Image; N],
-    /// Judges images for every component.
+    /// Verifies images for every component.
     pub verifier: B::Verifier,
     /// `boot_controls[i]` actuates `ComponentId(i)`'s reset, same indexing
     /// as `images`.
