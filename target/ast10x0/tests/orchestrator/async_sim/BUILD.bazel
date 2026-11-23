@@ -1,0 +1,22 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+# The shared sources and system config for the async orchestration scenarios.
+# Each scenario is its own package (`flaky_boot/`, `verify_hangs/`) that builds
+# these through labels, so one image is one scenario. See scenario.bzl.
+#
+# Thesis under test: the real orchestrator core can drive several services
+# without blocking, using ServiceLoop servers and an async client.
+
+exports_files([
+    "devices_main.rs",
+    "orchestrator_main.rs",
+    "target.rs",
+    "verifier_main.rs",
+])
+
+filegroup(
+    name = "system_config",
+    srcs = ["system.json5"],
+    visibility = ["//visibility:public"],
+)
