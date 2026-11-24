@@ -7,6 +7,48 @@ load("@pigweed//pw_kernel:flags.bzl", "KERNEL_DEVICE_COMMON_FLAGS")
 load("@rules_rust//rust:defs.bzl", "rust_library")
 load("//target/veer:defs.bzl", "TARGET_COMPATIBLE_WITH")
 
+config_setting(
+    name = "app",
+    flag_values = {"@pigweed//pw_kernel/userspace:is_app_build": "True"},
+)
+
+# An AST1080 build of a userspace app. Its flags are a superset of :app's, so
+# it wins the select below where both match.
+config_setting(
+    name = "ast1080_app",
+    flag_values = {
+        ":target_type": "ast1080",
+        "@pigweed//pw_kernel/userspace:is_app_build": "True",
+    },
+)
+
+# An AST1080 build of kernel code (not a userspace app).
+config_setting(
+    name = "ast1080_kernel",
+    flag_values = {
+        ":target_type": "ast1080",
+        "@pigweed//pw_kernel/userspace:is_app_build": "False",
+    },
+)
+
+# Log backend by target type. AST1080 uses the tokenized backend, like the
+# AST10x0 targets (pigweed's default): the UART carries base64 tokens that the
+# host detokenizes against the ELF. The emulator and FPGA keep plaintext logs,
+# which their host tests match on.
+alias(
+    name = "log_backend",
+    # Same kernel/app split as pigweed's own log_backend_{basic,tokenized}
+    # aliases, which are not visible from here.
+    actual = select({
+        ":app": "@pigweed//pw_kernel/userspace/log_backend:basic",
+        ":ast1080_app": "@pigweed//pw_kernel/userspace/log_backend:tokenized",
+        ":ast1080_kernel": "@pigweed//pw_kernel/subsys/console:pw_log_backend_tokenized",
+        "//conditions:default": "@pigweed//pw_kernel/subsys/console:pw_log_backend_basic",
+    }),
+    tags = ["kernel"],
+    visibility = ["//visibility:public"],
+)
+
 platform(
     name = "veer",
     constraint_values = [
@@ -25,7 +67,7 @@ platform(
             "@pigweed//pw_kernel/arch/riscv:veer_pic": True,
             "@pigweed//pw_kernel/config:kernel_config": ":config",
             "@pigweed//pw_kernel/subsys/console:console_backend": ":console",
-            "@pigweed//pw_log/rust:pw_log_backend": "@pigweed//pw_kernel:log_backend_basic",
+            "@pigweed//pw_log/rust:pw_log_backend": ":log_backend",
         },
     ),
     visibility = [":__subpackages__"],
@@ -38,6 +80,7 @@ string_flag(
         "silicon",
         "fpga",
         "emulator",
+        "ast1080",
     ],
 )
 
@@ -64,6 +107,12 @@ config_setting(
     visibility = ["//util:__subpackages__"],
 )
 
+# ASPEED AST1080 Caliptra-SS MCU.
+config_setting(
+    name = "ast1080",
+    flag_values = {":target_type": "ast1080"},
+)
+
 constraint_value(
     name = "target_veer",
     constraint_setting = "@pigweed//pw_kernel/target:target",
@@ -79,6 +128,7 @@ rust_library(
         "entry.rs",
     ],
     crate_features = select({
+        ":ast1080": ["ast1080"],
         ":emulator": ["emulator"],
         ":fpga": ["fpga"],
         ":silicon": ["silicon"],
@@ -101,6 +151,7 @@ rust_library(
     name = "console",
     srcs = ["console.rs"],
     crate_features = select({
+        ":ast1080": ["ast1080"],
         ":emulator": ["emulator"],
         ":fpga": ["fpga"],
         ":silicon": ["silicon"],
@@ -121,6 +172,7 @@ rust_library(
     name = "config",
     srcs = ["config.rs"],
     crate_features = select({
+        ":ast1080": ["ast1080"],
         ":emulator": ["emulator"],
         ":fpga": ["fpga"],
         ":silicon": ["silicon"],
@@ -131,11 +183,30 @@ rust_library(
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = [":__subpackages__"],
     deps = [
+        ":ast1080_memory_map",
         "@pigweed//pw_kernel/config:kernel_config_interface",
         "@pigweed//pw_kernel/lib/memory_config",
         "@rust_caliptra_crates//:caliptra-mcu-config-emulator",
         "@rust_caliptra_crates//:caliptra-mcu-config-fpga",
     ],
+)
+
+# Single AST1080 memory map, used by :config (MCU) and the host-side
+# render_system_config tool. The two sides get caliptra-mcu-config from
+# different crate repos, so pick the one matching the build platform.
+rust_library(
+    name = "ast1080_memory_map",
+    srcs = ["ast1080_memory_map.rs"],
+    edition = "2024",
+    visibility = [":__subpackages__"],
+    deps = select({
+        "@platforms//os:none": [
+            "@rust_caliptra_crates//:caliptra-mcu-config",
+        ],
+        "//conditions:default": [
+            "@rust_caliptra_crates_host//:caliptra-mcu-config",
+        ],
+    }),
 )
 
 filegroup(

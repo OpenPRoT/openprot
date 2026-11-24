@@ -133,7 +133,7 @@ fn entry() {
             }
         };
         served += 1;
-        pw_log::info!("mctp echo: serviced request {}", served);
+        pw_log::info!("mctp echo: serviced request {}", served as u32);
         if initiate && send_target_requests(&stack) != 0 {
             let _ = syscall::debug_shutdown(Err(pw_status::Error::Internal));
             loop {}

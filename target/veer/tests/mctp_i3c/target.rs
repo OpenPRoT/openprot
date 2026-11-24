@@ -40,7 +40,7 @@ impl TargetInterface for Target {
     fn shutdown(code: u32) -> ! {
         match code {
             0 => pw_log::info!("PASS"),
-            _ => pw_log::info!("FAIL: {}", code),
+            _ => pw_log::info!("FAIL: {}", code as u32),
         }
         exit(code);
     }
