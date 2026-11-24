@@ -34,10 +34,10 @@ impl ScuRegisters {
 /// Thin free-function wrapper around [`ScuRegisters::dcache_invd_all`].
 ///
 /// Exists solely so the function can be stored as a bare `fn()` pointer in
-/// [`HaceDevice::cache_flush`], which is wired at construction by the board
+/// [`Hace::cache_flush`], which is wired at construction by the board
 /// crate. All SCU register access goes through [`ScuRegisters`].
 pub fn dcache_invd_all() {
-    // SAFETY: singleton SCU; single-threaded HACE use is upheld by HaceDevice's
+    // SAFETY: singleton SCU; single-threaded HACE use is upheld by Hace's
     // single-instance contract.
     unsafe { ScuRegisters::new_global() }.dcache_invd_all();
 }

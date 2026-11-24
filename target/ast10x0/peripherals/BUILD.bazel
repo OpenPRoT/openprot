@@ -20,7 +20,6 @@ rust_library(
         "hace/helpers.rs",
         "hace/hmac.rs",
         "hace/mod.rs",
-        "hace/registers.rs",
         "hal/field_mux.rs",
         "hal/gpio.rs",
         "hal/mod.rs",
@@ -91,6 +90,7 @@ rust_library(
         "spimonitor/registers.rs",
         "spimonitor/traits.rs",
         "spimonitor/types.rs",
+        "tokens.rs",
         "uart/mod.rs",
         "wdt/mod.rs",
         "wdt/registers.rs",
@@ -140,6 +140,18 @@ rust_test(
         "@rust_crates//:embedded-hal",
         "@rust_crates//:heapless",
     ],
+)
+
+rust_test(
+    name = "tokens_test",
+    srcs = ["tokens.rs"],
+    crate_name = "tokens_test",
+    edition = "2024",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = ["@ast1060_pac"],
 )
 
 rust_test(

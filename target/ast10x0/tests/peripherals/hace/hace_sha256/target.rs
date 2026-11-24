@@ -5,7 +5,9 @@
 #![no_main]
 
 use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
-use ast10x0_peripherals::hace::{HaceDevice, HaceDigest, HaceHmac, HmacKey};
+use ast10x0_peripherals::hace::{Hace, HaceDigest, HaceHmac, HmacKey};
+use ast10x0_peripherals::scu::ScuRegisters;
+use ast10x0_peripherals::Peripherals;
 use codegen as _;
 use console_backend::console_backend_write_all;
 use entry as _;
@@ -19,6 +21,7 @@ pub struct Target {}
 
 const ERR_HASH_FAILED: &str = "hace hash failed";
 const ERR_VERIFY_FAILED: &str = "hace digest mismatch";
+const ERR_TAKEN: &str = "peripherals already taken";
 
 // NIST FIPS 180-4 example messages.
 const NIST_56: &[u8] = b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"; // 448-bit
@@ -60,77 +63,6 @@ fn check(name: &str, actual: &[u8], expected: &[u8]) -> Result<(), &'static str>
     Ok(())
 }
 
-/// One-shot KAT: single `update` of `$input`, compare to `$expected`.
-macro_rules! oneshot_case {
-    ($name:expr, $ty:ty, $val:expr, $input:expr, $expected:expr) => {{
-        pw_log::info!("case: {}", $name as &str);
-        // SAFETY: test runs once at boot with exclusive HACE access.
-        let mut device = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
-        // SAFETY: single-threaded test; no concurrent HACE access.
-        let mut dev = unsafe { HaceDigest::<$ty>::from_device(&mut device) };
-        let mut op = dev.init($val).map_err(|_| ERR_HASH_FAILED)?;
-        op.update($input).map_err(|_| ERR_HASH_FAILED)?;
-        let digest = op.finalize().map_err(|_| ERR_HASH_FAILED)?;
-        check($name, digest.as_bytes(), &$expected)?;
-    }};
-}
-
-/// Production streaming path: feed `pat(0..$total)` in `$chunk`-byte updates,
-/// then finalize. Asserts the engine's accumulated digest equals the standard
-/// SHA of the whole input (goal.md §3.5 gating test; D2 branch is dormant here).
-macro_rules! stream_case {
-    ($name:expr, $ty:ty, $val:expr, $total:expr, $chunk:expr, $expected:expr) => {{
-        pw_log::info!(
-            "case: {} ({} B in {} B chunks)",
-            $name as &str,
-            $total as u32,
-            $chunk as u32
-        );
-        // SAFETY: test runs once at boot with exclusive HACE access.
-        let mut device = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
-        // SAFETY: single-threaded test; no concurrent HACE access.
-        let mut dev = unsafe { HaceDigest::<$ty>::from_device(&mut device) };
-        let mut op = dev.init($val).map_err(|_| ERR_HASH_FAILED)?;
-        let mut off = 0usize;
-        while off < $total {
-            let n = core::cmp::min($chunk, $total - off);
-            // SAFETY: serial single-threaded use of INPUT_BUF.
-            let buf = unsafe { &mut *core::ptr::addr_of_mut!(INPUT_BUF) };
-            for k in 0..n {
-                buf[k] = pat(off + k);
-            }
-            op.update(&buf[..n]).map_err(|_| ERR_HASH_FAILED)?;
-            off += n;
-        }
-        let digest = op.finalize().map_err(|_| ERR_HASH_FAILED)?;
-        check($name, digest.as_bytes(), &$expected)?;
-    }};
-}
-
-/// RFC-2104 HMAC KAT: one `update` of `$data` under `$key`, compare to
-/// `$expected` (RFC-4231 tag). `$algo` is the `HmacSha2_*` marker.
-macro_rules! hmac_case {
-    ($name:expr, $algo:expr, $key:expr, $data:expr, $expected:expr) => {{
-        pw_log::info!("case: {}", $name as &str);
-        // Feed the message from the aligned RAM scratch (same as stream_case!):
-        // engine DMA wants a RAM source, not a rodata string literal.
-        let src: &[u8] = $data;
-        // SAFETY: serial single-threaded use of INPUT_BUF.
-        let buf = unsafe { &mut *core::ptr::addr_of_mut!(INPUT_BUF) };
-        buf[..src.len()].copy_from_slice(src);
-        let data: &[u8] = &buf[..src.len()];
-        // SAFETY: test runs once at boot with exclusive HACE access.
-        let mut device = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
-        // SAFETY: single-threaded test; no concurrent HACE access.
-        let mut hmac = unsafe { HaceHmac::from_device(&mut device) };
-        let key = HmacKey::from_slice($key).map_err(|_| ERR_HASH_FAILED)?;
-        let mut op = hmac.init($algo, key).map_err(|_| ERR_HASH_FAILED)?;
-        op.update(data).map_err(|_| ERR_HASH_FAILED)?;
-        let tag = op.finalize().map_err(|_| ERR_HASH_FAILED)?;
-        check($name, tag.as_bytes(), &$expected)?;
-    }};
-}
-
 include!("vectors.rs");
 
 fn run_hace_sha2_kats() -> Result<(), &'static str> {
@@ -144,6 +76,74 @@ fn run_hace_sha2_kats() -> Result<(), &'static str> {
     unsafe {
         let _ = board.init();
     };
+
+    // The tokens prove this test is the only owner of the HACE engine; the SCU is lent to the
+    // engine for its clock and reset bring-up. Every case below borrows this one `Hace`.
+    let peripherals = Peripherals::take().ok_or(ERR_TAKEN)?;
+    let scu = ScuRegisters::new(peripherals.scu);
+    let mut device = Hace::new(peripherals.hace, &scu);
+
+    /// One-shot KAT: single `update` of `$input`, compare to `$expected`.
+    macro_rules! oneshot_case {
+        ($name:expr, $ty:ty, $val:expr, $input:expr, $expected:expr) => {{
+            pw_log::info!("case: {}", $name as &str);
+            let mut dev = HaceDigest::<$ty, _>::from_device(&mut device);
+            let mut op = dev.init($val).map_err(|_| ERR_HASH_FAILED)?;
+            op.update($input).map_err(|_| ERR_HASH_FAILED)?;
+            let digest = op.finalize().map_err(|_| ERR_HASH_FAILED)?;
+            check($name, digest.as_bytes(), &$expected)?;
+        }};
+    }
+
+    /// Production streaming path: feed `pat(0..$total)` in `$chunk`-byte updates,
+    /// then finalize. Asserts the engine's accumulated digest equals the standard
+    /// SHA of the whole input (goal.md §3.5 gating test; D2 branch is dormant here).
+    macro_rules! stream_case {
+        ($name:expr, $ty:ty, $val:expr, $total:expr, $chunk:expr, $expected:expr) => {{
+            pw_log::info!(
+                "case: {} ({} B in {} B chunks)",
+                $name as &str,
+                $total as u32,
+                $chunk as u32
+            );
+            let mut dev = HaceDigest::<$ty, _>::from_device(&mut device);
+            let mut op = dev.init($val).map_err(|_| ERR_HASH_FAILED)?;
+            let mut off = 0usize;
+            while off < $total {
+                let n = core::cmp::min($chunk, $total - off);
+                // SAFETY: serial single-threaded use of INPUT_BUF.
+                let buf = unsafe { &mut *core::ptr::addr_of_mut!(INPUT_BUF) };
+                for k in 0..n {
+                    buf[k] = pat(off + k);
+                }
+                op.update(&buf[..n]).map_err(|_| ERR_HASH_FAILED)?;
+                off += n;
+            }
+            let digest = op.finalize().map_err(|_| ERR_HASH_FAILED)?;
+            check($name, digest.as_bytes(), &$expected)?;
+        }};
+    }
+
+    /// RFC-2104 HMAC KAT: one `update` of `$data` under `$key`, compare to
+    /// `$expected` (RFC-4231 tag). `$algo` is the `HmacSha2_*` marker.
+    macro_rules! hmac_case {
+        ($name:expr, $algo:expr, $key:expr, $data:expr, $expected:expr) => {{
+            pw_log::info!("case: {}", $name as &str);
+            // Feed the message from the aligned RAM scratch (same as stream_case!):
+            // engine DMA wants a RAM source, not a rodata string literal.
+            let src: &[u8] = $data;
+            // SAFETY: serial single-threaded use of INPUT_BUF.
+            let buf = unsafe { &mut *core::ptr::addr_of_mut!(INPUT_BUF) };
+            buf[..src.len()].copy_from_slice(src);
+            let data: &[u8] = &buf[..src.len()];
+            let mut hmac = HaceHmac::from_device(&mut device);
+            let key = HmacKey::from_slice($key).map_err(|_| ERR_HASH_FAILED)?;
+            let mut op = hmac.init($algo, key).map_err(|_| ERR_HASH_FAILED)?;
+            op.update(data).map_err(|_| ERR_HASH_FAILED)?;
+            let tag = op.finalize().map_err(|_| ERR_HASH_FAILED)?;
+            check($name, tag.as_bytes(), &$expected)?;
+        }};
+    }
 
     // --- SHA-256 ---
     oneshot_case!("sha256 empty", Sha2_256, Sha2_256, b"", EMPTY_256);
@@ -195,10 +195,7 @@ fn run_hace_sha2_kats() -> Result<(), &'static str> {
     // no real consumer produces.
     {
         pw_log::info!("case: {}", "sha256 d2-boundary" as &str);
-        // SAFETY: test runs once at boot with exclusive HACE access.
-        let mut device = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
-        // SAFETY: single-threaded test; no concurrent HACE access.
-        let mut dev = unsafe { HaceDigest::<Sha2_256>::from_device(&mut device) };
+        let mut dev = HaceDigest::<Sha2_256, _>::from_device(&mut device);
         let mut op = dev.init(Sha2_256).map_err(|_| ERR_HASH_FAILED)?;
         // SAFETY: serial single-threaded use of INPUT_BUF.
         let buf = unsafe { &mut *core::ptr::addr_of_mut!(INPUT_BUF) };
@@ -222,8 +219,7 @@ fn run_hace_sha2_kats() -> Result<(), &'static str> {
     {
         let dmsg: &[u8] = b"Test Using Larger Than Block-Size Key - Hash Key First";
         // K0 = SHA512(K6) zero-padded to 128.
-        let mut device = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
-        let mut dd = unsafe { HaceDigest::<Sha2_512>::from_device(&mut device) };
+        let mut dd = HaceDigest::<Sha2_512, _>::from_device(&mut device);
         let mut op = dd.init(Sha2_512).map_err(|_| ERR_HASH_FAILED)?;
         op.update(&HMAC_K6).map_err(|_| ERR_HASH_FAILED)?;
         let red = op.finalize().map_err(|_| ERR_HASH_FAILED)?;
@@ -243,8 +239,7 @@ fn run_hace_sha2_kats() -> Result<(), &'static str> {
         let buf = unsafe { &mut *core::ptr::addr_of_mut!(INPUT_BUF) };
         buf[..128].copy_from_slice(&ipad);
         buf[128..ilen].copy_from_slice(dmsg);
-        let mut device = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
-        let mut dd = unsafe { HaceDigest::<Sha2_512>::from_device(&mut device) };
+        let mut dd = HaceDigest::<Sha2_512, _>::from_device(&mut device);
         let mut op = dd.init(Sha2_512).map_err(|_| ERR_HASH_FAILED)?;
         op.update(&buf[..ilen]).map_err(|_| ERR_HASH_FAILED)?;
         let innr = op.finalize().map_err(|_| ERR_HASH_FAILED)?;
@@ -255,8 +250,7 @@ fn run_hace_sha2_kats() -> Result<(), &'static str> {
         let buf = unsafe { &mut *core::ptr::addr_of_mut!(INPUT_BUF) };
         buf[..128].copy_from_slice(&opad);
         buf[128..128 + 64].copy_from_slice(&ib);
-        let mut device = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
-        let mut dd = unsafe { HaceDigest::<Sha2_512>::from_device(&mut device) };
+        let mut dd = HaceDigest::<Sha2_512, _>::from_device(&mut device);
         let mut op = dd.init(Sha2_512).map_err(|_| ERR_HASH_FAILED)?;
         op.update(&buf[..128 + 64]).map_err(|_| ERR_HASH_FAILED)?;
         let t = op.finalize().map_err(|_| ERR_HASH_FAILED)?;
@@ -360,8 +354,7 @@ fn run_hace_sha2_kats() -> Result<(), &'static str> {
         pw_log::info!("case: {}", "dbg sha512 reduce-k6-via-bss" as &str);
         let buf = unsafe { &mut *core::ptr::addr_of_mut!(INPUT_BUF) };
         buf[..HMAC_K6.len()].copy_from_slice(&HMAC_K6);
-        let mut device = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
-        let mut dd = unsafe { HaceDigest::<Sha2_512>::from_device(&mut device) };
+        let mut dd = HaceDigest::<Sha2_512, _>::from_device(&mut device);
         let mut op = dd.init(Sha2_512).map_err(|_| ERR_HASH_FAILED)?;
         op.update(&buf[..HMAC_K6.len()])
             .map_err(|_| ERR_HASH_FAILED)?;
@@ -410,10 +403,7 @@ fn run_hace_sha2_kats() -> Result<(), &'static str> {
     // must equal the one-shot tag (exercises MacOp::update chaining).
     {
         pw_log::info!("case: {}", "hmac-sha256 streamed-7" as &str);
-        // SAFETY: test runs once at boot with exclusive HACE access.
-        let mut device = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
-        // SAFETY: single-threaded test; no concurrent HACE access.
-        let mut hmac = unsafe { HaceHmac::from_device(&mut device) };
+        let mut hmac = HaceHmac::from_device(&mut device);
         let key = HmacKey::from_slice(&HMAC_K7).map_err(|_| ERR_HASH_FAILED)?;
         let mut op = hmac.init(HmacSha2_256, key).map_err(|_| ERR_HASH_FAILED)?;
         let data: &[u8] = b"This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm.";

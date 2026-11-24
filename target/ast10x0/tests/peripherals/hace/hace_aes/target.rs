@@ -11,7 +11,9 @@
 //! 4 KB CBC round-trip path.
 
 use ast10x0_board::{Ast10x0Board, Ast10x0BoardDescriptor};
-use ast10x0_peripherals::hace::{AesCipher, HaceDevice, HaceError};
+use ast10x0_peripherals::hace::{AesCipher, Hace, HaceError};
+use ast10x0_peripherals::scu::ScuRegisters;
+use ast10x0_peripherals::Peripherals;
 use codegen as _;
 use console_backend::console_backend_write_all;
 use entry as _;
@@ -21,6 +23,7 @@ pub struct Target {}
 
 const ERR_AES_FAILED: &str = "hace aes op failed";
 const ERR_VERIFY_FAILED: &str = "hace aes mismatch";
+const ERR_TAKEN: &str = "peripherals already taken";
 const ERR_A4: &str = "hace aes delta-A4 not enforced";
 
 // DMA scratch buffers. Static RAM is required for SG-DMA access.
@@ -55,37 +58,6 @@ fn check(name: &str, actual: &[u8], expected: &[u8]) -> Result<(), &'static str>
     Ok(())
 }
 
-/// Run one AES KAT case and compare output bytes.
-macro_rules! kat {
-    ($name:expr, $op:ident, $key:expr, $iv:expr, $inp:expr, $expected:expr) => {{
-        pw_log::info!("case: {}", $name as &str);
-        let n = $inp.len();
-        // SAFETY: serial single-threaded use of the DMA scratch buffers.
-        let inb = unsafe { &mut *core::ptr::addr_of_mut!(AES_IN) };
-        let outb = unsafe { &mut *core::ptr::addr_of_mut!(AES_OUT) };
-        inb[..n].copy_from_slice($inp);
-        outb[..n].fill(0);
-        // SAFETY: test runs once at boot with exclusive HACE access.
-        let mut device = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
-        // SAFETY: single-threaded test; no concurrent HACE access.
-        let mut aes = unsafe { AesCipher::from_device(&mut device) };
-        kat!(@call aes, $op, $key, $iv, inb, outb, n);
-        check($name, &outb[..n], $expected)?;
-    }};
-    (@call $aes:ident, ecb_encrypt, $key:expr, $iv:expr, $inb:ident, $outb:ident, $n:expr) => {
-        $aes.ecb_encrypt($key, &$inb[..$n], &mut $outb[..$n]).map_err(|_| ERR_AES_FAILED)?
-    };
-    (@call $aes:ident, ecb_decrypt, $key:expr, $iv:expr, $inb:ident, $outb:ident, $n:expr) => {
-        $aes.ecb_decrypt($key, &$inb[..$n], &mut $outb[..$n]).map_err(|_| ERR_AES_FAILED)?
-    };
-    (@call $aes:ident, cbc_encrypt, $key:expr, $iv:expr, $inb:ident, $outb:ident, $n:expr) => {
-        $aes.cbc_encrypt($key, $iv, &$inb[..$n], &mut $outb[..$n]).map_err(|_| ERR_AES_FAILED)?
-    };
-    (@call $aes:ident, cbc_decrypt, $key:expr, $iv:expr, $inb:ident, $outb:ident, $n:expr) => {
-        $aes.cbc_decrypt($key, $iv, &$inb[..$n], &mut $outb[..$n]).map_err(|_| ERR_AES_FAILED)?
-    };
-}
-
 include!("vectors.rs");
 
 fn run_hace_aes_kats() -> Result<(), &'static str> {
@@ -99,6 +71,40 @@ fn run_hace_aes_kats() -> Result<(), &'static str> {
     unsafe {
         let _ = board.init();
     };
+
+    // The tokens prove this test is the only owner of the HACE engine; the SCU is lent to the
+    // device for its clock and reset bring-up.
+    let peripherals = Peripherals::take().ok_or(ERR_TAKEN)?;
+    let scu = ScuRegisters::new(peripherals.scu);
+    let mut device = Hace::new(peripherals.hace, &scu).with_yield(|_| core::hint::spin_loop());
+
+    // Run one AES KAT case and compare output bytes.
+    macro_rules! kat {
+        ($name:expr, $op:ident, $key:expr, $iv:expr, $inp:expr, $expected:expr) => {{
+            pw_log::info!("case: {}", $name as &str);
+            let n = $inp.len();
+            // SAFETY: serial single-threaded use of the DMA scratch buffers.
+            let inb = unsafe { &mut *core::ptr::addr_of_mut!(AES_IN) };
+            let outb = unsafe { &mut *core::ptr::addr_of_mut!(AES_OUT) };
+            inb[..n].copy_from_slice($inp);
+            outb[..n].fill(0);
+            let mut aes = AesCipher::from_device(&mut device);
+            kat!(@call aes, $op, $key, $iv, inb, outb, n);
+            check($name, &outb[..n], $expected)?;
+        }};
+        (@call $aes:ident, ecb_encrypt, $key:expr, $iv:expr, $inb:ident, $outb:ident, $n:expr) => {
+            $aes.ecb_encrypt($key, &$inb[..$n], &mut $outb[..$n]).map_err(|_| ERR_AES_FAILED)?
+        };
+        (@call $aes:ident, ecb_decrypt, $key:expr, $iv:expr, $inb:ident, $outb:ident, $n:expr) => {
+            $aes.ecb_decrypt($key, &$inb[..$n], &mut $outb[..$n]).map_err(|_| ERR_AES_FAILED)?
+        };
+        (@call $aes:ident, cbc_encrypt, $key:expr, $iv:expr, $inb:ident, $outb:ident, $n:expr) => {
+            $aes.cbc_encrypt($key, $iv, &$inb[..$n], &mut $outb[..$n]).map_err(|_| ERR_AES_FAILED)?
+        };
+        (@call $aes:ident, cbc_decrypt, $key:expr, $iv:expr, $inb:ident, $outb:ident, $n:expr) => {
+            $aes.cbc_decrypt($key, $iv, &$inb[..$n], &mut $outb[..$n]).map_err(|_| ERR_AES_FAILED)?
+        };
+    }
 
     // NIST SP 800-38A KATs.
     kat!(
@@ -174,8 +180,7 @@ fn run_hace_aes_kats() -> Result<(), &'static str> {
         for k in 0..17 {
             inb[k] = pat(k);
         }
-        let mut device = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
-        let mut aes = unsafe { AesCipher::from_device(&mut device) };
+        let mut aes = AesCipher::from_device(&mut device);
         match aes.ecb_encrypt(&AES128_KEY, &inb[..17], &mut outb[..17]) {
             Err(HaceError::InvalidInput) => pw_log::info!("delta-A4 reject 17B: PASS"),
             _ => return Err(ERR_A4),
@@ -193,8 +198,7 @@ fn run_hace_aes_kats() -> Result<(), &'static str> {
         }
         // Encrypt AES_IN -> AES_OUT.
         {
-            let mut device = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
-            let mut aes = unsafe { AesCipher::from_device(&mut device) };
+            let mut aes = AesCipher::from_device(&mut device);
             aes.cbc_encrypt(&AES256_KEY, &CBC_IV, &inb[..N], &mut ctb[..N])
                 .map_err(|_| ERR_AES_FAILED)?;
         }
@@ -202,8 +206,7 @@ fn run_hace_aes_kats() -> Result<(), &'static str> {
         {
             let inb = unsafe { &mut *core::ptr::addr_of_mut!(AES_IN) };
             let ctb = unsafe { &*core::ptr::addr_of!(AES_OUT) };
-            let mut device = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
-            let mut aes = unsafe { AesCipher::from_device(&mut device) };
+            let mut aes = AesCipher::from_device(&mut device);
             aes.cbc_decrypt(&AES256_KEY, &CBC_IV, &ctb[..N], &mut inb[..N])
                 .map_err(|_| ERR_AES_FAILED)?;
             for k in 0..N {

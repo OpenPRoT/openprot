@@ -11,7 +11,6 @@
     clippy::unimplemented
 )]
 
-use ast10x0_peripherals::hace::HaceDevice;
 use ast10x0_peripherals::scu::{ClockRegisterHalf, ScuRegisterHalf};
 use ast10x0_peripherals::scu::{PinctrlPin, ScuRegisters};
 
@@ -60,21 +59,6 @@ impl Ast10x0Board {
     #[must_use]
     pub const fn new(descriptor: Ast10x0BoardDescriptor) -> Self {
         Self { descriptor }
-    }
-
-    /// Create a [`HaceDevice`] bound to the singleton HACE instance.
-    ///
-    /// This is the primary factory for HACE access on AST10x0. The board
-    /// crate is the single point that wires the SCU cache-flush hook into
-    /// the HACE driver, keeping `ast10x0_peripherals::hace` free of any
-    /// direct SCU dependency at the operation level.
-    ///
-    /// # Safety
-    /// - Must not be called concurrently with any other HACE access.
-    /// - Only one [`HaceDevice`] should be live at a time.
-    pub unsafe fn hace_device<Y: FnMut(u32)>(&self, yield_fn: Y) -> HaceDevice<Y> {
-        // SAFETY: caller upholds the single-instance contract.
-        unsafe { HaceDevice::new_global(yield_fn) }
     }
 
     /// Initialize board: apply pinctrl groups and initialize I2C subsystem.

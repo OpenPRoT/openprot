@@ -1,7 +1,8 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 #
-# Raw MMIO may appear only in a peripheral's `registers.rs`.
+# Raw MMIO may appear only in a peripheral's `registers.rs`, or in
+# `peripherals/tokens.rs` where the ownership tokens create PAC peripherals.
 # Policy and rationale: MMIO.md (next to this file).
 #
 # Legacy violations exist in the tree, so a plain scan reports them. Gate on
@@ -38,6 +39,8 @@ rules:
       exclude:
         # The boundary.
         - "**/registers.rs"
+        # Where each ownership token creates its PAC peripheral.
+        - /target/ast10x0/peripherals/tokens.rs
         # Documented early-boot exception (Scu::steal() before the kernel runs).
         - /target/ast10x0/entry.rs
         # Hardware tests have no sanctioned register accessor yet (the wrappers
