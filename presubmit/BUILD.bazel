@@ -44,3 +44,17 @@ pw_py_test(
     main = "zero_tests_test.py",
     deps = [":zero_tests"],
 )
+
+pw_py_binary(
+    name = "memory_layout",
+    srcs = ["memory_layout.py"],
+    main = "memory_layout.py",
+)
+
+pw_py_test(
+    name = "memory_layout_test",
+    srcs = ["memory_layout_test.py"],
+    imports = [".."],
+    main = "memory_layout_test.py",
+    deps = [":memory_layout"],
+)
