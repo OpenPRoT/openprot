@@ -147,7 +147,10 @@ enum ComponentLifecycle {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 struct ComponentStatus {
     lifecycle: ComponentLifecycle,
-    /// Consecutive failed-restore count (INV7: consecutive only).
+    /// Consecutive failed-restore count (INV7: consecutive only). Ends only on
+    /// a confirmed boot ([`Rot::confirm_boot`]) or when the component is gated.
+    /// A passing verification does not end it: an image can be authentic and
+    /// still never run, so verifying is not recovering.
     retry: u8,
     /// Set while this component has been released from reset but has not yet
     /// reported its boot-progress signal ([`Event::ComponentReady`] for an
@@ -207,8 +210,8 @@ pub struct Rot<const N: usize, const E: usize> {
     /// [`ComponentStatus`] holds the component's service `lifecycle` (`Isolated`
     /// means gated out of the walk) and its consecutive failed-restore `retry`
     /// count, kept per component so interleaved recoveries never share a budget.
-    /// Durable across a return to `Ready`; only a fresh `Rot` on `PowerOnReset`
-    /// resets it.
+    /// Durable across a return to `Ready`; `retry` ends on a confirmed boot and
+    /// the rest resets only with a fresh `Rot` on `PowerOnReset`.
     statuses: heapless::Vec<ComponentStatus, N>,
     max_retry: u8,
     /// Set when an update has been activated ([`Effect::ActivateUpdate`]) but
@@ -321,10 +324,10 @@ impl<const N: usize, const E: usize> Rot<N, E> {
         }
     }
 
-    /// Drop `id`'s retry count. Called when the component recovers (passes
-    /// verification) or is gated — either way its consecutive-failure streak
-    /// ends, so a future failure starts counting fresh (INV7: consecutive only).
-    fn clear_retry(&mut self, id: ComponentId) {
+    /// Drop `id`'s retry count, so a future failure starts counting fresh
+    /// (INV7: consecutive only). Called when a boot is confirmed
+    /// ([`confirm_boot`](Self::confirm_boot)) or the component is gated.
+    fn clear_retry_count(&mut self, id: ComponentId) {
         if let Some(i) = self.status_index(id) {
             self.statuses[i].retry = 0;
         }
@@ -342,12 +345,25 @@ impl<const N: usize, const E: usize> Rot<N, E> {
         }
     }
 
-    /// Clear `id`'s boot-progress watchdog because it reported in
-    /// ([`Event::ComponentReady`] or [`Event::Booted`]). Idempotent: a report
-    /// for a component not awaiting boot simply changes nothing.
-    fn clear_awaiting_boot(&mut self, id: ComponentId) {
-        if let Some(i) = self.status_index(id) {
+    /// `id` reported its boot-progress signal ([`Event::ComponentReady`] or
+    /// [`Event::Booted`]): retire its watchdog and end its failure streak.
+    ///
+    /// This is where the retry count ends, because a confirmed boot is the one
+    /// thing that says a recovery worked. A passing verification says only that
+    /// the image is authentic, and reaching `Ready` says only that every
+    /// component was released: a passive chain gets there before any boot
+    /// report arrives. A component that verifies and never boots must keep its
+    /// count, or it would recover forever and never exhaust its retries.
+    ///
+    /// A report for a component that is not awaiting boot (never released,
+    /// under recovery, or already reported) is stale or spurious and changes
+    /// nothing, so it cannot reset the `retry` count.
+    fn confirm_boot(&mut self, id: ComponentId) {
+        if let Some(i) = self.status_index(id)
+            && self.statuses[i].awaiting_boot
+        {
             self.statuses[i].awaiting_boot = false;
+            self.clear_retry_count(id);
         }
     }
 
@@ -447,7 +463,7 @@ impl<const N: usize, const E: usize> Rot<N, E> {
     fn exhaust_recovery(&mut self, ctx: &mut Sink<E>, failed: ComponentId) -> Outcome {
         match self.gate_by_policy(ctx, failed) {
             Gating::Gated => {
-                self.clear_retry(failed);
+                self.clear_retry_count(failed);
                 Outcome::Transition(State::PreSupervision)
             }
             // `Required`, or an unknown/missing id: report the component that
@@ -582,9 +598,9 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                     if self.chain.get(self.cursor as usize).map(|(c, _)| c) != Some(id) {
                         return Outcome::Handled;
                     }
-                    // The component passed its check — it has recovered, so its
-                    // consecutive-failure streak ends (INV7: consecutive only).
-                    self.clear_retry(*id);
+                    // The component passed its check. That does not end its
+                    // failure streak: an authentic image can still fail to boot,
+                    // and only a boot report ends the streak (`confirm_boot`).
                     ctx.emit(Effect::ReleaseReset(*id));
                     // Released: it is now live, and owes a boot-progress signal
                     // (both tiers).
@@ -631,7 +647,7 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 // component's `ComponentReady` cannot arrive here: releasing an
                 // active moves the machine straight to `AwaitingReady`.
                 Event::Booted(id) => {
-                    self.clear_awaiting_boot(*id);
+                    self.confirm_boot(*id);
                     Outcome::Handled
                 }
                 // Timeout always recovers: silence says nothing about the
@@ -682,8 +698,9 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                     // Clear this component's boot-progress watchdog whether or
                     // not it is the one this state's slot is tracking: a later
                     // `Active` released speculatively reports its readiness here
-                    // too, and its watchdog must be cleared just the same.
-                    self.clear_awaiting_boot(*id);
+                    // too, and its watchdog must be cleared just the same. A
+                    // confirmed boot also ends its failure streak.
+                    self.confirm_boot(*id);
                     if awaiting != Some(*id) {
                         return Outcome::Handled; // not the tracked slot (INV9)
                     }
@@ -706,9 +723,9 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                     if self.chain.get(self.cursor as usize).map(|(c, _)| c) != Some(id) {
                         return Outcome::Handled;
                     }
-                    // The component passed its check — it has recovered, so its
-                    // consecutive-failure streak ends (INV7: consecutive only).
-                    self.clear_retry(*id);
+                    // The component passed its check. That does not end its
+                    // failure streak: an authentic image can still fail to boot,
+                    // and only a boot report ends the streak (`confirm_boot`).
                     ctx.emit(Effect::ReleaseReset(*id));
                     // Released: it is now live, and owes a boot-progress signal
                     // (both tiers).
@@ -898,9 +915,10 @@ impl<const N: usize, const E: usize> Rot<N, E> {
             // Boot-progress signals arriving after the walk left `PreSupervision`
             // / `AwaitingReady` (e.g. once the machine is already `Ready`): clear
             // the component's watchdog. `ComponentReady` is the active tier,
-            // `Booted` the passive tier; both just retire the outstanding wait.
+            // `Booted` the passive tier; both retire the outstanding wait and
+            // end the component's failure streak.
             Event::ComponentReady(id) | Event::Booted(id) => {
-                self.clear_awaiting_boot(*id);
+                self.confirm_boot(*id);
                 Outcome::Handled
             }
             // Timeout always recovers: silence is ambiguous, so retrying
@@ -982,12 +1000,12 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 // can't re-enter recovery for it. It is also held (not live)
                 // while the platform restores it, so it is not quiesced again on
                 // the re-walk.
-                self.clear_awaiting_boot(failed);
                 // `retry` here is the consecutive-recovery count for `failed`
                 // (0 on the first attempt); hand it to the driver so it need not
                 // track its own. It is bumped later, on `Restored`.
                 let attempt = match self.status_index(failed) {
                     Some(i) => {
+                        self.statuses[i].awaiting_boot = false;
                         self.statuses[i].released = false;
                         self.statuses[i].retry
                     }
@@ -1008,12 +1026,11 @@ impl<const N: usize, const E: usize> Rot<N, E> {
                 // component that policy deliberately isolated. Only a fresh
                 // `Rot` on `PowerOnReset` clears it.
                 //
-                // Retry counts, by contrast, ARE cleared: a clean boot means no
-                // recovery episode is in flight, so every per-component streak
-                // resets to zero. (The `Isolated` lifecycle is preserved.)
-                for s in self.statuses.iter_mut() {
-                    s.retry = 0;
-                }
+                // Retry counts are NOT cleared here either. Reaching `Ready`
+                // means every component was released, not that any booted: a
+                // passive chain gets here before a single boot report. A count
+                // ends on a confirmed boot (`confirm_boot`), so a component that
+                // verifies and never boots still exhausts its retries.
             }
             _ => {}
         }
