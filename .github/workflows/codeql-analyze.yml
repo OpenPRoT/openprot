@@ -1,0 +1,16 @@
+name: "CodeQL Analyze"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  schedule:
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  call-analyze:
+    uses: OpenPRoT/.github/.github/workflows/reusable-codeql-analyze.yml@main
