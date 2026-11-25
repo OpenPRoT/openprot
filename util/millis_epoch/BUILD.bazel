@@ -1,0 +1,24 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+# Converts between a kernel Instant and a u64 millisecond count, and back.
+# Kernel only, because it reads the kernel's system clock. Gated on the OS
+# rather than on //target:defs.bzl, as //util/ipc is, so shared code does not
+# load from //target.
+rust_library(
+    name = "millis_epoch",
+    srcs = ["src/lib.rs"],
+    crate_name = "util_millis_epoch",
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = select({
+        "@platforms//os:none": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pigweed//pw_kernel/userspace",
+    ],
+)
