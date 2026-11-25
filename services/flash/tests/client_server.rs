@@ -10,7 +10,7 @@ use std::rc::Rc;
 
 use hal_flash::{Flash, FlashAddress};
 use openprot_flash_client::{FlashClient, FlashTransport};
-use openprot_flash_server::Server;
+use openprot_flash_server::{Outcome, Server};
 use util_error::{self as error, ErrorCode};
 use util_types::PowerOf2Usize;
 
@@ -66,7 +66,9 @@ impl FlashTransport for Loopback {
             self.scratch[len..len + piece.len()].copy_from_slice(piece);
             len += piece.len();
         }
-        let frame_len = self.server.handle_frame(&mut self.scratch, len);
+        let Outcome::Done(frame_len) = self.server.handle_frame(&mut self.scratch, len) else {
+            panic!("RamFlash's erase never defers");
+        };
 
         let mut rest = &self.scratch[..frame_len];
         for piece in recv.iter_mut() {
@@ -131,7 +133,10 @@ impl FlashTransport for Channel {
             len += piece.len();
         }
         let frame_len = match self.servers.borrow_mut().get_mut(self.device) {
-            Some(server) => server.handle_frame(&mut self.scratch, len),
+            Some(server) => match server.handle_frame(&mut self.scratch, len) {
+                Outcome::Done(frame_len) => frame_len,
+                Outcome::Pending => panic!("RamFlash's erase never defers"),
+            },
             None => 0,
         };
 

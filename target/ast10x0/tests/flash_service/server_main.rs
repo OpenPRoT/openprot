@@ -12,7 +12,7 @@ use app_flash_server::handle;
 use ast10x0_peripherals::smc::ChipSelect;
 use flash_backend::{Backend, FmcController, NoWaitBlocking};
 use flash_server_runtime::Channel;
-use hal_flash::BlockingFlash;
+use hal_flash::{BlockingFlash, DeferredFlash};
 use hal_flash_driver::FlashDriver;
 use openprot_flash_server::Server;
 use pw_status::{Error, Result};
@@ -26,15 +26,17 @@ const HEADER_LEN: usize = 4;
 const BUF_SIZE: usize = HEADER_LEN + Backend::MAX_READ_SIZE;
 
 /// Creates the flash for `cs`, or logs why it could not.
+///
+/// Deferred: erases return early and the server runtime polls `is_busy` for completion.
 fn flash(
     controller: &FmcController,
     cs: ChipSelect,
-) -> Option<BlockingFlash<Backend<'_>, NoWaitBlocking>> {
+) -> Option<DeferredFlash<Backend<'_>, NoWaitBlocking>> {
     match controller.driver(cs) {
-        Ok(driver) => Some(BlockingFlash {
+        Ok(driver) => Some(DeferredFlash(BlockingFlash {
             driver,
             blocking: NoWaitBlocking,
-        }),
+        })),
         Err(e) => {
             pw_log::error!(
                 "flash server: CS{} init failed: {:08x}",
