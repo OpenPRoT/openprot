@@ -1,0 +1,34 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "i3c",
+    srcs = ["lib.rs"],
+    crate_features = select({
+        "//target/veer:fpga": ["fpga"],
+        "//conditions:default": [],
+    }),
+    crate_name = "caliptra_i3c_target",
+    edition = "2024",
+    deps = [
+        "//hal/blocking",
+        "//target/veer/registers",
+        "//third_party/caliptra:crate_tock-registers",
+        "@rust_caliptra_crates//:caliptra-mcu-config-emulator",
+        "@rust_caliptra_crates//:caliptra-mcu-config-fpga",
+    ],
+)
+
+# Host tests of the driver against a fake register block.
+rust_test(
+    name = "i3c_test",
+    crate = ":i3c",
+    crate_features = select({
+        "//target/veer:fpga": ["fpga"],
+        "//conditions:default": [],
+    }),
+)

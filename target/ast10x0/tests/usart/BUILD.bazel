@@ -54,7 +54,6 @@ rust_app(
     srcs = ["server_main.rs"],
     codegen_crate_name = "app_usart_server",
     edition = "2024",
-    system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
@@ -69,7 +68,6 @@ rust_app(
     srcs = ["client_main.rs"],
     codegen_crate_name = "app_usart_client",
     edition = "2024",
-    system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
@@ -84,7 +82,6 @@ rust_app(
     srcs = ["client2_main.rs"],
     codegen_crate_name = "app_usart_client2",
     edition = "2024",
-    system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [

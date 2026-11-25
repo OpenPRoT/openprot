@@ -1,0 +1,79 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// The flash server owns the primary flash controller and serves it on one
+// channel. The flash client uses that channel.
+{
+  arch: {
+    type: "riscv",
+  },
+  kernel: {
+    flash_start_address: @KERNEL_FLASH_START@,
+    flash_size_bytes: 65536,
+    ram_start_address: @KERNEL_RAM_START@,
+    ram_size_bytes: 32768,
+    interrupt_table: {
+      table: {}
+    },
+  },
+  apps: [
+    {
+      name: "flash_server",
+      flash_size_bytes: 65536,
+      processes: [
+        {
+          name: "flash_server",
+          ram_size_bytes: 8192,
+          memory_mappings: [
+            {
+              // The FPGA controller's registers, including its page buffer,
+              // are 0x200 bytes. The emulator controller's are the first 0x20.
+              name: "flash_ctrl",
+              type: "device",
+              start_address: @PRIMARY_FLASH_CTRL@,
+              size_bytes: 0x200,
+            },
+          ],
+          objects: [
+            {
+              name: "wg",
+              type: "wait_group",
+            },
+            {
+              name: "flash",
+              type: "channel_handler",
+            },
+            {
+              type: "thread",
+              name: "flash_server",
+              kernel_stack_size_bytes: 2048,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      name: "flash_client",
+      flash_size_bytes: 32768,
+      processes: [
+        {
+          name: "flash_client",
+          ram_size_bytes: 8192,
+          objects: [
+            {
+              name: "flash",
+              type: "channel_initiator",
+              handler_process: "flash_server",
+              handler_object_name: "flash",
+            },
+            {
+              type: "thread",
+              name: "flash_client",
+              kernel_stack_size_bytes: 2048,
+            },
+          ],
+        },
+      ],
+    },
+  ],
+}

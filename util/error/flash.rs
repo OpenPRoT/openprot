@@ -61,3 +61,36 @@ pub const FLASH_GENERIC_SFDP_PARAMETERS_TOO_LONG: ErrorCode =
 
 /// The OpenTitan flash error module.
 pub const FLASH_OPENTITAN: ErrorModule = ErrorModule::new(0x464f); //ascii `FO`.
+
+/// The AST10x0 SMC/FMC flash error module.
+pub const FLASH_AST10X0: ErrorModule = ErrorModule::new(0x4641); //ascii `FA`.
+
+/// Hardware-level failure reported by the SMC controller.
+pub const FLASH_AST10X0_HARDWARE_ERROR: ErrorCode = FLASH_AST10X0.from_pw(0, Error::Internal);
+/// Timed out waiting for a flash operation to complete.
+pub const FLASH_AST10X0_TIMEOUT: ErrorCode = FLASH_AST10X0.from_pw(1, Error::DeadlineExceeded);
+/// DMA transfer aborted.
+pub const FLASH_AST10X0_DMA_ABORTED: ErrorCode = FLASH_AST10X0.from_pw(2, Error::Aborted);
+/// DMA transfer length mismatch.
+pub const FLASH_AST10X0_DMA_LENGTH_MISMATCH: ErrorCode = FLASH_AST10X0.from_pw(3, Error::DataLoss);
+/// Invalid chip select.
+pub const FLASH_AST10X0_INVALID_CHIP_SELECT: ErrorCode =
+    FLASH_AST10X0.from_pw(4, Error::InvalidArgument);
+/// Invalid or unsupported capacity/range.
+pub const FLASH_AST10X0_INVALID_CAPACITY: ErrorCode = FLASH_AST10X0.from_pw(5, Error::OutOfRange);
+/// Attached flash device not supported.
+pub const FLASH_AST10X0_DEVICE_NOT_SUPPORTED: ErrorCode =
+    FLASH_AST10X0.from_pw(6, Error::Unimplemented);
+/// Flash is write-protected.
+pub const FLASH_AST10X0_WRITE_PROTECTED: ErrorCode =
+    FLASH_AST10X0.from_pw(7, Error::PermissionDenied);
+/// A write is already in progress.
+pub const FLASH_AST10X0_WRITE_IN_PROGRESS: ErrorCode = FLASH_AST10X0.from_pw(8, Error::Unavailable);
+/// Controller not in the Ready lifecycle state.
+pub const FLASH_AST10X0_CONTROLLER_NOT_READY: ErrorCode =
+    FLASH_AST10X0.from_pw(9, Error::FailedPrecondition);
+/// DMA requested but not enabled in the controller config.
+pub const FLASH_AST10X0_DMA_NOT_ENABLED: ErrorCode =
+    FLASH_AST10X0.from_pw(10, Error::FailedPrecondition);
+/// A read returned fewer bytes than requested.
+pub const FLASH_AST10X0_SHORT_READ: ErrorCode = FLASH_AST10X0.from_pw(11, Error::DataLoss);

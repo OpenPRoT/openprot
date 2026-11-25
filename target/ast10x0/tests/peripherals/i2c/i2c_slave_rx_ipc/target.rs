@@ -4,6 +4,7 @@
 #![no_std]
 #![no_main]
 
+use arch_arm_cortex_m::Arch;
 use ast10x0_peripherals::i2c;
 use ast10x0_peripherals::scu::pinctrl;
 use console_backend::console_backend_write_all;
@@ -21,24 +22,27 @@ impl TargetInterface for Target {
         // global resource and must not be mapped or touched by userspace.
         // SAFETY: kernel main() runs once with exclusive hardware ownership.
         unsafe {
-            let scu = ast10x0_peripherals::scu::ScuRegisters::new_global_unlocked();
-            scu.ungate_clock_mask(ast10x0_peripherals::scu::ClockRegisterHalf::Lower, 1 << 2);
-            scu.assert_reset_mask(ast10x0_peripherals::scu::ScuRegisterHalf::Upper, 1 << 2);
-            // brief settle delay (spin)
-            for _ in 0..10_000u32 {
-                core::hint::spin_loop();
-            }
-            scu.deassert_reset_mask(ast10x0_peripherals::scu::ScuRegisterHalf::Upper, 1 << 2);
-            for _ in 0..10_000u32 {
-                core::hint::spin_loop();
-            }
-            scu.apply_pinctrl_group(pinctrl::PINCTRL_I2C2);
+            let scu = ast10x0_peripherals::scu::ScuRegisters::new_global();
+            scu.unlock_and_lock_after(|scu| {
+                scu.ungate_clock_mask(ast10x0_peripherals::scu::ClockRegisterHalf::Lower, 1 << 2);
+                scu.assert_reset_mask(ast10x0_peripherals::scu::ScuRegisterHalf::Upper, 1 << 2);
+                // brief settle delay (spin)
+                for _ in 0..10_000u32 {
+                    core::hint::spin_loop();
+                }
+                scu.deassert_reset_mask(ast10x0_peripherals::scu::ScuRegisterHalf::Upper, 1 << 2);
+                for _ in 0..10_000u32 {
+                    core::hint::spin_loop();
+                }
+                scu.apply_pinctrl_group(pinctrl::PINCTRL_I2C2);
+            });
             i2c::init_i2c_global();
         }
 
         codegen::start();
-        #[expect(clippy::empty_loop)]
-        loop {}
+        loop {
+            let _ = kernel::sleep_until(Arch, kernel::Instant::MAX);
+        }
     }
 
     fn shutdown(code: u32) -> ! {

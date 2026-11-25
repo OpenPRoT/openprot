@@ -1,0 +1,56 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+{
+  arch: {
+    type: "riscv",
+  },
+  kernel: {
+    flash_start_address: @KERNEL_FLASH_START@,
+    flash_size_bytes: 65536,
+    ram_start_address: @KERNEL_RAM_START@,
+    ram_size_bytes: 32768,
+    interrupt_table: {
+      table: {}
+    },
+  },
+  apps: [
+    {
+      name: "ipc",
+      flash_size_bytes: 32768,
+      processes: [
+        {
+          name: "initiator",
+          ram_size_bytes: 4096,
+          objects: [
+            {
+              name: "ipc",
+              type: "channel_initiator",
+              handler_process: "handler",
+              handler_object_name: "ipc",
+            },
+              {
+              type: "thread",
+              name: "initiator_thread",
+              kernel_stack_size_bytes: 1024,
+            },],
+          
+        },
+        {
+          name: "handler",
+          ram_size_bytes: 4096,
+          objects: [
+            {
+              name: "ipc",
+              type: "channel_handler",
+            },
+              {
+              type: "thread",
+              name: "handler_thread",
+              kernel_stack_size_bytes: 1024,
+            },],
+          
+        },
+      ],
+    },
+  ],
+}

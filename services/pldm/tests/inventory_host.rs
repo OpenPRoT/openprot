@@ -10,8 +10,8 @@ use core::cell::RefCell;
 
 use mctp::Eid;
 use openprot_mctp_server::Server;
-use openprot_pldm_service::firmware_device::{FirmwareDevice, RunTerminusResult};
-use openprot_pldm_service::{MctpPldmTransport, PldmServiceError};
+use openprot_pldm_service::firmware_device::FirmwareDevice;
+use openprot_pldm_service::MctpPldmTransport;
 use pldm_common::codec::PldmCodec;
 use pldm_common::message::firmware_update::apply_complete::ApplyResult;
 use pldm_common::message::firmware_update::get_fw_params::{
@@ -33,7 +33,7 @@ use pldm_common::util::fw_component::FirmwareComponent;
 use pldm_interface::firmware_device::fd_ops::{ComponentOperation, FdOps, FdOpsError};
 
 mod common;
-use common::{transfer, BufferSender, DirectClientWithPump, FD_EID, TIMEOUT_MILLIS, UA_EID};
+use common::{run_fd_step, transfer, BufferSender, DirectClientWithPump, FD_EID, UA_EID};
 
 struct InventoryFdOps {
     descriptors: [Descriptor; 2],
@@ -222,14 +222,7 @@ fn firmware_update_inventory_commands_return_fd_data() {
             .send(Some(handle), 0x01, None, None, false, request)
             .expect("send inventory request");
 
-        match fd.run_terminus(UA_EID, &mut fd_buf, TIMEOUT_MILLIS, TIMEOUT_MILLIS, &mut ()) {
-            RunTerminusResult::Completed => {}
-            RunTerminusResult::StoppedByError(PldmServiceError::Mctp(error))
-                if error.is_timeout() => {}
-            RunTerminusResult::StoppedByError(error) => {
-                panic!("firmware device failed: {error:?}")
-            }
-        }
+        run_fd_step(&mut fd, UA_EID, &mut fd_buf, &mut ());
 
         transfer(&fd_to_ua_packets, &mut ua_server.borrow_mut());
         fd_to_ua_packets.borrow_mut().clear();

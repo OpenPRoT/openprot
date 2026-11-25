@@ -1,0 +1,27 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "ipc",
+    srcs = [
+        "async_transaction.rs",
+        "channel_transport.rs",
+        "lib.rs",
+        "target.rs",
+    ],
+    crate_name = "util_ipc",
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = select({
+        "@platforms//os:none": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//util/transport",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)

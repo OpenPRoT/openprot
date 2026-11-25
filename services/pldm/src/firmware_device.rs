@@ -41,6 +41,7 @@
 //!    every iteration keeps the responder path live during a transfer so the
 //!    Update Agent can send `CancelUpdate` at any time.
 
+use openprot_mctp_api::stack::StackListener;
 use openprot_mctp_api::MctpClient;
 use pldm_interface::cmd_interface::CmdInterface;
 use pldm_interface::control_context::ProtocolCapability;
@@ -102,11 +103,15 @@ impl FdEventSink for () {
     fn notify(&mut self, _event: FdEvent) {}
 }
 
-/// Outcome of [`FirmwareDevice::run_terminus`].
+/// Outcome of [`FirmwareDevice::run_terminus`]/[`FirmwareDevice::run_until`].
 pub enum RunTerminusResult {
-    /// The loop exited normally (currently unreachable: `run_terminus` only
-    /// returns via an error today, but this variant exists so a future,
-    /// well-defined completion condition does not require an API change).
+    /// The loop exited without an error. Reachable via
+    /// [`run_until`](FirmwareDevice::run_until) once its stop condition
+    /// returns `false` — which says nothing about protocol state, only that
+    /// the caller chose to stop. Unreachable via
+    /// [`run_terminus`](FirmwareDevice::run_terminus), whose stop condition
+    /// never fires; a well-defined *protocol* completion condition remains
+    /// open work there.
     Completed,
     /// The loop was stopped by an unrecoverable error.
     StoppedByError(PldmServiceError),
@@ -151,9 +156,109 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
         }
     }
 
-    /// Run the firmware-device service loop.
+    /// The step body, taking each field it needs directly rather than
+    /// `&mut self`.
     ///
-    /// Each iteration performs two interleaved phases:
+    /// This has to be a free-standing function, not a method: `run_until`
+    /// holds `listener`, which borrows `responder_transport` for the whole
+    /// session, alongside this step's need for `&mut cmd_interface`. A
+    /// method taking `&mut self` claims all of `self` at once — including
+    /// `responder_transport` — which the borrow checker sees as conflicting
+    /// with `listener`'s outstanding borrow even though the two never
+    /// actually touch the same data at the same time. Passing the fields
+    /// this needs individually, instead of through `self`, lets the borrow
+    /// checker see they are disjoint.
+    #[allow(clippy::too_many_arguments)]
+    fn run_once_inner(
+        cmd_interface: &mut CmdInterface<'_, O>,
+        requester_transport: &MctpPldmTransport<Cq>,
+        responder_transport: &MctpPldmTransport<Cr>,
+        listener: &mut StackListener<'_, Cr>,
+        fw_buf: &mut [u8; FD_MAX_MSG],
+        buf: &mut [u8],
+        remote_eid: u8,
+        timeout_millis: u32,
+        requester_timeout_millis: u32,
+        sink: &mut impl FdEventSink,
+    ) -> Result<(), PldmServiceError> {
+        // Phase 1: while in initiator mode, issue at most ONE outbound
+        // request this step. We deliberately fall through to the responder
+        // poll below (no early return) so an Update Agent command such as
+        // CancelUpdate is serviced between every RequestFirmwareData.
+        let initiator_active = cmd_interface.fd_ctx.should_start_initiator_mode();
+        if initiator_active
+            && let Some(pldm_len) = cmd_interface
+                .generate_initiator_request(fw_buf)
+                .map_err(PldmServiceError::MsgHandler)?
+        {
+            let resp_len = requester_transport.send_request(
+                remote_eid,
+                pldm_len,
+                fw_buf,
+                requester_timeout_millis,
+            )?;
+            let resp_total_len = resp_len
+                .checked_add(1)
+                .ok_or(PldmServiceError::PldmMem(PldmMemError::OverflowMaxSize))?;
+            let resp = fw_buf
+                .get_mut(..resp_total_len)
+                .ok_or(PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
+            cmd_interface
+                .process_initiator_response(resp)
+                .map_err(PldmServiceError::MsgHandler)?;
+        }
+
+        // Phase 2: poll for an inbound command so the responder path stays
+        // live during a transfer and the Update Agent can cancel at any
+        // time. `handle_responder_msg` receives the *whole* buffer because
+        // responses may be larger than the request they answer (e.g. GetTid:
+        // 4-byte request, 5-byte response). Commands from any EID other than
+        // `remote_eid` are dropped without a response.
+        let poll_timeout = if initiator_active {
+            RESPONDER_POLL_TIMEOUT_MILLIS
+        } else {
+            timeout_millis
+        };
+        listener.set_timeout(poll_timeout);
+        // Sampled around the responder poll: `RequestUpdate` is the only
+        // command that takes the FD out of `Idle`, so the false→true edge
+        // of `is_update_mode()` identifies exactly one accepted
+        // `RequestUpdate` (the initiator phase above never leaves `Idle`).
+        let was_update_mode = cmd_interface.fd_ctx.is_update_mode();
+        match responder_transport.respond_once(
+            listener,
+            buf,
+            |framed_buf, _req_total_len, source_eid| {
+                // Only act on commands from the UA this instance serves;
+                // silently drop anything else (e.g. a rogue endpoint).
+                if source_eid != remote_eid {
+                    return Ok(0);
+                }
+                cmd_interface
+                    .handle_responder_msg(framed_buf)
+                    .map_err(PldmServiceError::MsgHandler)
+            },
+        ) {
+            Ok(()) => {
+                if !was_update_mode && cmd_interface.fd_ctx.is_update_mode() {
+                    sink.notify(FdEvent::UpdateRequested);
+                }
+                Ok(())
+            }
+            // A short poll timeout while an initiator request is active
+            // just means no UA command arrived in that window; keep going
+            // so the transfer can continue.
+            Err(PldmServiceError::Mctp(e)) if initiator_active && e.is_timeout() => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Run the firmware-device service loop, stopping as soon as
+    /// `should_continue` returns `false` — even if the session is not
+    /// otherwise over.
+    ///
+    /// Each step performs the same two interleaved phases documented on
+    /// [`run_terminus`](Self::run_terminus):
     ///
     /// 1. **Initiator** — while the FD is in update mode
     ///    ([`should_start_initiator_mode`]), generate at most one outbound
@@ -161,23 +266,28 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
     ///    [`CmdInterface::generate_initiator_request`], send it to `remote_eid`
     ///    through `requester_transport`, and feed the response back into the
     ///    state machine via [`CmdInterface::process_initiator_response`].
-    /// 2. **Responder** — poll `responder_transport` for an inbound Update
-    ///    Agent command and reply via [`CmdInterface::handle_responder_msg`].
-    ///    While an initiator request is active, this poll uses a short
-    ///    timeout so the transfer keeps making progress; a lack of a message
-    ///    within that window is expected and does not end the loop. When
-    ///    idle, the poll blocks for the caller-supplied `timeout_millis`.
+    /// 2. **Responder** — poll for an inbound Update Agent command and reply
+    ///    via [`CmdInterface::handle_responder_msg`]. While an initiator
+    ///    request is active, this poll uses a short timeout so the transfer
+    ///    keeps making progress; a lack of a message within that window is
+    ///    expected and does not end the session. When idle, the poll blocks
+    ///    for the caller-supplied `timeout_millis`.
     ///
-    /// The responder listener is registered once, before the loop starts, and
-    /// reused for every poll (rather than being registered and dropped on
-    /// each iteration). This matters because the underlying MCTP stack
-    /// requires an active listener registration to accept an inbound request
-    /// of a given message type: registering a fresh listener on every poll
-    /// would leave a window during initiator (FD-to-UA) traffic in which no
-    /// listener is bound, silently dropping any Update Agent command that
-    /// arrives in that window.
+    /// `should_continue` is checked once per step, before the step runs. A
+    /// caller that wants to interleave other work on this thread does it
+    /// from inside `should_continue` (returning `true` to keep going) rather
+    /// than being handed control back directly between steps: the responder
+    /// listener has to stay registered for the entire session — the
+    /// underlying MCTP stack requires an active registration to accept an
+    /// inbound request of a given message type, so a caller-visible gap
+    /// between steps (dropping the listener, doing other work, re-arming it)
+    /// would silently drop any Update Agent command arriving in that window.
+    /// Threading the listener through a public step-by-step API without that
+    /// gap would need `StackListener` to stop borrowing `responder_transport`
+    /// (it currently also implements `Drop`, which rules out storing it as a
+    /// `FirmwareDevice` field too) — a change to `services/mctp/api`, not
+    /// this crate.
     ///
-    /// This method loops indefinitely and returns only on error.
     /// A `timeout_millis` of `0` blocks indefinitely while idle.
     ///
     /// `requester_timeout_millis` bounds how long each `send_request` call
@@ -196,7 +306,56 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
     /// transition), after the success response has been sent. Callers with
     /// nothing to notify pass `&mut ()`.
     ///
+    /// Returns [`StoppedByError`](RunTerminusResult::StoppedByError) if a
+    /// step fails, or [`Completed`](RunTerminusResult::Completed) once
+    /// `should_continue` returns `false` — the latter says nothing about
+    /// protocol state; it only means the caller chose to stop here. A
+    /// well-defined *protocol* completion condition is still open work.
+    ///
     /// [`should_start_initiator_mode`]: pldm_interface::firmware_device::fd_context::FirmwareDeviceContext
+    pub fn run_until(
+        &mut self,
+        remote_eid: u8,
+        buf: &mut [u8],
+        timeout_millis: u32,
+        requester_timeout_millis: u32,
+        sink: &mut impl FdEventSink,
+        mut should_continue: impl FnMut() -> bool,
+    ) -> RunTerminusResult {
+        let mut listener = match self.responder_transport.responder_listener(timeout_millis) {
+            Ok(listener) => listener,
+            Err(e) => return RunTerminusResult::StoppedByError(e),
+        };
+        // Scratch buffer for FD-initiated (outbound) requests, reused across
+        // steps rather than re-zeroed on every one.
+        let mut fw_buf = [0u8; FD_MAX_MSG];
+        while should_continue() {
+            // Field-by-field, not `&mut self` — see `run_once_inner`'s doc.
+            if let Err(e) = Self::run_once_inner(
+                &mut self.cmd_interface,
+                &self.requester_transport,
+                &self.responder_transport,
+                &mut listener,
+                &mut fw_buf,
+                buf,
+                remote_eid,
+                timeout_millis,
+                requester_timeout_millis,
+                sink,
+            ) {
+                return RunTerminusResult::StoppedByError(e);
+            }
+        }
+        RunTerminusResult::Completed
+    }
+
+    /// Run the firmware-device service loop to completion, blocking the
+    /// calling thread.
+    ///
+    /// A thin wrapper over [`run_until`](Self::run_until) with a
+    /// stop condition that never fires — see `run_until` for the full
+    /// behavior. This method loops indefinitely and returns only on error.
+    /// A `timeout_millis` of `0` blocks indefinitely while idle.
     pub fn run_terminus(
         &mut self,
         remote_eid: u8,
@@ -205,104 +364,13 @@ impl<'a, O: FdOps, Cr: MctpClient, Cq: MctpClient> FirmwareDevice<'a, O, Cr, Cq>
         requester_timeout_millis: u32,
         sink: &mut impl FdEventSink,
     ) -> RunTerminusResult {
-        match self.run_terminus_inner(
+        self.run_until(
             remote_eid,
             buf,
             timeout_millis,
             requester_timeout_millis,
             sink,
-        ) {
-            Ok(()) => RunTerminusResult::Completed,
-            Err(e) => RunTerminusResult::StoppedByError(e),
-        }
-    }
-
-    fn run_terminus_inner(
-        &mut self,
-        remote_eid: u8,
-        buf: &mut [u8],
-        timeout_millis: u32,
-        requester_timeout_millis: u32,
-        sink: &mut impl FdEventSink,
-    ) -> Result<(), PldmServiceError> {
-        let mut responder_listener = self
-            .responder_transport
-            .responder_listener(timeout_millis)?;
-        // Scratch buffer for FD-initiated (outbound) requests, reused across
-        // iterations rather than re-zeroed on every loop pass.
-        let mut fw_buf = [0u8; FD_MAX_MSG];
-
-        loop {
-            // Phase 1: while in initiator mode, issue at most ONE outbound
-            // request per iteration. We deliberately fall through to the
-            // responder poll below (no `continue`) so an Update Agent command
-            // such as CancelUpdate is serviced between every RequestFirmwareData.
-            let initiator_active = self.cmd_interface.fd_ctx.should_start_initiator_mode();
-            if initiator_active
-                && let Some(pldm_len) = self
-                    .cmd_interface
-                    .generate_initiator_request(&mut fw_buf)
-                    .map_err(PldmServiceError::MsgHandler)?
-            {
-                let resp_len = self.requester_transport.send_request(
-                    remote_eid,
-                    pldm_len,
-                    &mut fw_buf,
-                    requester_timeout_millis,
-                )?;
-                let resp_total_len = resp_len
-                    .checked_add(1)
-                    .ok_or(PldmServiceError::PldmMem(PldmMemError::OverflowMaxSize))?;
-                let resp = fw_buf
-                    .get_mut(..resp_total_len)
-                    .ok_or(PldmServiceError::PldmMem(PldmMemError::BufferTooSmall))?;
-                self.cmd_interface
-                    .process_initiator_response(resp)
-                    .map_err(PldmServiceError::MsgHandler)?;
-            }
-
-            // Phase 2: poll for an inbound command so the responder path
-            // stays live during a transfer and the Update Agent can cancel at
-            // any time. `handle_responder_msg` receives the *whole* buffer
-            // because responses may be larger than the request they answer
-            // (e.g. GetTid: 4-byte request, 5-byte response). Commands from
-            // any EID other than `remote_eid` are dropped without a response.
-            let poll_timeout = if initiator_active {
-                RESPONDER_POLL_TIMEOUT_MILLIS
-            } else {
-                timeout_millis
-            };
-            responder_listener.set_timeout(poll_timeout);
-            // Sampled around the responder poll: `RequestUpdate` is the only
-            // command that takes the FD out of `Idle`, so the false→true edge
-            // of `is_update_mode()` identifies exactly one accepted
-            // `RequestUpdate` (the initiator phase above never leaves `Idle`).
-            let was_update_mode = self.cmd_interface.fd_ctx.is_update_mode();
-            match self.responder_transport.respond_once(
-                &mut responder_listener,
-                buf,
-                |framed_buf, _req_total_len, source_eid| {
-                    // Only act on commands from the UA this instance serves;
-                    // silently drop anything else (e.g. a rogue endpoint).
-                    if source_eid != remote_eid {
-                        return Ok(0);
-                    }
-                    self.cmd_interface
-                        .handle_responder_msg(framed_buf)
-                        .map_err(PldmServiceError::MsgHandler)
-                },
-            ) {
-                Ok(()) => {
-                    if !was_update_mode && self.cmd_interface.fd_ctx.is_update_mode() {
-                        sink.notify(FdEvent::UpdateRequested);
-                    }
-                }
-                // A short poll timeout while an initiator request is active
-                // just means no UA command arrived in that window; keep
-                // looping so the transfer can continue.
-                Err(PldmServiceError::Mctp(e)) if initiator_active && e.is_timeout() => {}
-                Err(e) => return Err(e),
-            }
-        }
+            || true,
+        )
     }
 }

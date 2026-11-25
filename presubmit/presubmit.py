@@ -16,7 +16,7 @@ from pw_presubmit import (
     json_check,
     keep_sorted,
 )
-from presubmit import cpp_include_guard, license
+from presubmit import cpp_include_guard, license, rust_features
 from pw_presubmit.install_hook import install_git_hook
 from pw_presubmit.presubmit import Programs
 
@@ -32,6 +32,7 @@ QUICK = (
     cpp_include_guard.include_guard_check,
     license.license_check,
     json_check.presubmit_check,
+    rust_features.rust_features_check,
     # TODO(cfrantz): Determine how to enable the fix option for keep_sorted.
     # keep_sorted.presubmit_check,
 )

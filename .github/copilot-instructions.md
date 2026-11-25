@@ -8,10 +8,14 @@
 - [ ] Tests verify error handling paths, not just happy paths
 - [ ] Unsafe code blocks are documented with safety comments
 - [ ] Hardware register access uses proper volatile operations
+- [ ] Raw MMIO stays inside the target's designated boundary module; drivers use its safe typed API and take ownership of the peripheral instead of adding `unsafe` constructors. Added lines are held to this even in files that already violate it. Also flag register access through an accessor outside the boundary and `unsafe` without a `// SAFETY:` comment directly above it. Follow `docs/src/design/mmio.md` and the target's `target/<name>/MMIO.md`
 - [ ] Cryptographic operations use constant-time implementations where applicable
 - [ ] Code is no_std compatible (no heap allocation: Vec, HashMap, String, etc.)
 - [ ] Fixed-size arrays and heapless collections used instead of dynamic allocation
 - [ ] Stack usage is bounded and reasonable for embedded targets
+- [ ] Shared/reused scratch buffers are not aliased across multiple batched results — each consumer's data is copied or encoded before the buffer is overwritten for the next one
+- [ ] Untrusted IPC input is validated in the server, not in the hardware driver. Client-controlled address, size, and length meet the driver's documented preconditions (supported size, alignment, in-bounds range) before the handler calls into the HAL or driver
+- [ ] A new or changed image with a server and clients sets thread `priority` in `system.json5` per `docs/src/design/thread-priorities.md`: servers strictly above their clients, an interrupt-driven server highest, no `Level0`
 
 ## Quick Reference: Forbidden Patterns
 
@@ -22,14 +26,43 @@
 | `collection[index]` | `collection.get(index).ok_or(Error::OutOfBounds)?` |
 | `a + b` (integers) | `a.checked_add(b).ok_or(Error::Overflow)?` |
 | `ptr.read()` | `ptr.read_volatile()` (for MMIO) |
+| Raw register pointer access in a driver | A safe method on the target's register boundary (see `docs/src/design/mmio.md`) |
 | `Vec<T>`, `HashMap<K,V>` | Fixed-size arrays `[T; N]`, `heapless::Vec<T, N>` |
 | `String` | Fixed-size string `heapless::String<N>` or `&str` |
 | `Box<T>` | Stack allocation or `&mut T` reference |
+| Reuse one shared buffer across a batch, process after the loop | Encode/consume each result immediately, before the buffer is reused |
+
+**Example — buffer aliasing:**
+```rust
+// ❌ Bad: scratch_buf is overwritten each iteration; the second loop reads
+// it back after the fact, so every item except the last-resolved one is
+// delivered a *different* item's data instead of its own.
+let mut ready = Vec::new();
+for item in pending {
+    if let Some(msg) = item.take_ready() {
+        let meta = copy_into(msg, scratch_buf);   // overwrites scratch_buf
+        ready.push((item.id(), meta));
+    }
+}
+for (id, meta) in ready {
+    deliver(id, &scratch_buf[..meta.len]);        // id A gets id B's data
+}
+
+// ✅ Good: encode/deliver immediately, before scratch_buf is reused.
+for item in pending {
+    if let Some(msg) = item.take_ready() {
+        let meta = copy_into(msg, scratch_buf);
+        deliver(item.id(), &scratch_buf[..meta.len]); // consumed now, while still valid
+    }
+}
+```
 
 ## Security-Specific Guidelines
 
 - **Timing attacks**: Use constant-time comparisons for secrets (subtle crate)
 - **Zeroization**: Use `zeroize` crate for sensitive data cleanup (keys, passwords, etc.)
 - **Memory safety**: Ensure sensitive data is properly zeroized after use
-- **Hardware abstraction**: All register access must go through HAL traits
+- **Hardware abstraction**: All register access must go through HAL traits, and raw MMIO is confined to the target's boundary (`docs/src/design/mmio.md`)
 - **Error information**: Don't leak sensitive data in error messages
+- **Buffer aliasing (CWE-488)**: Never collect metadata for multiple pending/ready items against a single shared buffer and process them afterward — the buffer only ever holds the last write. Each item must be fully encoded/consumed before the buffer is reused for the next.
+- **IPC trust boundary**: Do not rely on clients, including third-party code, to send valid addresses, sizes, or lengths. Validate them in the IPC server. The driver assumes they are valid.

@@ -21,7 +21,8 @@ pub fn copy_to_reg_unaligned(
     >,
     src: &[u8],
 ) {
-    let (words, rem_bytes): (&[Unalign<u32>], &[u8]) = FromBytes::ref_from_prefix(src).unwrap();
+    let (words, rem_bytes): (&[Unalign<u32>], &[u8]) = FromBytes::ref_from_prefix(src)
+        .expect("Unalign<u32> has alignment 1, so the split cannot fail");
 
     for word in words {
         reg.write(|_| word.get());
@@ -40,7 +41,8 @@ pub fn copy_to_reg(
     src: &Aligned<A4, [u8]>,
 ) {
     // Convert to regular slice; optimizer should be smart enough to realize it's still aligned.
-    let (words, rem_bytes): (&[u32], &[u8]) = FromBytes::ref_from_prefix(src.as_ref()).unwrap();
+    let (words, rem_bytes): (&[u32], &[u8]) = FromBytes::ref_from_prefix(src.as_ref())
+        .expect("Aligned<A4> gives the 4-byte alignment u32 needs");
 
     for word in words {
         reg.write(|_| *word);
@@ -62,7 +64,8 @@ pub fn copy_to_reg_array<const LEN: usize>(
     src: &Aligned<A4, [u8]>,
 ) {
     // Convert to regular slice; optimizer should be smart enough to realize it's still aligned.
-    let (words, rem_bytes): (&[u32], &[u8]) = FromBytes::ref_from_prefix(src.as_ref()).unwrap();
+    let (words, rem_bytes): (&[u32], &[u8]) = FromBytes::ref_from_prefix(src.as_ref())
+        .expect("Aligned<A4> gives the 4-byte alignment u32 needs");
 
     let words_to_copy = min(LEN, words.len());
 
@@ -90,7 +93,8 @@ pub fn copy_to_reg_array_unaligned<const LEN: usize>(
     >,
     src: &[u8],
 ) {
-    let (words, rem_bytes): (&[Unalign<u32>], &[u8]) = FromBytes::ref_from_prefix(src).unwrap();
+    let (words, rem_bytes): (&[Unalign<u32>], &[u8]) = FromBytes::ref_from_prefix(src)
+        .expect("Unalign<u32> has alignment 1, so the split cannot fail");
 
     let words_to_copy = min(LEN, words.len());
 
@@ -112,7 +116,8 @@ pub fn copy_from_reg<const LEN: usize>(
     dest: &mut Aligned<A4, [u8]>,
     reg: &ureg::RegRef<impl ureg::ReadableReg<ReadVal = u32, Raw = u32>, impl ureg::Mmio + Copy>,
 ) {
-    let (words, rem_bytes): (&mut [u32], &mut [u8]) = FromBytes::mut_from_prefix(dest).unwrap();
+    let (words, rem_bytes): (&mut [u32], &mut [u8]) =
+        FromBytes::mut_from_prefix(dest).expect("Aligned<A4> gives the 4-byte alignment u32 needs");
     let words_to_copy = min(LEN, words.len());
 
     #[allow(clippy::needless_range_loop)]
@@ -133,7 +138,8 @@ pub fn copy_from_reg_array<const LEN: usize>(
         ureg::RegRef<impl ureg::ReadableReg<ReadVal = u32, Raw = u32>, impl ureg::Mmio + Copy>,
     >,
 ) {
-    let (words, rem_bytes): (&mut [u32], &mut [u8]) = FromBytes::mut_from_prefix(dest).unwrap();
+    let (words, rem_bytes): (&mut [u32], &mut [u8]) =
+        FromBytes::mut_from_prefix(dest).expect("Aligned<A4> gives the 4-byte alignment u32 needs");
     let words_to_copy = min(LEN, words.len());
 
     #[allow(clippy::needless_range_loop)]
@@ -154,8 +160,8 @@ pub fn copy_from_reg_array_unaligned<const LEN: usize>(
         ureg::RegRef<impl ureg::ReadableReg<ReadVal = u32, Raw = u32>, impl ureg::Mmio + Copy>,
     >,
 ) {
-    let (words, rem_bytes): (&mut [Unalign<u32>], &mut [u8]) =
-        FromBytes::mut_from_prefix(dest).unwrap();
+    let (words, rem_bytes): (&mut [Unalign<u32>], &mut [u8]) = FromBytes::mut_from_prefix(dest)
+        .expect("Unalign<u32> has alignment 1, so the split cannot fail");
     let words_to_copy = min(LEN, words.len());
 
     #[allow(clippy::needless_range_loop)]
@@ -173,8 +179,8 @@ pub fn copy_from_reg_unaligned(
     dest: &mut [u8],
     reg: &ureg::RegRef<impl ureg::ReadableReg<ReadVal = u32, Raw = u32>, impl ureg::MmioMut + Copy>,
 ) {
-    let (words, rem_bytes): (&mut [Unalign<u32>], &mut [u8]) =
-        FromBytes::mut_from_prefix(dest).unwrap();
+    let (words, rem_bytes): (&mut [Unalign<u32>], &mut [u8]) = FromBytes::mut_from_prefix(dest)
+        .expect("Unalign<u32> has alignment 1, so the split cannot fail");
 
     for word in words {
         word.set(reg.read())

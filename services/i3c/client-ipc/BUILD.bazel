@@ -1,0 +1,20 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("//target:defs.bzl", "KERNEL_TARGET_COMPATIBLE_WITH")
+
+# The single kernel-tagged piece of the client path: the IPC Transport impl.
+# Kernel targets only; nothing in it is specific to one SoC.
+rust_library(
+    name = "i3c_client_ipc",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = KERNEL_TARGET_COMPATIBLE_WITH,
+    visibility = ["//visibility:public"],
+    deps = [
+        "//services/i3c/api:i3c_api",
+        "@pigweed//pw_kernel/userspace",
+    ],
+)

@@ -1,0 +1,30 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// Deliberately broken manifest: two apps' pin_claims_<process> both name the
+// same (fictitious) pin. manifest_check reads this directly — no kernel, no
+// apps, no compile needed to catch it.
+{
+    apps: [
+        {
+            name: "claim_pin_a",
+            constants: [
+                {
+                    type: "string",
+                    name: "pin_claims_claim_pin_a_process",
+                    value: "shared_pin:gpio",
+                },
+            ],
+        },
+        {
+            name: "claim_pin_b",
+            constants: [
+                {
+                    type: "string",
+                    name: "pin_claims_claim_pin_b_process",
+                    value: "shared_pin:gpio",
+                },
+            ],
+        },
+    ],
+}

@@ -9,30 +9,32 @@ use super::types::ClockRegisterHalf;
 impl ScuRegisters {
     /// Gate clocks by setting bits in the selected clock-stop register half.
     ///
-    /// Caller must call `unlock_write_protection()` before this.
+    /// Unlocks the SCU for the duration of the write; see
+    /// [`ScuRegisters::unlock_and_lock_after`].
     pub fn gate_clock_mask(&self, half: ClockRegisterHalf, mask: u32) {
-        match half {
+        self.unlock_and_lock_after(|scu| match half {
             ClockRegisterHalf::Lower => {
-                self.regs().scu080().write(|w| unsafe { w.bits(mask) });
+                scu.regs().scu080().write(|w| unsafe { w.bits(mask) });
             }
             ClockRegisterHalf::Upper => {
-                self.regs().scu090().write(|w| unsafe { w.bits(mask) });
+                scu.regs().scu090().write(|w| unsafe { w.bits(mask) });
             }
-        }
+        });
     }
 
     /// Ungate clocks by clearing bits in the selected clock-stop register half.
     ///
-    /// Caller must call `unlock_write_protection()` before this.
+    /// Unlocks the SCU for the duration of the write; see
+    /// [`ScuRegisters::unlock_and_lock_after`].
     pub fn ungate_clock_mask(&self, half: ClockRegisterHalf, mask: u32) {
-        match half {
+        self.unlock_and_lock_after(|scu| match half {
             ClockRegisterHalf::Lower => {
-                self.regs().scu084().write(|w| unsafe { w.bits(mask) });
+                scu.regs().scu084().write(|w| unsafe { w.bits(mask) });
             }
             ClockRegisterHalf::Upper => {
-                self.regs().scu094().write(|w| unsafe { w.bits(mask) });
+                scu.regs().scu094().write(|w| unsafe { w.bits(mask) });
             }
-        }
+        });
     }
 
     /// Read the selected clock-stop register half.

@@ -9,8 +9,8 @@ use core::cell::{Cell, RefCell};
 
 use mctp::Eid;
 use openprot_mctp_server::Server;
-use openprot_pldm_service::firmware_device::{FirmwareDevice, RunTerminusResult};
-use openprot_pldm_service::{MctpPldmTransport, PldmServiceError};
+use openprot_pldm_service::firmware_device::FirmwareDevice;
+use openprot_pldm_service::MctpPldmTransport;
 use pldm_common::codec::PldmCodec;
 use pldm_common::message::control::{GetPldmVersionRequest, GetTidRequest, SetTidRequest};
 use pldm_common::message::firmware_update::apply_complete::ApplyResult;
@@ -24,7 +24,7 @@ use pldm_common::util::fw_component::FirmwareComponent;
 use pldm_interface::firmware_device::fd_ops::{ComponentOperation, FdOps, FdOpsError};
 
 mod common;
-use common::{transfer, BufferSender, DirectClientWithPump, FD_EID, TIMEOUT_MILLIS, UA_EID};
+use common::{run_fd_step, transfer, BufferSender, DirectClientWithPump, FD_EID, UA_EID};
 
 struct MockFdOps {
     component_accepted: Cell<bool>,
@@ -202,16 +202,10 @@ fn base_full_chain_via_firmware_device() {
         )
         .expect("send request_update payload");
 
-    // Runs `FirmwareDevice::run_terminus` until its inbound queue is drained.
-    // `run_terminus` loops until its responder listener has nothing left, at
-    // which point it returns Mctp(TimedOut); that terminating timeout means
-    // "done", not a failure.
-    let mut run_fd_once =
-        || match fd.run_terminus(UA_EID, &mut fd_buf, TIMEOUT_MILLIS, TIMEOUT_MILLIS, &mut ()) {
-            RunTerminusResult::Completed => {}
-            RunTerminusResult::StoppedByError(PldmServiceError::Mctp(e)) if e.is_timeout() => {}
-            RunTerminusResult::StoppedByError(e) => panic!("firmware device failed: {e:?}"),
-        };
+    // Each command below is answered within a single step: the responder
+    // transport's pre-recv pump delivers the queued UA->FD packet before
+    // `run_fd_step` even attempts to receive it.
+    let mut run_fd_once = || run_fd_step(&mut fd, UA_EID, &mut fd_buf, &mut ());
 
     // The responder transport's pre-recv pump delivers the queued UA->FD
     // packets into fd_server *after* its listener is registered. Delivering

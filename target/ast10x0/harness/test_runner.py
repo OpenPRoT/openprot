@@ -74,10 +74,16 @@ _LOCK_ACQUIRE_TIMEOUT = 120  # seconds to wait before giving up
 # ── SSH helpers ───────────────────────────────────────────────────────────────
 
 
+# Skip system/user ssh config. Under the Bazel sandbox, root-owned files in
+# /etc/ssh/ssh_config.d appear as owned by nobody and OpenSSH rejects them
+# ("Bad owner or permissions"). Default identities/known_hosts still apply.
+_SSH_CONFIG_OPTS = ["-F", "/dev/null"]
+
+
 def _ssh(host: str, cmd: str, **kwargs) -> subprocess.CompletedProcess:
     """Run a single SSH command synchronously."""
     return subprocess.run(
-        ["ssh", "-o", "BatchMode=yes", host, cmd],
+        ["ssh", *_SSH_CONFIG_OPTS, "-o", "BatchMode=yes", host, cmd],
         **kwargs,
     )
 
@@ -85,7 +91,16 @@ def _ssh(host: str, cmd: str, **kwargs) -> subprocess.CompletedProcess:
 def _ssh_stream(host: str, cmd: str) -> subprocess.Popen:
     """Open a streaming SSH session; stdout is a pipe the caller reads."""
     return subprocess.Popen(
-        ["ssh", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=5", host, cmd],
+        [
+            "ssh",
+            *_SSH_CONFIG_OPTS,
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ServerAliveInterval=5",
+            host,
+            cmd,
+        ],
         stdout=subprocess.PIPE,
         stderr=sys.stderr,
     )
@@ -153,6 +168,21 @@ def _acquire_lock(host: str, timeout: int = _LOCK_ACQUIRE_TIMEOUT) -> bool:
 
 def _release_lock(host: str) -> None:
     _ssh(host, f"rm -f {_LOCK_PATH}", capture_output=True)
+
+
+def _reap_stale_runners(host: str) -> None:
+    """Kill orphaned runners left behind when an SSH session drops.
+
+    The remote python does not die with its SSH client, and an orphan that still
+    holds the UARTs silently swallows the bootloader handshake of every later
+    run. Only called while holding the lock, so any match is an orphan.
+    """
+    # The [p] keeps the pattern from matching the shell that runs pkill.
+    r = _ssh(host, "pkill -f '[p]i_test_runner.py'", capture_output=True)
+    if r.returncode == 0:
+        print("RUNNER: reaped orphaned pi_test_runner.py on the Pi", file=sys.stderr)
+        # Let the kernel release the serial ports before we reopen them.
+        time.sleep(1)
 
 
 def _touch_lock_forever(host: str, stop: threading.Event) -> None:
@@ -269,15 +299,16 @@ def _run_remote(
 ) -> bool:
     """SCP firmware and runner to Pi; stream UART back over SSH stdout."""
     host = args.pi_host
-    gpio = config["gpio"]
-    uart = config["uart"]
-    baudrate = args.baudrate if args.baudrate else uart["baudrate"]
+    dev_a = config["device_a"]
+    baudrate = args.baudrate if args.baudrate else config["baudrate"]
 
     remote_dir = "/tmp/ast1060_test"
 
     if not _acquire_lock(host):
         return False
     print("RUNNER: lock acquired, starting test", file=sys.stderr)
+
+    _reap_stale_runners(host)
 
     stop_touch = threading.Event()
     touch_thread = threading.Thread(
@@ -288,7 +319,13 @@ def _run_remote(
     _ssh(host, f"rm -rf {remote_dir} && mkdir -p {remote_dir}", check=True)
 
     subprocess.run(
-        ["scp", "-q", str(runner), f"{host}:{remote_dir}/pi_test_runner.py"],
+        [
+            "scp",
+            *_SSH_CONFIG_OPTS,
+            "-q",
+            str(runner),
+            f"{host}:{remote_dir}/pi_test_runner.py",
+        ],
         check=True,
     )
 
@@ -296,7 +333,7 @@ def _run_remote(
         firmware_path = Path(args.firmware)
         remote_fw = f"{remote_dir}/{firmware_path.name}"
         subprocess.run(
-            ["scp", "-q", str(firmware_path), f"{host}:{remote_fw}"],
+            ["scp", *_SSH_CONFIG_OPTS, "-q", str(firmware_path), f"{host}:{remote_fw}"],
             check=True,
         )
     else:
@@ -307,25 +344,34 @@ def _run_remote(
         slave_firmware_path = Path(args.slave_firmware)
         remote_slave_fw = f"{remote_dir}/{slave_firmware_path.name}"
         subprocess.run(
-            ["scp", "-q", str(slave_firmware_path), f"{host}:{remote_slave_fw}"],
+            [
+                "scp",
+                *_SSH_CONFIG_OPTS,
+                "-q",
+                str(slave_firmware_path),
+                f"{host}:{remote_slave_fw}",
+            ],
             check=True,
         )
 
-    remote_cmd = f"python3 -u {remote_dir}/pi_test_runner.py {uart_device}"
+    remote_cmd = f"python3 -u {remote_dir}/pi_test_runner.py"
     if not args.parse_only:
         remote_cmd += f" {remote_fw}"
     remote_cmd += (
-        f" --srst-pin {gpio['srst_pin']}"
-        f" --fwspick-pin {gpio['fwspick_pin']}"
+        f" --srst-pin {dev_a['srst_pin']}"
+        f" --fwspick-pin {dev_a['fwspick_pin']}"
         f" --baudrate {baudrate}"
     )
+    if uart_device:
+        remote_cmd += f" --uart-device {uart_device}"
+    if args.verbose_runner:
+        remote_cmd += " --verbose-runner"
     if args.parse_only:
         remote_cmd += " --stream-only"
     if remote_slave_fw:
         device_b = config["device_b"]
         remote_cmd += (
             f" --slave-firmware {remote_slave_fw}"
-            f" --slave-uart-device {device_b['serial_port']}"
             f" --slave-srst-pin {device_b['srst_pin']}"
             f" --slave-fwspick-pin {device_b['fwspick_pin']}"
         )
@@ -342,6 +388,7 @@ def _run_remote(
             except subprocess.TimeoutExpired:
                 proc.kill()
                 proc.wait()
+        _reap_stale_runners(host)
         stop_touch.set()
         _release_lock(host)
 
@@ -375,7 +422,7 @@ def main() -> int:
         "--baudrate",
         type=int,
         default=None,
-        help=f"Override baud rate from evb_config.toml (default: {config['uart']['baudrate']})",
+        help=f"Override baud rate from evb_config.toml (default: {config['baudrate']})",
     )
     parser.add_argument(
         "--log-file",
@@ -392,6 +439,15 @@ def main() -> int:
         action="store_true",
         help="Skip GPIO and firmware upload; stream and detokenize UART output only",
     )
+    parser.add_argument(
+        "-v",
+        "--verbose-runner",
+        action="store_true",
+        help=(
+            "Dump each port's post-flush buffer during UART discovery. Pass "
+            "through Bazel with --test_arg=-v"
+        ),
+    )
     args, remaining = parser.parse_known_args()
 
     if os.environ.get("PW_RUNNER_PASSTHROUGH") == "1":
@@ -400,10 +456,19 @@ def main() -> int:
         res = subprocess.run([args.firmware] + remaining)
         return res.returncode
 
-    uart_device = os.environ.get("UART_DEVICE") or config["uart"]["serial_port"]
+    # Normally the Pi auto-discovers the UART by resetting the board, so no
+    # device is configured. UART_DEVICE lets a caller pin an explicit port;
+    # --parse-only can't reset, so it requires one.
+    uart_device = os.environ.get("UART_DEVICE")
 
     if not args.firmware:
         parser.error("firmware is required")
+
+    if args.parse_only and not uart_device:
+        parser.error(
+            "--parse-only requires UART_DEVICE to be set "
+            "(no reset happens, so the port can't be auto-discovered)"
+        )
 
     # system_image emits both .elf and .bin under the same stem; accept either.
     # When invoked via --run_under on a system_image_test, Bazel passes the

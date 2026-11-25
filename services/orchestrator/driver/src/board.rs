@@ -4,7 +4,7 @@
 //! What the board supplies to the driver: traits and wiring data only.
 //! Boards (or test mocks) implement these.
 
-use openprot_orchestrator_sm::{ComponentId, ComponentKind};
+use openprot_orchestrator_sm::{BootFailureKind, ComponentId, ComponentKind};
 
 pub use orchestrator_capabilities::{BootControl, BootWatch};
 use orchestrator_capabilities::{Svn, SvnFloor};
@@ -112,6 +112,14 @@ pub enum Report {
     /// Recovery attempts exhausted and the platform halts. Reported before
     /// the lockdown latch, while there is still a platform to report from.
     RecoveryFailed(ComponentId),
+    /// A boot walk failed at a named checkpoint. The `kind` tells whether
+    /// this was silence (timed out), a retriable device fault, or a terminal
+    /// device fault.
+    BootFailed {
+        id: ComponentId,
+        checkpoint: &'static str,
+        kind: BootFailureKind,
+    },
     /// An update request declined because the platform was busy. Nothing
     /// staged, and the requester may ask again. Platform-wide, not
     /// per-component: the machine supervises one update at a time and

@@ -210,6 +210,16 @@ pub mod slave {
         /// This is typically called after detecting a slave write event.
         fn read_slave_buffer(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error>;
 
+        /// Re-arm the receive path after a drained frame has been consumed.
+        ///
+        /// Deferring this call until the consumer has actually taken the data
+        /// (rather than re-arming right after `read_slave_buffer`) lets
+        /// hardware that supports clock-stretching hold the bus for exactly as
+        /// long as the consumer needs, instead of a fixed-size buffer silently
+        /// overwriting data the consumer hasn't read yet. Implementations
+        /// without that distinction can leave this a no-op.
+        fn rearm_slave_receive(&mut self) {}
+
         /// Write response data to the slave transmit buffer
         ///
         /// Prepares data to be sent to the master during the next read transaction.

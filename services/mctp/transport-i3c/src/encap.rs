@@ -1,0 +1,237 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+//! MCTP-over-I3C encapsulation (DSP0233).
+//!
+//! `mctp-estack` ships `i2c`, `serial` and `usb` bindings but no I3C one, so
+//! the framing lives here.
+//!
+//! # Wire format
+//!
+//! DSP0233 carries one MCTP packet as the data of one I3C private transfer, with
+//! a PEC byte after it. Unlike the SMBus/I2C binding (DSP0237) there is **no**
+//! command code, byte count or source-address field in front of the packet:
+//!
+//! ```text
+//! [Target Address + R/W][ACK][ MCTP packet ... ][ PEC ]
+//!                             ^ Write/Read Data 1
+//! ```
+//!
+//! * The address byte is the address phase of the bus transfer. It is not part
+//!   of the data this module sees or produces.
+//! * The PEC is an SMBus CRC-8 over the address byte (`addr << 1 | R/W`),
+//!   followed by the packet. For a controller write to this target that is
+//!   `(own_addr << 1) | 0`; for a controller read of this target's response it
+//!   is `(own_addr << 1) | 1`.
+//! * DSP0233 requires the PEC, so there is no way to turn it off here.
+//!
+//! Addresses are I3C dynamic addresses, assigned by the controller during ENTDAA,
+//! so `own_addr` is read back from the hardware at runtime, not a build-time
+//! constant.
+//!
+//! The MCTP packet itself is transport-independent, so fragmentation and
+//! reassembly stay in `mctp-estack`.
+
+use mctp::{Error, Result};
+use openprot_mctp_api::MCTP_HEADER_LEN;
+
+use util_pec::{Pec, SoftwarePec};
+
+/// R/W# bit of the address byte for a controller write (to this target).
+const WRITE: u8 = 0;
+/// R/W# bit of the address byte for a controller read (of this target).
+const READ: u8 = 1;
+
+/// SMBus PEC: CRC-8 with polynomial 0x07, zero seed, no reflection, by the
+/// default [`SoftwarePec`] engine.
+///
+/// Inlined rather than pulled from `smbus-pec`, which is only a transitive
+/// dependency here. A known-answer test in this crate pins it.
+pub fn smbus_pec(data: &[u8]) -> u8 {
+    SoftwarePec.update(0, data)
+}
+
+/// PEC of one I3C transfer: CRC-8 over the address byte, then the packet, by the
+/// default [`SoftwarePec`] engine.
+///
+/// `addr_byte` is the 7-bit target address shifted left once with the transfer's
+/// R/W# bit in bit 0 (see [`addr_byte`]).
+pub fn transfer_pec(addr_byte: u8, packet: &[u8]) -> u8 {
+    transfer_pec_with(&SoftwarePec, addr_byte, packet)
+}
+
+/// [`transfer_pec`] with the CRC computed by `pec`.
+pub fn transfer_pec_with(pec: &impl Pec, addr_byte: u8, packet: &[u8]) -> u8 {
+    pec.update(pec.update(0, &[addr_byte]), packet)
+}
+
+/// The address byte of a transfer: 7-bit address plus the R/W# bit.
+const fn addr_byte(addr: u8, rnw: u8) -> u8 {
+    (addr << 1) | rnw
+}
+
+/// The largest MTU this crate uses (254): the ceiling on what `I3cSender::get_mtu`
+/// reports. The MTU follows the target's live send limit (see [`mtu_for_limit`])
+/// and never exceeds this.
+///
+/// The i3c service carries one framed packet per `I3cOp::Send`, at most
+/// `i3c_api::MAX_SEND` (255): the 256-byte TTI FIFO less the address byte that
+/// leads a `Send` payload. `mctp-estack`'s `Fragmenter` treats its MTU as the
+/// largest whole packet, transport header included, and the frame is the packet
+/// plus its PEC, so the largest packet is one byte less than the frame:
+///
+/// ```text
+/// packet + pec <= MAX_SEND (255)   =>   packet <= 254
+/// ```
+///
+/// This is caliptra-mcu-sw's rule (`max_read_len - 1`, the PEC excluded) applied
+/// to our frame. What the target *sends* is not limited by the receive-side
+/// problem below, and ran 40 of 40 on the board at this size.
+///
+/// What a peer *sends us* is different, and nothing here bounds it. The core's RX
+/// data queue is 64 words, so a full frame fills it. A second full frame that
+/// arrives before the first is read out is cut short and flagged in the RX
+/// descriptor's error field. The driver drains a frame in about 0.6 ms with the
+/// bus idle, but the whole service still overflowed in 2 of 10 runs of the board
+/// test with 254-byte writes. See the README.
+pub const MCTP_I3C_IPC_MAXMTU: usize = i3c_api::MAX_SEND - 1;
+
+/// The MCTP baseline transmission unit (DSP0236): the packet payload size that
+/// every endpoint accepts, header excluded.
+pub const MCTP_BASELINE_PAYLOAD: usize = 64;
+
+/// The smallest MTU this binding works with: the MCTP header plus the baseline
+/// payload, as a whole packet (the same unit as [`MCTP_I3C_IPC_MAXMTU`]). A
+/// target that cannot send a packet this large cannot carry MCTP.
+pub const MCTP_I3C_MINMTU: usize = MCTP_HEADER_LEN + MCTP_BASELINE_PAYLOAD;
+
+/// The MTU for a target that can stage a frame of at most `max_send_len` bytes
+/// (`i3c_api::DeviceInfo::max_send_len`), or `None` if that is too little for
+/// [`MCTP_I3C_MINMTU`].
+///
+/// The frame carries the PEC after the packet, so the packet is one byte
+/// shorter than the frame. The result never exceeds [`MCTP_I3C_IPC_MAXMTU`]. The
+/// controller can change the limit (SETMRL), so ask again when it matters.
+pub fn mtu_for_limit(max_send_len: usize) -> Option<usize> {
+    let mtu = max_send_len.checked_sub(1)?.min(MCTP_I3C_IPC_MAXMTU);
+    (mtu >= MCTP_I3C_MINMTU).then_some(mtu)
+}
+
+/// Buffer size for `Fragmenter::fragment_vectored`, which refuses to emit into
+/// anything smaller than its MTU.
+pub const MCTP_I3C_IPC_PACKET: usize = MCTP_I3C_IPC_MAXMTU + MCTP_HEADER_LEN;
+
+/// Largest whole framed packet the transport ever hands to `I3cOp::Send`: what a
+/// `Send` can carry next to the address byte that leads its payload
+/// ([`i3c_api::MAX_SEND`]).
+pub const MCTP_I3C_IPC_FRAME: usize = i3c_api::MAX_SEND;
+
+// The MTU's whole packet plus its PEC must fit one `Send`.
+const _: () = assert!(MCTP_I3C_IPC_MAXMTU < MCTP_I3C_IPC_FRAME);
+
+/// Strip the PEC from an inbound private write and return the MCTP packet.
+///
+/// `own_addr` is this target's 7-bit dynamic address: the controller's write
+/// address phase was `(own_addr << 1) | 0`, and that byte is covered by the PEC
+/// even though it is not in `frame`.
+///
+/// Fails if the frame is empty, the PEC is wrong, or nothing is left after the
+/// PEC is removed.
+pub fn decode_write(own_addr: u8, frame: &[u8]) -> Result<&[u8]> {
+    decode_write_with(&SoftwarePec, own_addr, frame)
+}
+
+/// [`decode_write`] with the PEC checked by `pec`.
+pub fn decode_write_with<'f>(pec: &impl Pec, own_addr: u8, frame: &'f [u8]) -> Result<&'f [u8]> {
+    if frame.is_empty() {
+        return Err(Error::InvalidInput);
+    }
+    if own_addr > 0x7f {
+        return Err(Error::BadArgument);
+    }
+
+    let (received, packet) = frame.split_last().ok_or(Error::InvalidInput)?;
+    if packet.is_empty() || transfer_pec_with(pec, addr_byte(own_addr, WRITE), packet) != *received
+    {
+        return Err(Error::InvalidInput);
+    }
+    Ok(packet)
+}
+
+/// Frames MCTP packets for transfer over I3C.
+///
+/// `own_addr` is this target's I3C dynamic address. It is not known until the
+/// controller has run ENTDAA, so construct this after the address has been read
+/// back from the hardware.
+///
+/// `P` computes the PEC and defaults to [`SoftwarePec`].
+#[derive(Debug, Clone)]
+pub struct MctpI3cEncap<P = SoftwarePec> {
+    own_addr: u8,
+    pec: P,
+}
+
+impl MctpI3cEncap {
+    /// Bind to a dynamic address, computing the PEC in software.
+    pub fn new(own_addr: u8) -> Self {
+        Self::with_pec(own_addr, SoftwarePec)
+    }
+}
+
+impl<P: Pec> MctpI3cEncap<P> {
+    /// Bind to a dynamic address, computing the PEC with `pec`.
+    pub fn with_pec(own_addr: u8, pec: P) -> Self {
+        Self { own_addr, pec }
+    }
+
+    /// This target's dynamic address.
+    pub fn own_addr(&self) -> u8 {
+        self.own_addr
+    }
+
+    /// Strip the PEC from an inbound private write (see [`decode_write`]).
+    pub fn decode<'f>(&self, frame: &'f [u8]) -> Result<&'f [u8]> {
+        decode_write_with(&self.pec, self.own_addr, frame)
+    }
+
+    /// Frame one MCTP packet for an outbound transfer, which the controller
+    /// collects with a private read.
+    ///
+    /// Writes the packet and the trailing PEC into `out`, returning the framed
+    /// length. The PEC covers `(own_addr << 1) | 1`
+    /// followed by the packet.
+    ///
+    /// Fails with [`Error::NoSpace`] if `out` is too small, or
+    /// [`Error::BadArgument`] if the address is not 7-bit or the framed packet
+    /// would exceed [`MCTP_I3C_IPC_FRAME`].
+    pub fn encode(&self, packet: &[u8], out: &mut [u8]) -> Result<usize> {
+        if self.own_addr > 0x7f {
+            return Err(Error::BadArgument);
+        }
+
+        let framed = packet.len() + 1;
+        if framed > MCTP_I3C_IPC_FRAME {
+            return Err(Error::BadArgument);
+        }
+
+        out.get_mut(..packet.len())
+            .ok_or(Error::NoSpace)?
+            .copy_from_slice(packet);
+
+        let crc = transfer_pec_with(&self.pec, addr_byte(self.own_addr, READ), packet);
+        *out.get_mut(packet.len()).ok_or(Error::NoSpace)? = crc;
+
+        Ok(framed)
+    }
+}
+
+#[cfg(test)]
+mod crc_tests {
+    use super::*;
+
+    #[test]
+    fn smbus_pec_check_value() {
+        // CRC-8/SMBUS check value for "123456789".
+        assert_eq!(smbus_pec(b"123456789"), 0xF4);
+    }
+}

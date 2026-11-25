@@ -1,0 +1,59 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 GPIOH output and loopback test configuration: kernel routes, userspace app drives —
+// see gpioh_loopback_app_main.rs. Kernel-mode pin driving isn't a pattern this tree needs
+// anywhere else.
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,
+    },
+    kernel: {
+        // Sized so kernel flash ends exactly at 0x10000: the app's flash is auto-placed
+        // immediately after, and its MPU region needs a 32KB-aligned start.
+        flash_start_address: 0x00000500,
+        flash_size_bytes: 64256,
+        ram_start_address: 0x00040500,
+        ram_size_bytes: 131072,
+    },
+    apps: [
+        {
+            name: "gpioh_loopback_app",
+            flash_size_bytes: 32768,
+            constants: [
+                {
+                    // Pins this app's `gpioh_loopback_process` is authorized to drive (switch
+                    // direction on, read, write) — see `//target/ast10x0/pins:app_pin_claims`.
+                    // The kernel only routes these pins (see `target.rs`); this process is the
+                    // one that actually drives them.
+                    type: "string",
+                    name: "pin_claims_gpioh_loopback_process",
+                    value: "scu414_28:gpio,scu414_29:gpio",
+                },
+            ],
+            processes: [
+                {
+                    name: "gpioh_loopback_process",
+                    ram_size_bytes: 65536,
+                    objects: [
+                        {
+                            type: "thread",
+                            name: "gpioh_loopback_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },
+                    ],
+                    memory_mappings: [
+                        {
+                            name: "gpio_regs",
+                            type: "device",
+                            start_address: 0x7e780000,
+                            size_bytes: 0x1000,
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}

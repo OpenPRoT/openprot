@@ -1,0 +1,37 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+# The event loop of a pw_kernel server that answers several IPC channels and
+# may defer a reply. Owns the WaitGroup, so callers never see it.
+rust_library(
+    name = "service",
+    srcs = [
+        "channels.rs",
+        "lib.rs",
+    ],
+    crate_name = "util_service",
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = select({
+        "@platforms//os:none": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
+# channels.rs is the crate's private bookkeeping and has no kernel
+# dependency, so it is compiled on its own here to run its unit tests on a
+# host. It is not a second public crate.
+rust_test(
+    name = "service_test",
+    srcs = ["channels.rs"],
+    crate_root = "channels.rs",
+    edition = "2024",
+)

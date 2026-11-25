@@ -21,8 +21,18 @@ common --incompatible_default_to_explicit_init_py
 # our toolchains, and CI VMs may not have any local toolchain to detect.
 common --repo_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 
+# Don't propagate flags or defines to the exec config. Without this, every flag
+# set by a target platform or a system_image transition forks the exec config,
+# rebuilding host tools once per combination. Required by Pigweed; see
+# @pigweed//pw_build:pigweed.bazelrc.
+common --experimental_exclude_defines_from_exec_config
+common --experimental_exclude_starlark_flags_from_exec_config
+# Tools with -C lto=fat need -C embed-bitcode=yes; see the flag's definition below.
+common --experimental_propagate_custom_flag=@@rules_rust+//rust/settings:extra_exec_rustc_flags
+
 test --@pigweed//pw_kernel:enable_tests=true
 test --platform_suffix=test
+test --test_tag_filters=-fpga,-disabled
 
 # Remote execution config definitions
 # ===================================
@@ -108,8 +118,37 @@ test:stress_k_ast1060_evb   --test_env=AST1060_EVB_PI_HOST
 # Platform setup for building //target/veer/* artifacts.
 common:k_veer --platforms=//target/veer:veer
 build:k_veer --build_tag_filters=-do_not_build,-kernel_doc_test
-# Usage: VCK190_FPGA_HOST=<host> bazel test --config=k_veer //target/veer/unittest_runner:fpga_test
-test:k_veer --test_env=VCK190_FPGA_HOST
+
+# Caliptra VCK190 FPGA board via SSH.
+# Host-side test binaries compile for the VCK190's ARM cores (@pigweed//targets/host:linux_aarch64)
+# while MCU firmware images transition to //target/veer:veer with target_type=fpga.
+#
+# Usage: bazel test --config=fpga --test_env=VCK190_FPGA_HOST=<host> //target/veer/...
+# (or set `test:fpga --test_env=VCK190_FPGA_HOST=<host>` in .bazelrc-site).
+common:fpga --platforms=@pigweed//targets/host:linux_aarch64
+build:fpga --build_tag_filters=-do_not_build,-kernel_doc_test
+test:fpga --local_test_jobs=1
+test:fpga --run_under=//target/veer/tooling/fpga:run_remote
+test:fpga --strategy=TestRunner=local
+test:fpga --test_env=SSH_AUTH_SOCK
+test:fpga --test_env=VCK190_FPGA_HOST
+test:fpga --test_tag_filters=fpga,-disabled,-do_not_build,-do_not_run_test,-kernel_doc_test
+test:fpga --test_timeout=600
+
+# ── Release builds (SLSA provenance) ──
+# Used by .github/workflows/release.yml. Fails the build if MODULE.bazel.lock
+# is out of date instead of silently re-resolving dependencies. `./pw presubmit`
+# (the `lockfile_check` tool in workflows.json) checks the lockfile against git
+# instead, because `./pw` runs Bazel in update mode before the check.
+common:release --lockfile_mode=error
+common:release --stamp=false
+# Don't leak the invoking shell's environment (PATH, etc.) into build actions.
+common:release --incompatible_strict_action_env
+
+# --- Earl Grey RISC-V kernel target ---
+# Platform setup for building //target/earlgrey/* artifacts.
+common:k_earlgrey --platforms=//target/earlgrey:earlgrey
+build:k_earlgrey --build_tag_filters=-do_not_build,-kernel_doc_test
 
 # Site-local overrides. Kept last so developer machine-specific settings (e.g. a
 # local QEMU source override via --override_repository) take precedence. This

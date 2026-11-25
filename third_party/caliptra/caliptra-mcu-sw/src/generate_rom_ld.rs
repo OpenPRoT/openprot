@@ -1,23 +1,19 @@
 // Licensed under the Apache-2.0 license
 // SPDX-License-Identifier: Apache-2.0
 //
-// Host tool that emits the MCU ROM linker script for the emulator platform
-// by substituting the `EMULATOR_MEMORY_MAP` values into a template.
+// Host tool that emits the MCU ROM linker script for a platform by
+// substituting that platform's memory map into a template.
+//
+// Usage: generate_rom_ld <emulator|fpga>
 //
 // # Upstream cross-reference
 //
-// Mirrors `pub fn rom_ld_script(memory_map: &McuMemoryMap) -> String` in
-// `caliptra-mcu-sw/builder/src/rom.rs` (around line 130). The template
-// string is a direct copy of the `ROM_LD_TEMPLATE` const from that file.
-// That function lives in the `mcu-builder` crate, which we cannot depend on
-// from Bazel because its sole dependency is `caliptra_builder`, which has
-// unresolved upstream deps (`fslock`, `Crypto` trait wiring, `CARGO` env
-// var). Our `//third_party/caliptra/caliptra-mcu-sw:mcu_builder` target is
-// tagged `manual` for that reason. If/when `caliptra_builder` becomes
-// buildable, this file should be replaced by a thin wrapper that calls
-// `mcu_builder::rom_ld_script()` directly.
+// Mirrors the ROM linker script generation in `caliptra-mcu-sw`:
+// `firmware-bundler/src/ld.rs` (`rom_linker_content`) and
+// `firmware-bundler/data/default-rom-layout.ld`.
 
-use mcu_config_emulator::EMULATOR_MEMORY_MAP;
+use caliptra_mcu_config_emulator::EMULATOR_MEMORY_MAP;
+use caliptra_mcu_config_fpga::FPGA_MEMORY_MAP;
 
 const ROM_LD_TEMPLATE: &str = r#"
 /* Licensed under the Apache-2.0 license. */
@@ -25,10 +21,18 @@ const ROM_LD_TEMPLATE: &str = r#"
 ENTRY(_start)
 OUTPUT_ARCH( "riscv" )
 
+/*
+ * The last 48 bytes of the ROM image are reserved for a SHA-384 digest that is
+ * appended by the build step (see `append_rom_digest`). Carve them out of the
+ * ROM region so the linker refuses to place code or rodata there.
+ */
+ROM_DIGEST_SIZE = 48;
+
 MEMORY
 {
-  ROM   (rx) : ORIGIN = $ROM_OFFSET, LENGTH = $ROM_SIZE
-  RAM  (rwx) : ORIGIN = $DCCM_OFFSET, LENGTH = $DCCM_SIZE /* dedicated SRAM for the ROM stack */
+  ROM   (rx) : ORIGIN = $ROM_OFFSET, LENGTH = $ROM_SIZE - ROM_DIGEST_SIZE
+  RAM  (rwx) : ORIGIN = $DCCM_OFFSET, LENGTH = $DCCM_SIZE - $HANDOFF_SIZE /* dedicated SRAM for the ROM stack */
+  HANDOFF (rw) : ORIGIN = $HANDOFF_OFFSET, LENGTH = $HANDOFF_SIZE
 }
 
 SECTIONS
@@ -38,16 +42,31 @@ SECTIONS
         *(.text.init )
         *(.text*)
         *(.rodata*)
+        . = ALIGN(4);
     } > ROM
 
     ROM_DATA = .;
+
+    .stack (NOLOAD):
+    {
+        . = ALIGN(4);
+        . = . + STACK_SIZE;
+        . = ALIGN(4);
+    } > RAM
+
+    .estack (NOLOAD):
+    {
+        . = ALIGN(4);
+        . = . + ESTACK_SIZE;
+        . = ALIGN(4);
+        PROVIDE(ESTACK_START = . );
+    } > RAM
 
     .data : AT(ROM_DATA)
     {
         . = ALIGN(4);
         *(.data*);
         *(.sdata*);
-        KEEP(*(.eh_frame))
         . = ALIGN(4);
         PROVIDE( GLOBAL_POINTER = . + 0x800 );
         . = ALIGN(4);
@@ -62,23 +81,20 @@ SECTIONS
         . = ALIGN(4);
     } > RAM
 
-    .stack (NOLOAD):
+    /* We reserve 1 KB at the end of DCCM for the handoff table.
+       This must be 1KB aligned because the runtime requires DCCM regions
+       to be 1KB aligned for MEIVT (Machine External Interrupt Vector Table). */
+    .handoff (NOLOAD) :
     {
-        . = ALIGN(4);
-        . = . + STACK_SIZE;
-        . = ALIGN(4);
-        PROVIDE(STACK_START = . );
-    } > RAM
-
-    .estack (NOLOAD):
-    {
-        . = ALIGN(4);
-        . = . + ESTACK_SIZE;
-        . = ALIGN(4);
-        PROVIDE(ESTACK_START = . );
-    }
+        KEEP(*(.handoff))
+    } > HANDOFF
 
     _end = . ;
+
+    /DISCARD/ :
+    {
+        *(.eh_frame*)
+    }
 }
 
 BSS_START = ADDR(.bss);
@@ -87,14 +103,21 @@ DATA_START = ADDR(.data);
 DATA_END = DATA_START + SIZEOF(.data);
 ROM_DATA_START = LOADADDR(.data);
 STACK_SIZE = $ROM_STACK_SIZE;
-STACK_TOP = ORIGIN(RAM) + LENGTH(RAM);
-STACK_ORIGIN = STACK_TOP - STACK_SIZE;
+STACK_TOP = ORIGIN(RAM) + SIZEOF(.stack);
+STACK_ORIGIN = ORIGIN(RAM);
 ESTACK_SIZE = $ROM_ESTACK_SIZE;
-MRAC_VALUE = $MRAC_VALUE;
 
 "#;
 
 fn main() {
-    let ld_script = subst::substitute(ROM_LD_TEMPLATE, &EMULATOR_MEMORY_MAP.hash_map()).unwrap();
+    let platform = std::env::args()
+        .nth(1)
+        .expect("usage: generate_rom_ld <emulator|fpga>");
+    let memory_map = match platform.as_str() {
+        "emulator" => &EMULATOR_MEMORY_MAP,
+        "fpga" => &FPGA_MEMORY_MAP,
+        other => panic!("unknown platform {other:?}; expected emulator or fpga"),
+    };
+    let ld_script = subst::substitute(ROM_LD_TEMPLATE, &memory_map.hash_map()).unwrap();
     println!("{ld_script}");
 }

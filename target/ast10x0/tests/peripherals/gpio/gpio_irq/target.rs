@@ -6,7 +6,6 @@
 #![no_std]
 #![no_main]
 
-use ast10x0_peripherals::scu::{pinctrl, ScuRegisters};
 use console_backend::console_backend_write_all;
 use entry as _;
 use target_common::{declare_target, TargetInterface};
@@ -17,11 +16,10 @@ impl TargetInterface for Target {
     const NAME: &'static str = "AST10x0 GPIO IRQ Bringup";
 
     fn main() -> ! {
-        // SAFETY: single call at boot with exclusive access to SCU global registers.
-        unsafe {
-            let scu = ScuRegisters::new_global_unlocked();
-            scu.apply_pinctrl_group(pinctrl::PINCTRL_GPIOA0);
-        }
+        // Routes exactly the pins the manifest's pin_claims_<process> entries name — generated
+        // from this same system.json5, so this can never drift from what the app actually claims.
+        // SAFETY: sole call in this binary, at boot, before any process starts.
+        unsafe { kernel_pin_routes::route_claimed_pins() };
 
         codegen::start();
         #[expect(clippy::empty_loop)]

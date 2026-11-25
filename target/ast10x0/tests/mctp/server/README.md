@@ -150,7 +150,7 @@ GPIO pin assignments and serial port paths are defined in
 
 ```toml
 [gpio]
-srst_pin = 23       # BCM pin connected to board A SRST
+srst_pin = 27       # BCM pin connected to board A SRST
 fwspick_pin = 18    # BCM pin connected to board A FWSPICK
 
 [uart]
@@ -158,7 +158,7 @@ serial_port = "/dev/ttyUSB0"   # Board A serial port
 baudrate = 115200
 
 [device_b]
-srst_pin = 25       # BCM pin connected to board B SRST
+srst_pin = 17       # BCM pin connected to board B SRST
 fwspick_pin = 24    # BCM pin connected to board B FWSPICK
 serial_port = "/dev/ttyUSB1"   # Board B serial port
 ```

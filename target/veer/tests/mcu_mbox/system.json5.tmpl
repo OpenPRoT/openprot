@@ -1,0 +1,81 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// One app, which answers the commands that arrive in the two MCU mailboxes.
+// The app maps the SRAM of each mailbox and the page of its registers, and no
+// other part of the MCI block. The constants give the app the sizes of the
+// SRAMs.
+//
+// Addresses and sizes are rendered per platform (emulator or FPGA) by
+// `veer_system_config`.
+{
+  arch: {
+    type: "riscv",
+  },
+  kernel: {
+    flash_start_address: @KERNEL_FLASH_START@,
+    flash_size_bytes: 65536,
+    ram_start_address: @KERNEL_RAM_START@,
+    ram_size_bytes: 32768,
+    interrupt_table: {
+      table: {}
+    },
+  },
+  apps: [
+    {
+      name: "responder",
+      flash_size_bytes: 32768,
+      processes: [
+        {
+          name: "responder",
+          ram_size_bytes: 8192,
+          objects: [
+            {
+              type: "thread",
+              name: "main_thread",
+              kernel_stack_size_bytes: 2048,
+            },
+          ],
+          memory_mappings: [
+            {
+              name: "mcu_mbox0_sram",
+              type: "device",
+              start_address: @MCU_MBOX0_BASE@,
+              size_bytes: @MCU_MBOX0_SRAM_SIZE@,
+            },
+            {
+              name: "mcu_mbox0_csr",
+              type: "device",
+              start_address: @MCU_MBOX0_CSR_BASE@,
+              size_bytes: 0x1000,
+            },
+            {
+              name: "mcu_mbox1_sram",
+              type: "device",
+              start_address: @MCU_MBOX1_BASE@,
+              size_bytes: @MCU_MBOX1_SRAM_SIZE@,
+            },
+            {
+              name: "mcu_mbox1_csr",
+              type: "device",
+              start_address: @MCU_MBOX1_CSR_BASE@,
+              size_bytes: 0x1000,
+            },
+          ],
+        },
+      ],
+      constants: [
+        {
+          name: "mcu_mbox0_sram_size",
+          type: "u32",
+          value: @MCU_MBOX0_SRAM_SIZE@,
+        },
+        {
+          name: "mcu_mbox1_sram_size",
+          type: "u32",
+          value: @MCU_MBOX1_SRAM_SIZE@,
+        },
+      ],
+    },
+  ],
+}

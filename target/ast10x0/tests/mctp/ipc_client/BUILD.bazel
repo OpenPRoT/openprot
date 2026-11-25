@@ -60,13 +60,13 @@ rust_app(
     srcs = ["fake_server_main.rs"],
     codegen_crate_name = "app_fake_server",
     edition = "2024",
-    system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
         "//services/mctp/api:mctp_api",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
+        "@rust_crates//:mctp-lib",
     ],
 )
 
@@ -78,7 +78,6 @@ rust_app(
     srcs = ["client_main.rs"],
     codegen_crate_name = "app_client_test",
     edition = "2024",
-    system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [

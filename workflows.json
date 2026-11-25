@@ -61,9 +61,10 @@
         "build_type": "bazel",
         "args": [
           "--keep_going",
-          "--build_tag_filters=-hardware,-disabled,-verilator,-emulator,-qemu",
-          "--test_tag_filters=-hardware,-disabled,-verilator,-emulator,-qemu",
-          "--test_output=streamed"
+          "--build_tag_filters=-hardware,-disabled,-verilator,-emulator,-qemu,-fpga",
+          "--test_tag_filters=-hardware,-disabled,-verilator,-emulator,-qemu,-fpga",
+          "--test_output=streamed",
+          "--build_event_json_file=${BUILD_ROOT}/pw_ci_tests_bep.json"
         ],
         "driver_options": {
           "@type": "pw.build.proto.BazelDriverOptions",
@@ -121,12 +122,12 @@
       "name": "caliptra_fpga_build",
       "build_config": {
         "name": "caliptra_fpga_build_config",
-        "description": "Build (do not run) the Caliptra MCU fpga target image. Catches fpga cfg/build-wiring regressions without requiring lab hardware; actually running it needs a VCK190 board (see //target/veer/unittest_runner:fpga_test, tagged manual).",
+        "description": "Build (do not run) the Caliptra MCU FPGA test binaries and images. Catches FPGA cfg, cross-compile, and build-wiring regressions without requiring lab hardware.",
         "build_type": "bazel",
         "args": [
           "--keep_going",
-          "--config=k_veer",
-          "--//target/veer:target_type=fpga"
+          "--config=fpga",
+          "--build_tag_filters=+fpga,-disabled"
         ],
         "driver_options": {
           "@type": "pw.build.proto.BazelDriverOptions",
@@ -134,7 +135,7 @@
         }
       },
       "targets": [
-        "//target/veer/unittest_runner:fpga_test"
+        "//target/veer/..."
       ]
     },
     {
@@ -178,6 +179,29 @@
       "targets": [
         "//target/ast10x0/..."
       ]
+    },
+    {
+      "name": "flaky_tests",
+      "build_config": {
+        "name": "flaky_tests_config",
+        "description": "Execute flaky tests",
+        "build_type": "bazel",
+        "args": [
+          "--runs_per_test=3",
+          "--runs_per_test_detects_flakes",
+          "--cache_test_results=no",
+          "--keep_going",
+          "--test_output=errors",
+          "--config=k_ast1060_evb"
+        ],
+        "driver_options": {
+          "@type": "pw.build.proto.BazelDriverOptions",
+          "no_test": false
+        }
+      },
+      "targets": [
+        "//target/ast10x0/..."
+      ]
     }
   ],
   "tools": [
@@ -191,10 +215,38 @@
       "target": "//:format"
     },
     {
+      "name": "watch",
+      "description": "Run Bazel commands when files change",
+      "use_config": "bazel_default",
+      "target": "//:watch",
+      "type": "GENERAL"
+    },
+    {
       "name": "presubmit_checks",
       "description": "Run the presubmit checks",
       "use_config": "bazel_default",
       "target": "//presubmit:presubmit",
+      "type": "ANALYZER"
+    },
+    {
+      "name": "lockfile_check",
+      "description": "Fail if regenerating MODULE.bazel.lock changes the committed file",
+      "use_config": "bazel_default",
+      "target": "//presubmit:lockfile_check",
+      "type": "ANALYZER"
+    },
+    {
+      "name": "zero_test_audit",
+      "description": "Fail if a rust_test target in ci_tests ran zero tests",
+      "build_config": {
+        "name": "zero_test_audit_config",
+        "description": "Hand the audit the BEP file that ci_tests writes in its sibling build directory",
+        "build_type": "bazel",
+        "args": [
+          "--run_under=env ZERO_TESTS_BEP=${BUILD_ROOT}/../ci_tests_config/pw_ci_tests_bep.json"
+        ]
+      },
+      "target": "//presubmit:zero_tests",
       "type": "ANALYZER"
     }
   ],
@@ -204,6 +256,7 @@
       "description": "Quick presubmit for validating code changes locally",
       "analyzers": [
         "format",
+        "lockfile_check",
         "presubmit_checks"
       ],
       "builds": [
@@ -226,6 +279,9 @@
         "earlgrey_qemu_tests",
         "caliptra_emulator_tests",
         "caliptra_fpga_build"
+      ],
+      "analyzers": [
+        "zero_test_audit"
       ]
     },
     {
@@ -236,6 +292,13 @@
         "ast10x0_qemu_tests",
         "caliptra_emulator_tests",
         "earlgrey_verilator_tests"
+      ]
+    },
+    {
+      "name": "flaky",
+      "description": "Execute flaky tests",
+      "builds": [
+        "flaky_tests"
       ]
     }
   ]

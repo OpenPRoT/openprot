@@ -1,0 +1,34 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//cargo:defs.bzl", "cargo_build_script")
+
+# Build script for //third_party/caliptra/caliptra-sw:caliptra_hw_model. It is
+# in this package so that CARGO_MANIFEST_DIR/.. is
+# //third_party/caliptra/caliptra-sw, where the caliptra-ss OTP memory map is
+# staged (see :caliptra_ss_otp_ctrl_mmap there).
+cargo_build_script(
+    name = "caliptra_hw_model_build_script",
+    srcs = ["@caliptra_sw//:hw-model/build.rs"],
+    build_script_env = {
+        # Otherwise the script downloads fuses.hjson from GitHub at the MCU
+        # commit in caliptra-sw's CI config; use the copy at our
+        # caliptra-mcu-sw pin instead.
+        "CALIPTRA_MCU_FUSES_HJSON": "$(execpath @caliptra_mcu_sw//:hw/fuses.hjson)",
+    },
+    crate_features = select({
+        "@platforms//cpu:aarch64": ["fpga_subsystem"],
+        "//conditions:default": [],
+    }),
+    crate_root = "@caliptra_sw//:hw-model/build.rs",
+    data = [
+        "//third_party/caliptra/caliptra-sw:caliptra_ss_otp_ctrl_mmap",
+        "@caliptra_mcu_sw//:hw/fuses.hjson",
+    ],
+    edition = "2021",
+    visibility = ["//third_party/caliptra/caliptra-sw:__pkg__"],
+    deps = [
+        "@rust_caliptra_crates_host//:deser-hjson",
+        "@rust_caliptra_crates_host//:serde",
+    ],
+)

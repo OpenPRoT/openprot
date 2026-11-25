@@ -1,0 +1,183 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+rust_library(
+    name = "dpe",
+    srcs = ["dpe.rs"],
+    crate_name = "veer_dpe",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":mailbox",
+        "//hal/blocking",
+        "@rust_caliptra_crates//:caliptra-api",
+        "@rust_caliptra_crates//:caliptra-dpe",
+        "@rust_caliptra_crates//:zerocopy",
+    ],
+)
+
+rust_library(
+    name = "ecdsa",
+    srcs = ["ecdsa.rs"],
+    crate_name = "veer_ecdsa",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":mailbox",
+        "//hal/blocking",
+        "@rust_caliptra_crates//:caliptra-api",
+        "@rust_caliptra_crates//:caliptra-error",
+        "@rust_caliptra_crates//:zerocopy",
+    ],
+)
+
+rust_library(
+    name = "flash",
+    srcs = [
+        "flash.rs",
+        "flash_emulator.rs",
+        "flash_fpga.rs",
+    ],
+    crate_name = "veer_flash",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking/flash:driver",
+        "//target/veer/registers",
+        "//util/error",
+        "//util/types",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
+rust_test(
+    name = "flash_test",
+    crate = ":flash",
+    deps = ["//hal/blocking/flash"],
+)
+
+rust_library(
+    name = "handoff",
+    srcs = ["handoff.rs"],
+    crate_name = "veer_handoff",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@rust_crates//:bitflags"],
+)
+
+# Host tests of the reader against tables laid out as the ROM writes them.
+rust_test(
+    name = "handoff_test",
+    crate = ":handoff",
+)
+
+rust_library(
+    name = "mailbox",
+    srcs = ["mailbox.rs"],
+    crate_name = "veer_mailbox",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//target/veer/registers",
+        "//third_party/caliptra:crate_tock-registers",
+    ],
+)
+
+rust_library(
+    name = "mcu_mbox",
+    srcs = ["mcu_mbox.rs"],
+    crate_name = "veer_mcu_mbox",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//target/veer/registers",
+        "//third_party/caliptra:crate_tock-registers",
+    ],
+)
+
+# Host tests of the driver against a model of the mailbox.
+rust_test(
+    name = "mcu_mbox_test",
+    crate = ":mcu_mbox",
+)
+
+rust_library(
+    name = "mci",
+    srcs = ["mci.rs"],
+    crate_name = "veer_mci",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//target/veer/registers",
+        "//third_party/caliptra:crate_tock-registers",
+        "@rust_crates//:bitflags",
+    ],
+)
+
+# Host tests of the driver against the registers as memory.
+rust_test(
+    name = "mci_test",
+    crate = ":mci",
+)
+
+rust_library(
+    name = "rng",
+    srcs = ["rng.rs"],
+    crate_name = "veer_rng",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":mailbox",
+        "//hal/blocking",
+        "@rust_caliptra_crates//:caliptra-api",
+    ],
+)
+
+rust_library(
+    name = "sha",
+    srcs = ["sha.rs"],
+    crate_name = "veer_sha",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":mailbox",
+        "//hal/blocking",
+        "@rust_caliptra_crates//:caliptra-api",
+    ],
+)
+
+rust_library(
+    name = "wdt",
+    srcs = ["wdt.rs"],
+    crate_name = "veer_wdt",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//target/veer/registers",
+        "//third_party/caliptra:crate_tock-registers",
+    ],
+)
+
+# Host tests of the driver against a model of the watchdog RTL.
+rust_test(
+    name = "wdt_test",
+    crate = ":wdt",
+)
+
+# Tests the FPGA flash driver against a copy of the caliptra-sw host code that
+# implements the FPGA's flash controllers.
+rust_test(
+    name = "flash_fpga_test",
+    srcs = ["flash_fpga_test.rs"],
+    edition = "2024",
+    deps = [
+        ":flash",
+        "//hal/blocking/flash",
+        "//third_party/caliptra:crate_tock-registers",
+        "//third_party/caliptra/caliptra-sw:caliptra_hw_model_fpga_regs",
+        "//util/error",
+        "//util/types",
+    ],
+)

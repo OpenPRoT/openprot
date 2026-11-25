@@ -9,30 +9,32 @@ use super::types::ScuRegisterHalf;
 impl ScuRegisters {
     /// Assert reset bits in the selected reset-control register half.
     ///
-    /// Caller must call `unlock_write_protection()` before this.
+    /// Unlocks the SCU for the duration of the write; see
+    /// [`ScuRegisters::unlock_and_lock_after`].
     pub fn assert_reset_mask(&self, half: ScuRegisterHalf, mask: u32) {
-        match half {
+        self.unlock_and_lock_after(|scu| match half {
             ScuRegisterHalf::Lower => {
-                self.regs().scu040().write(|w| unsafe { w.bits(mask) });
+                scu.regs().scu040().write(|w| unsafe { w.bits(mask) });
             }
             ScuRegisterHalf::Upper => {
-                self.regs().scu050().write(|w| unsafe { w.bits(mask) });
+                scu.regs().scu050().write(|w| unsafe { w.bits(mask) });
             }
-        }
+        });
     }
 
     /// Deassert reset bits in the selected reset-control register half.
     ///
-    /// Caller must call `unlock_write_protection()` before this.
+    /// Unlocks the SCU for the duration of the write; see
+    /// [`ScuRegisters::unlock_and_lock_after`].
     pub fn deassert_reset_mask(&self, half: ScuRegisterHalf, mask: u32) {
-        match half {
+        self.unlock_and_lock_after(|scu| match half {
             ScuRegisterHalf::Lower => {
-                self.regs().scu044().write(|w| unsafe { w.bits(mask) });
+                scu.regs().scu044().write(|w| unsafe { w.bits(mask) });
             }
             ScuRegisterHalf::Upper => {
-                self.regs().scu054().write(|w| unsafe { w.bits(mask) });
+                scu.regs().scu054().write(|w| unsafe { w.bits(mask) });
             }
-        }
+        });
     }
 
     /// Read the selected reset-control register half.

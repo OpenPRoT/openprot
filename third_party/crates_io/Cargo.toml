@@ -40,7 +40,7 @@ zerocopy = { version = "0.8.48", default-features = false, features = ["derive"]
 zeroize = { version = "1.8", default-features = false, features = ["derive"] }
 
 cortex-m = { version = "0.7.7", features = ["critical-section-single-core"] }
-cortex-m-rt = "0.7.5"
+cortex-m-rt = { version = "0.7.5", features = ["device"] }
 cortex-m-semihosting = "0.5.0"
 critical-section = "1.2"
 embedded-hal = "1.0"
@@ -53,20 +53,20 @@ fugit = "0.3.7"
 openprot-hal-blocking = { git = "https://github.com/rusty1968/openprot.git", rev = "c6cd23a" }
 heapless = { version = "0.9", default-features = false }
 mctp = { git = "https://github.com/CodeConstruct/mctp-rs.git", default-features = false }
-mctp-lib = { git = "https://github.com/OpenPRoT/mctp-lib.git", branch = "9e-buildup" }
+mctp-lib = { git = "https://github.com/OpenPRoT/mctp-lib.git", branch = "main" }
 spdm-lib = { git = "https://github.com/OpenPRoT/spdm-lib.git", branch = "main" }
 pldm-common = { git = "https://github.com/OpenPRoT/pldm-lib.git" }
 pldm-interface = { git = "https://github.com/OpenPRoT/pldm-lib.git" }
 # Pin to match Hubris ecosystem
 rand_core = { version = "0.9", default-features = false }
-sec1 = { version = "0.7.3" }
+sec1 = { version = "0.8" }
 subtle = { version = "2", default-features = false }
 
 # RustCrypto ECDSA crates
-ecdsa = { version = "0.16.9" }
-p256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
-p384 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
-k256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
+ecdsa = { version = "0.17" }
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "arithmetic"] }
+p384 = { version = "0.14", default-features = false, features = ["ecdsa", "arithmetic"] }
+k256 = { version = "0.14", default-features = false, features = ["ecdsa", "arithmetic"] }
 
 # RustCrypto digest crates
 sha2 = { version = "0.10", default-features = false }

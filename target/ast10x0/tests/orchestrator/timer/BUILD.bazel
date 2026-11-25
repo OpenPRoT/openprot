@@ -55,7 +55,6 @@ rust_app(
     srcs = ["main.rs"],
     codegen_crate_name = "app_test_timer",
     edition = "2024",
-    system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [

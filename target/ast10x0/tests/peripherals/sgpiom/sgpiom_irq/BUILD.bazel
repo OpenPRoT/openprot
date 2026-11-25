@@ -55,7 +55,6 @@ rust_app(
     srcs = ["sgpiom_irq_server_main.rs"],
     codegen_crate_name = "app_sgpiom_irq_server",
     edition = "2024",
-    system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [

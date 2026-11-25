@@ -50,27 +50,6 @@ where
     resp.send(msg)
 }
 
-/// Run the echo loop forever, echoing received messages.
-pub fn run<L>(listener: &mut L) -> !
-where
-    L: openprot_mctp_api::MctpListener,
-{
-    let mut buf = [0u8; 255];
-    loop {
-        match listener.recv(&mut buf) {
-            Ok((_meta, msg, mut resp)) => {
-                let _ = resp.send(msg);
-            }
-            Err(e) => {
-                // Timeouts are expected noise from the short recv deadline; suppress them.
-                if !e.is_timeout() {
-                    pw_log::error!("echo recv failed: code={}", e.code as u32);
-                }
-            }
-        }
-    }
-}
-
 /// Run the echo loop with periodic sends to a peer endpoint, forever.
 pub fn run_with_peer<C: MctpClient, L: openprot_mctp_api::MctpListener>(
     stack: &Stack<C>,

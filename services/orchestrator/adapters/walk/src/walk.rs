@@ -2,15 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use orchestrator_capabilities::{BootStatus, BootWatch, EvidenceReader, FailureCause, WalkVerdict};
-use orchestrator_config::BootCheckpoint;
+use orchestrator_config::{BootCheckpoint, DeviceConfig};
 
 /// Walks a device's [`BootCheckpoint`]s in declaration order, reading
 /// evidence from an [`EvidenceReader`] at each poll. The checkpoint list
-/// comes from the device table and is `&'static`: lifetimes match the
-/// board config.
+/// comes from a [`DeviceConfig`], which validates non-empty and unique
+/// names at build time; lifetimes match the board config (`&'static`).
 ///
-/// Construction panics on an empty checkpoint list (a device with no
-/// checkpoints is unwatchable). A read error is treated as silence
+/// A read error is treated as silence
 /// (`Booting`), so a transient bus glitch does not kill a healthy boot.
 /// A lapsed window is a timeout with no final read: a device that has not
 /// reported cannot be judged on a race. Each checkpoint's deadline
@@ -31,20 +30,13 @@ enum Phase {
 }
 
 impl<R, P> CheckpointWalk<R, P> {
-    /// Binds a reader and its checkpoint list into a walk. The checkpoints
-    /// are walked in declaration order; each one's probe is resolved by
-    /// the reader.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `checkpoints` is empty.
-    pub fn new(reader: R, checkpoints: &'static [BootCheckpoint<P>]) -> Self {
-        // DeviceConfig::new already rejects empty checkpoint lists at build
-        // time, so this only fires if someone constructs a walk by hand.
-        assert!(!checkpoints.is_empty(), "checkpoint list must not be empty");
+    /// Binds a reader and a device's checkpoints into a walk. The
+    /// checkpoints were already checked non-empty and uniquely named at
+    /// build time by `DeviceConfig::new`.
+    pub fn new<S>(reader: R, device: &'static DeviceConfig<S, P>) -> Self {
         Self {
             reader,
-            checkpoints,
+            checkpoints: device.checkpoints(),
             phase: Phase::Idle,
         }
     }
@@ -138,10 +130,14 @@ impl<R: EvidenceReader<P>, P> BootWatch for CheckpointWalk<R, P> {
 mod tests {
     use super::*;
     use core::time::Duration;
+    use orchestrator_config::DeviceConfig;
 
     const BL1: BootCheckpoint<u8> = BootCheckpoint::new("bl1", 1, Duration::from_millis(100));
     const KERNEL: BootCheckpoint<u8> = BootCheckpoint::new("kernel", 2, Duration::from_millis(200));
     const CHECKPOINTS: &[BootCheckpoint<u8>] = &[BL1, KERNEL];
+
+    static DEVICE: DeviceConfig<u8, u8> = DeviceConfig::new("test-dev", 0, CHECKPOINTS);
+    static ONE_CP_DEVICE: DeviceConfig<u8, u8> = DeviceConfig::new("one-cp-dev", 0, &[BL1]);
 
     // A progress-register reader: probe N is Booted once progress >= N.
     // Mirrors the SocReader archetype in the evidence tests.
@@ -191,7 +187,7 @@ mod tests {
     }
 
     fn walk() -> CheckpointWalk<ProgressReader, u8> {
-        CheckpointWalk::new(ProgressReader::new(), CHECKPOINTS)
+        CheckpointWalk::new(ProgressReader::new(), &DEVICE)
     }
 
     // ── Happy path ──────────────────────────────────────────────────────
@@ -217,8 +213,7 @@ mod tests {
 
     #[test]
     fn single_checkpoint_walk_completes_in_one_poll() {
-        const ONE: &[BootCheckpoint<u8>] = &[BL1];
-        let mut w = CheckpointWalk::new(ProgressReader::new(), ONE);
+        let mut w = CheckpointWalk::new(ProgressReader::new(), &ONE_CP_DEVICE);
         w.reader_mut().level = 1;
         w.arm();
 
@@ -512,14 +507,5 @@ mod tests {
                 cause: FailureCause::DeviceFatal,
             }
         );
-    }
-
-    // ── Construction ────────────────────────────────────────────────────
-
-    #[test]
-    #[should_panic(expected = "checkpoint list must not be empty")]
-    fn empty_checkpoints_panic_at_construction() {
-        let empty: &'static [BootCheckpoint<u8>] = &[];
-        CheckpointWalk::new(ProgressReader::new(), empty);
     }
 }

@@ -22,19 +22,15 @@
 //! Mirrors `pub fn build_and_sign_image(...)` in
 //! `caliptra-sw/builder/src/lib.rs` (around line 489) and the supporting
 //! `ElfExecutable` in `caliptra-sw/image/elf/src/lib.rs`. The full upstream
-//! pipeline lives in the `caliptra-builder` crate, which we cannot depend on
-//! from Bazel because of unresolved upstream deps (`fslock`, `Crypto` trait
-//! wiring, `CARGO` env var). Our
-//! `//third_party/caliptra/caliptra-sw:caliptra_builder` target is tagged
-//! `manual` for that reason. If/when those upstream deps are fixed and
-//! `caliptra_builder` becomes buildable, this file should be replaced by a
-//! thin wrapper that calls `caliptra_builder::build_and_sign_image()`
-//! directly.
+//! pipeline lives in the `caliptra-builder` crate, which we do not pull into
+//! Bazel because it shells out to `cargo` and pulls in host-only build
+//! orchestration deps (`fslock`, `CARGO` env var).
 
 use std::fs;
 use std::path::PathBuf;
 
 use anyhow::{anyhow, bail, Context, Result};
+use caliptra_builder_version::{get_fmc_version, get_runtime_version};
 use caliptra_image_crypto::RustCrypto as Crypto;
 use caliptra_image_fake_keys::{OWNER_CONFIG, VENDOR_CONFIG_KEY_0};
 use caliptra_image_gen::{ImageGenerator, ImageGeneratorConfig, ImageGeneratorExecutable};
@@ -167,9 +163,11 @@ fn main() -> Result<()> {
     let runtime_bytes = fs::read(&args.runtime)
         .with_context(|| format!("failed to read Runtime ELF {:?}", args.runtime))?;
 
-    let fmc = ElfExecutable::from_bytes(&fmc_bytes, 0, rev).context("failed to pack FMC ELF")?;
-    let runtime =
-        ElfExecutable::from_bytes(&runtime_bytes, 0, rev).context("failed to pack Runtime ELF")?;
+    // Upstream's image_gen passes these versions to build_and_sign_image().
+    let fmc = ElfExecutable::from_bytes(&fmc_bytes, get_fmc_version().into(), rev)
+        .context("failed to pack FMC ELF")?;
+    let runtime = ElfExecutable::from_bytes(&runtime_bytes, get_runtime_version(), rev)
+        .context("failed to pack Runtime ELF")?;
 
     let cfg = ImageGeneratorConfig {
         pqc_key_type: FwVerificationPqcKeyType::LMS,

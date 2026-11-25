@@ -19,7 +19,6 @@ rust_app(
     srcs = ["src/main.rs"],
     codegen_crate_name = "app_mctp_server",
     edition = "2024",
-    system_config = "//target/ast10x0/tests/spdm/responder:system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     visibility = ["//target/ast10x0/tests/spdm:__subpackages__"],
@@ -27,5 +26,6 @@ rust_app(
         "//services/mctp/api:mctp_api",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
+        "@rust_crates//:mctp-lib",
     ],
 )

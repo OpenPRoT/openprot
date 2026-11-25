@@ -3,9 +3,10 @@
 This guide explains how to wire up cross-process communication between two
 `pw_kernel` userspace processes using channel objects.
 
-A worked example lives at `target/veer/ipc/` (system image) and upstream at
-`@pigweed//pw_kernel/tests/ipc/user/` (the two processes themselves) — refer
-to those files alongside this document.
+A worked example lives at
+[`target/veer/ipc/`](https://github.com/OpenPRoT/openprot/tree/main/target/veer/ipc)
+(system image) and upstream at `@pigweed//pw_kernel/tests/ipc/user/` (the two
+processes themselves) — refer to those files alongside this document.
 
 ## Conceptual model
 
@@ -158,7 +159,8 @@ fn entry() -> ! {
 
 On a target like veer, the `system_image` macro consumes both the
 `system.json5` and the upstream `multi_process_app` target that bundles the
-two process binaries. See `target/veer/ipc/user/BUILD.bazel`:
+two process binaries. See
+[`target/veer/ipc/user/BUILD.bazel`](https://github.com/OpenPRoT/openprot/blob/main/target/veer/ipc/user/BUILD.bazel):
 
 ```python
 system_image(
@@ -191,9 +193,12 @@ are byte buffers. A few rules of thumb that follow from that:
 - Pick a fixed-size request/response layout (or a length-prefixed one) so
   the handler can size its read buffer up front. Keep the buffers on the
   stack — they live inside `no_std` userspace.
-- Validate everything coming off the wire: length, range, enum variants.
-  Treat the request side as untrusted — it is in a different process and may
-  be running independently maintained code.
+- Treat everything that comes off the wire as untrusted input. Validate its
+  length, bounds, and allowed values. Do not rely on clients, including
+  third-party code, to send valid requests.
+- Do this in the server, not in the hardware driver. The driver assumes its
+  inputs are valid. Before the handler calls it, check that the size is
+  supported, the address is aligned, and the range lies inside the device.
 - Keep the handler loop free of `unwrap` / panic paths. The handler is the
   service for every other process holding an initiator endpoint, so a
   panic-on-malformed-input becomes a denial-of-service.

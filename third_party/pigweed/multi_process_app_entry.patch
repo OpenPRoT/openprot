@@ -1,0 +1,15 @@
+--- a/pw_kernel/tooling/system_generator/templates/multi_process_app.rs.jinja
++++ b/pw_kernel/tooling/system_generator/templates/multi_process_app.rs.jinja
+@@ -35,10 +35,8 @@
+ 
+ #[entry]
+ fn main(index: usize) {
+-    assert!(index < APP_ENTRY_TABLE.len());
+-
+-    unsafe {
+-        APP_ENTRY_TABLE[index]();
++    if let Some(entry) = APP_ENTRY_TABLE.get(index) {
++        unsafe { entry() }
+     }
+ }
+ 

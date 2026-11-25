@@ -4,7 +4,7 @@
 //! Contained block-device facade layered on top of `SpiNorFlash`.
 
 use crate::smc::device::flash::{JedecId, SpiNorFlash, SpiNorFlashDevice};
-use crate::smc::types::{FlashConfig, SmcError};
+use crate::smc::types::SmcError;
 
 /// Geometry and limits exposed by the block facade.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -18,27 +18,16 @@ pub struct BlockDeviceInfo {
 /// Minimal block-oriented facade over a `SpiNorFlash` device.
 pub struct SpiNorBlockDevice<'a, 'b> {
     flash: &'a mut SpiNorFlash<'b>,
-    cfg: FlashConfig,
 }
 
 impl<'a, 'b> SpiNorBlockDevice<'a, 'b> {
-    /// Build a block facade from an existing `SpiNorFlash` plus known config.
-    pub fn from_flash(flash: &'a mut SpiNorFlash<'b>, cfg: FlashConfig) -> Result<Self, SmcError> {
-        let expected = cfg_capacity_bytes(cfg)?;
-        let actual = SpiNorFlashDevice::capacity_bytes(flash)?;
-        if expected != actual {
+    /// Build a block facade from an existing `SpiNorFlash`.
+    pub fn from_flash(flash: &'a mut SpiNorFlash<'b>) -> Result<Self, SmcError> {
+        let g = flash.geometry();
+        if g.page_size == 0 || g.sector_size == 0 || g.block_size == 0 {
             return Err(SmcError::InvalidCapacity);
         }
-        if cfg.page_size == 0 || cfg.sector_size == 0 || cfg.block_size == 0 {
-            return Err(SmcError::InvalidCapacity);
-        }
-        Ok(Self { flash, cfg })
-    }
-
-    /// Build a block facade by mapping a JEDEC ID to a known flash profile.
-    pub fn from_jedec_id(flash: &'a mut SpiNorFlash<'b>, jedec: JedecId) -> Result<Self, SmcError> {
-        let cfg = cfg_from_jedec(jedec)?;
-        Self::from_flash(flash, cfg)
+        Ok(Self { flash })
     }
 
     /// Read bytes from the block device.
@@ -51,7 +40,7 @@ impl<'a, 'b> SpiNorBlockDevice<'a, 'b> {
         if data.is_empty() {
             return Ok(0);
         }
-        let page = self.cfg.page_size as usize;
+        let page = self.flash.geometry().page_size as usize;
         if (address as usize) % page != 0 {
             return Err(SmcError::InvalidCapacity);
         }
@@ -63,7 +52,7 @@ impl<'a, 'b> SpiNorBlockDevice<'a, 'b> {
         if length == 0 {
             return Ok(());
         }
-        let sector = self.cfg.sector_size;
+        let sector = self.flash.geometry().sector_size;
         if !address.is_multiple_of(sector) || !length.is_multiple_of(sector) {
             return Err(SmcError::InvalidCapacity);
         }
@@ -72,37 +61,17 @@ impl<'a, 'b> SpiNorBlockDevice<'a, 'b> {
 
     /// Return block-device geometry.
     pub fn info(&self) -> Result<BlockDeviceInfo, SmcError> {
+        let g = self.flash.geometry();
         Ok(BlockDeviceInfo {
-            capacity_bytes: cfg_capacity_bytes(self.cfg)?,
-            page_size: self.cfg.page_size as usize,
-            sector_size: self.cfg.sector_size as usize,
-            block_size: self.cfg.block_size as usize,
+            capacity_bytes: g.capacity_bytes as usize,
+            page_size: g.page_size as usize,
+            sector_size: g.sector_size as usize,
+            block_size: g.block_size as usize,
         })
     }
 
     /// Read JEDEC ID from the underlying flash.
     pub fn jedec(&self) -> Result<JedecId, SmcError> {
         self.flash.jedec()
-    }
-}
-
-fn cfg_capacity_bytes(cfg: FlashConfig) -> Result<usize, SmcError> {
-    (cfg.capacity_mb as usize)
-        .checked_mul(1024 * 1024)
-        .ok_or(SmcError::InvalidCapacity)
-}
-
-fn cfg_from_jedec(jedec: JedecId) -> Result<FlashConfig, SmcError> {
-    match (jedec.manufacturer, jedec.memory_type, jedec.capacity_code) {
-        (0xEF, 0x40, 0x17) => Ok(FlashConfig::winbond_w25q64()),
-        (0xEF, 0x40, 0x18) => Ok(FlashConfig {
-            capacity_mb: 16,
-            page_size: 256,
-            sector_size: 4096,
-            block_size: 65536,
-            spi_clock_mhz: 25,
-        }),
-        (0xEF, 0x40, 0x19) => Ok(FlashConfig::winbond_w25q256()),
-        _ => Err(SmcError::DeviceNotSupported),
     }
 }

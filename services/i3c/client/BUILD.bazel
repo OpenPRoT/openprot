@@ -1,0 +1,28 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_test")
+
+# Host-buildable: generic over i3c_api::Transport, no kernel/IPC dependency.
+# The IPC transport lives in //services/i3c/client-ipc (kernel-tagged).
+rust_library(
+    name = "i3c_client",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["//services/i3c/api:i3c_api"],
+)
+
+# The real client driven against the real dispatch via LoopbackTransport —
+# no kernel, no emulator.
+rust_test(
+    name = "i3c_client_loopback_test",
+    srcs = ["tests/loopback.rs"],
+    edition = "2024",
+    deps = [
+        ":i3c_client",
+        "//hal/blocking",
+        "//services/i3c/api:i3c_api",
+        "//services/i3c/server:i3c_server",
+    ],
+)

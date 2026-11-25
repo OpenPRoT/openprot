@@ -37,6 +37,7 @@ for the Bazel flags and constraints used when building firmware for it.
 
 - Update documentation in the `docs/` directory.
 - Build docs with `bazel build //docs`.
+- Rebuild docs on every change with `bazel run //:watch build //docs`.
 - Documentation is built with mdbook.
 
 ## Issues

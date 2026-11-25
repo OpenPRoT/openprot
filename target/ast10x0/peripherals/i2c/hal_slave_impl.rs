@@ -80,6 +80,10 @@ impl<Y: FnMut(u32)> I2cSlaveBuffer<SevenBitAddress> for Ast1060I2c<'_, Y> {
         self.slave_read(buffer)
     }
 
+    fn rearm_slave_receive(&mut self) {
+        Ast1060I2c::rearm_slave_receive(self);
+    }
+
     fn write_slave_response(&mut self, data: &[u8]) -> Result<(), Self::Error> {
         self.slave_write(data).map(|_| ())
     }
@@ -96,6 +100,7 @@ impl<Y: FnMut(u32)> I2cSlaveBuffer<SevenBitAddress> for Ast1060I2c<'_, Y> {
         if self.slave_has_data() {
             let mut scratch = [0u8; 32];
             let _ = self.slave_read(&mut scratch)?;
+            self.rearm_slave_receive();
         }
         Ok(())
     }

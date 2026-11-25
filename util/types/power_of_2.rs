@@ -26,6 +26,15 @@ impl PowerOf2Usize {
         Some(Self(val))
     }
 
+    /// Creates `2^n`, masking `n` to the bit width per Rust's shift semantics.
+    ///
+    /// Always succeeds: the masked shift amount is always less than the bit
+    /// width, so the result is always a nonzero power of two.
+    #[inline(always)]
+    pub const fn from_shift(n: u32) -> Self {
+        Self(1usize.wrapping_shl(n))
+    }
+
     /// Returns the underlying `usize` value.
     ///
     /// This method asserts to the compiler that the value is a non-zero

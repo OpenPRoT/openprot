@@ -15,6 +15,7 @@
 #![no_std]
 #![no_main]
 
+use arch_arm_cortex_m::Arch;
 use ast10x0_peripherals::scu::{pinctrl, ScuRegisters};
 use console_backend::console_backend_write_all;
 use entry as _;
@@ -27,14 +28,15 @@ impl TargetInterface for Target {
 
     fn main() -> ! {
         // SAFETY: single call at boot with exclusive access to SCU global regs.
-        unsafe {
-            let scu = ScuRegisters::new_global_unlocked();
+        let scu = unsafe { ScuRegisters::new_global() };
+        scu.unlock_and_lock_after(|scu| {
             scu.apply_pinctrl_group(pinctrl::PINCTRL_SGPIOM);
-        }
+        });
 
         codegen::start();
-        #[expect(clippy::empty_loop)]
-        loop {}
+        loop {
+            let _ = kernel::sleep_until(Arch, kernel::Instant::MAX);
+        }
     }
 
     fn shutdown(code: u32) -> ! {

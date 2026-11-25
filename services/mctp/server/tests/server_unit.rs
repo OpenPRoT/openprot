@@ -12,10 +12,24 @@ mod common;
 use std::cell::RefCell;
 
 use mctp::Eid;
-use openprot_mctp_api::ResponseCode;
+use openprot_mctp_api::{Handle, ResponseCode};
 use openprot_mctp_server::{RecvResult, Server, ServerConfig};
 
 use common::{transfer, BufferSender, DroppingBufferSender};
+
+/// Collect every handle resolved by one `Server::update` call, discarding
+/// the per-handle payload (tests here only need the handle/result pairs).
+fn collect_ready<S: mctp_lib::Sender, const N: usize>(
+    server: &mut Server<S, N>,
+    now_millis: u64,
+    recv_buf: &mut [u8],
+) -> Vec<(Handle, RecvResult)> {
+    let mut ready = Vec::new();
+    server.update(now_millis, recv_buf, |handle, result, _payload| {
+        ready.push((handle, result));
+    });
+    ready
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -202,11 +216,11 @@ fn pending_recv_times_out() {
     let mut recv_buf = [0u8; 255];
 
     // At t=50 ms: not yet timed out, no message.
-    let (_, ready) = server.update(50, &mut recv_buf);
+    let ready = collect_ready(&mut server, 50, &mut recv_buf);
     assert!(ready.is_empty(), "should not fire before deadline");
 
     // At t=100 ms: deadline reached.
-    let (_, ready) = server.update(100, &mut recv_buf);
+    let ready = collect_ready(&mut server, 100, &mut recv_buf);
     assert_eq!(ready.len(), 1);
     assert!(
         matches!(ready[0], (h, RecvResult::TimedOut) if h == listener),
@@ -230,7 +244,7 @@ fn pending_recv_fulfilled_before_timeout() {
     deliver_to(42, 8, 1, b"data", &mut server);
 
     let mut recv_buf = [0u8; 255];
-    let (_, ready) = server.update(50, &mut recv_buf);
+    let ready = collect_ready(&mut server, 50, &mut recv_buf);
 
     assert_eq!(ready.len(), 1);
     assert!(
@@ -241,4 +255,124 @@ fn pending_recv_fulfilled_before_timeout() {
         assert_eq!(meta.remote_eid, 42);
         assert_eq!(meta.msg_type, 1);
     }
+}
+
+// ---------------------------------------------------------------------------
+// register_recv bookkeeping: one per handle, cancel, next deadline
+// ---------------------------------------------------------------------------
+
+/// A handle has at most one outstanding recv; a second is refused and the
+/// first keeps its deadline.
+#[test]
+fn register_recv_twice_is_addr_in_use() {
+    use openprot_mctp_api::ResponseCode;
+
+    let mut server: Server<_, 16> = Server::new(Eid(8), 0, DroppingBufferSender);
+    let listener = server.listener(1).unwrap();
+
+    server.register_recv(listener, 100, 0).unwrap();
+    let err = server.register_recv(listener, 500, 0).unwrap_err();
+    assert_eq!(err.code, ResponseCode::AddrInUse);
+    assert_eq!(server.next_recv_deadline(), Some(100));
+}
+
+/// `next_recv_deadline` is the earliest timeout among registered recvs and
+/// ignores those that wait forever.
+#[test]
+fn next_recv_deadline_is_earliest_timeout() {
+    let mut server: Server<_, 16> = Server::new(Eid(8), 0, DroppingBufferSender);
+    let forever = server.listener(1).unwrap();
+    let late = server.listener(2).unwrap();
+    let soon = server.listener(3).unwrap();
+    assert_eq!(server.next_recv_deadline(), None);
+
+    server.register_recv(forever, 0, 5).unwrap();
+    assert_eq!(server.next_recv_deadline(), None);
+
+    server.register_recv(late, 300, 10).unwrap();
+    assert_eq!(server.next_recv_deadline(), Some(310));
+
+    server.register_recv(soon, 100, 20).unwrap();
+    assert_eq!(server.next_recv_deadline(), Some(120));
+
+    // Once `soon` times out it no longer counts.
+    let mut recv_buf = [0u8; 255];
+    let ready = collect_ready(&mut server, 120, &mut recv_buf);
+    assert_eq!(ready.len(), 1);
+    assert_eq!(server.next_recv_deadline(), Some(310));
+}
+
+/// A timeout that would overflow the millisecond clock saturates instead.
+#[test]
+fn register_recv_deadline_saturates() {
+    let mut server: Server<_, 16> = Server::new(Eid(8), 0, DroppingBufferSender);
+    let listener = server.listener(1).unwrap();
+    server.register_recv(listener, 100, u64::MAX - 1).unwrap();
+    assert_eq!(server.next_recv_deadline(), Some(u64::MAX));
+}
+
+/// A cancelled recv never fires and frees its handle for a new one.
+#[test]
+fn cancel_recv_withdraws_the_registration() {
+    let mut server: Server<_, 16> = Server::new(Eid(8), 0, DroppingBufferSender);
+    let listener = server.listener(1).unwrap();
+
+    server.register_recv(listener, 100, 0).unwrap();
+    server.cancel_recv(listener);
+    assert_eq!(server.next_recv_deadline(), None);
+
+    let mut recv_buf = [0u8; 255];
+    let ready = collect_ready(&mut server, 1_000, &mut recv_buf);
+    assert!(ready.is_empty(), "a cancelled recv must not time out");
+
+    server.register_recv(listener, 100, 1_000).unwrap();
+    assert_eq!(server.next_recv_deadline(), Some(1_100));
+}
+
+// ---------------------------------------------------------------------------
+// advance: the clock must be current before an event is handled
+// ---------------------------------------------------------------------------
+
+/// A fragmented message whose fragments arrive in separate events after a
+/// quiet period is reassembled, provided the clock is advanced before each
+/// packet is fed. Fed with a clock still at the previous event, the first
+/// fragment is dated before the quiet period and the reassembly is expired
+/// the moment the clock catches up.
+#[test]
+fn fragments_in_separate_events_after_a_quiet_period_are_reassembled() {
+    let mut a: Server<_, 16> = Server::new(Eid(8), 0, DroppingBufferSender);
+    let listener = a.listener(5).unwrap();
+
+    let buf_b = RefCell::new(Vec::new());
+    let sender_b = common::SmallMtuBufferSender {
+        packets: &buf_b,
+        mtu: 68,
+    };
+    let mut b: Server<_, 16> = Server::new(Eid(42), 0, sender_b);
+    let req = b.req(8).unwrap();
+    let payload = [0xA5u8; 200];
+    b.send(Some(req), 5, None, None, false, &payload).unwrap();
+    let fragments = buf_b.borrow().clone();
+    assert!(fragments.len() >= 2, "payload must fragment");
+
+    let mut recv_buf = [0u8; 255];
+
+    // Ten seconds of quiet, well past the six-second reassembly expiry.
+    // Event 1: the first fragment.
+    a.advance(10_000);
+    a.inbound(&fragments[0]).unwrap();
+    let ready = collect_ready(&mut a, 10_000, &mut recv_buf);
+    assert!(ready.is_empty());
+
+    // Event 2, a millisecond later: the rest.
+    a.advance(10_001);
+    for fragment in &fragments[1..] {
+        a.inbound(fragment).unwrap();
+    }
+    let _ = collect_ready(&mut a, 10_001, &mut recv_buf);
+
+    let meta = a
+        .try_recv(listener, &mut recv_buf)
+        .expect("message must survive the quiet period");
+    assert_eq!(&recv_buf[..meta.payload_size], &payload[..]);
 }

@@ -13,17 +13,15 @@
 //!
 //! Mirrors `pub fn elf2rom(elf_bytes: &[u8]) -> io::Result<Vec<u8>>` in
 //! `caliptra-sw/builder/src/lib.rs` (around line 396). That function lives in
-//! the `caliptra-builder` crate, which we cannot depend on from Bazel because
-//! of unresolved upstream deps (`fslock`, `Crypto` trait wiring, `CARGO` env
-//! var). Our `//third_party/caliptra/caliptra-sw:caliptra_builder` target is
-//! tagged `manual` for that reason. If/when those upstream deps are fixed and
-//! `caliptra_builder` becomes buildable, this file should be replaced by a
-//! thin wrapper that calls `caliptra_builder::elf2rom()` directly.
+//! the `caliptra-builder` crate, which we do not pull into Bazel because it
+//! shells out to `cargo` and pulls in host-only build orchestration deps
+//! (`fslock`, `CARGO` env var).
 
 use std::env;
 use std::fs;
 
 use anyhow::{anyhow, bail, Context, Result};
+use caliptra_builder_version::get_rom_version;
 use elf::endian::LittleEndian;
 use elf::ElfBytes;
 use sha2::{Digest, Sha256};
@@ -38,10 +36,6 @@ const ROM_SIZE: usize = 0x18000;
 //   offset 58..60  : rsvd:          u16        (LE, padding)
 // Total: 60 bytes.
 const ROM_INFO_SIZE: usize = 60;
-
-// Matches upstream `builder::version::get_rom_version()`
-// (ROM_VERSION_MAJOR=2, MINOR=0, PATCH=0).
-const ROM_VERSION: u16 = (2 & 0x1F) << 11;
 
 // Matches the "CALIPTRA_IMAGE_NO_GIT_REVISION" fallback in upstream
 // `builder::image_revision()`.
@@ -151,7 +145,7 @@ fn elf2rom(elf_bytes: &[u8]) -> Result<Vec<u8>> {
     rom_info_bytes[0..32].copy_from_slice(&digest_bytes);
     rom_info_bytes[32..52].copy_from_slice(&NO_GIT_REVISION);
     // flags = 0 (already zero)
-    rom_info_bytes[56..58].copy_from_slice(&ROM_VERSION.to_le_bytes());
+    rom_info_bytes[56..58].copy_from_slice(&get_rom_version().to_le_bytes());
     // rsvd = 0 (already zero)
     dst.copy_from_slice(&rom_info_bytes);
 

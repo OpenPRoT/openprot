@@ -16,77 +16,57 @@
 //!
 //! See [`crate::smc`] module-level documentation for the full taxonomy.
 
-use crate::smc::controller::{ReadySmc, UninitSmc};
-use crate::smc::interrupts::SmcInterrupt;
-use crate::smc::types::{
-    ChipSelect, FlashConfig, SmcConfig, SmcController, SmcError, TransferMode,
-};
+use crate::smc::controller::{Cs, ReadySmc, UninitSmc};
+use crate::smc::types::{SmcController, SmcError, SmcInstance};
 
 /// FMC handle before hardware initialization.
-pub struct FmcUninit {
-    inner: UninitSmc,
+pub struct FmcUninit<I: SmcInstance> {
+    inner: UninitSmc<I>,
 }
 
 /// FMC handle after hardware initialization.
-pub struct FmcReady {
-    inner: ReadySmc,
+///
+/// Per-chip operations (read, transfer, DMA) are reached through a [`Cs`] handle
+/// vended by [`FmcReady::cs0`] / [`FmcReady::cs1`]; the chip select is baked into
+/// that handle rather than passed on every call.
+pub struct FmcReady<I: SmcInstance> {
+    inner: ReadySmc<I>,
 }
 
-impl FmcUninit {
+impl<I: SmcInstance> FmcUninit<I> {
     /// Construct an uninitialized FMC controller.
     ///
     /// # Safety
     /// Caller must ensure unique ownership of the FMC hardware block.
-    pub unsafe fn new(mut config: SmcConfig) -> Result<Self, SmcError> {
-        config.controller_id = SmcController::Fmc;
+    pub unsafe fn new() -> Result<Self, SmcError> {
+        const {
+            assert!(
+                matches!(I::CONTROLLER, SmcController::Fmc),
+                "FmcUninit requires an SmcInstance whose CONTROLLER is Fmc"
+            );
+        }
         // SAFETY: Caller upholds controller ownership requirements.
-        let inner = unsafe { UninitSmc::new(config)? };
+        let inner = unsafe { UninitSmc::<I>::new()? };
         Ok(Self { inner })
     }
 
     /// Initialize FMC hardware and transition to ready state.
-    pub fn init(self) -> Result<FmcReady, SmcError> {
+    pub fn init(self) -> Result<FmcReady<I>, SmcError> {
         Ok(FmcReady {
             inner: self.inner.init()?,
         })
     }
 }
 
-impl FmcReady {
-    /// Perform a programmed I/O read via the FMC flash window.
-    pub fn read(&self, cs: ChipSelect, offset: u32, buf: &mut [u8]) -> Result<usize, SmcError> {
-        self.inner.read(cs, offset, buf)
+impl<I: SmcInstance> FmcReady<I> {
+    /// Build a handle for CS0 from its init-resolved geometry.
+    pub fn cs0(&mut self) -> Result<Cs<'_>, SmcError> {
+        self.inner.cs0()
     }
 
-    /// Initiate a DMA read operation.
-    pub fn dma_read(
-        &mut self,
-        cs: ChipSelect,
-        flash_offset: u32,
-        dram_addr: usize,
-        len: u32,
-    ) -> Result<(), SmcError> {
-        self.inner.dma_read(cs, flash_offset, dram_addr, len)
-    }
-
-    /// Read raw DMA/interrupt status bits from FMC008.
-    pub fn dma_status(&self) -> u32 {
-        self.inner.dma_status()
-    }
-
-    /// Clear DMA-related status bits in FMC008 (write-1-to-clear).
-    pub fn clear_dma_status(&self, clear_mask: u32) {
-        self.inner.clear_dma_status(clear_mask)
-    }
-
-    /// Handle DMA completion/error from IRQ status and finalize controller state.
-    pub fn handle_dma_irq(&mut self) -> Result<SmcInterrupt, SmcError> {
-        self.inner.handle_dma_irq()
-    }
-
-    /// Poll for DMA completion without requiring an IRQ. See `Smc::poll_dma_completion`.
-    pub fn poll_dma_completion(&mut self) -> core::task::Poll<Result<(), SmcError>> {
-        self.inner.poll_dma_completion()
+    /// Build a handle for CS1 from its init-resolved geometry.
+    pub fn cs1(&mut self) -> Result<Cs<'_>, SmcError> {
+        self.inner.cs1()
     }
 
     /// Check if FMC is ready for operations.
@@ -94,65 +74,13 @@ impl FmcReady {
         self.inner.is_ready()
     }
 
-    /// Program memory-mapped SPI NOR read mode for the selected chip select.
-    pub fn spi_nor_read_init(&mut self, cs: ChipSelect) -> Result<(), SmcError> {
-        self.inner.spi_nor_read_init(cs)
+    /// Get the controller identifier.
+    pub fn controller_id(&self) -> SmcController {
+        self.inner.controller_id()
     }
 
     #[doc(hidden)]
     pub fn test_force_dma_in_flight(&mut self) {
         self.inner.test_force_dma_in_flight();
-    }
-
-    /// Return configured flash capacity in bytes.
-    pub fn capacity_bytes(&self) -> Result<usize, SmcError> {
-        self.inner.capacity_bytes()
-    }
-
-    /// Return configured flash capacity in bytes for the given chip select.
-    pub fn cs_capacity_bytes(&self, cs: ChipSelect) -> Result<usize, SmcError> {
-        self.inner.cs_capacity_bytes(cs)
-    }
-
-    /// Return the configured `FlashConfig` for the requested chip select.
-    pub fn cs_config(&self, cs: ChipSelect) -> Result<FlashConfig, SmcError> {
-        self.inner.cs_config(cs)
-    }
-
-    /// Execute a raw user-mode SPI transfer on the selected FMC chip select.
-    ///
-    /// `cs` selects CS0 or CS1; `mode` controls the per-phase IO width.
-    /// Returns `SmcError::InvalidChipSelect` if CS1 is requested but not configured.
-    pub fn transceive_user(
-        &self,
-        cs: ChipSelect,
-        cmd: &[u8],
-        tx_payload: &[u8],
-        rx: &mut [u8],
-        mode: TransferMode,
-    ) -> Result<(), SmcError> {
-        self.inner.transceive_user(cs, cmd, tx_payload, rx, mode)
-    }
-
-    /// Convenience wrapper: execute a user-mode transfer on CS0.
-    pub fn transceive_user_cs0(
-        &self,
-        cmd: &[u8],
-        tx_payload: &[u8],
-        rx: &mut [u8],
-        mode: TransferMode,
-    ) -> Result<(), SmcError> {
-        self.inner
-            .transceive_user(ChipSelect::Cs0, cmd, tx_payload, rx, mode)
-    }
-
-    /// Access the underlying generic ready controller.
-    pub fn as_inner(&self) -> &ReadySmc {
-        &self.inner
-    }
-
-    /// Mutable access to the underlying generic ready controller.
-    pub fn as_inner_mut(&mut self) -> &mut ReadySmc {
-        &mut self.inner
     }
 }

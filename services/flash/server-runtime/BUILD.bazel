@@ -1,0 +1,25 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+# The only kernel-tagged flash server crate: serves one flash device per IPC
+# channel, using openprot_flash_server's platform-independent Server. The loop
+# and its WaitGroup are //util/service.
+rust_library(
+    name = "flash_server_runtime",
+    srcs = ["src/lib.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = ["@platforms//os:none"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//hal/blocking/flash",
+        "//services/flash/server:flash_server_lib",
+        "//util/error",
+        "//util/service",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)

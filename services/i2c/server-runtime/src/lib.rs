@@ -38,23 +38,22 @@ use userspace::time::Instant;
 pub struct Bus<B> {
     /// IPC channel handle (`channel_handler`) dedicated to this bus.
     pub channel: u32,
-    /// IRQ handle for this bus's controller.
-    pub irq: u32,
+    /// IRQ handle for this bus's controller, or `None` for a bus that never
+    /// arms slave notification — master writes complete by polling status
+    /// registers, so there is nothing for the interrupt to deliver.
+    pub irq: Option<u32>,
     /// The bus driver — implements both the master and slave seams.
     pub driver: B,
     notif_enabled: bool,
     rx: [u8; MAX_PAYLOAD_SIZE],
     rx_len: usize,
-    /// Source address (7-bit) of the master that wrote to us; only valid
-    /// when rx_len > 0. Captured on IRQ drain; ignored if not available.
-    rx_source: u8,
     /// Event kind that triggered the latch (DataReceived, ReadRequest, Stop).
     /// Only meaningful when rx_len > 0 or notification was armed.
     rx_event_kind: SlaveEvent,
 }
 
 impl<B> Bus<B> {
-    pub const fn new(channel: u32, irq: u32, driver: B) -> Self {
+    pub const fn new(channel: u32, irq: Option<u32>, driver: B) -> Self {
         Self {
             channel,
             irq,
@@ -62,7 +61,6 @@ impl<B> Bus<B> {
             notif_enabled: false,
             rx: [0u8; MAX_PAYLOAD_SIZE],
             rx_len: 0,
-            rx_source: 0,
             rx_event_kind: SlaveEvent::DataReceived,
         }
     }
@@ -104,8 +102,10 @@ where
         {
             pw_log::error!("wait_group_add bus channel failed");
         }
-        if let Err(_) = syscall::wait_group_add(wg, bus.irq, irq_signals, bus.irq as usize) {
-            pw_log::error!("wait_group_add irq failed");
+        if let Some(irq) = bus.irq {
+            if let Err(_) = syscall::wait_group_add(wg, irq, irq_signals, irq as usize) {
+                pw_log::error!("wait_group_add irq failed");
+            }
         }
     }
 
@@ -121,12 +121,18 @@ where
         // ---- hardware slave IRQ: drain the armed bus, ack, wake client ----
         // Each bus registered its IRQ with user_data = bus.irq, so check if this
         // signal came from an IRQ (vs. a client channel READABLE event).
-        if w.pending_signals.contains(irq_signals) {
+        if w.pending_signals.intersects(irq_signals) {
             let irq = w.user_data as u32;
             let acked = w.pending_signals & irq_signals;
-            if let Some(bus) = buses.iter_mut().find(|b| b.irq == irq) {
+            if let Some(bus) = buses.iter_mut().find(|b| b.irq == Some(irq)) {
+                // Service the controller even with no client listening: a master
+                // write leaves I2CM14 latched, holding the shared IRQ line
+                // asserted, and only the driver clears it. Skipping this makes
+                // the `interrupt_ack` below re-enable an interrupt that is still
+                // asserted, so it re-fires forever.
+                let event = bus.driver.try_next_slave_event();
                 if bus.notif_enabled {
-                    match bus.driver.try_next_slave_event() {
+                    match event {
                         Ok(Some((kind, _))) => match kind {
                             I2cIsrEvent::SlaveWrRecvd => {
                                 // Master finished writing — drain buffer into latch.
@@ -135,16 +141,6 @@ where
                                     Ok(n) => {
                                         if n > 0 {
                                             bus.rx_len = n;
-                                            // Source address extraction from MCTP-I2C header.
-                                            // With AST_I2CC_SLAVE_PKT_SAVE_ADDR set, the hardware
-                                            // prepends dest address at byte[0]; the MCTP-I2C header
-                                            // carries source at byte[3]: src_addr << 1 | 1.
-                                            // Extract it (bits 7:1 = 7-bit address).
-                                            if n > 3 {
-                                                bus.rx_source = (bus.rx[3] >> 1) & 0x7F;
-                                            } else {
-                                                bus.rx_source = 0xFF; // Invalid: message too short
-                                            }
                                         }
                                     }
                                     Err(_) => {
@@ -171,9 +167,8 @@ where
                             }
                         },
                         Ok(None) => {
-                            pw_log::debug!(
-                                "slave IRQ fired but no data ready — spurious or non-data event"
-                            );
+                            // Routine: the driver handles a parked frame's
+                            // address phase itself and reports no event.
                         }
                         Err(_) => {
                             pw_log::error!("try_next_slave_event failed");
@@ -244,7 +239,6 @@ where
             Some((I2cOp::DisableSlaveNotification, _)) => {
                 bus.notif_enabled = false;
                 bus.rx_len = 0;
-                bus.rx_source = 0;
                 bus.rx_event_kind = SlaveEvent::DataReceived;
                 encode_ok(&mut response_buf, 0)
             }
@@ -253,9 +247,9 @@ where
                 if bus.rx_len == 0 {
                     encode_error(&mut response_buf, I2cError::NoData)
                 } else {
-                    // Response payload: [kind (1), source_addr (1), data (0..max_len)]
+                    // Response payload: [kind (1), data (0..max_len)]
                     let cap = response_buf.len() - I2cResponseHeader::SIZE;
-                    let metadata_size = 2; // kind + source
+                    let metadata_size = 1; // kind
                     if cap < metadata_size {
                         encode_error(&mut response_buf, I2cError::BufferTooSmall)
                     } else {
@@ -263,10 +257,16 @@ where
                         let n = bus.rx_len.min(max_len).min(data_cap);
                         let payload_offset = I2cResponseHeader::SIZE;
                         response_buf[payload_offset] = bus.rx_event_kind as u8;
-                        response_buf[payload_offset + 1] = bus.rx_source;
-                        response_buf[payload_offset + 2..payload_offset + 2 + n]
+                        response_buf[payload_offset + 1..payload_offset + 1 + n]
                             .copy_from_slice(&bus.rx[..n]);
                         bus.rx_len = 0;
+                        // Only now that the client has actually taken the data:
+                        // re-arm the receive path so the hardware that was
+                        // holding the bus (clock-stretching) lets the next
+                        // master write through. This is what makes backpressure
+                        // reach the client instead of a fixed buffer silently
+                        // overwriting data it hasn't read yet.
+                        bus.driver.rearm_slave_receive();
                         encode_ok(&mut response_buf, metadata_size + n)
                     }
                 }

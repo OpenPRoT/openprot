@@ -8,6 +8,9 @@ load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_scri
 load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 load("//target/ast10x0:defs.bzl", "TARGET_COMPATIBLE_WITH", "system_image_test")
+load("//target/ast10x0/pins:defs.bzl", "app_pin_claims", "kernel_pin_routes")
+load("//util/hw_claim:defs.bzl", "manifest_hw_claim_test")
+load("//util/region:defs.bzl", "app_regions")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -31,6 +34,14 @@ target_linker_script(
     template = "//target/ast10x0:linker_script_template",
 )
 
+kernel_pin_routes(
+    name = "kernel_pin_routes",
+    edition = "2024",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
 rust_binary(
     name = "target",
     srcs = ["target.rs"],
@@ -39,6 +50,7 @@ rust_binary(
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
         ":codegen",
+        ":kernel_pin_routes",
         ":linker_script",
         "//target/ast10x0:entry",
         "//target/ast10x0/peripherals",
@@ -50,17 +62,35 @@ rust_binary(
     ],
 )
 
+app_regions(
+    name = "app_gpio_irq_server_regions",
+    edition = "2024",
+    process_name = "gpio_irq_process",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
+app_pin_claims(
+    name = "app_gpio_irq_server_pin_claims",
+    edition = "2024",
+    process_name = "gpio_irq_process",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+)
+
 rust_app(
     name = "gpio_irq_server",
     srcs = ["gpio_irq_server_main.rs"],
     codegen_crate_name = "app_gpio_irq_server",
     edition = "2024",
-    system_config = ":system_config",
     tags = ["kernel"],
     target_compatible_with = TARGET_COMPATIBLE_WITH,
     deps = [
+        ":app_gpio_irq_server_pin_claims",
+        ":app_gpio_irq_server_regions",
         "//target/ast10x0/peripherals",
-        "@ast1060_pac",
         "@pigweed//pw_kernel/userspace",
         "@pigweed//pw_log/rust:pw_log",
         "@pigweed//pw_status/rust:pw_status",
@@ -93,4 +123,16 @@ rust_binary_no_panics_test(
     name = "no_panics_test",
     binary = ":gpio_irq",
     tags = ["kernel"],
+)
+
+# Catches an app-vs-app pin_claims_<process> conflict straight out of the manifest, before anything
+# in this file builds. Only one app exists here today, so this has nothing to conflict with yet —
+# it earns its keep the moment a second app's pin_claims_<process> list is added to this manifest.
+manifest_hw_claim_test(
+    name = "manifest_hw_claim_test",
+    system_config = ":system_config",
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
 )

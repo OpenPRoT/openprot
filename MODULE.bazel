@@ -20,11 +20,24 @@ local_path_override(
     path = "third_party/caliptra",
 )
 
+# Local patch to pw_kernel's VeeR PIC code (see third_party/pigweed/):
+# veer_pic_gateways.patch makes the PIC gateways level-triggered and active
+# high explicitly, as caliptra-mcu-sw's PIC driver does.
+# veer_pic_claim.patch drops the MEICPCT write from the external-interrupt
+# claim, which traps as an illegal instruction on the Caliptra FPGA's VeeR core;
+# caliptra-mcu-sw's VeeR kernel reads MEIHAP directly.
+# multi_process_app_entry.patch looks up the process entry point with `get`
+# in the entry point generated for a `multi_process_app`, so the app has no
+# panic path.
 git_override(
     module_name = "pigweed",
-    commit = "294d431a761dc44fe07710c15d5ac1603f7ef7bf",
-    patch_args = ["-p1"],
-    patches = [],
+    commit = "e21bf7763475a456efdcc49dafb651ef952b3be1",
+    patch_strip = 1,
+    patches = [
+        "//third_party/pigweed:veer_pic_gateways.patch",
+        "//third_party/pigweed:veer_pic_claim.patch",
+        "//third_party/pigweed:multi_process_app_entry.patch",
+    ],
     remote = "https://pigweed.googlesource.com/pigweed/pigweed",
 )
 
@@ -65,7 +78,56 @@ crate.from_cargo(
         "thumbv7em-none-eabi",
     ],
 )
-use_repo(crate, "rust_caliptra_crates", "rust_caliptra_crates_host", "rust_crates")
+
+# mdbook preprocessors for //docs. They are host-only tools, so they get their
+# own crate universe instead of joining the firmware crate graph in
+# //third_party/crates_io.
+crate.from_specs(
+    name = "rust_mdbook_plugins",
+    cargo_lockfile = "//third_party/mdbook_plugins:Cargo.lock",
+    supported_platform_triples = [
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin",
+    ],
+)
+crate.spec(
+    package = "mdbook-mermaid",
+    repositories = ["rust_mdbook_plugins"],
+    # 0.17 moved to the mdbook 0.5 preprocessor API; the mdbook shipped by
+    # rules_rust_mdbook is 0.4.
+    version = "=0.16.2",
+)
+crate.spec(
+    default_features = False,
+    package = "mdbook",
+    repositories = ["rust_mdbook_plugins"],
+    # mdbook-mermaid links the mdbook library for the preprocessor protocol and
+    # warns at build time when that version differs from the mdbook running it.
+    # Keep this equal to the mdbook that rules_rust_mdbook ships.
+    version = "=0.4.44",
+)
+crate.annotation(
+    crate = "mdbook-mermaid",
+    gen_binaries = ["mdbook-mermaid"],
+    repositories = ["rust_mdbook_plugins"],
+)
+crate.annotation(
+    # rules_rust appends these to the host C toolchain's CFLAGS. The pigweed
+    # clang toolchain enables `-Wundef -Werror`, which rejects the `#if` on
+    # undefined CFG_TARGET_OS_* macros when psm preprocesses its assembly.
+    build_script_env = {"CFLAGS": "-Wno-undef"},
+    crate = "psm",
+    repositories = ["rust_mdbook_plugins"],
+)
+use_repo(
+    crate,
+    "rust_caliptra_crates",
+    "rust_caliptra_crates_host",
+    "rust_crates",
+    "rust_mdbook_plugins",
+)
 
 pw_rust_crates_ext = use_extension("@pigweed//pw_build:pw_rust_crates_extension.bzl", "pw_rust_crates_extension")
 
@@ -111,6 +173,27 @@ caliptra_repos_ext = use_extension(
 )
 use_repo(caliptra_repos_ext, "caliptra_mcu_sw", "caliptra_sw")
 
+# VCK190 subsystem bitstream matching the caliptra_mcu_sw pin above. URL and
+# sha256 are copied from hw/fpga/bitstream_manifests/subsystem.toml at that
+# commit; bump them together with the pin.
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+
+http_file(
+    name = "caliptra_fpga_bitstream",
+    downloaded_file_path = "caliptra-bitstream.pdi",
+    sha256 = "bb4892661af8769104694e5bd307a993264460a286437e0d8bc3b2f1de60173d",
+    urls = ["https://storage.googleapis.com/caliptra-github-ci-bitstreams/v1/a2cd177353b7f06170766f367743b98c900b1d7b/runtime_a2cd177.pdi"],
+)
+
+# caliptra-ss OTP controller memory map, needed by caliptra-hw-model's build
+# script (fpga_subsystem).
+http_file(
+    name = "caliptra_ss_otp_ctrl_mmap",
+    downloaded_file_path = "otp_ctrl_mmap.hjson",
+    sha256 = "7aa3729ad3b8dacd80134773fcbfa1476a8b8b05d4c340d7ff0190adbedb934b",
+    urls = ["https://raw.githubusercontent.com/chipsalliance/caliptra-ss/01b0a3528e196f4219d20dd9cbfec3727869d5d9/src/fuse_ctrl/data/otp_ctrl_mmap.hjson"],
+)
+
 nonhermetic_repo = use_repo_rule("//target/earlgrey/tooling/signing:nonhermetic.bzl", "nonhermetic_repo")
 
 nonhermetic_repo(name = "nonhermetic")
@@ -126,11 +209,17 @@ hsm = use_extension("//third_party/hsm:extensions.bzl", "hsm")
 use_repo(hsm, "cloud_kms_hsm")
 
 # ── lowRISC QEMU (ot-earlgrey machine for earlgrey QEMU tests) ──
-# Tag v10.2.0-2026-01-15, sha256 9e97f93b... (locked in third_party/qemu/extensions.bzl).
+# Tag v10.2.0-2026-06-14, sha256 0162acd6... (locked in third_party/qemu/extensions.bzl).
 qemu = use_extension("//third_party/qemu:extensions.bzl", "qemu")
 use_repo(qemu, "qemu_opentitan", "qemu_opentitan_src")
 
 # ── Python deps for QEMU tooling scripts (cfggen, flashgen) ──
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    is_default = True,
+    python_version = "3.12",
+)
+
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
     # AMD's Zscaler proxy intercepts TLS to pypi.org with its own cert; skip
@@ -143,7 +232,7 @@ pip.parse(
         "files.pythonhosted.org",
     ],
     hub_name = "openprot_python_deps",
-    python_version = "3.11",
+    python_version = "3.12",
     requirements_lock = "//third_party/qemu:requirements.txt",
 )
 use_repo(pip, "openprot_python_deps")

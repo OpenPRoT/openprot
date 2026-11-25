@@ -9,8 +9,8 @@ use core::cell::{Cell, RefCell};
 
 use mctp::Eid;
 use openprot_mctp_server::Server;
-use openprot_pldm_service::firmware_device::{FirmwareDevice, RunTerminusResult};
-use openprot_pldm_service::{MctpPldmTransport, PldmServiceError};
+use openprot_pldm_service::firmware_device::FirmwareDevice;
+use openprot_pldm_service::MctpPldmTransport;
 use pldm_common::codec::PldmCodec;
 use pldm_common::message::control::{GetTidRequest, SetTidRequest};
 use pldm_common::message::firmware_update::apply_complete::ApplyResult;
@@ -24,7 +24,7 @@ use pldm_common::util::fw_component::FirmwareComponent;
 use pldm_interface::firmware_device::fd_ops::{ComponentOperation, FdOps, FdOpsError};
 
 mod common;
-use common::{transfer, BufferSender, DirectClientWithPump, FD_EID, TIMEOUT_MILLIS, UA_EID};
+use common::{run_fd_step, transfer, BufferSender, DirectClientWithPump, FD_EID, UA_EID};
 
 struct MockFdOps {
     component_accepted: Cell<bool>,
@@ -196,17 +196,10 @@ fn responder_ignores_commands_from_unexpected_eid() {
     );
     let mut fd_buf = [0u8; 1024];
 
-    // Runs `FirmwareDevice::run_terminus` until its inbound queue is drained.
-    // `run_terminus` loops until its responder listener has nothing left, at
-    // which point it returns Mctp(TimedOut); that terminating timeout means
-    // "done", not a failure. `UA_EID` is the only EID `run_terminus` is told
-    // to serve, so commands from `ATTACKER_EID` must be ignored below.
-    let mut run_fd_once =
-        || match fd.run_terminus(UA_EID, &mut fd_buf, TIMEOUT_MILLIS, TIMEOUT_MILLIS, &mut ()) {
-            RunTerminusResult::Completed => {}
-            RunTerminusResult::StoppedByError(PldmServiceError::Mctp(e)) if e.is_timeout() => {}
-            RunTerminusResult::StoppedByError(e) => panic!("firmware device failed: {e:?}"),
-        };
+    // Each command below is answered within a single step. `UA_EID` is the
+    // only EID `run_fd_step` is told to serve, so commands from
+    // `ATTACKER_EID` must be ignored below.
+    let mut run_fd_once = || run_fd_step(&mut fd, UA_EID, &mut fd_buf, &mut ());
 
     let mut buf = [0u8; 1024];
     // ---- Attacker (EID 99) sends SetTid(0x99); the FD must ignore it ----

@@ -8,7 +8,7 @@ This HAL provides abstractions for interacting with flash memory. It defines tra
 
 A transparent wrapper around a 32-bit offset (`u32`) representing a location in flash memory. It supports basic arithmetic operations (`Add`, `AddAssign`, `BitAnd`, `BitAndAssign`) to facilitate address calculations.
 
-Platform-specific extension traits (like `EarlgreyFlashAddress` in `earlgrey_util`) may use the offset bits to encode additional information (e.g., distinguishing between DATA and INFO partitions using the MSB).
+A target may use the offset bits to encode more than a position, for example a partition selector. That encoding belongs to the target, not to this crate.
 
 ### `FlashDriver` Trait
 

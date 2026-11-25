@@ -5,6 +5,13 @@
 //!
 //! Provides register-level access to configure AST1060 pins for different
 //! functions (I2C, I3C, GPIO, etc.) via SCU multiplex registers.
+//!
+//! Superseded, for GPIO, by `scu::pins`'s `pins!`-generated tokens (`Routes<Gpio>`'s `ROUTE`
+//! names the exact same mux bits this module names by hand). Not marked `#[deprecated]`: this
+//! module still has ~27 real callers across i2c/i3c/smc/sgpiom/mctp/spdm and board wiring that
+//! haven't moved to the token model yet, and the lint is promoted to a build-breaking error
+//! here, so that would fail every one of those targets instead of just flagging intent. New
+//! peripheral code should use the token model; this module stays until the rest migrate.
 
 use super::ScuRegisters;
 use paste::paste;
@@ -536,6 +543,13 @@ paste! {
     gen_pin_pairs!(SCU6B0, 0x6B0, 30);
     gen_pin_pairs!(SCU6B0, 0x6B0, 31);
 }
+
+/// I2C0 pin group: SCL1/SDA1 mux selection on SCU414[28:29].
+///
+/// The SVD names these EnblSCL1FnPin/EnblSDA1FnPin (1-based naming),
+/// corresponding to PAC peripheral I2c0 (controller 0, base 0x7e7b_0080) on
+/// balls R15 (SCL) / P12 (SDA).
+pub const PINCTRL_I2C0: &[PinctrlPin] = &[PIN_SCU414_28, PIN_SCU414_29];
 
 /// I2C1 pin group: SCL2/SDA2 mux selection on SCU414[30:31].
 ///
@@ -1090,26 +1104,28 @@ impl ScuRegisters {
     /// # }
     /// ```
     pub fn apply_pinctrl_group(&self, pins: &[PinctrlPin]) {
-        let regs = self.regs();
-        for pin in pins {
-            match pin.offset {
-                0x410 => modify_reg!(regs.scu410(), pin.bit, pin.clear),
-                0x414 => modify_reg!(regs.scu414(), pin.bit, pin.clear),
-                0x418 => modify_reg!(regs.scu418(), pin.bit, pin.clear),
-                0x41C => modify_reg!(regs.scu41c(), pin.bit, pin.clear),
-                0x430 => modify_reg!(regs.scu430(), pin.bit, pin.clear),
-                0x434 => modify_reg!(regs.scu434(), pin.bit, pin.clear),
-                0x4B0 => modify_reg!(regs.scu4b0(), pin.bit, pin.clear),
-                0x4B4 => modify_reg!(regs.scu4b4(), pin.bit, pin.clear),
-                0x4B8 => modify_reg!(regs.scu4b8(), pin.bit, pin.clear),
-                0x4BC => modify_reg!(regs.scu4bc(), pin.bit, pin.clear),
-                0x690 => modify_reg!(regs.scu690(), pin.bit, pin.clear),
-                0x694 => modify_reg!(regs.scu694(), pin.bit, pin.clear),
-                0x698 => modify_reg!(regs.scu698(), pin.bit, pin.clear),
-                0x69C => modify_reg!(regs.scu69c(), pin.bit, pin.clear),
-                0x6B0 => modify_reg!(regs.scu6b0(), pin.bit, pin.clear),
-                _ => {} // Unknown offset, silently ignore
+        self.unlock_and_lock_after(|scu| {
+            let regs = scu.regs();
+            for pin in pins {
+                match pin.offset {
+                    0x410 => modify_reg!(regs.scu410(), pin.bit, pin.clear),
+                    0x414 => modify_reg!(regs.scu414(), pin.bit, pin.clear),
+                    0x418 => modify_reg!(regs.scu418(), pin.bit, pin.clear),
+                    0x41C => modify_reg!(regs.scu41c(), pin.bit, pin.clear),
+                    0x430 => modify_reg!(regs.scu430(), pin.bit, pin.clear),
+                    0x434 => modify_reg!(regs.scu434(), pin.bit, pin.clear),
+                    0x4B0 => modify_reg!(regs.scu4b0(), pin.bit, pin.clear),
+                    0x4B4 => modify_reg!(regs.scu4b4(), pin.bit, pin.clear),
+                    0x4B8 => modify_reg!(regs.scu4b8(), pin.bit, pin.clear),
+                    0x4BC => modify_reg!(regs.scu4bc(), pin.bit, pin.clear),
+                    0x690 => modify_reg!(regs.scu690(), pin.bit, pin.clear),
+                    0x694 => modify_reg!(regs.scu694(), pin.bit, pin.clear),
+                    0x698 => modify_reg!(regs.scu698(), pin.bit, pin.clear),
+                    0x69C => modify_reg!(regs.scu69c(), pin.bit, pin.clear),
+                    0x6B0 => modify_reg!(regs.scu6b0(), pin.bit, pin.clear),
+                    _ => {} // Unknown offset, silently ignore
+                }
             }
-        }
+        });
     }
 }

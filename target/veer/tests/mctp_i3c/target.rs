@@ -1,0 +1,49 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+//! Kernel image for the VeeR MCTP-over-I3C test. Boots and hands control to the
+//! userspace app processes declared in system.json5 (i3c server, MCTP server,
+//! and an MCTP echo app).
+
+#![no_std]
+#![no_main]
+
+use arch_riscv::Arch;
+use console_backend as _;
+use entry::exit;
+use target_common::{declare_target, TargetInterface};
+use veer_wdt::Wdt;
+
+pub struct Target {}
+
+impl TargetInterface for Target {
+    const NAME: &'static str = "Caliptra MCTP-over-I3C Test";
+
+    fn main() -> ! {
+        // The ROM leaves the MCU watchdog running with a period of 800 million
+        // clock cycles, and nothing here restarts it. A test that hangs would
+        // otherwise be reset mid-run, and the kernel's warm re-entry then trips
+        // a scheduler assertion that hides the real failure.
+        //
+        // SAFETY: this code runs in the kernel, which can access the MCI
+        // registers, and no other code in this image uses the watchdog.
+        unsafe { Wdt::new(kernel_config::MCI_BASE) }.stop();
+        codegen::start();
+        // The bootstrap thread has nothing left to do. Sleep rather than spin: a
+        // spinning thread at the same priority as the app threads takes a time
+        // slice at every scheduler tick and delays every wake-up behind it.
+        loop {
+            let _ = kernel::sleep_until(Arch, kernel::Instant::MAX);
+        }
+    }
+
+    fn shutdown(code: u32) -> ! {
+        match code {
+            0 => pw_log::info!("PASS"),
+            _ => pw_log::info!("FAIL: {}", code),
+        }
+        exit(code);
+    }
+}
+
+declare_target!(Target);

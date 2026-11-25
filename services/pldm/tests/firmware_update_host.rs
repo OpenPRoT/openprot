@@ -538,3 +538,110 @@ fn firmware_update_full_flow_via_requester() {
         fd_ops.applied.get()
     );
 }
+
+/// `run_until` hands control back to an external stop condition instead of
+/// looping forever — the caller, not the FD, decides how many steps to run.
+///
+/// `RequestUpdate` alone is enough to prove this: answering it takes exactly
+/// one step (Phase 1 is a no-op outside update mode; Phase 2 answers the one
+/// queued command), and it never puts the FD into initiator mode, so this
+/// test needs no requester-side pump.
+#[test]
+fn run_until_stops_at_the_callers_condition() {
+    let fd_ops = MockFdOps {
+        component_accepted: Cell::new(false),
+        download_bytes_received: Cell::new(0),
+        downloaded_image: RefCell::new([0u8; IMAGE_SIZE as usize]),
+        verified: Cell::new(false),
+        applied: Cell::new(false),
+    };
+
+    let ua_to_fd_packets = RefCell::new(Vec::new());
+    let ua_sender = BufferSender {
+        packets: &ua_to_fd_packets,
+    };
+    let ua_server: RefCell<Server<_, 16>> = RefCell::new(Server::new(Eid(UA_EID), 0, ua_sender));
+
+    let fd_to_ua_packets = RefCell::new(Vec::new());
+    let fd_sender = BufferSender {
+        packets: &fd_to_ua_packets,
+    };
+    let fd_server: RefCell<Server<_, 16>> = RefCell::new(Server::new(Eid(FD_EID), 0, fd_sender));
+
+    let requester_transport = MctpPldmTransport::new(DirectClientWithPump::new(&fd_server, || {}));
+    let responder_transport = MctpPldmTransport::new(DirectClientWithPump::new(&fd_server, || {
+        transfer(&ua_to_fd_packets, &mut fd_server.borrow_mut());
+        ua_to_fd_packets.borrow_mut().clear();
+    }));
+
+    let mut fd = FirmwareDevice::init(
+        &fd_ops,
+        &pldm_interface::config::PLDM_PROTOCOL_CAPABILITIES,
+        responder_transport,
+        requester_transport,
+    );
+
+    // Queue one RequestUpdate from the UA.
+    let comp_ver = fw_string("v1.0");
+    let req_update =
+        RequestUpdateRequest::new(0, PldmMsgType::Request, IMAGE_SIZE, 1, 1, 0, &comp_ver);
+    let mut req_buf = [0u8; 1024];
+    let len = req_update
+        .encode(&mut req_buf)
+        .expect("encode RequestUpdate");
+    let req_handle = ua_server
+        .borrow_mut()
+        .req(FD_EID)
+        .expect("allocate UA request handle to FD");
+    ua_server
+        .borrow_mut()
+        .send(
+            Some(req_handle),
+            PLDM_MSG_TYPE,
+            None,
+            None,
+            false,
+            &req_buf[..len],
+        )
+        .expect("send RequestUpdate");
+
+    // Permit exactly one step, then stop — checked once before the step
+    // (returns `true`) and once more after (returns `false`), so it never
+    // sees a second step run.
+    let calls = Cell::new(0u32);
+    let mut fd_buf = [0u8; 1024];
+    let result = fd.run_until(
+        UA_EID,
+        &mut fd_buf,
+        TIMEOUT_MILLIS,
+        TIMEOUT_MILLIS,
+        &mut (),
+        || {
+            calls.set(calls.get() + 1);
+            calls.get() <= 1
+        },
+    );
+    assert!(
+        matches!(result, RunTerminusResult::Completed),
+        "the caller's own stop condition should end the session cleanly, not an error"
+    );
+    assert_eq!(
+        calls.get(),
+        2,
+        "should_continue is consulted once to permit the step and once more to stop"
+    );
+
+    // The single permitted step answered the queued command: the UA already
+    // has its response, and no second command was needed to get it.
+    transfer(&fd_to_ua_packets, &mut ua_server.borrow_mut());
+    let mut resp = [0u8; 1024];
+    ua_server
+        .borrow_mut()
+        .try_recv(req_handle, &mut resp)
+        .expect("UA response should already be available after one step");
+    assert_eq!(
+        resp[3],
+        PldmBaseCompletionCode::Success as u8,
+        "RequestUpdate should have been answered within the single permitted step"
+    );
+}

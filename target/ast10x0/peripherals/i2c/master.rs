@@ -280,6 +280,18 @@ impl<Y: FnMut(u32)> Ast1060I2c<'_, Y> {
                 return Err(I2cError::Abnormal);
             }
 
+            // Packet-done is raised while the controller is still driving the
+            // STOP, so I2CM14[31:28] still reads STOP rather than IDLE here. A
+            // command issued in that state is dropped and its frame never
+            // reaches the bus, so settle before handing the bus back.
+            if is_last && stop {
+                let mut settle = constants::DEFAULT_TIMEOUT_US;
+                while settle > 0 && (self.regs().i2cm14().read().bits() >> 28) != 0 {
+                    settle = settle.saturating_sub(1);
+                    (self.yield_ns)(100_000);
+                }
+            }
+
             #[allow(clippy::cast_possible_truncation)]
             {
                 self.current_xfer_cnt += chunk_len as u32;

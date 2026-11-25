@@ -20,7 +20,47 @@ pub use kernel_config::{
 //const TIMER_SIZE: usize = 0x200;
 //
 //const PLIC_SIZE: usize = 0x0000_5400;
-const PIC_BASE: usize = 0x6000_0000;
+
+// MCU memory map for the selected target type, taken from upstream caliptra-mcu-sw
+#[cfg(not(feature = "fpga"))]
+use caliptra_mcu_config_emulator::{
+    EMULATOR_MCU_STRAPS as MCU_STRAPS, EMULATOR_MEMORY_MAP as MCU_MEMORY_MAP,
+};
+#[cfg(feature = "fpga")]
+use caliptra_mcu_config_fpga::{FPGA_MCU_STRAPS as MCU_STRAPS, FPGA_MEMORY_MAP as MCU_MEMORY_MAP};
+
+/// Whether the second I3C core (i3c1) is the one the platform straps select for
+/// MCTP. The MCU ROM and runtime read the same strap, `active_i3c`, so this
+/// follows what they set up. Only 1 selects i3c1; any other value is core 0, as
+/// the ROM treats it.
+const ACTIVE_I3C1: bool = MCU_STRAPS.active_i3c == 1;
+
+/// Base of the MCI register block (MCU timer, device mappings).
+pub const MCI_BASE: usize = MCU_MEMORY_MAP.mci_offset as usize;
+
+/// Base of the Caliptra mailbox registers.
+pub const MBOX_BASE: usize = MCU_MEMORY_MAP.mbox_offset as usize;
+
+/// Base of the Caliptra SoC interface registers.
+pub const SOC_IFC_BASE: usize = MCU_MEMORY_MAP.soc_offset as usize;
+
+/// Base of the active I3C core's register block: core 0, or core 1 when the
+/// platform straps select it.
+pub const I3C_BASE: usize = if ACTIVE_I3C1 {
+    MCU_MEMORY_MAP.i3c1_offset
+} else {
+    MCU_MEMORY_MAP.i3c_offset
+} as usize;
+
+/// PIC interrupt number of the active I3C core (core 0 is 2, core 1 is 3, as in
+/// caliptra-mcu-sw's `I3C_IRQ` and `I3C1_IRQ`).
+pub const I3C_IRQ: u32 = if ACTIVE_I3C1 { 3 } else { 2 };
+
+/// Base of the region in DCCM where the MCU ROM leaves its handoff table.
+pub const HANDOFF_BASE: usize = MCU_MEMORY_MAP.handoff_offset as usize;
+
+const PIC_BASE: usize = MCU_MEMORY_MAP.pic_offset as usize;
+const DCCM_BASE: usize = MCU_MEMORY_MAP.dccm_offset as usize;
 
 pub struct KernelConfig;
 
@@ -59,18 +99,21 @@ impl VeerPicConfigInterface for VeerPicConfig {
     const PIC_BASE_ADDRESS: usize = PIC_BASE;
     const MAX_IRQS: u32 = 256;
     // The VeeR core requires the external-interrupt redirect table to live
-    // in DCCM; this image does not otherwise use DCCM. 256 IRQs * 4 bytes
-    // fits well within the 16KiB DCCM.
-    const MEIVT_BASE_ADDRESS: usize = 0x5000_0000;
+    // in DCCM. 256 IRQs * 4 bytes is the first 1 KiB of the 16 KiB DCCM. The
+    // ROM's handoff table is in the last 1 KiB.
+    const MEIVT_BASE_ADDRESS: usize = DCCM_BASE;
 }
 
 pub struct TimerConfig;
 
-const TIMER_BASE: usize = 0x2100_0000;
+/// MCI `mcu_rv_mtime` register (the MCU timer lives in the MCI block).
+pub const MTIME_REGISTER: usize = MCI_BASE + 0xe4;
+/// MCI `mcu_rv_mtimecmp` register.
+pub const MTIMECMP_REGISTER: usize = MCI_BASE + 0xec;
 
 impl ClintTimerConfigInterface for TimerConfig {
-    const MTIME_REGISTER: usize = TIMER_BASE + 0xe4;
-    const MTIMECMP_REGISTER: usize = TIMER_BASE + 0xec;
+    const MTIME_REGISTER: usize = MTIME_REGISTER;
+    const MTIMECMP_REGISTER: usize = MTIMECMP_REGISTER;
 }
 
 unsafe extern "C" {

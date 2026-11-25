@@ -1,6 +1,6 @@
 # util_error
 
-Structured error handling for OpenProt.
+Structured error handling for OpenPRoT.
 
 This crate provides a mechanism for defining and using structured 32-bit error codes (`ErrorCode`) partitioned by 16-bit modules (`ErrorModule`).
 

@@ -23,7 +23,7 @@ use mctp_lib::fragment::{Fragmenter, SendOutput};
 use mctp_lib::Sender;
 use openprot_mctp_api::{
     Handle, MctpClient, MctpError, MctpListener, MctpReqChannel, MctpRespChannel, RecvMetadata,
-    ResponseCode,
+    ResponseCode, MCTP_HEADER_LEN,
 };
 use openprot_mctp_server::Server;
 
@@ -40,18 +40,17 @@ pub struct BufferSender<'a> {
 
 /// MTU for MCTP payload (without header)
 const MCTP_MTU: usize = 255;
-/// MCTP header size (4 bytes)
-const MCTP_HEADER_SIZE: usize = 4;
 
 impl Sender for BufferSender<'_> {
     fn send_vectored(
         &mut self,
+        _eid: Eid,
         mut fragmenter: Fragmenter,
         payload: &[&[u8]],
     ) -> mctp::Result<Tag> {
         loop {
             // Buffer must be MTU + header size
-            let mut buf = [0u8; MCTP_MTU + MCTP_HEADER_SIZE];
+            let mut buf = [0u8; MCTP_MTU + MCTP_HEADER_LEN];
             match fragmenter.fragment_vectored(payload, &mut buf) {
                 SendOutput::Packet(p) => {
                     self.packets.borrow_mut().push(p.to_vec());
@@ -80,12 +79,13 @@ pub struct SmallMtuBufferSender<'a> {
 impl Sender for SmallMtuBufferSender<'_> {
     fn send_vectored(
         &mut self,
+        _eid: Eid,
         mut fragmenter: Fragmenter,
         payload: &[&[u8]],
     ) -> mctp::Result<Tag> {
         loop {
             // Buffer must be MTU + header size
-            let mut buf = [0u8; MCTP_MTU + MCTP_HEADER_SIZE];
+            let mut buf = [0u8; MCTP_MTU + MCTP_HEADER_LEN];
             match fragmenter.fragment_vectored(payload, &mut buf) {
                 SendOutput::Packet(p) => {
                     self.packets.borrow_mut().push(p.to_vec());
@@ -114,12 +114,13 @@ pub struct DroppingBufferSender;
 impl Sender for DroppingBufferSender {
     fn send_vectored(
         &mut self,
+        _eid: Eid,
         mut fragmenter: Fragmenter,
         payload: &[&[u8]],
     ) -> mctp::Result<Tag> {
         loop {
             // Buffer must be MTU + header size
-            let mut buf = [0u8; MCTP_MTU + MCTP_HEADER_SIZE];
+            let mut buf = [0u8; MCTP_MTU + MCTP_HEADER_LEN];
             match fragmenter.fragment_vectored(payload, &mut buf) {
                 SendOutput::Packet(_) => {}
                 SendOutput::Complete { tag, .. } => return Ok(tag),
@@ -350,13 +351,4 @@ impl<S: Sender, const N: usize> MctpReqChannel for DirectReqChannel<'_, S, N> {
     fn remote_eid(&self) -> u8 {
         self.remote_eid
     }
-}
-
-// ---------------------------------------------------------------------------
-// make_server helper
-// ---------------------------------------------------------------------------
-
-/// Construct a `Server` + its outbound packet buffer, for two-endpoint tests.
-pub fn make_server(eid: u8, packets: &RefCell<Vec<Vec<u8>>>) -> Server<BufferSender<'_>, 16> {
-    Server::new(Eid(eid), 0, BufferSender { packets })
 }

@@ -1,0 +1,174 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// AST10x0 MCTP multi-protocol QEMU test system image.
+//
+// One real MCTP server process is the messaging layer for two protocol
+// tasks (`spdm_echo`, `pldm_echo`), each on its own channel. A `harness`
+// process plays the remote peer over a loopback transport and reports
+// pass/fail; its `ctl_*` channels are a startup barrier so no request is
+// sent before the echo tasks have registered their listeners. The server
+// owns both ends of the `transport`/`loopback` channel pair so it can wake
+// its own transport wait source after every outbound packet (see
+// server_main.rs).
+//
+// Memory map (AST10x0: 768 KB SRAM, no XIP):
+//   0x00000000 - 0x00000500  vector table (1280 B)
+//   0x00000500 - 0x00020000  kernel flash (~128 KB)
+//   0x00020000 - 0x00060000  app flash (256 KB total; 64 KB per app)
+//   0x00060000 - 0x00080000  kernel RAM (128 KB)
+//   0x00080000 - 0x000C0000  app RAM (256 KB total; 64 KB per process)
+{
+    arch: {
+        type: "armv7m",
+        vector_table_start_address: 0x00000000,
+        vector_table_size_bytes: 1280,
+    },
+    kernel: {
+        flash_start_address: 0x00000500,
+        flash_size_bytes: 129792,
+        ram_start_address: 0x00060000,
+        ram_size_bytes: 131072,
+    },
+    apps: [
+        {
+            name: "mctp_server",
+            flash_size_bytes: 65536,
+            processes: [
+                {
+                    name: "mctp_server_process",
+                    ram_size_bytes: 65536,
+                    objects: [
+                        {
+                            name: "wg",
+                            type: "wait_group",
+                        },
+                        {
+                            name: "mctp_spdm",
+                            type: "channel_handler",
+                        },
+                        {
+                            name: "mctp_pldm",
+                            type: "channel_handler",
+                        },
+                        {
+                            name: "mctp_harness",
+                            type: "channel_handler",
+                        },
+                        {
+                            name: "transport",
+                            type: "channel_handler",
+                        },
+                        {
+                            // Initiator half of the server's own transport
+                            // channel: the loopback Sender pokes USER on it
+                            // to wake the server's transport wait.
+                            name: "loopback",
+                            type: "channel_initiator",
+                            handler_process: "mctp_server_process",
+                            handler_object_name: "transport",
+                        },
+                        {
+                            type: "thread",
+                            name: "mctp_server_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            name: "spdm_echo",
+            flash_size_bytes: 65536,
+            processes: [
+                {
+                    name: "spdm_echo_process",
+                    ram_size_bytes: 65536,
+                    objects: [
+                        {
+                            name: "mctp",
+                            type: "channel_initiator",
+                            handler_process: "mctp_server_process",
+                            handler_object_name: "mctp_spdm",
+                        },
+                        {
+                            // Startup barrier: the harness transacts on it
+                            // once the task has registered its listener.
+                            name: "ctl",
+                            type: "channel_handler",
+                        },
+                        {
+                            type: "thread",
+                            name: "spdm_echo_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            name: "pldm_echo",
+            flash_size_bytes: 65536,
+            processes: [
+                {
+                    name: "pldm_echo_process",
+                    ram_size_bytes: 65536,
+                    objects: [
+                        {
+                            name: "mctp",
+                            type: "channel_initiator",
+                            handler_process: "mctp_server_process",
+                            handler_object_name: "mctp_pldm",
+                        },
+                        {
+                            // Startup barrier: the harness transacts on it
+                            // once the task has registered its listener.
+                            name: "ctl",
+                            type: "channel_handler",
+                        },
+                        {
+                            type: "thread",
+                            name: "pldm_echo_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            name: "harness",
+            flash_size_bytes: 65536,
+            processes: [
+                {
+                    name: "harness_process",
+                    ram_size_bytes: 65536,
+                    objects: [
+                        {
+                            name: "mctp",
+                            type: "channel_initiator",
+                            handler_process: "mctp_server_process",
+                            handler_object_name: "mctp_harness",
+                        },
+                        {
+                            name: "ctl_spdm",
+                            type: "channel_initiator",
+                            handler_process: "spdm_echo_process",
+                            handler_object_name: "ctl",
+                        },
+                        {
+                            name: "ctl_pldm",
+                            type: "channel_initiator",
+                            handler_process: "pldm_echo_process",
+                            handler_object_name: "ctl",
+                        },
+                        {
+                            type: "thread",
+                            name: "harness_thread",
+                            kernel_stack_size_bytes: 4096,
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}

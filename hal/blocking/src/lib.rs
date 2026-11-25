@@ -15,8 +15,12 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+/// Certificate chain storage traits
+pub mod certificate;
 /// Cryptographic digest operations (hashing)
 pub mod digest;
+/// DICE Protection Environment (DPE) client traits
+pub mod dpe;
 /// ECDSA digital signature operations
 pub mod ecdsa;
 /// Gpio port module
@@ -25,8 +29,12 @@ pub mod gpio_port;
 pub mod i2c_device;
 /// I2C hardware controller traits (hardware abstraction layer)
 pub mod i2c_hardware;
+/// I3C target (device) mode hardware abstraction traits
+pub mod i3c_hardware;
 /// Message Authentication Code (MAC) traits and implementations
 pub mod mac;
+/// Random number generator traits
+pub mod rng;
 /// Reset and clocking traits for OpenPRoT HAL
 pub mod system_control;
 

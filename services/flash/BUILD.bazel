@@ -1,0 +1,26 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+package(default_visibility = ["//visibility:public"])
+
+# Embedded-safe production crates only (no rust_test targets).
+filegroup(
+    name = "flash_embedded_all",
+    srcs = [
+        "//services/flash/api:flash_api",
+        "//services/flash/client:flash_client",
+        # Kernel-only crates (depend on pw_kernel userspace; not host-testable).
+        "//services/flash/client-ipc:flash_client_ipc",
+        "//services/flash/server:flash_server_lib",
+        "//services/flash/server-runtime:flash_server_runtime",
+    ],
+)
+
+# Host-side tests; run without embedded target config.
+test_suite(
+    name = "flash_host_tests",
+    tests = [
+        "//services/flash/server:flash_server_handler_test",
+        "//services/flash/tests:flash_client_server_test",
+    ],
+)

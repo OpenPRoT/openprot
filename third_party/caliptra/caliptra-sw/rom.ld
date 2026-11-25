@@ -8,7 +8,7 @@
  *
  * Abstract:
  *
- * 	ROM Linker Script (Modified for testing: increased ROM size)
+ * 	ROM Linker Script
  */
 
 OUTPUT_ARCH(riscv)
@@ -18,12 +18,12 @@ ENTRY(_start)
 ROM_ORG          = 0x00000000;
 ICCM_ORG         = 0x40000000;
 DCCM_ORG         = 0x50000000;
-DATA_ORG         = 0x50000000;
-STACK_ORG        = 0x50030000;
-ESTACK_ORG       = 0x5003F800;
-NSTACK_ORG       = 0x5003FC00;
+STACK_ORG        = 0x50000000;
+ESTACK_ORG       = 0x50026800;
+NSTACK_ORG       = 0x50026C00;
+DATA_ORG         = 0x5003FC00;
 
-CFI_STATE_ORG      = 0x500003E4;
+CFI_STATE_ORG      = 0x5003FFE4;
 
 /* Workaround https://github.com/llvm/llvm-project/issues/62423
  * by allowing lld to exceed the ROM size before relaxation optimizations are
@@ -31,11 +31,11 @@ CFI_STATE_ORG      = 0x500003E4;
  * ensure that the sections fit within the true 96k ROM size.
  */
 ROM_RELAXATION_PADDING = 8k;
-ROM_SIZE          = 256K; /* Increased from 96K for testing */
+ROM_SIZE          = 96K;
 ICCM_SIZE         = 256K;
 DCCM_SIZE         = 256K;
 DATA_SIZE         = 996;
-STACK_SIZE        = 62K;
+STACK_SIZE        = 120K;
 ESTACK_SIZE       = 1K;
 NSTACK_SIZE       = 1K;
 
@@ -47,9 +47,9 @@ MEMORY
 	STACK        (rw) : ORIGIN = STACK_ORG,        LENGTH = STACK_SIZE
 	ESTACK       (rw) : ORIGIN = ESTACK_ORG,       LENGTH = ESTACK_SIZE
 	NSTACK       (rw) : ORIGIN = NSTACK_ORG,       LENGTH = NSTACK_SIZE
-} 
+}
 
-SECTIONS 
+SECTIONS
 {
 	.text : ALIGN(4)
 	{
@@ -151,6 +151,11 @@ SECTIONS
 		*(.eh_frame_hdr)
 	}
 }
+
+/*
+_bss_len  = SIZEOF(.bss);
+_data_len = SIZEOF(.data);
+*/
 
 ASSERT(SIZEOF(.got) == 0, ".got section detected in ROM");
 ASSERT(SIZEOF(.data) == 0, ".data section detected in ROM");

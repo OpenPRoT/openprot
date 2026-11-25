@@ -314,9 +314,9 @@ fn dispatch_recv_resolved_by_drive_pending() {
     // drive_pending should deliver the message
     let mut fired_handle: Option<Handle> = None;
     let mut fired_len = 0usize;
-    drive_pending(&mut server_a, 0, &mut recv_buf, &mut resp, |h, n| {
+    drive_pending(&mut server_a, 0, &mut recv_buf, &mut resp, |h, bytes| {
         fired_handle = Some(h);
-        fired_len = n;
+        fired_len = bytes.len();
     });
 
     assert_eq!(fired_handle, Some(listener_handle));
@@ -355,9 +355,9 @@ fn dispatch_recv_timeout() {
     // Advance time past deadline — no message ever arrives
     let mut fired_handle: Option<Handle> = None;
     let mut fired_len = 0usize;
-    drive_pending(&mut server, 200, &mut recv_buf, &mut resp, |h, n| {
+    drive_pending(&mut server, 200, &mut recv_buf, &mut resp, |h, bytes| {
         fired_handle = Some(h);
-        fired_len = n;
+        fired_len = bytes.len();
     });
 
     assert_eq!(fired_handle, Some(listener_handle));
@@ -414,4 +414,224 @@ fn dispatch_recv_immediate_if_message_waiting() {
     assert_eq!(header.eid, 42);
     let recv_payload = wire::get_response_payload(&resp[..n], &header).unwrap();
     assert_eq!(recv_payload, payload);
+}
+
+// ---------------------------------------------------------------------------
+// MctpOp::Recv — a recv that cannot be resolved later is answered now
+// ---------------------------------------------------------------------------
+
+/// Registers a listener for `msg_type` and returns its handle.
+fn listener<S: openprot_mctp_server::Sender, const N: usize>(
+    server: &mut Server<S, N>,
+    msg_type: u8,
+) -> Handle {
+    let mut req = [0u8; 64];
+    let mut resp = [0u8; 64];
+    let mut recv_buf = [0u8; 255];
+    let req_len = wire::encode_listener(&mut req, msg_type).unwrap();
+    let resp_len = dispatch_reply(&req[..req_len], &mut resp, server, &mut recv_buf);
+    Handle(
+        wire::decode_response_header(&resp[..resp_len])
+            .unwrap()
+            .handle,
+    )
+}
+
+/// With the outstanding table full, a further `Recv` is answered `NoSpace`.
+/// It must not be reported `Pending`: nothing was registered, so nothing
+/// would ever resolve it.
+#[test]
+fn dispatch_recv_is_no_space_when_outstanding_table_is_full() {
+    use openprot_mctp_api::ResponseCode;
+
+    let buf = RefCell::new(Vec::new());
+    let sender = BufferSender { packets: &buf };
+    let mut server: Server<_, 1> = Server::new(Eid(8), 0, sender);
+    let first = listener(&mut server, 1);
+    let second = listener(&mut server, 2);
+
+    let mut req = [0u8; 64];
+    let mut resp = [0u8; 64];
+    let mut recv_buf = [0u8; 255];
+
+    let req_len = wire::encode_recv(&mut req, first.0, 0).unwrap();
+    let outcome = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server, &mut recv_buf, 0);
+    assert!(matches!(outcome, DispatchOutcome::Pending { .. }));
+
+    let req_len = wire::encode_recv(&mut req, second.0, 0).unwrap();
+    let n = dispatch_reply(&req[..req_len], &mut resp, &mut server, &mut recv_buf);
+    let header = wire::decode_response_header(&resp[..n]).unwrap();
+    assert_eq!(header.response_code(), ResponseCode::NoSpace);
+}
+
+/// A handle has one outstanding `Recv`. A second is answered `AddrInUse`
+/// rather than parked behind a registration that only resolves once.
+#[test]
+fn dispatch_recv_twice_on_one_handle_is_addr_in_use() {
+    use openprot_mctp_api::ResponseCode;
+
+    let buf = RefCell::new(Vec::new());
+    let sender = BufferSender { packets: &buf };
+    let mut server: Server<_, 16> = Server::new(Eid(8), 0, sender);
+    let handle = listener(&mut server, 1);
+
+    let mut req = [0u8; 64];
+    let mut resp = [0u8; 64];
+    let mut recv_buf = [0u8; 255];
+
+    let req_len = wire::encode_recv(&mut req, handle.0, 0).unwrap();
+    let outcome = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server, &mut recv_buf, 0);
+    assert!(matches!(outcome, DispatchOutcome::Pending { .. }));
+
+    let n = dispatch_reply(&req[..req_len], &mut resp, &mut server, &mut recv_buf);
+    let header = wire::decode_response_header(&resp[..n]).unwrap();
+    assert_eq!(header.response_code(), ResponseCode::AddrInUse);
+}
+
+/// Delivers the five-byte message "early" of type 3 from a peer to
+/// `server_a`, which must already have a listener for type 3.
+fn deliver_early<S: openprot_mctp_server::Sender, const N: usize>(server_a: &mut Server<S, N>) {
+    let buf_b = RefCell::new(Vec::new());
+    let sender_b = BufferSender { packets: &buf_b };
+    let mut server_b: Server<_, 16> = Server::new(Eid(42), 0, sender_b);
+
+    let mut req = [0u8; 128];
+    let mut resp = [0u8; 128];
+    let mut recv_buf = [0u8; 255];
+    let req_len = wire::encode_req(&mut req, 8).unwrap();
+    let resp_len = dispatch_reply(&req[..req_len], &mut resp, &mut server_b, &mut recv_buf);
+    let req_handle = wire::decode_response_header(&resp[..resp_len])
+        .unwrap()
+        .handle;
+    let req_len =
+        wire::encode_send(&mut req, Some(req_handle), 3, None, None, false, b"early").unwrap();
+    dispatch_reply(&req[..req_len], &mut resp, &mut server_b, &mut recv_buf);
+    transfer(&buf_b, server_a);
+}
+
+/// A waiting message larger than the receive buffer is answered `NoSpace`
+/// on the immediate path. It must neither panic nor return a short payload.
+#[test]
+fn dispatch_recv_payload_larger_than_buffer_is_no_space() {
+    use openprot_mctp_api::ResponseCode;
+
+    let buf_a = RefCell::new(Vec::new());
+    let sender_a = BufferSender { packets: &buf_a };
+    let mut server_a: Server<_, 16> = Server::new(Eid(8), 0, sender_a);
+    let handle = listener(&mut server_a, 3);
+    deliver_early(&mut server_a);
+
+    let mut req = [0u8; 64];
+    let mut resp = [0u8; 64];
+    let mut small = [0u8; 2];
+    let req_len = wire::encode_recv(&mut req, handle.0, 1000).unwrap();
+    let n = dispatch_reply(&req[..req_len], &mut resp, &mut server_a, &mut small);
+    let header = wire::decode_response_header(&resp[..n]).unwrap();
+    assert_eq!(header.response_code(), ResponseCode::NoSpace);
+}
+
+/// The same on the deferred path: `drive_pending` hands `on_ready` a
+/// `NoSpace` response for a message that did not fit.
+#[test]
+fn drive_pending_payload_larger_than_buffer_is_no_space() {
+    use openprot_mctp_api::ResponseCode;
+
+    let buf_a = RefCell::new(Vec::new());
+    let sender_a = BufferSender { packets: &buf_a };
+    let mut server_a: Server<_, 16> = Server::new(Eid(8), 0, sender_a);
+    let handle = listener(&mut server_a, 3);
+
+    let mut req = [0u8; 64];
+    let mut resp = [0u8; 64];
+    let mut small = [0u8; 2];
+    let req_len = wire::encode_recv(&mut req, handle.0, 1000).unwrap();
+    let outcome = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server_a, &mut small, 0);
+    assert!(matches!(outcome, DispatchOutcome::Pending { .. }));
+
+    deliver_early(&mut server_a);
+
+    let mut fired: Option<(Handle, ResponseCode)> = None;
+    drive_pending(&mut server_a, 1, &mut small, &mut resp, |h, bytes| {
+        let header = wire::decode_response_header(bytes).unwrap();
+        fired = Some((h, header.response_code()));
+    });
+    assert_eq!(fired, Some((handle, ResponseCode::NoSpace)));
+}
+
+// ---------------------------------------------------------------------------
+// The clock is advanced before a request is handled
+// ---------------------------------------------------------------------------
+
+/// A request sent after a quiet period still gets its response. The `Send`
+/// opens the flow that matches the response to the request; `dispatch`
+/// must date that flow now. Dated at the previous event, it would expire as
+/// soon as the clock caught up, and the response would have nowhere to go.
+#[test]
+fn response_to_a_request_sent_after_a_quiet_period_is_delivered() {
+    let buf_a = RefCell::new(Vec::new());
+    let sender_a = BufferSender { packets: &buf_a };
+    let mut server_a: Server<_, 16> = Server::new(Eid(8), 0, sender_a);
+
+    let buf_b = RefCell::new(Vec::new());
+    let sender_b = BufferSender { packets: &buf_b };
+    let mut server_b: Server<_, 16> = Server::new(Eid(42), 0, sender_b);
+    let listener_b = listener(&mut server_b, 5);
+
+    let mut req = [0u8; 128];
+    let mut resp = [0u8; 128];
+    let mut recv_buf = [0u8; 255];
+
+    // A opened its request handle at t=0, then nothing for ten seconds.
+    let req_len = wire::encode_req(&mut req, 42).unwrap();
+    let resp_len = dispatch_reply(&req[..req_len], &mut resp, &mut server_a, &mut recv_buf);
+    let req_handle = wire::decode_response_header(&resp[..resp_len])
+        .unwrap()
+        .handle;
+
+    // t=10 s: A sends, and the driver then drives pending as it does after
+    // every event.
+    const T: u64 = 10_000;
+    let req_len =
+        wire::encode_send(&mut req, Some(req_handle), 5, None, None, false, b"ping").unwrap();
+    let outcome = dispatch_mctp_op(&req[..req_len], &mut resp, &mut server_a, &mut recv_buf, T);
+    assert!(matches!(outcome, DispatchOutcome::Reply(_)));
+    drive_pending(&mut server_a, T, &mut recv_buf, &mut resp, |_, _| {});
+
+    // B answers on the request's tag.
+    transfer(&buf_a, &mut server_b);
+    let meta = server_b
+        .try_recv(listener_b, &mut recv_buf)
+        .expect("B receives the request");
+    server_b
+        .send(
+            None,
+            5,
+            Some(meta.remote_eid),
+            Some(meta.msg_tag),
+            false,
+            b"pong",
+        )
+        .unwrap();
+
+    // t=10.001 s: the response arrives at A.
+    server_a.advance(T + 1);
+    transfer(&buf_b, &mut server_a);
+    let req_len = wire::encode_recv(&mut req, req_handle, 1000).unwrap();
+    let outcome = dispatch_mctp_op(
+        &req[..req_len],
+        &mut resp,
+        &mut server_a,
+        &mut recv_buf,
+        T + 1,
+    );
+    let n = match outcome {
+        DispatchOutcome::Reply(n) => n,
+        DispatchOutcome::Pending { .. } => panic!("response was lost"),
+    };
+    let header = wire::decode_response_header(&resp[..n]).unwrap();
+    assert!(header.is_success());
+    assert_eq!(
+        wire::get_response_payload(&resp[..n], &header).unwrap(),
+        b"pong"
+    );
 }

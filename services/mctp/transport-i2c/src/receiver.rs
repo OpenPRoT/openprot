@@ -35,7 +35,7 @@ impl MctpI2cReceiver {
     /// and the I2C source address, or an error if decoding fails.
     ///
     /// This is the same decode path as Hubris `handle_i2c_transport`:
-    /// `i2c_reader.recv(data)` → `server.stack.inbound(pkt)`.
+    /// `i2c_reader.recv(data)` → `server.inbound(pkt)`.
     pub fn decode<'a>(&self, data: &'a [u8]) -> Result<(&'a [u8], MctpI2cHeader), mctp::Error> {
         // MctpI2cEncap::decode strips the I2C header, validates PEC,
         // and returns the raw MCTP packet + source I2C address.

@@ -1,0 +1,20 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// A kernel-only image with no apps. IRQ 1 is the interrupt of the MCI.
+{
+  arch: {
+    type: "riscv",
+  },
+  kernel: {
+    flash_start_address: @KERNEL_FLASH_START@,
+    flash_size_bytes: 65536,
+    ram_start_address: @KERNEL_RAM_START@,
+    ram_size_bytes: 32768,
+    interrupt_table: {
+      table: {
+        "1": "mci_interrupt_handler",
+      }
+    },
+  },
+}

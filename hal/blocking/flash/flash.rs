@@ -11,6 +11,11 @@ use hal_flash_driver::FlashDriver;
 use util_io::RandomRead;
 use util_types::{Blocking, PowerOf2Usize};
 
+/// Length of the scratch buffer that holds the unaligned prefix of a
+/// read. A driver whose `READ_ALIGNMENT` exceeds `PREFIX_BUF_LEN`
+/// cannot use `BlockingFlash`.
+const PREFIX_BUF_LEN: usize = 16;
+
 /// High-level flash interface.
 ///
 /// This trait provides a simplified, synchronous, blocking interface for flash operations.
@@ -122,8 +127,8 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
     type Error = TDriver::Error;
     fn geometry(&mut self) -> Result<(NonZero<usize>, PowerOf2Usize, u32), Self::Error> {
         let bitmap = self.driver.erasable_sizes_bitmap()?;
-        let page_size = PowerOf2Usize::new(1 << (bitmap.trailing_zeros())).unwrap();
-        Ok((self.driver.size(), page_size, bitmap))
+        let page_size = PowerOf2Usize::from_shift(bitmap.trailing_zeros());
+        Ok((self.driver.size(), page_size, bitmap.get()))
     }
     /// Reads data from flash.
     ///
@@ -135,11 +140,13 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
         let align_skip_len = (addr.offset() & (TDriver::READ_ALIGNMENT as u32 - 1)) as usize;
         if (align_skip_len) != 0 {
             // Read prefix up to alignment boundary
-            assert!(TDriver::READ_ALIGNMENT <= 16);
-            let mut tmp = [0_u8; 16];
+            const { assert!(TDriver::READ_ALIGNMENT <= PREFIX_BUF_LEN) };
+            let mut tmp = [0_u8; PREFIX_BUF_LEN];
             let prefix_count = min(TDriver::READ_ALIGNMENT - align_skip_len, buf.len());
-            self.driver
-                .read(addr & !(TDriver::READ_ALIGNMENT - 1), &mut tmp)?;
+            self.driver.read(
+                addr & !(TDriver::READ_ALIGNMENT - 1),
+                &mut tmp[..TDriver::READ_ALIGNMENT],
+            )?;
             buf[..prefix_count].copy_from_slice(&tmp[align_skip_len..][..prefix_count]);
             buf = &mut buf[prefix_count..];
             addr += prefix_count;
@@ -166,17 +173,14 @@ impl<TDriver: FlashDriver, TBlocking: Blocking> Flash for BlockingFlash<TDriver,
     /// and do not cross window boundaries. Each chunk is programmed asynchronously,
     /// and the thread blocks until it completes before starting the next chunk.
     fn program(&mut self, start_addr: FlashAddress, mut data: &[u8]) -> Result<(), Self::Error> {
-        assert!(
-            TDriver::PROGRAM_WINDOW_SIZE.count_ones() == 1,
-            "TDriver::PROGRAM_WINDOW_SIZE must be a power of 2"
-        );
-        let window_mask = TDriver::PROGRAM_WINDOW_SIZE - 1;
+        let program_window_size = self.driver.program_window_size().get();
+        let window_mask = program_window_size - 1;
         let mut addr = start_addr;
         while !data.is_empty() {
             // Calculate bytes remaining in the current program window
             let chunk = &data[..min(
                 data.len(),
-                TDriver::PROGRAM_WINDOW_SIZE - ((addr.offset() & window_mask as u32) as usize),
+                program_window_size - ((addr.offset() & window_mask as u32) as usize),
             )];
             self.driver.start_program(addr, chunk)?;
             self.blocking.wait_for_notification();
@@ -231,8 +235,8 @@ mod test {
         const READ_ALIGNMENT: usize = 4;
         const PROGRAM_ALIGNMENT: usize = 8;
 
-        fn erasable_sizes_bitmap(&mut self) -> Result<u32, Self::Error> {
-            Ok(1 << 11)
+        fn erasable_sizes_bitmap(&mut self) -> Result<NonZero<u32>, Self::Error> {
+            Ok(NonZero::new(1 << 11).unwrap())
         }
         fn size(&self) -> NonZero<usize> {
             NonZero::new(self.data.len()).unwrap()
@@ -263,15 +267,15 @@ mod test {
             data: &[u8],
         ) -> Result<(), Self::Error> {
             let start_addr = start_addr.offset() as usize;
+            let program_window_size = self.program_window_size().get();
             assert!(start_addr.checked_add(data.len()).unwrap() <= self.data.len());
             assert!(
-                data.len() <= Self::PROGRAM_WINDOW_SIZE,
+                data.len() <= program_window_size,
                 "Program window violation"
             );
             let end_addr = start_addr.wrapping_add(data.len());
             assert!(
-                start_addr / Self::PROGRAM_WINDOW_SIZE
-                    == (end_addr - 1) / Self::PROGRAM_WINDOW_SIZE,
+                start_addr / program_window_size == (end_addr - 1) / program_window_size,
                 "Program window violation"
             );
             for (dest, src) in self.data[start_addr..end_addr].iter_mut().zip(data) {

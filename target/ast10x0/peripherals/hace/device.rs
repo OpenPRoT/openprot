@@ -110,13 +110,16 @@ impl<Y: FnMut(u32)> HaceDevice<Y> {
         // clock-stop bit and enable the HACE YCLK before touching any HACE registers.
         // SAFETY: SCU is a singleton; this is called under the same single-instance
         // contract as HaceRegisters::new_global — the caller guarantees exclusivity.
-        let scu = unsafe { ScuRegisters::new_global_unlocked() };
-        scu.ungate_clock_mask(ClockRegisterHalf::Lower, 1 << 13);
-        // SCU040 bit 4 = HACE reset. Write bit 4 to SCU044 to deassert reset and
-        // bring the HACE out of reset before accessing any HACE registers. Without
-        // this, the AHB bus hangs on the first HACE register read when the ROM
-        // bootloader (UART/fwspick mode) leaves HACE in reset.
-        scu.deassert_reset_mask(ScuRegisterHalf::Lower, 1 << 4);
+        let scu = unsafe { ScuRegisters::new_global() };
+
+        scu.unlock_and_lock_after(|scu| {
+            scu.ungate_clock_mask(ClockRegisterHalf::Lower, 1 << 13);
+            // SCU040 bit 4 = HACE reset. Write bit 4 to SCU044 to deassert reset and
+            // bring the HACE out of reset before accessing any HACE registers. Without
+            // this, the AHB bus hangs on the first HACE register read when the ROM
+            // bootloader (UART/fwspick mode) leaves HACE in reset.
+            scu.deassert_reset_mask(ScuRegisterHalf::Lower, 1 << 4);
+        });
 
         // SAFETY: Caller coordinates singleton access.
         let regs = unsafe { HaceRegisters::new_global() };

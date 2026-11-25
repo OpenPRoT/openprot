@@ -84,6 +84,10 @@ pub struct Ast1060I2cBackend {
     slave_enabled: bool,
     /// Mirrored slave address — serves `I2cSlaveCore::slave_address(&self)`.
     slave_addr: Option<SevenBitAddress>,
+    /// Permission to admit one more slave frame, granted by the consumer's
+    /// drain. Held here because the transient driver cannot carry it across
+    /// HAL method boundaries.
+    slave_rx_credit: bool,
 }
 
 impl Ast1060I2cBackend {
@@ -142,6 +146,9 @@ impl I2cSlaveCore<SevenBitAddress> for Ast1060I2cBackend {
     fn configure_slave_address(&mut self, addr: SevenBitAddress) -> Result<(), Self::Error> {
         self.make_driver().configure_slave_address(addr)?;
         self.slave_addr = Some(addr);
+        // Setup pays for the first frame, so it can park and resume like any
+        // other rather than stalling at startup.
+        self.slave_rx_credit = true;
         Ok(())
     }
 
@@ -169,6 +176,12 @@ impl I2cSlaveCore<SevenBitAddress> for Ast1060I2cBackend {
 impl I2cSlaveBuffer<SevenBitAddress> for Ast1060I2cBackend {
     fn read_slave_buffer(&mut self, buffer: &mut [u8]) -> Result<usize, Self::Error> {
         self.make_driver().read_slave_buffer(buffer)
+    }
+
+    fn rearm_slave_receive(&mut self) {
+        let mut driver = self.make_driver();
+        driver.rearm_slave_receive();
+        self.slave_rx_credit = driver.slave_rx_credit;
     }
 
     fn write_slave_response(&mut self, data: &[u8]) -> Result<(), Self::Error> {
@@ -206,7 +219,12 @@ impl I2cBusRecovery for Ast1060I2cBackend {
 /// to reach it via trait dispatch (a blanket on I2cSlaveBuffer would shadow it).
 impl I2cSlaveEvent for Ast1060I2cBackend {
     fn try_next_slave_event(&mut self) -> Result<Option<(I2cIsrEvent, usize)>, Self::Error> {
-        self.make_driver().try_next_slave_event()
+        let credit = self.slave_rx_credit;
+        let mut driver = self.make_driver();
+        driver.slave_rx_credit = credit;
+        let event = driver.try_next_slave_event();
+        self.slave_rx_credit = driver.slave_rx_credit;
+        event
     }
 }
 
@@ -299,6 +317,7 @@ pub unsafe fn open_bus(bus: u8, config: &I2cConfig) -> Result<BusDriver, I2cErro
         master_dma_buf: None,
         slave_dma_buf: None,
         slave_enabled: false,
+        slave_rx_credit: false,
         slave_addr: None,
     })
 }
@@ -332,6 +351,7 @@ pub unsafe fn open_bus_dma(
         master_dma_buf: Some(master_dma_buf),
         slave_dma_buf: Some(slave_dma_buf),
         slave_enabled: false,
+        slave_rx_credit: false,
         slave_addr: None,
     })
 }

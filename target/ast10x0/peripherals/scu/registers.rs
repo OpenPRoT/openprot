@@ -3,10 +3,31 @@
 
 //! AST10x0 SCU low-level register access.
 
+use super::pins::ScuMmio;
+use crate::hal::field_mux::RegisterAccess;
 use ast1060_pac as device;
 use core::marker::PhantomData;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 const SCU_UNLOCK_KEY: u32 = 0x1688_A8A8;
+
+/// Write-enable the SCU's protected registers, through the confined `ScuMmio` accessor. The key
+/// stays private here; the pin-mux route path calls this before applying a pin's coalesced mux writes.
+pub(crate) fn unlock_scu_writes(mmio: &ScuMmio) {
+    mmio.write_at::<0x000>(SCU_UNLOCK_KEY);
+}
+
+/// Write-protect the SCU's protected registers again: any value other than [`SCU_UNLOCK_KEY`]
+/// re-asserts protection, per the standard Aspeed SCU protection-key convention (same key across
+/// their SCU family). The pin-mux route path calls this once it's done applying a boot-time mux —
+/// nothing after boot has a legitimate reason to need the SCU open for writes.
+pub(crate) fn lock_scu_writes(mmio: &ScuMmio) {
+    mmio.write_at::<0x000>(0);
+}
+
+/// Nesting depth of [`ScuRegisters::unlock_and_lock_after`]; the SCU is
+/// unlocked while this is non-zero.
+static UNLOCK_DEPTH: AtomicU32 = AtomicU32::new(0);
 
 /// Safe wrapper around the AST10x0 SCU register block.
 pub struct ScuRegisters {
@@ -37,24 +58,9 @@ impl ScuRegisters {
     ///
     /// # Safety
     /// Caller must ensure access to the singleton SCU is coordinated.
-    pub(crate) const unsafe fn new_global() -> Self {
+    pub const unsafe fn new_global() -> Self {
         // SAFETY: Caller upholds the singleton access contract.
         unsafe { Self::new(device::Scu::ptr()) }
-    }
-
-    /// Create a register accessor for the global SCU instance, with write
-    /// protection immediately unlocked.
-    ///
-    /// Follows the aspeed-rust pattern: unlock once, then perform all
-    /// register writes in sequence without re-locking between operations.
-    ///
-    /// # Safety
-    /// Caller must ensure access to the singleton SCU is coordinated.
-    pub unsafe fn new_global_unlocked() -> Self {
-        // SAFETY: Caller upholds the singleton access contract.
-        let scu = unsafe { Self::new_global() };
-        scu.unlock_write_protection();
-        scu
     }
 
     #[inline]
@@ -64,13 +70,51 @@ impl ScuRegisters {
     }
 
     /// Unlock SCU write-protected registers for subsequent write operations.
-    ///
-    /// Call this once before a sequence of SCU writes, following the aspeed-rust
-    /// pattern of a single unlock per batch of register operations.
     #[inline]
-    pub(crate) fn unlock_write_protection(&self) {
+    fn unlock_write_protection(&self) {
         self.regs()
             .scu000()
             .write(|w| unsafe { w.bits(SCU_UNLOCK_KEY) });
+    }
+
+    /// Lock SCU write-protected registers.
+    #[inline]
+    fn lock_write_protection(&self) {
+        self.regs().scu000().write(|w| unsafe { w.bits(0) });
+    }
+
+    /// Run `f` with the SCU write-protected registers unlocked, then re-lock.
+    ///
+    /// Calls may be nested: only the outermost call unlocks and only the
+    /// outermost call re-locks, so a setter that takes the lock itself can be
+    /// invoked from inside another `unlock_and_lock_after` closure without
+    /// re-locking the SCU under the caller.
+    ///
+    /// The SCU is not re-locked if `f` panics.
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use ast10x0_peripherals::scu::ScuRegisters;
+    /// // SAFETY: example only; the caller owns the singleton SCU.
+    /// let scu = unsafe { ScuRegisters::new_global() };
+    /// scu.unlock_and_lock_after(|scu| {
+    ///     let mut bits = scu.regs().scu0f0().read().bits();
+    ///     bits &= !0xF;
+    ///     scu.regs().scu0f0().write(|w| unsafe { w.bits(bits) });
+    /// });
+    /// ```
+    #[inline]
+    pub fn unlock_and_lock_after<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&ScuRegisters) -> R,
+    {
+        if UNLOCK_DEPTH.fetch_add(1, Ordering::AcqRel) == 0 {
+            self.unlock_write_protection();
+        }
+        let result = f(self);
+        if UNLOCK_DEPTH.fetch_sub(1, Ordering::AcqRel) == 1 {
+            self.lock_write_protection();
+        }
+        result
     }
 }

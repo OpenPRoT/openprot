@@ -23,12 +23,18 @@ pub trait FlashDriver {
     /// The error type returned by driver operations.
     type Error;
 
-    /// The default page size in bytes.
-    const PAGE_SIZE: usize;
+    /// The page size in bytes.
+    ///
+    /// Prefer the [`page_size`](Self::page_size) method which is flexible to serve
+    /// statically defined or runtime discovered values.
+    const PAGE_SIZE: usize = 0;
 
     /// The maximum size of a single program operation (write window).
     /// Program operations cannot span across boundaries aligned to this size.
-    const PROGRAM_WINDOW_SIZE: usize;
+    ///
+    /// Prefer the [`program_window_size`](Self::program_window_size) method
+    /// which is flexible to serve statically defined or runtime discovered values.
+    const PROGRAM_WINDOW_SIZE: usize = 0;
 
     /// The maximum size of a single read operation.
     const MAX_READ_SIZE: usize;
@@ -42,11 +48,30 @@ pub trait FlashDriver {
     /// Returns the total size of the flash in bytes.
     fn size(&self) -> NonZero<usize>;
 
+    /// Page size in bytes.
+    fn page_size(&self) -> usize {
+        Self::PAGE_SIZE
+    }
+
+    /// The maximum size of a single program operation (write window).
+    /// Program operations cannot span across boundaries aligned to this size.
+    ///
+    /// The default proves `PROGRAM_WINDOW_SIZE` is a power of two at compile
+    /// time. An override providing a runtime-discovered value (e.g. via SFDP)
+    /// must itself produce a valid `PowerOf2Usize`.
+    fn program_window_size(&self) -> PowerOf2Usize {
+        const {
+            PowerOf2Usize::new(Self::PROGRAM_WINDOW_SIZE)
+                .expect("PROGRAM_WINDOW_SIZE must be a power of 2")
+        }
+    }
+
     /// Returns a bitmap of supported erase block sizes.
     ///
     /// Each bit `i` represents a supported erase block size of `2^i` bytes.
     /// For example, if bit 11 is set, then 2048-byte erases are supported.
-    fn erasable_sizes_bitmap(&mut self) -> Result<u32, Self::Error>;
+    /// At least one bit must be set.
+    fn erasable_sizes_bitmap(&mut self) -> Result<NonZero<u32>, Self::Error>;
 
     /// Reads data from flash synchronously.
     ///

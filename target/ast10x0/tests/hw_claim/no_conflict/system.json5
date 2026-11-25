@@ -1,0 +1,57 @@
+// Licensed under the Apache-2.0 license
+// SPDX-License-Identifier: Apache-2.0
+
+// Negative control for pin_conflict/ and mmio_conflict/: two apps each claim
+// a genuinely different pin and a genuinely different register block. The
+// check must report zero conflicts here, not just reject the deliberately
+// broken cases.
+{
+    apps: [
+        {
+            name: "claim_a",
+            constants: [
+                {
+                    type: "string",
+                    name: "pin_claims_claim_a_process",
+                    value: "pin_a:gpio",
+                },
+            ],
+            processes: [
+                {
+                    name: "claim_a_process",
+                    memory_mappings: [
+                        {
+                            name: "fmc_regs",
+                            type: "device",
+                            start_address: 0x7e620000,
+                            size_bytes: 0x1000,
+                        },
+                    ],
+                },
+            ],
+        },
+        {
+            name: "claim_b",
+            constants: [
+                {
+                    type: "string",
+                    name: "pin_claims_claim_b_process",
+                    value: "pin_b:gpio",
+                },
+            ],
+            processes: [
+                {
+                    name: "claim_b_process",
+                    memory_mappings: [
+                        {
+                            name: "spi1_regs",
+                            type: "device",
+                            start_address: 0x7e630000,
+                            size_bytes: 0x1000,
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+}

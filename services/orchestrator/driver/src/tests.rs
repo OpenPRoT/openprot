@@ -888,10 +888,15 @@ impl ReportSink for RecordingSink {
 }
 
 /// One of each report, so a test covers the whole enum.
-fn every_report() -> [Report; 4] {
+fn every_report() -> [Report; 5] {
     [
         Report::Isolated(C0),
         Report::RecoveryFailed(C0),
+        Report::BootFailed {
+            id: C0,
+            checkpoint: "self-test",
+            kind: BootFailureKind::DeviceFatal,
+        },
         Report::UpdateDeferred,
         Report::UpdateAborted,
     ]
@@ -901,7 +906,7 @@ fn every_report() -> [Report; 4] {
 // over; the unit sink is a wiring choice and satisfies the same caller.
 #[test]
 fn every_report_reaches_a_sink() {
-    fn tell<S: ReportSink>(sink: &mut S, reports: [Report; 4]) {
+    fn tell<S: ReportSink>(sink: &mut S, reports: [Report; 5]) {
         for report in reports {
             sink.report(report);
         }
@@ -1027,6 +1032,11 @@ fn reports_reach_the_board_sink() {
     for effect in [
         Effect::ReportIsolated(C0),
         Effect::ReportRecoveryFailed(C0),
+        Effect::ReportBootFailed {
+            id: C0,
+            checkpoint: "self-test",
+            kind: BootFailureKind::DeviceFatal,
+        },
         Effect::ReportUpdateDeferred,
         Effect::ReportUpdateAborted,
     ] {

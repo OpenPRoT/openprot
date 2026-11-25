@@ -1,0 +1,178 @@
+# Licensed under the Apache-2.0 license
+
+# Builds release firmware images on a GitHub-hosted runner and publishes signed
+# SLSA build provenance for them. See docs/src/supply-chain.md.
+
+name: Release
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Bazel platform to build for'
+        default: '//target/ast10x0'
+        required: true
+      targets:
+        description: 'Space-separated Bazel targets to release'
+        default: '//target/ast10x0/erot:erot'
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  RELEASE_PLATFORM: ${{ inputs.platform || '//target/ast10x0' }}
+  RELEASE_TARGETS: ${{ inputs.targets || '//target/ast10x0/erot:erot' }}
+
+jobs:
+  build-firmware:
+    name: Build and attest firmware
+    # GitHub-hosted runner only: the self-hosted CI runner is not used for
+    # release builds.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write     # Sigstore OIDC identity for the attestation
+      attestations: write  # store the provenance attestation
+    steps:
+    - name: Checkout
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      with:
+        persist-credentials: false
+
+    - name: Reject site-local Bazel overrides
+      run: |
+        if [ -e .bazelrc-site ]; then
+          echo "::error::.bazelrc-site must not exist in a release build"
+          exit 1
+        fi
+
+    - name: Setup Bazel
+      uses: bazel-contrib/setup-bazel@f34d6a05eae3c24acab7fa54587492daeaeffdab # 0.19.2
+      with:
+        # No caches: release outputs must not depend on cached state.
+        bazelisk-cache: false
+        disk-cache: false
+        repository-cache: false
+
+    - name: Build
+      run: |
+        bazel --nosystem_rc --nohome_rc build \
+            --config=release \
+            --platforms="${RELEASE_PLATFORM}" \
+            ${RELEASE_TARGETS}
+
+    - name: Check release closure is hermetic
+      # The release target must not reach the non-hermetic Earlgrey signing
+      # repos (they read $HOME), the pip repo, the locally built QEMU, or the
+      # HSM/Caliptra repos. Write to a file first so a failing bazel call fails
+      # the step instead of looking like "no matches".
+      run: |
+        BAD='(^|@@?)//target/earlgrey|nonhermetic|openprot_python_deps|qemu_opentitan|cloud_kms|caliptra'
+        bazel --nosystem_rc --nohome_rc cquery \
+            --config=release \
+            --platforms="${RELEASE_PLATFORM}" \
+            --platform_suffix= \
+            --@pigweed//pw_kernel:enable_tests=false \
+            --output=label \
+            "deps(${RELEASE_TARGETS// /+})" > closure-labels.txt
+        if grep -Ei "${BAD}" closure-labels.txt; then
+          echo "::error::Release closure reaches a non-hermetic or out-of-scope repo"
+          exit 1
+        fi
+        # `caliptra_deps+` itself is always present (it is a local_path_override
+        # module in MODULE.bazel), so only match repos its extensions fetch
+        # (`caliptra_deps++...`), not the module's own directory.
+        ls "$(bazel --nosystem_rc --nohome_rc info output_base)/external" > fetched-repos.txt
+        if grep -Ei 'nonhermetic|qemu_opentitan|cloud_kms|openprot_python_deps|caliptra_deps\+\+' fetched-repos.txt; then
+          echo "::error::Release build fetched a non-hermetic or out-of-scope repo"
+          exit 1
+        fi
+
+    - name: Collect artifacts
+      run: |
+        mkdir -p release-artifacts
+        # cquery inherits the `test` rc settings (--platform_suffix=test,
+        # enable_tests=true), which would point at a different output
+        # directory than the build above. Reset them so the paths match.
+        bazel --nosystem_rc --nohome_rc cquery \
+            --config=release \
+            --platforms="${RELEASE_PLATFORM}" \
+            --platform_suffix= \
+            --@pigweed//pw_kernel:enable_tests=false \
+            --output=files \
+            ${RELEASE_TARGETS} \
+          | sort -u > artifact-paths.txt
+        if [ ! -s artifact-paths.txt ]; then
+          echo "::error::No output files found for ${RELEASE_TARGETS}"
+          exit 1
+        fi
+        while read -r f; do
+          cp -L "$f" release-artifacts/
+        done < artifact-paths.txt
+        (cd release-artifacts && sha256sum -- * > ../SHA256SUMS.txt)
+        mv SHA256SUMS.txt release-artifacts/
+        cat release-artifacts/SHA256SUMS.txt
+
+    - name: Attest build provenance
+      uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      with:
+        subject-path: 'release-artifacts/*'
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: release-artifacts
+        path: release-artifacts/
+        if-no-files-found: error
+
+  verify-provenance:
+    name: Verify provenance
+    needs: build-firmware
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      attestations: read
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: release-artifacts
+        path: release-artifacts
+
+    - name: Verify attestations
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        for f in release-artifacts/*; do
+          gh attestation verify "$f" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/release.yml"
+        done
+
+  # Publishing is gated on verification so a failed check never leaves a
+  # published release behind.
+  publish-release:
+    name: Publish GitHub release
+    needs: verify-provenance
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write      # create the release and attach artifacts
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: release-artifacts
+        path: release-artifacts
+
+    - name: Publish GitHub release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh release create "${GITHUB_REF_NAME}" release-artifacts/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --verify-tag \
+            --generate-notes

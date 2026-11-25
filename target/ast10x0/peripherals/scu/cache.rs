@@ -18,14 +18,16 @@ impl ScuRegisters {
     #[inline]
     pub fn dcache_invd_all(&self) {
         const DCACHE_CLEAN: u32 = 1 << 1;
-        // SAFETY: SCU MMIO read-modify-write; DSB only orders memory accesses.
-        unsafe {
-            let ctrl = self.regs().scua58().read().bits();
-            self.regs().scua58().write(|w| w.bits(ctrl & !DCACHE_CLEAN));
-            core::arch::asm!("dsb sy", options(nostack, preserves_flags));
-            self.regs().scua58().write(|w| w.bits(ctrl | DCACHE_CLEAN));
-            core::arch::asm!("dsb sy", options(nostack, preserves_flags));
-        }
+        self.unlock_and_lock_after(|scu| {
+            // SAFETY: SCU MMIO read-modify-write; DSB only orders memory accesses.
+            unsafe {
+                let ctrl = scu.regs().scua58().read().bits();
+                scu.regs().scua58().write(|w| w.bits(ctrl & !DCACHE_CLEAN));
+                core::arch::asm!("dsb sy", options(nostack, preserves_flags));
+                scu.regs().scua58().write(|w| w.bits(ctrl | DCACHE_CLEAN));
+                core::arch::asm!("dsb sy", options(nostack, preserves_flags));
+            }
+        });
     }
 }
 

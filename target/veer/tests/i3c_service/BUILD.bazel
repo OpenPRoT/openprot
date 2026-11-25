@@ -1,0 +1,129 @@
+# Licensed under the Apache-2.0 license
+# SPDX-License-Identifier: Apache-2.0
+
+load("@pigweed//pw_kernel/tooling:multi_process_app.bzl", "multi_process_app")
+load("@pigweed//pw_kernel/tooling:rust_app.bzl", "rust_process")
+load("@pigweed//pw_kernel/tooling:target_codegen.bzl", "target_codegen")
+load("@pigweed//pw_kernel/tooling:target_linker_script.bzl", "target_linker_script")
+load("@pigweed//pw_kernel/tooling/panic_detector:rust_binary_no_panics_test.bzl", "rust_binary_no_panics_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("//target:app_no_panics_test.bzl", "app_no_panics_test")
+load("//target/veer:defs.bzl", "TARGET_COMPATIBLE_WITH", "veer_system_config", "veer_system_image")
+load("//target/veer/tooling:caliptra_runner.bzl", "caliptra_test")
+
+package(default_visibility = ["//visibility:public"])
+
+veer_system_config(
+    name = "system_config",
+    src = "system.json5.tmpl",
+)
+
+target_codegen(
+    name = "codegen",
+    arch = "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+    system_config = ":system_config",
+)
+
+target_linker_script(
+    name = "linker_script",
+    system_config = ":system_config",
+    tags = ["kernel"],
+    template = "//target/veer:linker_script_template",
+)
+
+rust_binary(
+    name = "target",
+    srcs = ["target.rs"],
+    edition = "2024",
+    tags = ["kernel"],
+    target_compatible_with = TARGET_COMPATIBLE_WITH,
+    deps = [
+        ":codegen",
+        ":linker_script",
+        "//target/veer:config",
+        "//target/veer:entry",
+        "//target/veer/peripherals:wdt",
+        "@pigweed//pw_kernel/arch/riscv:arch_riscv",
+        "@pigweed//pw_kernel/kernel",
+        "@pigweed//pw_kernel/subsys/console:console_backend",
+        "@pigweed//pw_kernel/target:target_common",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)
+
+# On-target test for //services/i3c/server-runtime: the server process runs the
+# real reactor; the client process drives //services/i3c/client over client-ipc.
+multi_process_app(
+    name = "i3c_service",
+    processes = [
+        ":server",
+        ":client",
+    ],
+    tags = ["kernel"],
+)
+
+rust_process(
+    name = "server",
+    srcs = ["server.rs"],
+    codegen_crate_name = "server_codegen",
+    edition = "2024",
+    tags = ["kernel"],
+    deps = [
+        "//hal/blocking",
+        "//services/i3c/server:i3c_server",
+        "//services/i3c/server-runtime:i3c_server_runtime",
+        "//target/veer/peripherals/i3c",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+    ],
+)
+
+rust_process(
+    name = "client",
+    srcs = ["client.rs"],
+    codegen_crate_name = "client_codegen",
+    edition = "2024",
+    tags = ["kernel"],
+    deps = [
+        "//services/i3c/api:i3c_api",
+        "//services/i3c/client:i3c_client",
+        "//services/i3c/client-ipc:i3c_client_ipc",
+        "@pigweed//pw_kernel/userspace",
+        "@pigweed//pw_log/rust:pw_log",
+        "@pigweed//pw_status/rust:pw_status",
+    ],
+)
+
+veer_system_image(
+    name = "i3c_service_image",
+    apps = [":i3c_service"],
+    kernel = ":target",
+    platform = "//target/veer",
+    system_config = ":system_config",
+    tags = ["kernel"],
+)
+
+rust_binary_no_panics_test(
+    name = "no_panics_test",
+    binary = ":i3c_service_image",
+    tags = ["kernel"],
+)
+
+app_no_panics_test(
+    name = "app_no_panics_test",
+    image = ":i3c_service_image",
+    tags = ["kernel"],
+)
+
+# The host side drives the firmware through caliptra_mcu_hw_model, following
+# caliptra-mcu-sw's own test_i3c_services: a private write over the I3C socket
+# the model provides. On the emulator the model is the emulator; on the VCK190
+# it forwards the socket to the FPGA's I3C host controller. Generates
+# i3c_service_test_emulator and i3c_service_test_fpga.
+caliptra_test(
+    name = "i3c_service_test",
+    srcs = ["host_test.rs"],
+    mcu_image = ":i3c_service_image",
+    deps = ["//third_party/caliptra/caliptra-mcu-sw:mcu_testing_common"],
+)

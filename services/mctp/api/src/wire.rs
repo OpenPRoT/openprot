@@ -269,14 +269,11 @@ impl MctpResponseHeader {
 // Constants
 // ============================================================================
 
-/// Maximum MCTP payload size.
-pub const MAX_PAYLOAD_SIZE: usize = 1023;
-
-/// Maximum total request size (header + payload).
-pub const MAX_REQUEST_SIZE: usize = MctpRequestHeader::SIZE + MAX_PAYLOAD_SIZE;
-
-/// Maximum total response size (header + payload).
-pub const MAX_RESPONSE_SIZE: usize = MctpResponseHeader::SIZE + MAX_PAYLOAD_SIZE;
+/// Maximum total request/response size accepted by this wire codec.
+///
+/// Payload policy is enforced by the concrete stack implementation
+/// (`mctp-estack` via `mctp-lib` config), not by this protocol module.
+pub const MAX_WIRE_MESSAGE_SIZE: usize = u16::MAX as usize + MctpRequestHeader::SIZE;
 
 /// Sentinel value for "no handle".
 pub const NO_HANDLE: u32 = 0xFFFF_FFFF;
@@ -382,10 +379,10 @@ pub fn encode_send(
     ic: bool,
     payload: &[u8],
 ) -> Result<usize, WireError> {
-    if payload.len() > MAX_PAYLOAD_SIZE {
+    let total = MctpRequestHeader::SIZE + payload.len();
+    if total > MAX_WIRE_MESSAGE_SIZE {
         return Err(WireError::PayloadTooLarge);
     }
-    let total = MctpRequestHeader::SIZE + payload.len();
     if buf.len() < total {
         return Err(WireError::BufferTooSmall);
     }
@@ -412,8 +409,16 @@ pub fn encode_send(
         handle: handle.unwrap_or(NO_HANDLE),
         tag: tag.unwrap_or(0),
     };
-    buf[..MctpRequestHeader::SIZE].copy_from_slice(&header.to_bytes());
-    buf[MctpRequestHeader::SIZE..total].copy_from_slice(payload);
+    let (head, body) = buf
+        .get_mut(..total)
+        .and_then(|msg| msg.split_at_mut_checked(MctpRequestHeader::SIZE))
+        .ok_or(WireError::BufferTooSmall)?;
+    for (d, s) in head.iter_mut().zip(header.to_bytes()) {
+        *d = s;
+    }
+    for (d, s) in body.iter_mut().zip(payload) {
+        *d = *s;
+    }
     Ok(total)
 }
 
@@ -480,10 +485,13 @@ pub fn encode_recv_response(
     tag: u8,
     payload: &[u8],
 ) -> Result<usize, WireError> {
-    if payload.len() > MAX_PAYLOAD_SIZE {
+    let Ok(payload_len_u16) = u16::try_from(payload.len()) else {
+        return Err(WireError::PayloadTooLarge);
+    };
+    let total = MctpResponseHeader::SIZE + payload.len();
+    if total > MAX_WIRE_MESSAGE_SIZE {
         return Err(WireError::PayloadTooLarge);
     }
-    let total = MctpResponseHeader::SIZE + payload.len();
     if buf.len() < total {
         return Err(WireError::BufferTooSmall);
     }
@@ -493,7 +501,7 @@ pub fn encode_recv_response(
         msg_type,
         eid,
         handle: 0,
-        payload_len: payload.len() as u16,
+        payload_len: payload_len_u16,
         tag,
     };
     buf[..MctpResponseHeader::SIZE].copy_from_slice(&resp.to_bytes());
@@ -686,7 +694,7 @@ mod tests {
     #[test]
     fn send_payload_too_large() {
         let mut buf = [0u8; 2048];
-        let oversized = [0u8; MAX_PAYLOAD_SIZE + 1];
+        let oversized = [0u8; MAX_WIRE_MESSAGE_SIZE + 1];
         assert_eq!(
             encode_send(&mut buf, None, 1, None, None, false, &oversized),
             Err(WireError::PayloadTooLarge)
@@ -846,8 +854,8 @@ mod tests {
 
     #[test]
     fn encode_recv_response_payload_too_large() {
-        let mut buf = [0u8; 2048];
-        let oversized = [0u8; MAX_PAYLOAD_SIZE + 1];
+        let mut buf = [0u8; MAX_WIRE_MESSAGE_SIZE + 1];
+        let oversized = [0u8; MAX_WIRE_MESSAGE_SIZE + 1];
         assert_eq!(
             encode_recv_response(&mut buf, 1, false, 0, 0, &oversized),
             Err(WireError::PayloadTooLarge)

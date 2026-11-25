@@ -98,6 +98,16 @@ The `wire` module implements binary request/response encoding.
 It is used internally by transport client implementations and server endpoints;
 applications do not use it directly.
 
+## Payload size policy
+
+Payload sizing is configured in `mctp-estack` (consumed via `mctp-lib`),
+not in this API crate. The authoritative value is `mctp_lib::config::MAX_PAYLOAD`
+(`mctp_estack::config::MAX_PAYLOAD`), configured at build time through
+`MCTP_ESTACK_MAX_MESSAGE`.
+
+This `wire` module intentionally avoids a stack-specific hard-coded payload
+limit so client/server behavior follows the stack configuration.
+
 ## Dependencies
 
 This crate currently has no external Rust crate dependencies.

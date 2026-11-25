@@ -1,7 +1,7 @@
 # Licensed under the Apache-2.0 license
 # SPDX-License-Identifier: Apache-2.0
 
-load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_library")
+load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_library", "rust_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -24,5 +24,11 @@ rust_library(
 
 rust_doc(
     name = "blocking_doc",
+    crate = ":blocking",
+)
+
+# The crate's own unit tests (the facade fakes, address validation, and so on).
+rust_test(
+    name = "blocking_test",
     crate = ":blocking",
 )

@@ -14,5 +14,6 @@ rust_library(
     deps = [
         "//services/mctp/api:mctp_api",
         "@pigweed//pw_kernel/userspace",
+        "@rust_crates//:mctp-lib",
     ],
 )
