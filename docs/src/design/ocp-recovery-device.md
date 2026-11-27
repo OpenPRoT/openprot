@@ -79,6 +79,18 @@ period in `PROT_CAP` byte 14, and the value has to be non-zero, because
 Recovery Agent starts polling, how often it polls and how many times it
 streams again are Recovery Agent policy, outside this design.
 
+The reason code in `DEVICE_STATUS` says why the eRoT entered recovery.
+Table 2 of the spec takes the reason for `RecoveryMode` and
+`RecoveryPending` from the previous boot, and both rows name forced
+recovery and an error in the previous boot as causes. In this design
+the boot selector starts the OCP recovery firmware after it has
+rejected the local images or used up the retries of the active slot,
+so the eRoT reports the error of the previous boot. For the
+operational image, the codes from Table 3 are `MainFirmwareMissing`
+(0xb), `MainFirmwareAuthFailure` (0xc) and `MainFirmwareRollback`
+(0xd). The sequence diagram starts after the boot selector rejected
+the signature of the operational image.
+
 The serving loop and the recovery flow of the OCP recovery firmware run
 as separate execution contexts. The interface and the `FifoSink` hold
 state that the serving loop writes inside each `dispatch` call, so
@@ -100,7 +112,7 @@ sequenceDiagram
     participant Flow as eRoT recovery flow
     end
 
-    Flow->>RF: set_device_state(RecoveryMode, FlashlessStreamingBoot)
+    Flow->>RF: set_device_state(RecoveryMode, MainFirmwareAuthFailure)
     Flow->>RF: set_recovery_status(AwaitingImage, image 0)
 
     RA->>RF: read PROT_CAP (0x22)
@@ -108,7 +120,7 @@ sequenceDiagram
     RA->>RF: read DEVICE_ID (0x23)
     RF-->>RA: vendor and device identifiers
     RA->>RF: read DEVICE_STATUS (0x24)
-    RF-->>RA: device state RecoveryMode (0x3), reason 0x12
+    RF-->>RA: device state RecoveryMode (0x3), reason 0xc
 
     RA->>RF: write INDIRECT_FIFO_CTRL (0x2d): CMS, reset, image size
     RF->>Staging: begin_image(size_bytes)
@@ -124,7 +136,7 @@ sequenceDiagram
         RF-->>RA: write index, read index, EMPTY
     end
 
-    Flow->>RF: set_device_state(RecoveryPending, FlashlessStreamingBoot)
+    Flow->>RF: set_device_state(RecoveryPending, MainFirmwareAuthFailure)
 
     RA->>RF: write RECOVERY_CTRL (0x26): CMS, image selection 0x1 (image from the CMS byte 0 selects), activate 0xf
     Flow->>RF: take_activation()
@@ -237,7 +249,7 @@ the reset writes the status registers.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> AwaitingImage: enter recovery mode,<br/>reason 0x12
+    [*] --> AwaitingImage: enter recovery mode,<br/>error of the previous boot
     AwaitingImage --> ReceivingImage: INDIRECT_FIFO_CTRL announces a size
     ReceivingImage --> ReceivingImage: each INDIRECT_FIFO_DATA write appends
     ReceivingImage --> AwaitingActivation: every announced byte received,<br/>DEVICE_STATUS reports RecoveryPending
@@ -439,10 +451,16 @@ OCP Recovery.
 - Which state does the eRoT report after a streamed image boots? The
   spec has a Device that runs operational firmware report `Healthy`, and
   this design reports `RunningRecoveryImage`.
-- Which reason code does the eRoT report on entering recovery? The
-  diagrams report `FlashlessStreamingBoot` (0x12), which fits a Device
-  that holds no local image. An eRoT whose local images failed still
-  holds local images, so which reason fits that eRoT is open.
+- Which reason code does the eRoT report when the boot selector rejects
+  one local image as corrupt (0xb) and another on its signature (0xc)?
+  Which code does the eRoT report when the active slot uses up its
+  retries? How does the boot selector pass the error to the OCP
+  recovery firmware?
+- Does `FlashlessStreamingBoot` (0x12) also cover streaming boot after
+  the boot selector rejects the local images? Table 3 describes 0x12 as
+  "Flashless/Streaming Boot". The Recovery Agent selects flashless boot
+  mode (section 7.3) by writing 0xe to `DEVICE_RESET` byte 1, and the
+  spec does not say whether 0x12 is limited to that mode.
 - Can the recovery flow run on `RecoveryDevice`, over a `RecoveryDriver`
   that `RecoveryInterface` implements? The eRoT and a Device with a
   recovery block would then share one sequence, and the differences
@@ -465,3 +483,6 @@ that loads the rest over PLDM firmware update.
 - The draft of the `services/ocp-recovery` crates advertises version
   1.1 in `PROT_CAP`, and `FifoSink` has no way to report that the FIFO
   is full, so a `FifoSink` that takes chunks later cannot set FULL.
+- The tests of the `services/ocp-recovery` draft enter recovery with
+  `FlashlessStreamingBoot` (0x12), and the diagrams report
+  `MainFirmwareAuthFailure` (0xc).
