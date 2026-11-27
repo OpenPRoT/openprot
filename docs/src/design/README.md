@@ -20,6 +20,15 @@ of the project.
 -   [**MMIO Policy**](./mmio.md): Where raw register access is allowed, the
     ownership and safety invariants at that boundary, prohibited patterns, and
     how they are enforced. Targets add their own rules in `target/<name>/MMIO.md`.
+-   [**OCP Recovery: the eRoT as Device**](./ocp-recovery-device.md):
+    The eRoT as the Device of the OCP Recovery interface, which a
+    Recovery Agent on the platform drives. Covers the streaming sequence,
+    where the pushed bytes land, who verifies and boots the image, and
+    which image serves the registers.
+-   [**OCP Recovery: the eRoT as Recovery Agent**](./ocp-recovery-agent.md):
+    The eRoT as Recovery Agent for a downstream device that serves the
+    OCP Recovery interface. Covers when the role runs and the Recovery
+    Agent sequence.
 -   [**Orchestrator**](./orchestrator/orchestrator-overview.md): The eRoT boot-sequence state
     machine (`services/orchestrator/sm`). Covers the two-tier firmware
     verification model (`ComponentAttrs`, eRoT gate, iRoT gate), the
