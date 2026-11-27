@@ -15,5 +15,8 @@ pub mod scu;
 pub mod sgpiom;
 pub mod smc;
 pub mod spimonitor;
+pub mod tokens;
 pub mod uart;
 pub mod wdt;
+
+pub use tokens::Peripherals;

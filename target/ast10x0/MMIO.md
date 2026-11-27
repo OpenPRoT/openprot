@@ -14,6 +14,12 @@ Registers are accessed through `ast1060_pac`, an svd2rust-style PAC pinned in
 `Pac::ptr()`, use `Pac::PTR`, dereference a register-block pointer, or use
 volatile accesses. Everything above them uses the safe methods.
 
+A peripheral that has moved to ownership tokens (see Ownership) has no
+`registers.rs`. Its PAC peripheral is created in one place,
+`peripherals/tokens.rs`, and its driver reaches the register block through the
+PAC's safe `Deref`, with no raw pointer. HACE is the first: `hace/device.rs`
+holds `ast1060_pac::Hace` and implements the typed register methods on `Hace`.
+
 ```rust
 // peripherals/gpio/registers.rs  (the boundary)
 pub struct GpioRegisters {
@@ -51,7 +57,14 @@ Specific to this target:
 
 The target form is one owned token per peripheral (`Peripherals::take()` guarded
 by an atomic flag, `unsafe steal()` as the escape hatch), as in embassy-stm32,
-embassy-nrf and esp-hal. It does not exist yet (#756). Until it does:
+embassy-nrf and esp-hal. `ast10x0_peripherals::Peripherals` (`peripherals/tokens.rs`)
+provides it: `Peripherals::take()` returns one zero-sized token per `ast1060_pac`
+peripheral, once, and `unsafe Peripherals::steal()` is the escape hatch. Each token
+wraps the PAC peripheral and hands it over only inside the crate (`into_pac()`), so
+a driver's `new(token, ..)` consumes the token and keeps the PAC peripheral. Only
+HACE (`Hace::new`) and the SCU wrapper (`ScuRegisters::new`) take a token so far
+(#756); the other HALs still use the legacy constructors. Until a peripheral has a
+token:
 
 - Calling an existing `unsafe` wrapper constructor (`new_global*()`,
   `Backend::new()`) is allowed when a `// SAFETY:` comment names who owns the
@@ -81,12 +94,14 @@ reached through `addr_of_mut!`, and `NVIC::unmask`.
 
 ## Patterns in use today
 
-Nothing in the tree calls `Peripherals::take()`. Ownership is a `# Safety`
-comment at each call site. The patterns found, best to worst:
+Only the HACE tests (`hace_aes`, `hace_sha256`) call `Peripherals::take()`. HACE has
+no `unsafe` constructor left. Elsewhere ownership is a
+`# Safety` comment at each call site. The patterns found, best to worst:
 
 | # | Pattern | Example | Verdict |
 |---|---------|---------|---------|
-| 1 | Register wrapper: `!Send + !Sync` struct over `*const RegisterBlock`, `unsafe fn new_global()`, safe `regs()` | `scu/registers.rs`, `gpio/registers.rs`, `hace/registers.rs`, `i3c/registers.rs` | Boundary form. Keep. The `unsafe` constructor is legacy. |
+| 1 | Register wrapper: `!Send + !Sync` struct over `*const RegisterBlock`, `unsafe fn new_global()`, safe `regs()` | `scu/registers.rs`, `gpio/registers.rs`, `i3c/registers.rs` | Boundary form. Keep. The `unsafe` constructor is legacy. |
+| 1a | Token-owned driver: holds the PAC peripheral from its token, safe `Deref` to the register block, `new(token, ..)` | `hace/device.rs` | Target form. |
 | 2 | Inline `unsafe { &*Pac::ptr() }` in driver code | `gpio/mod.rs` (about 14 times), `i2c/types.rs`, `i2c/global.rs`, `scu/routing.rs`, `board/src/spim_wiring.rs` | Violation. |
 | 3 | `Pac::steal()` | `entry.rs` (`jtag_init`) | Allowed only as the early-boot exception above. |
 | 4 | Const pointer such as `&*Secure::PTR` | `otp/mod.rs` | Violation. |
@@ -113,10 +128,11 @@ pub fn into_pull_down_input(self, regs: &GpioRegisters) -> Pin<Input<PullDown>> 
 
 ```rust
 // Bad: constructor that asks the caller to promise exclusivity.
-let dev = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
+let sgpiom = unsafe { Sgpiom::new_global() };
 
 // Good (target form): ownership is proven by moving the token in.
-let dev = HaceDevice::new(peripherals.hace, |_| core::hint::spin_loop());
+let scu = ScuRegisters::new(peripherals.scu);
+let dev = Hace::new(peripherals.hace, &scu);
 ```
 
 ## Enforcement
@@ -124,7 +140,7 @@ let dev = HaceDevice::new(peripherals.hace, |_| core::hint::spin_loop());
 The Semgrep rule [`mmio.semgrep.yml`](mmio.semgrep.yml) flags `Pac::ptr()`,
 `Pac::PTR`, `Pac::steal()`, `read_volatile` / `write_volatile`, hard-coded
 address casts (`0x... as *const T`), and `pub unsafe fn new*` outside
-`registers.rs`. The
+`registers.rs` and `tokens.rs`. The
 [`ast10x0-mmio.yml`](../../.github/workflows/ast10x0-mmio.yml) workflow runs it
 on pull requests that change `target/ast10x0/`. It compares against the base
 commit, so only violations the pull request introduces fail, including new lines
@@ -149,8 +165,10 @@ semgrep --config target/ast10x0/mmio.semgrep.yml --error \
 
 ## Adding or changing a peripheral
 
-1. Put raw access in `peripherals/<peripheral>/registers.rs`, behind safe typed
-   methods.
+1. Prefer a token-owned driver: take the token in `new`, keep the PAC
+   peripheral it hands over, and put the typed register methods on the driver
+   (as `hace/device.rs` does). Otherwise put raw access in
+   `peripherals/<peripheral>/registers.rs`, behind safe typed methods.
 2. Keep drivers, services and backends free of PAC types and `unsafe` register
    access.
 3. Prefer taking ownership over an `unsafe` constructor (see Ownership).

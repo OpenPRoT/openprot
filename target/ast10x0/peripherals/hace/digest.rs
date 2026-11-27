@@ -10,9 +10,9 @@ use super::context::{
     HashContext, HACE_BLOCK_SIZE, HACE_BLOCK_SIZE_128, SHA256_DIGEST_SIZE, SHA256_IV,
     SHA384_DIGEST_SIZE, SHA384_IV, SHA512_DIGEST_SIZE, SHA512_IV,
 };
+use super::device::Hace;
 use super::error::HaceError;
 use super::helpers::{fill_padding, load_iv, ptr_to_u32};
-use super::registers::HaceRegisters;
 use core::marker::PhantomData;
 use openprot_hal_blocking::digest::scoped::{DigestCtrlReset, DigestInit, DigestOp};
 use openprot_hal_blocking::digest::{
@@ -95,65 +95,30 @@ impl HaceDigestSpec for Sha2_512 {
     }
 }
 
-pub struct HaceDigest<'a, T: DigestAlgorithm> {
-    pub(crate) regs: HaceRegisters,
+pub struct HaceDigest<'a, T: DigestAlgorithm, Y: FnMut(u32)> {
+    /// The engine owner. The exclusive borrow is the arbiter: a second `HaceDigest`/`HaceHmac`/
+    /// `AesCipher` needs `&mut Hace` again, which is a borrow-check error while this one lives.
+    pub(crate) dev: &'a mut Hace<Y>,
     pub(crate) ctx: &'a mut HashContext,
-    pub(crate) poll_budget: u32,
-    /// Cooperative yield hook, borrowed from the originating [`HaceDevice`] and
-    /// invoked once between every completion poll. Type-erased so the adapter
-    /// (and the `Digest*` trait impls) need not be generic over the strategy.
-    pub(crate) yield_fn: &'a mut dyn FnMut(u32),
-    /// Cache flush hook: invalidates stale CPU cache lines after HACE DMA.
-    /// Injected from [`HaceDevice`] so this module has no direct SCU dependency.
-    pub(crate) cache_flush: fn(),
     _algo: PhantomData<T>,
 }
 
-impl<'a, T: DigestAlgorithm> HaceDigest<'a, T> {
-    /// Construct a digest adapter from an existing register handle, context,
-    /// poll budget, and cooperative yield hook.
-    pub(crate) fn new(
-        regs: HaceRegisters,
-        ctx: &'a mut HashContext,
-        poll_budget: u32,
-        yield_fn: &'a mut dyn FnMut(u32),
-        cache_flush: fn(),
-    ) -> Self {
+impl<'a, T: DigestAlgorithm, Y: FnMut(u32)> HaceDigest<'a, T, Y> {
+    /// Construct a digest adapter from a [`Hace`].
+    ///
+    /// Safe: a `Hace` can only be built from the HACE ownership token, so the exclusive borrow
+    /// is exclusive access to the engine for the lifetime of the returned [`HaceDigest`].
+    pub fn from_device(dev: &'a mut Hace<Y>) -> Self {
+        // SAFETY: `dev` holds the sole pointer to this `.ram_nc` context (acquired once at
+        // construction from the token), and the live `&'a mut Hace` gates it, so no other `&mut`
+        // to it is live. The context is not part of `Hace`'s own memory, so holding both `&mut`
+        // does not alias.
+        let ctx: &'a mut HashContext = unsafe { &mut *dev.ctx };
         Self {
-            regs,
+            dev,
             ctx,
-            poll_budget,
-            yield_fn,
-            cache_flush,
             _algo: PhantomData,
         }
-    }
-
-    /// Construct a digest adapter from a [`HaceDevice`].
-    ///
-    /// # Safety
-    /// Caller must ensure no concurrent or reentrant HACE access for the
-    /// lifetime of the returned [`HaceDigest`].
-    pub unsafe fn from_device<Y: FnMut(u32)>(device: &'a mut super::device::HaceDevice<Y>) -> Self {
-        // Borrow split. `regs`/`poll_budget`/`ctx` are `Copy`d out; the
-        // retained `&'a mut device.yield_fn` reborrow pins `&'a mut HaceDevice`
-        // for the whole life of the returned op — that is the arbiter: a
-        // second `HaceDigest`/`HaceHmac` needs `&mut device` again and is a
-        // borrow-check error while this one lives. The context is no longer
-        // minted by a `shared_ctx_ptr()` free accessor at each call; it is the
-        // device's sole pointer, so its transient `&mut` is reached only
-        // *through* that exclusive device borrow
-        // (`borrow-arbitrated-engine-exclusivity`, Checklist box 2/4).
-        let regs = device.regs;
-        let poll_budget = device.poll_budget;
-        let cache_flush = device.cache_flush;
-        // SAFETY: the device holds the sole pointer to this `.ram_nc` context
-        // (acquired once at its `unsafe fn new*` single-instance gate); the
-        // caller upholds non-reentrancy and the live `&'a mut device` (pinned
-        // by `yield_fn` below) gates it, so no other `&mut` to it is live.
-        let ctx: &'a mut HashContext = unsafe { &mut *device.ctx };
-        let yield_fn: &'a mut dyn FnMut(u32) = &mut device.yield_fn;
-        Self::new(regs, ctx, poll_budget, yield_fn, cache_flush)
     }
 
     /// DMA one full block held in `ctx.buffer` (always `.ram_nc`) to the engine.
@@ -170,33 +135,33 @@ impl<'a, T: DigestAlgorithm> HaceDigest<'a, T> {
         let digest_addr = ptr_to_u32(self.ctx.digest.as_ptr())?;
         let method = self.ctx.method;
 
-        self.regs.clear_hash_intflag();
-        self.regs
+        self.dev.clear_hash_intflag();
+        self.dev
             .program_hash_operation(sg_addr, digest_addr, bufcnt, method);
 
-        for _ in 0..self.poll_budget {
-            if self.regs.hash_intflag_is_set() {
+        for _ in 0..self.dev.poll_budget {
+            if self.dev.hash_intflag_is_set() {
                 self.ctx.bufcnt = 0;
                 return Ok(());
             }
-            (self.yield_fn)(POLL_YIELD_NS);
+            (self.dev.yield_fn)(POLL_YIELD_NS);
         }
 
-        self.regs.stop_hash_operation();
+        self.dev.stop_hash_operation();
         Err(HaceError::Timeout)
     }
 }
 
-impl<'a, T: DigestAlgorithm> ErrorType for HaceDigest<'a, T> {
+impl<'a, T: DigestAlgorithm, Y: FnMut(u32)> ErrorType for HaceDigest<'a, T, Y> {
     type Error = HaceError;
 }
 
-impl<'a, T: HaceDigestSpec> DigestInit<T> for HaceDigest<'a, T>
+impl<'a, T: HaceDigestSpec, Y: FnMut(u32)> DigestInit<T> for HaceDigest<'a, T, Y>
 where
     T::Digest: IntoBytes,
 {
     type OpContext<'b>
-        = HaceDigest<'b, T>
+        = HaceDigest<'b, T, Y>
     where
         Self: 'b;
 
@@ -217,17 +182,14 @@ where
         self.ctx.bufcnt = 0;
         self.ctx.digcnt = [0; 2];
         Ok(HaceDigest {
-            regs: self.regs,
+            dev: &mut *self.dev,
             ctx: &mut *self.ctx,
-            poll_budget: self.poll_budget,
-            yield_fn: &mut *self.yield_fn,
-            cache_flush: self.cache_flush,
             _algo: PhantomData,
         })
     }
 }
 
-impl<'a, T: HaceDigestSpec> DigestOp for HaceDigest<'a, T>
+impl<'a, T: HaceDigestSpec, Y: FnMut(u32)> DigestOp for HaceDigest<'a, T, Y>
 where
     T::Digest: IntoBytes,
 {
@@ -309,38 +271,38 @@ where
         let digest_addr = ptr_to_u32(this.ctx.digest.as_ptr())?;
         let method = this.ctx.method;
 
-        this.regs.clear_hash_intflag();
-        this.regs
+        this.dev.clear_hash_intflag();
+        this.dev
             .program_hash_operation(sg_addr, digest_addr, bufcnt, method);
 
-        for _ in 0..this.poll_budget {
-            if this.regs.hash_intflag_is_set() {
+        for _ in 0..this.dev.poll_budget {
+            if this.dev.hash_intflag_is_set() {
                 // Invalidate stale CPU cache lines over the digest buffer.
-                (this.cache_flush)();
+                (this.dev.cache_flush)();
                 let result = T::digest_from_context(this.ctx);
                 // Cleanup context (mirrors cleanup_context in aspeed-rust).
                 this.ctx.bufcnt = 0;
                 this.ctx.digcnt = [0; 2];
                 this.ctx.buffer.fill(0);
                 this.ctx.digest.fill(0);
-                this.regs.stop_hash_operation();
+                this.dev.stop_hash_operation();
                 return Ok(result);
             }
-            (this.yield_fn)(POLL_YIELD_NS);
+            (this.dev.yield_fn)(POLL_YIELD_NS);
         }
 
-        this.regs.stop_hash_operation();
+        this.dev.stop_hash_operation();
         Err(HaceError::Timeout)
     }
 }
 
-impl<'a, T: DigestAlgorithm> DigestCtrlReset for HaceDigest<'a, T> {
+impl<'a, T: DigestAlgorithm, Y: FnMut(u32)> DigestCtrlReset for HaceDigest<'a, T, Y> {
     fn reset(&mut self) -> Result<(), Self::Error> {
         self.ctx.bufcnt = 0;
         self.ctx.digcnt = [0; 2];
         self.ctx.buffer.fill(0);
         self.ctx.digest.fill(0);
-        self.regs.stop_hash_operation();
+        self.dev.stop_hash_operation();
         Ok(())
     }
 }

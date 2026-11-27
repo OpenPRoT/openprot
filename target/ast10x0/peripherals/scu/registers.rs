@@ -5,6 +5,7 @@
 
 use super::pins::ScuMmio;
 use crate::hal::field_mux::RegisterAccess;
+use crate::tokens::Scu;
 use ast1060_pac as device;
 use core::marker::PhantomData;
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -47,7 +48,7 @@ impl ScuRegisters {
     /// Caller must ensure:
     /// - `base` points to a valid SCU register block.
     /// - access to the SCU instance is serialized appropriately.
-    const unsafe fn new(base: *const device::scu::RegisterBlock) -> Self {
+    const unsafe fn from_ptr(base: *const device::scu::RegisterBlock) -> Self {
         Self {
             base,
             _not_send_sync: PhantomData,
@@ -60,7 +61,18 @@ impl ScuRegisters {
     /// Caller must ensure access to the singleton SCU is coordinated.
     pub const unsafe fn new_global() -> Self {
         // SAFETY: Caller upholds the singleton access contract.
-        unsafe { Self::new(device::Scu::ptr()) }
+        unsafe { Self::from_ptr(device::Scu::ptr()) }
+    }
+
+    /// Create a register accessor from the SCU ownership token.
+    ///
+    /// The token proves the caller owns the peripheral, so this is safe. The SCU is shared by
+    /// many drivers: build one accessor and lend it as `&ScuRegisters` (#757).
+    #[must_use]
+    pub fn new(_scu: Scu) -> Self {
+        // SAFETY: the consumed token is the only owner of the SCU block, whose PAC pointer is
+        // valid for the life of the program.
+        unsafe { Self::from_ptr(device::Scu::ptr()) }
     }
 
     #[inline]

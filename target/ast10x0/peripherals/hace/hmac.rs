@@ -12,7 +12,8 @@
 //!
 //! One-shot, like the authoritative model (goal.md §1.7: "HMAC — NOT
 //! streaming"). Each sub-hash runs through the verified public [`HaceDigest`]
-//! path (`HaceDevice` → `from_device` → `DigestInit`).
+//! path (`Hace` → `from_device` → `DigestInit`), on the caller's [`Hace`],
+//! reborrowed from the controller's exclusive borrow.
 //!
 //! Key reduction always copies the raw key bytes through a `.ram_nc` staging
 //! buffer before DMA, ensuring the HACE engine reads from non-cacheable SRAM
@@ -21,7 +22,7 @@
 //!
 //! Correctness authority: published RFC-4231 known-answer vectors (§2.1).
 
-use super::device::HaceDevice;
+use super::device::Hace;
 use super::digest::HaceDigest;
 use super::error::HaceError;
 use core::marker::PhantomData;
@@ -50,17 +51,18 @@ pub const HMAC_MSG_CAP: usize = 1024;
 // overflows (HardFault lockup) by rfc4231-3. With all big buffers here,
 // `HaceHmacCtx` is just three scalars (~20 bytes) on the stack.
 //
-// Safety contract: only one HMAC operation is live at a time (the
-// single-instance/non-reentrant `HaceDevice` contract). `init()` zeroes all
-// fields before starting a new operation.
+// Safety contract: only one HMAC operation is live at a time. Every HMAC
+// operation holds the exclusive `&mut Hace` borrow, and a `Hace` can only be
+// built from the HACE ownership token. `init()` zeroes all fields before
+// starting a new operation.
 struct HmacNcBufs {
     key: core::cell::UnsafeCell<[u8; HMAC_KEY_CAP]>,
     ipad: core::cell::UnsafeCell<[u8; 128]>,
     opad: core::cell::UnsafeCell<[u8; 128]>,
     msg: core::cell::UnsafeCell<[u8; HMAC_MSG_CAP]>,
 }
-// SAFETY: single-threaded HACE driver; non-reentrant `HaceDevice` contract
-// serialises all HMAC operations.
+// SAFETY: every access is made while holding the one `&mut Hace` borrow (see
+// above), which serialises all HMAC operations.
 unsafe impl Sync for HmacNcBufs {}
 
 #[unsafe(link_section = ".ram_nc")]
@@ -75,13 +77,8 @@ static HMAC_NC: HmacNcBufs = HmacNcBufs {
 /// algorithm's `Digest`. Used for all three HMAC sub-hashes so HMAC rides
 /// exactly the digest path the KAT suite covers.
 macro_rules! one_shot {
-    ($inner:ty, $algo:expr, $pb:expr, $input:expr) => {{
-        // SAFETY: the whole HACE driver is single-threaded / non-reentrant;
-        // the HMAC controller upholds that contract for its sub-hashes.
-        let dev = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
-        let mut dev = dev.with_timeout_polls($pb);
-        // SAFETY: same single-threaded exclusivity contract.
-        let mut dd = unsafe { HaceDigest::<$inner>::from_device(&mut dev) };
+    ($inner:ty, $algo:expr, $dev:expr, $input:expr) => {{
+        let mut dd = HaceDigest::<$inner, _>::from_device(&mut *$dev);
         let mut op = dd.init($algo)?;
         op.update($input)?;
         op.finalize()?
@@ -123,50 +120,46 @@ impl HmacKey {
 
 impl KeyHandle for HmacKey {}
 
-/// HMAC controller. Holds only the poll budget; each sub-hash binds the
-/// singleton HACE through the standard [`HaceDevice`] path.
-pub struct HaceHmac {
-    poll_budget: u32,
+/// HMAC controller. Holds the caller's exclusive [`Hace`] borrow; every
+/// sub-hash reborrows it through the standard [`HaceDigest`] path.
+pub struct HaceHmac<'d, Y: FnMut(u32)> {
+    dev: &'d mut Hace<Y>,
 }
 
-impl HaceHmac {
-    pub(crate) fn new(poll_budget: u32) -> Self {
-        Self { poll_budget }
-    }
-
-    /// Construct an HMAC controller from a [`super::device::HaceDevice`].
+impl<'d, Y: FnMut(u32)> HaceHmac<'d, Y> {
+    /// Construct an HMAC controller from a [`Hace`].
     ///
-    /// # Safety
-    /// Caller must ensure no concurrent or reentrant HACE access for the
-    /// lifetime of HMAC operations created from this controller.
-    pub unsafe fn from_device<Y: FnMut(u32)>(device: &mut super::device::HaceDevice<Y>) -> Self {
-        Self::new(device.poll_budget)
+    /// Safe: a `Hace` can only be built from the HACE ownership token, so the
+    /// exclusive borrow is exclusive access to the engine and to the HMAC
+    /// buffers for the lifetime of this controller and its operations.
+    pub fn from_device(dev: &'d mut Hace<Y>) -> Self {
+        Self { dev }
     }
 }
 
-impl MacErrorType for HaceHmac {
+impl<Y: FnMut(u32)> MacErrorType for HaceHmac<'_, Y> {
     type Error = HaceError;
 }
 
 /// In-flight HMAC operation. All large buffers (ipad, opad, key, msg) live in
-/// the `.ram_nc` static `HMAC_NC`; this struct holds only the scalars needed
-/// to drive `finalize()` (~20 bytes on the stack).
-pub struct HaceHmacCtx<Inner> {
+/// the `.ram_nc` static `HMAC_NC`; this struct holds only the engine borrow and
+/// the scalars needed to drive `finalize()`.
+pub struct HaceHmacCtx<'a, Inner, Y: FnMut(u32)> {
+    dev: &'a mut Hace<Y>,
     msg_len: usize,
-    poll_budget: u32,
     _inner: PhantomData<Inner>,
 }
 
-impl<Inner> MacErrorType for HaceHmacCtx<Inner> {
+impl<Inner, Y: FnMut(u32)> MacErrorType for HaceHmacCtx<'_, Inner, Y> {
     type Error = HaceError;
 }
 
 macro_rules! hmac_variant {
     ($mac:ty, $inner:ty, $algo:expr, $b:expr, $nw:expr) => {
-        impl MacInit<$mac> for HaceHmac {
+        impl<'d, Y: FnMut(u32)> MacInit<$mac> for HaceHmac<'d, Y> {
             type Key = HmacKey;
             type OpContext<'a>
-                = HaceHmacCtx<$inner>
+                = HaceHmacCtx<'a, $inner, Y>
             where
                 Self: 'a;
 
@@ -175,7 +168,6 @@ macro_rules! hmac_variant {
                 _algo: $mac,
                 key: HmacKey,
             ) -> Result<Self::OpContext<'a>, HaceError> {
-                let pb = self.poll_budget;
                 let k = key.as_slice();
 
                 // K0: key reduced to <= block_size, then zero-padded to block.
@@ -193,7 +185,7 @@ macro_rules! hmac_variant {
                         }
                         buf.get(..k.len()).unwrap_or(&[])
                     };
-                    let kh = one_shot!($inner, $algo, pb, key_nc);
+                    let kh = one_shot!($inner, $algo, self.dev, key_nc);
                     let hb = kh.as_bytes();
                     if let Some(dst) = k0.get_mut(..hb.len()) {
                         for (d, s) in dst.iter_mut().zip(hb.iter()) {
@@ -231,14 +223,14 @@ macro_rules! hmac_variant {
                 }
 
                 Ok(HaceHmacCtx {
+                    dev: &mut *self.dev,
                     msg_len: 0,
-                    poll_budget: pb,
                     _inner: PhantomData,
                 })
             }
         }
 
-        impl MacOp for HaceHmacCtx<$inner> {
+        impl<Y: FnMut(u32)> MacOp for HaceHmacCtx<'_, $inner, Y> {
             type Output = Digest<$nw>;
 
             fn update(&mut self, input: &[u8]) -> Result<(), HaceError> {
@@ -267,15 +259,13 @@ macro_rules! hmac_variant {
             }
 
             fn finalize(self) -> Result<Self::Output, HaceError> {
-                let pb = self.poll_budget;
+                let dev = self.dev;
 
                 // inner = H(K0^ipad ‖ msg)
                 // Feed ipad and msg via two update() calls — both sourced from
                 // HMAC_NC (.ram_nc), so DMA-safe without any extra copy.
                 let inner = {
-                    let dev = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
-                    let mut dev = dev.with_timeout_polls(pb);
-                    let mut dd = unsafe { HaceDigest::<$inner>::from_device(&mut dev) };
+                    let mut dd = HaceDigest::<$inner, _>::from_device(&mut *dev);
                     let mut op = dd.init($algo)?;
                     // SAFETY: HMAC_NC is exclusively owned by this operation.
                     let ipad = unsafe { &*HMAC_NC.ipad.get() };
@@ -287,9 +277,7 @@ macro_rules! hmac_variant {
                 let inner_bytes = inner.as_bytes();
 
                 // outer = H(K0^opad ‖ inner)
-                let dev = unsafe { HaceDevice::new_global(|_| core::hint::spin_loop()) };
-                let mut dev = dev.with_timeout_polls(pb);
-                let mut dd = unsafe { HaceDigest::<$inner>::from_device(&mut dev) };
+                let mut dd = HaceDigest::<$inner, _>::from_device(dev);
                 let mut op = dd.init($algo)?;
                 // SAFETY: HMAC_NC is exclusively owned by this operation.
                 let opad = unsafe { &*HMAC_NC.opad.get() };

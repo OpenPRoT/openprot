@@ -7,7 +7,7 @@
 //! Correctness is checked with NIST AESAVS/CAVP KATs.
 //!
 //! Deltas:
-//! - A1: borrow-arbitrated exclusivity via `&mut HaceDevice`
+//! - A1: borrow-arbitrated exclusivity via `&mut Hace`
 //! - A2: ciphertext is plain `CT` (IV is separate)
 //! - A3: key/IV context bytes are zeroized after each op and on drop
 //! - A4: invalid block sizing returns `InvalidInput` before programming HW
@@ -18,10 +18,9 @@ use super::constants::{
     HACE_SG_LAST, POLL_YIELD_NS,
 };
 use super::context::CryptoContext;
-use super::device::HaceDevice;
+use super::device::Hace;
 use super::error::HaceError;
 use super::helpers::ptr_to_u32;
-use super::registers::HaceRegisters;
 use core::marker::PhantomData;
 use openprot_hal_blocking::cipher::{
     BlockCipherMode, CipherInit, CipherMode, CipherOp, ErrorType, SymmetricCipher,
@@ -34,47 +33,22 @@ pub const AES_BLOCK: usize = 16;
 ///
 /// Created via [`AesCipher::from_device`]. The retained `&mut` borrow prevents
 /// overlapping AES/digest/HMAC operations.
-pub struct AesCipher<'a> {
-    regs: HaceRegisters,
+pub struct AesCipher<'a, Y: FnMut(u32)> {
+    /// The engine owner; the exclusive borrow is the arbiter.
+    dev: &'a mut Hace<Y>,
     ctx: &'a mut CryptoContext,
-    poll_budget: u32,
-    /// Cooperative yield hook called once per completion poll.
-    yield_fn: &'a mut dyn FnMut(u32),
-    /// Cache flush hook: invalidates stale CPU cache lines after HACE DMA.
-    /// Injected from [`HaceDevice`] so this module has no direct SCU dependency.
-    cache_flush: fn(),
 }
 
-impl<'a> AesCipher<'a> {
-    pub(crate) fn new(
-        regs: HaceRegisters,
-        ctx: &'a mut CryptoContext,
-        poll_budget: u32,
-        yield_fn: &'a mut dyn FnMut(u32),
-        cache_flush: fn(),
-    ) -> Self {
-        Self {
-            regs,
-            ctx,
-            poll_budget,
-            yield_fn,
-            cache_flush,
-        }
-    }
-
-    /// Build an AES adapter from a [`HaceDevice`](super::device::HaceDevice).
+impl<'a, Y: FnMut(u32)> AesCipher<'a, Y> {
+    /// Build an AES adapter from a [`Hace`].
     ///
-    /// # Safety
-    /// No concurrent or reentrant HACE access for the returned lifetime.
-    pub unsafe fn from_device<Y: FnMut(u32)>(device: &'a mut super::device::HaceDevice<Y>) -> Self {
-        // Borrow split; retained `yield_fn` keeps the device exclusively borrowed.
-        let regs = device.regs;
-        let poll_budget = device.poll_budget;
-        let cache_flush = device.cache_flush;
-        // SAFETY: single-instance device + exclusive live borrow gate access.
-        let ctx: &'a mut CryptoContext = unsafe { &mut *device.crypto_ctx };
-        let yield_fn: &'a mut dyn FnMut(u32) = &mut device.yield_fn;
-        Self::new(regs, ctx, poll_budget, yield_fn, cache_flush)
+    /// Safe: a `Hace` can only be built from the HACE ownership token, so the exclusive borrow
+    /// is exclusive access to the engine for the returned lifetime.
+    pub fn from_device(dev: &'a mut Hace<Y>) -> Self {
+        // SAFETY: single-owner `Hace` + exclusive live borrow gate access; the context is not
+        // part of `Hace`'s own memory, so holding both `&mut` does not alias.
+        let ctx: &'a mut CryptoContext = unsafe { &mut *dev.crypto_ctx };
+        Self { dev, ctx }
     }
 
     /// Map AES key length to command bits. Reject AES-192.
@@ -150,21 +124,21 @@ impl<'a> AesCipher<'a> {
         let ctx_base = ptr_to_u32(self.ctx.ctx.as_ptr())?;
         let data_len = len;
 
-        self.regs.clear_crypto_intflag();
-        self.regs
+        self.dev.clear_crypto_intflag();
+        self.dev
             .program_crypto_operation(src_desc, dst_desc, ctx_base, data_len, cmd);
 
         let mut done = false;
-        for _ in 0..self.poll_budget {
-            if self.regs.crypto_intflag_is_set() {
+        for _ in 0..self.dev.poll_budget {
+            if self.dev.crypto_intflag_is_set() {
                 done = true;
                 break;
             }
-            (self.yield_fn)(POLL_YIELD_NS);
+            (self.dev.yield_fn)(POLL_YIELD_NS);
         }
 
         // Invalidate the data cache so the CPU reads what the engine wrote.
-        (self.cache_flush)();
+        (self.dev.cache_flush)();
 
         // Always clear key/IV material from the DMA context buffer.
         self.ctx.ctx = [0u8; 64];
@@ -174,7 +148,7 @@ impl<'a> AesCipher<'a> {
         } else {
             pw_log::error!(
                 "hace: AES timeout: HACE1C={:#010x}, cmd={:#010x}, len={}",
-                self.regs.read_hace1c() as u32,
+                self.dev.read_hace1c() as u32,
                 cmd as u32,
                 len as u32,
             );
@@ -218,7 +192,7 @@ impl<'a> AesCipher<'a> {
     }
 }
 
-impl Drop for AesCipher<'_> {
+impl<Y: FnMut(u32)> Drop for AesCipher<'_, Y> {
     fn drop(&mut self) {
         // Defensive scrub on drop.
         self.ctx.ctx = [0u8; 64];
@@ -277,27 +251,24 @@ impl Drop for AesKey {
     }
 }
 
-/// Fixed-`N` openprot cipher-trait skin bound to one [`HaceDevice`].
+/// Fixed-`N` openprot cipher-trait skin bound to one [`Hace`].
 ///
 /// Each context wraps borrow-arbitrated [`AesCipher`].
 pub struct AesSkin<'d, Y: FnMut(u32), const N: usize> {
-    dev: &'d mut HaceDevice<Y>,
+    dev: &'d mut Hace<Y>,
 }
 
 impl<'d, Y: FnMut(u32), const N: usize> AesSkin<'d, Y, N> {
-    /// Bind the cipher skin to the device.
-    ///
-    /// # Safety
-    /// Same contract as [`AesCipher::from_device`]: no concurrent/reentrant
-    /// HACE access for this skin or derived contexts.
-    pub unsafe fn new(dev: &'d mut HaceDevice<Y>) -> Self {
+    /// Bind the cipher skin to the device. The exclusive borrow covers this skin and every
+    /// context derived from it.
+    pub fn new(dev: &'d mut Hace<Y>) -> Self {
         Self { dev }
     }
 }
 
 /// In-flight trait-skin op: core plus session key/IV.
-pub struct AesOp<'a, const N: usize, M> {
-    core: AesCipher<'a>,
+pub struct AesOp<'a, Y: FnMut(u32), const N: usize, M> {
+    core: AesCipher<'a, Y>,
     key: AesKey,
     iv: [u8; AES_BLOCK],
     _m: PhantomData<M>,
@@ -314,11 +285,11 @@ impl<'d, Y: FnMut(u32), const N: usize> SymmetricCipher for AesSkin<'d, Y, N> {
     type CipherText = [u8; N];
 }
 
-impl<'a, const N: usize, M> ErrorType for AesOp<'a, N, M> {
+impl<'a, Y: FnMut(u32), const N: usize, M> ErrorType for AesOp<'a, Y, N, M> {
     type Error = HaceError;
 }
 
-impl<'a, const N: usize, M> SymmetricCipher for AesOp<'a, N, M> {
+impl<'a, Y: FnMut(u32), const N: usize, M> SymmetricCipher for AesOp<'a, Y, N, M> {
     type Key = AesKey;
     type Nonce = [u8; AES_BLOCK];
     type PlainText = [u8; N];
@@ -329,7 +300,7 @@ macro_rules! cipher_init {
     ($mode:ty) => {
         impl<'d, Y: FnMut(u32), const N: usize> CipherInit<$mode> for AesSkin<'d, Y, N> {
             type CipherContext<'a>
-                = AesOp<'a, N, $mode>
+                = AesOp<'a, Y, N, $mode>
             where
                 Self: 'a;
 
@@ -338,8 +309,8 @@ macro_rules! cipher_init {
                 key: &Self::Key,
                 nonce: &Self::Nonce,
             ) -> Result<Self::CipherContext<'a>, Self::Error> {
-                // SAFETY: `AesSkin::new` guarantees non-reentrancy; reborrow is exclusive.
-                let core = unsafe { AesCipher::from_device(&mut *self.dev) };
+                // The skin's exclusive borrow is reborrowed for this op.
+                let core = AesCipher::from_device(&mut *self.dev);
                 Ok(AesOp {
                     core,
                     key: key.clone(),
@@ -353,7 +324,7 @@ macro_rules! cipher_init {
 cipher_init!(Ecb);
 cipher_init!(Cbc);
 
-impl<'a, const N: usize> CipherOp<Ecb> for AesOp<'a, N, Ecb> {
+impl<'a, Y: FnMut(u32), const N: usize> CipherOp<Ecb> for AesOp<'a, Y, N, Ecb> {
     fn encrypt(&mut self, plaintext: [u8; N]) -> Result<[u8; N], HaceError> {
         const { assert!(N % AES_BLOCK == 0, "AesSkin<N>: N must be a multiple of 16") };
         let mut ct = [0u8; N];
@@ -371,7 +342,7 @@ impl<'a, const N: usize> CipherOp<Ecb> for AesOp<'a, N, Ecb> {
     }
 }
 
-impl<'a, const N: usize> CipherOp<Cbc> for AesOp<'a, N, Cbc> {
+impl<'a, Y: FnMut(u32), const N: usize> CipherOp<Cbc> for AesOp<'a, Y, N, Cbc> {
     fn encrypt(&mut self, plaintext: [u8; N]) -> Result<[u8; N], HaceError> {
         const { assert!(N % AES_BLOCK == 0, "AesSkin<N>: N must be a multiple of 16") };
         let mut ct = [0u8; N];

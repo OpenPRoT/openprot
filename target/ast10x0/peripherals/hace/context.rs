@@ -142,7 +142,7 @@ impl SectionPlacedContext {
 static SHARED_HASH_CTX: SectionPlacedContext = SectionPlacedContext::new();
 
 /// Acquire the raw pointer to the section-placed hash context, to be held as
-/// private state by the one [`HaceDevice`](super::device::HaceDevice).
+/// private state by the one [`Hace`](super::device::Hace).
 ///
 /// This is the *only* path to the context. There is deliberately no free
 /// accessor that hands the pointer to arbitrary call sites: the operation
@@ -160,9 +160,9 @@ static SHARED_HASH_CTX: SectionPlacedContext = SectionPlacedContext::new();
 /// below (Checklist box 3), exactly as the sibling SBC port does.
 ///
 /// # Safety
-/// The HACE engine is a hardware singleton. The caller (the `HaceDevice`
+/// The HACE engine is a hardware singleton. The caller (the `Hace`
 /// construction gate) must uphold the same single-instance/non-reentrancy
-/// contract as `HaceRegisters::new*`: at most one live `HaceDevice`, hence at
+/// contract as `Hace::new*`: at most one live `Hace`, hence at
 /// most one live `&mut` minted from this pointer, at a time.
 pub(crate) unsafe fn acquire_shared_ctx() -> *mut HashContext {
     SHARED_HASH_CTX.get()
@@ -220,7 +220,7 @@ impl SectionPlacedCrypto {
 static SHARED_CRYPTO_CTX: SectionPlacedCrypto = SectionPlacedCrypto::new();
 
 /// Acquire the raw pointer to the section-placed crypto context, held as
-/// private state by the one [`HaceDevice`](super::device::HaceDevice). Exactly
+/// private state by the one [`Hace`](super::device::Hace). Exactly
 /// the [`acquire_shared_ctx`] discipline, for the AES path: no free accessor;
 /// the live `&mut` is reached only *through* the borrowed device
 /// (`borrow-arbitrated-engine-exclusivity`, goal.md §2.3 delta A1). AES is the
@@ -229,7 +229,7 @@ static SHARED_CRYPTO_CTX: SectionPlacedCrypto = SectionPlacedCrypto::new();
 ///
 /// # Safety
 /// Same single-instance/non-reentrancy contract as [`acquire_shared_ctx`]: at
-/// most one live `HaceDevice`, hence at most one live `&mut` from this pointer.
+/// most one live `Hace`, hence at most one live `&mut` from this pointer.
 pub(crate) unsafe fn acquire_crypto_ctx() -> *mut CryptoContext {
     SHARED_CRYPTO_CTX.get()
 }
