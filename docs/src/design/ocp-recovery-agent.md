@@ -15,10 +15,7 @@ eRoT runs the same sequence in both cases. For a downstream device whose
 boot flash the eRoT writes, the orchestrator restores the image through
 the `Recovery` capability, and the eRoT sends no OCP Recovery command.
 
-The register value names on this page follow the variants of
-`DeviceStatus` and `RecoveryStatus` in `hal/blocking/ocp_recovery`, the
-HAL for firmware on the Device side. Every value on this page follows
-OCP Secure Firmware Recovery 1.2.
+Every value on this page follows OCP Secure Firmware Recovery 1.2.
 
 The eRoT sends each command through a driver that implements
 `RegisterAccess`, as a block read or a block write over the bus that
@@ -71,19 +68,11 @@ Where OCP Recovery loads only the first firmware stage and the
 downstream device loads the rest over PLDM firmware update, the
 downstream device needs a second checkpoint after the push.
 
-The role does not sit behind `Recovery::restore`. The orchestrator
-holds the managed device in reset before it calls `restore`, and a
-downstream device in reset serves no registers, so an implementor of
-`restore` would have to release the downstream device inside the
-call.
-
 ## The Recovery Agent sequence
 
 The sequence follows the Recovery Agent in the Caliptra MCU SW BMC
 emulator (`caliptra-mcu-sw/emulator/bmc/src/recovery.rs`) and adds the
-failure paths. The eRoT runs the sequence as one flow of reads and
-writes, and the diagram shows each step and each poll as a state. In
-each read state, the value the eRoT reads decides the transition.
+failure paths.
 
 ```mermaid
 stateDiagram-v2
@@ -132,9 +121,8 @@ A failed access repeats the same step, except in the chunk write. When
 the downstream device refuses a write, when the read back of
 `INDIRECT_FIFO_CTRL` returns another image size, or when a chunk write
 fails on the bus, the eRoT drops the sequence and starts again at
-`ReadProtCap`. In 1.2 a NACK rejects the whole transfer, so a NACK on a
-chunk write takes the same restart. The new announcement resets the
-FIFO, so the downstream device stages every chunk once.
+`ReadProtCap`. The new announcement resets the FIFO, so the downstream
+device stages every chunk once.
 
 `PushLimits` bounds what the eRoT does in 1 boot cycle, and the board
 configuration sets the values. After `max_restarts` restarts the eRoT
@@ -159,10 +147,6 @@ the MCU ROM writes a `RECOVERY_STATUS` of `BootingImage` and no
 the boot evidence from the count of activated images or from another
 signal, as for any downstream device without an end state.
 
-The host tests run the sequence against a mock downstream device that
-implements `RegisterAccess` and calls `dispatch` of the Device side
-directly, so the tests need no IPC channel to a downstream device.
-
 ## Open questions
 
 - Does the eRoT pad the last chunk? The eRoT sends a short last chunk.
@@ -184,6 +168,3 @@ directly, so the tests need no IPC channel to a downstream device.
 - The eRoT does not write `DEVICE_RESET` to the downstream device yet,
   so the orchestrator resets the downstream device only through the
   reset line.
-- The HAL names the value 0xe of `RECOVERY_STATUS`
-  `ErrorEnteringRecovery`, and the register crate
-  `services/ocp-recovery/api` names the value `EnterRecoveryError`.

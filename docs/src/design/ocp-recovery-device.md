@@ -75,31 +75,21 @@ polls tells the Recovery Agent that the Device waits for bytes, and a
 heartbeat that stays the same tells the Recovery Agent that the Device
 has stopped. A board that serves the interface declares its heartbeat
 period in `PROT_CAP` byte 14, and the value has to be non-zero, because
-0 is the spec value for a Device that sends no heartbeat. When the
+a period of 0 states that the Device sends no heartbeat. When the
 Recovery Agent starts polling, how often it polls and how many times it
 streams again are Recovery Agent policy, outside this design.
 
 The reason code in `DEVICE_STATUS` says why the eRoT entered recovery.
-Table 2 of the spec takes the reason for `RecoveryMode` and
-`RecoveryPending` from the previous boot, and both rows name forced
-recovery and an error in the previous boot as causes. In this design
-the boot selector starts the OCP recovery firmware after it has
+The boot selector starts the OCP recovery firmware after it has
 rejected the local images or used up the retries of the active slot,
-so the eRoT reports the error of the previous boot. For the
-operational image, the codes from Table 3 are `MainFirmwareMissing`
-(0xb), `MainFirmwareAuthFailure` (0xc) and `MainFirmwareRollback`
-(0xd). The sequence diagram starts after the boot selector rejected
-the signature of the operational image.
+so the eRoT reports the error of the previous boot, for example
+`MainFirmwareAuthFailure` (0xc). The sequence diagram starts after the
+boot selector rejected the signature of the operational image.
 
 The serving loop and the recovery flow of the OCP recovery firmware run
-as separate execution contexts. The interface and the `FifoSink` hold
-state that the serving loop writes inside each `dispatch` call, so
-every arrow the Recovery Agent starts is work the serving loop does,
-the `begin_image` and `append` calls into the `FifoSink` included. The arrows the recovery flow starts run in the
-recovery flow, which blocks on `take_activation` while the serving loop
-keeps answering the Recovery Agent. The Recovery Agent polls, so a read
-that lands before a recovery-flow update returns the older value, and
-the diagram shows the poll that lands after.
+as separate execution contexts. The recovery flow blocks on
+`take_activation` while the serving loop keeps answering the Recovery
+Agent.
 
 ```mermaid
 sequenceDiagram
@@ -162,8 +152,7 @@ lifelines stand for the image that runs after the reset.
 
 In 1.2 the FIFO keeps 1 entry free, so the FIFO holds at most its size
 minus 1 entry, and a Recovery Agent that paces by polling writes a
-chunk while the FULL bit of `INDIRECT_FIFO_STATUS` is clear. The spec also lets an agent pace on a
-NACK, or on the gap between the write index and the read index. How the
+chunk while the FULL bit of `INDIRECT_FIFO_STATUS` is clear. How the
 FIFO reads after a push depends on the `FifoSink`. A `FifoSink` that
 takes each chunk inside `append`, while `dispatch` handles the
 `INDIRECT_FIFO_DATA` write that carried the chunk, leaves the FIFO
@@ -180,9 +169,7 @@ than the `FifoSink` holds, and `dispatch` refuses the whole of a write
 that would carry the received bytes past the announced size: the
 `FifoSink` keeps the bytes it holds, the indices do not move, and
 `dispatch` latches a protocol error the next `DEVICE_STATUS` read
-returns. An agent that overran writes `INDIRECT_FIFO_CTRL` again with
-the reset field set, which discards the received image and announces
-the new size.
+returns.
 
 ## Verifying the streamed image
 
@@ -194,9 +181,7 @@ verify covered, and keeps unverified bytes out of executable memory.
 The verify step runs through `IncrementalVerifier`. The flow starts a
 session and polls it over the image as a `ByteSource`, and an
 `Authenticated` outcome carries the `AuthenticatedImage` that reports
-the SVN. The flow compares that SVN against the SVN floor of the eRoT,
-which `ErotUpdate` names as `SvnFloor`, not against the SVN floor the
-orchestrator reads for a managed device.
+the SVN. The flow compares that SVN against the SVN floor of the eRoT.
 
 The flow verifies the image, resets the eRoT through `SelfReset`, and
 the boot path verifies the image again before booting the image. The
@@ -210,7 +195,7 @@ command with `take_reset_request` and performs the reset through
 `SelfReset`.
 
 Proposed mapping from the verify outcome to `RECOVERY_STATUS` and
-`DEVICE_STATUS`. The spec leaves the reason code to the Device:
+`DEVICE_STATUS`:
 
 | Verify outcome | RECOVERY_STATUS state | DEVICE_STATUS state and reason |
 | --- | --- | --- |
@@ -221,31 +206,25 @@ Proposed mapping from the verify outcome to `RECOVERY_STATUS` and
 | Image malformed or short | `Failed` (0xc) | `BootFailure` (0xe), `RecoveryFirmwareMissing` (0xe) |
 | Device cannot enter recovery | `ErrorEnteringRecovery` (0xe) | `BootFailure` (0xe), `GenericHardwareError` (0x1) |
 
-Only `RecoveryMode`, `RecoveryPending` and `BootFailure` carry a
-reason code, and the interface stores 0 for every other state. The last
-row reports the failure through `BootFailure` rather than `FatalError`.
-The spec calls a fatal error not recoverable through the OCP flow and
-populates no reason code for it, so a Recovery Agent reading `FatalError`
-stops pushing images, while `BootFailure` carries the reason code that
-says what to fix.
+A Device that cannot enter recovery reports `BootFailure` rather than
+`FatalError`, because a Recovery Agent that reads `FatalError` stops
+pushing images.
 
 The image that runs after the reset writes the values of
 the `Successful` row and of the row for the verify at boot.
 
 The Recovery Agent clears a terminal state with the `DEVICE_RESET`
 command, and the eRoT takes the request through `take_reset_request` and
-resets itself. `RECOVERY_STATUS` is read-only on the wire, so only the
-Device writes `RECOVERY_STATUS`.
+resets itself.
 
 ## The execution model
 
-The OCP recovery firmware runs the recovery sequence as its main flow,
-in place of a recovery service or an event-driven state machine. The
-flow runs straight through to the verify before the reset and blocks on
-`take_activation` and `take_reset_request`, while the serving loop
-keeps calling `dispatch`. After the reset, the boot path runs
-the verify at boot and boots the image, and the image that runs after
-the reset writes the status registers.
+The OCP recovery firmware runs the recovery sequence as its main flow.
+The flow runs straight through to the verify before the reset and blocks
+on `take_activation` and `take_reset_request`, while the serving loop
+keeps calling `dispatch`. After the reset, the boot path runs the verify
+at boot and boots the image, and the image that runs after the reset
+writes the status registers.
 
 ```mermaid
 stateDiagram-v2
@@ -304,12 +283,8 @@ flowchart LR
 
 The Recovery Agent polls `DEVICE_STATUS` and `INDIRECT_FIFO_STATUS` and
 watches the heartbeat for as long as the flow runs, so the serving loop
-must not block on the recovery flow. The hardware of a recovery block
-answers the Recovery Agent whatever the firmware does, so the firmware
-behind that recovery block can wait on the OCP Recovery registers in a
-blocking loop. On the eRoT the firmware answers, so the recovery flow
-blocks on events while the serving loop keeps answering, and
-`tick_heartbeat` shows the Recovery Agent that the Device is alive.
+must not block on the recovery flow, and `tick_heartbeat` shows the
+Recovery Agent that the Device is alive.
 
 Until a streamed image verifies and boots, every downstream device
 stays in reset, and the OCP recovery firmware serves only the
@@ -352,9 +327,8 @@ image failed, before the Recovery Agent sends any bytes. How the eRoT starts the
 what the OCP recovery firmware contains and who may rewrite it are
 questions in issue #705.
 
-Whether a board serves OCP streaming at all is board configuration,
-which a const function checks at build time, and a board that declares
-nothing builds no serving flow.
+Whether a board serves OCP streaming at all is board configuration, and
+a board that declares nothing builds no serving flow.
 
 ## The scope rule and the protocol-error latch
 
@@ -362,12 +336,12 @@ Each command belongs to a group, and the group sets the states in which
 `dispatch` serves the command. Commands `0x22` through `0x27`, which are
 `PROT_CAP`, `DEVICE_ID`, `DEVICE_STATUS`, `DEVICE_RESET`,
 `RECOVERY_CTRL` and `RECOVERY_STATUS`, are always available, and so is
-`HW_STATUS` (`0x28`) on a board that advertises `PROT_CAP` bit 9.
-`HW_STATUS` carries the composite temperature and the hardware error
-bits, which a Recovery Agent reads while the eRoT runs normally, so
-recovery mode does not gate it. The indirect memory window (`0x29` to
-`0x2b`) and the vendor command (`0x2c`) are unsupported in every state,
-and `dispatch` answers them with the unsupported-command error.
+`HW_STATUS` (`0x28`) on a board that advertises `PROT_CAP` bit 9. A
+Recovery Agent reads `HW_STATUS` while the eRoT runs normally, so
+recovery mode does not gate `HW_STATUS`. The indirect memory window
+(`0x29` to `0x2b`) and the vendor command (`0x2c`) are unsupported in
+every state, and `dispatch` answers them with the unsupported-command
+error.
 
 That leaves the FIFO group (`0x2d` to `0x2f`) as the one scoped group.
 It is available while `DEVICE_STATUS` byte 0 reads `RecoveryMode` (0x3)
@@ -378,12 +352,7 @@ means the Device runs outside recovery mode, and the second means the
 streamed image already runs and the FIFO holds nothing the agent can
 use.
 
-`dispatch` latches a protocol error for each refused FIFO command. The
-spec gives the FIFO commands scope R, which means that the Device serves
-the FIFO commands at any non-zero `DEVICE_STATUS`, so this refusal
-departs from the spec. Outside recovery the FIFO registers carry no image
-size, no indices and no staged bytes, and an agent that reads them
-learns nothing.
+`dispatch` latches a protocol error for each refused FIFO command.
 
 `BootFailure` (0xe) is neither `RecoveryMode` nor
 `RecoveryPending`, so `dispatch` refuses the FIFO commands after the
@@ -397,70 +366,32 @@ A refusal changes no register except the error byte it latches.
 storing anything, latches a protocol error into `DEVICE_STATUS` byte 1,
 and answers zero bytes. The latch clears when the Recovery Agent reads
 `DEVICE_STATUS`, and the read returns the error that was latched before
-the clear. A second error arriving before that read overwrites the first,
-so the Recovery Agent sees the most recent one.
-
-The protocol error values are the `ProtocolError` bytes in
-`services/ocp-recovery/api`.
-
-"Write 1, Device Clears" works on the whole field: the Device writes
-the idle value back once it has acted, and it refuses a write of any
-value the field does not name. The values differ per field.
-`RECOVERY_CTRL` byte 2 takes `0xf` to activate and `0x0` for idle,
-`INDIRECT_FIFO_CTRL` byte 1 takes `0x1` to reset the indices and `0x0`
-for idle, and `DEVICE_RESET` byte 0 takes `0x1` for a device reset and
-`0x2` for a management reset.
+the clear.
 
 ## Out of scope
 
-Forced recovery is out of scope. Adopting forced recovery later costs a
-configuration field plus the operational image serving the registers,
-because the Recovery Agent writes the forced-recovery value to an eRoT
-that runs normally. The interface decodes the forced-recovery value the agent
-writes and keeps the value when `take_reset_request` clears the reset
-control, so adopting forced recovery
-later needs no change to the wire layer.
-
-Multi-stage activation is out of scope. The spec has the Device
-increment the recovery image index and return to awaiting an image when
-a further stage follows a successful activation, so an agent streams one
-stage after another. The eRoT accepts one streamed image and boots it,
-and the flow reports image 0 throughout. The register file carries the
-index field, so adopting stages later costs the flow a counter rather
-than a wire change.
-
-Also out of scope: the indirect memory window and the vendor command,
-which `dispatch` refuses in every state and `PROT_CAP` does not
-advertise, and the transport binding.
-
-Downstream devices are out of scope on this page. The interface the
-eRoT serves carries images for the eRoT only.
-[OCP Recovery: the eRoT as Recovery Agent](./ocp-recovery-agent.md)
-covers the eRoT as Recovery Agent for a downstream device that serves
-OCP Recovery.
+- Forced recovery
+- Multi-stage activation
+- The indirect memory window and the vendor command
+- The transport binding
+- Downstream devices, which
+  [OCP Recovery: the eRoT as Recovery Agent](./ocp-recovery-agent.md)
+  covers
 
 ## Open questions
 
 - Which image serves the interface after the reset? That image reports
-  the outcome to the Recovery Agent, and the scope rule has a Recovery
-  Agent read `Healthy` and `HW_STATUS` while the eRoT runs normally.
-  The reset before the boot clears `RecoveryInterface`, and a refusal
-  at the verify at boot needs a report of the refusal to the Recovery
-  Agent as well. Issue #705 collects the record the eRoT keeps across
-  the reset.
+  the outcome to the Recovery Agent. Issue #705 holds the question on
+  which record the eRoT keeps across the reset.
 - Which state does the eRoT report after a streamed image boots? The
   spec has a Device that runs operational firmware report `Healthy`, and
   this design reports `RunningRecoveryImage`.
 - Which reason code does the eRoT report when the boot selector rejects
-  one local image as corrupt (0xb) and another on its signature (0xc)?
-  Which code does the eRoT report when the active slot uses up its
-  retries? How does the boot selector pass the error to the OCP
-  recovery firmware?
-- Does `FlashlessStreamingBoot` (0x12) also cover streaming boot after
-  the boot selector rejects the local images? Table 3 describes 0x12 as
-  "Flashless/Streaming Boot". The Recovery Agent selects flashless boot
-  mode (section 7.3) by writing 0xe to `DEVICE_RESET` byte 1, and the
-  spec does not say whether 0x12 is limited to that mode.
+  one local image as corrupt (0xb) and another on its signature (0xc),
+  or when the active slot uses up its retries? How does the boot
+  selector pass the error to the OCP recovery firmware? Does
+  `FlashlessStreamingBoot` (0x12) also fit a streaming boot after the
+  boot selector rejected every local image?
 - Can the recovery flow run on `RecoveryDevice`, over a `RecoveryDriver`
   that `RecoveryInterface` implements? The eRoT and a Device with a
   recovery block would then share one sequence, and the differences
@@ -483,6 +414,3 @@ that loads the rest over PLDM firmware update.
 - The draft of the `services/ocp-recovery` crates advertises version
   1.1 in `PROT_CAP`, and `FifoSink` has no way to report that the FIFO
   is full, so a `FifoSink` that takes chunks later cannot set FULL.
-- The tests of the `services/ocp-recovery` draft enter recovery with
-  `FlashlessStreamingBoot` (0x12), and the diagrams report
-  `MainFirmwareAuthFailure` (0xc).
